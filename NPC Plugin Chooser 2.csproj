@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net8.0-windows</TargetFramework>
+        <RootNamespace>NPC_Plugin_Chooser_2</RootNamespace>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UseWPF>true</UseWPF>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Mutagen.Bethesda.Json" Version="0.49.0" />
+      <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.49.0" />
+      <PackageReference Include="Mutagen.Bethesda.Synthesis" Version="0.33.3" />
+      <PackageReference Include="Mutagen.Bethesda.Synthesis.WPF" Version="0.33.3" />
+      <PackageReference Include="Mutagen.Bethesda.WPF" Version="0.49.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Page Update="Views\MainWindow.xaml">
+        <Generator>MSBuild:Compile</Generator>
+        <XamlRuntime>Wpf</XamlRuntime>
+        <SubType>Designer</SubType>
+      </Page>
+    </ItemGroup>
+
+</Project>
