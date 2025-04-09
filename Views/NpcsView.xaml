@@ -79,7 +79,7 @@
                                         </Style>
                                     </Image.Style>
                                 </Image>
-                                <TextBlock Text="{Binding ModKey.FileName}" VerticalAlignment="Bottom" HorizontalAlignment="Center" Background="#AAFFFFFF" FontSize="10" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding ModName}" VerticalAlignment="Bottom" HorizontalAlignment="Center" Background="#AAFFFFFF" FontSize="10" TextTrimming="CharacterEllipsis"/>
                             </Grid>
                          </Border>
                     </DataTemplate>

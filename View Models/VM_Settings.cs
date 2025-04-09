@@ -99,7 +99,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public static Settings LoadSettings()
         {
             string settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");
-            if (Directory.Exists(settingsPath))
+            if (File.Exists(settingsPath))
             {
                 var trialSettings =
                     JSONhandler<Settings>.LoadJSONFile(settingsPath, out bool success, out string exception);
