@@ -1,0 +1,104 @@
+﻿<!-- SettingsView.xaml -->
+<reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
+             xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+             xmlns:bsky="clr-namespace:Mutagen.Bethesda.Skyrim;assembly=Mutagen.Bethesda.Skyrim"
+             xmlns:reactiveui="http://reactiveui.net"
+             xmlns:System="clr-namespace:System;assembly=mscorlib"
+             mc:Ignorable="d"
+             x:TypeArguments="vm:VM_Settings"
+             d:DesignHeight="450" d:DesignWidth="800">
+    <UserControl.Resources>
+        <ObjectDataProvider x:Key="SkyrimReleaseEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="bsky:SkyrimRelease"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+        <StackPanel>
+            <TextBlock Text="General Settings" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+
+            <!-- Skyrim Game Path -->
+            <TextBlock Text="Skyrim Game Path (Optional - Auto-detects if blank):"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <!-- Update Binding Here -->
+                <TextBox Grid.Column="0" Text="{Binding SkyrimGamePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectGameFolderCommand}"/>
+            </Grid>
+            <TextBlock Text="Leave blank to attempt auto-detection based on the selected Skyrim version." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+
+
+             <!-- Skyrim Version -->
+            <TextBlock Text="Skyrim Version:"/>
+             <!-- ComboBox SelectedItem binding usually updates on selection change anyway -->
+            <ComboBox ItemsSource="{Binding Source={StaticResource SkyrimReleaseEnumValues}}"
+                      SelectedItem="{Binding SkyrimRelease, Mode=TwoWay}"/>
+            <TextBlock Text="Ensure this matches the game version you are modding." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+
+            <!-- Output Mod Name -->
+            <TextBlock Text="Output Mod Name:"/>
+            <!-- Update Binding Here -->
+            <TextBox Text="{Binding OutputModName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+
+             <!-- Mods Folder (If needed by backend logic, otherwise remove) -->
+             <!--
+             <TextBlock Text="Mods Folder (e.g., MO2 Mods Path - Used for...?)"/>
+             <Grid>
+                 <Grid.ColumnDefinitions>
+                     <ColumnDefinition Width="*"/>
+                     <ColumnDefinition Width="Auto"/>
+                 </Grid.ColumnDefinitions>
+                 <TextBox Grid.Column="0" Text="{Binding ModsFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                 <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectModsFolderCommand}"/>
+             </Grid>
+             <TextBlock Text="Specify the root folder where your mods are installed." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+             -->
+
+            <!-- Mugshots Folder -->
+            <TextBlock Text="Mugshots Folder:"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <!-- Update Binding Here -->
+                <TextBox Grid.Column="0" Text="{Binding MugshotsFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectMugshotsFolderCommand}"/>
+            </Grid>
+            <TextBlock Text="Folder containing subfolders for each mod's NPC preview images." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+
+            <!-- Environment Status -->
+            <TextBlock Text="Environment Status:" FontWeight="Bold" Margin="0,10,0,5"/>
+            <TextBlock>
+                <Run Text="Mutagen Environment Initialized: "/>
+                <Run Text="{Binding EnvironmentIsValid, Mode=OneWay}" FontWeight="Bold"/>
+            </TextBlock>
+             <TextBlock Text="{Binding EnvironmentErrorText}" Foreground="Red" TextWrapping="Wrap" MaxHeight="100" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                 <TextBlock.Style>
+                     <Style TargetType="TextBlock">
+                         <Style.Triggers>
+                             <Trigger Property="Text" Value="{x:Null}">
+                                 <Setter Property="Visibility" Value="Collapsed"/>
+                             </Trigger>
+                              <Trigger Property="Text" Value="">
+                                 <Setter Property="Visibility" Value="Collapsed"/>
+                             </Trigger>
+                         </Style.Triggers>
+                     </Style>
+                 </TextBlock.Style>
+            </TextBlock>
+
+            <!-- Add other settings from VM_Settings as needed -->
+
+        </StackPanel>
+    </ScrollViewer>
+</reactiveui:ReactiveUserControl>

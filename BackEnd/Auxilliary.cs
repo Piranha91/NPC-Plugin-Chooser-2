@@ -1,4 +1,6 @@
-﻿namespace NPC_Plugin_Chooser_2.BackEnd;
+﻿using System.IO;
+
+namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public class Auxilliary
 {
@@ -52,5 +54,26 @@ public class Auxilliary
 
         formIDstr += split[0];
         return true;
+    }
+    
+    public enum PathType
+    {
+        File,
+        Directory
+    }
+    public static dynamic CreateDirectoryIfNeeded(string path, PathType type)
+    {
+        if (type == PathType.File)
+        {
+            FileInfo file = new FileInfo(path);
+            file.Directory.Create(); // If the directory already exists, this method does nothing.
+            return file;
+        }
+        else
+        {
+            DirectoryInfo directory = new DirectoryInfo(path);
+            directory.Create();
+            return directory;
+        }
     }
 }

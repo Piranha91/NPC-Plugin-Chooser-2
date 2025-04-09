@@ -9,7 +9,7 @@ public class Settings
     public string MugshotsFolder { get; set; } = string.Empty;
     public SkyrimRelease SkyrimRelease { get; set; } = SkyrimRelease.SkyrimSE;
     public string SkyrimGamePath { get; set; } = string.Empty;
-    public string OutputModName { get; set; } = string.Empty;
+    public string OutputModName { get; set; } = "NPC.esp";
     public List<ModSetting> ModSettings { get; set; } = new();
-    public Dictionary<INpcGetter, ModKey> SelectedAppearanceMods { get; set; } = new();
+    public Dictionary<FormKey, string> SelectedAppearanceMods { get; set; } = new();
 }

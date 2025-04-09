@@ -1,0 +1,37 @@
+﻿<!-- RunView.xaml -->
+<reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.RunView"
+                                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                                xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
+                                xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+                                xmlns:reactiveui="http://reactiveui.net"
+                                mc:Ignorable="d"
+                                x:TypeArguments="vm:VM_Run"
+                                d:DesignHeight="450" d:DesignWidth="800">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- ADD x:Name HERE -->
+        <Button x:Name="RunButton"
+                Grid.Row="0"
+                Content="Run Patch Generation"
+                Command="{Binding RunCommand}"
+                HorizontalAlignment="Left" MinWidth="150" Padding="10,5" Margin="0,0,0,10"/>
+
+        <!-- ADD x:Name HERE -->
+        <TextBox x:Name="LogTextBox"
+                 Grid.Row="1"
+                 Text="{Binding LogOutput, Mode=OneWay}"
+                 IsReadOnly="True"
+                 VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Auto"
+                 AcceptsReturn="True"
+                 TextWrapping="NoWrap"
+                 FontFamily="Consolas"/>
+    </Grid>
+</reactiveui:ReactiveUserControl>

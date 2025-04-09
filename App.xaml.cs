@@ -1,17 +1,116 @@
-﻿using System.Configuration;
-using System.Data;
+﻿// App.xaml.cs
+using Autofac;
+using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.Models;
+using NPC_Plugin_Chooser_2.Views;
+using NPC_Plugin_Chooser_2.View_Models;
+using ReactiveUI;
+using Splat;
+using Splat.Autofac; // Ensure this using directive is present
+using System.IO;
+using System.Reflection;
 using System.Windows;
+using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
-using Mutagen.Bethesda.Synthesis;
+using System.Collections.Generic; // Added for Dictionary
+using System; // Added for Exception, Path, etc.
+using System.Linq; // Added for LINQ methods if needed
 
-namespace NPC_Plugin_Chooser_2;
-
-/// <summary>
-/// Interaction logic for App.xaml
-/// </summary>
-public partial class App : Application
+namespace NPC_Plugin_Chooser_2
 {
-    protected override void OnStartup(StartupEventArgs e)
+    /// <summary>
+    /// Interaction logic for App.xaml
+    /// </summary>
+    public partial class App : Application
     {
+        public App()
+        {
+            // Set up Autofac
+            var builder = new ContainerBuilder();
+
+            // Register Services & Models (as singletons where appropriate)
+            // Load/Save Settings (Consider implementing persistence here)
+            var settings = VM_Settings.LoadSettings(); // Replace with actual loading logic if needed
+            builder.RegisterInstance(settings).AsSelf().SingleInstance();
+
+            builder.RegisterType<EnvironmentStateProvider>().AsSelf().SingleInstance();
+            builder.RegisterType<Auxilliary>().AsSelf().SingleInstance();
+            builder.RegisterType<NpcConsistencyProvider>().AsSelf().SingleInstance(); // Added for central selection management
+
+            // Register ViewModels
+            builder.RegisterType<VM_MainWindow>().AsSelf().SingleInstance(); // Main window is often a singleton
+            builder.RegisterType<VM_NpcSelectionBar>().AsSelf().SingleInstance(); // Keep NPC list state
+            builder.RegisterType<VM_Settings>().AsSelf().SingleInstance(); // Keep settings state
+            builder.RegisterType<VM_Run>().AsSelf().SingleInstance(); // Keep run state
+            // Register VM_FullScreenImage transiently as it's created on demand
+            builder.RegisterType<VM_FullScreenImage>().AsSelf();
+
+
+            // Register Views using Splat's IViewFor convention
+            // This allows resolving Views via service locator if needed, but primarily helps ReactiveUI internals
+            builder.RegisterType<MainWindow>().As<IViewFor<VM_MainWindow>>();
+            builder.RegisterType<NpcsView>().As<IViewFor<VM_NpcSelectionBar>>();
+            builder.RegisterType<SettingsView>().As<IViewFor<VM_Settings>>();
+            builder.RegisterType<RunView>().As<IViewFor<VM_Run>>();
+            builder.RegisterType<FullScreenImageView>().As<IViewFor<VM_FullScreenImage>>(); // For full screen view
+            
+
+            // Use Autofac for Splat Dependency Resolution
+            var autofacResolver = builder.UseAutofacDependencyResolver();
+            
+            // Register the resolver in Autofac so it can be later resolved
+            builder.RegisterInstance(autofacResolver);
+
+            // Configure Splat to use the Autofac resolver
+            // ModeDetector.OverrideModeDetector(Mode.Run); // Obsolete - Splat should detect mode automatically
+            Locator.SetLocator(autofacResolver); // Configure Splat globally
+
+            // Initialize ReactiveUI specifics AFTER setting the locator
+            Locator.CurrentMutable.InitializeSplat();
+            Locator.CurrentMutable.InitializeReactiveUI();
+
+            // Register Views with ReactiveUI's ViewLocator (needed for ViewModelViewHost, DataTemplates etc.)
+            // These factory registrations tell ReactiveUI how to create a View instance when it sees a specific ViewModel type.
+            Locator.CurrentMutable.Register(() => new NpcsView(), typeof(IViewFor<VM_NpcSelectionBar>));
+            Locator.CurrentMutable.Register(() => new SettingsView(), typeof(IViewFor<VM_Settings>));
+            Locator.CurrentMutable.Register(() => new RunView(), typeof(IViewFor<VM_Run>));
+            Locator.CurrentMutable.Register(() => new FullScreenImageView(), typeof(IViewFor<VM_FullScreenImage>));
+            
+            var container = builder.Build();
+            autofacResolver.SetLifetimeScope(container);
+
+            // Resolve the main window view model to start the application
+            // The MainWindow's DataContext will be set automatically by ReactiveUI's View magic
+            // if MainWindow inherits ReactiveWindow<VM_MainWindow> and its VM is resolved correctly.
+            // We don't strictly need to resolve the VM here; the View's constructor/WhenActivated handles it.
+            // var mainWindowViewModel = container.Resolve<VM_MainWindow>();
+        }
+
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            base.OnStartup(e);
+            // Resolve the MainWindow *View* using the service locator.
+            // ReactiveUI's ReactiveWindow base class or ViewLocator mechanisms
+            // will typically handle associating the correct ViewModel.
+            var mainWindow = Locator.Current.GetService<IViewFor<VM_MainWindow>>() as Window;
+
+            // Fallback or alternative: Just create the window directly.
+            // If MainWindow resolves its VM correctly in its constructor using Splat, this works fine.
+            if (mainWindow == null)
+            {
+                 mainWindow = new MainWindow();
+            }
+
+            if (mainWindow != null)
+            {
+                 mainWindow.Show();
+            }
+             else
+            {
+                 // Handle error - main window view couldn't be resolved or created
+                 MessageBox.Show("Fatal Error: Could not resolve or create the MainWindow view.", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                 // Consider Application.Current.Shutdown();
+            }
+        }
     }
 }

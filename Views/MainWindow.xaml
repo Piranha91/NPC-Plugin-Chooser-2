@@ -1,14 +1,32 @@
-﻿<Window x:Class="NPC_Plugin_Chooser_2.Views.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:NPC_Plugin_Chooser_2"
-        xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
-        mc:Ignorable="d"
-        d:DataContext="{d:DesignInstance Type=vm:VM_MainWindow}"
-        Title="NPC Plugin Chooser" Height="450" Width="800">
+﻿<!-- MainWindow.xaml -->
+<reactiveui:ReactiveWindow x:Class="NPC_Plugin_Chooser_2.Views.MainWindow"
+                           xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                           xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                           xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                           xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                           xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
+                           xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+                           xmlns:reactiveui="http://reactiveui.net"
+                           mc:Ignorable="d"
+                           x:TypeArguments="vm:VM_MainWindow"
+                           d:DataContext="{d:DesignInstance Type=vm:VM_MainWindow}"
+                           Title="NPC Plugin Chooser" Height="700" Width="1000">
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/> <!-- Tab Navigation -->
+            <RowDefinition Height="*"/> <!-- Content -->
+        </Grid.RowDefinitions>
 
+        <!-- Tab Navigation -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Background="LightGray">
+            <RadioButton x:Name="NpcsRadioButton" Content="NPCs" GroupName="MainTabs" IsChecked="{Binding IsNpcsTabSelected, Mode=TwoWay}" Style="{StaticResource {x:Type ToggleButton}}"/>
+            <RadioButton x:Name="SettingsRadioButton" Content="Settings" GroupName="MainTabs" IsChecked="{Binding IsSettingsTabSelected, Mode=TwoWay}" Style="{StaticResource {x:Type ToggleButton}}"/>
+            <RadioButton x:Name="RunRadioButton" Content="Run" GroupName="MainTabs" IsChecked="{Binding IsRunTabSelected, Mode=TwoWay}" Style="{StaticResource {x:Type ToggleButton}}"/>
+        </StackPanel>
+
+        <!-- Content Area -->
+        <Border Grid.Row="1" BorderThickness="1" BorderBrush="DarkGray" Margin="5">
+            <reactiveui:ViewModelViewHost x:Name="ViewModelViewHost" ViewModel="{Binding CurrentViewModel}" />
+        </Border>
     </Grid>
-</Window>
+</reactiveui:ReactiveWindow>
