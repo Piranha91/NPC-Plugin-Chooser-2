@@ -49,7 +49,9 @@
 
         <!-- Right Column: Appearance Mod Images -->
          <!-- *** ADD PreviewMouseWheel handler *** -->
-         <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+         <ScrollViewer Grid.Column="1" x:Name="ImageDisplayScrollViewer"
+                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                       SizeChanged="ImageDisplayScrollViewer_SizeChanged"
                        PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
              <ItemsControl x:Name="AppearanceModsItemsControl" ItemsSource="{Binding CurrentNpcAppearanceMods}">
                  <ItemsControl.ItemsPanel>

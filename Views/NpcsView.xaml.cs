@@ -1,7 +1,7 @@
 ﻿// NpcsView.xaml.cs (Updated with Disposal Logic)
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
-using System;
+using System.Windows;
 using System.Reactive.Disposables; // Required for CompositeDisposable and DisposeWith
 using System.Windows.Input;        // Required for MouseWheelEventArgs
 using Splat;
@@ -79,6 +79,38 @@ namespace NPC_Plugin_Chooser_2.Views
                 }
             }
         }
+        
+        private void ImageDisplayScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (ViewModel != null)
+            {
+                double availableWidth = e.NewSize.Width;
+                double availableHeight = e.NewSize.Height;
+                int imageCount = ViewModel.CurrentNpcAppearanceMods?.Count ?? 0;
+
+                if (imageCount > 0)
+                {
+                    double spacing = 10; // Left+Right margin in your Border
+                    double paddingPerImage = spacing;
+
+                    // Try a square grid
+                    int columns = (int)Math.Ceiling(Math.Sqrt(imageCount * availableWidth / availableHeight));
+                    int rows = (int)Math.Ceiling((double)imageCount / columns);
+
+                    double maxWidthPerImage = (availableWidth - (columns * paddingPerImage)) / columns;
+                    double maxHeightPerImage = (availableHeight - (rows * paddingPerImage)) / rows;
+                    double finalSize = Math.Min(maxWidthPerImage, maxHeightPerImage);
+
+                    // Clamp to min/max defined in your ViewModel
+                    const double MinImageSize = 40.0;
+                    const double MaxImageSize = 600.0;
+                    finalSize = Math.Clamp(finalSize, MinImageSize, MaxImageSize);
+
+                    ViewModel.ImageDisplaySize = finalSize;
+                }
+            }
+        }
+
 
         // Optional: Explicitly dispose if the view might be reused without full destruction/recreation
         // Usually not needed if WhenActivated handles disposal correctly on deactivation.
