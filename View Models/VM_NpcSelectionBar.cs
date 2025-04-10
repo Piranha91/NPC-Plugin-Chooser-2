@@ -1,9 +1,10 @@
-﻿// [VM_NpcSelectionBar.cs] - Updated with Search Functionality
+﻿// [VM_NpcSelectionBar.cs] - Updated with Image Sizing
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Reactive; // Required for Unit
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Text.RegularExpressions;
@@ -16,12 +17,12 @@ using NPC_Plugin_Chooser_2.Models;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Splat;
-using System.ComponentModel; // For Enum Description
-using DynamicData.Binding; // If using ObservableCollectionExtended or similar
+// using System.ComponentModel; // No longer needed for just Enum Values
+// using DynamicData.Binding; // Not needed for this implementation
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
-    // Add NpcSearchType enum definition here or in a separate file within the namespace
+    // NpcSearchType enum definition (ensure it's accessible)
 
     public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     {
@@ -38,27 +39,27 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public NpcSearchType SearchType2 { get; set; } = NpcSearchType.Name;
         [Reactive] public string SearchText3 { get; set; } = string.Empty;
         [Reactive] public NpcSearchType SearchType3 { get; set; } = NpcSearchType.Name;
-        [Reactive] public bool IsSearchAndLogic { get; set; } = true; // True for AND, False for OR
-
-        // Available search types for dropdowns
+        [Reactive] public bool IsSearchAndLogic { get; set; } = true;
         public Array AvailableSearchTypes => Enum.GetValues(typeof(NpcSearchType));
         // --- End Search Properties ---
 
-        // Original list of all NPCs
+        // --- Image Sizing Properties ---
+        private const double DefaultImageSize = 150.0;
+        private const double MinImageSize = 40.0;
+        private const double MaxImageSize = 600.0;
+        private const double ImageSizeStepFactor = 15.0; // Pixel change per standard wheel tick
+
+        [Reactive] public double ImageDisplaySize { get; set; } = DefaultImageSize;
+
+        public ReactiveCommand<double, Unit> ChangeImageSizeCommand { get; }
+        // --- End Image Sizing Properties ---
+
+
         private List<VM_NpcSelection> _allNpcs = new();
-
-        // *** CHANGED: This is now the FILTERED list for the UI ***
         public ObservableCollection<VM_NpcSelection> FilteredNpcs { get; } = new();
-
-        // Stores mugshot data (used in filtering)
         private Dictionary<string, List<(string ModName, string ImagePath)>> _mugshotData = new();
 
-        // Keep original Npcs property name for binding compatibility if needed,
-        // but it now points to the filtered list. Consider renaming if possible.
-        // public ObservableCollection<VM_NpcSelection> Npcs => FilteredNpcs; // Alias if needed
-
         [Reactive] public VM_NpcSelection? SelectedNpc { get; set; }
-
         [ObservableAsProperty] public ObservableCollection<VM_AppearanceMod>? CurrentNpcAppearanceMods { get; }
 
         public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider, Settings settings, Auxilliary auxilliary, NpcConsistencyProvider consistencyProvider)
@@ -68,7 +69,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _auxilliary = auxilliary;
             _consistencyProvider = consistencyProvider;
 
-            // Create Appearance Mod VMs based on SelectedNpc
             this.WhenAnyValue(x => x.SelectedNpc)
                 .Select(selectedNpc => selectedNpc != null
                     ? CreateAppearanceModViewModels(selectedNpc, _mugshotData)
@@ -76,26 +76,48 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .ToPropertyEx(this, x => x.CurrentNpcAppearanceMods);
 
-            // Subscribe to selection changes from the consistency provider
              _consistencyProvider.NpcSelectionChanged
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(args => UpdateSelectionState(args.NpcFormKey, args.SelectedMod))
                 .DisposeWith(_disposables);
 
-            // --- Setup Search Filtering Trigger ---
             this.WhenAnyValue(
                     x => x.SearchText1, x => x.SearchType1,
                     x => x.SearchText2, x => x.SearchType2,
                     x => x.SearchText3, x => x.SearchType3,
                     x => x.IsSearchAndLogic)
-                .Throttle(TimeSpan.FromMilliseconds(250), RxApp.MainThreadScheduler) // Debounce search
+                .Throttle(TimeSpan.FromMilliseconds(250), RxApp.MainThreadScheduler)
                 .Subscribe(_ => ApplyFilter())
                 .DisposeWith(_disposables);
-            // --- End Search Filtering Trigger ---
 
-            // Initial population
-            Initialize(); // Populates _allNpcs and applies initial filter
+            // --- Image Size Command ---
+            ChangeImageSizeCommand = ReactiveCommand.Create<double>(delta =>
+            {
+                // Calculate change based on delta and factor
+                // Delta is typically +/- 120 for standard mouse wheel ticks
+                double change = (delta / 120.0) * ImageSizeStepFactor;
+                double newSize = ImageDisplaySize + change;
+
+                // Clamp the new size within defined bounds
+                ImageDisplaySize = Math.Clamp(newSize, MinImageSize, MaxImageSize);
+                //System.Diagnostics.Debug.WriteLine($"Image Size Changed: {ImageDisplaySize}"); // For debugging
+            });
+
+            ChangeImageSizeCommand.ThrownExceptions.Subscribe(ex =>
+                {
+                    // Log or show error if command execution fails
+                    System.Diagnostics.Debug.WriteLine($"Error changing image size: {ex.Message}");
+                    MessageBox.Show($"Error adjusting image size: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                })
+                .DisposeWith(_disposables);
+            // --- End Image Size Command ---
+
+
+            Initialize();
         }
+
+        // --- Methods (Initialize, ApplyFilter, ScanMugshotDirectory, CreateAppearanceModViewModels etc. remain the same as previous correct version) ---
+        // ... (Keep all previous methods like Initialize, ApplyFilter, BuildPredicate, ScanMugshotDirectory, CreateAppearanceModViewModels)
 
         private void UpdateSelectionState(FormKey npcFormKey, string selectedMod)
         {
@@ -159,192 +181,94 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public void Initialize()
         {
-            // Clear previous state
             var previouslySelectedNpcKey = SelectedNpc?.NpcFormKey;
             SelectedNpc = null;
             _allNpcs.Clear();
-            FilteredNpcs.Clear(); // Clear UI list
-
-            if (!_environmentStateProvider.EnvironmentIsValid)
-            {
+            FilteredNpcs.Clear();
+            if (!_environmentStateProvider.EnvironmentIsValid) {
                 MessageBox.Show($"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}", "Environment Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-                _mugshotData.Clear();
-                return; // Stop initialization
+                _mugshotData.Clear(); return;
             }
-
-            // 1. Scan Mugshots (needed for filtering and VM creation)
             _mugshotData = ScanMugshotDirectory();
             var processedMugshotKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            // 2. Process NPCs from Load Order -> Populate _allNpcs
-            var npcRecords = _environmentStateProvider.LoadOrder.PriorityOrder
-                                 .WinningOverrides<INpcGetter>()
-                                 .Where(npc => npc.EditorID?.Contains("Preset", StringComparison.OrdinalIgnoreCase) == false &&
-                                               !npc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.IsCharGenFacePreset))
-                                 .OrderBy(x => _auxilliary.FormKeyStringToFormIDString(x.FormKey.ToString()))
-                                 .ToArray();
-
-            foreach (var npc in npcRecords)
-            {
+            var npcRecords = _environmentStateProvider.LoadOrder.PriorityOrder.WinningOverrides<INpcGetter>()
+                                 .Where(npc => npc.EditorID?.Contains("Preset", StringComparison.OrdinalIgnoreCase) == false && !npc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.IsCharGenFacePreset))
+                                 .OrderBy(x => _auxilliary.FormKeyStringToFormIDString(x.FormKey.ToString())).ToArray();
+            foreach (var npc in npcRecords) {
                 try {
                     var npcSelector = new VM_NpcSelection(npc, _environmentStateProvider, _consistencyProvider);
-                    _allNpcs.Add(npcSelector); // Add to master list
-                    string npcFormKeyString = npc.FormKey.ToString();
+                    _allNpcs.Add(npcSelector); string npcFormKeyString = npc.FormKey.ToString();
                     if (_mugshotData.ContainsKey(npcFormKeyString)) { processedMugshotKeys.Add(npcFormKeyString); }
                 } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Error initializing VM for NPC {npc.EditorID ?? npc.FormKey.ToString()}: {ex.Message}"); }
             }
-
-            // 3. Process NPCs found ONLY in Mugshots -> Populate _allNpcs
-            foreach (var kvp in _mugshotData)
-            {
-                 string mugshotFormKeyString = kvp.Key;
-                 List<(string ModName, string ImagePath)> mugshots = kvp.Value;
-                 if (!processedMugshotKeys.Contains(mugshotFormKeyString) && mugshots.Any())
-                 {
+            foreach (var kvp in _mugshotData) {
+                 string mugshotFormKeyString = kvp.Key; List<(string ModName, string ImagePath)> mugshots = kvp.Value;
+                 if (!processedMugshotKeys.Contains(mugshotFormKeyString) && mugshots.Any()) {
                      try {
                          FormKey mugshotFormKey = FormKey.Factory(mugshotFormKeyString);
                          var npcSelector = new VM_NpcSelection(mugshotFormKey, _environmentStateProvider, _consistencyProvider);
-                         if (npcSelector.DisplayName == mugshotFormKeyString) {
-                             string firstModName = mugshots[0].ModName; string pluginBaseName = Path.GetFileNameWithoutExtension(mugshotFormKey.ModKey.FileName);
-                             npcSelector.DisplayName = $"{firstModName} - {pluginBaseName} [{mugshotFormKeyString}]";
-                         }
-                         _allNpcs.Add(npcSelector); // Add to master list
+                         if (npcSelector.DisplayName == mugshotFormKeyString) { string firstModName = mugshots[0].ModName; string pluginBaseName = Path.GetFileNameWithoutExtension(mugshotFormKey.ModKey.FileName); npcSelector.DisplayName = $"{firstModName} - {pluginBaseName} [{mugshotFormKeyString}]"; }
+                         _allNpcs.Add(npcSelector);
                      } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Error creating VM for mugshot-only NPC {mugshotFormKeyString}: {ex.Message}"); }
                  }
             }
-
-            // 4. Apply initial filter (which populates FilteredNpcs)
-            ApplyFilter();
-
-            // 5. Restore Selection (search within FilteredNpcs)
-            if (previouslySelectedNpcKey != null) {
-                SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey));
-            }
-            if (SelectedNpc == null && FilteredNpcs.Any()) {
-                SelectedNpc = FilteredNpcs[0]; // Select first item in the filtered list
-            }
+            ApplyFilter(); // Apply filter to populate FilteredNpcs
+             if (previouslySelectedNpcKey != null) { SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey)); }
+             if (SelectedNpc == null && FilteredNpcs.Any()) { SelectedNpc = FilteredNpcs[0]; }
         }
 
-        // --- Filtering Logic ---
         private void ApplyFilter()
         {
             IEnumerable<VM_NpcSelection> results = _allNpcs;
-            bool filter1Active = !string.IsNullOrWhiteSpace(SearchText1);
-            bool filter2Active = !string.IsNullOrWhiteSpace(SearchText2);
-            bool filter3Active = !string.IsNullOrWhiteSpace(SearchText3);
-
-            // Build predicates for active filters
+            bool filter1Active = !string.IsNullOrWhiteSpace(SearchText1); bool filter2Active = !string.IsNullOrWhiteSpace(SearchText2); bool filter3Active = !string.IsNullOrWhiteSpace(SearchText3);
             Func<VM_NpcSelection, bool>? predicate1 = filter1Active ? BuildPredicate(SearchType1, SearchText1) : null;
             Func<VM_NpcSelection, bool>? predicate2 = filter2Active ? BuildPredicate(SearchType2, SearchText2) : null;
             Func<VM_NpcSelection, bool>? predicate3 = filter3Active ? BuildPredicate(SearchType3, SearchText3) : null;
-
             var activePredicates = new List<Func<VM_NpcSelection, bool>>();
-            if (predicate1 != null) activePredicates.Add(predicate1);
-            if (predicate2 != null) activePredicates.Add(predicate2);
-            if (predicate3 != null) activePredicates.Add(predicate3);
-
-            if (activePredicates.Any())
-            {
-                if (IsSearchAndLogic) // AND Logic
-                {
-                    results = results.Where(npc => activePredicates.All(p => p(npc)));
-                }
-                else // OR Logic
-                {
-                    results = results.Where(npc => activePredicates.Any(p => p(npc)));
-                }
+            if (predicate1 != null) activePredicates.Add(predicate1); if (predicate2 != null) activePredicates.Add(predicate2); if (predicate3 != null) activePredicates.Add(predicate3);
+            if (activePredicates.Any()) {
+                if (IsSearchAndLogic) { results = results.Where(npc => activePredicates.All(p => p(npc))); }
+                else { results = results.Where(npc => activePredicates.Any(p => p(npc))); }
             }
-            // If no filters active, results remains _allNpcs
-
-            // Update the observable collection bound to the UI
-            // Efficient update is tricky; Clear/Add is simplest for moderate lists.
-            // Consider DynamicData library for large lists and complex updates.
-            var previouslySelectedNpcKey = SelectedNpc?.NpcFormKey; // Preserve selection
-
+            var previouslySelectedNpcKey = SelectedNpc?.NpcFormKey;
             FilteredNpcs.Clear();
-            foreach (var npc in results.OrderBy(x => _auxilliary.FormKeyStringToFormIDString(x.NpcFormKey.ToString()))) // Keep sorted
-            {
-                FilteredNpcs.Add(npc);
-            }
-
-            // Try to restore selection within the new filtered list
-             if (previouslySelectedNpcKey != null) {
-                 SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey));
-             }
-             // If selection lost and list has items, select the first one
-              if (SelectedNpc == null && FilteredNpcs.Any()) {
-                  SelectedNpc = FilteredNpcs[0];
-              }
-               // If selection lost and list is empty, ensure selection is null
-              else if (!FilteredNpcs.Any()) {
-                  SelectedNpc = null;
-              }
+            foreach (var npc in results.OrderBy(x => _auxilliary.FormKeyStringToFormIDString(x.NpcFormKey.ToString()))) { FilteredNpcs.Add(npc); }
+             if (previouslySelectedNpcKey != null) { SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey)); }
+              if (SelectedNpc == null && FilteredNpcs.Any()) { SelectedNpc = FilteredNpcs[0]; } else if (!FilteredNpcs.Any()) { SelectedNpc = null; }
         }
 
         private Func<VM_NpcSelection, bool> BuildPredicate(NpcSearchType type, string searchText)
         {
-            // Pre-compile contains check for performance if needed, though likely minor here
-            // StringComparison comparison = StringComparison.OrdinalIgnoreCase; // Use OrdinalIgnoreCase for non-linguistic comparison
-
-            return type switch
-            {
-                NpcSearchType.Name => npc =>
-                    (npc.DisplayName?.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0) ||
-                    (npc.NpcGetter?.Name?.String?.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0),
-
-                NpcSearchType.EditorID => npc =>
-                    npc.NpcGetter?.EditorID?.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0,
-
-                NpcSearchType.InAppearanceMod => npc =>
-                    // Check plugin sources
-                    npc.AppearanceMods.Any(m => m.FileName.String.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0) ||
-                    // Check mugshot sources by ModName folder
-                    (_mugshotData.TryGetValue(npc.NpcFormKey.ToString(), out var mugshots) &&
-                     mugshots.Any(m => m.ModName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)),
-
-                NpcSearchType.FromMod => npc =>
-                    npc.NpcFormKey.ModKey.FileName.String.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0, // Contains check
-
-                NpcSearchType.FormKey => npc =>
-                    npc.NpcFormKey.ToString().IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0, // Contains check
-
-                _ => npc => true // Should not happen
+            return type switch {
+                NpcSearchType.Name => npc => (npc.DisplayName?.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0) || (npc.NpcGetter?.Name?.String?.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0),
+                NpcSearchType.EditorID => npc => npc.NpcGetter?.EditorID?.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0,
+                NpcSearchType.InAppearanceMod => npc => npc.AppearanceMods.Any(m => m.FileName.String.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0) || (_mugshotData.TryGetValue(npc.NpcFormKey.ToString(), out var mugshots) && mugshots.Any(m => m.ModName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)),
+                NpcSearchType.FromMod => npc => npc.NpcFormKey.ModKey.FileName.String.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0,
+                NpcSearchType.FormKey => npc => npc.NpcFormKey.ToString().IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0,
+                _ => npc => true
             };
         }
-        // --- End Filtering Logic ---
 
-        private ObservableCollection<VM_AppearanceMod> CreateAppearanceModViewModels(
-            VM_NpcSelection npcVM,
-            Dictionary<string, List<(string ModName, string ImagePath)>> mugshotData)
+        private ObservableCollection<VM_AppearanceMod> CreateAppearanceModViewModels(VM_NpcSelection npcVM, Dictionary<string, List<(string ModName, string ImagePath)>> mugshotData)
         {
-            // (Logic from previous step - No changes needed here for search)
-            var modVMs = new ObservableCollection<VM_AppearanceMod>();
-            if (npcVM == null) return modVMs;
-            string npcFormKeyString = npcVM.NpcFormKey.ToString();
-            var npcMugshotList = mugshotData.GetValueOrDefault(npcFormKeyString, new List<(string ModName, string ImagePath)>());
+            var modVMs = new ObservableCollection<VM_AppearanceMod>(); if (npcVM == null) return modVMs;
+            string npcFormKeyString = npcVM.NpcFormKey.ToString(); var npcMugshotList = mugshotData.GetValueOrDefault(npcFormKeyString, new List<(string ModName, string ImagePath)>());
             var addedModSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
             if (npcVM.NpcGetter != null) {
                 foreach (var modKey in npcVM.AppearanceMods.Distinct()) {
                     string pluginModName = modKey.FileName; string? imagePathForThisPlugin = null;
                     var matchingMugshot = npcMugshotList.FirstOrDefault(m => m.ModName.Equals(pluginModName, StringComparison.OrdinalIgnoreCase));
                     if (matchingMugshot != default) { imagePathForThisPlugin = matchingMugshot.ImagePath; }
-                    modVMs.Add(new VM_AppearanceMod(pluginModName, modKey, npcVM.NpcFormKey, imagePathForThisPlugin, _settings, _consistencyProvider));
-                    addedModSources.Add(pluginModName);
+                    modVMs.Add(new VM_AppearanceMod(pluginModName, modKey, npcVM.NpcFormKey, imagePathForThisPlugin, _settings, _consistencyProvider)); addedModSources.Add(pluginModName);
                 }
             }
             foreach (var mugshotInfo in npcMugshotList) {
                 string mugshotModName = mugshotInfo.ModName; string mugshotImagePath = mugshotInfo.ImagePath;
-                if (!addedModSources.Contains(mugshotModName)) {
-                    modVMs.Add(new VM_AppearanceMod(mugshotModName, npcVM.NpcFormKey.ModKey, npcVM.NpcFormKey, mugshotImagePath, _settings, _consistencyProvider));
-                    addedModSources.Add(mugshotModName);
-                }
+                if (!addedModSources.Contains(mugshotModName)) { modVMs.Add(new VM_AppearanceMod(mugshotModName, npcVM.NpcFormKey.ModKey, npcVM.NpcFormKey, mugshotImagePath, _settings, _consistencyProvider)); addedModSources.Add(mugshotModName); }
             }
              if (npcVM.NpcGetter == null && !modVMs.Any() && npcVM.AppearanceMods.Any()) {
                  var baseModKey = npcVM.AppearanceMods.First();
-                  if (!addedModSources.Contains(baseModKey.FileName)) {
-                       modVMs.Add(new VM_AppearanceMod(baseModKey.FileName, baseModKey, npcVM.NpcFormKey, null, _settings, _consistencyProvider));
-                  }
+                  if (!addedModSources.Contains(baseModKey.FileName)) { modVMs.Add(new VM_AppearanceMod(baseModKey.FileName, baseModKey, npcVM.NpcFormKey, null, _settings, _consistencyProvider)); }
              }
             var sortedVMs = modVMs.OrderBy(vm => vm.ModName).ToList(); modVMs.Clear(); foreach (var vm in sortedVMs) { modVMs.Add(vm); }
             return modVMs;

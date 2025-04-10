@@ -13,11 +13,9 @@
              d:DesignHeight="600" d:DesignWidth="800">
 
     <UserControl.Resources>
-        <!-- Converters -->
         <local:BooleanToBrushConverter x:Key="BooleanToBrushConverter"/>
-        <!-- BooleanNegationConverter is no longer needed for RadioButton binding -->
-        <!-- <local:BooleanNegationConverter x:Key="BooleanNegationConverter"/> -->
         <local:IsNotNullConverter x:Key="IsNotNullConverter"/>
+        <!-- Removed BooleanNegationConverter as it's no longer needed for RadioButtons -->
     </UserControl.Resources>
 
     <Grid>
@@ -28,82 +26,31 @@
 
         <!-- Left Column: Search + NPC List -->
         <DockPanel Grid.Column="0" LastChildFill="True">
-            <!-- Search Area -->
+            <!-- Search Area (Same as before) -->
             <Border DockPanel.Dock="Top" BorderThickness="0,0,1,1" BorderBrush="DarkGray" Padding="5">
                 <StackPanel Orientation="Vertical">
                     <!-- Search Term 1 -->
-                    <Grid Margin="0,0,0,5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
-                                  ItemsSource="{Binding AvailableSearchTypes}"
-                                  SelectedItem="{Binding SearchType1, Mode=TwoWay}"
-                                  ToolTip="Select search field 1"/>
-                        <TextBox Grid.Column="1" VerticalAlignment="Center"
-                                 Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 ToolTip="Enter search term 1"/>
-                    </Grid>
-
+                    <Grid Margin="0,0,0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding AvailableSearchTypes}" SelectedItem="{Binding SearchType1, Mode=TwoWay}" ToolTip="Select search field 1"/><TextBox Grid.Column="1" VerticalAlignment="Center" Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 1"/></Grid>
                     <!-- Search Term 2 -->
-                     <Grid Margin="0,0,0,5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
-                                  ItemsSource="{Binding AvailableSearchTypes}"
-                                  SelectedItem="{Binding SearchType2, Mode=TwoWay}"
-                                  ToolTip="Select search field 2"/>
-                        <TextBox Grid.Column="1" VerticalAlignment="Center"
-                                 Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 ToolTip="Enter search term 2"/>
-                    </Grid>
-
+                    <Grid Margin="0,0,0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding AvailableSearchTypes}" SelectedItem="{Binding SearchType2, Mode=TwoWay}" ToolTip="Select search field 2"/><TextBox Grid.Column="1" VerticalAlignment="Center" Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 2"/></Grid>
                     <!-- Search Term 3 -->
-                    <Grid Margin="0,0,0,5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
-                                  ItemsSource="{Binding AvailableSearchTypes}"
-                                  SelectedItem="{Binding SearchType3, Mode=TwoWay}"
-                                  ToolTip="Select search field 3"/>
-                        <TextBox Grid.Column="1" VerticalAlignment="Center"
-                                 Text="{Binding SearchText3, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 ToolTip="Enter search term 3"/>
-                    </Grid>
-
-                    <!-- Logic Selector (Corrected Binding) -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                         <!-- Bind this one TwoWay -->
-                         <RadioButton Content="AND (Match All)" GroupName="SearchLogic" VerticalAlignment="Center" Margin="0,0,10,0"
-                                     IsChecked="{Binding IsSearchAndLogic, Mode=TwoWay}"
-                                     ToolTip="Results must match all active search terms"/>
-                         <!-- NO IsChecked binding needed here - GroupName handles it -->
-                         <RadioButton Content="OR (Match Any)" GroupName="SearchLogic" VerticalAlignment="Center"
-                                     ToolTip="Results must match at least one active search term"/>
-                    </StackPanel>
-
+                    <Grid Margin="0,0,0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding AvailableSearchTypes}" SelectedItem="{Binding SearchType3, Mode=TwoWay}" ToolTip="Select search field 3"/><TextBox Grid.Column="1" VerticalAlignment="Center" Text="{Binding SearchText3, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 3"/></Grid>
+                    <!-- Logic Selector (Corrected) -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><RadioButton Content="AND (Match All)" GroupName="SearchLogic" VerticalAlignment="Center" Margin="0,0,10,0" IsChecked="{Binding IsSearchAndLogic, Mode=TwoWay}" ToolTip="Results must match all active search terms"/><RadioButton Content="OR (Match Any)" GroupName="SearchLogic" VerticalAlignment="Center" ToolTip="Results must match at least one active search term"/></StackPanel>
                 </StackPanel>
             </Border>
 
             <!-- NPC List Area -->
             <Border BorderThickness="0,0,1,0" BorderBrush="DarkGray">
-                <!-- Bind to the FilteredNpcs collection -->
-                <ListBox x:Name="NpcListBox"
-                         ItemsSource="{Binding FilteredNpcs}"
-                         SelectedItem="{Binding SelectedNpc, Mode=TwoWay}"
-                         DisplayMemberPath="DisplayName"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                <ListBox x:Name="NpcListBox" ItemsSource="{Binding FilteredNpcs}" SelectedItem="{Binding SelectedNpc, Mode=TwoWay}" DisplayMemberPath="DisplayName" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
             </Border>
         </DockPanel>
 
 
         <!-- Right Column: Appearance Mod Images -->
-         <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+         <!-- *** ADD PreviewMouseWheel handler *** -->
+         <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                       PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
              <ItemsControl x:Name="AppearanceModsItemsControl" ItemsSource="{Binding CurrentNpcAppearanceMods}">
                  <ItemsControl.ItemsPanel>
                      <ItemsPanelTemplate>
@@ -112,9 +59,13 @@
                  </ItemsControl.ItemsPanel>
                  <ItemsControl.ItemTemplate>
                      <DataTemplate DataType="{x:Type vm:VM_AppearanceMod}">
+                          <!-- *** BIND Width and Height to ViewModel property *** -->
                           <Border BorderThickness="2" Margin="5"
-                                  BorderBrush="{Binding IsSelected, Converter={StaticResource BooleanToBrushConverter}, ConverterParameter=LimeGreen|Transparent}">
-                             <Grid Width="150" Height="150" Background="LightGray">
+                                  BorderBrush="{Binding IsSelected, Converter={StaticResource BooleanToBrushConverter}, ConverterParameter=LimeGreen|Transparent}"
+                                  Width="{Binding DataContext.ImageDisplaySize, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"
+                                  Height="{Binding DataContext.ImageDisplaySize, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}">
+                             <!-- Grid automatically takes size from Border -->
+                             <Grid Background="LightGray">
                                  <Image Source="{Binding ImagePath}" Stretch="Uniform" ToolTip="{Binding ModName}">
                                      <Image.InputBindings>
                                          <MouseBinding MouseAction="LeftClick" Command="{Binding SelectCommand}" />
@@ -140,27 +91,11 @@
              </ItemsControl>
          </ScrollViewer>
 
-        <!-- Placeholder Text Block (Corrected Logic) -->
+        <!-- Placeholder Text Block (Same as before) -->
          <TextBlock Grid.Column="1" Text="Select an NPC..."
                    HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" Foreground="Gray" TextWrapping="Wrap" Margin="20">
              <TextBlock.Style>
-                <Style TargetType="TextBlock">
-                    <Setter Property="Visibility" Value="Collapsed"/>
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding SelectedNpc}" Value="{x:Null}">
-                            <Setter Property="Visibility" Value="Visible"/>
-                            <Setter Property="Text" Value="Select an NPC from the list on the left to see appearance options."/>
-                        </DataTrigger>
-                        <MultiDataTrigger>
-                            <MultiDataTrigger.Conditions>
-                                <Condition Binding="{Binding SelectedNpc, Converter={StaticResource IsNotNullConverter}}" Value="True" />
-                                <Condition Binding="{Binding CurrentNpcAppearanceMods.Count}" Value="0" />
-                            </MultiDataTrigger.Conditions>
-                            <Setter Property="Visibility" Value="Visible" />
-                            <Setter Property="Text" Value="No appearance options found for the selected NPC."/>
-                        </MultiDataTrigger>
-                    </Style.Triggers>
-                </Style>
+                <Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding SelectedNpc}" Value="{x:Null}"><Setter Property="Visibility" Value="Visible"/><Setter Property="Text" Value="Select an NPC from the list on the left to see appearance options."/></DataTrigger><MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding SelectedNpc, Converter={StaticResource IsNotNullConverter}}" Value="True" /><Condition Binding="{Binding CurrentNpcAppearanceMods.Count}" Value="0" /></MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible" /><Setter Property="Text" Value="No appearance options found for the selected NPC."/></MultiDataTrigger></Style.Triggers></Style>
             </TextBlock.Style>
         </TextBlock>
 
