@@ -1,10 +1,11 @@
-﻿// NpcsView.xaml.cs
+﻿// NpcsView.xaml.cs (Updated)
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
+using System; // Required for Exception, Console
 using System.Reactive.Disposables;
-using System.Windows.Controls; // Required for ListBox
-using System.Windows.Media; // Required for Brush
-using Splat;
+// using System.Windows.Controls; // Not strictly required if using XAML bindings mostly
+// using System.Windows.Media; // Not required for these bindings
+using Splat; // Required for Locator
 
 namespace NPC_Plugin_Chooser_2.Views
 {
@@ -16,47 +17,67 @@ namespace NPC_Plugin_Chooser_2.Views
         public NpcsView()
         {
             InitializeComponent();
-            
-            if (this.DataContext == null) // Only if not already set
+
+            // Attempt to manually resolve/set DataContext if not done by ViewLocator
+            // NOTE: This is often not necessary if ReactiveUI's View Location is set up correctly.
+            if (this.DataContext == null)
             {
                 try
                 {
+                    // Use GetService<T> which returns default(T) (null for classes) if not found
                     var vm = Locator.Current.GetService<VM_NpcSelectionBar>();
                     if (vm != null)
                     {
-                        Console.WriteLine("DEBUG: Manually setting DataContext in SettingsView constructor!");
+                        System.Diagnostics.Debug.WriteLine("DEBUG: Manually setting DataContext/ViewModel in NpcsView constructor!");
                         this.DataContext = vm;
-                        this.ViewModel = vm; // Also set the ViewModel property
+                        // Setting ViewModel is redundant if DataContext is set correctly and
+                        // the view inherits ReactiveUserControl<TViewModel>, but doesn't hurt.
+                        this.ViewModel = vm;
                     }
                     else
                     {
-                        Console.WriteLine("DEBUG: Failed to resolve VM_Settings manually in constructor.");
+                        System.Diagnostics.Debug.WriteLine("DEBUG: Failed to resolve VM_NpcSelectionBar manually in constructor (GetService returned null).");
+                        // Consider throwing an exception or logging more severely if the VM is essential here.
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"DEBUG: Error manually resolving/setting DataContext: {ex.Message}");
+                    // Catch potential exceptions from Splat/DI container
+                    System.Diagnostics.Debug.WriteLine($"DEBUG: Error manually resolving/setting DataContext in NpcsView: {ex.Message}");
+                    // Handle error appropriately, maybe show a message to the user or log to a file.
                 }
             }
 
+
             this.WhenActivated(d =>
             {
-                this.OneWayBind(ViewModel, vm => vm.Npcs, v => v.NpcListBox.ItemsSource).DisposeWith(d);
-                this.Bind(ViewModel, vm => vm.SelectedNpc, v => v.NpcListBox.SelectedItem).DisposeWith(d);
-                this.OneWayBind(ViewModel, vm => vm.CurrentNpcAppearanceMods, v => v.AppearanceModsItemsControl.ItemsSource).DisposeWith(d);
+                // --- FIX: Bind to FilteredNpcs instead of Npcs ---
+                // Binds the ViewModel's FilteredNpcs collection to the NpcListBox's ItemsSource.
+                this.OneWayBind(ViewModel,
+                                vm => vm.FilteredNpcs, // Source property on ViewModel
+                                v => v.NpcListBox.ItemsSource) // Target property on View
+                    .DisposeWith(d); // Dispose the binding when the view is deactivated
 
-                // Bind visibility triggers (done in XAML for simplicity here)
-                // this.OneWayBind(ViewModel, vm => vm.SelectedNpc, v => v.SelectNpcTextBlock.Visibility,
+                // Binds the SelectedNpc property both ways between ViewModel and ListBox selection.
+                this.Bind(ViewModel,
+                          vm => vm.SelectedNpc, // Source property on ViewModel
+                          v => v.NpcListBox.SelectedItem) // Target property on View
+                    .DisposeWith(d);
+
+                // Binds the ViewModel's collection of appearance mods for the currently selected NPC
+                // to the ItemsControl displaying them.
+                this.OneWayBind(ViewModel,
+                                vm => vm.CurrentNpcAppearanceMods, // Source property on ViewModel
+                                v => v.AppearanceModsItemsControl.ItemsSource) // Target property on View
+                    .DisposeWith(d);
+
+                // Visibility bindings are handled in XAML using DataTriggers/MultiDataTriggers,
+                // which is generally preferred for UI state logic.
+                // Example of how it *could* be done in code-behind (but not needed here):
+                // this.OneWayBind(ViewModel, vm => vm.SelectedNpc, v => v.YourPlaceholderTextBlock.Visibility,
                 //    npc => npc == null ? Visibility.Visible : Visibility.Collapsed).DisposeWith(d);
-                // this.OneWayBind(ViewModel, vm => vm.SelectedNpc, v => v.AppearanceModsScrollViewer.Visibility,
-                //    npc => npc != null ? Visibility.Visible : Visibility.Collapsed).DisposeWith(d);
 
             });
         }
     }
 }
-// Add x:Name to controls in XAML to use code-behind bindings:
-// <ListBox x:Name="NpcListBox" ... />
-// <ItemsControl x:Name="AppearanceModsItemsControl" ... />
-// <TextBlock x:Name="SelectNpcTextBlock" ... />
-// <ScrollViewer x:Name="AppearanceModsScrollViewer" ... />
