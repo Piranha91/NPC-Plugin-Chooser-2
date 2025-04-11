@@ -61,15 +61,24 @@ namespace NPC_Plugin_Chooser_2.Views
             {
                 try
                 {
-                    double change = (e.Delta / 120.0) * ImageSizeStepFactor;
-                    foreach (var vm in ViewModel.CurrentNpcAppearanceMods)
+                    if (Keyboard.Modifiers == ModifierKeys.Control)
                     {
-                        vm.ImageHeight += change;
-                        vm.ImageWidth += change;
-                    }
+                        // Ctrl + Scroll → Resize images
+                        if (ViewModel?.CurrentNpcAppearanceMods != null)
+                        {
+                            double change = (e.Delta / 120.0) * ImageSizeStepFactor;
 
-                    // Mark the event as handled to prevent default ScrollViewer scrolling.
-                    e.Handled = true;
+                            foreach (var vm in ViewModel.CurrentNpcAppearanceMods)
+                            {
+                                vm.ImageHeight += change;
+                                vm.ImageWidth += change;
+                            }
+
+                            // Prevent normal scroll behavior
+                            e.Handled = true;
+                        }
+                    }
+                    // Else: allow normal scroll behavior
                 }
                 catch (Exception ex)
                 {
