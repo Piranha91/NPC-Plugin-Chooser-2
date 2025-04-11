@@ -68,10 +68,9 @@
                                   Height="{Binding ImageHeight}">
                              <!-- Grid automatically takes size from Border -->
                              <Grid Background="LightGray">
-                                 <Image Source="{Binding ImagePath}" Stretch="Uniform" ToolTip="{Binding ModName}">
+                                 <Image Source="{Binding ImagePath}" Stretch="Uniform" ToolTip="{Binding ModName}" PreviewMouseRightButtonDown="Image_PreviewMouseRightButtonDown">
                                      <Image.InputBindings>
                                          <MouseBinding MouseAction="LeftClick" Command="{Binding SelectCommand}" />
-                                         <MouseBinding MouseAction="RightClick" Command="{Binding ToggleFullScreenCommand}" />
                                      </Image.InputBindings>
                                       <Image.Style>
                                          <Style TargetType="Image">

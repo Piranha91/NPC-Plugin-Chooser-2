@@ -128,5 +128,16 @@ namespace NPC_Plugin_Chooser_2.Views
             }
         }
 
+        private void Image_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                if (sender is Image image && image.DataContext is VM_AppearanceMod vm)
+                {
+                    vm.ToggleFullScreenCommand.Execute().Subscribe(); // ReactiveUI-friendly execution
+                    e.Handled = true;
+                }
+            }
+        }
     }
 }
