@@ -31,9 +31,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public double ImageHeight { get; set; }
         [Reactive] public bool IsSelected { get; set; }
         [Reactive] public bool HasMugshot { get; private set; } // Flag if a specific mugshot was assigned
+        [Reactive] public bool IsVisible { get; set; } = true;
+        [Reactive] public bool IsSetHidden { get; set; } = true;
 
         public ReactiveCommand<Unit, Unit> SelectCommand { get; }
         public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
+        public ReactiveCommand<Unit, Unit> HideCommand { get; }
 
         // Updated Constructor
         public VM_AppearanceMod(
@@ -71,6 +74,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             SelectCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error selecting mod: {ex.Message}")).DisposeWith(Disposables);
             ToggleFullScreenCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error showing image: {ex.Message}")).DisposeWith(Disposables);
+            HideCommand = ReactiveCommand.Create(() =>
+            {
+                IsSetHidden = false;
+                return Unit.Default;
+            });
 
             // Listen for changes triggered by other selections for the same NPC
             _consistencyProvider.NpcSelectionChanged

@@ -86,6 +86,15 @@
                                             Background="#AAFFFFFF" FontSize="10" Padding="3,1"
                                             TextTrimming="CharacterEllipsis" ToolTip="{Binding ModName}"/>
                              </Grid>
+                             <Border.ContextMenu>
+                                 <ContextMenu>
+                                     <MenuItem Header="Select" Command="{Binding SelectCommand}" />
+                                     <MenuItem Header="Hide" Command="{Binding HideCommand}" />
+                                     <Separator />
+                                     <MenuItem Header="Select All From This Mod" Command="{Binding SelectAllFromThisModCommand}" />
+                                     <MenuItem Header="Hide All From This Mod" Command="{Binding HideAllFromThisModCommand}" />
+                                 </ContextMenu>
+                             </Border.ContextMenu>
                           </Border>
                      </DataTemplate>
                  </ItemsControl.ItemTemplate>

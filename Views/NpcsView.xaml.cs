@@ -138,6 +138,7 @@ namespace NPC_Plugin_Chooser_2.Views
                     e.Handled = true;
                 }
             }
+            // else: allow normal context menu behavior
         }
     }
 }

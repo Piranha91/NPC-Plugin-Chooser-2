@@ -31,6 +31,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly NpcConsistencyProvider _consistencyProvider;
         private readonly Auxilliary _auxilliary;
         private readonly CompositeDisposable _disposables = new();
+        
+        private HashSet<string> _hiddenModNames = new();
 
         // --- Search Properties ---
         [Reactive] public string SearchText1 { get; set; } = string.Empty;
@@ -42,7 +44,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool IsSearchAndLogic { get; set; } = true;
         public Array AvailableSearchTypes => Enum.GetValues(typeof(NpcSearchType));
         // --- End Search Properties ---
-        
+
+        [Reactive] public bool ShowHiddenMods { get; set; } = false;
+        public ReactiveCommand<VM_AppearanceMod, Unit> SelectAllFromThisModCommand { get; }
+        public ReactiveCommand<VM_AppearanceMod, Unit> HideAllFromThisModCommand { get; }
 
         private List<VM_NpcSelection> _allNpcs = new();
         public ObservableCollection<VM_NpcSelection> FilteredNpcs { get; } = new();
@@ -78,6 +83,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .Throttle(TimeSpan.FromMilliseconds(250), RxApp.MainThreadScheduler)
                 .Subscribe(_ => ApplyFilter())
                 .DisposeWith(_disposables);
+            
+            this.WhenAnyValue(x => x.ShowHiddenMods)
+                .Subscribe(_ => ToggleModVisibility())
+                .DisposeWith(_disposables);
+            
+            SelectAllFromThisModCommand = ReactiveCommand.Create<VM_AppearanceMod>(SelectAllFromMod);
+            HideAllFromThisModCommand = ReactiveCommand.Create<VM_AppearanceMod>(HideAllFromMod);
 
             Initialize();
         }
@@ -239,6 +251,48 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var sortedVMs = modVMs.OrderBy(vm => vm.ModName).ToList(); modVMs.Clear(); foreach (var vm in sortedVMs) { modVMs.Add(vm); }
             return modVMs;
         }
+        
+        private void SelectAllFromMod(VM_AppearanceMod referenceMod)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void HideAllFromMod(VM_AppearanceMod referenceMod)
+        {
+            if (!_hiddenModNames.Contains(referenceMod.ModName))
+            {
+                _hiddenModNames.Add(referenceMod.ModName);
+                referenceMod.IsSetHidden = true;
+            }
+
+            if (!ShowHiddenMods)
+            {
+                referenceMod.IsVisible = false;
+            }
+        }
+
+        private void ToggleModVisibility()
+        {
+            if (CurrentNpcAppearanceMods != null)
+            {
+                foreach (var mod in CurrentNpcAppearanceMods)
+                {
+                    if (ShowHiddenMods)
+                    {
+                        mod.IsVisible = true;
+                    }
+                    else if (mod.IsSetHidden)
+                    {
+                        mod.IsVisible = false;
+                    }
+                    else
+                    {
+                        mod.IsVisible = true;
+                    }
+                }
+            }
+        }
+
 
         public void Dispose() { _disposables.Dispose(); ClearAppearanceModViewModels(); }
         private void ClearAppearanceModViewModels() { if (CurrentNpcAppearanceMods != null) { foreach (var vm in CurrentNpcAppearanceMods) { vm.Dispose(); } } }
