@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reactive; // Required for Unit
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Text.RegularExpressions;
 using System.Windows;
 using Mutagen.Bethesda;
@@ -14,6 +15,7 @@ using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
+using NPC_Plugin_Chooser_2.Views;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Splat;
@@ -46,15 +48,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- End Search Properties ---
 
         [Reactive] public bool ShowHiddenMods { get; set; } = false;
-        public ReactiveCommand<VM_AppearanceMod, Unit> SelectAllFromThisModCommand { get; }
-        public ReactiveCommand<VM_AppearanceMod, Unit> HideAllFromThisModCommand { get; }
-
+        
         private List<VM_NpcSelection> _allNpcs = new();
         public ObservableCollection<VM_NpcSelection> FilteredNpcs { get; } = new();
         private Dictionary<string, List<(string ModName, string ImagePath)>> _mugshotData = new();
 
         [Reactive] public VM_NpcSelection? SelectedNpc { get; set; }
         [ObservableAsProperty] public ObservableCollection<VM_AppearanceMod>? CurrentNpcAppearanceMods { get; }
+        
+        // Create a subject for refresh signals.
+        private readonly ISubject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
+
+        // Expose an observable that views can subscribe to.
+        public IObservable<Unit> RefreshImageSizesObservable => _refreshImageSizesSubject.AsObservable();
 
         public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider, Settings settings, Auxilliary auxilliary, NpcConsistencyProvider consistencyProvider)
         {
@@ -88,8 +94,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .Subscribe(_ => ToggleModVisibility())
                 .DisposeWith(_disposables);
             
-            SelectAllFromThisModCommand = ReactiveCommand.Create<VM_AppearanceMod>(SelectAllFromMod);
-            HideAllFromThisModCommand = ReactiveCommand.Create<VM_AppearanceMod>(HideAllFromMod);
 
             Initialize();
         }
@@ -237,27 +241,44 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     string pluginModName = modKey.FileName; string? imagePathForThisPlugin = null;
                     var matchingMugshot = npcMugshotList.FirstOrDefault(m => m.ModName.Equals(pluginModName, StringComparison.OrdinalIgnoreCase));
                     if (matchingMugshot != default) { imagePathForThisPlugin = matchingMugshot.ImagePath; }
-                    modVMs.Add(new VM_AppearanceMod(pluginModName, modKey, npcVM.NpcFormKey, imagePathForThisPlugin, _settings, _consistencyProvider)); addedModSources.Add(pluginModName);
+                    modVMs.Add(new VM_AppearanceMod(pluginModName, modKey, npcVM.NpcFormKey, imagePathForThisPlugin, _settings, _consistencyProvider, this)); addedModSources.Add(pluginModName);
                 }
             }
             foreach (var mugshotInfo in npcMugshotList) {
                 string mugshotModName = mugshotInfo.ModName; string mugshotImagePath = mugshotInfo.ImagePath;
-                if (!addedModSources.Contains(mugshotModName)) { modVMs.Add(new VM_AppearanceMod(mugshotModName, npcVM.NpcFormKey.ModKey, npcVM.NpcFormKey, mugshotImagePath, _settings, _consistencyProvider)); addedModSources.Add(mugshotModName); }
+                if (!addedModSources.Contains(mugshotModName)) { modVMs.Add(new VM_AppearanceMod(mugshotModName, npcVM.NpcFormKey.ModKey, npcVM.NpcFormKey, mugshotImagePath, _settings, _consistencyProvider, this)); addedModSources.Add(mugshotModName); }
             }
              if (npcVM.NpcGetter == null && !modVMs.Any() && npcVM.AppearanceMods.Any()) {
                  var baseModKey = npcVM.AppearanceMods.First();
-                  if (!addedModSources.Contains(baseModKey.FileName)) { modVMs.Add(new VM_AppearanceMod(baseModKey.FileName, baseModKey, npcVM.NpcFormKey, null, _settings, _consistencyProvider)); }
+                  if (!addedModSources.Contains(baseModKey.FileName)) { modVMs.Add(new VM_AppearanceMod(baseModKey.FileName, baseModKey, npcVM.NpcFormKey, null, _settings, _consistencyProvider, this)); }
              }
             var sortedVMs = modVMs.OrderBy(vm => vm.ModName).ToList(); modVMs.Clear(); foreach (var vm in sortedVMs) { modVMs.Add(vm); }
-            return modVMs;
+            
+            // hide global hidden mods
+            foreach (var m in sortedVMs)
+            {
+                if (_hiddenModNames.Contains(m.ModName))
+                {
+                    m.IsSetHidden = true;
+                }
+            }
+            ToggleModVisibility();
+            
+            return new(sortedVMs);
+        }
+
+        public void HideSelectedMod(VM_AppearanceMod referenceMod)
+        {
+            referenceMod.IsSetHidden = true;
+            ToggleModVisibility();
         }
         
-        private void SelectAllFromMod(VM_AppearanceMod referenceMod)
+        public void SelectAllFromMod(VM_AppearanceMod referenceMod)
         {
             throw new NotImplementedException();
         }
 
-        private void HideAllFromMod(VM_AppearanceMod referenceMod)
+        public void HideAllFromMod(VM_AppearanceMod referenceMod)
         {
             if (!_hiddenModNames.Contains(referenceMod.ModName))
             {
@@ -269,9 +290,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 referenceMod.IsVisible = false;
             }
+            
+            ToggleModVisibility();
         }
 
-        private void ToggleModVisibility()
+        public void ToggleModVisibility()
         {
             if (CurrentNpcAppearanceMods != null)
             {
@@ -290,6 +313,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         mod.IsVisible = true;
                     }
                 }
+                _refreshImageSizesSubject.OnNext(Unit.Default); // Sends the signal
             }
         }
 

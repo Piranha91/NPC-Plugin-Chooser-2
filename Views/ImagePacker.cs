@@ -13,21 +13,23 @@ public class ImagePacker
         double availableHeight, double availableWidth,
         int verticalMargin, int horizontalMargin)
     {
-        var vmsWithImages = appearanceMods.Where(x => x.HasMugshot).ToList();
+        var vmsWithImages = appearanceMods
+            .Where(x => x.HasMugshot && x.IsVisible)
+            .ToList(); // ✅ only consider visible mods
 
         if (!vmsWithImages.Any())
             return;
 
-        // Get original sizes
         var originalSizes = vmsWithImages
             .Select(vm => (vm.ImageWidth, vm.ImageHeight))
             .ToList();
 
-        // Define binary search bounds
+        var firstImage = vmsWithImages.First();
+        
         double low = 0;
-        double high = 1.0;
+        //double high = 1;
+        double high = Math.Min(availableWidth / firstImage.ImageWidth, availableHeight / firstImage.ImageHeight);
 
-        // Estimate upper bound for scaling (safe upper bound)
         foreach (var (w, h) in originalSizes)
         {
             double maxScaleW = availableWidth / (w + horizontalMargin);
@@ -37,7 +39,6 @@ public class ImagePacker
 
         const double epsilon = 0.01;
 
-        // Binary search for max scale
         while (high - low > epsilon)
         {
             double mid = (low + high) / 2;
@@ -47,13 +48,13 @@ public class ImagePacker
                 high = mid;
         }
 
-        // Apply final scale
         foreach (var (vm, original) in vmsWithImages.Zip(originalSizes))
         {
             vm.ImageWidth = original.ImageWidth * low;
             vm.ImageHeight = original.ImageHeight * low;
         }
     }
+
 
     
     private static bool CanPackAll(

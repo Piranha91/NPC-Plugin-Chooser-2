@@ -1,4 +1,6 @@
 ﻿// NpcsView.xaml.cs (Updated with Disposal Logic)
+
+using System.Reactive;
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
 using System.Windows;
@@ -15,6 +17,7 @@ namespace NPC_Plugin_Chooser_2.Views
         // 1. Field to hold disposables tied to the View's activation lifecycle
         private readonly CompositeDisposable _viewBindings = new CompositeDisposable();
         private const double ImageSizeStepFactor = 15.0; // Pixel change per standard wheel tick
+        private bool hasUsedScrollWheel = false;
 
         public NpcsView()
         {
@@ -47,6 +50,24 @@ namespace NPC_Plugin_Chooser_2.Views
                     .DisposeWith(d);
                 this.OneWayBind(ViewModel, vm => vm.CurrentNpcAppearanceMods, v => v.AppearanceModsItemsControl.ItemsSource)
                     .DisposeWith(d);
+                this.WhenAnyValue(x => x.ViewModel.ShowHiddenMods)
+                    .Where(_ => ViewModel?.CurrentNpcAppearanceMods != null && !hasUsedScrollWheel)
+                    .Throttle(TimeSpan.FromMilliseconds(100))
+                    .ObserveOnDispatcher()
+                    .Subscribe(_ => RefreshImageSizes())
+                    .DisposeWith(d);
+                
+                // Subscribe to the refresh observable.
+                ViewModel?.RefreshImageSizesObservable
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(_ =>
+                    {
+                        if (!hasUsedScrollWheel)
+                        {
+                            RefreshImageSizes();
+                        }
+                    })
+                    .DisposeWith(d);
 
                 // Any other view-specific subscriptions or bindings set up here
                 // should also use .DisposeWith(d)
@@ -74,6 +95,7 @@ namespace NPC_Plugin_Chooser_2.Views
                                 vm.ImageWidth += change;
                             }
 
+                            hasUsedScrollWheel = true; // ✅ Track zoom usage
                             // Prevent normal scroll behavior
                             e.Handled = true;
                         }
@@ -108,12 +130,18 @@ namespace NPC_Plugin_Chooser_2.Views
         
         private void NpcListBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            hasUsedScrollWheel = false; // ✅ Reset zoom state on NPC change
+            RefreshImageSizes();
+        }
+        
+        private void RefreshImageSizes()
+        {
             if (ViewModel != null && ViewModel.CurrentNpcAppearanceMods != null)
             {
                 Dispatcher.BeginInvoke(() =>
                 {
                     var availableHeight = ImageDisplayScrollViewer.ViewportHeight;
-                    var availableWidth = AppearanceModsItemsControl.ActualWidth;
+                    var availableWidth = ImageDisplayScrollViewer.ViewportWidth;
 
                     // Only scale if layout has been finalized
                     if (availableHeight > 0 && availableWidth > 0)

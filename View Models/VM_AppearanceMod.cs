@@ -22,6 +22,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly FormKey _npcFormKey; // Store NPC FormKey instead of Getter
         private readonly Settings _settings;
         private readonly NpcConsistencyProvider _consistencyProvider; // To notify of selection
+        private readonly VM_NpcSelectionBar _vmNpcSelectionBar;
         private readonly CompositeDisposable Disposables = new();
 
         public ModKey? ModKey { get; }
@@ -32,11 +33,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool IsSelected { get; set; }
         [Reactive] public bool HasMugshot { get; private set; } // Flag if a specific mugshot was assigned
         [Reactive] public bool IsVisible { get; set; } = true;
-        [Reactive] public bool IsSetHidden { get; set; } = true;
+        [Reactive] public bool IsSetHidden { get; set; } = false;
 
         public ReactiveCommand<Unit, Unit> SelectCommand { get; }
         public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
         public ReactiveCommand<Unit, Unit> HideCommand { get; }
+        public ReactiveCommand<Unit, Unit> SelectAllFromThisModCommand { get; }
+        public ReactiveCommand<Unit, Unit> HideAllFromThisModCommand { get; }
 
         // Updated Constructor
         public VM_AppearanceMod(
@@ -45,13 +48,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
             FormKey npcFormKey, // NPC identifier
             string? imagePath, // Explicitly provided image path (optional)
             Settings settings,
-            NpcConsistencyProvider consistencyProvider)
+            NpcConsistencyProvider consistencyProvider,
+            VM_NpcSelectionBar vmNpcSelectionBar)
         {
             ModName = modName; // Use the provided name
             ModKey = modKey;
             _npcFormKey = npcFormKey;
             _settings = settings;
             _consistencyProvider = consistencyProvider;
+            _vmNpcSelectionBar = vmNpcSelectionBar;
 
             // Use provided image path if valid, otherwise empty
             ImagePath = !string.IsNullOrWhiteSpace(imagePath) && File.Exists(imagePath) ? imagePath : string.Empty;
@@ -74,11 +79,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             SelectCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error selecting mod: {ex.Message}")).DisposeWith(Disposables);
             ToggleFullScreenCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error showing image: {ex.Message}")).DisposeWith(Disposables);
-            HideCommand = ReactiveCommand.Create(() =>
-            {
-                IsSetHidden = false;
-                return Unit.Default;
-            });
+            
+            HideCommand = ReactiveCommand.Create(() => HideThisMod());
+            SelectAllFromThisModCommand = ReactiveCommand.Create(() => vmNpcSelectionBar.SelectAllFromMod(this));;
+            HideAllFromThisModCommand = ReactiveCommand.Create(() => vmNpcSelectionBar.HideAllFromMod(this));;
 
             // Listen for changes triggered by other selections for the same NPC
             _consistencyProvider.NpcSelectionChanged
@@ -119,7 +123,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        // Removed GenerateImagePath()
+        public void HideThisMod()
+        {
+            _vmNpcSelectionBar.HideSelectedMod(this);
+        }
 
         // Implement IDisposable
         public void Dispose()
