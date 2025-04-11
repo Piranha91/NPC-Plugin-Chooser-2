@@ -1,6 +1,7 @@
 ﻿// [VM_AppearanceMod.cs] - Updated
 using System;
 using System.IO;
+using System.Drawing;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
@@ -26,6 +27,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ModKey? ModKey { get; }
         public string ModName { get; } // Display name (can be from ModKey or Mugshot folder)
         [Reactive] public string ImagePath { get; private set; } = string.Empty;
+        [Reactive] public double ImageWidth { get; set; }
+        [Reactive] public double ImageHeight { get; set; }
         [Reactive] public bool IsSelected { get; set; }
         [Reactive] public bool HasMugshot { get; private set; } // Flag if a specific mugshot was assigned
 
@@ -50,6 +53,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Use provided image path if valid, otherwise empty
             ImagePath = !string.IsNullOrWhiteSpace(imagePath) && File.Exists(imagePath) ? imagePath : string.Empty;
             HasMugshot = !string.IsNullOrWhiteSpace(ImagePath);
+            if (HasMugshot)
+            {
+                var (width, height) = ImagePacker.GetImageDimensionsInDIPs(ImagePath);
+                ImageWidth = width;
+                ImageHeight = height;
+            }
 
             // Update IsSelected based on the central provider (using ModName for comparison now)
             IsSelected = _consistencyProvider.IsModSelected(_npcFormKey, ModName);
@@ -109,5 +118,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             Disposables.Dispose();
         }
+        
+        
     }
 }

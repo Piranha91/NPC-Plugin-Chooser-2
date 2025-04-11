@@ -42,7 +42,7 @@
 
             <!-- NPC List Area -->
             <Border BorderThickness="0,0,1,0" BorderBrush="DarkGray">
-                <ListBox x:Name="NpcListBox" ItemsSource="{Binding FilteredNpcs}" SelectedItem="{Binding SelectedNpc, Mode=TwoWay}" DisplayMemberPath="DisplayName" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                <ListBox x:Name="NpcListBox" ItemsSource="{Binding FilteredNpcs}" SelectedItem="{Binding SelectedNpc, Mode=TwoWay}" DisplayMemberPath="DisplayName" ScrollViewer.VerticalScrollBarVisibility="Auto" SelectionChanged="NpcListBox_OnSelectionChanged"/>
             </Border>
         </DockPanel>
 
@@ -64,8 +64,8 @@
                           <!-- *** BIND Width and Height to ViewModel property *** -->
                           <Border BorderThickness="2" Margin="5"
                                   BorderBrush="{Binding IsSelected, Converter={StaticResource BooleanToBrushConverter}, ConverterParameter=LimeGreen|Transparent}"
-                                  Width="{Binding DataContext.ImageDisplaySize, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"
-                                  Height="{Binding DataContext.ImageDisplaySize, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}">
+                                  Width="{Binding ImageWidth}"
+                                  Height="{Binding ImageHeight}">
                              <!-- Grid automatically takes size from Border -->
                              <Grid Background="LightGray">
                                  <Image Source="{Binding ImagePath}" Stretch="Uniform" ToolTip="{Binding ModName}">

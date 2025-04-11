@@ -42,18 +42,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool IsSearchAndLogic { get; set; } = true;
         public Array AvailableSearchTypes => Enum.GetValues(typeof(NpcSearchType));
         // --- End Search Properties ---
-
-        // --- Image Sizing Properties ---
-        private const double DefaultImageSize = 150.0;
-        private const double MinImageSize = 40.0;
-        private const double MaxImageSize = 600.0;
-        private const double ImageSizeStepFactor = 15.0; // Pixel change per standard wheel tick
-
-        [Reactive] public double ImageDisplaySize { get; set; } = DefaultImageSize;
-
-        public ReactiveCommand<double, Unit> ChangeImageSizeCommand { get; }
-        // --- End Image Sizing Properties ---
-
+        
 
         private List<VM_NpcSelection> _allNpcs = new();
         public ObservableCollection<VM_NpcSelection> FilteredNpcs { get; } = new();
@@ -89,29 +78,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .Throttle(TimeSpan.FromMilliseconds(250), RxApp.MainThreadScheduler)
                 .Subscribe(_ => ApplyFilter())
                 .DisposeWith(_disposables);
-
-            // --- Image Size Command ---
-            ChangeImageSizeCommand = ReactiveCommand.Create<double>(delta =>
-            {
-                // Calculate change based on delta and factor
-                // Delta is typically +/- 120 for standard mouse wheel ticks
-                double change = (delta / 120.0) * ImageSizeStepFactor;
-                double newSize = ImageDisplaySize + change;
-
-                // Clamp the new size within defined bounds
-                ImageDisplaySize = Math.Clamp(newSize, MinImageSize, MaxImageSize);
-                //System.Diagnostics.Debug.WriteLine($"Image Size Changed: {ImageDisplaySize}"); // For debugging
-            });
-
-            ChangeImageSizeCommand.ThrownExceptions.Subscribe(ex =>
-                {
-                    // Log or show error if command execution fails
-                    System.Diagnostics.Debug.WriteLine($"Error changing image size: {ex.Message}");
-                    MessageBox.Show($"Error adjusting image size: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-                })
-                .DisposeWith(_disposables);
-            // --- End Image Size Command ---
-
 
             Initialize();
         }

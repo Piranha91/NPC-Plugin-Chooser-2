@@ -5,7 +5,8 @@ using System.Windows;
 using System.Reactive.Disposables; // Required for CompositeDisposable and DisposeWith
 using System.Windows.Input;        // Required for MouseWheelEventArgs
 using Splat;
-using System.Reactive.Linq;        // Required for .Subscribe()
+using System.Reactive.Linq;
+using System.Windows.Controls; // Required for .Subscribe()
 
 namespace NPC_Plugin_Chooser_2.Views
 {
@@ -13,6 +14,7 @@ namespace NPC_Plugin_Chooser_2.Views
     {
         // 1. Field to hold disposables tied to the View's activation lifecycle
         private readonly CompositeDisposable _viewBindings = new CompositeDisposable();
+        private const double ImageSizeStepFactor = 15.0; // Pixel change per standard wheel tick
 
         public NpcsView()
         {
@@ -55,19 +57,16 @@ namespace NPC_Plugin_Chooser_2.Views
         private void ScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             // Check if ViewModel and command exist
-            if (ViewModel?.ChangeImageSizeCommand != null)
+            if (ViewModel != null & ViewModel?.CurrentNpcAppearanceMods != null)
             {
                 try
                 {
-                    ViewModel.ChangeImageSizeCommand.Execute(e.Delta)
-                        .Subscribe( // Subscribe to handle potential errors from the command execution
-                            _ => { /* Optional: Action on successful completion (usually not needed for Execute) */ },
-                            ex => { // Action on error during command execution
-                                System.Diagnostics.Debug.WriteLine($"Error executing ChangeImageSizeCommand: {ex.Message}");
-                            })
-                        // 3. Add this subscription to the view's disposable collection.
-                        // It will be disposed automatically when the view is deactivated.
-                        .DisposeWith(_viewBindings);
+                    double change = (e.Delta / 120.0) * ImageSizeStepFactor;
+                    foreach (var vm in ViewModel.CurrentNpcAppearanceMods)
+                    {
+                        vm.ImageHeight += change;
+                        vm.ImageWidth += change;
+                    }
 
                     // Mark the event as handled to prevent default ScrollViewer scrolling.
                     e.Handled = true;
@@ -82,32 +81,9 @@ namespace NPC_Plugin_Chooser_2.Views
         
         private void ImageDisplayScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            if (ViewModel != null)
+            if (ViewModel != null && ViewModel.CurrentNpcAppearanceMods != null)
             {
-                double availableWidth = e.NewSize.Width;
-                double availableHeight = e.NewSize.Height;
-                int imageCount = ViewModel.CurrentNpcAppearanceMods?.Count ?? 0;
-
-                if (imageCount > 0)
-                {
-                    double spacing = 10; // Left+Right margin in your Border
-                    double paddingPerImage = spacing;
-
-                    // Try a square grid
-                    int columns = (int)Math.Ceiling(Math.Sqrt(imageCount * availableWidth / availableHeight));
-                    int rows = (int)Math.Ceiling((double)imageCount / columns);
-
-                    double maxWidthPerImage = (availableWidth - (columns * paddingPerImage)) / columns;
-                    double maxHeightPerImage = (availableHeight - (rows * paddingPerImage)) / rows;
-                    double finalSize = Math.Min(maxWidthPerImage, maxHeightPerImage);
-
-                    // Clamp to min/max defined in your ViewModel
-                    const double MinImageSize = 40.0;
-                    const double MaxImageSize = 600.0;
-                    finalSize = Math.Clamp(finalSize, MinImageSize, MaxImageSize);
-
-                    ViewModel.ImageDisplaySize = finalSize;
-                }
+                //ImagePacker.MaximizeStartingImageSizes(ViewModel.CurrentNpcAppearanceMods, e.NewSize.Height, e.NewSize.Width, 5, 5);
             }
         }
 
@@ -119,5 +95,29 @@ namespace NPC_Plugin_Chooser_2.Views
         //     _viewBindings.Dispose();
         //     base.OnClosed(e);
         // }
+        
+        
+        private void NpcListBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ViewModel != null && ViewModel.CurrentNpcAppearanceMods != null)
+            {
+                Dispatcher.BeginInvoke(() =>
+                {
+                    var availableHeight = ImageDisplayScrollViewer.ViewportHeight;
+                    var availableWidth = AppearanceModsItemsControl.ActualWidth;
+
+                    // Only scale if layout has been finalized
+                    if (availableHeight > 0 && availableWidth > 0)
+                    {
+                        ImagePacker.MaximizeStartingImageSizes(
+                            ViewModel.CurrentNpcAppearanceMods,
+                            availableHeight,
+                            availableWidth,
+                            5, 5);
+                    }
+                }, System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+        }
+
     }
 }
