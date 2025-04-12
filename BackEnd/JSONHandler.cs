@@ -1,4 +1,7 @@
-﻿namespace NPC_Plugin_Chooser_2.BackEnd;
+﻿using DynamicData;
+using Mutagen.Bethesda.Plugins;
+
+namespace NPC_Plugin_Chooser_2.BackEnd;
 
 using Newtonsoft.Json;
 using Mutagen.Bethesda.Json;

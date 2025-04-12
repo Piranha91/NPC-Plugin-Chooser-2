@@ -69,8 +69,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _settings = settings;
             _auxilliary = auxilliary;
             _consistencyProvider = consistencyProvider;
-            _hiddenModNames = settings.HiddenModNames;
-            _hiddenModsPerNpc = settings.HiddenModsPerNpc;
+            _hiddenModNames = _settings.HiddenModNames;
+            _hiddenModsPerNpc = _settings.HiddenModsPerNpc;
 
             this.WhenAnyValue(x => x.SelectedNpc)
                 .Select(selectedNpc => selectedNpc != null
@@ -206,6 +206,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
              if (previouslySelectedNpcKey != null) { SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey)); }
              if (SelectedNpc == null && FilteredNpcs.Any()) { SelectedNpc = FilteredNpcs[0]; }
         }
+        
 
         private void ApplyFilter()
         {
@@ -300,6 +301,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (SelectedNpc is not null && _hiddenModsPerNpc.ContainsKey(SelectedNpc.NpcFormKey) && _hiddenModsPerNpc[SelectedNpc.NpcFormKey].Contains(referenceMod.ModName))
             {
                 _hiddenModsPerNpc[SelectedNpc.NpcFormKey].Remove(referenceMod.ModName);
+                if (!_hiddenModsPerNpc[SelectedNpc.NpcFormKey].Any())
+                {
+                    _hiddenModsPerNpc.Remove(SelectedNpc.NpcFormKey);
+                }
             }
         }
         

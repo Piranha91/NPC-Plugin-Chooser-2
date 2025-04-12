@@ -13,7 +13,8 @@ using System.Windows;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using System.Collections.Generic; // Added for Dictionary
-using System; // Added for Exception, Path, etc.
+using System;
+using System.ComponentModel; // Added for Exception, Path, etc.
 using System.Linq; // Added for LINQ methods if needed
 
 namespace NPC_Plugin_Chooser_2
@@ -30,6 +31,8 @@ namespace NPC_Plugin_Chooser_2
 
             // Register Services & Models (as singletons where appropriate)
             // Load/Save Settings (Consider implementing persistence here)
+            TypeDescriptor.AddAttributes(typeof(FormKey), new TypeConverterAttribute(typeof(FormKeyTypeConverter))); // Required for JSON deserialization of Dictionary<FormKey, anything>
+
             var settings = VM_Settings.LoadSettings(); // Replace with actual loading logic if needed
             builder.RegisterInstance(settings).AsSelf().SingleInstance();
 
