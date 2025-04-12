@@ -292,6 +292,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 _hiddenModsPerNpc.Add(SelectedNpc.NpcFormKey, new HashSet<string>() { referenceMod.ModName });
             }
         }
+
+        public void UnhideSelectedMod(VM_AppearanceMod referenceMod)
+        {
+            referenceMod.IsSetHidden = false;
+            ToggleModVisibility();
+            if (SelectedNpc is not null && _hiddenModsPerNpc.ContainsKey(SelectedNpc.NpcFormKey) && _hiddenModsPerNpc[SelectedNpc.NpcFormKey].Contains(referenceMod.ModName))
+            {
+                _hiddenModsPerNpc[SelectedNpc.NpcFormKey].Remove(referenceMod.ModName);
+            }
+        }
         
         public void SelectAllFromMod(VM_AppearanceMod referenceMod)
         {
@@ -307,6 +317,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             
             ToggleModVisibility();
+        }
+
+        public void UnhideAllFromMod(VM_AppearanceMod referenceMod)
+        {
+            referenceMod.IsSetHidden = false;
+            ToggleModVisibility();
+            if (_hiddenModNames.Contains(referenceMod.ModName))
+            {
+                _hiddenModNames.Remove(referenceMod.ModName);
+            }
         }
 
         public void ToggleModVisibility()

@@ -161,9 +161,11 @@
                                     <ContextMenu>
                                         <MenuItem Header="Select" Command="{Binding SelectCommand}" />
                                         <MenuItem Header="Hide" Command="{Binding HideCommand}" />
+                                        <MenuItem Header="Unhide" Command="{Binding UnhideCommand}" />
                                         <Separator />
                                         <MenuItem Header="Select All From This Mod" Command="{Binding SelectAllFromThisModCommand}" />
                                         <MenuItem Header="Hide All From This Mod" Command="{Binding HideAllFromThisModCommand}" />
+                                        <MenuItem Header="Unhide All From This Mod" Command="{Binding UnhideAllFromThisModCommand}" />
                                     </ContextMenu>
                                 </Border.ContextMenu>
                             </Border>

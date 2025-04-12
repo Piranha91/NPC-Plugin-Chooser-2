@@ -38,8 +38,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> SelectCommand { get; }
         public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
         public ReactiveCommand<Unit, Unit> HideCommand { get; }
+        public ReactiveCommand<Unit, Unit> UnhideCommand { get; }
         public ReactiveCommand<Unit, Unit> SelectAllFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> HideAllFromThisModCommand { get; }
+        public ReactiveCommand<Unit, Unit> UnhideAllFromThisModCommand { get; }
 
         // Updated Constructor
         public VM_AppearanceMod(
@@ -81,8 +83,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ToggleFullScreenCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error showing image: {ex.Message}")).DisposeWith(Disposables);
             
             HideCommand = ReactiveCommand.Create(() => HideThisMod());
+            UnhideCommand = ReactiveCommand.Create(() => vmNpcSelectionBar.UnhideSelectedMod(this));
             SelectAllFromThisModCommand = ReactiveCommand.Create(() => vmNpcSelectionBar.SelectAllFromMod(this));;
             HideAllFromThisModCommand = ReactiveCommand.Create(() => vmNpcSelectionBar.HideAllFromMod(this));;
+            UnhideAllFromThisModCommand = ReactiveCommand.Create(() => vmNpcSelectionBar.UnhideAllFromMod(this));
 
             // Listen for changes triggered by other selections for the same NPC
             _consistencyProvider.NpcSelectionChanged
