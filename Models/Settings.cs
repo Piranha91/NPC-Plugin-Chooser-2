@@ -12,4 +12,6 @@ public class Settings
     public string OutputModName { get; set; } = "NPC.esp";
     public List<ModSetting> ModSettings { get; set; } = new();
     public Dictionary<FormKey, string> SelectedAppearanceMods { get; set; } = new();
+    public HashSet<string> HiddenModNames = new();
+    public Dictionary<FormKey, HashSet<string>> HiddenModsPerNpc = new();
 }

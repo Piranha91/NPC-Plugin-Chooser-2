@@ -35,6 +35,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly CompositeDisposable _disposables = new();
         
         private HashSet<string> _hiddenModNames = new();
+        private Dictionary<FormKey, HashSet<string>> _hiddenModsPerNpc = new();
 
         // --- Search Properties ---
         [Reactive] public string SearchText1 { get; set; } = string.Empty;
@@ -68,6 +69,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _settings = settings;
             _auxilliary = auxilliary;
             _consistencyProvider = consistencyProvider;
+            _hiddenModNames = settings.HiddenModNames;
+            _hiddenModsPerNpc = settings.HiddenModsPerNpc;
 
             this.WhenAnyValue(x => x.SelectedNpc)
                 .Select(selectedNpc => selectedNpc != null
@@ -75,6 +78,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     : new ObservableCollection<VM_AppearanceMod>())
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .ToPropertyEx(this, x => x.CurrentNpcAppearanceMods);
+            
+            this.WhenAnyValue(x => x.CurrentNpcAppearanceMods)       
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(_ => ToggleModVisibility())
+                .DisposeWith(_disposables);
 
              _consistencyProvider.NpcSelectionChanged
                 .ObserveOn(RxApp.MainThreadScheduler)
@@ -261,8 +269,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     m.IsSetHidden = true;
                 }
+                else if (SelectedNpc is not null && _hiddenModsPerNpc.ContainsKey(SelectedNpc.NpcFormKey) &&
+                         _hiddenModsPerNpc[SelectedNpc.NpcFormKey].Contains(m.ModName))
+                {
+                    m.IsSetHidden = true;
+                }
             }
-            ToggleModVisibility();
             
             return new(sortedVMs);
         }
@@ -271,6 +283,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             referenceMod.IsSetHidden = true;
             ToggleModVisibility();
+            if (SelectedNpc is not null && _hiddenModsPerNpc.ContainsKey(SelectedNpc.NpcFormKey) && !_hiddenModsPerNpc[SelectedNpc.NpcFormKey].Contains(referenceMod.ModName))
+            {
+                _hiddenModsPerNpc[SelectedNpc.NpcFormKey].Add(referenceMod.ModName);
+            }
+            else if (SelectedNpc is not null)
+            {
+                _hiddenModsPerNpc.Add(SelectedNpc.NpcFormKey, new HashSet<string>() { referenceMod.ModName });
+            }
         }
         
         public void SelectAllFromMod(VM_AppearanceMod referenceMod)
@@ -284,11 +304,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 _hiddenModNames.Add(referenceMod.ModName);
                 referenceMod.IsSetHidden = true;
-            }
-
-            if (!ShowHiddenMods)
-            {
-                referenceMod.IsVisible = false;
             }
             
             ToggleModVisibility();
