@@ -45,6 +45,7 @@ namespace NPC_Plugin_Chooser_2.Views
                 // Wire up tab selection logic (can also be done with commands)
                 // These require x:Name attributes on the RadioButtons in MainWindow.xaml
                  this.Bind(ViewModel, vm => vm.IsNpcsTabSelected, v => v.NpcsRadioButton.IsChecked).DisposeWith(d);
+                 this.Bind(ViewModel, vm => vm.IsModsTabSelected, v => v.ModsRadioButton.IsChecked).DisposeWith(d); // *** NEW ***
                  this.Bind(ViewModel, vm => vm.IsSettingsTabSelected, v => v.SettingsRadioButton.IsChecked).DisposeWith(d);
                  this.Bind(ViewModel, vm => vm.IsRunTabSelected, v => v.RunRadioButton.IsChecked).DisposeWith(d);
 

@@ -21,7 +21,7 @@
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
         <StackPanel>
-            <TextBlock Text="General Settings" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+            <!-- Removed "General Settings" Header -->
 
             <!-- Skyrim Game Path -->
             <TextBlock Text="Skyrim Game Path (Optional - Auto-detects if blank):"/>
@@ -30,7 +30,6 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <!-- Update Binding Here -->
                 <TextBox Grid.Column="0" Text="{Binding SkyrimGamePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
                 <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectGameFolderCommand}"/>
             </Grid>
@@ -39,29 +38,25 @@
 
              <!-- Skyrim Version -->
             <TextBlock Text="Skyrim Version:"/>
-             <!-- ComboBox SelectedItem binding usually updates on selection change anyway -->
             <ComboBox ItemsSource="{Binding Source={StaticResource SkyrimReleaseEnumValues}}"
                       SelectedItem="{Binding SkyrimRelease, Mode=TwoWay}"/>
             <TextBlock Text="Ensure this matches the game version you are modding." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
 
-            <!-- Output Mod Name -->
-            <TextBlock Text="Output Mod Name:"/>
-            <!-- Update Binding Here -->
-            <TextBox Text="{Binding OutputModName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
-
-             <!-- Mods Folder (If needed by backend logic, otherwise remove) -->
-             <!--
-             <TextBlock Text="Mods Folder (e.g., MO2 Mods Path - Used for...?)"/>
+             <!-- Mods Folder -->
+             <TextBlock Text="Mods Folder (e.g., MO2 Mods Path):"/>
              <Grid>
                  <Grid.ColumnDefinitions>
                      <ColumnDefinition Width="*"/>
                      <ColumnDefinition Width="Auto"/>
                  </Grid.ColumnDefinitions>
-                 <TextBox Grid.Column="0" Text="{Binding ModsFolder, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                 <TextBox Grid.Column="0" Text="{Binding ModsFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
                  <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectModsFolderCommand}"/>
              </Grid>
-             <TextBlock Text="Specify the root folder where your mods are installed." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
-             -->
+             <TextBlock Text="Specify the root folder where your mods are installed (used for Mod linking)." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+
+            <!-- Output Mod Name -->
+            <TextBlock Text="Output Mod Name:"/>
+            <TextBox Text="{Binding OutputModName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
 
             <!-- Mugshots Folder -->
             <TextBlock Text="Mugshots Folder:"/>
@@ -70,17 +65,33 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <!-- Update Binding Here -->
                 <TextBox Grid.Column="0" Text="{Binding MugshotsFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
                 <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectMugshotsFolderCommand}"/>
             </Grid>
             <TextBlock Text="Folder containing subfolders for each mod's NPC preview images." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
 
-            <!-- Environment Status -->
+            <!-- Environment Status with Conditional Coloring -->
             <TextBlock Text="Environment Status:" FontWeight="Bold" Margin="0,10,0,5"/>
             <TextBlock>
                 <Run Text="Mutagen Environment Initialized: "/>
-                <Run Text="{Binding EnvironmentIsValid, Mode=OneWay}" FontWeight="Bold"/>
+                <Run FontWeight="Bold">
+                    <Run.Style>
+                        <Style TargetType="Run">
+                            <!-- Default Text -->
+                            <Setter Property="Text" Value="{Binding EnvironmentIsValid, Mode=OneWay}"/>
+                            <!-- Trigger for True -->
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding EnvironmentIsValid, Mode=OneWay}" Value="True">
+                                    <Setter Property="Foreground" Value="Green"/>
+                                </DataTrigger>
+                                <!-- Trigger for False -->
+                                <DataTrigger Binding="{Binding EnvironmentIsValid, Mode=OneWay}" Value="False">
+                                    <Setter Property="Foreground" Value="Red"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Run.Style>
+                </Run>
             </TextBlock>
              <TextBlock Text="{Binding EnvironmentErrorText}" Foreground="Red" TextWrapping="Wrap" MaxHeight="100" ScrollViewer.VerticalScrollBarVisibility="Auto">
                  <TextBlock.Style>
@@ -96,8 +107,6 @@
                      </Style>
                  </TextBlock.Style>
             </TextBlock>
-
-            <!-- Add other settings from VM_Settings as needed -->
 
         </StackPanel>
     </ScrollViewer>

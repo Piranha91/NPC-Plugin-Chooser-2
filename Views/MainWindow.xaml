@@ -20,6 +20,8 @@
         <!-- Tab Navigation -->
         <StackPanel Grid.Row="0" Orientation="Horizontal" Background="LightGray">
             <RadioButton x:Name="NpcsRadioButton" Content="NPCs" GroupName="MainTabs" IsChecked="{Binding IsNpcsTabSelected, Mode=TwoWay}" Style="{StaticResource {x:Type ToggleButton}}"/>
+            <!-- *** NEW: Mods Tab RadioButton *** -->
+            <RadioButton x:Name="ModsRadioButton" Content="Mods" GroupName="MainTabs" IsChecked="{Binding IsModsTabSelected, Mode=TwoWay}" Style="{StaticResource {x:Type ToggleButton}}"/>
             <RadioButton x:Name="SettingsRadioButton" Content="Settings" GroupName="MainTabs" IsChecked="{Binding IsSettingsTabSelected, Mode=TwoWay}" Style="{StaticResource {x:Type ToggleButton}}"/>
             <RadioButton x:Name="RunRadioButton" Content="Run" GroupName="MainTabs" IsChecked="{Binding IsRunTabSelected, Mode=TwoWay}" Style="{StaticResource {x:Type ToggleButton}}"/>
         </StackPanel>

@@ -45,6 +45,7 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<VM_NpcSelectionBar>().AsSelf().SingleInstance(); // Keep NPC list state
             builder.RegisterType<VM_Settings>().AsSelf().SingleInstance(); // Keep settings state
             builder.RegisterType<VM_Run>().AsSelf().SingleInstance(); // Keep run state
+            builder.RegisterType<VM_Mods>().AsSelf().SingleInstance(); // *** NEW: Register Mods VM ***
             // Register VM_FullScreenImage transiently as it's created on demand
             builder.RegisterType<VM_FullScreenImage>().AsSelf();
 
@@ -55,12 +56,13 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<NpcsView>().As<IViewFor<VM_NpcSelectionBar>>();
             builder.RegisterType<SettingsView>().As<IViewFor<VM_Settings>>();
             builder.RegisterType<RunView>().As<IViewFor<VM_Run>>();
+            builder.RegisterType<ModsView>().As<IViewFor<VM_Mods>>(); // *** NEW: Register Mods View ***
             builder.RegisterType<FullScreenImageView>().As<IViewFor<VM_FullScreenImage>>(); // For full screen view
-            
+
 
             // Use Autofac for Splat Dependency Resolution
             var autofacResolver = builder.UseAutofacDependencyResolver();
-            
+
             // Register the resolver in Autofac so it can be later resolved
             builder.RegisterInstance(autofacResolver);
 
@@ -77,10 +79,34 @@ namespace NPC_Plugin_Chooser_2
             Locator.CurrentMutable.Register(() => new NpcsView(), typeof(IViewFor<VM_NpcSelectionBar>));
             Locator.CurrentMutable.Register(() => new SettingsView(), typeof(IViewFor<VM_Settings>));
             Locator.CurrentMutable.Register(() => new RunView(), typeof(IViewFor<VM_Run>));
+            Locator.CurrentMutable.Register(() => new ModsView(), typeof(IViewFor<VM_Mods>)); // *** NEW: Register Mods View Factory ***
             Locator.CurrentMutable.Register(() => new FullScreenImageView(), typeof(IViewFor<VM_FullScreenImage>));
-            
+
             var container = builder.Build();
             autofacResolver.SetLifetimeScope(container);
+
+            // Hook into Exit event to save settings (including ModSettings)
+            // Ensure the SaveModSettingsToModel is called before VM_Settings saves the main settings file
+            this.Exit += (s, e) =>
+            {
+                 var modsVm = Locator.Current.GetService<VM_Mods>();
+                 var settingsVm = Locator.Current.GetService<VM_Settings>(); // To trigger its save maybe? No, VM_Settings already hooks Exit.
+
+                 if (modsVm != null)
+                 {
+                      try
+                      {
+                          modsVm.SaveModSettingsToModel(); // Saves VM list back to Settings model instance
+                          // VM_Settings saving logic should already be hooked to App.Exit,
+                          // so it will save the updated Settings model afterwards.
+                      }
+                      catch (Exception ex)
+                      {
+                           System.Diagnostics.Debug.WriteLine($"Error saving Mod Settings on exit: {ex.Message}");
+                           // Optionally show an error message to the user
+                      }
+                 }
+            };
 
             // Resolve the main window view model to start the application
             // The MainWindow's DataContext will be set automatically by ReactiveUI's View magic
