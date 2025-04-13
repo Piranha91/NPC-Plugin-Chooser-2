@@ -70,6 +70,13 @@
             </Grid>
             <TextBlock Text="Folder containing subfolders for each mod's NPC preview images." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
 
+            <CheckBox Content="Show NPC Descriptions"
+                      IsChecked="{Binding ShowNpcDescriptions, Mode=TwoWay}"
+                      Margin="0,15,0,5"
+                      ToolTip="If checked, shows descriptions for selected base game NPCs from a local data file (NpcDescriptions.json)."/>
+            <TextBlock Text="Note: This feature assumes you have a working internet connection and UESP or TES Fandom are currently accessible."
+                       FontSize="10" Foreground="Gray" TextWrapping="Wrap" Margin="10,0,0,10"/>
+            
             <!-- Environment Status with Conditional Coloring -->
             <TextBlock Text="Environment Status:" FontWeight="Bold" Margin="0,10,0,5"/>
             <TextBlock>

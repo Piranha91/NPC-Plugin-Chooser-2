@@ -10,6 +10,7 @@ public class Settings
     public SkyrimRelease SkyrimRelease { get; set; } = SkyrimRelease.SkyrimSE;
     public string SkyrimGamePath { get; set; } = string.Empty;
     public string OutputModName { get; set; } = "NPC.esp";
+    public bool ShowNpcDescriptions { get; set; } = true;
     public List<ModSetting> ModSettings { get; set; } = new();
     public Dictionary<FormKey, string> SelectedAppearanceMods { get; set; } = new();
     public HashSet<string> HiddenModNames = new();

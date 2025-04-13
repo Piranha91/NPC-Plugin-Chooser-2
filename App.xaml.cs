@@ -15,7 +15,10 @@ using Mutagen.Bethesda.Skyrim;
 using System.Collections.Generic; // Added for Dictionary
 using System;
 using System.ComponentModel; // Added for Exception, Path, etc.
-using System.Linq; // Added for LINQ methods if needed
+using System.Linq;
+using System.Net.Http;
+using Autofac.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection; // Added for LINQ methods if needed
 
 namespace NPC_Plugin_Chooser_2
 {
@@ -28,17 +31,29 @@ namespace NPC_Plugin_Chooser_2
         {
             // Set up Autofac
             var builder = new ContainerBuilder();
+            
 
             // Register Services & Models (as singletons where appropriate)
             // Load/Save Settings (Consider implementing persistence here)
             TypeDescriptor.AddAttributes(typeof(FormKey), new TypeConverterAttribute(typeof(FormKeyTypeConverter))); // Required for JSON deserialization of Dictionary<FormKey, anything>
 
+            // --- Setup HttpClientFactory using Microsoft.Extensions.DependencyInjection ---
+            // 1. Create a ServiceCollection
+            var services = new ServiceCollection();
+            // 2. Register HttpClientFactory and related services
+            services.AddHttpClient();
+            // 3. Populate the Autofac builder with the registrations from ServiceCollection
+            builder.Populate(services);
+            // --- End HttpClientFactory Setup ---
+            
+            
             var settings = VM_Settings.LoadSettings(); // Replace with actual loading logic if needed
             builder.RegisterInstance(settings).AsSelf().SingleInstance();
 
             builder.RegisterType<EnvironmentStateProvider>().AsSelf().SingleInstance();
             builder.RegisterType<Auxilliary>().AsSelf().SingleInstance();
             builder.RegisterType<NpcConsistencyProvider>().AsSelf().SingleInstance(); // Added for central selection management
+            builder.RegisterType<NpcDescriptionProvider>().AsSelf().SingleInstance(); // Added for central NPC Description management
 
             // Register ViewModels
             builder.RegisterType<VM_MainWindow>().AsSelf().SingleInstance(); // Main window is often a singleton
@@ -58,7 +73,6 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<RunView>().As<IViewFor<VM_Run>>();
             builder.RegisterType<ModsView>().As<IViewFor<VM_Mods>>(); // *** NEW: Register Mods View ***
             builder.RegisterType<FullScreenImageView>().As<IViewFor<VM_FullScreenImage>>(); // For full screen view
-
 
             // Use Autofac for Splat Dependency Resolution
             var autofacResolver = builder.UseAutofacDependencyResolver();

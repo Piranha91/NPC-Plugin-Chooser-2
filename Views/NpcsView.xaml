@@ -7,11 +7,12 @@
              xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
              xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
              xmlns:reactiveui="http://reactiveui.net"
+             xmlns:System="clr-namespace:System;assembly=mscorlib"
              mc:Ignorable="d"
              x:TypeArguments="vm:VM_NpcSelectionBar"
              d:DataContext="{d:DesignInstance Type=vm:VM_NpcSelectionBar}"
              d:DesignHeight="600" d:DesignWidth="800">
-    
+
     <UserControl.Resources>
         <local:BooleanToBrushConverter x:Key="BooleanToBrushConverter"/>
         <local:IsNotNullConverter x:Key="IsNotNullConverter"/>
@@ -20,23 +21,25 @@
     </UserControl.Resources>
 
     <Grid>
-        <!-- Define two rows: Settings row and the main content row -->
+        <!-- Define rows: Settings, Main Content, Description -->
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- Settings -->
             <RowDefinition Height="*"/>    <!-- Main Content -->
+            <RowDefinition Height="Auto"/> <!-- Description Row -->
         </Grid.RowDefinitions>
 
-        <!-- Settings Row -->
+        <!-- Settings Row (Grid.Row="0") -->
         <Border Grid.Row="0" Background="#F0F0F0" BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="10">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
-                <CheckBox Content="Show Hidden Mods"
-                          IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}"
-                          VerticalAlignment="Center"
-                          ToolTip="Toggle visibility of hidden appearance mods"/>
+                 <!-- CheckBox binding relies on VM_NpcSelectionBar.ShowHiddenMods being correctly bound to Settings -->
+                 <CheckBox Content="Show Hidden Mods"
+                           IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}"
+                           VerticalAlignment="Center"
+                           ToolTip="Toggle visibility of hidden appearance mods"/>
             </StackPanel>
         </Border>
 
-        <!-- Main Content Row -->
+        <!-- Main Content Row (Grid.Row="1") -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="250"/> <!-- NPC List + Search -->
@@ -54,12 +57,12 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center" 
-                                      ItemsSource="{Binding AvailableSearchTypes}" 
-                                      SelectedItem="{Binding SearchType1, Mode=TwoWay}" 
+                            <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
+                                      ItemsSource="{Binding AvailableSearchTypes}"
+                                      SelectedItem="{Binding SearchType1, Mode=TwoWay}"
                                       ToolTip="Select search field 1"/>
-                            <TextBox Grid.Column="1" VerticalAlignment="Center" 
-                                     Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                            <TextBox Grid.Column="1" VerticalAlignment="Center"
+                                     Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      ToolTip="Enter search term 1"/>
                         </Grid>
                         <!-- Search Term 2 -->
@@ -68,12 +71,12 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center" 
-                                      ItemsSource="{Binding AvailableSearchTypes}" 
-                                      SelectedItem="{Binding SearchType2, Mode=TwoWay}" 
+                            <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
+                                      ItemsSource="{Binding AvailableSearchTypes}"
+                                      SelectedItem="{Binding SearchType2, Mode=TwoWay}"
                                       ToolTip="Select search field 2"/>
-                            <TextBox Grid.Column="1" VerticalAlignment="Center" 
-                                     Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                            <TextBox Grid.Column="1" VerticalAlignment="Center"
+                                     Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      ToolTip="Enter search term 2"/>
                         </Grid>
                         <!-- Search Term 3 -->
@@ -82,20 +85,20 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center" 
-                                      ItemsSource="{Binding AvailableSearchTypes}" 
-                                      SelectedItem="{Binding SearchType3, Mode=TwoWay}" 
+                            <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
+                                      ItemsSource="{Binding AvailableSearchTypes}"
+                                      SelectedItem="{Binding SearchType3, Mode=TwoWay}"
                                       ToolTip="Select search field 3"/>
-                            <TextBox Grid.Column="1" VerticalAlignment="Center" 
-                                     Text="{Binding SearchText3, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                            <TextBox Grid.Column="1" VerticalAlignment="Center"
+                                     Text="{Binding SearchText3, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      ToolTip="Enter search term 3"/>
                         </Grid>
                         <!-- Logic Selector -->
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <RadioButton Content="AND (Match All)" GroupName="SearchLogic" VerticalAlignment="Center" 
-                                         Margin="0,0,10,0" IsChecked="{Binding IsSearchAndLogic, Mode=TwoWay}" 
+                            <RadioButton Content="AND (Match All)" GroupName="SearchLogic" VerticalAlignment="Center"
+                                         Margin="0,0,10,0" IsChecked="{Binding IsSearchAndLogic, Mode=TwoWay}"
                                          ToolTip="Results must match all active search terms"/>
-                            <RadioButton Content="OR (Match Any)" GroupName="SearchLogic" VerticalAlignment="Center" 
+                            <RadioButton Content="OR (Match Any)" GroupName="SearchLogic" VerticalAlignment="Center"
                                          ToolTip="Results must match at least one active search term"/>
                         </StackPanel>
                     </StackPanel>
@@ -103,10 +106,10 @@
 
                 <!-- NPC List Area -->
                 <Border BorderThickness="0,0,1,0" BorderBrush="DarkGray">
-                    <ListBox x:Name="NpcListBox" ItemsSource="{Binding FilteredNpcs}" 
-                             SelectedItem="{Binding SelectedNpc, Mode=TwoWay}" 
-                             DisplayMemberPath="DisplayName" 
-                             ScrollViewer.VerticalScrollBarVisibility="Auto" 
+                    <ListBox x:Name="NpcListBox" ItemsSource="{Binding FilteredNpcs}"
+                             SelectedItem="{Binding SelectedNpc, Mode=TwoWay}"
+                             DisplayMemberPath="DisplayName"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
                              SelectionChanged="NpcListBox_OnSelectionChanged"/>
                 </Border>
             </DockPanel>
@@ -121,14 +124,14 @@
                 <ItemsControl x:Name="AppearanceModsItemsControl" ItemsSource="{Binding CurrentNpcAppearanceMods}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
-                            <WrapPanel Orientation="Horizontal" 
+                            <WrapPanel Orientation="Horizontal"
                                        Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
-                                       /> <!-- Binding Actual forces scroll bar all the way to the right, and reports the proper available width to the image resizer -->
+                                       /> <!-- Binding ActualWidth helps with layout -->
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:VM_AppearanceMod}">
-                            <!-- Bind Visibility to the mod's IsVisible property using BooleanToVisibilityConverter -->
+                            <!-- Bind Visibility to the mod's IsVisible property -->
                             <Border BorderThickness="2" Margin="5"
                                     Visibility="{Binding IsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
                                     BorderBrush="{Binding IsSelected, Converter={StaticResource BooleanToBrushConverter}, ConverterParameter=LimeGreen|Transparent}"
@@ -198,5 +201,37 @@
                 </TextBlock.Style>
             </TextBlock>
         </Grid>
+
+        <!-- Description Panel (Grid.Row="2") -->
+        <Border Grid.Row="2" BorderBrush="Gray" BorderThickness="0,1,0,0"
+                Background="#FAFAD2"
+                Padding="5">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Visible"/>
+                    <Style.Triggers>
+                        <!-- Hide if description is null -->
+                        <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                        <!-- Hide if description is empty string -->
+                        <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Static System:String.Empty}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <!-- Grid to overlay loading indicator -->
+             <Grid>
+                 <ScrollViewer MaxHeight="40" VerticalScrollBarVisibility="Auto"> <!-- Limit height -->
+                     <TextBlock Text="{Binding CurrentNpcDescription}" TextWrapping="Wrap"/>
+                 </ScrollViewer>
+                 <!-- Optional Loading Indicator -->
+                 <TextBlock Text="Loading description..." FontStyle="Italic" Foreground="Gray"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding IsLoadingDescription, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+            </Grid>
+        </Border>
+
     </Grid>
 </reactiveui:ReactiveUserControl>

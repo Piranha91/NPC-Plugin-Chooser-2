@@ -29,6 +29,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly EnvironmentStateProvider _environmentStateProvider;
         private readonly Settings _settings;
         private readonly NpcConsistencyProvider _consistencyProvider;
+        private readonly NpcDescriptionProvider _descriptionProvider;
         private readonly Auxilliary _auxilliary;
         private readonly CompositeDisposable _disposables = new();
 
@@ -47,15 +48,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- End Search Properties ---
 
         [Reactive] public bool ShowHiddenMods { get; set; } = false;
-
-        // *** Make AllNpcs public ***
-        // private List<VM_NpcSelection> _allNpcs = new(); // Old private field
+        
         public List<VM_NpcSelection> AllNpcs { get; } = new(); // Public property
         public ObservableCollection<VM_NpcSelection> FilteredNpcs { get; } = new();
         private Dictionary<string, List<(string ModName, string ImagePath)>> _mugshotData = new();
 
         [Reactive] public VM_NpcSelection? SelectedNpc { get; set; }
         [ObservableAsProperty] public ObservableCollection<VM_AppearanceMod>? CurrentNpcAppearanceMods { get; }
+        
+        [Reactive] public string? CurrentNpcDescription { get; private set; }
+        public ReactiveCommand<Unit, string?> LoadDescriptionCommand { get; }
+        [ObservableAsProperty] public bool IsLoadingDescription { get; } // Optional loading indicator
 
         // Create a subject for refresh signals.
         private readonly ISubject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
@@ -63,12 +66,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // Expose an observable that views can subscribe to.
         public IObservable<Unit> RefreshImageSizesObservable => _refreshImageSizesSubject.AsObservable();
 
-        public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider, Settings settings, Auxilliary auxilliary, NpcConsistencyProvider consistencyProvider)
+        public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider, Settings settings, Auxilliary auxilliary, NpcConsistencyProvider consistencyProvider, NpcDescriptionProvider descriptionProvider)
         {
             _environmentStateProvider = environmentStateProvider;
             _settings = settings;
             _auxilliary = auxilliary;
             _consistencyProvider = consistencyProvider;
+            _descriptionProvider = descriptionProvider;
             _hiddenModNames = _settings.HiddenModNames;
             _hiddenModsPerNpc = _settings.HiddenModsPerNpc;
 
@@ -102,6 +106,47 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .Subscribe(_ => ToggleModVisibility())
                 .DisposeWith(_disposables);
 
+            // *** NEW: Setup Description Command ***
+            LoadDescriptionCommand = ReactiveCommand.CreateFromTask<Unit, string?>(
+                async (_, ct) => // Pass CancellationToken if needed
+                {
+                    var npc = SelectedNpc; // Capture current selection
+                    if (npc != null && _settings.ShowNpcDescriptions)
+                    {
+                        try
+                        {
+                            // Pass relevant info to provider
+                            return await _descriptionProvider.GetDescriptionAsync(npc.NpcFormKey, npc.DisplayName, npc.NpcGetter?.EditorID);
+                        }
+                        catch (Exception ex)
+                        {
+                             System.Diagnostics.Debug.WriteLine($"Error executing LoadDescriptionCommand: {ex}");
+                             return null; // Return null on error
+                        }
+                    }
+                    return null; // Conditions not met
+                },
+                // CanExecute: Only run if an NPC is selected and setting is enabled?
+                this.WhenAnyValue(x => x.SelectedNpc, x => x._settings.ShowNpcDescriptions,
+                                  (npc, show) => npc != null && show)
+            );
+
+            // Update the CurrentNpcDescription property with the command's result
+            LoadDescriptionCommand.ObserveOn(RxApp.MainThreadScheduler)
+                                  .BindTo(this, x => x.CurrentNpcDescription)
+                                  .DisposeWith(_disposables);
+
+            // Optional: Bind IsExecuting to the loading property
+            LoadDescriptionCommand.IsExecuting
+                                  .ToPropertyEx(this, x => x.IsLoadingDescription)
+                                  .DisposeWith(_disposables);
+
+            // Trigger the command whenever SelectedNpc or the setting changes
+            this.WhenAnyValue(x => x.SelectedNpc, x => x._settings.ShowNpcDescriptions)
+                .Throttle(TimeSpan.FromMilliseconds(200)) // Add small delay before triggering fetch
+                .Select(_ => Unit.Default) // Command takes Unit input
+                .InvokeCommand(LoadDescriptionCommand)
+                .DisposeWith(_disposables);
 
             Initialize();
         }

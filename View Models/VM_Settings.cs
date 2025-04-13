@@ -25,6 +25,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public SkyrimRelease SkyrimRelease { get; set; }
         [Reactive] public string SkyrimGamePath { get; set; }
         [Reactive] public string OutputModName { get; set; }
+        [Reactive] public bool ShowNpcDescriptions { get; set; }
 
         // Read-only properties reflecting environment state
         [ObservableAsProperty] public bool EnvironmentIsValid { get; }
@@ -51,10 +52,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
             SkyrimRelease = _model.SkyrimRelease;
             SkyrimGamePath = _model.SkyrimGamePath;
             OutputModName = _model.OutputModName;
+            ShowNpcDescriptions = _model.ShowNpcDescriptions;
 
             // Update model when VM properties change
             this.WhenAnyValue(x => x.ModsFolder).Subscribe(s => _model.ModsFolder = s);
             this.WhenAnyValue(x => x.MugshotsFolder).Subscribe(s => _model.MugshotsFolder = s);
+            this.WhenAnyValue(x => x.ShowNpcDescriptions).Subscribe(b => _model.ShowNpcDescriptions = b);
 
             // Properties that trigger environment update
             this.WhenAnyValue(x => x.SkyrimGamePath).Subscribe(s =>
