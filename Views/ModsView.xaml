@@ -13,8 +13,28 @@
              d:DesignHeight="600" d:DesignWidth="800">
 
     <Grid Margin="5">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding ModSettingsList}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/> <!-- Filter Controls -->
+            <RowDefinition Height="*"/>    <!-- List -->
+        </Grid.RowDefinitions>
+
+        <!-- *** Filter Area *** -->
+        <Border Grid.Row="0" BorderBrush="LightGray" BorderThickness="0,0,0,1" Margin="0,0,0,5" Padding="0,0,0,5">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Filter Name:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <TextBox Text="{Binding NameFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="150" Margin="0,0,20,0" VerticalAlignment="Center"/>
+
+                <TextBlock Text="Filter Plugin:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <TextBox Text="{Binding PluginFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="150" VerticalAlignment="Center"/>
+                 <!-- Add Clear Buttons? (Optional)
+                 <Button Content="Clear Filters" Command="{Binding ClearFiltersCommand}" Margin="20,0,0,0"/>
+                 -->
+            </StackPanel>
+        </Border>
+
+        <!-- *** List Area (moved to Grid.Row="1") *** -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding ModSettingsList}"> <!-- Binding is already correct (to the public filtered list) -->
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type vm:VM_ModSetting}">
                         <Border BorderBrush="DarkGray" BorderThickness="1" Margin="0,5" Padding="10">
@@ -42,7 +62,7 @@
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                     <Style.Triggers>
                                                         <!-- Trigger to hide if Suffix is null or empty -->
-                                                        <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Static System:String.Empty}"> <!-- Now 'System' prefix is valid -->
+                                                        <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Static System:String.Empty}">
                                                             <Setter Property="Visibility" Value="Collapsed"/>
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Null}">
