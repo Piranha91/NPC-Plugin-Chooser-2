@@ -34,6 +34,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool HasMugshot { get; private set; } // Flag if a specific mugshot was assigned
         [Reactive] public bool IsVisible { get; set; } = true;
         [Reactive] public bool IsSetHidden { get; set; } = false;
+        [Reactive] public bool CanJumpToMod { get; set; } = false;
 
         public ReactiveCommand<Unit, Unit> SelectCommand { get; }
         public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
@@ -42,6 +43,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> SelectAllFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> HideAllFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> UnhideAllFromThisModCommand { get; }
+        public ReactiveCommand<Unit, Unit> JumpToModCommand { get; }
 
         // Updated Constructor
         public VM_AppearanceMod(
@@ -70,6 +72,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 ImageHeight = height;
             }
 
+            CanJumpToMod = vmNpcSelectionBar.CanJumpToMod(modName);
+
             // Update IsSelected based on the central provider (using ModName for comparison now)
             IsSelected = _consistencyProvider.IsModSelected(_npcFormKey, ModName);
 
@@ -87,6 +91,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             SelectAllFromThisModCommand = ReactiveCommand.Create(() => vmNpcSelectionBar.SelectAllFromMod(this));;
             HideAllFromThisModCommand = ReactiveCommand.Create(() => vmNpcSelectionBar.HideAllFromMod(this));;
             UnhideAllFromThisModCommand = ReactiveCommand.Create(() => vmNpcSelectionBar.UnhideAllFromMod(this));
+            JumpToModCommand = ReactiveCommand.Create(() => vmNpcSelectionBar.JumpToMod(this));
 
             // Listen for changes triggered by other selections for the same NPC
             _consistencyProvider.NpcSelectionChanged

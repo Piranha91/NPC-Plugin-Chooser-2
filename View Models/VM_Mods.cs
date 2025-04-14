@@ -40,7 +40,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool IsLoadingNpcData { get; private set; }
 
         // --- Data Lists (Left Panel) ---
-        private List<VM_ModSetting> _allModSettings = new();
+        private List<VM_ModSetting> _allModSettingsInternal = new();
+        public IReadOnlyList<VM_ModSetting> AllModSettings => _allModSettingsInternal; // Public access
         public ObservableCollection<VM_ModSetting> ModSettingsList { get; } = new();
 
         // --- Right Panel Properties ---
@@ -83,7 +84,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             });
 
 
-            PopulateModSettings(); // Populates and sorts _allModSettings
+            PopulateModSettings(); // Populates and sorts _allModSettingsInternal
 
             // --- Setup Filter Reaction ---
             this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText, x => x.NpcSearchText, x => x.SelectedNpcSearchType) // Added NpcSearchType
@@ -209,7 +210,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                      // Ensure the NPC is in the filtered list after clearing filters (should be)
                      if (!_npcSelectionBar.FilteredNpcs.Contains(npcToSelect))
                      {
-                         _npcSelectionBar.ApplyFilter(); // Re-apply (now empty) filter
+                         _npcSelectionBar.ApplyFilter(false); // Re-apply (now empty) filter
                      }
 
                      // Now select the NPC
@@ -259,7 +260,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public void PopulateModSettings()
         {
-            _allModSettings.Clear();
+            _allModSettingsInternal.Clear();
             var warnings = new List<string>();
             var loadedDisplayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var linkedModKeys = new HashSet<ModKey>();
@@ -481,10 +482,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             }, TaskScheduler.Default); // Specify scheduler for the continuation itself if needed, default is fine here
 
-            // Populate _allModSettings immediately (NPC lists will populate in the background)
+            // Populate _allModSettingsInternal immediately (NPC lists will populate in the background)
             
             // Final Step 1: Populate and Sort the source list
-            _allModSettings = tempList.OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+            _allModSettingsInternal = tempList.OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
 
             // Final Step 2: Show warnings
             if (warnings.Any())
@@ -494,7 +495,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 MessageBox.Show(warningMessage.ToString(), "Mod Settings Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
-            foreach (var vm in _allModSettings)
+            foreach (var vm in _allModSettingsInternal)
             {
                 vm.HasValidMugshots = CheckMugshotValidity(vm.MugShotFolderPath);
             }
@@ -503,7 +504,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // Filtering Logic (Left Panel)
          private void ApplyFilters()
          {
-             IEnumerable<VM_ModSetting> filtered = _allModSettings;
+             IEnumerable<VM_ModSetting> filtered = _allModSettingsInternal;
 
              if (!string.IsNullOrWhiteSpace(NameFilterText))
              {
@@ -558,7 +559,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
              }
 
 
-             System.Diagnostics.Debug.WriteLine($"ApplyFilters: Displaying {ModSettingsList.Count} of {_allModSettings.Count} items.");
+             System.Diagnostics.Debug.WriteLine($"ApplyFilters: Displaying {ModSettingsList.Count} of {_allModSettingsInternal.Count} items.");
          }
 
 
@@ -566,7 +567,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
          public void SaveModSettingsToModel()
          {
              _settings.ModSettings.Clear();
-             foreach (var vm in _allModSettings) // Save from the full list
+             foreach (var vm in _allModSettingsInternal) // Save from the full list
              {
                  // Only save if it has meaningful data (Key, Folder Paths, or Mugshot Path)
                  if (!string.IsNullOrWhiteSpace(vm.DisplayName) &&

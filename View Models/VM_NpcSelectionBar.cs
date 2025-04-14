@@ -1,10 +1,12 @@
-﻿// [VM_NpcSelectionBar.cs] - Updated with Image Sizing and Public AllNpcs
+﻿// [VM_NpcSelectionBar.cs] - Updated with JumpToModCommand
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics; // For Debug.WriteLine
 using System.IO;
 using System.Linq;
-using System.Reactive; // Required for Unit
+using System.Reactive;
+using System.Reactive.Concurrency; // Required for Unit
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
@@ -19,8 +21,7 @@ using NPC_Plugin_Chooser_2.Views;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Splat;
-// using System.ComponentModel; // No longer needed for just Enum Values
-// using DynamicData.Binding; // Not needed for this implementation
+
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -32,6 +33,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly NpcDescriptionProvider _descriptionProvider;
         private readonly Auxilliary _auxilliary;
         private readonly CompositeDisposable _disposables = new();
+
+        // *** NEW: Lazy references to break circular dependencies ***
+        private readonly Lazy<VM_Mods> _lazyModsVm;
+        private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
 
         private HashSet<string> _hiddenModNames = new();
         private Dictionary<FormKey, HashSet<string>> _hiddenModsPerNpc = new();
@@ -48,34 +53,44 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- End Search Properties ---
 
         [Reactive] public bool ShowHiddenMods { get; set; } = false;
-        
-        public List<VM_NpcSelection> AllNpcs { get; } = new(); // Public property
+
+        public List<VM_NpcSelection> AllNpcs { get; } = new();
         public ObservableCollection<VM_NpcSelection> FilteredNpcs { get; } = new();
         private Dictionary<string, List<(string ModName, string ImagePath)>> _mugshotData = new();
 
         [Reactive] public VM_NpcSelection? SelectedNpc { get; set; }
         [ObservableAsProperty] public ObservableCollection<VM_AppearanceMod>? CurrentNpcAppearanceMods { get; }
-        
+
         [Reactive] public string? CurrentNpcDescription { get; private set; }
         public ReactiveCommand<Unit, string?> LoadDescriptionCommand { get; }
-        [ObservableAsProperty] public bool IsLoadingDescription { get; } // Optional loading indicator
+        [ObservableAsProperty] public bool IsLoadingDescription { get; }
 
-        // Create a subject for refresh signals.
+
         private readonly ISubject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
-
-        // Expose an observable that views can subscribe to.
         public IObservable<Unit> RefreshImageSizesObservable => _refreshImageSizesSubject.AsObservable();
 
-        public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider, Settings settings, Auxilliary auxilliary, NpcConsistencyProvider consistencyProvider, NpcDescriptionProvider descriptionProvider)
+        // *** UPDATED CONSTRUCTOR SIGNATURE ***
+        public VM_NpcSelectionBar(
+            EnvironmentStateProvider environmentStateProvider,
+            Settings settings,
+            Auxilliary auxilliary,
+            NpcConsistencyProvider consistencyProvider,
+            NpcDescriptionProvider descriptionProvider,
+            Lazy<VM_Mods> lazyModsVm, // Inject Lazy<VM_Mods>
+            Lazy<VM_MainWindow> lazyMainWindowVm) // Inject Lazy<VM_MainWindow>
         {
             _environmentStateProvider = environmentStateProvider;
             _settings = settings;
             _auxilliary = auxilliary;
             _consistencyProvider = consistencyProvider;
             _descriptionProvider = descriptionProvider;
-            _hiddenModNames = _settings.HiddenModNames;
-            _hiddenModsPerNpc = _settings.HiddenModsPerNpc;
+            _lazyModsVm = lazyModsVm; // Store Lazy references
+            _lazyMainWindowVm = lazyMainWindowVm;
 
+            _hiddenModNames = _settings.HiddenModNames ?? new(); // Ensure initialized
+            _hiddenModsPerNpc = _settings.HiddenModsPerNpc ?? new(); // Ensure initialized
+
+            // --- Existing Property Setup ---
             this.WhenAnyValue(x => x.SelectedNpc)
                 .Select(selectedNpc => selectedNpc != null
                     ? CreateAppearanceModViewModels(selectedNpc, _mugshotData)
@@ -99,71 +114,121 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     x => x.SearchText3, x => x.SearchType3,
                     x => x.IsSearchAndLogic)
                 .Throttle(TimeSpan.FromMilliseconds(250), RxApp.MainThreadScheduler)
-                .Subscribe(_ => ApplyFilter())
+                .Subscribe(_ => ApplyFilter(false))
                 .DisposeWith(_disposables);
 
             this.WhenAnyValue(x => x.ShowHiddenMods)
                 .Subscribe(_ => ToggleModVisibility())
                 .DisposeWith(_disposables);
 
-            // *** NEW: Setup Description Command ***
+            // --- Description Command Setup ---
             LoadDescriptionCommand = ReactiveCommand.CreateFromTask<Unit, string?>(
-                async (_, ct) => // Pass CancellationToken if needed
+                async (_, ct) =>
                 {
-                    var npc = SelectedNpc; // Capture current selection
+                    var npc = SelectedNpc;
                     if (npc != null && _settings.ShowNpcDescriptions)
                     {
-                        try
-                        {
-                            // Pass relevant info to provider
-                            return await _descriptionProvider.GetDescriptionAsync(npc.NpcFormKey, npc.DisplayName, npc.NpcGetter?.EditorID);
-                        }
-                        catch (Exception ex)
-                        {
-                             System.Diagnostics.Debug.WriteLine($"Error executing LoadDescriptionCommand: {ex}");
-                             return null; // Return null on error
-                        }
-                    }
-                    return null; // Conditions not met
+                        try { return await _descriptionProvider.GetDescriptionAsync(npc.NpcFormKey, npc.DisplayName, npc.NpcGetter?.EditorID); }
+                        catch (Exception ex) { Debug.WriteLine($"Error executing LoadDescriptionCommand: {ex}"); return null; }
+                    } return null;
                 },
-                // CanExecute: Only run if an NPC is selected and setting is enabled?
-                this.WhenAnyValue(x => x.SelectedNpc, x => x._settings.ShowNpcDescriptions,
-                                  (npc, show) => npc != null && show)
+                this.WhenAnyValue(x => x.SelectedNpc, x => x._settings.ShowNpcDescriptions, (npc, show) => npc != null && show)
             );
-
-            // Update the CurrentNpcDescription property with the command's result
-            LoadDescriptionCommand.ObserveOn(RxApp.MainThreadScheduler)
-                                  .BindTo(this, x => x.CurrentNpcDescription)
-                                  .DisposeWith(_disposables);
-
-            // Optional: Bind IsExecuting to the loading property
-            LoadDescriptionCommand.IsExecuting
-                                  .ToPropertyEx(this, x => x.IsLoadingDescription)
-                                  .DisposeWith(_disposables);
-
-            // Trigger the command whenever SelectedNpc or the setting changes
+            LoadDescriptionCommand.ObserveOn(RxApp.MainThreadScheduler).BindTo(this, x => x.CurrentNpcDescription).DisposeWith(_disposables);
+            LoadDescriptionCommand.IsExecuting.ToPropertyEx(this, x => x.IsLoadingDescription).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.SelectedNpc, x => x._settings.ShowNpcDescriptions)
-                .Throttle(TimeSpan.FromMilliseconds(200)) // Add small delay before triggering fetch
-                .Select(_ => Unit.Default) // Command takes Unit input
-                .InvokeCommand(LoadDescriptionCommand)
-                .DisposeWith(_disposables);
+                .Throttle(TimeSpan.FromMilliseconds(200)).Select(_ => Unit.Default)
+                .InvokeCommand(LoadDescriptionCommand).DisposeWith(_disposables);
 
             Initialize();
         }
 
-        // --- Methods (Initialize, ApplyFilter, ScanMugshotDirectory, CreateAppearanceModViewModels etc. remain the same as previous correct version) ---
-        // ... (Keep all previous methods like Initialize, ApplyFilter, BuildPredicate, ScanMugshotDirectory, CreateAppearanceModViewModels)
+        // --- Methods ---
+
+        // *** NEW: JumpToMod Command Execution Logic ***
+        public bool CanJumpToMod(string appearanceModName)
+        {
+            // Access VM_Mods via Lazy object
+            var modsVm = _lazyModsVm.Value;
+            if (modsVm == null)
+            {
+                return false;
+            }
+            
+            var targetModSetting = modsVm.AllModSettings.FirstOrDefault(ms => ms.DisplayName.Equals(appearanceModName, StringComparison.OrdinalIgnoreCase));
+            return targetModSetting != null;
+        }
+        
+        public void JumpToMod(VM_AppearanceMod appearanceMod)
+        {
+            if (appearanceMod == null || string.IsNullOrWhiteSpace(appearanceMod.ModName)) return;
+
+            string targetModName = appearanceMod.ModName;
+            Debug.WriteLine($"JumpToMod requested for: {targetModName}");
+
+            // Access VM_Mods via Lazy object
+            var modsVm = _lazyModsVm.Value;
+            if (modsVm == null)
+            {
+                MessageBox.Show("Mods view model is not available.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // Find the VM_ModSetting by DisplayName
+            // Search the *full* list in VM_Mods
+            var targetModSetting = modsVm.AllModSettings.FirstOrDefault(ms => ms.DisplayName.Equals(targetModName, StringComparison.OrdinalIgnoreCase));
+
+            if (targetModSetting != null)
+            {
+                 Debug.WriteLine($"Found target VM_ModSetting: {targetModSetting.DisplayName}");
+                // 1. Switch to the Mods tab using Lazy MainWindow VM
+                var mainWindowVm = _lazyMainWindowVm.Value;
+                if (mainWindowVm == null) {
+                     MessageBox.Show("Main window view model is not available.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                     return;
+                 }
+                 mainWindowVm.IsModsTabSelected = true;
+
+                // 2. Tell VM_Mods to show the mugshots for the found setting
+                // Schedule this to run after the tab switch might have occurred
+                 RxApp.MainThreadScheduler.Schedule(() =>
+                 {
+                      // Ensure the target mod is visible in the filtered list *if possible*
+                      // This is tricky. Simplest is to just clear filters if not visible.
+                      if (!modsVm.ModSettingsList.Contains(targetModSetting))
+                      {
+                            Debug.WriteLine($"Target mod {targetModSetting.DisplayName} not in filtered list. Clearing filters.");
+                            modsVm.NameFilterText = string.Empty;
+                            modsVm.PluginFilterText = string.Empty;
+                            modsVm.NpcSearchText = string.Empty;
+                            // ApplyFilters() will be called automatically due to property changes
+                      }
+
+                      // Execute the command to show mugshots
+                      modsVm.ShowMugshotsCommand.Execute(targetModSetting).Subscribe(
+                          _ => { Debug.WriteLine($"Successfully triggered ShowMugshots for {targetModSetting.DisplayName}"); },
+                          ex => { Debug.WriteLine($"Error executing ShowMugshotsCommand: {ex}"); }
+                      ).DisposeWith(_disposables); // Dispose subscription
+
+                      // TODO: Implement scrolling in ModsView.xaml.cs if needed.
+                      // This would likely involve VM_Mods raising an event/signal
+                      // with the target VM_ModSetting, and ModsView handling it.
+                      Debug.WriteLine($"Scrolling to {targetModSetting.DisplayName} in ModsView is not yet implemented.");
+                 });
+
+            }
+            else
+            {
+                Debug.WriteLine($"Could not find VM_ModSetting with DisplayName: {targetModName}");
+                MessageBox.Show($"Could not find the mod '{targetModName}' in the Mods list.", "Mod Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
 
         private void UpdateSelectionState(FormKey npcFormKey, string selectedMod)
         {
-            // Find in the *filtered* list first, as that's what the user sees
-            var npcVM = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(npcFormKey));
-            // If not found in filtered list (e.g., due to search), find in the master list
-            if (npcVM == null)
-            {
-                 // *** Use public AllNpcs ***
-                 npcVM = AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(npcFormKey));
-            }
+            var npcVM = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(npcFormKey))
+                     ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(npcFormKey));
 
             if (npcVM != null)
             {
@@ -219,9 +284,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             var previouslySelectedNpcKey = SelectedNpc?.NpcFormKey;
             SelectedNpc = null;
-            // *** Use public AllNpcs ***
             AllNpcs.Clear();
             FilteredNpcs.Clear();
+            CurrentNpcDescription = null; // Clear description on init
+
             if (!_environmentStateProvider.EnvironmentIsValid) {
                 MessageBox.Show($"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}", "Environment Error", MessageBoxButton.OK, MessageBoxImage.Warning);
                 _mugshotData.Clear(); return;
@@ -234,7 +300,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             foreach (var npc in npcRecords) {
                 try {
                     var npcSelector = new VM_NpcSelection(npc, _environmentStateProvider, _consistencyProvider);
-                    // *** Use public AllNpcs ***
                     AllNpcs.Add(npcSelector);
                     string npcFormKeyString = npc.FormKey.ToString();
                     if (_mugshotData.ContainsKey(npcFormKeyString)) { processedMugshotKeys.Add(npcFormKeyString); }
@@ -247,20 +312,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
                          FormKey mugshotFormKey = FormKey.Factory(mugshotFormKeyString);
                          var npcSelector = new VM_NpcSelection(mugshotFormKey, _environmentStateProvider, _consistencyProvider);
                          if (npcSelector.DisplayName == mugshotFormKeyString) { string firstModName = mugshots[0].ModName; string pluginBaseName = Path.GetFileNameWithoutExtension(mugshotFormKey.ModKey.FileName); npcSelector.DisplayName = $"{firstModName} - {pluginBaseName} [{mugshotFormKeyString}]"; }
-                         // *** Use public AllNpcs ***
                          AllNpcs.Add(npcSelector);
                      } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Error creating VM for mugshot-only NPC {mugshotFormKeyString}: {ex.Message}"); }
                  }
             }
-            ApplyFilter(); // Apply filter to populate FilteredNpcs
+            ApplyFilter(true); // Apply filter to populate FilteredNpcs
              if (previouslySelectedNpcKey != null) { SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey)); }
-             if (SelectedNpc == null && FilteredNpcs.Any()) { SelectedNpc = FilteredNpcs[0]; }
+             else if (!FilteredNpcs.Any()) { SelectedNpc = null; } // Explicitly null if no results
         }
 
 
-        public void ApplyFilter()
+        public void ApplyFilter(bool initializing) // Made public for potential external use
         {
-            // *** Use public AllNpcs ***
             IEnumerable<VM_NpcSelection> results = AllNpcs;
             bool filter1Active = !string.IsNullOrWhiteSpace(SearchText1); bool filter2Active = !string.IsNullOrWhiteSpace(SearchText2); bool filter3Active = !string.IsNullOrWhiteSpace(SearchText3);
             Func<VM_NpcSelection, bool>? predicate1 = filter1Active ? BuildPredicate(SearchType1, SearchText1) : null;
@@ -273,10 +336,23 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 else { results = results.Where(npc => activePredicates.Any(p => p(npc))); }
             }
             var previouslySelectedNpcKey = SelectedNpc?.NpcFormKey;
-            FilteredNpcs.Clear();
-            foreach (var npc in results.OrderBy(x => _auxilliary.FormKeyStringToFormIDString(x.NpcFormKey.ToString()))) { FilteredNpcs.Add(npc); }
-             if (previouslySelectedNpcKey != null) { SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey)); }
-              if (SelectedNpc == null && FilteredNpcs.Any()) { SelectedNpc = FilteredNpcs[0]; } else if (!FilteredNpcs.Any()) { SelectedNpc = null; }
+            var orderedResults = results.OrderBy(x => _auxilliary.FormKeyStringToFormIDString(x.NpcFormKey.ToString())).ToList();
+
+            // Efficiently update ObservableCollection
+            FilteredNpcs.Clear(); // Clear once
+            foreach (var npc in orderedResults) { FilteredNpcs.Add(npc); } // Add all new items
+
+
+             // Restore selection or select first
+             if (previouslySelectedNpcKey != null) {
+                 SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey));
+             }
+              // If previous selection is gone or wasn't there, select the first item if any
+              if (SelectedNpc == null && FilteredNpcs.Any() && !initializing) {
+                  SelectedNpc = FilteredNpcs[0];
+              } else if (!FilteredNpcs.Any()) { // Explicitly null if no results
+                  SelectedNpc = null;
+              }
         }
 
         private Func<VM_NpcSelection, bool> BuildPredicate(NpcSearchType type, string searchText)
@@ -291,7 +367,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             };
         }
 
-        // CreateAppearanceModViewModels, Hide/Unhide/SelectAll methods remain the same
+
         private ObservableCollection<VM_AppearanceMod> CreateAppearanceModViewModels(VM_NpcSelection npcVM, Dictionary<string, List<(string ModName, string ImagePath)>> mugshotData)
         {
             var modVMs = new ObservableCollection<VM_AppearanceMod>(); if (npcVM == null) return modVMs;
@@ -309,10 +385,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 string mugshotModName = mugshotInfo.ModName; string mugshotImagePath = mugshotInfo.ImagePath;
                 if (!addedModSources.Contains(mugshotModName)) { modVMs.Add(new VM_AppearanceMod(mugshotModName, npcVM.NpcFormKey.ModKey, npcVM.NpcFormKey, mugshotImagePath, _settings, _consistencyProvider, this)); addedModSources.Add(mugshotModName); }
             }
-             if (npcVM.NpcGetter == null && !modVMs.Any() && npcVM.AppearanceMods.Any()) {
+            if (npcVM.NpcGetter == null && !modVMs.Any() && npcVM.AppearanceMods.Any()) {
                  var baseModKey = npcVM.AppearanceMods.First();
                   if (!addedModSources.Contains(baseModKey.FileName)) { modVMs.Add(new VM_AppearanceMod(baseModKey.FileName, baseModKey, npcVM.NpcFormKey, null, _settings, _consistencyProvider, this)); }
-             }
+            }
             var sortedVMs = modVMs.OrderBy(vm => vm.ModName).ToList(); modVMs.Clear(); foreach (var vm in sortedVMs) { modVMs.Add(vm); }
 
             // hide global hidden mods
@@ -335,114 +411,113 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public void HideSelectedMod(VM_AppearanceMod referenceMod)
         {
             referenceMod.IsSetHidden = true;
-            ToggleModVisibility();
-            if (SelectedNpc is not null && _hiddenModsPerNpc.ContainsKey(SelectedNpc.NpcFormKey) && !_hiddenModsPerNpc[SelectedNpc.NpcFormKey].Contains(referenceMod.ModName))
+            if (SelectedNpc != null) // Check if SelectedNpc is not null
             {
-                _hiddenModsPerNpc[SelectedNpc.NpcFormKey].Add(referenceMod.ModName);
+                 if (!_hiddenModsPerNpc.ContainsKey(SelectedNpc.NpcFormKey))
+                 {
+                     _hiddenModsPerNpc[SelectedNpc.NpcFormKey] = new HashSet<string>();
+                 }
+                 _hiddenModsPerNpc[SelectedNpc.NpcFormKey].Add(referenceMod.ModName);
             }
-            else if (SelectedNpc is not null && !_hiddenModsPerNpc.ContainsKey(SelectedNpc.NpcFormKey)) // Ensure key exists before adding
-            {
-                _hiddenModsPerNpc.Add(SelectedNpc.NpcFormKey, new HashSet<string>() { referenceMod.ModName });
-            }
+            ToggleModVisibility(); // Update visibility after modifying hidden state
         }
 
         public void UnhideSelectedMod(VM_AppearanceMod referenceMod)
         {
-            referenceMod.IsSetHidden = false;
-            ToggleModVisibility();
-            if (SelectedNpc is not null && _hiddenModsPerNpc.ContainsKey(SelectedNpc.NpcFormKey) && _hiddenModsPerNpc[SelectedNpc.NpcFormKey].Contains(referenceMod.ModName))
+            referenceMod.IsSetHidden = false; // Unhide first
+             if (SelectedNpc != null && _hiddenModsPerNpc.TryGetValue(SelectedNpc.NpcFormKey, out var hiddenSet))
             {
-                _hiddenModsPerNpc[SelectedNpc.NpcFormKey].Remove(referenceMod.ModName);
-                if (!_hiddenModsPerNpc[SelectedNpc.NpcFormKey].Any())
-                {
-                    _hiddenModsPerNpc.Remove(SelectedNpc.NpcFormKey);
-                }
+                 if (hiddenSet.Remove(referenceMod.ModName))
+                 {
+                     if (!hiddenSet.Any()) // Remove the key if the set becomes empty
+                     {
+                          _hiddenModsPerNpc.Remove(SelectedNpc.NpcFormKey);
+                     }
+                 }
             }
+            ToggleModVisibility(); // Update visibility after modifying hidden state
         }
 
         public void SelectAllFromMod(VM_AppearanceMod referenceMod)
         {
-            // Implementation needed - Iterate AllNpcs, find those with this mod in AppearanceMods,
-            // and call _consistencyProvider.SetSelectedMod for each.
-             MessageBox.Show($"Select All From Mod '{referenceMod.ModName}' - Not Yet Implemented.");
-             // throw new NotImplementedException();
+             // Implementation needed - Iterate AllNpcs, find those with this mod in AppearanceMods,
+             // and call _consistencyProvider.SetSelectedMod for each.
+              MessageBox.Show($"Select All From Mod '{referenceMod.ModName}' - Not Yet Implemented.");
+              // throw new NotImplementedException();
         }
 
         public void HideAllFromMod(VM_AppearanceMod referenceMod)
         {
-            if (!_hiddenModNames.Contains(referenceMod.ModName))
+            if (_hiddenModNames.Add(referenceMod.ModName)) // Add returns true if added successfully (wasn't there)
             {
-                _hiddenModNames.Add(referenceMod.ModName);
-                referenceMod.IsSetHidden = true; // Hide the current instance as well
+                // Also update the IsSetHidden state for the *current* NPC's mods if visible
+                 if (CurrentNpcAppearanceMods != null)
+                 {
+                      foreach (var modVM in CurrentNpcAppearanceMods)
+                      {
+                          if (modVM.ModName.Equals(referenceMod.ModName, StringComparison.OrdinalIgnoreCase))
+                          {
+                              modVM.IsSetHidden = true;
+                          }
+                      }
+                 }
             }
-
             ToggleModVisibility(); // Update visibility for the current NPC
         }
 
         public void UnhideAllFromMod(VM_AppearanceMod referenceMod)
         {
-            referenceMod.IsSetHidden = false; // Unhide the current instance
-            ToggleModVisibility(); // Update visibility for the current NPC
-            if (_hiddenModNames.Contains(referenceMod.ModName))
-            {
-                _hiddenModNames.Remove(referenceMod.ModName);
-            }
-             // We might need to trigger a refresh of CurrentNpcAppearanceMods if the underlying hidden status changed globally
-             // Or re-apply ToggleModVisibility after CurrentNpcAppearanceMods is potentially regenerated if SelectedNpc changes.
-             // The current logic only affects the *visible* state, not the IsSetHidden state of *other* instances after this call.
-             // If a user Unhides All, then switches NPC, the mod might appear hidden again if it was hidden per-NPC.
-             // This requires careful state management if global unhide should override per-NPC hides.
-             // Current implementation: Unhide All only removes from the global hidden list.
+             if (_hiddenModNames.Remove(referenceMod.ModName)) // Remove returns true if removed successfully
+             {
+                  // Also update the IsSetHidden state for the *current* NPC's mods if visible
+                 if (CurrentNpcAppearanceMods != null)
+                 {
+                      foreach (var modVM in CurrentNpcAppearanceMods)
+                      {
+                          if (modVM.ModName.Equals(referenceMod.ModName, StringComparison.OrdinalIgnoreCase))
+                          {
+                               // Only unhide if it's not *also* hidden per-NPC
+                               bool isHiddenPerNpc = SelectedNpc != null &&
+                                                    _hiddenModsPerNpc.TryGetValue(SelectedNpc.NpcFormKey, out var hiddenSet) &&
+                                                    hiddenSet.Contains(modVM.ModName);
+                              modVM.IsSetHidden = isHiddenPerNpc; // Set based on per-NPC state now
+                          }
+                      }
+                 }
+             }
+             ToggleModVisibility(); // Update visibility for the current NPC
         }
 
         public void ToggleModVisibility()
         {
-            if (CurrentNpcAppearanceMods != null && SelectedNpc != null)
+            if (CurrentNpcAppearanceMods == null || !CurrentNpcAppearanceMods.Any()) return;
+
+            bool needsRefresh = false;
+            var npcSpecificHidden = SelectedNpc != null ? _hiddenModsPerNpc.GetValueOrDefault(SelectedNpc.NpcFormKey) : null;
+
+            foreach (var mod in CurrentNpcAppearanceMods)
             {
-                 bool needsRefresh = false;
-                 var npcSpecificHidden = _hiddenModsPerNpc.GetValueOrDefault(SelectedNpc.NpcFormKey);
+                // Determine the definitive hidden state based on global AND specific lists
+                bool shouldBeHidden = _hiddenModNames.Contains(mod.ModName) || (npcSpecificHidden?.Contains(mod.ModName) ?? false);
+                mod.IsSetHidden = shouldBeHidden; // Update the source-of-truth hidden state
 
-                foreach (var mod in CurrentNpcAppearanceMods)
+                // Determine if it should be VISIBLE based on the ShowHiddenMods toggle
+                bool shouldBeVisible = ShowHiddenMods || !mod.IsSetHidden;
+
+                if (mod.IsVisible != shouldBeVisible)
                 {
-                    bool shouldBeHidden = _hiddenModNames.Contains(mod.ModName) || (npcSpecificHidden?.Contains(mod.ModName) ?? false);
-                    mod.IsSetHidden = shouldBeHidden; // Update the underlying hidden state based on current rules
-
-                    bool shouldBeVisible = ShowHiddenMods || !mod.IsSetHidden;
-
-                    if (mod.IsVisible != shouldBeVisible)
-                    {
-                         mod.IsVisible = shouldBeVisible;
-                         needsRefresh = true; // Visibility actually changed
-                    }
-                }
-                if (needsRefresh)
-                {
-                    _refreshImageSizesSubject.OnNext(Unit.Default); // Sends the signal only if visibility changed
+                     mod.IsVisible = shouldBeVisible;
+                     needsRefresh = true; // Visibility actually changed
                 }
             }
-             else if (CurrentNpcAppearanceMods != null) // Handle case where SelectedNpc might be briefly null during transition?
-             {
-                 bool needsRefresh = false;
-                  foreach (var mod in CurrentNpcAppearanceMods)
-                 {
-                      bool shouldBeHidden = _hiddenModNames.Contains(mod.ModName); // Can't check per-NPC if SelectedNpc is null
-                       mod.IsSetHidden = shouldBeHidden;
-                       bool shouldBeVisible = ShowHiddenMods || !mod.IsSetHidden;
-                      if (mod.IsVisible != shouldBeVisible)
-                      {
-                          mod.IsVisible = shouldBeVisible;
-                          needsRefresh = true;
-                      }
-                 }
-                 if (needsRefresh)
-                 {
-                     _refreshImageSizesSubject.OnNext(Unit.Default);
-                 }
-             }
+            if (needsRefresh)
+            {
+                _refreshImageSizesSubject.OnNext(Unit.Default); // Sends the signal only if visibility changed
+            }
         }
 
 
         public void Dispose() { _disposables.Dispose(); ClearAppearanceModViewModels(); }
-        private void ClearAppearanceModViewModels() { if (CurrentNpcAppearanceMods != null) { foreach (var vm in CurrentNpcAppearanceMods) { vm.Dispose(); } } }
+        private void ClearAppearanceModViewModels() { if (CurrentNpcAppearanceMods != null) { foreach (var vm in CurrentNpcAppearanceMods) { vm.Dispose(); } CurrentNpcAppearanceMods.Clear(); } }
     }
 }

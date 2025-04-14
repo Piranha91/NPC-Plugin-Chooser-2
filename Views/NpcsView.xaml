@@ -16,12 +16,10 @@
     <UserControl.Resources>
         <local:BooleanToBrushConverter x:Key="BooleanToBrushConverter"/>
         <local:IsNotNullConverter x:Key="IsNotNullConverter"/>
-        <!-- Add the built-in BooleanToVisibilityConverter -->
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
     </UserControl.Resources>
 
     <Grid>
-        <!-- Define rows: Settings, Main Content, Description -->
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- Settings -->
             <RowDefinition Height="*"/>    <!-- Main Content -->
@@ -31,7 +29,6 @@
         <!-- Settings Row (Grid.Row="0") -->
         <Border Grid.Row="0" Background="#F0F0F0" BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="10">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
-                 <!-- CheckBox binding relies on VM_NpcSelectionBar.ShowHiddenMods being correctly bound to Settings -->
                  <CheckBox Content="Show Hidden Mods"
                            IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}"
                            VerticalAlignment="Center"
@@ -42,11 +39,14 @@
         <!-- Main Content Row (Grid.Row="1") -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="250"/> <!-- NPC List + Search -->
-                <ColumnDefinition Width="*" x:Name="NpcDisplayColumn" />   <!-- Appearance Mod Images -->
+                <ColumnDefinition Width="250" MinWidth="200"/> <!-- NPC List + Search -->
+                <!-- *** NEW: Column for GridSplitter *** -->
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*" MinWidth="250" x:Name="NpcDisplayColumn" />   <!-- Appearance Mod Images -->
             </Grid.ColumnDefinitions>
 
             <!-- Left Column: Search + NPC List -->
+            <!-- DockPanel remains in Grid.Column="0" -->
             <DockPanel Grid.Column="0" LastChildFill="True">
                 <!-- Search Area -->
                 <Border DockPanel.Dock="Top" BorderThickness="0,0,1,1" BorderBrush="DarkGray" Padding="5">
@@ -114,8 +114,12 @@
                 </Border>
             </DockPanel>
 
+            <!-- *** NEW: GridSplitter *** -->
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="LightGray" ResizeBehavior="PreviousAndNext"/>
+
             <!-- Right Column: Appearance Mod Images -->
-            <ScrollViewer Grid.Column="1" x:Name="ImageDisplayScrollViewer"
+            <!-- ScrollViewer now in Grid.Column="2" -->
+            <ScrollViewer Grid.Column="2" x:Name="ImageDisplayScrollViewer"
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"
@@ -126,12 +130,11 @@
                         <ItemsPanelTemplate>
                             <WrapPanel Orientation="Horizontal"
                                        Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
-                                       /> <!-- Binding ActualWidth helps with layout -->
+                                       />
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:VM_AppearanceMod}">
-                            <!-- Bind Visibility to the mod's IsVisible property -->
                             <Border BorderThickness="2" Margin="5"
                                     Visibility="{Binding IsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
                                     BorderBrush="{Binding IsSelected, Converter={StaticResource BooleanToBrushConverter}, ConverterParameter=LimeGreen|Transparent}"
@@ -169,6 +172,10 @@
                                         <MenuItem Header="Select All From This Mod" Command="{Binding SelectAllFromThisModCommand}" />
                                         <MenuItem Header="Hide All From This Mod" Command="{Binding HideAllFromThisModCommand}" />
                                         <MenuItem Header="Unhide All From This Mod" Command="{Binding UnhideAllFromThisModCommand}" />
+                                        <Separator />
+                                        <MenuItem Header="Jump to Mod"
+                                                  Command="{Binding JumpToModCommand}"
+                                                  Visibility="{Binding CanJumpToMod, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                     </ContextMenu>
                                 </Border.ContextMenu>
                             </Border>
@@ -178,7 +185,8 @@
             </ScrollViewer>
 
             <!-- Placeholder Text Block -->
-            <TextBlock Grid.Column="1" Text="Select an NPC..."
+            <!-- Placeholder now in Grid.Column="2" -->
+            <TextBlock Grid.Column="2" Text="Select an NPC..."
                        HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" Foreground="Gray" TextWrapping="Wrap" Margin="20">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
@@ -210,23 +218,19 @@
                 <Style TargetType="Border">
                     <Setter Property="Visibility" Value="Visible"/>
                     <Style.Triggers>
-                        <!-- Hide if description is null -->
                         <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Null}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
-                        <!-- Hide if description is empty string -->
                         <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Static System:String.Empty}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
             </Border.Style>
-            <!-- Grid to overlay loading indicator -->
              <Grid>
-                 <ScrollViewer MaxHeight="40" VerticalScrollBarVisibility="Auto"> <!-- Limit height -->
+                 <ScrollViewer MaxHeight="40" VerticalScrollBarVisibility="Auto">
                      <TextBlock Text="{Binding CurrentNpcDescription}" TextWrapping="Wrap"/>
                  </ScrollViewer>
-                 <!-- Optional Loading Indicator -->
                  <TextBlock Text="Loading description..." FontStyle="Italic" Foreground="Gray"
                             HorizontalAlignment="Center" VerticalAlignment="Center"
                             Visibility="{Binding IsLoadingDescription, Converter={StaticResource BooleanToVisibilityConverter}}"/>
