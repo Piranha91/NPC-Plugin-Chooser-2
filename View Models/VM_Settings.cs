@@ -18,6 +18,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly EnvironmentStateProvider _environmentStateProvider;
         private Settings _model;
         private readonly VM_NpcSelectionBar _npcSelectionBar; // To trigger re-initialization
+        private readonly VM_Mods _modListVM; // To trigger re-initialization
 
         // Reactive properties bound to the UI
         [Reactive] public string ModsFolder { get; set; }
@@ -38,10 +39,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> SelectMugshotsFolderCommand { get; }
 
 
-        public VM_Settings(EnvironmentStateProvider environmentStateProvider, Settings settings, VM_NpcSelectionBar npcSelectionBar)
+        public VM_Settings(EnvironmentStateProvider environmentStateProvider, Settings settings, VM_NpcSelectionBar npcSelectionBar, VM_Mods modListVM)
         {
             _environmentStateProvider = environmentStateProvider;
             _npcSelectionBar = npcSelectionBar; // Inject NPC bar VM
+            _modListVM = modListVM;
             _model = settings;
             
             Application.Current.Exit += (_, __) => { SaveSettings(); };
@@ -136,6 +138,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
              // If the environment became valid/invalid, or critical paths changed,
              // re-initialize the NPC list.
              _npcSelectionBar.Initialize(); // Call Initialize on the NPC bar VM
+             _modListVM.PopulateModSettings(); 
          }
 
 
@@ -162,6 +165,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                 {
                     ModsFolder = dialog.SelectedPath;
+                    _modListVM.PopulateModSettings();
                 }
             }
         }
@@ -177,6 +181,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     MugshotsFolder = dialog.SelectedPath;
                     // Optional: Trigger NPC view update if image paths depend on this?
                      _npcSelectionBar.Initialize(); // Re-init might be needed to regenerate image paths
+                     _modListVM.PopulateModSettings();
                 }
             }
         }

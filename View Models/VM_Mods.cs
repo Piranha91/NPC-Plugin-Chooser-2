@@ -61,7 +61,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
              // Application.Current.Exit += (s, e) => SaveModSettingsToModel(); // Example hook
         }
 
-        private void PopulateModSettings()
+        public void PopulateModSettings()
         {
             _allModSettings.Clear();
             var warnings = new List<string>();
@@ -69,7 +69,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var linkedModKeys = new HashSet<ModKey>();
             var tempList = new List<VM_ModSetting>();
 
-            // Phase 1
+            // Phase 1: Load existing data from Settings
             foreach (var setting in _settings.ModSettings)
             {
                  if (string.IsNullOrWhiteSpace(setting.DisplayName)) continue;
@@ -84,7 +84,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  if (vm.CorrespondingModKey.HasValue) { linkedModKeys.Add(vm.CorrespondingModKey.Value); }
             }
 
-            // Phase 2a
+            // Phase 2a:  Create new VM_ModSettings from Mugshot folders
              var vmsFromMugshots = new List<VM_ModSetting>();
              if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
              {
@@ -103,7 +103,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  catch (Exception ex) { warnings.Add($"Error scanning Mugshots folder '{_settings.MugshotsFolder}': {ex.Message}"); }
              }
 
-            // Phase 2b
+            // Phase 2b: Try to link CorrespondingFolderPaths to the new VM_ModSettings created in Phase 2a
              var vmsLinkedToModFolder = new List<VM_ModSetting>();
              if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
              {
@@ -123,7 +123,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  catch (Exception ex) { warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}' for linking: {ex.Message}"); }
              }
 
-            // Phase 2c
+            // Phase 2c: Try to link CorrespondingModKeys to the new VM_ModSettings altered in Phase 2b
              var appearanceModKeys = new HashSet<ModKey>();
              if (_npcSelectionBar.AllNpcs != null)
              {
@@ -168,7 +168,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
              NextVmInPhase2c:;
              }
 
-            // Add Phase 2 VMs to temp list
+            // Add Phase 2 VMs to temp list: 
             foreach(var vm in vmsFromMugshots)
             {
                 if (vm.CorrespondingFolderPaths.Any() || vm.CorrespondingModKey.HasValue)
@@ -180,7 +180,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
 
-            // Phase 3
+            // Phase 3: Create new VM_ModSettings from "orphaned" ModKeys that lack corresponding MugShots.
              var orphanedModKeys = appearanceModKeys.Except(linkedModKeys).ToList();
              var modKeyToFileLocations = new Dictionary<ModKey, List<string>>();
              if (orphanedModKeys.Any() && !string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
@@ -224,7 +224,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 var folderPaths = kvp.Value;
                 if (tempList.Any(vm => vm.CorrespondingModKey == modKey)) continue;
 
-                var vm = new VM_ModSetting(modKey.ToString(), this)
+                // create new display name
+                var folderNames = folderPaths.Select(folderPath => Path.GetFileName(folderPath));
+                var displayName = String.Join(" | ", folderNames);
+                
+                var vm = new VM_ModSetting(displayName, this)
                 {
                     CorrespondingModKey = modKey,
                     CorrespondingFolderPaths = new ObservableCollection<string>(folderPaths)
@@ -248,7 +252,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     warnings.Add($"ModKey '{modKey}' found in multiple folders ({string.Join(", ", folderPaths.Select(p => Path.GetFileName(p)))}). Review '{vm.DisplayName}' entry.");
                 }
             }
-
+            
             // Final Step 1: Populate and Sort the source list
             _allModSettings = tempList.OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
 
