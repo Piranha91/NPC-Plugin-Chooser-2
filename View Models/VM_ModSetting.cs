@@ -23,6 +23,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public List<string> NpcNames { get; set; } = new();
         public List<string> NpcEditorIDs { get; set; } = new();
         public List<FormKey> NpcFormKeys { get; set; } = new();
+        public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
 
         private readonly SkyrimRelease _skyrimRelease;
         
@@ -100,16 +101,25 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 {
                                     if (!NpcFormKeys.Contains(npc.FormKey))
                                     {
+                                        string displayName = string.Empty;
                                         NpcFormKeys.Add(npc.FormKey);
                                         if (npc.Name is not null && npc.Name.String is not null)
                                         {
                                             NpcNames.Add(npc.Name.String);
+                                            displayName = npc.Name.String;
                                         }
 
                                         if (npc.EditorID is not null)
                                         {
                                             NpcEditorIDs.Add(npc.EditorID);
+                                            displayName = npc.EditorID;
                                         }
+
+                                        if (displayName == string.Empty)
+                                        {
+                                            displayName = npc.FormKey.ToString();
+                                        }
+                                        NpcFormKeysToDisplayName.Add(npc.FormKey, displayName);
                                     }
                                 }
                             }
