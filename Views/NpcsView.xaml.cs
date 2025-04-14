@@ -1,5 +1,6 @@
 ﻿// NpcsView.xaml.cs (Updated with Disposal Logic)
 
+using System.Collections.ObjectModel;
 using System.Reactive;
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
@@ -8,7 +9,8 @@ using System.Reactive.Disposables; // Required for CompositeDisposable and Dispo
 using System.Windows.Input;        // Required for MouseWheelEventArgs
 using Splat;
 using System.Reactive.Linq;
-using System.Windows.Controls; // Required for .Subscribe()
+using System.Windows.Controls;
+using System.Windows.Threading; // Required for .Subscribe()
 
 namespace NPC_Plugin_Chooser_2.Views
 {
@@ -146,8 +148,9 @@ namespace NPC_Plugin_Chooser_2.Views
                     // Only scale if layout has been finalized
                     if (availableHeight > 0 && availableWidth > 0)
                     {
+                        var images = new ObservableCollection<IHasMugshotImage>(ViewModel.CurrentNpcAppearanceMods);
                         ImagePacker.MaximizeStartingImageSizes(
-                            ViewModel.CurrentNpcAppearanceMods,
+                            images,
                             availableHeight,
                             availableWidth,
                             5, 5);

@@ -17,7 +17,7 @@ using Splat; // For Locator
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
-    public class VM_AppearanceMod : ReactiveObject, IDisposable
+    public class VM_AppearanceMod : ReactiveObject, IDisposable, IHasMugshotImage
     {
         private readonly FormKey _npcFormKey; // Store NPC FormKey instead of Getter
         private readonly Settings _settings;

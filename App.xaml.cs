@@ -63,6 +63,8 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<VM_Mods>().AsSelf().SingleInstance(); // *** NEW: Register Mods VM ***
             // Register VM_FullScreenImage transiently as it's created on demand
             builder.RegisterType<VM_FullScreenImage>().AsSelf();
+            // Register VM_ModNpcMugshot transiently (created on demand)
+            builder.RegisterType<VM_ModNpcMugshot>().AsSelf();
 
 
             // Register Views using Splat's IViewFor convention

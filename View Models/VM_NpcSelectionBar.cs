@@ -258,7 +258,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
 
-        private void ApplyFilter()
+        public void ApplyFilter()
         {
             // *** Use public AllNpcs ***
             IEnumerable<VM_NpcSelection> results = AllNpcs;

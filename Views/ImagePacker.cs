@@ -8,7 +8,7 @@ namespace NPC_Plugin_Chooser_2.Views
     public class ImagePacker
     {
         public static void MaximizeStartingImageSizes(
-            ObservableCollection<VM_AppearanceMod> appearanceMods,
+            ObservableCollection<IHasMugshotImage> appearanceMods,
             double availableHeight, double availableWidth,
             int verticalMargin, int horizontalMargin)
         {

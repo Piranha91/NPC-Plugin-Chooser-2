@@ -30,6 +30,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // *** NEW: Calculated property for display ***
         private readonly ObservableAsPropertyHelper<string> _modKeyDisplaySuffix;
         public string ModKeyDisplaySuffix => _modKeyDisplaySuffix.Value;
+        
+        [Reactive] public bool HasValidMugshots { get; set; } // *** NEW: Flag for clickable display name ***
 
         // Commands
         public ReactiveCommand<Unit, Unit> AddFolderPathCommand { get; }
@@ -112,7 +114,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                         if (npc.EditorID is not null)
                                         {
                                             NpcEditorIDs.Add(npc.EditorID);
-                                            displayName = npc.EditorID;
+                                            if (displayName == string.Empty)
+                                            {
+                                                displayName = npc.EditorID;
+                                            }
                                         }
 
                                         if (displayName == string.Empty)
