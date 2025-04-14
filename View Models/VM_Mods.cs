@@ -5,10 +5,12 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Reactive;
+using System.Reactive.Concurrency;
 using System.Reactive.Linq; // Added for Throttle, ObserveOn
 using System.Text;
 using System.Windows; // For MessageBox
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
 using ReactiveUI;
@@ -25,6 +27,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- Filtering Properties ---
         [Reactive] public string NameFilterText { get; set; } = string.Empty;
         [Reactive] public string PluginFilterText { get; set; } = string.Empty;
+        [Reactive] public ModNpcSearchType SelectedNpcSearchType { get; set; } = ModNpcSearchType.Name;
+        [Reactive] public string NpcSearchText { get; set; } = string.Empty;
+        public Array AvailableNpcSearchTypes => Enum.GetValues(typeof(ModNpcSearchType));
+        [Reactive] public bool IsLoadingNpcData { get; private set; }
 
         // --- Data Lists ---
         // Private list holding ALL mod settings after population and sorting
@@ -35,6 +41,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         // Expose for binding in VM_ModSetting commands
         public string ModsFolderSetting => _settings.ModsFolder;
+        public SkyrimRelease SkyrimRelease => _settings.SkyrimRelease;
 
         public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider, VM_NpcSelectionBar npcSelectionBar)
         {
@@ -50,7 +57,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             PopulateModSettings(); // Populates and sorts _allModSettings
 
             // --- Setup Filter Reaction ---
-            this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText)
+            this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText, x => x.NpcSearchText)
                 .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(_ => ApplyFilters());
@@ -68,6 +75,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var loadedDisplayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var linkedModKeys = new HashSet<ModKey>();
             var tempList = new List<VM_ModSetting>();
+            IsLoadingNpcData = true;
 
             // Phase 1: Load existing data from Settings
             foreach (var setting in _settings.ModSettings)
@@ -253,6 +261,39 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
             
+            // Asynchronously wait for all tasks to complete *without blocking the UI thread*
+            // Note: We don't necessarily need to await this *within* PopulateModSettings
+            // if the UI doesn't immediately depend on the NPC lists being populated.
+            // ApplyFilters will run initially with empty NPC lists, and could potentially
+            // be triggered again later if needed, though filtering might be inaccurate until completion.
+            var refreshTasks = tempList.Select(vm => Task.Run(() => vm.RefreshNpcLists())).ToList();
+            Task.WhenAll(refreshTasks).ContinueWith(t =>
+            {
+                // This continuation runs on a background thread by default
+                if (t.IsFaulted)
+                {
+                    //Debug.WriteLine($"One or more errors occurred during async NPC list refresh: {t.Exception?.Flatten().InnerExceptions.FirstOrDefault()?.Message}");
+                    // Log additional errors if needed: t.Exception?.Flatten().InnerExceptions
+                }
+                //Debug.WriteLine($"PopulateModSettings: Finished refreshing NPC lists asynchronously in {npcListWatch.ElapsedMilliseconds} ms.");
+
+                // *** Dispatch UI updates back to the main thread ***
+                RxApp.MainThreadScheduler.Schedule(() =>
+                {
+                    IsLoadingNpcData = false; // *** Clear loading flag on UI thread ***
+                    ApplyFilters(); // *** Re-apply filters now that data is loaded ***
+                    if (warnings.Any()) // Show warnings on UI thread
+                    {
+                        var warningMessage = new StringBuilder("Warnings encountered during Mod Settings population:\n\n");
+                        foreach (var warning in warnings) { warningMessage.AppendLine($"- {warning}"); }
+                        //MessageBox.Show(warningMessage.ToString(), "Mod Settings Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                });
+
+            }, TaskScheduler.Default); // Specify scheduler for the continuation itself if needed, default is fine here
+
+            // Populate _allModSettings immediately (NPC lists will populate in the background)
+            
             // Final Step 1: Populate and Sort the source list
             _allModSettings = tempList.OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
 
@@ -280,6 +321,27 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  filtered = filtered.Where(vm => vm.CorrespondingModKey.HasValue &&
                                                 vm.CorrespondingModKey.Value.ToString().Contains(PluginFilterText, StringComparison.OrdinalIgnoreCase));
              }
+             
+             // *** Apply NPC Filter ***
+             if (!IsLoadingNpcData && !string.IsNullOrWhiteSpace(NpcSearchText))
+             {
+                 string searchTextLower = NpcSearchText.Trim(); // Trim whitespace for comparison
+
+                 switch (SelectedNpcSearchType)
+                 {
+                     case ModNpcSearchType.Name:
+                         filtered = filtered.Where(vm => vm.NpcNames.Any(name => name.Contains(searchTextLower, StringComparison.OrdinalIgnoreCase)));
+                         break;
+                     case ModNpcSearchType.EditorID:
+                         filtered = filtered.Where(vm => vm.NpcEditorIDs.Any(eid => eid.Contains(searchTextLower, StringComparison.OrdinalIgnoreCase)));
+                         break;
+                     case ModNpcSearchType.FormKey:
+                         // Compare string representations of FormKeys
+                         filtered = filtered.Where(vm => vm.NpcFormKeys.Any(fk => fk.ToString().Contains(searchTextLower, StringComparison.OrdinalIgnoreCase)));
+                         break;
+                 }
+             }
+             // *** End NPC Filter ***
 
              ModSettingsList.Clear();
              foreach (var vm in filtered)

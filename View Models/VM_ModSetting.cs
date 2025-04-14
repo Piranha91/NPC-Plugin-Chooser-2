@@ -9,6 +9,8 @@ using Mutagen.Bethesda.Plugins;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using System.Linq;
+using Mutagen.Bethesda.Skyrim;
+using NPC_Plugin_Chooser_2.Models;
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -18,7 +20,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string MugShotFolderPath { get; set; } = string.Empty; // Path to the mugshot folder for this mod
         [Reactive] public ModKey? CorrespondingModKey { get; set; }
         [Reactive] public ObservableCollection<string> CorrespondingFolderPaths { get; set; } = new();
+        public List<string> NpcNames { get; set; } = new();
+        public List<string> NpcEditorIDs { get; set; } = new();
+        public List<FormKey> NpcFormKeys { get; set; } = new();
 
+        private readonly SkyrimRelease _skyrimRelease;
+        
         // *** NEW: Calculated property for display ***
         private readonly ObservableAsPropertyHelper<string> _modKeyDisplaySuffix;
         public string ModKeyDisplaySuffix => _modKeyDisplaySuffix.Value;
@@ -76,6 +83,45 @@ namespace NPC_Plugin_Chooser_2.View_Models
             BrowseMugshotFolderCommand = ReactiveCommand.Create(BrowseMugshotFolder);
         }
 
+        public void RefreshNpcLists()
+        {
+            if (CorrespondingModKey.HasValue && CorrespondingFolderPaths.Any())
+            {
+                foreach (var dirPath in CorrespondingFolderPaths)
+                {
+                    var trialPath = Path.Combine(dirPath, CorrespondingModKey.Value.ToString());
+                    if (File.Exists(trialPath))
+                    {
+                        try
+                        {
+                            using var mod = SkyrimMod.CreateFromBinaryOverlay(trialPath, _parentVm.SkyrimRelease);
+                            {
+                                foreach (var npc in mod.Npcs)
+                                {
+                                    if (!NpcFormKeys.Contains(npc.FormKey))
+                                    {
+                                        NpcFormKeys.Add(npc.FormKey);
+                                        if (npc.Name is not null && npc.Name.String is not null)
+                                        {
+                                            NpcNames.Add(npc.Name.String);
+                                        }
+
+                                        if (npc.EditorID is not null)
+                                        {
+                                            NpcEditorIDs.Add(npc.EditorID);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
 
         private void AddFolderPath()
         {

@@ -10,7 +10,13 @@
              xmlns:System="clr-namespace:System;assembly=mscorlib"
              mc:Ignorable="d"
              x:TypeArguments="vm:VM_Mods"
+             d:DataContext="{d:DesignInstance Type=vm:VM_Mods}"
              d:DesignHeight="600" d:DesignWidth="800">
+    
+    <UserControl.Resources>
+        <local:BooleanNegationConverter x:Key="BooleanNegationConverter"/>
+        <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </UserControl.Resources>
 
     <Grid Margin="5">
         <Grid.RowDefinitions>
@@ -18,123 +24,124 @@
             <RowDefinition Height="*"/>    <!-- List -->
         </Grid.RowDefinitions>
 
-        <!-- *** Filter Area *** -->
-        <Border Grid.Row="0" BorderBrush="LightGray" BorderThickness="0,0,0,1" Margin="0,0,0,5" Padding="0,0,0,5">
+        <!-- Filter Area -->
+        <Border Grid.Row="0" BorderBrush="LightGray" BorderThickness="0,0,0,1" Margin="0,0,0,5" Padding="5">
             <StackPanel Orientation="Horizontal">
+                <!-- Name Filter -->
                 <TextBlock Text="Filter Name:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                <TextBox Text="{Binding NameFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="150" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                <TextBox Text="{Binding NameFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="150" Margin="0,0,15,0" VerticalAlignment="Center"/>
 
+                <!-- Plugin Filter -->
                 <TextBlock Text="Filter Plugin:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                <TextBox Text="{Binding PluginFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="150" VerticalAlignment="Center"/>
-                 <!-- Add Clear Buttons? (Optional)
-                 <Button Content="Clear Filters" Command="{Binding ClearFiltersCommand}" Margin="20,0,0,0"/>
-                 -->
+                <TextBox Text="{Binding PluginFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="150" Margin="0,0,15,0" VerticalAlignment="Center"/>
+
+                <!-- NPC Filter -->
+                <TextBlock Text="Filter NPC:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <ComboBox ItemsSource="{Binding AvailableNpcSearchTypes}"
+                          SelectedItem="{Binding SelectedNpcSearchType, Mode=TwoWay}"
+                          MinWidth="80" VerticalAlignment="Center" Margin="0,0,5,0"
+                          IsEnabled="{Binding IsLoadingNpcData, Converter={StaticResource BooleanNegationConverter}}"
+                          ToolTip="Select NPC field to filter by (active after initial load)"/>
+                <TextBox Text="{Binding NpcSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         Width="150" VerticalAlignment="Center"
+                         IsEnabled="{Binding IsLoadingNpcData, Converter={StaticResource BooleanNegationConverter}}"
+                         ToolTip="Enter NPC search term (active after initial load)"/>
+
+                <!-- Optional: Display loading status -->
+                <TextBlock Text="Loading NPC data..." Foreground="Gray" FontStyle="Italic"
+                           Margin="15,0,0,0" VerticalAlignment="Center"
+                           Visibility="{Binding IsLoadingNpcData, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
             </StackPanel>
         </Border>
 
-        <!-- *** List Area (moved to Grid.Row="1") *** -->
+        <!-- List Area (Grid.Row="1") -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding ModSettingsList}"> <!-- Binding is already correct (to the public filtered list) -->
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="{x:Type vm:VM_ModSetting}">
-                        <Border BorderBrush="DarkGray" BorderThickness="1" Margin="0,5" Padding="10">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/> <!-- Display Name/ModKey & Mugshot -->
-                                    <RowDefinition Height="Auto"/> <!-- Corresponding Folders Header & Add Button -->
-                                    <RowDefinition Height="Auto"/> <!-- Corresponding Folders List -->
-                                </Grid.RowDefinitions>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
+             <!-- ItemsControl and DataTemplate remain the same -->
+             <ItemsControl ItemsSource="{Binding ModSettingsList}">
+                 <ItemsControl.ItemTemplate>
+                     <DataTemplate DataType="{x:Type vm:VM_ModSetting}">
+                         <Border BorderBrush="DarkGray" BorderThickness="1" Margin="0,5" Padding="10">
+                             <Grid>
+                                 <!-- Grid Definitions ... -->
+                                 <Grid.RowDefinitions>
+                                     <RowDefinition Height="Auto"/> <!-- Display Name/ModKey & Mugshot -->
+                                     <RowDefinition Height="Auto"/> <!-- Corresponding Folders Header & Add Button -->
+                                     <RowDefinition Height="Auto"/> <!-- Corresponding Folders List -->
+                                 </Grid.RowDefinitions>
+                                 <Grid.ColumnDefinitions>
+                                     <ColumnDefinition Width="*"/>
+                                 </Grid.ColumnDefinitions>
 
-                                <!-- Row 0: Basic Info -->
-                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,5">
-                                    <!-- Combined DisplayName and Suffix using adjacent TextBlocks -->
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="14" VerticalAlignment="Center"/>
-                                        <!-- TextBlock for Suffix, visibility controlled by Trigger -->
-                                        <TextBlock Text="{Binding ModKeyDisplaySuffix}"
-                                                   FontWeight="Bold" FontSize="14" Margin="4,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <!-- Default Visibility -->
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                    <Style.Triggers>
-                                                        <!-- Trigger to hide if Suffix is null or empty -->
-                                                        <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Static System:String.Empty}">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Null}">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </StackPanel>
+                                 <!-- Row 0: Basic Info ... -->
+                                 <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,5">
+                                     <!-- Combined DisplayName and Suffix ... -->
+                                     <StackPanel Orientation="Horizontal">
+                                         <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="14" VerticalAlignment="Center"/>
+                                         <TextBlock Text="{Binding ModKeyDisplaySuffix}"
+                                                    FontWeight="Bold" FontSize="14" Margin="4,0,0,0" VerticalAlignment="Center">
+                                             <TextBlock.Style>
+                                                 <Style TargetType="TextBlock">
+                                                     <Setter Property="Visibility" Value="Visible"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Static System:String.Empty}">
+                                                             <Setter Property="Visibility" Value="Collapsed"/>
+                                                         </DataTrigger>
+                                                         <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Null}">
+                                                             <Setter Property="Visibility" Value="Collapsed"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </TextBlock.Style>
+                                         </TextBlock>
+                                     </StackPanel>
+                                     <!-- Mugshot Folder Path ... -->
+                                     <Grid Margin="10,5,0,0">
+                                         <Grid.ColumnDefinitions>
+                                             <ColumnDefinition Width="Auto"/>
+                                             <ColumnDefinition Width="*"/>
+                                             <ColumnDefinition Width="Auto"/>
+                                         </Grid.ColumnDefinitions>
+                                         <TextBlock Grid.Column="0" Text="Mugshot Folder:" VerticalAlignment="Center"/>
+                                         <TextBlock Grid.Column="1" Text="{Binding MugShotFolderPath, TargetNullValue='(Not Found)'}" VerticalAlignment="Center" Margin="5,0" ToolTip="{Binding MugShotFolderPath}" TextTrimming="CharacterEllipsis"/>
+                                         <Button Grid.Column="2" Content="Browse..." Command="{Binding BrowseMugshotFolderCommand}" Padding="5,1" VerticalAlignment="Center"/>
+                                     </Grid>
+                                 </StackPanel>
 
-                                    <!-- Mugshot Folder Path with Browse Button -->
-                                    <Grid Margin="10,5,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="Mugshot Folder:" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding MugShotFolderPath, TargetNullValue='(Not Found)'}" VerticalAlignment="Center" Margin="5,0" ToolTip="{Binding MugShotFolderPath}" TextTrimming="CharacterEllipsis"/>
-                                        <Button Grid.Column="2" Content="Browse..."
-                                                Command="{Binding BrowseMugshotFolderCommand}"
-                                                Padding="5,1" VerticalAlignment="Center"/>
-                                    </Grid>
-                                </StackPanel>
+                                 <!-- Row 1: Folders Header & Add Button ... -->
+                                 <Grid Grid.Row="1" Grid.Column="0" Margin="0,5,0,5">
+                                      <Grid.ColumnDefinitions>
+                                          <ColumnDefinition Width="Auto"/>
+                                          <ColumnDefinition Width="*"/>
+                                          <ColumnDefinition Width="Auto"/>
+                                      </Grid.ColumnDefinitions>
+                                      <TextBlock Grid.Column="0" Text="Corresponding Mod Folder Paths:" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                      <Button Grid.Column="2" Content="Add" Command="{Binding AddFolderPathCommand}" Padding="5,1" VerticalAlignment="Center"/>
+                                 </Grid>
 
-                                <!-- Row 1: Folders Header & Add Button -->
-                                <Grid Grid.Row="1" Grid.Column="0" Margin="0,5,0,5">
-                                     <Grid.ColumnDefinitions>
-                                         <ColumnDefinition Width="Auto"/>
-                                         <ColumnDefinition Width="*"/>
-                                         <ColumnDefinition Width="Auto"/>
-                                     </Grid.ColumnDefinitions>
-                                     <TextBlock Grid.Column="0" Text="Corresponding Mod Folder Paths:" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                     <Button Grid.Column="2" Content="Add"
-                                             Command="{Binding AddFolderPathCommand}"
-                                             Padding="5,1" VerticalAlignment="Center"/>
-                                </Grid>
+                                 <!-- Row 2: Folders List ... -->
+                                  <ItemsControl Grid.Row="2" Grid.Column="0" ItemsSource="{Binding CorrespondingFolderPaths}" Margin="10,0,0,0">
+                                     <ItemsControl.ItemTemplate>
+                                         <DataTemplate>
+                                             <Grid Margin="0,2">
+                                                 <Grid.ColumnDefinitions>
+                                                     <ColumnDefinition Width="*"/>
+                                                     <ColumnDefinition Width="Auto"/>
+                                                     <ColumnDefinition Width="Auto"/>
+                                                 </Grid.ColumnDefinitions>
+                                                 <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" ToolTip="{Binding}" TextTrimming="CharacterEllipsis"/>
+                                                 <Button Grid.Column="1" Content="Browse..." Command="{Binding DataContext.BrowseFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}" CommandParameter="{Binding}" Padding="5,1" Margin="5,0" VerticalAlignment="Center"/>
+                                                 <Button Grid.Column="2" Content="X" Foreground="Red" FontWeight="Bold" Command="{Binding DataContext.RemoveFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}" CommandParameter="{Binding}" Padding="5,1" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                             </Grid>
+                                         </DataTemplate>
+                                     </ItemsControl.ItemTemplate>
+                                 </ItemsControl>
 
-
-                                <!-- Row 2: Folders List -->
-                                <ItemsControl Grid.Row="2" Grid.Column="0" ItemsSource="{Binding CorrespondingFolderPaths}" Margin="10,0,0,0">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/> <!-- Path -->
-                                                    <ColumnDefinition Width="Auto"/> <!-- Browse Button -->
-                                                    <ColumnDefinition Width="Auto"/> <!-- Remove Button -->
-                                                </Grid.ColumnDefinitions>
-
-                                                <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" ToolTip="{Binding}" TextTrimming="CharacterEllipsis"/>
-
-                                                <Button Grid.Column="1" Content="Browse..."
-                                                        Command="{Binding DataContext.BrowseFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"
-                                                        CommandParameter="{Binding}"
-                                                        Padding="5,1" Margin="5,0" VerticalAlignment="Center"/>
-
-                                                <Button Grid.Column="2" Content="X" Foreground="Red" FontWeight="Bold"
-                                                        Command="{Binding DataContext.RemoveFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"
-                                                        CommandParameter="{Binding}"
-                                                        Padding="5,1" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                             </Grid>
+                         </Border>
+                     </DataTemplate>
+                 </ItemsControl.ItemTemplate>
+             </ItemsControl>
         </ScrollViewer>
     </Grid>
 </reactiveui:ReactiveUserControl>
