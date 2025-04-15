@@ -15,4 +15,6 @@ public class Settings
     public Dictionary<FormKey, string> SelectedAppearanceMods { get; set; } = new();
     public HashSet<string> HiddenModNames = new();
     public Dictionary<FormKey, HashSet<string>> HiddenModsPerNpc = new();
+    public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); // not used by this program, but kept as a holding variable to facilitate interchangeability with EasyNPC
+    public HashSet<ModKey> EasyNpcDefaultPluginExclusions { get; set; } = new() { ModKey.FromFileName("Synthesis.esp")};
 }
