@@ -53,6 +53,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- End Search Properties ---
 
         [Reactive] public bool ShowHiddenMods { get; set; } = false;
+        [Reactive] public bool ShowNpcDescriptions { get; set; } // Moved from VM_Settings
 
         public List<VM_NpcSelection> AllNpcs { get; } = new();
         public ObservableCollection<VM_NpcSelection> FilteredNpcs { get; } = new();
@@ -70,21 +71,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public IObservable<Unit> RefreshImageSizesObservable => _refreshImageSizesSubject.AsObservable();
 
         // *** UPDATED CONSTRUCTOR SIGNATURE ***
-        public VM_NpcSelectionBar(
-            EnvironmentStateProvider environmentStateProvider,
-            Settings settings,
+        public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider,
+            Settings settings, 
             Auxilliary auxilliary,
             NpcConsistencyProvider consistencyProvider,
             NpcDescriptionProvider descriptionProvider,
-            Lazy<VM_Mods> lazyModsVm, // Inject Lazy<VM_Mods>
-            Lazy<VM_MainWindow> lazyMainWindowVm) // Inject Lazy<VM_MainWindow>
+            Lazy<VM_Mods> lazyModsVm,
+            Lazy<VM_MainWindow> lazyMainWindowVm) 
         {
             _environmentStateProvider = environmentStateProvider;
-            _settings = settings;
+            _settings = settings; 
             _auxilliary = auxilliary;
             _consistencyProvider = consistencyProvider;
             _descriptionProvider = descriptionProvider;
-            _lazyModsVm = lazyModsVm; // Store Lazy references
+            _lazyModsVm = lazyModsVm;
             _lazyMainWindowVm = lazyMainWindowVm;
 
             _hiddenModNames = _settings.HiddenModNames ?? new(); // Ensure initialized
@@ -122,21 +122,29 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .DisposeWith(_disposables);
 
             // --- Description Command Setup ---
+            ShowNpcDescriptions = _settings.ShowNpcDescriptions;
+            this.WhenAnyValue(x => x.ShowNpcDescriptions)
+                .Subscribe(b => _settings.ShowNpcDescriptions = b) // Update model when VM changes
+                .DisposeWith(_disposables);
+            
             LoadDescriptionCommand = ReactiveCommand.CreateFromTask<Unit, string?>(
                 async (_, ct) =>
                 {
                     var npc = SelectedNpc;
-                    if (npc != null && _settings.ShowNpcDescriptions)
+                    // Use the local ShowNpcDescriptions property now
+                    if (npc != null && ShowNpcDescriptions)
                     {
                         try { return await _descriptionProvider.GetDescriptionAsync(npc.NpcFormKey, npc.DisplayName, npc.NpcGetter?.EditorID); }
                         catch (Exception ex) { Debug.WriteLine($"Error executing LoadDescriptionCommand: {ex}"); return null; }
                     } return null;
                 },
-                this.WhenAnyValue(x => x.SelectedNpc, x => x._settings.ShowNpcDescriptions, (npc, show) => npc != null && show)
+                // Update command CanExecute to use local property
+                this.WhenAnyValue(x => x.SelectedNpc, x => x.ShowNpcDescriptions, (npc, show) => npc != null && show)
             );
             LoadDescriptionCommand.ObserveOn(RxApp.MainThreadScheduler).BindTo(this, x => x.CurrentNpcDescription).DisposeWith(_disposables);
             LoadDescriptionCommand.IsExecuting.ToPropertyEx(this, x => x.IsLoadingDescription).DisposeWith(_disposables);
-            this.WhenAnyValue(x => x.SelectedNpc, x => x._settings.ShowNpcDescriptions)
+            // Update trigger for InvokeCommand to use local property
+            this.WhenAnyValue(x => x.SelectedNpc, x => x.ShowNpcDescriptions)
                 .Throttle(TimeSpan.FromMilliseconds(200)).Select(_ => Unit.Default)
                 .InvokeCommand(LoadDescriptionCommand).DisposeWith(_disposables);
 

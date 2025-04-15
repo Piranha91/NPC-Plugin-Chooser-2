@@ -502,7 +502,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         // Filtering Logic (Left Panel)
-         private void ApplyFilters()
+         public void ApplyFilters()
          {
              IEnumerable<VM_ModSetting> filtered = _allModSettingsInternal;
 

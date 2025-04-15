@@ -56,7 +56,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             LogOutput = string.Empty; // Clear log on new run
             AppendLog("Starting patch generation...");
-            AppendLog($"Output Mod: {_environmentStateProvider.OutputModName}");
+            AppendLog($"Output Mod: {_environmentStateProvider.OutputPluginName}");
             AppendLog($"Skyrim Version: {_environmentStateProvider.SkyrimVersion}");
             AppendLog($"Data Path: {_environmentStateProvider.DataFolderPath}");
 
@@ -77,7 +77,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             try
             {
                 // Re-initialize output mod for the run
-                _environmentStateProvider.OutputMod = new SkyrimMod(ModKey.FromName(_environmentStateProvider.OutputModName, ModType.Plugin), _environmentStateProvider.SkyrimVersion);
+                _environmentStateProvider.OutputMod = new SkyrimMod(ModKey.FromName(_environmentStateProvider.OutputPluginName, ModType.Plugin), _environmentStateProvider.SkyrimVersion);
 
 
                 AppendLog("\nProcessing NPC Appearance Selections:");
@@ -152,10 +152,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 if (processedCount > 0)
                 {
-                     AppendLog($"\nCopied appearance data for {processedCount} NPC(s) to {_environmentStateProvider.OutputModName}.");
+                     AppendLog($"\nCopied appearance data for {processedCount} NPC(s) to {_environmentStateProvider.OutputPluginName}.");
 
                      // Save the output mod
-                     string outputPath = Path.Combine(_environmentStateProvider.DataFolderPath.ToString(), _environmentStateProvider.OutputModName); // Ensure DataFolderPath is a string
+                     string outputPath = Path.Combine(_environmentStateProvider.DataFolderPath.ToString(), _environmentStateProvider.OutputPluginName); // Ensure DataFolderPath is a string
                      AppendLog($"Attempting to save output mod to: {outputPath}");
                      _environmentStateProvider.OutputMod.WriteToBinary(outputPath);
                      AppendLog($"Output mod saved successfully.");
@@ -172,7 +172,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  // Log exceptions during the patching process itself
                  AppendLog($"\nFATAL PATCHING ERROR: {ex.Message}");
                  AppendLog(ExceptionLogger.GetExceptionStack(ex));
-                 AppendLog($"Output mod ({_environmentStateProvider.OutputModName}) was NOT saved due to errors.");
+                 AppendLog($"Output mod ({_environmentStateProvider.OutputPluginName}) was NOT saved due to errors.");
                  // Do not rethrow here if you want the command's IsExecuting to become false normally.
                  // The error is already logged via the command's ThrownExceptions handler.
                  // throw; // Re-throwing prevents the command from naturally completing its 'IsExecuting' cycle

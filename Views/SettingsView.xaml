@@ -7,114 +7,178 @@
              xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
              xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
              xmlns:bsky="clr-namespace:Mutagen.Bethesda.Skyrim;assembly=Mutagen.Bethesda.Skyrim"
+             xmlns:models="clr-namespace:NPC_Plugin_Chooser_2.Models"
+             xmlns:plugins="clr-namespace:Mutagen.Bethesda.WPF.Plugins;assembly=Mutagen.Bethesda.WPF"
              xmlns:reactiveui="http://reactiveui.net"
              xmlns:System="clr-namespace:System;assembly=mscorlib"
              mc:Ignorable="d"
              x:TypeArguments="vm:VM_Settings"
-             d:DesignHeight="450" d:DesignWidth="800">
+             d:DataContext="{d:DesignInstance Type=vm:VM_Settings}"
+             d:DesignHeight="600" d:DesignWidth="800"> <!-- Increased height for more controls -->
     <UserControl.Resources>
         <ObjectDataProvider x:Key="SkyrimReleaseEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="bsky:SkyrimRelease"/>
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
+        <!-- Optional: Converter for Enum descriptions if desired -->
     </UserControl.Resources>
+
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
         <StackPanel>
-            <!-- Removed "General Settings" Header -->
 
-            <!-- Skyrim Game Path -->
-            <TextBlock Text="Skyrim Game Path (Optional - Auto-detects if blank):"/>
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBox Grid.Column="0" Text="{Binding SkyrimGamePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
-                <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectGameFolderCommand}"/>
-            </Grid>
-            <TextBlock Text="Leave blank to attempt auto-detection based on the selected Skyrim version." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+            <!-- Section 1: Game Environment -->
+            <GroupBox Header="Game Environment" Margin="0,0,0,10" Padding="5">
+                <StackPanel>
+                    <!-- Skyrim Game Path -->
+                    <TextBlock Text="Skyrim Game Path (Optional - Auto-detects if blank):" Margin="0,0,0,2"/>
+                    <Grid Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding SkyrimGamePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                        <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectGameFolderCommand}"/>
+                    </Grid>
+                    <TextBlock Text="Leave blank to attempt auto-detection based on the selected Skyrim version." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
 
+                    <!-- Skyrim Version -->
+                    <TextBlock Text="Skyrim Version:" Margin="0,0,0,2"/>
+                    <ComboBox ItemsSource="{Binding Source={StaticResource SkyrimReleaseEnumValues}}"
+                              SelectedItem="{Binding SkyrimRelease, Mode=TwoWay}" Margin="0,0,0,2"/>
+                    <TextBlock Text="Ensure this matches the game version you are modding." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
 
-             <!-- Skyrim Version -->
-            <TextBlock Text="Skyrim Version:"/>
-            <ComboBox ItemsSource="{Binding Source={StaticResource SkyrimReleaseEnumValues}}"
-                      SelectedItem="{Binding SkyrimRelease, Mode=TwoWay}"/>
-            <TextBlock Text="Ensure this matches the game version you are modding." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+                    <!-- Environment Status -->
+                    <TextBlock Text="Environment Status:" FontWeight="Bold" Margin="0,5,0,2"/>
+                    <TextBlock>
+                        <Run Text="Mutagen Environment Initialized: "/>
+                        <Run FontWeight="Bold">
+                            <Run.Style>
+                                <Style TargetType="Run">
+                                    <Setter Property="Text" Value="{Binding EnvironmentIsValid, Mode=OneWay}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding EnvironmentIsValid, Mode=OneWay}" Value="True">
+                                            <Setter Property="Foreground" Value="Green"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding EnvironmentIsValid, Mode=OneWay}" Value="False">
+                                            <Setter Property="Foreground" Value="Red"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Run.Style>
+                        </Run>
+                    </TextBlock>
+                    <TextBlock Text="{Binding EnvironmentErrorText}" Foreground="Red" TextWrapping="Wrap" MaxHeight="100" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <Trigger Property="Text" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></Trigger>
+                                    <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </GroupBox>
 
-             <!-- Mods Folder -->
-             <TextBlock Text="Mods Folder (e.g., MO2 Mods Path):"/>
-             <Grid>
-                 <Grid.ColumnDefinitions>
-                     <ColumnDefinition Width="*"/>
-                     <ColumnDefinition Width="Auto"/>
-                 </Grid.ColumnDefinitions>
-                 <TextBox Grid.Column="0" Text="{Binding ModsFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
-                 <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectModsFolderCommand}"/>
-             </Grid>
-             <TextBlock Text="Specify the root folder where your mods are installed (used for Mod linking)." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+            <!-- Section 2: Mod Environment -->
+            <GroupBox Header="Mod Environment" Margin="0,0,0,10" Padding="5">
+                <StackPanel>
+                    <!-- Mods Folder -->
+                    <TextBlock Text="Mods Folder (e.g., MO2 Mods Path):" Margin="0,0,0,2"/>
+                    <Grid Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding ModsFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                        <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectModsFolderCommand}"/>
+                    </Grid>
+                    <TextBlock Text="Specify the root folder where your mods are installed (used for Mod linking)." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
 
-            <!-- Output Mod Name -->
-            <TextBlock Text="Output Mod Name:"/>
-            <TextBox Text="{Binding OutputModName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                    <!-- Mugshots Folder -->
+                    <TextBlock Text="Mugshots Folder:" Margin="0,0,0,2"/>
+                    <Grid Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding MugshotsFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                        <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectMugshotsFolderCommand}"/>
+                    </Grid>
+                    <TextBlock Text="Folder containing subfolders for each mod's NPC preview images." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+                </StackPanel>
+            </GroupBox>
 
-            <!-- Mugshots Folder -->
-            <TextBlock Text="Mugshots Folder:"/>
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBox Grid.Column="0" Text="{Binding MugshotsFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
-                <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectMugshotsFolderCommand}"/>
-            </Grid>
-            <TextBlock Text="Folder containing subfolders for each mod's NPC preview images." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+            <!-- Section 3: Output Settings -->
+            <GroupBox Header="Output Settings" Margin="0,0,0,10" Padding="5">
+                <StackPanel>
+                    <!-- Output Directory (New) -->
+                    <TextBlock Text="Output Directory:" Margin="0,0,0,2"/>
+                    <Grid Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding OutputDirectory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                        <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectOutputDirectoryCommand}"/>
+                    </Grid>
+                    <TextBlock Text="Directory where the generated plugin and related files will be saved." FontSize="10" Foreground="Gray" Margin="0,0,0,5"/>
 
-            <CheckBox Content="Show NPC Descriptions"
-                      IsChecked="{Binding ShowNpcDescriptions, Mode=TwoWay}"
-                      Margin="0,15,0,5"
-                      ToolTip="If checked, shows descriptions for selected base game NPCs from a local data file (NpcDescriptions.json)."/>
-            <TextBlock Text="Note: This feature assumes you have a working internet connection and UESP or TES Fandom are currently accessible."
-                       FontSize="10" Foreground="Gray" TextWrapping="Wrap" Margin="10,0,0,10"/>
-            
-            <!-- Environment Status with Conditional Coloring -->
-            <TextBlock Text="Environment Status:" FontWeight="Bold" Margin="0,10,0,5"/>
-            <TextBlock>
-                <Run Text="Mutagen Environment Initialized: "/>
-                <Run FontWeight="Bold">
-                    <Run.Style>
-                        <Style TargetType="Run">
-                            <!-- Default Text -->
-                            <Setter Property="Text" Value="{Binding EnvironmentIsValid, Mode=OneWay}"/>
-                            <!-- Trigger for True -->
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding EnvironmentIsValid, Mode=OneWay}" Value="True">
-                                    <Setter Property="Foreground" Value="Green"/>
-                                </DataTrigger>
-                                <!-- Trigger for False -->
-                                <DataTrigger Binding="{Binding EnvironmentIsValid, Mode=OneWay}" Value="False">
-                                    <Setter Property="Foreground" Value="Red"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Run.Style>
-                </Run>
-            </TextBlock>
-             <TextBlock Text="{Binding EnvironmentErrorText}" Foreground="Red" TextWrapping="Wrap" MaxHeight="100" ScrollViewer.VerticalScrollBarVisibility="Auto">
-                 <TextBlock.Style>
-                     <Style TargetType="TextBlock">
-                         <Style.Triggers>
-                             <Trigger Property="Text" Value="{x:Null}">
-                                 <Setter Property="Visibility" Value="Collapsed"/>
-                             </Trigger>
-                              <Trigger Property="Text" Value="">
-                                 <Setter Property="Visibility" Value="Collapsed"/>
-                             </Trigger>
-                         </Style.Triggers>
-                     </Style>
-                 </TextBlock.Style>
-            </TextBlock>
+                    <!-- Append Date/Time Stamp (New) -->
+                    <CheckBox Content="Append Date/Time Stamp to Output Directory"
+                              IsChecked="{Binding AppendTimestampToOutputDirectory, Mode=TwoWay}"
+                              Margin="0,0,0,10"
+                              ToolTip="If checked, a timestamp (YYYYMMDD_HHMMSS) will be appended to the Output Directory name upon generation."/>
 
+                    <!-- Output Plugin Name (Was Output Mod Name) -->
+                    <TextBlock Text="Output Plugin Name:" Margin="0,0,0,2"/>
+                    <TextBox Text="{Binding OutputPluginName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                    <!-- Output Mod Name (Conceptual - No UI Element Needed, value comes from model default) -->
+
+                    <!-- Patching Mode (New) -->
+                    <TextBlock Text="Patching Mode:" Margin="0,0,0,2"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ComboBox Grid.Column="0"
+                                  ItemsSource="{Binding PatchingModes}"
+                                  SelectedItem="{Binding SelectedPatchingMode, Mode=TwoWay}"
+                                  Margin="0,0,5,0"/>
+                        <Button Grid.Column="1" Content="?" Command="{Binding ShowPatchingModeHelpCommand}" Padding="6,2"/>
+                    </Grid>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Section 4: EasyNPC Transfer -->
+            <GroupBox Header="EasyNPC Transfer" Margin="0,0,0,10" Padding="5">
+                <StackPanel>
+                    <!-- Import/Export Buttons (New) -->
+                    <Button Content="Import NPC Appearance Choices from EasyNPC"
+                            Command="{Binding ImportEasyNpcCommand}"
+                            HorizontalAlignment="Left" Margin="0,0,0,5"/>
+                    <Button Content="Export NPC Appearance Choices To EasyNPC"
+                            Command="{Binding ExportEasyNpcCommand}"
+                            HorizontalAlignment="Left" Margin="0,0,0,15"/>
+
+                    <!-- NPC Default Plugin Exclusions (ModKeyMultiPicker - New) -->
+                    <TextBlock Text="NPC Default Plugin Exclusions:" Margin="0,0,0,2"/>
+                    <plugins:ModKeyMultiPicker
+                        Background="Black"
+                        Foreground="Green"
+                        BorderThickness="1"
+                        BorderBrush="Aqua"
+                        MinHeight="100"
+                        MinWidth="100"
+                        ModKeys="{Binding EasyNpcDefaultPluginExclusions}"
+                        SearchableMods="{Binding CurrentLoadOrder}"
+                        Margin="0,0,0,10"
+                        ToolTip="Select plugins to exclude when determining the 'default' appearance plugin in EasyNPC-like mode."/>
+                     <TextBlock Text="Plugins selected here will be ignored when identifying the default appearance provider in EasyNPC-Like mode (e.g., Synthesis.esp)." FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
+                </StackPanel>
+            </GroupBox>
         </StackPanel>
     </ScrollViewer>
 </reactiveui:ReactiveUserControl>

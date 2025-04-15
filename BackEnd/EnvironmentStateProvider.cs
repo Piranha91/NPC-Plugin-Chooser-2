@@ -23,7 +23,7 @@ public class EnvironmentStateProvider
     public DirectoryPath DataFolderPath { get; set; }
     public ISkyrimMod OutputMod { get; set; }
     
-    public string OutputModName { get; set; }
+    public string OutputPluginName { get; set; }
     public bool EnvironmentIsValid { get; set; } = false;
     
     // Additional properties (for logging only)
@@ -55,7 +55,7 @@ public class EnvironmentStateProvider
         
         if (!settings.OutputModName.IsNullOrWhitespace())
         {
-            OutputModName = settings.OutputModName;
+            OutputPluginName = settings.OutputPluginName;
         }
         
         UpdateEnvironment();
@@ -73,7 +73,7 @@ public class EnvironmentStateProvider
         }
 
         OutputMod = null;
-        OutputMod = new SkyrimMod(ModKey.FromName(OutputModName, ModType.Plugin), SkyrimVersion);
+        OutputMod = new SkyrimMod(ModKey.FromName(OutputPluginName, ModType.Plugin), SkyrimVersion);
 
         var built = false;
 
@@ -94,7 +94,7 @@ public class EnvironmentStateProvider
 
             EnvironmentIsValid = true;
             
-            CreationClubListingsFilePath = _environment.CreationClubListingsFilePath;
+            CreationClubListingsFilePath = _environment.CreationClubListingsFilePath ?? string.Empty;
             LoadOrderFilePath = _environment.LoadOrderFilePath;
             DataFolderPath = _environment.DataFolderPath; // If a custom data folder path was provided it will not change. If no custom data folder path was provided, this will set it to the default path.
         }

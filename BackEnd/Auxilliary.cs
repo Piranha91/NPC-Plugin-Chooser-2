@@ -26,7 +26,7 @@ public class Auxilliary
         var split = formKeyString.Split(':');
         if (split.Length != 2) { return false; }
 
-        if (split[1] == _environmentStateProvider.OutputModName + ".esp")
+        if (split[1] == _environmentStateProvider.OutputPluginName + ".esp")
         {
             formIDstr = _environmentStateProvider.LoadOrder.ListedOrder.Count().ToString("X"); // format FormID assuming the generated patch will be last in the load order
         }

@@ -33,6 +33,11 @@
                            IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}"
                            VerticalAlignment="Center"
                            ToolTip="Toggle visibility of hidden appearance mods"/>
+                 
+                 <CheckBox Content="Show NPC Descriptions"
+                           IsChecked="{Binding ShowNpcDescriptions, Mode=TwoWay}"
+                           VerticalAlignment="Center"
+                           ToolTip="If checked, shows descriptions for selected base game NPCs from online sources." Margin="5 0 0 0"/>
             </StackPanel>
         </Border>
 
