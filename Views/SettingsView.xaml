@@ -165,18 +165,11 @@
 
                     <!-- NPC Default Plugin Exclusions (ModKeyMultiPicker - New) -->
                     <TextBlock Text="NPC Default Plugin Exclusions:" Margin="0,0,0,2"/>
-                    <plugins:ModKeyMultiPicker
-                        Background="Black"
-                        Foreground="Green"
-                        BorderThickness="1"
-                        BorderBrush="Aqua"
-                        MinHeight="100"
-                        MinWidth="100"
-                        ModKeys="{Binding EasyNpcDefaultPluginExclusions}"
-                        SearchableMods="{Binding CurrentLoadOrder}"
-                        Margin="0,0,0,10"
-                        ToolTip="Select plugins to exclude when determining the 'default' appearance plugin in EasyNPC-like mode."/>
-                     <TextBlock Text="Plugins selected here will be ignored when identifying the default appearance provider in EasyNPC-Like mode (e.g., Synthesis.esp)." FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
+                    <local:ModSelectorView DataContext="{Binding ExclusionSelectorViewModel}"
+                                           Height="180"
+                                           Margin="0,0,0,10"
+                                           ToolTip="Select plugins to exclude when determining the 'default' appearance plugin in EasyNPC-like mode."/>
+                     <TextBlock Text="Plugins selected here will be ignored when assigning conflict-winning overrides to EasyNPC's Default Plugin selections" FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
                 </StackPanel>
             </GroupBox>
         </StackPanel>

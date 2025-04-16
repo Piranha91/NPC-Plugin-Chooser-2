@@ -44,8 +44,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- New EasyNPC Transfer Properties ---
         // Assuming ModKeyMultiPicker binds directly to an ObservableCollection-like source
         // We will wrap the HashSet from the model. Consider a more robust solution if direct binding causes issues.
-        [Reactive] public ObservableCollection<ModKey> EasyNpcDefaultPluginExclusions { get; set; }
-        [Reactive] public ILoadOrderGetter CurrentLoadOrder { get; set; }
+        [Reactive] public VM_ModSelector ExclusionSelectorViewModel { get; private set; }
+        [ObservableAsProperty] public IEnumerable<ModKey> AvailablePluginsForExclusion { get; }
 
         // --- Read-only properties reflecting environment state ---
         [ObservableAsProperty] public bool EnvironmentIsValid { get; }
@@ -74,28 +74,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
             MugshotsFolder = _model.MugshotsFolder;
             SkyrimRelease = _model.SkyrimRelease;
             SkyrimGamePath = _model.SkyrimGamePath;
-            OutputModName = _model.OutputModName; // Maps to conceptual name
-            OutputPluginName = _model.OutputPluginName; // Maps to actual plugin filename
+            OutputPluginName = _model.OutputPluginName; 
             OutputDirectory = _model.OutputDirectory;
             AppendTimestampToOutputDirectory = _model.AppendTimestampToOutputDirectory;
             SelectedPatchingMode = _model.PatchingMode;
-            // Initialize the ObservableCollection wrapper for the exclusion list
-            EasyNpcDefaultPluginExclusions = new ObservableCollection<ModKey>(_model.EasyNpcDefaultPluginExclusions);
-            // ShowNpcDescriptions is removed
+            ExclusionSelectorViewModel = new VM_ModSelector();
+            ExclusionSelectorViewModel.LoadFromModel(_environmentStateProvider.LoadOrder.Keys, _model.EasyNpcDefaultPluginExclusions);
 
             // Update model when VM properties change
             this.WhenAnyValue(x => x.ModsFolder).Subscribe(s => _model.ModsFolder = s);
             this.WhenAnyValue(x => x.MugshotsFolder).Subscribe(s => _model.MugshotsFolder = s);
-            this.WhenAnyValue(x => x.OutputModName).Subscribe(s => _model.OutputModName = s); // Conceptual name
             this.WhenAnyValue(x => x.OutputDirectory).Subscribe(s => _model.OutputDirectory = s);
             this.WhenAnyValue(x => x.AppendTimestampToOutputDirectory).Subscribe(b => _model.AppendTimestampToOutputDirectory = b);
             this.WhenAnyValue(x => x.SelectedPatchingMode).Subscribe(pm => _model.PatchingMode = pm);
-            // Keep the HashSet in the model updated when the ObservableCollection changes
-            EasyNpcDefaultPluginExclusions.CollectionChanged += (sender, args) =>
-            {
-                _model.EasyNpcDefaultPluginExclusions = new HashSet<ModKey>(EasyNpcDefaultPluginExclusions);
-            };
-            // ShowNpcDescriptions binding removed
 
             // Properties that trigger environment update
             this.WhenAnyValue(x => x.SkyrimGamePath).Subscribe(s =>
@@ -128,18 +119,25 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  .Select(err => string.IsNullOrWhiteSpace(err) ? string.Empty : $"Environment Error: {err}")
                 .ToPropertyEx(this, x => x.EnvironmentErrorText);
 
-            // Populate AvailablePluginsForExclusion based on environment state
+            // Populate AvailablePluginsForExclusion (existing code...)
             this.WhenAnyValue(x => x.EnvironmentIsValid)
-                .Subscribe(y =>
+                .Select(_ => _environmentStateProvider.EnvironmentIsValid
+                    ? _environmentStateProvider.LoadOrder.Keys.ToList()
+                    : Enumerable.Empty<ModKey>())
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .ToPropertyEx(this, x => x.AvailablePluginsForExclusion);
+
+            // --- Update ModSelectorViewModel when available plugins change --- NEW
+            this.WhenAnyValue(x => x.AvailablePluginsForExclusion)
+                .Where(list => list != null)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(availablePlugins =>
                 {
-                    if (y)
-                    {
-                        CurrentLoadOrder = _environmentStateProvider.LoadOrder;
-                    }
-                    else
-                    {
-                        CurrentLoadOrder = new LoadOrder<ISkyrimModGetter>();
-                    }
+                    // --- Get the currently selected items from the UI's ViewModel ---
+                    var currentUISelctions = ExclusionSelectorViewModel.SaveToModel();
+
+                    // --- Reload using the current UI selections, not the model's ---
+                    ExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentUISelctions);
                 });
 
 
@@ -175,9 +173,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             // Ensure defaults for new/potentially missing fields after loading old file
-            loadedSettings.OutputModName ??= "NPC Plugin Chooser";
             loadedSettings.OutputPluginName ??= "NPC.esp";
-            loadedSettings.OutputDirectory ??= string.Empty;
+            loadedSettings.OutputDirectory ??= default;
             // AppendTimestampToOutputDirectory default is false (bool default)
             // PatchingMode default is Default (enum default)
             loadedSettings.EasyNpcDefaultPluginExclusions ??= new() { ModKey.FromFileName("Synthesis.esp") };
@@ -188,8 +185,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private void SaveSettings()
         {
-            // Ensure the model's exclusion list matches the VM's observable collection
-            _model.EasyNpcDefaultPluginExclusions = new HashSet<ModKey>(EasyNpcDefaultPluginExclusions);
+            _model.EasyNpcDefaultPluginExclusions = new HashSet<ModKey>(ExclusionSelectorViewModel.SaveToModel());
 
             string settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");
             JSONhandler<Settings>.SaveJSONFile(_model, settingsPath, out bool success, out string exception);
@@ -208,9 +204,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             this.RaisePropertyChanged(nameof(EnvironmentIsValid));
             this.RaisePropertyChanged(nameof(EnvironmentErrorText));
-             // Trigger re-population of available plugins for the picker
-            this.RaisePropertyChanged(nameof(CurrentLoadOrder));
-
 
             _npcSelectionBar.Initialize();
             _modListVM.PopulateModSettings();

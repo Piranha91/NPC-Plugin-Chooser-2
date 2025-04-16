@@ -14,9 +14,8 @@ public class Settings
     public string SkyrimGamePath { get; set; } = string.Empty;
 
     // Output Settings
-    public string OutputDirectory { get; set; } = string.Empty; // New
+    public string OutputDirectory { get; set; } = "NPC Output"; // New
     public bool AppendTimestampToOutputDirectory { get; set; } = false; // New
-    public string OutputModName { get; set; } = "NPC Plugin Chooser"; // Conceptual Name - Default Updated
     public string OutputPluginName { get; set; } = "NPC.esp"; // Actual Filename - New
     public PatchingMode PatchingMode { get; set; } = PatchingMode.Default; // New
 

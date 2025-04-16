@@ -53,7 +53,7 @@ public class EnvironmentStateProvider
             DataFolderPath = settings.SkyrimGamePath;
         }
         
-        if (!settings.OutputModName.IsNullOrWhitespace())
+        if (!settings.OutputPluginName.IsNullOrWhitespace())
         {
             OutputPluginName = settings.OutputPluginName;
         }
