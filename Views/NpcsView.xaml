@@ -115,6 +115,7 @@
                              SelectedItem="{Binding SelectedNpc, Mode=TwoWay}"
                              DisplayMemberPath="DisplayName"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             VerticalContentAlignment="Stretch"
                              SelectionChanged="NpcListBox_OnSelectionChanged"/>
                 </Border>
             </DockPanel>
