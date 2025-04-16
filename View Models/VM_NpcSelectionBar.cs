@@ -370,11 +370,29 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 MessageBox.Show($"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}", "Environment Error", MessageBoxButton.OK, MessageBoxImage.Warning);
                 _mugshotData.Clear(); return;
             }
+            
             _mugshotData = ScanMugshotDirectory();
+            
             var processedMugshotKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var npcRecords = _environmentStateProvider.LoadOrder.PriorityOrder.WinningOverrides<INpcGetter>()
-                                 .Where(npc => npc.EditorID?.Contains("Preset", StringComparison.OrdinalIgnoreCase) == false && !npc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.IsCharGenFacePreset))
-                                 .OrderBy(x => _auxilliary.FormKeyStringToFormIDString(x.FormKey.ToString())).ToArray();
+            
+            var npcRecords = (
+                from npc in _environmentStateProvider.LoadOrder.PriorityOrder.WinningOverrides<INpcGetter>()
+                // Resolve the race ONCE and store it in a temporary variable 'resolvedRace'
+                let resolvedRace = npc.Race.TryResolve(_environmentStateProvider.LinkCache)
+                // Apply the filters
+                where npc.EditorID?.Contains("Preset", StringComparison.OrdinalIgnoreCase) == false &&
+                      !npc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.IsCharGenFacePreset) &&
+                      !npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits) &&
+                      !npc.Race.IsNull && // Keep the IsNull check as a quick pre-filter
+                      resolvedRace is not null && // Check if the resolution succeeded using the variable
+                      // Use the resolvedRace variable here and handle potential nulls + convert bool? to bool
+                      (resolvedRace.Keywords?.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Keyword.ActorTypeNPC) ?? false)
+                // Order the results
+                orderby _auxilliary.FormKeyStringToFormIDString(npc.FormKey.ToString())
+                // Select the original npc object
+                select npc
+            ).ToArray(); // Convert the final result to an array
+            
             foreach (var npc in npcRecords) {
                 try {
                     var npcSelector = new VM_NpcSelection(npc, _environmentStateProvider, _consistencyProvider);
