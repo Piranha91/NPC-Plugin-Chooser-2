@@ -13,9 +13,9 @@ namespace NPC_Plugin_Chooser_2.BackEnd
     public class NpcSelectionChangedEventArgs : EventArgs
     {
         public FormKey NpcFormKey { get; }
-        public string SelectedMod { get; }
+        public string? SelectedMod { get; }
 
-        public NpcSelectionChangedEventArgs(FormKey npcFormKey,string selectedMod)
+        public NpcSelectionChangedEventArgs(FormKey npcFormKey, string? selectedMod)
         {
             NpcFormKey = npcFormKey;
             SelectedMod = selectedMod;
@@ -42,6 +42,9 @@ namespace NPC_Plugin_Chooser_2.BackEnd
 
         public void SetSelectedMod(FormKey npcFormKey, string selectedMod)
         {
+            // Prevent setting null/empty string via this method, use ClearSelectedMod instead
+            if (string.IsNullOrEmpty(selectedMod)) return;
+            
             bool changed = false;
             if (!_selectedMods.TryGetValue(npcFormKey, out var currentModKey) || currentModKey != selectedMod)
             {
@@ -58,21 +61,36 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                  // SaveSettings();
             }
         }
+        
+        /// <summary>
+        /// Clears the selected appearance mod for the specified NPC.
+        /// </summary>
+        /// <param name="npcFormKey">The FormKey of the NPC whose selection should be cleared.</param>
+        public void ClearSelectedMod(FormKey npcFormKey)
+        {
+            bool changed = false;
+            if (_selectedMods.ContainsKey(npcFormKey))
+            {
+                _selectedMods.Remove(npcFormKey);
+                // Also remove from the persistent settings model
+                _settings.SelectedAppearanceMods.Remove(npcFormKey);
+                changed = true;
+            }
 
-        public string GetSelectedMod(FormKey npcFormKey, ModKey? defaultModKey = null)
+            if (changed)
+            {
+                // Notify subscribers, passing null for selectedMod to indicate deselection
+                _npcSelectionChanged.OnNext(new NpcSelectionChangedEventArgs(npcFormKey, null));
+            }
+        }
+
+        public string? GetSelectedMod(FormKey npcFormKey) // Return nullable string
         {
             if (_selectedMods.TryGetValue(npcFormKey, out var selectedModKey))
             {
-                return selectedModKey.ToString();
+                return selectedModKey;
             }
-            // If no selection is stored and a default (e.g., the winning override) is provided, use it.
-             if (defaultModKey.HasValue)
-             {
-                 return defaultModKey.Value.ToString();
-             }
-             // This case should ideally not happen if initialization is correct,
-             // but return something sensible. Maybe the NPC's original modkey?
-             return npcFormKey.ModKey.ToString(); // Fallback to the NPC's definition mod
+            return null; // Return null if no specific selection exists
         }
 
         public bool IsModSelected(FormKey npcFormKey, string modToCheck)

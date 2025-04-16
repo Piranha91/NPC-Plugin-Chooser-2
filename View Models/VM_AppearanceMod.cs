@@ -123,7 +123,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private void SelectThisMod()
         {
-             _consistencyProvider.SetSelectedMod(_npcFormKey, ModName);
+            // Check the *current* state before deciding action
+            if (IsSelected)
+            {
+                // If it's already selected, clear the selection for this NPC
+                System.Diagnostics.Debug.WriteLine($"Deselecting mod '{ModName}' for NPC '{_npcFormKey}'");
+                _consistencyProvider.ClearSelectedMod(_npcFormKey);
+            }
+            else
+            {
+                // If it's not selected, select this mod
+                System.Diagnostics.Debug.WriteLine($"Selecting mod '{ModName}' for NPC '{_npcFormKey}'");
+                _consistencyProvider.SetSelectedMod(_npcFormKey, ModName);
+            }
+            // The IsSelected property will be updated reactively via the
+            // _consistencyProvider.NpcSelectionChanged subscription in the constructor.
         }
 
         private void ToggleFullScreen()

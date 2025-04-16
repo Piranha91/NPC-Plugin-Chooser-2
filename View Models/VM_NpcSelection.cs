@@ -27,7 +27,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // public ObservableCollection<VM_AppearanceMod> AppearanceSources { get; } = new(); // Maybe add later if needed directly here
 
         // This property reflects the centrally stored selection
-        [Reactive] public string SelectedAppearanceMod { get; set; }
+        [Reactive] public string? SelectedAppearanceMod { get; set; }
 
         // Constructor for NPCs found in load order
         public VM_NpcSelection(INpcGetter npcGetter, EnvironmentStateProvider environmentStateProvider, NpcConsistencyProvider consistencyProvider)
@@ -68,7 +68,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     // If no contexts, still add the base modkey if getter exists
                     AppearanceMods.Add(npcGetter.FormKey.ModKey);
-                    SelectedAppearanceMod = _consistencyProvider.GetSelectedMod(npcGetter.FormKey, npcGetter.FormKey.ModKey);
+                    SelectedAppearanceMod = _consistencyProvider.GetSelectedMod(npcGetter.FormKey);
                     return;
                 }
 
@@ -107,7 +107,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
 
                 // Retrieve the potentially user-overridden selection, using winner as default
-                SelectedAppearanceMod = _consistencyProvider.GetSelectedMod(npcGetter.FormKey, baseContext.ModKey);
+                SelectedAppearanceMod = _consistencyProvider.GetSelectedMod(npcGetter.FormKey);
 
             }
             catch (Exception ex)
@@ -117,7 +117,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 if (!AppearanceMods.Any() && _environmentStateProvider.LoadOrder.ContainsKey(npcGetter.FormKey.ModKey))
                 {
                      AppearanceMods.Add(npcGetter.FormKey.ModKey);
-                     SelectedAppearanceMod = _consistencyProvider.GetSelectedMod(npcGetter.FormKey, npcGetter.FormKey.ModKey);
+                     SelectedAppearanceMod = _consistencyProvider.GetSelectedMod(npcGetter.FormKey);
                 }
                 else if (!AppearanceMods.Any())
                 {
@@ -149,9 +149,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                  AppearanceMods.Add(npcFormKey.ModKey);
             }
-
-            // Set initial selected mod based on consistency provider, defaulting to the FormKey's ModKey
-            SelectedAppearanceMod = _consistencyProvider.GetSelectedMod(npcFormKey, npcFormKey.ModKey);
         }
 
 
