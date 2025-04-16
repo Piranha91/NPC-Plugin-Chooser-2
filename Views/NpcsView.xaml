@@ -16,7 +16,27 @@
     <UserControl.Resources>
         <local:BooleanToBrushConverter x:Key="BooleanToBrushConverter"/>
         <local:IsNotNullConverter x:Key="IsNotNullConverter"/>
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <local:EnumDescriptionConverter x:Key="EnumDescConverter"/>
+
+        <!-- *** Define ObjectDataProvider as a Resource *** -->
+        <ObjectDataProvider x:Key="NpcSearchTypeEnumValues"
+                            MethodName="GetValues"
+                            ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="vm:NpcSearchType"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+
+         <!-- *** Define ObjectDataProvider for SelectionStateFilterType *** -->
+         <ObjectDataProvider x:Key="SelectionStateFilterTypeEnumValues"
+                             MethodName="GetValues"
+                             ObjectType="{x:Type System:Enum}">
+             <ObjectDataProvider.MethodParameters>
+                 <x:Type TypeName="vm:SelectionStateFilterType"/>
+             </ObjectDataProvider.MethodParameters>
+         </ObjectDataProvider>
+
     </UserControl.Resources>
 
     <Grid>
@@ -33,11 +53,11 @@
                            IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}"
                            VerticalAlignment="Center"
                            ToolTip="Toggle visibility of hidden appearance mods"/>
-                 
+
                  <CheckBox Content="Show NPC Descriptions"
                            IsChecked="{Binding ShowNpcDescriptions, Mode=TwoWay}"
                            VerticalAlignment="Center"
-                           ToolTip="If checked, shows descriptions for selected base game NPCs from online sources." Margin="5 0 0 0"/>
+                           ToolTip="If checked, shows descriptions for selected base game NPCs from online sources." Margin="15 0 0 0"/>
             </StackPanel>
         </Border>
 
@@ -45,72 +65,133 @@
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="250" MinWidth="200"/> <!-- NPC List + Search -->
-                <!-- *** NEW: Column for GridSplitter *** -->
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>               <!-- Splitter -->
                 <ColumnDefinition Width="*" MinWidth="250" x:Name="NpcDisplayColumn" />   <!-- Appearance Mod Images -->
             </Grid.ColumnDefinitions>
 
             <!-- Left Column: Search + NPC List -->
-            <!-- DockPanel remains in Grid.Column="0" -->
             <DockPanel Grid.Column="0" LastChildFill="True">
                 <!-- Search Area -->
                 <Border DockPanel.Dock="Top" BorderThickness="0,0,1,1" BorderBrush="DarkGray" Padding="5">
                     <StackPanel Orientation="Vertical">
+
                         <!-- Search Term 1 -->
                         <Grid Margin="0,0,0,5">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/> <!-- Type ComboBox -->
+                                <ColumnDefinition Width="*"/>    <!-- Input Control (TextBox or ComboBox) -->
                             </Grid.ColumnDefinitions>
+
+                            <!-- Type Selector -->
                             <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
-                                      ItemsSource="{Binding AvailableSearchTypes}"
+                                      ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}"
                                       SelectedItem="{Binding SearchType1, Mode=TwoWay}"
-                                      ToolTip="Select search field 1"/>
-                            <TextBox Grid.Column="1" VerticalAlignment="Center"
-                                     Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     ToolTip="Enter search term 1"/>
+                                      ToolTip="Select search field 1">
+                                <!-- *** REMOVED ItemsSourceProvider *** -->
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+
+                            <!-- Input Area (TextBox OR ComboBox) -->
+                            <Grid Grid.Column="1">
+                                <!-- Text Box -->
+                                <TextBox VerticalAlignment="Center"
+                                         Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Enter search term 1"
+                                         Visibility="{Binding IsSelectionStateSearch1, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}"/>
+
+                                <!-- State ComboBox -->
+                                <ComboBox VerticalAlignment="Center"
+                                          ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}"
+                                          SelectedItem="{Binding SelectedStateFilter1, Mode=TwoWay}"
+                                          ToolTip="Filter by selection state"
+                                          Visibility="{Binding IsSelectionStateSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                     <ComboBox.ItemTemplate>
+                                         <DataTemplate>
+                                             <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
+                                         </DataTemplate>
+                                     </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </Grid>
                         </Grid>
-                        <!-- Search Term 2 -->
+
+                        <!-- Search Term 2 (Repeat pattern) -->
                         <Grid Margin="0,0,0,5">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
-                                      ItemsSource="{Binding AvailableSearchTypes}"
-                                      SelectedItem="{Binding SearchType2, Mode=TwoWay}"
-                                      ToolTip="Select search field 2"/>
-                            <TextBox Grid.Column="1" VerticalAlignment="Center"
-                                     Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     ToolTip="Enter search term 2"/>
-                        </Grid>
-                        <!-- Search Term 3 -->
+                             <Grid.ColumnDefinitions>
+                                 <ColumnDefinition Width="Auto"/>
+                                 <ColumnDefinition Width="*"/>
+                             </Grid.ColumnDefinitions>
+                             <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
+                                       ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}"
+                                       SelectedItem="{Binding SearchType2, Mode=TwoWay}"
+                                       ToolTip="Select search field 2">
+                                 <ComboBox.ItemTemplate>
+                                     <DataTemplate>
+                                         <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
+                                     </DataTemplate>
+                                 </ComboBox.ItemTemplate>
+                             </ComboBox>
+                             <Grid Grid.Column="1">
+                                 <TextBox VerticalAlignment="Center" Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 2"
+                                          Visibility="{Binding IsSelectionStateSearch2, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}"/>
+                                 <ComboBox VerticalAlignment="Center"
+                                           ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}"
+                                           SelectedItem="{Binding SelectedStateFilter2, Mode=TwoWay}" ToolTip="Filter by selection state"
+                                           Visibility="{Binding IsSelectionStateSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                     <ComboBox.ItemTemplate>
+                                          <DataTemplate>
+                                              <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
+                                          </DataTemplate>
+                                     </ComboBox.ItemTemplate>
+                                 </ComboBox>
+                             </Grid>
+                         </Grid>
+
+                        <!-- Search Term 3 (Repeat pattern) -->
                         <Grid Margin="0,0,0,5">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
-                                      ItemsSource="{Binding AvailableSearchTypes}"
-                                      SelectedItem="{Binding SearchType3, Mode=TwoWay}"
-                                      ToolTip="Select search field 3"/>
-                            <TextBox Grid.Column="1" VerticalAlignment="Center"
-                                     Text="{Binding SearchText3, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     ToolTip="Enter search term 3"/>
-                        </Grid>
-                        <!-- Logic Selector -->
+                             <Grid.ColumnDefinitions>
+                                 <ColumnDefinition Width="Auto"/>
+                                 <ColumnDefinition Width="*"/>
+                             </Grid.ColumnDefinitions>
+                             <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
+                                       ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}"
+                                       SelectedItem="{Binding SearchType3, Mode=TwoWay}"
+                                       ToolTip="Select search field 3">
+                                 <ComboBox.ItemTemplate>
+                                     <DataTemplate>
+                                         <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
+                                     </DataTemplate>
+                                 </ComboBox.ItemTemplate>
+                             </ComboBox>
+                             <Grid Grid.Column="1">
+                                 <TextBox VerticalAlignment="Center" Text="{Binding SearchText3, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 3"
+                                          Visibility="{Binding IsSelectionStateSearch3, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}"/>
+                                 <ComboBox VerticalAlignment="Center"
+                                           ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}"
+                                           SelectedItem="{Binding SelectedStateFilter3, Mode=TwoWay}" ToolTip="Filter by selection state"
+                                           Visibility="{Binding IsSelectionStateSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                      <ComboBox.ItemTemplate>
+                                          <DataTemplate>
+                                              <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
+                                          </DataTemplate>
+                                      </ComboBox.ItemTemplate>
+                                 </ComboBox>
+                             </Grid>
+                         </Grid>
+
+                        <!-- Logic Selector (Unchanged) -->
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <RadioButton Content="AND (Match All)" GroupName="SearchLogic" VerticalAlignment="Center"
-                                         Margin="0,0,10,0" IsChecked="{Binding IsSearchAndLogic, Mode=TwoWay}"
-                                         ToolTip="Results must match all active search terms"/>
-                            <RadioButton Content="OR (Match Any)" GroupName="SearchLogic" VerticalAlignment="Center"
-                                         ToolTip="Results must match at least one active search term"/>
+                            <RadioButton Content="AND (Match All)" GroupName="SearchLogic" VerticalAlignment="Center" Margin="0,0,10,0" IsChecked="{Binding IsSearchAndLogic, Mode=TwoWay}" ToolTip="Results must match all active search terms"/>
+                            <RadioButton Content="OR (Match Any)" GroupName="SearchLogic" VerticalAlignment="Center" ToolTip="Results must match at least one active search term"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
-                <!-- NPC List Area -->
-                <Border BorderThickness="0,0,1,0" BorderBrush="DarkGray">
+                <!-- NPC List Area (Unchanged) -->
+                 <Border BorderThickness="0,0,1,0" BorderBrush="DarkGray">
                     <ListBox x:Name="NpcListBox" ItemsSource="{Binding FilteredNpcs}"
                              SelectedItem="{Binding SelectedNpc, Mode=TwoWay}"
                              DisplayMemberPath="DisplayName"
@@ -120,12 +201,11 @@
                 </Border>
             </DockPanel>
 
-            <!-- *** NEW: GridSplitter *** -->
+            <!-- GridSplitter (Unchanged) -->
             <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="LightGray" ResizeBehavior="PreviousAndNext"/>
 
-            <!-- Right Column: Appearance Mod Images -->
-            <!-- ScrollViewer now in Grid.Column="2" -->
-            <ScrollViewer Grid.Column="2" x:Name="ImageDisplayScrollViewer"
+            <!-- Right Column: Appearance Mod Images (Unchanged) -->
+             <ScrollViewer Grid.Column="2" x:Name="ImageDisplayScrollViewer"
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"
@@ -190,8 +270,7 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <!-- Placeholder Text Block -->
-            <!-- Placeholder now in Grid.Column="2" -->
+            <!-- Placeholder Text Block (Unchanged) -->
             <TextBlock Grid.Column="2" Text="Select an NPC..."
                        HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" Foreground="Gray" TextWrapping="Wrap" Margin="20">
                 <TextBlock.Style>
@@ -216,7 +295,7 @@
             </TextBlock>
         </Grid>
 
-        <!-- Description Panel (Grid.Row="2") -->
+        <!-- Description Panel (Grid.Row="2") (Unchanged) -->
         <Border Grid.Row="2" BorderBrush="Gray" BorderThickness="0,1,0,0"
                 Background="#FAFAD2"
                 Padding="5">
@@ -224,12 +303,17 @@
                 <Style TargetType="Border">
                     <Setter Property="Visibility" Value="Visible"/>
                     <Style.Triggers>
+                         <!-- Hide if description is null or empty -->
                         <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Null}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
                         <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Static System:String.Empty}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
+                        <!-- Also hide if ShowNpcDescriptions is false -->
+                         <DataTrigger Binding="{Binding ShowNpcDescriptions}" Value="False">
+                             <Setter Property="Visibility" Value="Collapsed"/>
+                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
             </Border.Style>

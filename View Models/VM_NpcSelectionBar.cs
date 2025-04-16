@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics; // For Debug.WriteLine
 using System.IO;
 using System.Linq;
@@ -58,9 +59,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string SearchText1 { get; set; } = string.Empty;
         [Reactive] public NpcSearchType SearchType1 { get; set; } = NpcSearchType.Name;
         [Reactive] public string SearchText2 { get; set; } = string.Empty;
-        [Reactive] public NpcSearchType SearchType2 { get; set; } = NpcSearchType.Name;
+        [Reactive] public NpcSearchType SearchType2 { get; set; } = NpcSearchType.EditorID;
         [Reactive] public string SearchText3 { get; set; } = string.Empty;
-        [Reactive] public NpcSearchType SearchType3 { get; set; } = NpcSearchType.Name;
+        [Reactive] public NpcSearchType SearchType3 { get; set; } = NpcSearchType.InAppearanceMod;
+        [ObservableAsProperty] public bool IsSelectionStateSearch1 { get; }
+        [Reactive] public SelectionStateFilterType SelectedStateFilter1 { get; set; } = SelectionStateFilterType.NotMade; // Default value
+
+        [ObservableAsProperty] public bool IsSelectionStateSearch2 { get; }
+        [Reactive] public SelectionStateFilterType SelectedStateFilter2 { get; set; } = SelectionStateFilterType.NotMade;
+
+        [ObservableAsProperty] public bool IsSelectionStateSearch3 { get; }
+        [Reactive] public SelectionStateFilterType SelectedStateFilter3 { get; set; } = SelectionStateFilterType.NotMade;
+        public Array AvailableSelectionStateFilters => Enum.GetValues(typeof(SelectionStateFilterType));
         [Reactive] public bool IsSearchAndLogic { get; set; } = true;
         public Array AvailableSearchTypes => Enum.GetValues(typeof(NpcSearchType));
         // --- End Search Properties ---
@@ -122,15 +132,60 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(args => UpdateSelectionState(args.NpcFormKey, args.SelectedMod))
                 .DisposeWith(_disposables);
+            
+            this.WhenAnyValue(x => x.SearchType1)
+                .Select(type => type == NpcSearchType.SelectionState)
+                .ToPropertyEx(this, x => x.IsSelectionStateSearch1);
 
-            this.WhenAnyValue(
-                    x => x.SearchText1, x => x.SearchType1,
-                    x => x.SearchText2, x => x.SearchType2,
-                    x => x.SearchText3, x => x.SearchType3,
-                    x => x.IsSearchAndLogic)
-                .Throttle(TimeSpan.FromMilliseconds(250), RxApp.MainThreadScheduler)
+            this.WhenAnyValue(x => x.SearchType2)
+                .Select(type => type == NpcSearchType.SelectionState)
+                .ToPropertyEx(this, x => x.IsSelectionStateSearch2);
+
+            this.WhenAnyValue(x => x.SearchType3)
+                .Select(type => type == NpcSearchType.SelectionState)
+                .ToPropertyEx(this, x => x.IsSelectionStateSearch3);
+            
+            // --- Observe changes in filter groups and logic ---
+
+            // Observable for changes in the first filter group
+            var filter1Changes = this.WhenAnyValue(
+                x => x.SearchText1,
+                x => x.SearchType1,
+                x => x.SelectedStateFilter1
+            ).Select(_ => Unit.Default); // Map to Unit
+
+            // Observable for changes in the second filter group
+            var filter2Changes = this.WhenAnyValue(
+                x => x.SearchText2,
+                x => x.SearchType2,
+                x => x.SelectedStateFilter2
+            ).Select(_ => Unit.Default); // Map to Unit
+
+            // Observable for changes in the third filter group
+            var filter3Changes = this.WhenAnyValue(
+                x => x.SearchText3,
+                x => x.SearchType3,
+                x => x.SelectedStateFilter3
+            ).Select(_ => Unit.Default); // Map to Unit
+
+            // Observable for changes in the search logic (AND/OR)
+            var logicChanges = this.WhenAnyValue(
+                x => x.IsSearchAndLogic
+            ).Select(_ => Unit.Default); // Map to Unit
+
+            // --- Merge all change signals ---
+            Observable.Merge(
+                    filter1Changes,
+                    filter2Changes,
+                    filter3Changes,
+                    logicChanges
+                )
+                .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler)
+                .ObserveOn(RxApp.MainThreadScheduler) // Ensure ApplyFilter runs on UI thread
                 .Subscribe(_ => ApplyFilter(false))
                 .DisposeWith(_disposables);
+
+            // --- End Filter Trigger Setup ---
 
             this.WhenAnyValue(x => x.ShowHiddenMods)
                 .Subscribe(_ => ToggleModVisibility())
@@ -345,51 +400,124 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
 
-        public void ApplyFilter(bool initializing) // Made public for potential external use
+        public void ApplyFilter(bool initializing)
         {
             IEnumerable<VM_NpcSelection> results = AllNpcs;
-            bool filter1Active = !string.IsNullOrWhiteSpace(SearchText1); bool filter2Active = !string.IsNullOrWhiteSpace(SearchText2); bool filter3Active = !string.IsNullOrWhiteSpace(SearchText3);
-            Func<VM_NpcSelection, bool>? predicate1 = filter1Active ? BuildPredicate(SearchType1, SearchText1) : null;
-            Func<VM_NpcSelection, bool>? predicate2 = filter2Active ? BuildPredicate(SearchType2, SearchText2) : null;
-            Func<VM_NpcSelection, bool>? predicate3 = filter3Active ? BuildPredicate(SearchType3, SearchText3) : null;
-            var activePredicates = new List<Func<VM_NpcSelection, bool>>();
-            if (predicate1 != null) activePredicates.Add(predicate1); if (predicate2 != null) activePredicates.Add(predicate2); if (predicate3 != null) activePredicates.Add(predicate3);
-            if (activePredicates.Any()) {
-                if (IsSearchAndLogic) { results = results.Where(npc => activePredicates.All(p => p(npc))); }
-                else { results = results.Where(npc => activePredicates.Any(p => p(npc))); }
+
+            // --- Build individual filter predicates ---
+            var predicates = new List<Func<VM_NpcSelection, bool>>();
+
+            // Filter 1
+            if (SearchType1 == NpcSearchType.SelectionState)
+            {
+                predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter1));
             }
+            else if (!string.IsNullOrWhiteSpace(SearchText1))
+            {
+                var textPredicate1 = BuildTextPredicate(SearchType1, SearchText1);
+                if (textPredicate1 != null) predicates.Add(textPredicate1);
+            }
+
+            // Filter 2
+            if (SearchType2 == NpcSearchType.SelectionState)
+            {
+                predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter2));
+            }
+            else if (!string.IsNullOrWhiteSpace(SearchText2))
+            {
+                var textPredicate2 = BuildTextPredicate(SearchType2, SearchText2);
+                if (textPredicate2 != null) predicates.Add(textPredicate2);
+            }
+
+            // Filter 3
+            if (SearchType3 == NpcSearchType.SelectionState)
+            {
+                predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter3));
+            }
+            else if (!string.IsNullOrWhiteSpace(SearchText3))
+            {
+                var textPredicate3 = BuildTextPredicate(SearchType3, SearchText3);
+                if (textPredicate3 != null) predicates.Add(textPredicate3);
+            }
+            // --- End building predicates ---
+
+
+            // Apply combined filter logic
+            if (predicates.Any())
+            {
+                if (IsSearchAndLogic)
+                {
+                    // AND logic: NPC must match ALL active predicates
+                    results = results.Where(npc => predicates.All(p => p(npc)));
+                }
+                else
+                {
+                    // OR logic: NPC must match AT LEAST ONE active predicate
+                    results = results.Where(npc => predicates.Any(p => p(npc)));
+                }
+            }
+
             var previouslySelectedNpcKey = SelectedNpc?.NpcFormKey;
             var orderedResults = results.OrderBy(x => _auxilliary.FormKeyStringToFormIDString(x.NpcFormKey.ToString())).ToList();
 
             // Efficiently update ObservableCollection
-            FilteredNpcs.Clear(); // Clear once
-            foreach (var npc in orderedResults) { FilteredNpcs.Add(npc); } // Add all new items
+            FilteredNpcs.Clear();
+            foreach (var npc in orderedResults) { FilteredNpcs.Add(npc); }
 
 
-             // Restore selection or select first
-             if (previouslySelectedNpcKey != null) {
-                 SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey));
-             }
-              // If previous selection is gone or wasn't there, select the first item if any
-              if (SelectedNpc == null && FilteredNpcs.Any() && !initializing) {
-                  SelectedNpc = FilteredNpcs[0];
-              } else if (!FilteredNpcs.Any()) { // Explicitly null if no results
-                  SelectedNpc = null;
-              }
+            // Restore selection or select first
+            if (previouslySelectedNpcKey != null)
+            {
+                SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey));
+            }
+            if (SelectedNpc == null && FilteredNpcs.Any() && !initializing)
+            {
+                SelectedNpc = FilteredNpcs[0];
+            }
+            else if (!FilteredNpcs.Any())
+            {
+                SelectedNpc = null;
+            }
+        }
+        
+        private bool CheckSelectionState(VM_NpcSelection npc, SelectionStateFilterType filterState)
+        {
+            // Check if a specific appearance mod has been chosen.
+            // We consider null or empty string as "not made".
+            bool isSelected = !string.IsNullOrEmpty(_consistencyProvider.GetSelectedMod(npc.NpcFormKey));
+
+            return filterState == SelectionStateFilterType.Made ? isSelected : !isSelected;
         }
 
-        private Func<VM_NpcSelection, bool> BuildPredicate(NpcSearchType type, string searchText)
+        private Func<VM_NpcSelection, bool>? BuildTextPredicate(NpcSearchType type, string searchText)
         {
-            return type switch {
-                NpcSearchType.Name => npc => (npc.DisplayName?.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0) || (npc.NpcGetter?.Name?.String?.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0),
-                NpcSearchType.EditorID => npc => npc.NpcGetter?.EditorID?.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0,
-                NpcSearchType.InAppearanceMod => npc => npc.AppearanceMods.Any(m => m.FileName.String.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0) || (_mugshotData.TryGetValue(npc.NpcFormKey.ToString(), out var mugshots) && mugshots.Any(m => m.ModName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)),
-                NpcSearchType.FromMod => npc => npc.NpcFormKey.ModKey.FileName.String.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0,
-                NpcSearchType.FormKey => npc => npc.NpcFormKey.ToString().IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0,
-                _ => npc => true
+            // Ignore SelectionState type here
+            if (type == NpcSearchType.SelectionState || string.IsNullOrWhiteSpace(searchText))
+            {
+                return null;
+            }
+
+            string searchTextLower = searchText.Trim().ToLowerInvariant(); // Optimization
+
+            switch (type)
+            {
+                case NpcSearchType.Name:
+                    return npc => npc.DisplayName?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false;
+                case NpcSearchType.EditorID:
+                    return npc => npc.NpcGetter?.EditorID?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false;
+                case NpcSearchType.InAppearanceMod:
+                    // This check is slightly simplified but captures the essence
+                    return npc => npc.AppearanceMods.Any(m => m.FileName.String.Contains(searchText, StringComparison.OrdinalIgnoreCase)) ||
+                                  (_mugshotData.TryGetValue(npc.NpcFormKey.ToString(), out var mugshots) &&
+                                   mugshots.Any(m => m.ModName.Contains(searchText, StringComparison.OrdinalIgnoreCase)));
+                case NpcSearchType.FromMod:
+                    return npc => npc.NpcFormKey.ModKey.FileName.String.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+                case NpcSearchType.FormKey:
+                    return npc => npc.NpcFormKey.ToString().Contains(searchText, StringComparison.OrdinalIgnoreCase);
+                default:
+                    return null; // Should not happen
             };
         }
-
 
         private ObservableCollection<VM_AppearanceMod> CreateAppearanceModViewModels(VM_NpcSelection npcVM, Dictionary<string, List<(string ModName, string ImagePath)>> mugshotData)
         {

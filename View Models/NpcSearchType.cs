@@ -1,10 +1,26 @@
-﻿namespace NPC_Plugin_Chooser_2.View_Models;
+﻿// NpcSearchType.cs
+using System.ComponentModel; // Required for Description attribute
 
-public enum NpcSearchType
+namespace NPC_Plugin_Chooser_2.View_Models
 {
-    Name,
-    EditorID,
-    InAppearanceMod, // Checks plugins AND mugshot folders
-    FromMod,         // Checks NpcFormKey.ModKey
-    FormKey          // Checks NpcFormKey.ToString()
+    public enum NpcSearchType
+    {
+        [Description("Name")] // Add Description attributes
+        Name,
+
+        [Description("EditorID")]
+        EditorID,
+
+        [Description("In Appearance Mod")]
+        InAppearanceMod, // Checks plugins AND mugshot folders
+
+        [Description("From Mod")]
+        FromMod,         // Checks NpcFormKey.ModKey
+
+        [Description("FormKey")]
+        FormKey,          // Checks NpcFormKey.ToString()
+
+        [Description("Selection State")] // New value
+        SelectionState
+    }
 }
