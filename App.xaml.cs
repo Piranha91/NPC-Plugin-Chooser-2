@@ -65,7 +65,8 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<VM_FullScreenImage>().AsSelf();
             // Register VM_ModNpcMugshot transiently (created on demand)
             builder.RegisterType<VM_ModNpcMugshot>().AsSelf();
-
+            // Register VM_AppearnceMod transiently (created on demand)
+            builder.RegisterType<VM_AppearanceMod>().AsSelf();
 
             // Register Views using Splat's IViewFor convention
             // This allows resolving Views via service locator if needed, but primarily helps ReactiveUI internals

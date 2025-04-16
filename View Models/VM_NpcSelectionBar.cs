@@ -27,6 +27,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
 {
     public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     {
+        // --- Define the Factory Delegate ---
+        // Parameters are those needed *at the time of creation* that Autofac can't resolve
+        public delegate VM_AppearanceMod AppearanceModFactory(
+            string modName,
+            FormKey npcFormKey,
+            ModKey? overrideModeKey,
+            string? imagePath
+        );
+        // --- End Delegate Definition ---
+        
         private readonly EnvironmentStateProvider _environmentStateProvider;
         private readonly Settings _settings;
         private readonly NpcConsistencyProvider _consistencyProvider;
@@ -37,6 +47,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // *** NEW: Lazy references to break circular dependencies ***
         private readonly Lazy<VM_Mods> _lazyModsVm;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
+        
+        // --- Store the Injected Factory ---
+        private readonly AppearanceModFactory _appearanceModFactory;
 
         private HashSet<string> _hiddenModNames = new();
         private Dictionary<FormKey, HashSet<string>> _hiddenModsPerNpc = new();
@@ -77,7 +90,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             NpcConsistencyProvider consistencyProvider,
             NpcDescriptionProvider descriptionProvider,
             Lazy<VM_Mods> lazyModsVm,
-            Lazy<VM_MainWindow> lazyMainWindowVm) 
+            Lazy<VM_MainWindow> lazyMainWindowVm,
+            AppearanceModFactory appearanceModFactory) 
         {
             _environmentStateProvider = environmentStateProvider;
             _settings = settings; 
@@ -86,6 +100,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _descriptionProvider = descriptionProvider;
             _lazyModsVm = lazyModsVm;
             _lazyMainWindowVm = lazyMainWindowVm;
+            _appearanceModFactory = appearanceModFactory;
 
             _hiddenModNames = _settings.HiddenModNames ?? new(); // Ensure initialized
             _hiddenModsPerNpc = _settings.HiddenModsPerNpc ?? new(); // Ensure initialized
@@ -380,23 +395,30 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             var modVMs = new ObservableCollection<VM_AppearanceMod>(); if (npcVM == null) return modVMs;
             string npcFormKeyString = npcVM.NpcFormKey.ToString(); var npcMugshotList = mugshotData.GetValueOrDefault(npcFormKeyString, new List<(string ModName, string ImagePath)>());
-            var addedModSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (npcVM.NpcGetter != null) {
-                foreach (var modKey in npcVM.AppearanceMods.Distinct()) {
-                    string pluginModName = modKey.FileName; string? imagePathForThisPlugin = null;
-                    var matchingMugshot = npcMugshotList.FirstOrDefault(m => m.ModName.Equals(pluginModName, StringComparison.OrdinalIgnoreCase));
-                    if (matchingMugshot != default) { imagePathForThisPlugin = matchingMugshot.ImagePath; }
-                    modVMs.Add(new VM_AppearanceMod(pluginModName, modKey, npcVM.NpcFormKey, imagePathForThisPlugin, _settings, _consistencyProvider, this)); addedModSources.Add(pluginModName);
-                }
-            }
+            var processedAppearancePlugins = new HashSet<ModKey>();
+            
+            // 1) Create mods from mughots
             foreach (var mugshotInfo in npcMugshotList) {
                 string mugshotModName = mugshotInfo.ModName; string mugshotImagePath = mugshotInfo.ImagePath;
-                if (!addedModSources.Contains(mugshotModName)) { modVMs.Add(new VM_AppearanceMod(mugshotModName, npcVM.NpcFormKey.ModKey, npcVM.NpcFormKey, mugshotImagePath, _settings, _consistencyProvider, this)); addedModSources.Add(mugshotModName); }
+                modVMs.Add(_appearanceModFactory(mugshotModName, npcVM.NpcFormKey, null, mugshotImagePath));
+                var associatedModKey = _lazyModsVm.Value.AllModSettings
+                    .FirstOrDefault(x => x.DisplayName == mugshotModName)?.CorrespondingModKey;
+                if (associatedModKey != null)
+                {
+                    processedAppearancePlugins.Add(associatedModKey.Value);
+                }
             }
-            if (npcVM.NpcGetter == null && !modVMs.Any() && npcVM.AppearanceMods.Any()) {
-                 var baseModKey = npcVM.AppearanceMods.First();
-                  if (!addedModSources.Contains(baseModKey.FileName)) { modVMs.Add(new VM_AppearanceMod(baseModKey.FileName, baseModKey, npcVM.NpcFormKey, null, _settings, _consistencyProvider, this)); }
+            // 2) Create mods from plugins that don't have any associated mugshots
+            
+            // Get appearance mods from appearance plugins that override the base plugin
+            if (npcVM.NpcGetter != null) {
+                foreach (var modKey in npcVM.AppearanceMods.Distinct().Where(x => !processedAppearancePlugins.Contains(x))) 
+                {
+                    modVMs.Add(_appearanceModFactory(modKey.ToString(), npcVM.NpcFormKey, modKey, string.Empty)); 
+                    processedAppearancePlugins.Add(modKey);
+                }
             }
+            
             var sortedVMs = modVMs.OrderBy(vm => vm.ModName).ToList(); modVMs.Clear(); foreach (var vm in sortedVMs) { modVMs.Add(vm); }
 
             // hide global hidden mods
@@ -448,10 +470,72 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public void SelectAllFromMod(VM_AppearanceMod referenceMod)
         {
-             // Implementation needed - Iterate AllNpcs, find those with this mod in AppearanceMods,
-             // and call _consistencyProvider.SetSelectedMod for each.
-              MessageBox.Show($"Select All From Mod '{referenceMod.ModName}' - Not Yet Implemented.");
-              // throw new NotImplementedException();
+            if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName))
+            {
+                Debug.WriteLine("SelectAllFromMod: referenceMod or its ModName is null/empty.");
+                return;
+            }
+
+            string targetModName = referenceMod.ModName;
+            int updatedCount = 0;
+
+            Debug.WriteLine($"SelectAllFromMod: Attempting to select '{targetModName}' for all applicable NPCs.");
+
+            // Iterate through the master list of all NPCs
+            foreach (var npcVM in AllNpcs)
+            {
+                if (npcVM == null) continue; // Safety check
+
+                // Use the helper method to check if the target mod is a valid source
+                if (IsModAnAppearanceSourceForNpc(npcVM, referenceMod))
+                {
+                    // Check if the selection actually needs changing to avoid unnecessary events
+                    // Note: GetSelectedMod might return the winning override if no specific choice was made yet.
+                    // This check ensures we only update if the user hasn't already picked *this* mod or
+                    // if the default wouldn't resolve to this mod anyway.
+                    // It's generally safe to just call SetSelectedMod regardless, as the provider handles deduplication.
+                    // Let's keep it simple and just call SetSelectedMod.
+
+                    _consistencyProvider.SetSelectedMod(npcVM.NpcFormKey, targetModName);
+                    updatedCount++; // Increment count even if it was already selected, indicating it was processed.
+                }
+            }
+
+            Debug.WriteLine($"SelectAllFromMod: Finished processing. Attempted to set '{targetModName}' for {updatedCount} NPCs where it was an available source.");
+
+            // Optional: Provide user feedback. A message box might be too disruptive if many NPCs are affected.
+            // Consider a status bar update or a less intrusive notification if needed.
+            // For now, the Debug output provides confirmation.
+            // MessageBox.Show($"Set '{targetModName}' as the appearance for {updatedCount} applicable NPCs.", "Selection Update Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        
+        /// <summary>
+        /// Checks if a given mod name (could be plugin filename or mugshot folder name)
+        /// corresponds to a valid appearance source (plugin record or mugshot) for the specified NPC.
+        /// </summary>
+        private bool IsModAnAppearanceSourceForNpc(VM_NpcSelection npcVM, VM_AppearanceMod referenceMod)
+        {
+            if (npcVM == null || string.IsNullOrEmpty(referenceMod.ModName)) return false;
+            
+            // Is there a mugshot for this mod?
+            
+            string npcFormKeyString = npcVM.NpcFormKey.ToString();
+            if (_mugshotData.TryGetValue(npcFormKeyString, out var mugshots))
+            {
+                // Check if any mugshot entry for this NPC has a matching ModName (folder name)
+                if (mugshots.Any(m => m.ModName.Equals(referenceMod.ModName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return true;
+                }
+            }
+            
+            // Is the ModKey of the refrenceMod an override of this mod?
+            if (referenceMod.ModKey != null && npcVM.AppearanceMods.Contains(referenceMod.ModKey.Value))
+            {
+                return true; // should probably check that no other VM_ModSetting has the same ModKey to ensure uniqueness.
+            }
+
+            return false; // Not found as a source
         }
 
         public void HideAllFromMod(VM_AppearanceMod referenceMod)
