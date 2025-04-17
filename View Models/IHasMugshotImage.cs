@@ -6,4 +6,5 @@ public interface IHasMugshotImage
     public double ImageHeight { get; set; }
     public bool HasMugshot { get; }
     public bool IsVisible { get; }
+    public string ImagePath { get; set; }
 }

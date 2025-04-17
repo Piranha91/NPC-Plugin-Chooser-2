@@ -32,4 +32,11 @@
       </Page>
     </ItemGroup>
 
+    <ItemGroup>
+      <None Remove="Resources\No Mugshot.png" />
+      <Content Include="Resources\No Mugshot.png">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+    </ItemGroup>
+
 </Project>

@@ -28,7 +28,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public ModKey? ModKey { get; }
         public string ModName { get; }
-        [Reactive] public string ImagePath { get; private set; } = string.Empty;
+        [Reactive] public string ImagePath { get;  set; } = string.Empty;
         [Reactive] public double ImageWidth { get; set; }
         [Reactive] public double ImageHeight { get; set; }
         [Reactive] public bool IsSelected { get; set; }
@@ -46,6 +46,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> HideAllFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> UnhideAllFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> JumpToModCommand { get; }
+        
+        // --- Placeholder Image Configuration ---
+        // Relative path from the application's base directory
+        private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
+        // Calculate the full path once
+        private static readonly string FullPlaceholderPath = Path.Combine(AppContext.BaseDirectory, PlaceholderResourceRelativePath);
+        // Check if the placeholder file actually exists at runtime
+        private static readonly bool PlaceholderExists = File.Exists(FullPlaceholderPath);
+        // --- End Placeholder Configuration ---
 
         // *** Constructor is public again ***
         // Parameters that vary per instance are listed first by convention
@@ -70,10 +79,29 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _consistencyProvider = consistencyProvider;
             _vmNpcSelectionBar = vmNpcSelectionBar;
 
+            // --- Image Path and HasMugshot Logic ---
+            // 1. Check if a *real* mugshot path was provided and exists
+            bool realMugshotExists = !string.IsNullOrWhiteSpace(imagePath) && File.Exists(imagePath);
+            HasMugshot = realMugshotExists; // Set based on *real* mugshot presence
 
-            ImagePath = !string.IsNullOrWhiteSpace(imagePath) && File.Exists(imagePath) ? imagePath : string.Empty;
-            HasMugshot = !string.IsNullOrWhiteSpace(ImagePath);
-            if (HasMugshot)
+            // 2. Assign ImagePath: Prioritize real mugshot, then placeholder, then empty
+            if (realMugshotExists)
+            {
+                ImagePath = imagePath!; // Use the valid real mugshot path
+            }
+            else if (PlaceholderExists)
+            {
+                ImagePath = FullPlaceholderPath; // Use the placeholder path
+                 // HasMugshot remains false because it's not a *real* mugshot for this mod
+            }
+            else
+            {
+                ImagePath = string.Empty; // Fallback: No real mugshot AND no placeholder found
+                HasMugshot = false;       // Ensure HasMugshot is false
+            }
+
+            // 3. Try to get dimensions if *any* image path was set (real or placeholder)
+            if (!string.IsNullOrWhiteSpace(ImagePath))
             {
                 try
                 {
@@ -83,16 +111,28 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Error getting dimensions for {ImagePath}: {ex.Message}");
-                    HasMugshot = false;
+                    // Log error if dimensions couldn't be read (e.g., invalid image file, permissions)
+                    System.Diagnostics.Debug.WriteLine($"Error getting dimensions for '{ImagePath}': {ex.Message}");
+                    // Reset state if the image (even placeholder) is unusable
                     ImagePath = string.Empty;
+                    HasMugshot = false; // Can't display it, so treat as no mugshot
+                    ImageWidth = 0;
+                    ImageHeight = 0;
                 }
             }
+            else // No image path set (no real, no placeholder)
+            {
+                ImageWidth = 0; // Ensure dimensions are zero
+                ImageHeight = 0;
+            }
+            // --- End Image Path Logic ---
+
 
             CanJumpToMod = _vmNpcSelectionBar.CanJumpToMod(modName); // Use injected instance
             IsSelected = _consistencyProvider.IsModSelected(_npcFormKey, ModName);
 
             SelectCommand = ReactiveCommand.Create(SelectThisMod);
+            // Can toggle full screen if *any* image path is valid (real or placeholder)
             var canToggleFullScreen = this.WhenAnyValue(x => x.ImagePath, path => !string.IsNullOrEmpty(path) && File.Exists(path));
             ToggleFullScreenCommand = ReactiveCommand.Create(ToggleFullScreen, canToggleFullScreen);
             HideCommand = ReactiveCommand.Create(HideThisMod);

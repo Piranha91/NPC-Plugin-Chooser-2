@@ -15,7 +15,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
     {
         private readonly VM_Mods _parentVm;
 
-        public string ImagePath { get; }
+        public string ImagePath { get; set; }
         public FormKey NpcFormKey { get; }
         public string NpcDisplayName { get; }
         [Reactive] public double ImageWidth { get; set; }
