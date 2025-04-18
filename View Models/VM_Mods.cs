@@ -216,9 +216,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                      // Now select the NPC
                      _npcSelectionBar.SelectedNpc = npcToSelect;
 
-                     // Optional: Scroll into view (requires ListBox reference from NpcsView, tricky in MVVM)
-                     //var npcsView = Find NpcsView instance somehow...
-                     //npcsView?.ScrollIntoView(npcToSelect);
+                     // Attempt to scroll into view (Requires reference or messaging)
+                     // This is often better handled with an Attached Property or Behavior on the ListBox in the View.
+                     // For now, just selecting it is the primary goal.
+                     _npcSelectionBar.RequestScrollIntoView(npcToSelect); // Assuming VM_NpcSelectionBar has such a method/mechanism
                  }
                  else
                  {
@@ -284,11 +285,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // Phase 2a:  Create new VM_ModSettings from Mugshot folders
              var vmsFromMugshots = new List<VM_ModSetting>();
+             var mugShotDirs = Directory.EnumerateDirectories(_settings.MugshotsFolder);
              if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
              {
                  try
                  {
-                     foreach (var dirPath in Directory.EnumerateDirectories(_settings.MugshotsFolder))
+                     foreach (var dirPath in mugShotDirs)
                      {
                          string folderName = Path.GetFileName(dirPath);
                          if (!loadedDisplayNames.Contains(folderName))
@@ -371,10 +373,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 if (vm.CorrespondingFolderPaths.Any() || vm.CorrespondingModKey.HasValue)
                 {
-                    if (!tempList.Any(existing => existing.DisplayName.Equals(vm.DisplayName, StringComparison.OrdinalIgnoreCase)))
-                    {
-                         tempList.Add(vm);
-                    }
+                    vm.IsMugshotOnlyEntry = false;
+                }
+                else
+                {
+                    vm.IsMugshotOnlyEntry = true;
+                }
+                
+                if (!tempList.Any(existing => existing.DisplayName.Equals(vm.DisplayName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    tempList.Add(vm);
                 }
             }
 
@@ -562,6 +570,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
              System.Diagnostics.Debug.WriteLine($"ApplyFilters: Displaying {ModSettingsList.Count} of {_allModSettingsInternal.Count} items.");
          }
 
+         public bool TryGetWinningNpc(FormKey fk, out INpcGetter? npcGetter)
+         {
+             var matchingNpc = _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(fk, out npcGetter);
+             return matchingNpc;
+         }
+
 
          // Save Logic
          public void SaveModSettingsToModel()
@@ -571,7 +585,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
              {
                  // Only save if it has meaningful data (Key, Folder Paths, or Mugshot Path)
                  if (!string.IsNullOrWhiteSpace(vm.DisplayName) &&
-                     (vm.CorrespondingModKey.HasValue || vm.CorrespondingFolderPaths.Any() || !string.IsNullOrWhiteSpace(vm.MugShotFolderPath)))
+                     (vm.CorrespondingModKey.HasValue || vm.CorrespondingFolderPaths.Any()))
                  {
                      // Create a new ModSetting model instance
                      var model = new Models.ModSetting

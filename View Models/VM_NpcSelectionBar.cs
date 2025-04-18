@@ -92,6 +92,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private readonly ISubject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
         public IObservable<Unit> RefreshImageSizesObservable => _refreshImageSizesSubject.AsObservable();
+        public Interaction<VM_NpcSelection, Unit> ScrollToNpcInteraction { get; }
 
         // *** UPDATED CONSTRUCTOR SIGNATURE ***
         public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider,
@@ -114,6 +115,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             _hiddenModNames = _settings.HiddenModNames ?? new(); // Ensure initialized
             _hiddenModsPerNpc = _settings.HiddenModsPerNpc ?? new(); // Ensure initialized
+            
+            ScrollToNpcInteraction = new Interaction<VM_NpcSelection, Unit>();
 
             // --- Existing Property Setup ---
             this.WhenAnyValue(x => x.SelectedNpc)
@@ -222,6 +225,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         // --- Methods ---
+        
+        public async Task RequestScrollIntoView(VM_NpcSelection npcToScrollTo)
+        {
+            if (npcToScrollTo == null) return;
+            try
+            {
+                await ScrollToNpcInteraction.Handle(npcToScrollTo);
+                Debug.WriteLine($"Requested scroll for {npcToScrollTo.DisplayName}");
+            }
+            catch (Exception ex)
+            {
+                // Handle cases where the interaction wasn't handled by the view
+                Debug.WriteLine($"Error invoking ScrollToNpcInteraction: {ex.Message}. Was the handler registered in NpcsView?");
+            }
+        }
 
         // *** NEW: JumpToMod Command Execution Logic ***
         public bool CanJumpToMod(string appearanceModName)

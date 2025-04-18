@@ -1,6 +1,7 @@
 ﻿// NpcsView.xaml.cs (Updated with Disposal Logic)
 
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Reactive;
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
@@ -73,6 +74,50 @@ namespace NPC_Plugin_Chooser_2.Views
 
                 // Any other view-specific subscriptions or bindings set up here
                 // should also use .DisposeWith(d)
+                
+                ViewModel.ScrollToNpcInteraction.RegisterHandler(interaction =>
+                {
+                    var npcToScrollTo = interaction.Input;
+                    Debug.WriteLine($"NpcsView Interaction Handler: Received request to scroll to {npcToScrollTo?.DisplayName ?? "NULL NPC"}");
+
+                    if (npcToScrollTo != null)
+                    {
+                        // Ensure the operation happens on the UI thread
+                        Dispatcher.InvokeAsync(() =>
+                        {
+                            try
+                            {
+                                // Check if the item is actually in the ListBox's ItemsSource
+                                if (NpcListBox.Items.Contains(npcToScrollTo))
+                                {
+                                    NpcListBox.ScrollIntoView(npcToScrollTo);
+                                    Debug.WriteLine($"NpcsView Interaction Handler: Called ScrollIntoView for {npcToScrollTo.DisplayName}");
+                                    // Optionally ensure selection if it didn't happen automatically
+                                    // if (NpcListBox.SelectedItem != npcToScrollTo) {
+                                    //     NpcListBox.SelectedItem = npcToScrollTo;
+                                    // }
+                                }
+                                else
+                                {
+                                     Debug.WriteLine($"NpcsView Interaction Handler: NPC {npcToScrollTo.DisplayName} not found in NpcListBox.Items.");
+                                     // This can happen if filters changed between selection and scroll request
+                                }
+                                interaction.SetOutput(Unit.Default); // Complete the interaction
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"NpcsView Interaction Handler: Error during ScrollIntoView: {ex.Message}");
+                                // Complete the interaction even on error to prevent hangs
+                                interaction.SetOutput(Unit.Default);
+                            }
+                        });
+                    }
+                    else
+                    {
+                        // Complete interaction if input was null
+                        interaction.SetOutput(Unit.Default);
+                    }
+                }).DisposeWith(d); // Dispose the handler registration when the view deactivates
             });
         }
 
