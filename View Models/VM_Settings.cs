@@ -1,10 +1,12 @@
 ﻿// VM_Settings.cs (Updated)
 
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Windows;
 using System.IO;
 using System.Reactive;
 using System.Reactive.Linq;
+using System.Text;
 using Microsoft.Win32;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using Mutagen.Bethesda.Plugins;
@@ -25,6 +27,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Settings _model; // Renamed from settings to _model for clarity
         private readonly VM_NpcSelectionBar _npcSelectionBar;
         private readonly VM_Mods _modListVM;
+        private readonly NpcConsistencyProvider _consistencyProvider; 
 
         // --- Existing & Modified Properties ---
         [Reactive] public string ModsFolder { get; set; }
@@ -60,12 +63,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> ImportEasyNpcCommand { get; } // New
         public ReactiveCommand<Unit, Unit> ExportEasyNpcCommand { get; } // New
 
-        public VM_Settings(EnvironmentStateProvider environmentStateProvider, Settings settings, VM_NpcSelectionBar npcSelectionBar, VM_Mods modListVM)
+        public VM_Settings(EnvironmentStateProvider environmentStateProvider, Settings settings, VM_NpcSelectionBar npcSelectionBar, VM_Mods modListVM, NpcConsistencyProvider consistencyProvider)
         {
             _environmentStateProvider = environmentStateProvider;
             _npcSelectionBar = npcSelectionBar;
             _modListVM = modListVM;
             _model = settings; // Use the injected model instance
+            _consistencyProvider = consistencyProvider;
 
             Application.Current.Exit += (_, __) => { SaveSettings(); };
 
@@ -310,11 +314,202 @@ When the ouptut plugin is generated, put it at the end of your load order.";
             MessageBox.Show(helpText, "Patching Mode Information", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        private void ImportEasyNpc() // New Placeholder
+        private void ImportEasyNpc()
         {
-            MessageBox.Show("Import from EasyNPC - Not yet implemented.", "Import", MessageBoxButton.OK, MessageBoxImage.Information);
-            // Future implementation here
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "EasyNPC Profile (*.txt)|*.txt|All files (*.*)|*.*",
+                Title = "Select EasyNPC Profile Text File"
+            };
+
+            if (openFileDialog.ShowDialog() != true) return; // User cancelled
+
+            string filePath = openFileDialog.FileName;
+            // Store *successfully matched* potential changes
+            var potentialChanges = new List<(FormKey NpcKey, ModKey DefaultKey, ModKey AppearanceKey, string NpcName, string TargetModDisplayName)>();
+            var errors = new List<string>();
+            var missingAppearancePlugins = new HashSet<ModKey>(); // Track plugins without matching VM_ModSetting
+            int lineNum = 0;
+
+            // --- Pass 1: Parse file and identify missing plugins ---
+            try
+            {
+                foreach (string line in File.ReadLines(filePath))
+                {
+                    lineNum++;
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#') || line.StartsWith("//")) continue;
+
+                    var equalSplit = line.Split(new[] { '=' }, 2);
+                    if (equalSplit.Length != 2) { errors.Add($"Line {lineNum}: Invalid format (missing '=')."); continue; }
+                    string formStringPart = equalSplit[0].Trim();
+                    string pluginInfoPart = equalSplit[1].Trim();
+
+                    FormKey npcKey = default;
+                    ModKey defaultKey = default;
+                    ModKey appearanceKey = default;
+
+                    // Parse FormKey
+                    var formSplit = formStringPart.Split('#');
+                    if (formSplit.Length == 2 && !string.IsNullOrWhiteSpace(formSplit[0]) && !string.IsNullOrWhiteSpace(formSplit[1])) {
+                        try { npcKey = FormKey.Factory($"{formSplit[1]}:{formSplit[0]}"); }
+                        catch (Exception ex) { errors.Add($"Line {lineNum}: Cannot parse FormKey '{formStringPart}'. {ex.Message}"); continue; }
+                    } else { errors.Add($"Line {lineNum}: Invalid FormString '{formStringPart}'."); continue; }
+
+                    // Parse Plugins
+                    var pipeSplit = pluginInfoPart.Split('|');
+                    if (pipeSplit.Length < 2 || string.IsNullOrWhiteSpace(pipeSplit[0]) || string.IsNullOrWhiteSpace(pipeSplit[1])) { errors.Add($"Line {lineNum}: Invalid Plugin Info '{pluginInfoPart}'."); continue; }
+                    string defaultPluginName = pipeSplit[0].Trim();
+                    string appearancePluginName = pipeSplit[1].Trim();
+
+                    try { defaultKey = ModKey.FromFileName(defaultPluginName); }
+                    catch (Exception ex) { errors.Add($"Line {lineNum}: Cannot parse Default Plugin '{defaultPluginName}'. {ex.Message}"); continue; }
+
+                    try { appearanceKey = ModKey.FromFileName(appearancePluginName); }
+                    catch (Exception ex) { errors.Add($"Line {lineNum}: Cannot parse Appearance Plugin '{appearancePluginName}'. {ex.Message}"); continue; }
+
+                    // Check if a VM_ModSetting exists for the appearance plugin
+                    if (!_modListVM.TryGetModSettingForPlugin(appearanceKey, out _, out string targetModDisplayName))
+                    {
+                        // Not found - track it and skip adding to potentialChanges for now
+                        missingAppearancePlugins.Add(appearanceKey);
+                        Debug.WriteLine($"ImportEasyNpc: Appearance Plugin '{appearanceKey}' not found in Mods Menu for NPC {npcKey}.");
+                        // We don't add this to potentialChanges yet
+                    }
+                    else
+                    {
+                        // Found - add to potential changes
+                        string npcName = _npcSelectionBar.AllNpcs.FirstOrDefault(n => n.NpcFormKey == npcKey)?.DisplayName ?? npcKey.ToString();
+                        potentialChanges.Add((npcKey, defaultKey, appearanceKey, npcName, targetModDisplayName));
+                    }
+                } // End foreach line
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error reading file '{filePath}':\n{ex.Message}", "File Read Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // --- Handle Parsing Errors (Optional: Show before Missing Plugin check) ---
+            if (errors.Any())
+            {
+                var errorMsg = new StringBuilder($"Encountered {errors.Count} errors while parsing '{Path.GetFileName(filePath)}':\n\n");
+                errorMsg.AppendLine(string.Join("\n", errors.Take(20)));
+                if (errors.Count > 20) errorMsg.AppendLine("\n...");
+                errorMsg.AppendLine("\nThese lines were skipped. Continue processing?");
+                if (MessageBox.Show(errorMsg.ToString(), "Parsing Errors", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.No)
+                {
+                    return; // Cancel based on parsing errors
+                }
+            }
+
+            // --- Handle Missing Appearance Plugins ---
+            if (missingAppearancePlugins.Any())
+            {
+                var missingMsg = new StringBuilder("The following Appearance Plugins are assigned in your EasyNPC profile, ");
+                missingMsg.AppendLine("but there are no Mods in your Mods Menu that list them as Corresponding Plugins:");
+                missingMsg.AppendLine();
+                foreach (var missingKey in missingAppearancePlugins.Take(15)) // Show max 15
+                {
+                    missingMsg.AppendLine($"- {missingKey.FileName}");
+                }
+                if (missingAppearancePlugins.Count > 15) missingMsg.AppendLine("  ...");
+                missingMsg.AppendLine("\nHow would you like to proceed?");
+
+                // Simulate custom buttons with Yes/No mapping
+                missingMsg.AppendLine("\n[Yes] = Continue and Skip NPCs assigned these plugins");
+                missingMsg.AppendLine("[No]  = Cancel Import");
+
+
+                MessageBoxResult choice = MessageBox.Show(missingMsg.ToString(), "Missing Appearance Plugin Mappings", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+                if (choice == MessageBoxResult.No) // User chose Cancel
+                {
+                    MessageBox.Show("Import cancelled.", "Import Cancelled", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                // If Yes, we simply proceed with the already filtered 'potentialChanges' list.
+                Debug.WriteLine("User chose to continue, skipping NPCs with missing appearance plugins.");
+            }
+
+
+            // Check if there are any changes left to process
+            if (!potentialChanges.Any())
+            {
+                MessageBox.Show("No valid changes found to apply after processing the file (possibly due to skipping or parsing errors).", "Import Empty", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+
+            // --- Prepare Confirmation (using the filtered potentialChanges) ---
+            var changesToConfirm = new List<string>(); // List of strings for the message box
+            // No need for finalApplyList, potentialChanges already has targetModDisplayName
+
+            foreach (var change in potentialChanges)
+            {
+                // Get current selection display name
+                string? currentSelectionDisplayName = _consistencyProvider.GetSelectedMod(change.NpcKey);
+
+                // Add to confirmation list ONLY if overwriting an EXISTING selection
+                if (!string.IsNullOrEmpty(currentSelectionDisplayName) &&
+                    currentSelectionDisplayName != change.TargetModDisplayName)
+                {
+                    const int maxLen = 40;
+                    string oldDisplay = currentSelectionDisplayName;
+                    if (oldDisplay.Length > maxLen) oldDisplay = oldDisplay.Substring(0, maxLen - 3) + "...";
+                    string newDisplay = change.TargetModDisplayName;
+                    if (newDisplay.Length > maxLen) newDisplay = newDisplay.Substring(0, maxLen - 3) + "...";
+
+                    changesToConfirm.Add($"{change.NpcName}: [{oldDisplay}] -> [{newDisplay}]");
+                }
+                // We will apply all items in potentialChanges list later
+            }
+
+            // --- Show Confirmation Dialog ---
+            string confirmationMessage;
+            int totalToProcess = potentialChanges.Count; // Based on successfully matched items
+
+            if (changesToConfirm.Any()) // Specific *overwrites* will occur
+            {
+                confirmationMessage = $"The following {changesToConfirm.Count} existing NPC appearance assignments will be changed:\n\n" +
+                                      string.Join("\n", changesToConfirm.Take(30));
+                if (changesToConfirm.Count > 30) confirmationMessage += "\n...";
+            }
+            else // No overwrites, but settings ARE being applied
+            {
+                confirmationMessage = "No existing NPC appearance assignments will be changed.";
+            }
+
+            confirmationMessage += $"\n\nEasyNPC Default Plugin settings will also be updated for {totalToProcess} processed NPCs.";
+            // No longer need message about adding Mods list entries
+            confirmationMessage += "\n\nDo you want to apply these changes?";
+
+            if (MessageBox.Show(confirmationMessage, "Confirm Import", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            {
+                // --- Apply Changes ---
+                int appliedCount = 0;
+                foreach (var applyItem in potentialChanges) // Iterate the filtered list
+                {
+                    // Update EasyNPC Default Plugin in the model
+                    _model.EasyNpcDefaultPlugins[applyItem.NpcKey] = applyItem.DefaultKey;
+
+                    // Update Selected Appearance Mod using the consistency provider
+                    _consistencyProvider.SetSelectedMod(applyItem.NpcKey, applyItem.TargetModDisplayName);
+                    appliedCount++;
+                }
+
+                // No longer need to check modSettingAdded or call ResortAndRefreshFilters
+
+                // Refresh NPC list filter in case selection state changed
+                _npcSelectionBar.ApplyFilter(false);
+
+                MessageBox.Show($"Successfully imported settings for {appliedCount} NPCs.", "Import Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                 MessageBox.Show("Import cancelled.", "Import Cancelled", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
         }
+
 
         private void ExportEasyNpc() // New Placeholder
         {

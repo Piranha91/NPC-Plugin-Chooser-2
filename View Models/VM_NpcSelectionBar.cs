@@ -599,6 +599,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
 
+            var selectedModName = _consistencyProvider.GetSelectedMod(npcVM.NpcFormKey);
+            var selectedVm = sortedVMs.FirstOrDefault(x => x.ModName == selectedModName);
+            if (selectedVm != null)
+            {
+                selectedVm.IsSelected = true;
+            }
+
             return new(sortedVMs);
         }
 

@@ -609,5 +609,54 @@ namespace NPC_Plugin_Chooser_2.View_Models
              // if (!success) { MessageBox.Show($"Error saving settings: {exception}", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error); }
              // else { System.Diagnostics.Debug.WriteLine("DEBUG: Settings successfully updated in memory by SaveModSettingsToModel."); }
          }
+         
+        /// <summary>
+        /// Tries to find an existing VM_ModSetting matching the plugin key.
+        /// It searches based on the CorrespondingModKey property of the VM_ModSettings.
+        /// </summary>
+        /// <param name="appearancePluginKey">The ModKey of the appearance plugin to search for.</param>
+        /// <param name="foundVm">Output: The found VM_ModSetting instance if a match exists; otherwise, null.</param>
+        /// <param name="modDisplayName">Output: The display name of the found VM_ModSetting if found; otherwise, defaults to the input plugin's filename.</param>
+        /// <returns>True if a matching VM_ModSetting was found based on the CorrespondingModKey, false otherwise.</returns>
+        public bool TryGetModSettingForPlugin(ModKey appearancePluginKey, out VM_ModSetting? foundVm, out string modDisplayName)
+        {
+            // Initialize output parameters
+            foundVm = null;
+            // Default the display name to the filename from the input key.
+            // This will be used if the VM is not found or if the key is invalid.
+            // Use ?? to handle potential null FileName (though unlikely for valid ModKey)
+            modDisplayName = appearancePluginKey.FileName;
+
+            // Check if the input ModKey is valid (not null or default)
+            if (appearancePluginKey.IsNull)
+            {
+                Debug.WriteLine($"TryGetModSettingForPlugin: Received an invalid (IsNull) ModKey.");
+                // Keep foundVm as null and modDisplayName as the default set above.
+                return false; // Cannot find a match for an invalid key.
+            }
+
+            // Search the internal list of all loaded/created mod settings.
+            // The comparison checks if the CorrespondingModKey property of a VM matches the input key.
+            // Ensure vm.CorrespondingModKey is not null before comparing.
+            foundVm = _allModSettingsInternal.FirstOrDefault(vm => vm.CorrespondingModKey.HasValue && vm.CorrespondingModKey.Value.Equals(appearancePluginKey));
+
+            // Check if a VM was found
+            if (foundVm != null)
+            {
+                // A matching VM was found. Update the output display name to the actual display name of the found VM.
+                modDisplayName = foundVm.DisplayName;
+                // Log success for debugging if needed.
+                // Debug.WriteLine($"TryGetModSettingForPlugin: Found existing VM '{modDisplayName}' for key '{appearancePluginKey}'.");
+                return true; // Indicate success.
+            }
+            else
+            {
+                // No VM with a matching CorrespondingModKey was found in the list.
+                // Log failure for debugging if needed.
+                // Debug.WriteLine($"TryGetModSettingForPlugin: No VM found for key '{appearancePluginKey}'.");
+                // Keep foundVm as null and modDisplayName as the default filename set earlier.
+                return false; // Indicate failure.
+            }
+        }
     }
 }
