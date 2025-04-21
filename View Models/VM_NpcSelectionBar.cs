@@ -568,14 +568,22 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var processedAppearancePlugins = new HashSet<ModKey>();
             
             // 1) Create mods from mughots
-            foreach (var mugshotInfo in npcMugshotList) {
-                string mugshotModName = mugshotInfo.ModName; string mugshotImagePath = mugshotInfo.ImagePath;
-                modVMs.Add(_appearanceModFactory(mugshotModName, npcVM.NpcFormKey, null, mugshotImagePath));
-                var associatedModKey = _lazyModsVm.Value.AllModSettings
-                    .FirstOrDefault(x => x.DisplayName == mugshotModName)?.CorrespondingModKey;
-                if (associatedModKey != null)
+            foreach (var mugshotInfo in npcMugshotList) 
+            {
+                string mugshotModName = mugshotInfo.ModName; 
+                string mugshotImagePath = mugshotInfo.ImagePath;
+                string mugShotDirPath = Directory.GetParent(Directory.GetParent(mugshotImagePath).FullName).FullName;
+                
+                var matchingVMs =
+                    _lazyModsVm.Value.AllModSettings.Where(x => x.MugShotFolderPath.Equals(mugShotDirPath));
+
+                foreach (var vm in matchingVMs)
                 {
-                    processedAppearancePlugins.Add(associatedModKey.Value);
+                    modVMs.Add(_appearanceModFactory(vm.DisplayName, npcVM.NpcFormKey, vm.CorrespondingModKey, mugshotImagePath));
+                    if (vm.CorrespondingModKey != null)
+                    {
+                        processedAppearancePlugins.Add(vm.CorrespondingModKey.Value);
+                    }
                 }
             }
             // 2) Create mods from plugins that don't have any associated mugshots
