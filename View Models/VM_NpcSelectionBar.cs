@@ -592,8 +592,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (npcVM.NpcGetter != null) {
                 foreach (var modKey in npcVM.AppearanceMods.Distinct().Where(x => !processedAppearancePlugins.Contains(x))) 
                 {
-                    modVMs.Add(_appearanceModFactory(modKey.ToString(), npcVM.NpcFormKey, modKey, string.Empty)); 
-                    processedAppearancePlugins.Add(modKey);
+                    var corespondingMod = _lazyModsVm.Value.AllModSettings.FirstOrDefault(x => x.CorrespondingModKey.Equals(modKey));
+                    if (corespondingMod != null)
+                    {
+                        modVMs.Add(_appearanceModFactory(corespondingMod.DisplayName, npcVM.NpcFormKey, modKey, string.Empty)); 
+                        processedAppearancePlugins.Add(modKey);
+                    }
                 }
             }
             
