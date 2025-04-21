@@ -194,10 +194,28 @@
                  <Border BorderThickness="0,0,1,0" BorderBrush="DarkGray">
                     <ListBox x:Name="NpcListBox" ItemsSource="{Binding FilteredNpcs}"
                              SelectedItem="{Binding SelectedNpc, Mode=TwoWay}"
-                             DisplayMemberPath="DisplayName"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                              VerticalContentAlignment="Stretch"
-                             SelectionChanged="NpcListBox_OnSelectionChanged"/>
+                             SelectionChanged="NpcListBox_OnSelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border>
+                                    <!-- Tooltip with proper binding to NpcName, NpcEditorID, NpcFormKeyStr -->
+                                    <Border.ToolTip>
+                                        <ToolTip>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding NpcName}" />
+                                                <TextBlock Text="{Binding NpcEditorId}" />
+                                                <TextBlock Text="{Binding NpcFormKeyString}" />
+                                            </StackPanel>
+                                        </ToolTip>
+                                    </Border.ToolTip>
+                                    <!-- Display the NpcName in the listbox item -->
+                                    <TextBlock Text="{Binding DisplayName}" />
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                 </Border>
             </DockPanel>
 

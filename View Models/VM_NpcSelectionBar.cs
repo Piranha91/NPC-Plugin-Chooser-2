@@ -221,7 +221,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .Throttle(TimeSpan.FromMilliseconds(200)).Select(_ => Unit.Default)
                 .InvokeCommand(LoadDescriptionCommand).DisposeWith(_disposables);
 
-            Initialize();
+            //Initialize(); Don't initialize here; allow environment subscription from VM_Settings to call it
         }
 
         // --- Methods ---
@@ -425,7 +425,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                      try {
                          FormKey mugshotFormKey = FormKey.Factory(mugshotFormKeyString);
                          var npcSelector = new VM_NpcSelection(mugshotFormKey, _environmentStateProvider, _consistencyProvider);
-                         if (npcSelector.DisplayName == mugshotFormKeyString) { string firstModName = mugshots[0].ModName; string pluginBaseName = Path.GetFileNameWithoutExtension(mugshotFormKey.ModKey.FileName); npcSelector.DisplayName = $"{firstModName} - {pluginBaseName} [{mugshotFormKeyString}]"; }
+                         if (npcSelector.DisplayName == mugshotFormKeyString)
+                         {
+                             npcSelector.DisplayName += " (Missing)";
+                             string containedIn = string.Join(", ", mugshots.Select(m => m.ModName));
+                             npcSelector.NpcName = "Imported from Mugshots: " + containedIn;
+                             npcSelector.NpcEditorId = "Not in current Load Order";
+                         }
                          AllNpcs.Add(npcSelector);
                      } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Error creating VM for mugshot-only NPC {mugshotFormKeyString}: {ex.Message}"); }
                  }

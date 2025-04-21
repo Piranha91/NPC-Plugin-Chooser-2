@@ -14,7 +14,7 @@
              mc:Ignorable="d"
              x:TypeArguments="vm:VM_Settings"
              d:DataContext="{d:DesignInstance Type=vm:VM_Settings}"
-             d:DesignHeight="600" d:DesignWidth="800"> <!-- Increased height for more controls -->
+             d:DesignHeight="800" d:DesignWidth="800"> <!-- Increased height for more controls -->
     <UserControl.Resources>
         <ObjectDataProvider x:Key="SkyrimReleaseEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
@@ -155,21 +155,41 @@
             <!-- Section 4: EasyNPC Transfer -->
             <GroupBox Header="EasyNPC Transfer" Margin="0,0,0,10" Padding="5">
                 <StackPanel>
-                    <!-- Import/Export Buttons (New) -->
-                    <Button Content="Import NPC Appearance Choices from EasyNPC"
+                    <!-- Import Button -->
+                    <Button Content="Import NPC Appearance Choices from EasyNPC Profile"
                             Command="{Binding ImportEasyNpcCommand}"
-                            HorizontalAlignment="Left" Margin="0,0,0,5"/>
-                    <Button Content="Export NPC Appearance Choices To EasyNPC"
-                            Command="{Binding ExportEasyNpcCommand}"
-                            HorizontalAlignment="Left" Margin="0,0,0,15"/>
+                            HorizontalAlignment="Left" Margin="0,0,0,5"
+                            ToolTip="Import settings from a standard EasyNPC profile text file."/>
 
-                    <!-- NPC Default Plugin Exclusions (ModKeyMultiPicker - New) -->
+                    <!-- Export Button -->
+                    <Button Content="Export NPC Appearance Choices To New EasyNPC Profile"
+                            Command="{Binding ExportEasyNpcCommand}"
+                            HorizontalAlignment="Left" Margin="0,0,0,5"
+                            ToolTip="Export current settings to a new EasyNPC profile text file."/>
+
+                    <!-- *** NEW: Update Profile Controls *** -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                        <Button Content="Update Existing EasyNPC Profile"
+                                Command="{Binding UpdateEasyNpcProfileCommand}"
+                                CommandParameter="{Binding AddMissingNpcsOnUpdate}"
+                                ToolTip="Update an existing EasyNPC profile file with current selections."
+                                VerticalAlignment="Center"/>
+                        <CheckBox Content="Add Missing NPCs?"
+                                  IsChecked="{Binding AddMissingNpcsOnUpdate, Mode=TwoWay}"
+                                  Margin="10,0,0,0"
+                                  VerticalAlignment="Center"
+                                  ToolTip="If checked, NPCs selected here but not found in the file will be added."/>
+                    </StackPanel>
+                    <!-- *** END: Update Profile Controls *** -->
+
+
+                    <!-- NPC Default Plugin Exclusions (Unchanged) -->
                     <TextBlock Text="NPC Default Plugin Exclusions:" Margin="0,0,0,2"/>
                     <local:ModSelectorView DataContext="{Binding ExclusionSelectorViewModel}"
                                            Height="180"
                                            Margin="0,0,0,10"
                                            ToolTip="Select plugins to exclude when determining the 'default' appearance plugin in EasyNPC-like mode."/>
-                     <TextBlock Text="Plugins selected here will be ignored when assigning conflict-winning overrides to EasyNPC's Default Plugin selections" FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
+                    <TextBlock Text="Plugins selected here will be ignored when assigning conflict-winning overrides to EasyNPC's Default Plugin selections" FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
                 </StackPanel>
             </GroupBox>
         </StackPanel>

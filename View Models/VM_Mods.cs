@@ -29,6 +29,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Settings _settings;
         private readonly EnvironmentStateProvider _environmentStateProvider;
         private readonly VM_NpcSelectionBar _npcSelectionBar; // To access AllNpcs and navigate
+        private readonly NpcConsistencyProvider _consistencyProvider;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm; // *** NEW: To switch tabs ***
 
         // --- Filtering Properties (Left Panel) ---
@@ -63,11 +64,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public SkyrimRelease SkyrimRelease => _settings.SkyrimRelease;
 
         // *** Updated Constructor Signature ***
-        public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider, VM_NpcSelectionBar npcSelectionBar, Lazy<VM_MainWindow> lazyMainWindowVm)
+        public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider, VM_NpcSelectionBar npcSelectionBar, NpcConsistencyProvider consistencyProvider, Lazy<VM_MainWindow> lazyMainWindowVm)
         {
             _settings = settings;
             _environmentStateProvider = environmentStateProvider;
             _npcSelectionBar = npcSelectionBar;
+            _consistencyProvider = consistencyProvider;
             _lazyMainWindowVm = lazyMainWindowVm;
 
             if (!_npcSelectionBar.AllNpcs.Any())
@@ -656,6 +658,152 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // Debug.WriteLine($"TryGetModSettingForPlugin: No VM found for key '{appearancePluginKey}'.");
                 // Keep foundVm as null and modDisplayName as the default filename set earlier.
                 return false; // Indicate failure.
+            }
+        }
+        
+        /// <summary>
+        /// Called after a Mod Folder Path or Mugshot Folder Path is potentially changed on a VM_ModSetting.
+        /// Checks if this change links it to another complementary VM (one with only mugshots, one with only mods)
+        /// and performs an automatic merge if conditions are met.
+        /// </summary>
+        /// <param name="modifiedVm">The VM that the user directly modified.</param>
+        /// <param name="addedOrSetPath">The specific path that was added or set.</param>
+        /// <param name="pathType">Indicates whether a ModFolder or MugshotFolder was changed.</param>
+        /// <param name="hadMugshotPathBefore">Did modifiedVm have a mugshot path BEFORE this change?</param>
+        /// <param name="hadModPathsBefore">Did modifiedVm have mod paths BEFORE this change?</param>
+        public void CheckForAndPerformMerge(VM_ModSetting modifiedVm, string addedOrSetPath, PathType pathType, bool hadMugshotPathBefore, bool hadModPathsBefore)
+        {
+            if (modifiedVm == null || string.IsNullOrEmpty(addedOrSetPath)) return;
+
+            VM_ModSetting? sourceVm = null; // The potential VM to merge *from*
+
+            // Find a potential source VM that contains the path added/set to the modified VM
+            foreach (var vm in _allModSettingsInternal)
+            {
+                if (vm == modifiedVm) continue; // Don't compare to self
+
+                bool pathMatches = false;
+                if (pathType == PathType.ModFolder && vm.CorrespondingFolderPaths.Contains(addedOrSetPath, StringComparer.OrdinalIgnoreCase))
+                {
+                    pathMatches = true;
+                }
+                else if (pathType == PathType.MugshotFolder && addedOrSetPath.Equals(vm.MugShotFolderPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    pathMatches = true;
+                }
+
+                if (pathMatches)
+                {
+                    sourceVm = vm;
+                    break; // Found a potential source containing the path
+                }
+            }
+
+            if (sourceVm == null) return; // No other VM contains this specific path
+
+            // Now check if the merge conditions based on initial states are met
+            bool mergeConditionsMet = false;
+            VM_ModSetting winner = modifiedVm; // Assume the modified VM is the winner initially
+            VM_ModSetting loser = sourceVm;
+
+            if (pathType == PathType.ModFolder)
+            {
+                // User added a Mod Folder path to 'modifiedVm'
+                // Conditions:
+                // 1. 'modifiedVm' previously ONLY had mugshots (hadMugshotPathBefore=true, hadModPathsBefore=false)
+                // 2. 'sourceVm' previously ONLY had this specific mod path and NO mugshots
+                bool sourceHadOnlyThisModPath = sourceVm.CorrespondingFolderPaths.Count == 1 &&
+                                               sourceVm.CorrespondingFolderPaths.Contains(addedOrSetPath, StringComparer.OrdinalIgnoreCase);
+                bool sourceHadNoMugshots = string.IsNullOrWhiteSpace(sourceVm.MugShotFolderPath); // Check current state is okay here
+
+                if (hadMugshotPathBefore && !hadModPathsBefore && sourceHadOnlyThisModPath && sourceHadNoMugshots)
+                {
+                    mergeConditionsMet = true;
+                    // Winner = modifiedVm, Loser = sourceVm (Correctly initialized)
+                }
+            }
+            else // pathType == PathType.MugshotFolder
+            {
+                // User set the Mugshot Folder path on 'modifiedVm'
+                // Conditions:
+                // 1. 'modifiedVm' previously ONLY had mod paths (hadMugshotPathBefore=false, hadModPathsBefore=true)
+                // 2. 'sourceVm' previously ONLY had this specific mugshot path and NO mod paths
+                bool sourceHadOnlyThisMugshot = addedOrSetPath.Equals(sourceVm.MugShotFolderPath, StringComparison.OrdinalIgnoreCase) &&
+                                               !sourceVm.HasModPathsAssigned; // Check current state is okay
+                bool sourceHadNoModPaths = !sourceVm.HasModPathsAssigned; // Redundant check, but clear
+
+                if (!hadMugshotPathBefore && hadModPathsBefore && sourceHadOnlyThisMugshot)
+                {
+                    mergeConditionsMet = true;
+                    // Winner = modifiedVm, Loser = sourceVm (Correctly initialized)
+                }
+            }
+
+
+            // Perform the merge if conditions are met
+            if (mergeConditionsMet)
+            {
+                Debug.WriteLine($"Merge Condition Met: Merging '{loser.DisplayName}' into '{winner.DisplayName}'");
+
+                // --- Perform Merge Actions ---
+                // 1. Transfer necessary data (loser -> winner)
+                // Mugshot Path (only if winner doesn't have one)
+                if (!winner.HasMugshotPathAssigned && loser.HasMugshotPathAssigned)
+                {
+                    winner.MugShotFolderPath = loser.MugShotFolderPath;
+                }
+                // Mod Folder Paths (add paths from loser not already in winner)
+                foreach (var path in loser.CorrespondingFolderPaths)
+                {
+                    if (!winner.CorrespondingFolderPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+                    {
+                        winner.CorrespondingFolderPaths.Add(path);
+                    }
+                }
+                // Corresponding Mod Key (prioritize winner's if set, otherwise take loser's)
+                if (!winner.CorrespondingModKey.HasValue && loser.CorrespondingModKey.HasValue)
+                {
+                    winner.CorrespondingModKey = loser.CorrespondingModKey;
+                }
+                // IsMugshotOnlyEntry should remain based on the WINNER's original status
+                 // Although, if a merge happens, it's unlikely the winner was mugshot-only. Let's set it to false.
+                 winner.IsMugshotOnlyEntry = false;
+
+
+                // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)
+                 string loserName = loser.DisplayName;
+                 string winnerName = winner.DisplayName;
+                 var npcsToUpdate = _settings.SelectedAppearanceMods
+                     .Where(kvp => kvp.Value.Equals(loserName, StringComparison.OrdinalIgnoreCase))
+                     .Select(kvp => kvp.Key) // Get FormKeys of NPCs assigned to the loser
+                     .ToList(); // Materialize the list before modifying the dictionary
+
+                 if (npcsToUpdate.Any())
+                 {
+                      Debug.WriteLine($"Updating {npcsToUpdate.Count} NPC selections from '{loserName}' to '{winnerName}'.");
+                      foreach (var npcKey in npcsToUpdate)
+                      {
+                           // Use consistency provider to update both cache and _settings model
+                           _consistencyProvider.SetSelectedMod(npcKey, winnerName);
+                      }
+                 }
+
+
+                // 3. Remove Loser VM
+                bool removed = _allModSettingsInternal.Remove(loser);
+                Debug.WriteLine($"Removed loser VM '{loserName}': {removed}");
+
+
+                // 4. Refresh UI
+                ApplyFilters();
+
+
+                // 5. Inform User
+                 MessageBox.Show(
+                     $"Automatically merged mod settings:\n\n'{loserName}' was merged into '{winnerName}'.\n\nNPC assignments using '{loserName}' have been updated.",
+                     "Mod Settings Merged",
+                     MessageBoxButton.OK,
+                     MessageBoxImage.Information);
             }
         }
     }

@@ -11,14 +11,22 @@ using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using System.Linq;
 using Mutagen.Bethesda.Skyrim;
-using Noggog;
-using NPC_Plugin_Chooser_2.BackEnd;
-using NPC_Plugin_Chooser_2.Models;
+using NPC_Plugin_Chooser_2.Models; // Assuming Models namespace
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
+    /// <summary>
+    /// Enum to specify the type of path being modified for merge checks.
+    /// </summary>
+    public enum PathType
+    {
+        MugshotFolder,
+        ModFolder
+    }
+
     public class VM_ModSetting : ReactiveObject
     {
+        // --- Properties ---
         [Reactive] public string DisplayName { get; set; } = string.Empty;
         [Reactive] public string MugShotFolderPath { get; set; } = string.Empty; // Path to the mugshot folder for this mod
         [Reactive] public ModKey? CorrespondingModKey { get; set; }
@@ -30,72 +38,91 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private readonly SkyrimRelease _skyrimRelease;
 
-        // *** NEW: Flag for dynamically created entries ***
+        // Flag indicating if this VM was created dynamically only from a Mugshot folder
+        // and wasn't loaded from the persisted ModSettings.
         public bool IsMugshotOnlyEntry { get; set; } = false;
 
-        // *** NEW: Helper properties for UI Styling ***
-        [ObservableAsProperty] public bool HasMugshotPathAssigned { get; } // Reactive property backed by MugShotFolderPath
-        [ObservableAsProperty] public bool HasModPathsAssigned { get; } // Reactive property backed by CorrespondingFolderPaths
+        // Helper properties derived from other reactive properties for UI Styling/Logic
+        [ObservableAsProperty] public bool HasMugshotPathAssigned { get; } // True if MugShotFolderPath is not null/whitespace
+        [ObservableAsProperty] public bool HasModPathsAssigned { get; } // True if CorrespondingFolderPaths has items
 
-        // *** Calculated property for display ***
+        // Calculated property for displaying the ModKey suffix in the UI
         private readonly ObservableAsPropertyHelper<string> _modKeyDisplaySuffix;
         public string ModKeyDisplaySuffix => _modKeyDisplaySuffix.Value;
 
-        [Reactive] public bool HasValidMugshots { get; set; } // Flag for clickable display name (checks content)
+        // Flag indicating if the MugShotFolderPath contains validly structured image files.
+        // Used to enable/disable the clickable DisplayName link.
+        [Reactive] public bool HasValidMugshots { get; set; }
 
-        // Commands
+        // --- Commands ---
         public ReactiveCommand<Unit, Unit> AddFolderPathCommand { get; }
         public ReactiveCommand<string, Unit> BrowseFolderPathCommand { get; }
         public ReactiveCommand<string, Unit> RemoveFolderPathCommand { get; }
         public ReactiveCommand<Unit, Unit> BrowseMugshotFolderCommand { get; }
 
-        // Reference to the parent VM to notify about changes if needed (e.g., for saving)
-        private readonly VM_Mods _parentVm;
+        // --- Private Fields ---
+        private readonly VM_Mods _parentVm; // Reference to the parent VM (VM_Mods)
 
-        // Constructor used when loading from existing Models.ModSetting
-        public VM_ModSetting(Models.ModSetting model, VM_Mods parentVm) : this(model.DisplayName, parentVm, false) // Chain constructor, explicitly false
+        // --- Constructors ---
+
+        /// <summary>
+        /// Constructor used when loading from an existing Models.ModSetting.
+        /// </summary>
+        public VM_ModSetting(Models.ModSetting model, VM_Mods parentVm)
+            : this(model.DisplayName, parentVm, isMugshotOnly: false) // Chain constructor, explicitly false for IsMugshotOnlyEntry
         {
             // Properties specific to loading existing model
             CorrespondingModKey = model.ModKey;
-            CorrespondingFolderPaths = new ObservableCollection<string>(model.CorrespondingFolderPaths);
+            CorrespondingFolderPaths = new ObservableCollection<string>(model.CorrespondingFolderPaths ?? new List<string>()); // Handle potential null
             // IsMugshotOnlyEntry is set to false via chaining
         }
 
-        // Constructor used when creating dynamically from a Mugshot folder
-        public VM_ModSetting(string displayName, string mugshotPath, VM_Mods parentVm) : this(displayName, parentVm, true) // Chain constructor, explicitly true
+        /// <summary>
+        /// Constructor used when creating dynamically from a Mugshot folder during initial population.
+        /// </summary>
+        public VM_ModSetting(string displayName, string mugshotPath, VM_Mods parentVm)
+            : this(displayName, parentVm, isMugshotOnly: true) // Chain constructor, explicitly true for IsMugshotOnlyEntry
         {
-            MugShotFolderPath = mugshotPath;
-            // IsMugshotOnlyEntry is set to true via chaining
+             MugShotFolderPath = mugshotPath;
+             // IsMugshotOnlyEntry is set to true via chaining
         }
 
-        // Base constructor (used directly or chained) - ADD isMugshotOnly PARAMETER
+        /// <summary>
+        /// Base constructor (used directly or chained).
+        /// </summary>
+        /// <param name="displayName">The initial display name.</param>
+        /// <param name="parentVm">Reference to the parent VM_Mods.</param>
+        /// <param name="isMugshotOnly">Flag indicating if this VM represents an entry initially created only from a mugshot folder.</param>
         public VM_ModSetting(string displayName, VM_Mods parentVm, bool isMugshotOnly = false)
         {
             _parentVm = parentVm;
             DisplayName = displayName;
             IsMugshotOnlyEntry = isMugshotOnly; // Set the flag based on how it was created
+            _skyrimRelease = parentVm.SkyrimRelease; // Get SkyrimRelease from parent
 
             // --- Setup for ModKeyDisplaySuffix ---
             _modKeyDisplaySuffix = this.WhenAnyValue(x => x.DisplayName, x => x.CorrespondingModKey)
                 .Select(tuple => {
                     var name = tuple.Item1;
                     var key = tuple.Item2;
-
-                    if (!key.HasValue)
-                    {
-                        return string.Empty; // No key, empty suffix
-                    }
-                    else if (!string.IsNullOrEmpty(name) && name.Equals(key.Value.FileName, StringComparison.OrdinalIgnoreCase)) // Compare against FileName
-                    {
-                        return "(Base Mod)"; // Name matches key FileName
-                    }
-                    else
-                    {
-                        return $"({key.Value})"; // Name differs or is empty, show key
-                    }
+                    if (!key.HasValue) return string.Empty;
+                    return !string.IsNullOrEmpty(name) && name.Equals(key.Value.FileName, StringComparison.OrdinalIgnoreCase)
+                        ? "(Base Mod)"
+                        : $"({key.Value})";
                 })
-                .ToProperty(this, x => x.ModKeyDisplaySuffix, scheduler: RxApp.MainThreadScheduler); // Ensure updates on UI thread
+                .ToProperty(this, x => x.ModKeyDisplaySuffix, scheduler: RxApp.MainThreadScheduler);
 
+            // --- Setup Reactive Helper Properties for UI ---
+            this.WhenAnyValue(x => x.MugShotFolderPath)
+                .Select(path => !string.IsNullOrWhiteSpace(path))
+                .ToPropertyEx(this, x => x.HasMugshotPathAssigned);
+
+             Observable.Merge(
+                     this.WhenAnyValue(x => x.CorrespondingFolderPaths.Count).Select(count => count > 0),
+                     Observable.Return(this.CorrespondingFolderPaths?.Any() ?? false) // Initial check
+                 )
+                 .DistinctUntilChanged()
+                 .ToPropertyEx(this, x => x.HasModPathsAssigned);
 
             // --- Command Initializations ---
             AddFolderPathCommand = ReactiveCommand.Create(AddFolderPath);
@@ -103,52 +130,47 @@ namespace NPC_Plugin_Chooser_2.View_Models
             RemoveFolderPathCommand = ReactiveCommand.Create<string>(RemoveFolderPath);
             BrowseMugshotFolderCommand = ReactiveCommand.Create(BrowseMugshotFolder);
 
-            // --- Setup Reactive Helper Properties for UI ---
-            // Reactively determine if a mugshot path is assigned
-            this.WhenAnyValue(x => x.MugShotFolderPath)
-                .Select(path => !string.IsNullOrWhiteSpace(path))
-                .ToPropertyEx(this, x => x.HasMugshotPathAssigned);
-
-            // Reactively determine if any mod paths are assigned
-            // Need to handle collection changes AND initial state
-             Observable.Merge(
-                     this.WhenAnyValue(x => x.CorrespondingFolderPaths.Count).Select(count => count > 0), // React to count changes
-                     Observable.Return(this.CorrespondingFolderPaths?.Any() ?? false) // Initial check
-                 )
-                 .DistinctUntilChanged() // Only update if the value actually changes
-                 .ToPropertyEx(this, x => x.HasModPathsAssigned);
-
-
-            // --- Update UI state based on property changes ---
-             // Recalculate HasValidMugshots (content check) when path changes
+            // --- Subscribe to Property Changes for Dependent Logic ---
              this.WhenAnyValue(x => x.MugShotFolderPath)
-                 .Throttle(TimeSpan.FromMilliseconds(100)) // Add slight delay in case path changes rapidly
+                 .Throttle(TimeSpan.FromMilliseconds(100))
                  .ObserveOn(RxApp.MainThreadScheduler)
                  .Subscribe(_ => {
-                     _parentVm?.RecalculateMugshotValidity(this); // Notify parent VM
+                     // Notify parent to recheck if the folder contains valid images
+                     _parentVm?.RecalculateMugshotValidity(this);
                  });
+
+            // Optionally, trigger RefreshNpcLists when ModKey or Paths change?
+            // Could be intensive. Let's assume it's done during initial load for now.
+            // this.WhenAnyValue(x => x.CorrespondingModKey, x => x.CorrespondingFolderPaths.Count)
+            //    .Throttle(TimeSpan.FromSeconds(1)) // Avoid rapid calls
+            //    .ObserveOn(TaskPoolScheduler.Default) // Run on background thread
+            //    .Subscribe(_ => RefreshNpcLists());
         }
+
+        // --- Command Implementations ---
 
         private void AddFolderPath()
         {
-            using (var dialog = new FolderBrowserDialog()) // Consider using CommonOpenFileDialog for modern look
+            using (var dialog = new FolderBrowserDialog())
             {
                 dialog.Description = $"Select a corresponding folder for {DisplayName}";
-                string initialPath = _parentVm.ModsFolderSetting; // Start in main Mods folder if set
-                if (string.IsNullOrWhiteSpace(initialPath) || !Directory.Exists(initialPath))
-                {
-                    // Fallback: Use first existing path in the list, or My Documents
-                    initialPath = CorrespondingFolderPaths.FirstOrDefault(p => Directory.Exists(p)) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                }
-                 dialog.SelectedPath = initialPath; // Set starting path
+                string initialPath = _parentVm.ModsFolderSetting;
+                if (string.IsNullOrWhiteSpace(initialPath) || !Directory.Exists(initialPath)) { initialPath = CorrespondingFolderPaths.FirstOrDefault(p => Directory.Exists(p)) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments); }
+                dialog.SelectedPath = initialPath;
 
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
-                    if (!CorrespondingFolderPaths.Contains(dialog.SelectedPath, StringComparer.OrdinalIgnoreCase))
+                    string addedPath = dialog.SelectedPath;
+                    if (!CorrespondingFolderPaths.Contains(addedPath, StringComparer.OrdinalIgnoreCase))
                     {
-                        CorrespondingFolderPaths.Add(dialog.SelectedPath);
-                        // Re-evaluate ModKey linking? Might be complex. Parent could handle this if needed.
-                        // _parentVm?.AttemptRelinkModKey(this); // Example hook
+                        // Store state *before* modification for merge check
+                        bool hadMugshotBefore = HasMugshotPathAssigned;
+                        bool hadModPathsBefore = HasModPathsAssigned;
+
+                        CorrespondingFolderPaths.Add(addedPath); // Modify the collection
+
+                        // *** Notify parent VM AFTER path is added ***
+                        _parentVm?.CheckForAndPerformMerge(this, addedPath, PathType.ModFolder, hadMugshotBefore, hadModPathsBefore);
                     }
                 }
             }
@@ -156,30 +178,39 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private void BrowseFolderPath(string existingPath)
         {
-            using (var dialog = new FolderBrowserDialog()) // Consider using CommonOpenFileDialog
+            using (var dialog = new FolderBrowserDialog())
             {
                 dialog.Description = $"Change corresponding folder for {DisplayName}";
-                dialog.SelectedPath = Directory.Exists(existingPath) ? existingPath : _parentVm.ModsFolderSetting; // Start in current or main mods
-                 if (string.IsNullOrWhiteSpace(dialog.SelectedPath) || !Directory.Exists(dialog.SelectedPath)) {
-                     dialog.SelectedPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments); // Fallback
-                 }
+                dialog.SelectedPath = Directory.Exists(existingPath) ? existingPath : _parentVm.ModsFolderSetting;
+                if (string.IsNullOrWhiteSpace(dialog.SelectedPath) || !Directory.Exists(dialog.SelectedPath)) { dialog.SelectedPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments); }
 
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
+                    string newPath = dialog.SelectedPath;
                     int index = CorrespondingFolderPaths.IndexOf(existingPath);
-                    if (index >= 0 && !CorrespondingFolderPaths.Contains(dialog.SelectedPath, StringComparer.OrdinalIgnoreCase))
+
+                    // Check if path actually changed and isn't already in the list elsewhere
+                    if (index >= 0 &&
+                        !newPath.Equals(existingPath, StringComparison.OrdinalIgnoreCase) &&
+                        !CorrespondingFolderPaths.Contains(newPath, StringComparer.OrdinalIgnoreCase))
                     {
-                        CorrespondingFolderPaths[index] = dialog.SelectedPath;
-                        // _parentVm?.AttemptRelinkModKey(this); // Re-evaluate link if path changes
+                         // Store state *before* modification for merge check
+                        bool hadMugshotBefore = HasMugshotPathAssigned;
+                        bool hadModPathsBefore = CorrespondingFolderPaths.Count > 0; // Had paths if count was > 0 before change
+
+                        CorrespondingFolderPaths[index] = newPath; // Modify the collection
+
+                        // *** Notify parent VM AFTER path is changed ***
+                        _parentVm?.CheckForAndPerformMerge(this, newPath, PathType.ModFolder, hadMugshotBefore, hadModPathsBefore);
                     }
-                    else if (index >= 0 && dialog.SelectedPath.Equals(existingPath, StringComparison.OrdinalIgnoreCase)) { /* Path didn't actually change */ }
-                    else if (index < 0)
+                    else if (index >= 0 && newPath.Equals(existingPath, StringComparison.OrdinalIgnoreCase)) { /* No change needed */ }
+                    else if (index >= 0) // Path didn't change but new path already exists elsewhere
                     {
-                         System.Windows.MessageBox.Show($"Cannot change path. The original path '{existingPath}' was not found in the list.", "Browse Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                         System.Windows.MessageBox.Show($"Cannot change path. The new path '{newPath}' already exists in the list.", "Browse Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
                     }
-                     else // Path already exists
+                    else // index < 0
                     {
-                         System.Windows.MessageBox.Show($"Cannot change path. The new path '{dialog.SelectedPath}' already exists in the list.", "Browse Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                         System.Windows.MessageBox.Show($"Cannot change path. The original path '{existingPath}' was not found.", "Browse Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
                     }
                 }
             }
@@ -187,50 +218,53 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private void RemoveFolderPath(string pathToRemove)
         {
+            // Removing a path doesn't trigger the merge check.
             if (CorrespondingFolderPaths.Contains(pathToRemove))
             {
                 CorrespondingFolderPaths.Remove(pathToRemove);
-                // If no paths remain, potentially clear the ModKey?
-                 if (!CorrespondingFolderPaths.Any() && CorrespondingModKey.HasValue)
-                 {
-                     // Maybe add logic here or in parent VM to clear/re-evaluate ModKey
-                     // CorrespondingModKey = null; // Directly? Or let parent handle?
-                     // _parentVm?.EvaluateModKeyAfterPathRemoval(this);
-                 }
             }
         }
 
         private void BrowseMugshotFolder()
         {
-            using (var dialog = new FolderBrowserDialog()) // Consider CommonOpenFileDialog
+            using (var dialog = new FolderBrowserDialog())
             {
                 dialog.Description = $"Select the Mugshot Folder for {DisplayName}";
-                // Prefer current path, then parent's setting, then fallback
                 string initialPath = MugShotFolderPath;
-                if (string.IsNullOrWhiteSpace(initialPath) || !Directory.Exists(initialPath))
-                {
-                     initialPath = _parentVm.MugshotsFolderSetting;
-                }
-                if (string.IsNullOrWhiteSpace(initialPath) || !Directory.Exists(initialPath))
-                {
-                     initialPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                }
+                if (string.IsNullOrWhiteSpace(initialPath) || !Directory.Exists(initialPath)) { initialPath = _parentVm.MugshotsFolderSetting; }
+                if (string.IsNullOrWhiteSpace(initialPath) || !Directory.Exists(initialPath)) { initialPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments); }
                 dialog.SelectedPath = initialPath;
 
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
-                    if (Directory.Exists(dialog.SelectedPath))
+                    string newPath = dialog.SelectedPath;
+                    if (Directory.Exists(newPath) && !newPath.Equals(MugShotFolderPath, StringComparison.OrdinalIgnoreCase))
                     {
-                        MugShotFolderPath = dialog.SelectedPath; // This will trigger reactive update via WhenAnyValue
+                        // Store state *before* modification for merge check
+                        bool hadMugshotBefore = HasMugshotPathAssigned;
+                        bool hadModPathsBefore = HasModPathsAssigned;
+
+                        MugShotFolderPath = newPath; // Modify the property
+
+                        // *** Notify parent VM AFTER path is set ***
+                        _parentVm?.CheckForAndPerformMerge(this, newPath, PathType.MugshotFolder, hadMugshotBefore, hadModPathsBefore);
                     }
-                    else
+                    else if (!Directory.Exists(newPath))
                     {
-                        System.Windows.MessageBox.Show($"The selected folder does not exist: '{dialog.SelectedPath}'", "Browse Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                         System.Windows.MessageBox.Show($"The selected folder does not exist: '{newPath}'", "Browse Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
                     }
+                    // else: Path didn't change or wasn't valid - no action needed
                 }
             }
         }
 
+        // --- Other Methods ---
+
+        /// <summary>
+        /// Reads associated plugin files (based on CorrespondingModKey and CorrespondingFolderPaths)
+        /// and populates the NPC lists (NpcNames, NpcEditorIDs, NpcFormKeys, NpcFormKeysToDisplayName).
+        /// Should typically be run asynchronously during initial load or after significant changes.
+        /// </summary>
         public void RefreshNpcLists()
         {
             // Reset lists before potentially repopulating
@@ -244,105 +278,49 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 foreach (var dirPath in CorrespondingFolderPaths)
                 {
-                     // Check if the *plugin file* exists within the corresponding folder path
-                     // We assume the plugin name matches the ModKey FileName
-                     if (!CorrespondingModKey.HasValue) continue; // Should not happen due to outer check, but safety first
+                     if (!CorrespondingModKey.HasValue) continue; // Safety check
 
                      string pluginFileName = CorrespondingModKey.Value.FileName;
                      string potentialPluginPath = Path.Combine(dirPath, pluginFileName);
-
                      string actualPluginPath = null;
 
-                     if (File.Exists(potentialPluginPath))
-                     {
-                         actualPluginPath = potentialPluginPath;
-                     }
-                     // Add more sophisticated checking if needed, e.g., searching subdirs or alternative naming conventions
+                     if (File.Exists(potentialPluginPath)) { actualPluginPath = potentialPluginPath; }
 
-                     if (actualPluginPath != null && File.Exists(actualPluginPath))
+                     if (actualPluginPath != null) // Check if a valid path was found
                      {
                          try
                          {
-                             // Use FromBinaryOverlay to avoid locking the file if possible
-                             using var mod = SkyrimMod.CreateFromBinaryOverlay(actualPluginPath, _parentVm.SkyrimRelease);
+                             using var mod = SkyrimMod.CreateFromBinaryOverlay(actualPluginPath, _skyrimRelease); // Use correct release
                              {
-                                 foreach (var npcGetter in mod.Npcs) // Iterate through INpcGetter
+                                 foreach (var npcGetter in mod.Npcs)
                                  {
-                                     GetNpcDisplayName(npcGetter);
+                                     if (!NpcFormKeys.Contains(npcGetter.FormKey)) // Avoid duplicates if NPC in multiple paths/plugins
+                                     {
+                                         var npc = npcGetter; // Use the getter interface
+                                         string displayName = string.Empty;
+                                         NpcFormKeys.Add(npc.FormKey);
+
+                                         if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String)) { NpcNames.Add(npc.Name.String); displayName = npc.Name.String; }
+                                         if (!string.IsNullOrEmpty(npc.EditorID)) { NpcEditorIDs.Add(npc.EditorID); if (string.IsNullOrEmpty(displayName)) displayName = npc.EditorID; }
+                                         if (string.IsNullOrEmpty(displayName)) displayName = npc.FormKey.ToString();
+
+                                         NpcFormKeysToDisplayName.Add(npc.FormKey, displayName);
+                                     }
                                  }
                              }
                          }
                          catch (Exception e)
                          {
-                             // Log or display error specific to this plugin file?
                              Debug.WriteLine($"Error loading NPC data from {actualPluginPath} for '{DisplayName}': {e.Message}");
+                             // Optionally add to a warning list to show user?
                              continue; // Skip to next folder path on error
                          }
                      }
-                     else
-                     {
-                         // Debug.WriteLine($"Plugin file '{pluginFileName}' not found in path '{dirPath}' for '{DisplayName}'.");
-                     }
                  }
              }
-            else if (!MugShotFolderPath.IsNullOrWhitespace())
-            {
-                var pluginNameDirs = Directory.EnumerateDirectories(MugShotFolderPath, "*", SearchOption.AllDirectories);
-                foreach (var pluginNameDir in pluginNameDirs)
-                {
-                    var pluginName = pluginNameDir.Split(Path.DirectorySeparatorChar).Last();
-                    var files = Directory.EnumerateFiles(pluginNameDir, "*.*", SearchOption.AllDirectories);
-                    var formKeyStrs = files.Select(x => 
-                        Path.GetFileNameWithoutExtension(x).Substring(2) + ":" + pluginName
-                        ).ToArray();
-
-                    foreach (var formKeyStr in formKeyStrs)
-                    {
-                        var formKey = FormKey.TryFactory(formKeyStr.ToUpper());
-                        if (formKey != null && _parentVm.TryGetWinningNpc(formKey.Value, out var npcGetter) && npcGetter != null)
-                        {
-                            GetNpcDisplayName(npcGetter);
-                        }
-                    }
-                }
-            }
-             // After processing all paths, raise property changed for filter purposes if needed?
-             // Filtering relies on these lists, so maybe trigger a filter update in VM_Mods after all RefreshNpcLists tasks complete.
-        }
-
-        public void GetNpcDisplayName(INpcGetter npcGetter)
-        {
-            // Make sure FormKey doesn't already exist (can happen if NPC record is in multiple linked plugins/paths)
-            if (!NpcFormKeys.Contains(npcGetter.FormKey))
-            {
-                // Resolve the link for full NPC data if needed, but FormKey, Name, EditorID are usually available directly
-                // For now, use the getter directly
-                var npc = npcGetter; // Use the getter interface directly for basic info
-
-                string displayName = string.Empty;
-                NpcFormKeys.Add(npc.FormKey);
-
-                if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String))
-                {
-                    NpcNames.Add(npc.Name.String);
-                    displayName = npc.Name.String;
-                }
-
-                if (!string.IsNullOrEmpty(npc.EditorID))
-                {
-                    NpcEditorIDs.Add(npc.EditorID);
-                    if (string.IsNullOrEmpty(displayName))
-                    {
-                        displayName = npc.EditorID;
-                    }
-                }
-
-                if (string.IsNullOrEmpty(displayName))
-                {
-                    displayName = npc.FormKey.ToString(); // Fallback to FormKey
-                }
-                NpcFormKeysToDisplayName.Add(npc.FormKey, displayName);
-            }
+             // Note: This method modifies collections directly. If these lists were bound to UI
+             // elements that require ObservableCollections, adjustments would be needed.
+             // Currently, they are used for filtering logic within VM_Mods.
         }
     }
 }

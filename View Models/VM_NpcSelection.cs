@@ -21,6 +21,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public FormKey NpcFormKey { get; }
 
         [Reactive] public string DisplayName { get; set; } = "Unnamed NPC";
+        [Reactive] public string NpcName { get; set; } = "No Name Assigned";
+        [Reactive] public string NpcEditorId { get; set; } = "No Editor ID";
+        public string NpcFormKeyString { get;  } = "No FormKey";
+        
         // Stores the ModKeys providing appearance data (from plugins)
         public ObservableCollection<ModKey> AppearanceMods { get; } = new();
         // Holds viewmodels for appearance sources (plugins + potentially mugshots) - managed by VM_NpcSelectionBar
@@ -35,6 +39,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _environmentStateProvider = environmentStateProvider;
             _consistencyProvider = consistencyProvider;
             NpcFormKey = npcGetter.FormKey;
+            NpcFormKeyString = NpcFormKey.ToString();
             NpcGetter = npcGetter; // Store the getter
 
             Initialize(npcGetter); // Initialize based on the record
@@ -49,6 +54,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _environmentStateProvider = environmentStateProvider;
             _consistencyProvider = consistencyProvider;
             NpcFormKey = npcFormKey;
+            NpcFormKeyString = npcFormKey.ToString();
             NpcGetter = null; // No getter available
 
             Initialize(npcFormKey); // Initialize based on the FormKey
@@ -60,7 +66,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private void Initialize(INpcGetter npcGetter)
         {
             DisplayName = npcGetter.Name?.String ?? npcGetter.EditorID ?? npcGetter.FormKey.ToString();
+            if (npcGetter.Name != null && npcGetter.Name.String != null)
+            {
+                NpcName = npcGetter.Name.String;
+            }
 
+            if (npcGetter.EditorID != null)
+            {
+                NpcEditorId = npcGetter.EditorID;
+            }
+            
             try
             {
                 var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcGetter.FormKey).ToArray();
@@ -73,7 +88,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
 
 
-                var baseContext = contexts.Last(); // Winning override context
+                var baseContext = contexts.Last(); // Original Npc Record
 
                 // Add the base record's modkey first
                 if (!AppearanceMods.Contains(baseContext.ModKey))
@@ -153,7 +168,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
 
         // Comparison logic - Ensure HeadParts comparison is robust
-        private bool ModifiesAppearance(INpcGetter baseRecord, INpcGetter currentRecord)
+        public static bool ModifiesAppearance(INpcGetter baseRecord, INpcGetter currentRecord)
         {
             // If it's the same record instance, it doesn't modify itself relative to itself
             if (ReferenceEquals(baseRecord, currentRecord)) return false;
