@@ -5,22 +5,26 @@ namespace NPC_Plugin_Chooser_2.View_Models
 {
     public enum NpcSearchType
     {
-        [Description("Name")] // Add Description attributes
+        [Description("Name")]
         Name,
 
         [Description("EditorID")]
         EditorID,
 
         [Description("In Appearance Mod")]
-        InAppearanceMod, // Checks plugins AND mugshot folders
+        InAppearanceMod,
 
         [Description("From Mod")]
-        FromMod,         // Checks NpcFormKey.ModKey
+        FromMod,
 
         [Description("FormKey")]
-        FormKey,          // Checks NpcFormKey.ToString()
+        FormKey,
 
-        [Description("Selection State")] // New value
-        SelectionState
+        [Description("Selection State")]
+        SelectionState,
+
+        // *** NEW: Group Filter ***
+        [Description("Group")]
+        Group
     }
 }

@@ -1,5 +1,6 @@
 ﻿using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
+using System.Collections.Generic; // Required for HashSet
 
 namespace NPC_Plugin_Chooser_2.Models;
 
@@ -23,8 +24,12 @@ public class Settings
     public bool ShowNpcDescriptions { get; set; } = true;
     public List<ModSetting> ModSettings { get; set; } = new();
     public Dictionary<FormKey, string> SelectedAppearanceMods { get; set; } = new();
-    public HashSet<string> HiddenModNames = new();
-    public Dictionary<FormKey, HashSet<string>> HiddenModsPerNpc = new();
+    public HashSet<string> HiddenModNames { get; set; } = new();
+    public Dictionary<FormKey, HashSet<string>> HiddenModsPerNpc { get; set; } = new();
+
+    // *** NEW: NPC Group Assignments ***
+    // Stores which groups each NPC belongs to. Key is NPC FormKey, Value is a set of group names.
+    public Dictionary<FormKey, HashSet<string>> NpcGroupAssignments { get; set; } = new();
 
     // EasyNPC Interchangeability / Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); // not used by this program, but kept as a holding variable to facilitate interchangeability with EasyNPC
