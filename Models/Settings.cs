@@ -17,7 +17,7 @@ public class Settings
     // Output Settings
     public string OutputDirectory { get; set; } = "NPC Output"; // New
     public bool AppendTimestampToOutputDirectory { get; set; } = false; // New
-    public string OutputPluginName { get; set; } = "NPC.esp"; // Actual Filename - New
+    public string OutputPluginName { get; set; } = "NPC"; // Actual Filename - New
     public PatchingMode PatchingMode { get; set; } = PatchingMode.Default; // New
 
     // UI / Other

@@ -17,6 +17,7 @@ using Mutagen.Bethesda;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.Reactive.Disposables;
+using System.Windows;
 using Mutagen.Bethesda.Archives;
 using Mutagen.Bethesda.Plugins.Cache;
 using Noggog; // Needed for LinkCache Interface
@@ -30,6 +31,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly NpcConsistencyProvider _consistencyProvider;
         private readonly Auxilliary _auxilliary;
         private readonly VM_Settings _vmSettings;
+        private readonly Lazy<VM_Mods> _lazyVmMods;
         private readonly CompositeDisposable _disposables = new();
 
         // --- Constants ---
@@ -87,13 +89,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
             Settings settings,
             NpcConsistencyProvider consistencyProvider,
             Auxilliary auxilliary,
-            VM_Settings vmSettings)
+            VM_Settings vmSettings,
+            Lazy<VM_Mods> lazyVmMods)
         {
             _environmentStateProvider = environmentStateProvider;
             _settings = settings;
             _consistencyProvider = consistencyProvider;
             _auxilliary = auxilliary;
             _vmSettings = vmSettings;
+            _lazyVmMods = lazyVmMods;
 
             // Command can only execute if environment is valid and not already running
             var canExecute = this.WhenAnyValue(x => x.IsRunning, x => x._environmentStateProvider.EnvironmentIsValid,
@@ -278,263 +282,414 @@ namespace NPC_Plugin_Chooser_2.View_Models
             return true;
         }
 
+        private async Task<(Dictionary<FormKey, ScreeningResult> screeningCache, List<string> invalidSelections)> ScreenSelectionsAsync()
+        {
+            AppendLog("\nStarting pre-run screening of NPC selections...");
+            var screeningCache = new Dictionary<FormKey, ScreeningResult>();
+            var invalidSelections = new List<string>(); // List of strings for user message
+            var selections = _settings.SelectedAppearanceMods;
+
+            if (selections == null || !selections.Any())
+            {
+                AppendLog("No selections to screen.");
+                return (screeningCache, invalidSelections);
+            }
+
+            int totalToScreen = selections.Count;
+            int currentScreened = 0;
+
+            foreach (var kvp in selections)
+            {
+                currentScreened++;
+                var npcFormKey = kvp.Key;
+                var selectedModDisplayName = kvp.Value;
+                string npcIdentifier = npcFormKey.ToString(); // Default identifier
+
+                UpdateProgress(currentScreened, totalToScreen, $"Screening {npcIdentifier}");
+
+                // 1. Resolve winning override (needed for context and potentially EasyNPC mode base)
+                if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var winningNpcOverride))
+                {
+                    AppendLog($"  SCREENING WARNING: Could not resolve base/winning NPC {npcFormKey}. Skipping screening for this NPC.");
+                    // Don't add to cache or invalid list if the base NPC itself is unresolvable
+                    await Task.Delay(1); // Throttle slightly
+                    continue;
+                }
+                npcIdentifier = $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})"; // Better identifier
+
+                // 2. Find the ModSetting for the selection
+                if (!_modSettingsMap.TryGetValue(selectedModDisplayName, out var appearanceModSetting))
+                {
+                    AppendLog($"  SCREENING ERROR: Cannot find Mod Setting '{selectedModDisplayName}' for NPC {npcIdentifier}. Invalid selection.");
+                    invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod Setting not found)");
+                    // Add a placeholder invalid result to cache? Or just rely on the invalidSelections list? Let's rely on the list for now.
+                    await Task.Delay(1);
+                    continue;
+                }
+
+                // 3. Check for Plugin Record Override
+                bool hasPluginOverride = false;
+                INpcGetter? sourceNpcRecord = null;
+                ModKey? appearancePluginKey = appearanceModSetting.ModKey; // Nullable ModKey
+
+                if (appearancePluginKey.HasValue && !appearancePluginKey.Value.IsNull)
+                {
+                    // Resolve all contexts for the base NPC FormKey
+                    var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcFormKey);
+                    // Find the specific context matching the appearance plugin's ModKey
+                    var selectedModContext = contexts.FirstOrDefault(x => x.ModKey.Equals(appearancePluginKey.Value));
+
+                    if (selectedModContext != null && selectedModContext.Record != null)
+                    {
+                        // Found the override record in the specified plugin
+                        hasPluginOverride = true;
+                        sourceNpcRecord = selectedModContext.Record; // Cache the record
+                        AppendLog($"    Screening: Found plugin record override in {appearancePluginKey.Value.FileName}.");
+                    }
+                    else
+                    {
+                        AppendLog($"    Screening: No plugin record override found in {appearancePluginKey.Value.FileName}.");
+                    }
+                }
+                else
+                {
+                    AppendLog($"    Screening: Mod Setting '{selectedModDisplayName}' has no associated plugin key. Checking assets only.");
+                }
+
+
+                // 4. Check for FaceGen Assets
+                var assetSourceDirs = appearanceModSetting.CorrespondingFolderPaths ?? new List<string>();
+                bool hasFaceGen = false;
+                if (assetSourceDirs.Any())
+                {
+                    // Use the existing FaceGenExists but pass the *effective* plugin key (could be null if only assets defined)
+                    // Pass the original NPC FormKey for path generation
+                    hasFaceGen = FaceGenExists(npcFormKey, appearancePluginKey ?? npcFormKey.ModKey, assetSourceDirs); // Use original key if no plugin override key
+                    AppendLog($"    Screening: FaceGen assets found in source directories: {hasFaceGen}.");
+                }
+                else
+                {
+                    AppendLog($"    Screening: Mod Setting '{selectedModDisplayName}' has no asset source directories defined.");
+                }
+
+
+                // 5. Determine Validity and Cache Result
+                bool isValid = hasPluginOverride || hasFaceGen;
+                screeningCache[npcFormKey] = new ScreeningResult(
+                    isValid,
+                    hasPluginOverride,
+                    hasFaceGen,
+                    sourceNpcRecord,
+                    winningNpcOverride, // Cache the winning override
+                    appearanceModSetting,
+                    appearancePluginKey
+                );
+
+                if (!isValid)
+                {
+                    AppendLog($"  SCREENING INVALID: NPC {npcIdentifier} -> Selected Mod '{selectedModDisplayName}' provides neither a plugin record override nor FaceGen assets.");
+                    invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (No plugin override or FaceGen found)");
+                }
+
+                await Task.Delay(1); // Throttle loop slightly
+            } // End foreach selection
+
+            UpdateProgress(totalToScreen, totalToScreen, "Screening Complete.");
+            AppendLog($"Screening finished. Found {invalidSelections.Count} invalid selections.");
+
+            return (screeningCache, invalidSelections);
+        }
+
+        // Add Dispose method if not present
+        public void Dispose()
+        {
+            _disposables.Dispose();
+        }
 
         private async Task RunPatchingLogic()
         {
             LogOutput = string.Empty;
             ResetProgress();
-            _pluginsUsedForAppearance.Clear(); // Clear for new run
+            _pluginsUsedForAppearance.Clear();
             UpdateProgress(0, 1, "Initializing...");
             AppendLog("Starting patch generation...");
 
             // --- Pre-Run Checks ---
-             if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
+            if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
              { AppendLog("Environment is not valid..."); ResetProgress(); return; }
-             if (_settings.ModSettings == null || !_settings.ModSettings.Any())
-             { AppendLog("No Mod Settings configured..."); ResetProgress(); return; }
-             if (string.IsNullOrWhiteSpace(_settings.OutputDirectory))
+            if (string.IsNullOrWhiteSpace(_settings.OutputDirectory))
              { AppendLog("Output Directory is not set..."); ResetProgress(); return; }
+            
+            // --- *** Save Mod Settings Before Proceeding *** ---
+            try
+            {
+                var vmMods = _lazyVmMods.Value; // Resolve the VM_Mods instance
+                if (vmMods == null)
+                {
+                    // This indicates a setup error in dependency injection
+                    throw new InvalidOperationException("VM_Mods instance could not be resolved via Lazy<T>.");
+                }
+                vmMods.SaveModSettingsToModel(); // Call the save method directly
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"CRITICAL ERROR: Failed to save Mod Settings before patching: {ExceptionLogger.GetExceptionStack(ex)}");
+                AppendLog("Aborting patch generation as settings may be inconsistent.");
+                ResetProgress();
+                return; // Stop if save fails
+            }
+            // --- *** End Save Mod Settings *** ---
+
+            // --- Now check if ModSettings list itself is populated after saving ---
+            if (_settings.ModSettings == null || !_settings.ModSettings.Any())
+            { AppendLog("No Mod Settings configured (or saved from Mods tab). Cannot determine asset sources."); ResetProgress(); return; }
 
             // --- Load Auxiliary Config Files ---
             if (!LoadAuxiliaryFiles())
-            { AppendLog("Failed to load auxiliary files..."); ResetProgress(); return; }
-
-            // --- Prepare Output Paths ---
-            // check if _settings.OutputDirectory is a valid directory path. If yes, assume the user wants output in that specific directory
-            // If not, assume it's a folder name and place it in the mods folder
-            string baseOutputDirectory;
-            bool isSpecifiedDirectory = false;
-            var testSplit = _settings.OutputDirectory.Split(Path.DirectorySeparatorChar);
-            if (testSplit.Length > 1 && Directory.Exists(_settings.OutputDirectory))
-            {
-                baseOutputDirectory = _settings.OutputDirectory;
-                isSpecifiedDirectory = true;
-            }
-            else if (testSplit.Length == 1)
-            {
-                baseOutputDirectory = Path.Combine(_settings.ModsFolder, _settings.OutputDirectory);
-            }
-            else
-            {
-                AppendLog("Error: Could not locate directory " + _settings.OutputDirectory); ResetProgress(); return;
-            }
-            
-            _currentRunOutputAssetPath = baseOutputDirectory;
-            if (_settings.AppendTimestampToOutputDirectory)
-            {
-                if (isSpecifiedDirectory)
-                {
-                    AppendLog(
-                        "Warning: Timestamp will not be appended to output directory because the path is fully specified. " +
-                        "If you want to add a timestamp, only provide the name of your desired output folder.");
-                }
-                else
-                {
-                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                    _currentRunOutputAssetPath = Path.Combine(baseOutputDirectory, timestamp);
-                    AppendLog($"Using timestamped output asset directory: {_currentRunOutputAssetPath}");
-                }
-            } 
-            else { AppendLog($"Using output asset directory: {_currentRunOutputAssetPath}"); }
-            
-            try { Directory.CreateDirectory(_currentRunOutputAssetPath); AppendLog("Ensured output asset directory exists."); }
-            catch (Exception ex)
-            {
-                 AppendLog($"ERROR: Could not create output asset directory... Aborting. Error: {ExceptionLogger.GetExceptionStack(ex)}"); ResetProgress(); return;
-            }
-
-            // --- Initialize Output Mod ---
-            _environmentStateProvider.OutputMod = new SkyrimMod(ModKey.FromName(_environmentStateProvider.OutputPluginName, ModType.Plugin), _environmentStateProvider.SkyrimVersion);
-            AppendLog($"Initialized output mod: {_environmentStateProvider.OutputPluginName}");
-
-            // --- Clear Output Asset Directory ---
-            if (ClearOutputDirectoryOnRun)
-            {
-                 AppendLog("Clearing output asset directory...");
-                 try { ClearDirectory(_currentRunOutputAssetPath); AppendLog("Output asset directory cleared."); }
-                 catch (Exception ex)
-                 { AppendLog($"ERROR: Failed to clear output asset directory: {ExceptionLogger.GetExceptionStack(ex)}. Aborting."); ResetProgress(); return; }
-            }
+             { AppendLog("Failed to load auxiliary files..."); ResetProgress(); return; }
 
             // --- Build Mod Settings Map ---
             _modSettingsMap = _settings.ModSettings
                 .Where(ms => !string.IsNullOrWhiteSpace(ms.DisplayName))
                 .GroupBy(ms => ms.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-            AppendLog($"Built lookup map for {_modSettingsMap.Count} unique Mod Settings.");
+             AppendLog($"Built lookup map for {_modSettingsMap.Count} unique Mod Settings.");
 
-            // --- Main Processing Loop ---
-            AppendLog("\nProcessing NPC Appearance Selections...");
+            // --- *** Pre-Run Screening (Requirement 2) *** ---
+            UpdateProgress(0, 1, "Screening selections...");
+            var (screeningCache, invalidSelections) = await ScreenSelectionsAsync();
+
+            if (invalidSelections.Any())
+            {
+                var message = new StringBuilder($"Found {invalidSelections.Count} NPC selection(s) where the chosen appearance mod provides neither a plugin record override nor FaceGen assets:\n\n");
+                message.AppendLine(string.Join("\n", invalidSelections.Take(15))); // Show first 15
+                if (invalidSelections.Count > 15) message.AppendLine("[...]");
+                message.AppendLine("\nThese selections will be skipped. Continue with the valid selections?");
+
+                // Show confirmation dialog - Needs to run on UI thread if called from background
+                bool continuePatching = false;
+                // Use Dispatcher.Invoke to run synchronously on the UI thread and get the result back
+                Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    System.Diagnostics.Debug.WriteLine($"[VM_Run.RunPatchingLogic] Showing MessageBox on Thread: {System.Threading.Thread.CurrentThread.ManagedThreadId}");
+                    var result = MessageBox.Show(message.ToString(), "Invalid Selections Found", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    continuePatching = (result == MessageBoxResult.Yes);
+                    System.Diagnostics.Debug.WriteLine($"[VM_Run.RunPatchingLogic] MessageBox result: {result}, continuePatching: {continuePatching}");
+                });
+
+                // Execution of RunPatchingLogic will pause here until the MessageBox is closed
+                // because Dispatcher.Invoke is synchronous.
+
+                if (!continuePatching)
+                {
+                    AppendLog("Patching cancelled by user due to invalid selections.");
+                    ResetProgress();
+                    return; // Exit RunPatchingLogic
+                }
+                AppendLog("Proceeding with valid selections, skipping invalid ones...");
+            }
+            // --- *** End Screening *** ---
+
+            // --- Prepare Output Paths ---
+            // (Logic for determining _currentRunOutputAssetPath remains the same)
+            string baseOutputDirectory;
+            bool isSpecifiedDirectory = false;
+            var testSplit = _settings.OutputDirectory.Split(Path.DirectorySeparatorChar);
+            if (testSplit.Length > 1 && Directory.Exists(_settings.OutputDirectory)) { baseOutputDirectory = _settings.OutputDirectory; isSpecifiedDirectory = true; }
+            else if (testSplit.Length == 1) { baseOutputDirectory = Path.Combine(_settings.ModsFolder, _settings.OutputDirectory); }
+            else { AppendLog("Error: Could not locate directory " + _settings.OutputDirectory); ResetProgress(); return; }
+
+            _currentRunOutputAssetPath = baseOutputDirectory;
+            if (_settings.AppendTimestampToOutputDirectory && !isSpecifiedDirectory)
+            { string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss"); _currentRunOutputAssetPath = Path.Combine(baseOutputDirectory, timestamp); }
+            AppendLog($"Using output asset directory: {_currentRunOutputAssetPath}");
+            try { Directory.CreateDirectory(_currentRunOutputAssetPath); AppendLog("Ensured output asset directory exists."); }
+            catch (Exception ex) { AppendLog($"ERROR: Could not create output asset directory... Aborting. Error: {ExceptionLogger.GetExceptionStack(ex)}"); ResetProgress(); return; }
+
+
+            // --- Initialize Output Mod ---
+            _environmentStateProvider.OutputMod = new SkyrimMod(ModKey.FromName(_environmentStateProvider.OutputPluginName, ModType.Plugin), _environmentStateProvider.SkyrimVersion);
+             AppendLog($"Initialized output mod: {_environmentStateProvider.OutputPluginName}");
+
+            // --- Clear Output Asset Directory ---
+            if (ClearOutputDirectoryOnRun)
+            { /* (Logic remains the same) */
+                AppendLog("Clearing output asset directory...");
+                try { ClearDirectory(_currentRunOutputAssetPath); AppendLog("Output asset directory cleared."); }
+                catch (Exception ex) { AppendLog($"ERROR: Failed to clear output asset directory: {ExceptionLogger.GetExceptionStack(ex)}. Aborting."); ResetProgress(); return; }
+            }
+
+            // --- Main Processing Loop (Using Screening Cache) ---
+            AppendLog("\nProcessing Valid NPC Appearance Selections...");
             int processedCount = 0;
-            int skippedCount = 0;
+            int skippedCount = 0; // Counts skips *within* this loop (invalid were already accounted for)
 
-            var selections = _settings.SelectedAppearanceMods;
-            if (selections == null || !selections.Any())
-            { AppendLog("No NPC appearance selections have been made..."); }
+            var selectionsToProcess = screeningCache.Where(kv => kv.Value.SelectionIsValid).ToList(); // Only process valid ones
+
+            if (!selectionsToProcess.Any())
+            {
+                AppendLog("No valid NPC selections found or remaining after screening.");
+            }
             else
             {
-                int totalSelectedNpcs = selections.Count;
-                var npcsToProcess = selections.Keys.ToList();
-
-                for(int i = 0; i < npcsToProcess.Count; i++)
+                int totalToProcess = selectionsToProcess.Count;
+                for(int i = 0; i < totalToProcess; i++)
                 {
-                    var npcFormKey = npcsToProcess[i];
-                    var selectedModDisplayName = selections[npcFormKey];
-                    string npcIdentifier = npcFormKey.ToString();
+                    var kvp = selectionsToProcess[i];
+                    var npcFormKey = kvp.Key;
+                    var result = kvp.Value; // The ScreeningResult
 
-                    // Resolve NPC and Filter
-                    if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var winningNpcOverride))
-                    { AppendLog($"  WARNING: Could not resolve NPC {npcFormKey}... Skipping."); skippedCount++; UpdateProgress(i + 1, totalSelectedNpcs, $"Skipped {npcIdentifier}"); await Task.Delay(1); continue; }
-                    npcIdentifier = $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
+                    // Resolve necessary components from cache
+                    var winningNpcOverride = result.WinningNpcOverride; // Already resolved, guaranteed non-null if in cache
+                    var appearanceModSetting = result.AppearanceModSetting; // Already looked up
+                    var appearancePluginKey = result.AppearancePluginKey; // Cached, might be null
+                    var sourceNpc = result.SourceNpcRecord; // Cached, might be null
+                    string selectedModDisplayName = appearanceModSetting?.DisplayName ?? "N/A"; // Get name from cached setting
+                    string npcIdentifier = $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
+
+                    // Apply Group Filter (still needed)
                     if (ShouldSkipNpc(winningNpcOverride, SelectedNpcGroup))
-                    { AppendLog($"  Skipping {npcIdentifier} (Group Filter)..."); skippedCount++; UpdateProgress(i + 1, totalSelectedNpcs, $"Skipped {npcIdentifier} (Group Filter)"); await Task.Delay(1); continue; }
+                    { AppendLog($"  Skipping {npcIdentifier} (Group Filter)..."); skippedCount++; UpdateProgress(i + 1, totalToProcess, $"Skipped {npcIdentifier} (Group Filter)"); await Task.Delay(1); continue; }
 
-                    UpdateProgress(i + 1, totalSelectedNpcs, $"Processing {winningNpcOverride.EditorID ?? npcFormKey.ToString()}");
+                    UpdateProgress(i + 1, totalToProcess, $"Processing {winningNpcOverride.EditorID ?? npcFormKey.ToString()}");
                     AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'");
 
-                    // Lookup ModSetting
-                    if (!_modSettingsMap.TryGetValue(selectedModDisplayName, out var appearanceModSetting))
-                    { AppendLog($"  ERROR: Could not find Mod Setting '{selectedModDisplayName}'... Skipping."); skippedCount++; UpdateProgress(i + 1, totalSelectedNpcs, $"ERROR: ModSetting {selectedModDisplayName} not found"); await Task.Delay(1); continue; }
+                    Npc? patchNpc = null; // The NPC record to be placed in the patch
+                    INpcGetter? npcForAssetLookup = null; // Which NPC record to use for finding *extra* assets
+                    bool copyOnlyFaceGenAssets = false; // Flag for asset copying
 
-                    // Get Appearance Plugin Key
-                    ModKey? appearancePluginKeyNullable = appearanceModSetting.ModKey; // Renamed for clarity
-                    if (!appearancePluginKeyNullable.HasValue || appearancePluginKeyNullable.Value.IsNull)
-                    { AppendLog($"  ERROR: Mod Setting '{selectedModDisplayName}' has no Plugin assigned... Skipping."); skippedCount++; UpdateProgress(i + 1, totalSelectedNpcs, $"ERROR: ModSetting {selectedModDisplayName} no plugin"); await Task.Delay(1); continue; }
-                    ModKey appearancePluginKey = appearancePluginKeyNullable.Value; // Use non-nullable from here
 
-                    // Resolve Source NPC
-                    /* I think this is the correct algorithm
-                    var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcFormKey);
-                    var selectedModContext = contexts.FirstOrDefault(x => x.ModKey.Equals(appearancePluginKey));
-                    if (selectedModContext == null)
+                    // --- *** Apply Logic Based on Screening Result (Requirement 1) *** ---
+                    if (result.HasPluginRecordOverride && sourceNpc != null) // Scenario: Plugin override exists
                     {
-                        AppendLog($"  WARNING: Could not find NPC record in '{appearancePluginKey.FileName}'... Skipping record patching."); 
-                        skippedCount++; UpdateProgress(i + 1, totalSelectedNpcs, $"ERROR: NPC not in {appearancePluginKey.FileName}"); 
-                        await Task.Delay(1); continue;
+                        AppendLog("    Source: Plugin Record Override");
+                        npcForAssetLookup = sourceNpc; // Use appearance mod's record for extra asset lookup
+
+                        switch (_settings.PatchingMode)
+                        {
+                            case PatchingMode.EasyNPC_Like:
+                                AppendLog($"      Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}).");
+                                patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride);
+                                CopyAppearanceData(sourceNpc, patchNpc);
+                                break;
+                            case PatchingMode.Default:
+                            default:
+                                AppendLog($"      Mode: Default. Forwarding record from source plugin ({sourceNpc.FormKey.ModKey.FileName}).");
+                                patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(sourceNpc);
+                                break;
+                        }
+                        // Track plugin if it exists and isn't null/base game
+                        if (appearancePluginKey.HasValue && !appearancePluginKey.Value.IsNull && !BaseGamePlugins.Contains(appearancePluginKey.Value)) {
+                            _pluginsUsedForAppearance.Add(appearancePluginKey.Value);
+                        }
                     }
- 
-                    var sourceNpc = selectedModContext.Record;
-                    */
-                    
-                    // Resolve Source NPC: Temporarily going with Gemini app
-                    // Construct the specific FormKey for the override within the appearance plugin
-                    FormKey targetOverrideKey = new FormKey(appearancePluginKey, npcFormKey.ID);
-
-                    // Try to resolve the context (and thus the record) using this specific override key
-                    if (!_environmentStateProvider.LinkCache.TryResolveContext<INpc, INpcGetter>(
-                            targetOverrideKey, out var sourceNpcContext) || sourceNpcContext?.Record == null) // Added null check on context too
+                    else if (result.HasFaceGenAssets) // Scenario: Plugin override missing OR invalid, but FaceGen exists
                     {
-                        // Log that we couldn't find the specific override record in the expected plugin
-                        AppendLog($"  WARNING: Could not find NPC record override ({targetOverrideKey}) in the selected appearance plugin '{appearancePluginKey.FileName}'. This plugin might not actually override this NPC's appearance record. Skipping record patching.");
+                        AppendLog("    Source: FaceGen Assets Only");
+                        copyOnlyFaceGenAssets = true; // Only copy FaceGen related assets
+
+                        switch (_settings.PatchingMode)
+                        {
+                            case PatchingMode.EasyNPC_Like:
+                                AppendLog($"      Mode: EasyNPC-Like. Using winning override ({winningNpcOverride.FormKey.ModKey.FileName}) as base.");
+                                patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride);
+                                // No appearance data copied - we're using the winning override's data but replacing assets
+                                break;
+                            case PatchingMode.Default:
+                            default:
+                                AppendLog($"      Mode: Default. Using original record ({npcFormKey}) as base.");
+                                // Resolve the original master record directly
+                                 if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var baseNpcRecord)) {
+                                    patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(baseNpcRecord);
+                                 } else {
+                                    AppendLog($"      ERROR: Could not resolve original master record for {npcFormKey}. Skipping this NPC.");
+                                    skippedCount++;
+                                    await Task.Delay(1);
+                                    continue; // Skip if base record fails
+                                 }
+                                break;
+                        }
+                        // Don't track plugin for dependencies here, as we didn't use its record override
+                        // npcForAssetLookup remains null, asset copying should only handle FaceGen
+                    }
+                    else
+                    {
+                        // This case should have been filtered by the screening result, but handle defensively
+                        AppendLog($"  UNEXPECTED: Selection for {npcIdentifier} was marked valid but has neither plugin record nor FaceGen. Skipping.");
                         skippedCount++;
-                        UpdateProgress(i + 1, totalSelectedNpcs, $"ERROR: NPC not in {appearancePluginKey.FileName}");
                         await Task.Delay(1);
                         continue;
                     }
+                    // --- *** End Scenario Logic *** ---
 
-                    // If successful, sourceNpcContext.Record now holds the INpcGetter from the appearance plugin
-                    var sourceNpc = sourceNpcContext.Record;
-                    
-                    // END Gemini approach
 
-                    // --- Apply Patching Mode Logic (Clarification 1 Applied) ---
-                    Npc patchNpc;
-                    bool isTemplated = NPCisTemplated(sourceNpc);
-
-                    switch (_settings.PatchingMode)
+                    // --- Copy Assets ---
+                    if (patchNpc != null && appearanceModSetting != null) // Ensure we have a patch record and mod settings
                     {
-                        case PatchingMode.EasyNPC_Like: // V1: ForwardConflictWinnerData = true
-                            AppendLog($"    Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}).");
-                            // Start with the winning override
-                            patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride);
-                            // Copy appearance FROM sourceNpc ONTO patchNpc
-                            CopyAppearanceData(sourceNpc, patchNpc);
-                            break;
+                        // The key used for path generation should ideally be the one associated with the assets.
+                        // If we used a plugin override, use its key. If FaceGen only, use the original NPC's key.
+                        ModKey keyForFaceGenPath = result.HasPluginRecordOverride && appearancePluginKey.HasValue ? appearancePluginKey.Value : npcFormKey.ModKey;
 
-                        case PatchingMode.Default: // V1: ForwardConflictWinnerData = false
-                        default:
-                            AppendLog($"    Mode: Default. Forwarding record directly from source plugin ({sourceNpc.FormKey.ModKey.FileName}).");
-                            // Add the source record directly, overwriting anything else for this FormKey in the patch.
-                            // Non-appearance data comes *only* from the source plugin record.
-                            patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(sourceNpc);
-                            // No merging of non-appearance data from winning override in this mode.
-                            break;
+                        // Determine if the NPC record being used for assets is templated
+                        // If FaceGen only, templating isn't relevant to *asset copying* in the same way.
+                        bool isEffectivelyTemplated = !copyOnlyFaceGenAssets && npcForAssetLookup != null && NPCisTemplated(npcForAssetLookup);
+
+                        CopyNpcAssets(patchNpc, keyForFaceGenPath, npcForAssetLookup, appearanceModSetting, isEffectivelyTemplated, copyOnlyFaceGenAssets);
+                    }
+                    else
+                    {
+                         AppendLog($"  ERROR: Could not proceed with asset copying due to missing patch record or mod setting for {npcIdentifier}.");
+                         skippedCount++;
+                         await Task.Delay(1);
+                         continue;
                     }
 
-                    // Track the appearance plugin used for dependency duplication later
-                    _pluginsUsedForAppearance.Add(appearancePluginKey);
-
-                    // --- Copy Assets (Clarification 2 Applied within helper) ---
-                    CopyNpcAssets(patchNpc, sourceNpc, appearancePluginKey, appearanceModSetting, isTemplated);
 
                     processedCount++;
                     await Task.Delay(5);
                 } // End For Loop
+            } // End else (selectionsToProcess.Any())
 
-                UpdateProgress(totalSelectedNpcs, totalSelectedNpcs, "Finalizing...");
+            UpdateProgress(processedCount + skippedCount, processedCount + skippedCount, "Finalizing...");
 
-                // --- Post-Processing: Duplicate Dependencies (Clarification 5 Applied) ---
-                if (_pluginsUsedForAppearance.Any())
-                {
-                     AppendLog($"\nDuplicating referenced records from used appearance plugins...");
-                     int duplicatedCount = 0;
-                     foreach(var pluginKey in _pluginsUsedForAppearance)
-                     {
-                         if (BaseGamePlugins.Contains(pluginKey))
-                         {
-                              AppendLog($"  Skipping dependency duplication for base game plugin: {pluginKey.FileName}");
-                              continue;
-                         }
-
-                         try
-                         {
-                             AppendLog($"  Processing dependencies for: {pluginKey.FileName}");
-                             _environmentStateProvider.OutputMod.DuplicateFromOnlyReferenced(_environmentStateProvider.LinkCache, pluginKey, out var recordsDuplicated);
-                              AppendLog($"    Duplicated {recordsDuplicated.Count} records.");
-                              duplicatedCount += recordsDuplicated.Count;
-                         }
-                         catch (Exception ex)
-                         {
-                              AppendLog($"  ERROR duplicating dependencies for {pluginKey.FileName}: {ExceptionLogger.GetExceptionStack(ex)}");
-                              // Continue processing other plugins
-                         }
-                     }
-                     AppendLog($"Finished dependency duplication. Total records duplicated: {duplicatedCount}.");
+            // --- Post-Processing: Duplicate Dependencies ---
+            if (_pluginsUsedForAppearance.Any())
+            { /* (Logic remains the same) */
+                AppendLog($"\nDuplicating referenced records from used appearance plugins...");
+                int duplicatedCount = 0;
+                foreach(var pluginKey in _pluginsUsedForAppearance) {
+                    if (BaseGamePlugins.Contains(pluginKey)) { AppendLog($"  Skipping dependency duplication for base game plugin: {pluginKey.FileName}"); continue; }
+                    try {
+                        AppendLog($"  Processing dependencies for: {pluginKey.FileName}");
+                        _environmentStateProvider.OutputMod.DuplicateFromOnlyReferenced(_environmentStateProvider.LinkCache, pluginKey, out var recordsDuplicated);
+                         AppendLog($"    Duplicated {recordsDuplicated.Count} records.");
+                         duplicatedCount += recordsDuplicated.Count;
+                    } catch (Exception ex) { AppendLog($"  ERROR duplicating dependencies for {pluginKey.FileName}: {ExceptionLogger.GetExceptionStack(ex)}"); }
                 }
+                AppendLog($"Finished dependency duplication. Total records duplicated: {duplicatedCount}.");
+            }
 
 
-                // --- Final Steps (Save Output Mod) ---
-                if (processedCount > 0 || _pluginsUsedForAppearance.Any()) // Save even if only dependencies were duplicated
-                {
-                    AppendLog($"\nProcessed {processedCount} NPC(s).");
-                    if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.");
-
-                    string outputPluginPath = Path.Combine(_currentRunOutputAssetPath, _environmentStateProvider.OutputPluginName);
-                    AppendLog($"Attempting to save output mod to: {outputPluginPath}");
-                    try
-                    {
-                         _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath);
-                         AppendLog($"Output mod saved successfully.");
-                    }
-                     catch (Exception ex)
-                     {
-                         AppendLog($"FATAL SAVE ERROR: Could not write output plugin: {ExceptionLogger.GetExceptionStack(ex)}");
-                         AppendLog($"Output mod ({_environmentStateProvider.OutputPluginName}) was NOT saved.");
-                         ResetProgress();
-                         return;
-                     }
-                }
-                else
-                {
-                    AppendLog("\nNo NPC appearances processed or dependencies duplicated.");
-                    if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.");
-                    AppendLog("Output mod not saved as no changes were made.");
-                }
+            // --- Final Steps (Save Output Mod) ---
+            if (processedCount > 0 || _pluginsUsedForAppearance.Any())
+            { /* (Logic remains the same) */
+                AppendLog($"\nProcessed {processedCount} NPC(s).");
+                if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.");
+                string outputPluginPath = Path.Combine(_currentRunOutputAssetPath, _environmentStateProvider.OutputPluginFileName );
+                AppendLog($"Attempting to save output mod to: {outputPluginPath}");
+                try { _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath); AppendLog($"Output mod saved successfully."); }
+                catch (Exception ex) { AppendLog($"FATAL SAVE ERROR: Could not write output plugin: {ExceptionLogger.GetExceptionStack(ex)}"); AppendLog($"Output mod NOT saved."); ResetProgress(); return; }
+            }
+            else
+            { /* (Logic remains the same) */
+                AppendLog("\nNo NPC appearances processed or dependencies duplicated.");
+                if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.");
+                AppendLog("Output mod not saved as no changes were made.");
             }
 
             AppendLog("\nPatch generation process completed.");
             UpdateProgress(processedCount + skippedCount, processedCount + skippedCount, "Finished.");
-        }
+        } // End RunPatchingLogic
 
         // --- Helper Methods (Partially Revised) ---
 
@@ -585,12 +740,24 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         /// <summary>
         /// Main asset copying orchestrator. Calls helpers for identification and copying.
+        /// Handles scenarios where only FaceGen assets should be copied.
         /// </summary>
-        private void CopyNpcAssets(Npc npcInPatch, INpcGetter sourceNpc, ModKey appearancePluginKey, ModSetting appearanceModSetting, bool isTemplated)
+        /// <param name="npcInPatch">The NPC record being added/modified in the output patch.</param>
+        /// <param name="keyForFaceGenPath">The ModKey to use when constructing FaceGen paths (usually from appearance plugin, or original if FaceGen only).</param>
+        /// <param name="npcForExtraAssetLookup">The NPC record used to look up EXTRA assets (HeadParts, Armor). Null if only copying FaceGen.</param>
+        /// <param name="appearanceModSetting">The ModSetting defining source paths.</param>
+        /// <param name="isEffectivelyTemplated">Whether the source NPC uses template traits (relevant if npcForExtraAssetLookup is not null).</param>
+        /// <param name="copyOnlyFaceGenAssets">If true, only copies FaceGen NIF/DDS and assets referenced within the FaceGen NIF.</param>
+        private void CopyNpcAssets(
+            Npc npcInPatch,
+            ModKey keyForFaceGenPath, // Use this for constructing FaceGen paths
+            INpcGetter? npcForExtraAssetLookup, // Null if FaceGen only
+            ModSetting appearanceModSetting,
+            bool isEffectivelyTemplated, // Only relevant if npcForExtraAssetLookup is not null
+            bool copyOnlyFaceGenAssets)
         {
             AppendLog($"    Copying assets for {npcInPatch.EditorID ?? npcInPatch.FormKey.ToString()} from sources related to '{appearanceModSetting.DisplayName}'...");
 
-            // Source directories are now just the list from ModSetting
             var assetSourceDirs = appearanceModSetting.CorrespondingFolderPaths ?? new List<string>();
             if (!assetSourceDirs.Any())
             {
@@ -599,80 +766,98 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             AppendLog($"      Asset source directories: {string.Join(", ", assetSourceDirs)}");
 
-
             // --- Identify Required Assets ---
             HashSet<string> meshesToCopy = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             HashSet<string> texturesToCopy = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            ModKey effectivePluginKey = keyForFaceGenPath; // Default key for asset lookup/warning context
 
-            // 1. FaceGen Assets
-            if (!isTemplated)
+            // 1. FaceGen Assets (Always check if requested, templating handled by caller passing null npcForExtraAssetLookup)
+            // Construct FaceGen paths using the provided key
+            var (faceMeshPath, faceTexPath) = GetFaceGenSubPathStrings(npcInPatch.FormKey); // Use the keyForFaceGenPath here!
+            meshesToCopy.Add(faceMeshPath);
+            texturesToCopy.Add(faceTexPath);
+            AppendLog($"      Identified FaceGen paths (using key {keyForFaceGenPath.FileName}): {faceMeshPath}, {faceTexPath}");
+
+            // Check FaceGen existence using the keyForFaceGenPath
+            if (!FaceGenExists(npcInPatch.FormKey, keyForFaceGenPath, assetSourceDirs))
             {
-                 var (faceMeshPath, faceTexPath) = GetFaceGenSubPathStrings(sourceNpc.FormKey);
-                 meshesToCopy.Add(faceMeshPath);
-                 texturesToCopy.Add(faceTexPath);
-                 AppendLog($"      Identified FaceGen: {faceMeshPath}, {faceTexPath}");
-
-                 // Check FaceGen existence (**Clarification 2 Applied**)
-                 if (!FaceGenExists(sourceNpc.FormKey, appearancePluginKey, assetSourceDirs))
-                 {
-                     string errorMsg = $"Missing expected FaceGen for NPC {npcInPatch.EditorID ?? npcInPatch.FormKey.ToString()} in source directories for plugin {appearancePluginKey.FileName}.";
-                     AppendLog($"      WARNING: {errorMsg}");
-                     if (AbortIfMissingFaceGen)
-                     { throw new FileNotFoundException(errorMsg); }
-                 }
-            } else { AppendLog($"      Skipping FaceGen identification (Templated)."); }
-
-            // 2. Extra Assets
-            if (CopyExtraAssets)
-            {
-                 AppendLog($"      Identifying extra assets...");
-                 GetAssetsReferencedByPlugin(sourceNpc, meshesToCopy, texturesToCopy);
+                string errorMsg = $"Missing expected FaceGen for NPC {npcInPatch.EditorID ?? npcInPatch.FormKey.ToString()} in source directories using key {keyForFaceGenPath.FileName}.";
+                AppendLog($"      WARNING: {errorMsg}");
+                if (AbortIfMissingFaceGen)
+                { throw new FileNotFoundException(errorMsg); }
+                // If not aborting, remove the missing paths so we don't try to copy them later
+                meshesToCopy.Remove(faceMeshPath);
+                texturesToCopy.Remove(faceTexPath);
             }
 
-            // --- Handle BSAs (**Clarification 2 Applied**) ---
+            // 2. Extra Assets (Only if NOT FaceGen-only AND CopyExtraAssets is true)
+            if (!copyOnlyFaceGenAssets && CopyExtraAssets && npcForExtraAssetLookup != null)
+            {
+                AppendLog($"      Identifying extra assets referenced by plugin record {npcForExtraAssetLookup.FormKey}...");
+                GetAssetsReferencedByPlugin(npcForExtraAssetLookup, meshesToCopy, texturesToCopy);
+                effectivePluginKey = npcForExtraAssetLookup.FormKey.ModKey; // Use this plugin key for BSA/warning context if looking up extra assets
+            }
+            else if (copyOnlyFaceGenAssets)
+            {
+                 AppendLog($"      Skipping extra asset identification (FaceGen Only mode).");
+            }
+            else if (!CopyExtraAssets)
+            {
+                 AppendLog($"      Skipping extra asset identification (CopyExtraAssets disabled).");
+            }
+             else if (npcForExtraAssetLookup == null)
+            {
+                 AppendLog($"      Skipping extra asset identification (No source NPC record provided).");
+            }
+
+
+            // --- Handle BSAs ---
             HashSet<string> extractedMeshFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             HashSet<string> extractedTextureFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (HandleBSAFiles_Patching)
             {
-                AppendLog($"      Checking BSAs associated with {appearancePluginKey.FileName} in source directories...");
-                // UnpackAssetsFromBSA now handles iterating through source directories
-                UnpackAssetsFromBSA(meshesToCopy, texturesToCopy, extractedMeshFiles, extractedTextureFiles, appearancePluginKey, assetSourceDirs, _currentRunOutputAssetPath);
+                AppendLog($"      Checking BSAs associated with plugin key {effectivePluginKey.FileName} in source directories...");
+                UnpackAssetsFromBSA(meshesToCopy, texturesToCopy, extractedMeshFiles, extractedTextureFiles, effectivePluginKey, assetSourceDirs, _currentRunOutputAssetPath);
                 AppendLog($"      Extracted {extractedMeshFiles.Count} meshes and {extractedTextureFiles.Count} textures from BSAs.");
             }
 
-             // --- Handle NIF Scanning (**Uses Clarification 2 via UnpackAssetsFromBSA**) ---
-             if (CopyExtraAssets && FindExtraTexturesInNifs)
-             {
-                  AppendLog($"      Scanning NIF files for additional textures...");
-                  HashSet<string> texturesFromNifs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                  HashSet<string> alreadyHandledTextures = new HashSet<string>(texturesToCopy, StringComparer.OrdinalIgnoreCase);
-                  alreadyHandledTextures.UnionWith(extractedTextureFiles);
+            // --- Handle NIF Scanning ---
+            // Scan NIFs if CopyExtraAssets OR copyOnlyFaceGenAssets (because FaceGen NIF itself needs scanning) AND FindExtraTexturesInNifs is true
+            if ((CopyExtraAssets || copyOnlyFaceGenAssets) && FindExtraTexturesInNifs)
+            {
+                 AppendLog($"      Scanning NIF files for additional texture references...");
+                 HashSet<string> texturesFromNifs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                 HashSet<string> alreadyHandledTextures = new HashSet<string>(texturesToCopy, StringComparer.OrdinalIgnoreCase);
+                 alreadyHandledTextures.UnionWith(extractedTextureFiles);
 
-                  // Scan loose NIFs (check all source dirs)
-                  GetExtraTexturesFromNifSet(meshesToCopy, assetSourceDirs, texturesFromNifs, alreadyHandledTextures);
-                  // Scan extracted NIFs (check output dir)
-                  GetExtraTexturesFromNifSet(extractedMeshFiles, new List<string> { _currentRunOutputAssetPath }, texturesFromNifs, alreadyHandledTextures);
+                 // Scan loose NIFs (check all source dirs)
+                 GetExtraTexturesFromNifSet(meshesToCopy, assetSourceDirs, texturesFromNifs, alreadyHandledTextures);
+                 // Scan extracted NIFs (check output dir)
+                 GetExtraTexturesFromNifSet(extractedMeshFiles, new List<string> { _currentRunOutputAssetPath }, texturesFromNifs, alreadyHandledTextures);
 
-                  AppendLog($"        Found {texturesFromNifs.Count} additional textures in NIFs.");
+                 AppendLog($"        Found {texturesFromNifs.Count} additional textures in NIFs.");
 
-                  // Try extracting newly found textures from BSAs
-                  if (HandleBSAFiles_Patching && texturesFromNifs.Any())
-                  {
-                      HashSet<string> newlyExtractedNifTextures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                      UnpackAssetsFromBSA(new HashSet<string>(), texturesFromNifs, new HashSet<string>(), newlyExtractedNifTextures, appearancePluginKey, assetSourceDirs, _currentRunOutputAssetPath);
-                      AppendLog($"        Extracted {newlyExtractedNifTextures.Count} of these additional textures from BSAs.");
-                      texturesFromNifs.ExceptWith(newlyExtractedNifTextures);
-                  }
-                  texturesToCopy.UnionWith(texturesFromNifs); // Add remaining loose NIF textures
-             }
+                 // Try extracting newly found textures from BSAs
+                 if (HandleBSAFiles_Patching && texturesFromNifs.Any())
+                 {
+                     HashSet<string> newlyExtractedNifTextures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                     UnpackAssetsFromBSA(new HashSet<string>(), texturesFromNifs, new HashSet<string>(), newlyExtractedNifTextures, effectivePluginKey, assetSourceDirs, _currentRunOutputAssetPath);
+                     AppendLog($"        Extracted {newlyExtractedNifTextures.Count} of these additional textures from BSAs.");
+                     texturesFromNifs.ExceptWith(newlyExtractedNifTextures);
+                 }
+                 texturesToCopy.UnionWith(texturesFromNifs);
+            }
+            else {
+                AppendLog($"      Skipping NIF scanning for textures.");
+            }
 
 
-            // --- Copy Loose Files (**Clarification 2 Applied**) ---
+            // --- Copy Loose Files ---
             AppendLog($"      Copying {meshesToCopy.Count} loose mesh files...");
-            CopyAssetFiles(assetSourceDirs, meshesToCopy, "Meshes", appearancePluginKey.FileName.String);
+            CopyAssetFiles(assetSourceDirs, meshesToCopy, "Meshes", effectivePluginKey.FileName.String);
 
             AppendLog($"      Copying {texturesToCopy.Count} loose texture files...");
-            CopyAssetFiles(assetSourceDirs, texturesToCopy, "Textures", appearancePluginKey.FileName.String);
+            CopyAssetFiles(assetSourceDirs, texturesToCopy, "Textures", effectivePluginKey.FileName.String);
 
             AppendLog($"    Finished asset copying for {npcInPatch.EditorID ?? npcInPatch.FormKey.ToString()}.");
         }
@@ -713,10 +898,25 @@ namespace NPC_Plugin_Chooser_2.View_Models
              if (!string.IsNullOrEmpty(txstGetter.Multilayer?.GivenPath)) texturePaths.Add(txstGetter.Multilayer.GivenPath);
              if (!string.IsNullOrEmpty(txstGetter.BacklightMaskOrSpecular?.GivenPath)) texturePaths.Add(txstGetter.BacklightMaskOrSpecular.GivenPath);
         }
-        private (string, string) GetFaceGenSubPathStrings(FormKey npcFormKey)
-        { /* Implementation remains the same */
-            string meshPath = $"actors\\character\\facegendata\\facegeom\\{npcFormKey.ModKey.FileName}\\{npcFormKey.IDString()}.nif";
-            string texPath = $"actors\\character\\facegendata\\facetint\\{npcFormKey.ModKey.FileName}\\{npcFormKey.IDString()}.dds";
+        /// <summary>
+        /// Gets the relative file paths for FaceGen NIF and DDS files,
+        /// ensuring the FormID component is an 8-character, zero-padded hex string.
+        /// </summary>
+        /// <param name="npcFormKey">The FormKey of the NPC.</param>
+        /// <returns>A tuple containing the relative mesh path and texture path (lowercase).</returns>
+        private (string MeshPath, string TexturePath) GetFaceGenSubPathStrings(FormKey npcFormKey)
+        {
+            // Get the plugin filename string
+            string pluginFileName = npcFormKey.ModKey.FileName.String; // Use .String property
+
+            // Get the Form ID and format it as an 8-character uppercase hex string (X8)
+            string formIDHex = npcFormKey.ID.ToString("X8"); // e.g., 0001A696
+
+            // Construct the paths
+            string meshPath = $"actors\\character\\facegendata\\facegeom\\{pluginFileName}\\{formIDHex}.nif";
+            string texPath = $"actors\\character\\facegendata\\facetint\\{pluginFileName}\\{formIDHex}.dds";
+
+            // Return lowercase paths for case-insensitive comparisons later
             return (meshPath.ToLowerInvariant(), texPath.ToLowerInvariant());
         }
 

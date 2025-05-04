@@ -24,6 +24,7 @@ public class EnvironmentStateProvider
     public ISkyrimMod OutputMod { get; set; }
     
     public string OutputPluginName { get; set; }
+    public string OutputPluginFileName => OutputPluginName + ".esp";
     public bool EnvironmentIsValid { get; set; } = false;
     
     // Additional properties (for logging only)
@@ -73,7 +74,7 @@ public class EnvironmentStateProvider
         }
 
         OutputMod = null;
-        OutputMod = new SkyrimMod(ModKey.FromName(OutputPluginName, ModType.Plugin), SkyrimVersion);
+        OutputMod = new SkyrimMod(ModKey.FromName(OutputPluginFileName, ModType.Plugin), SkyrimVersion);
 
         var built = false;
 
