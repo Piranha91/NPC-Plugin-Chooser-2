@@ -1208,7 +1208,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 SelectedGroupName = string.Empty; // Or set to null, depending on desired behavior
             }
-
+            
+            MessageBus.Current.SendMessage(new NpcGroupsChangedMessage());  // Send a message indicating groups might have changed
 
             Debug.WriteLine($"Updated AvailableNpcGroups. Count: {AvailableNpcGroups.Count}");
         }

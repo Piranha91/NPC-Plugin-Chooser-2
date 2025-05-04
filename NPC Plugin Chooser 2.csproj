@@ -19,6 +19,7 @@
       <PackageReference Include="Mutagen.Bethesda.Synthesis" Version="0.33.3" />
       <PackageReference Include="Mutagen.Bethesda.Synthesis.WPF" Version="0.33.3" />
       <PackageReference Include="Mutagen.Bethesda.WPF" Version="0.49.0" />
+      <PackageReference Include="niflysharp" Version="1.3.0" />
       <PackageReference Include="ReactiveUI.Fody" Version="19.5.41" />
       <PackageReference Include="ReactiveUI.WPF" Version="20.2.45" />
       <PackageReference Include="Splat.Autofac" Version="15.3.1" />
@@ -35,6 +36,14 @@
     <ItemGroup>
       <None Remove="Resources\No Mugshot.png" />
       <Content Include="Resources\No Mugshot.png">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+      <None Remove="Resources\Paths To Ignore.json" />
+      <Content Include="Resources\Paths To Ignore.json">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+      <None Remove="Resources\Warnings To Suppress.json" />
+      <Content Include="Resources\Warnings To Suppress.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
     </ItemGroup>

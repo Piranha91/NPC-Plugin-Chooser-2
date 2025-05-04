@@ -9,21 +9,37 @@
                                 xmlns:reactiveui="http://reactiveui.net"
                                 mc:Ignorable="d"
                                 x:TypeArguments="vm:VM_Run"
-                                d:DesignHeight="450" d:DesignWidth="800">
-    <Grid Margin="10">
+                                d:DataContext="{d:DesignInstance Type=vm:VM_Run}"
+                                d:DesignHeight="550" d:DesignWidth="800">
+    <Grid Margin="10"
+          HorizontalAlignment="Stretch"
+          VerticalAlignment="Stretch">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/> <!-- Run Button & Group Selector -->
+            <RowDefinition Height="*"/>    <!-- Log Output -->
+            <RowDefinition Height="Auto"/> <!-- Progress Bar -->
         </Grid.RowDefinitions>
 
-        <!-- ADD x:Name HERE -->
-        <Button x:Name="RunButton"
-                Grid.Row="0"
-                Content="Run Patch Generation"
-                Command="{Binding RunCommand}"
-                HorizontalAlignment="Left" MinWidth="150" Padding="10,5" Margin="0,0,0,10"/>
+        <!-- Controls Row -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,10">
+            <Button x:Name="RunButton"
+                    DockPanel.Dock="Left"
+                    Content="Run Patch Generation"
+                    Command="{Binding RunCommand}"
+                    MinWidth="150" Padding="10,5" VerticalAlignment="Center"/>
 
-        <!-- ADD x:Name HERE -->
+            <TextBlock Text="Patch NPCs In Group:" Margin="15,0,5,0" VerticalAlignment="Center"/>
+            <ComboBox x:Name="GroupComboBox"
+                      MinWidth="150"
+                      ItemsSource="{Binding AvailableNpcGroups}"
+                      SelectedItem="{Binding SelectedNpcGroup, Mode=TwoWay}"
+                      VerticalAlignment="Center"
+                      ToolTip="Select an NPC group to process, or 'All NPCs' to process all selected NPCs."/>
+            <!-- Add spacer or adjust alignment if needed -->
+            <TextBlock/>
+        </DockPanel>
+
+        <!-- Log Output -->
         <TextBox x:Name="LogTextBox"
                  Grid.Row="1"
                  Text="{Binding LogOutput, Mode=OneWay}"
@@ -32,6 +48,19 @@
                  HorizontalScrollBarVisibility="Auto"
                  AcceptsReturn="True"
                  TextWrapping="NoWrap"
-                 FontFamily="Consolas"/>
+                 FontFamily="Consolas"
+                 HorizontalAlignment="Stretch" 
+                 VerticalAlignment="Stretch"/>
+
+        <!-- Progress Bar -->
+         <StatusBar Grid.Row="2" Margin="0,5,0,0">
+             <StatusBarItem>
+                 <ProgressBar x:Name="ProgressBar" Value="{Binding ProgressValue, Mode=OneWay}" Width="200" Height="18" />
+             </StatusBarItem>
+             <StatusBarItem>
+                 <TextBlock x:Name="ProgressTextBlock" Text="{Binding ProgressText}"/>
+             </StatusBarItem>
+         </StatusBar>
+
     </Grid>
 </reactiveui:ReactiveUserControl>
