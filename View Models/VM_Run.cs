@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
+using static NPC_Plugin_Chooser_2.BackEnd.PatcherExtensions;
 using NPC_Plugin_Chooser_2.Models;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
@@ -20,6 +21,7 @@ using System.Reactive.Disposables;
 using System.Windows;
 using Mutagen.Bethesda.Archives;
 using Mutagen.Bethesda.Plugins.Cache;
+using Mutagen.Bethesda.Plugins.Records;
 using Noggog; // Needed for LinkCache Interface
 
 namespace NPC_Plugin_Chooser_2.View_Models
@@ -79,7 +81,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private HashSet<string> _warningsToSuppress_Global = new();
         private Dictionary<string, ModSetting> _modSettingsMap = new(); // Key: DisplayName, Value: ModSetting
         private string _currentRunOutputAssetPath = string.Empty;
-        private HashSet<ModKey> _pluginsUsedForAppearance = new(); // Track plugins needing dependency duplication
 
 
         public ReactiveCommand<Unit, Unit> RunCommand { get; }
@@ -410,7 +411,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             LogOutput = string.Empty;
             ResetProgress();
-            _pluginsUsedForAppearance.Clear();
             UpdateProgress(0, 1, "Initializing...");
             AppendLog("Starting patch generation...");
 
@@ -518,6 +518,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 try { ClearDirectory(_currentRunOutputAssetPath); AppendLog("Output asset directory cleared."); }
                 catch (Exception ex) { AppendLog($"ERROR: Failed to clear output asset directory: {ExceptionLogger.GetExceptionStack(ex)}. Aborting."); ResetProgress(); return; }
             }
+            
+            // --- *** Data Collection for Custom Dependency Duplication *** ---
+            // Key: ModKey of the appearance plugin that *sourced* the record/appearance
+            // Value: List of records *in the output patch* that were created/modified using that source
+            var sourcePluginToPatchedRecordsMap = new Dictionary<ModKey, List<IMajorRecordGetter>>();
 
             // --- Main Processing Loop (Using Screening Cache) ---
             AppendLog("\nProcessing Valid NPC Appearance Selections...");
@@ -557,13 +562,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     Npc? patchNpc = null; // The NPC record to be placed in the patch
                     INpcGetter? npcForAssetLookup = null; // Which NPC record to use for finding *extra* assets
                     bool copyOnlyFaceGenAssets = false; // Flag for asset copying
-
+                    bool usedPluginRecord = false; // Track if we used the plugin override
 
                     // --- *** Apply Logic Based on Screening Result (Requirement 1) *** ---
                     if (result.HasPluginRecordOverride && sourceNpc != null) // Scenario: Plugin override exists
                     {
                         AppendLog("    Source: Plugin Record Override");
                         npcForAssetLookup = sourceNpc; // Use appearance mod's record for extra asset lookup
+                        usedPluginRecord = true;
 
                         switch (_settings.PatchingMode)
                         {
@@ -577,10 +583,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 AppendLog($"      Mode: Default. Forwarding record from source plugin ({sourceNpc.FormKey.ModKey.FileName}).");
                                 patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(sourceNpc);
                                 break;
-                        }
-                        // Track plugin if it exists and isn't null/base game
-                        if (appearancePluginKey.HasValue && !appearancePluginKey.Value.IsNull && !BaseGamePlugins.Contains(appearancePluginKey.Value)) {
-                            _pluginsUsedForAppearance.Add(appearancePluginKey.Value);
                         }
                     }
                     else if (result.HasFaceGenAssets) // Scenario: Plugin override missing OR invalid, but FaceGen exists
@@ -622,6 +624,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                     // --- *** End Scenario Logic *** ---
 
+                    // --- *** Populate Map for Dependency Duplication *** ---
+                    // Add the *record currently in the patch* (patchNpc) to the map,
+                    // keyed by the *source appearance plugin*, but only if we actually used that plugin's *record data*.
+                    // We don't add if only FaceGen assets were used, as record dependencies aren't relevant then.
+                    if (usedPluginRecord && appearancePluginKey.HasValue && !appearancePluginKey.Value.IsNull && !BaseGamePlugins.Contains(appearancePluginKey.Value))
+                    {
+                        ModKey sourceKey = appearancePluginKey.Value;
+                        if (!sourcePluginToPatchedRecordsMap.TryGetValue(sourceKey, out var recordList))
+                        {
+                            recordList = new List<IMajorRecordGetter>();
+                            sourcePluginToPatchedRecordsMap[sourceKey] = recordList;
+                        }
+                        recordList.Add(patchNpc); // Add the record *from the patch*
+                    }
 
                     // --- Copy Assets ---
                     if (patchNpc != null && appearanceModSetting != null) // Ensure we have a patch record and mod settings
@@ -652,26 +668,65 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             UpdateProgress(processedCount + skippedCount, processedCount + skippedCount, "Finalizing...");
 
-            // --- Post-Processing: Duplicate Dependencies ---
-            if (_pluginsUsedForAppearance.Any())
-            { /* (Logic remains the same) */
-                AppendLog($"\nDuplicating referenced records from used appearance plugins...");
-                int duplicatedCount = 0;
-                foreach(var pluginKey in _pluginsUsedForAppearance) {
-                    if (BaseGamePlugins.Contains(pluginKey)) { AppendLog($"  Skipping dependency duplication for base game plugin: {pluginKey.FileName}"); continue; }
-                    try {
-                        AppendLog($"  Processing dependencies for: {pluginKey.FileName}");
-                        _environmentStateProvider.OutputMod.DuplicateFromOnlyReferenced(_environmentStateProvider.LinkCache, pluginKey, out var recordsDuplicated);
-                         AppendLog($"    Duplicated {recordsDuplicated.Count} records.");
-                         duplicatedCount += recordsDuplicated.Count;
-                    } catch (Exception ex) { AppendLog($"  ERROR duplicating dependencies for {pluginKey.FileName}: {ExceptionLogger.GetExceptionStack(ex)}"); }
+            // --- *** Post-Processing: Duplicate Dependencies (Using Custom Function) *** ---
+            // Initialize the *single* mapping dictionary that will accumulate results
+            Dictionary<FormKey, FormKey> globalMapping = new();
+            AppendLog($"\nDuplicating referenced records using custom function...");
+            int totalDuplicatedCount = 0;
+
+            // Iterate through the map we built
+            foreach (var kvp in sourcePluginToPatchedRecordsMap)
+            {
+                 ModKey modToDuplicateFrom = kvp.Key;
+                 List<IMajorRecordGetter> recordsInPatchSourcedFromMod = kvp.Value;
+
+                 if (!recordsInPatchSourcedFromMod.Any()) continue; // Skip if list is empty
+
+                 AppendLog($"  Processing dependencies for: {modToDuplicateFrom.FileName} (from {recordsInPatchSourcedFromMod.Count} patched records)");
+                 try
+                 {
+                     // Call the custom extension method, passing the list of records from the *output patch*
+                     // and the *accumulating* mapping dictionary by reference.
+                     _environmentStateProvider.OutputMod.DuplicateFromOnlyReferencedGetters(
+                         recordsInPatchSourcedFromMod,
+                         _environmentStateProvider.LinkCache,
+                         modToDuplicateFrom,
+                         ref globalMapping // Pass by reference
+                         // typesToInspect: null or empty array uses default behavior
+                     );
+                     // Note: The custom function internally handles adding to the mapping and removing old links
+                     // We don't get a count back directly from this version. We can infer from mapping size change if needed.
+                     AppendLog($"    Completed dependency processing for {modToDuplicateFrom.FileName}.");
+                 }
+                 catch (Exception ex)
+                 {
+                      AppendLog($"  ERROR duplicating dependencies for {modToDuplicateFrom.FileName}: {ExceptionLogger.GetExceptionStack(ex)}");
+                      // Continue processing other plugins
+                 }
+            }
+            AppendLog($"Finished dependency duplication. Total mappings created/accumulated: {globalMapping.Count}.");
+
+            // --- *** Final Remapping (Potentially Redundant but Safe) *** ---
+            // Although the custom function calls RemapLinks internally for the mappings *it* created,
+            // calling it once more at the end with the *full* accumulated mapping ensures
+            // that links in records processed *earlier* are correctly remapped if their
+            // target was duplicated by a *later* call to the custom function.
+            if (globalMapping.Any())
+            {
+                AppendLog("Performing final link remapping pass...");
+                try
+                {
+                    _environmentStateProvider.OutputMod.RemapLinks(globalMapping);
+                    AppendLog("Final remapping complete.");
                 }
-                AppendLog($"Finished dependency duplication. Total records duplicated: {duplicatedCount}.");
+                catch (Exception ex)
+                {
+                     AppendLog($"ERROR during final remapping: {ExceptionLogger.GetExceptionStack(ex)}");
+                }
             }
 
-
             // --- Final Steps (Save Output Mod) ---
-            if (processedCount > 0 || _pluginsUsedForAppearance.Any())
+            if (processedCount > 0 || globalMapping.Any())
             { /* (Logic remains the same) */
                 AppendLog($"\nProcessed {processedCount} NPC(s).");
                 if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.");
