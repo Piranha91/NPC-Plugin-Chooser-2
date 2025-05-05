@@ -1,4 +1,5 @@
-﻿using nifly;
+﻿using Microsoft.IO;
+using nifly;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -6,12 +7,38 @@ public class NifHandler
 {
     public static HashSet<string> GetExtraTexturesFromNif(string nifPath)
     {
-        HashSet<string> ExtraTextures = new HashSet<string>();
+        var debug = File.Exists(nifPath);
+        HashSet<string> uniqueTextures = new HashSet<string>();
         using (NifFile nif = new NifFile())
         {
             nif.Load(nifPath);
-            ExtraTextures = new niflycpp.TextureFinder(nif.GetHeader()).UniqueTextures.ToHashSet<string>();
-            return RemoveTopFolderFromPath(ExtraTextures, "textures");
+            // Assume 'niFile' is your loaded NIF file object and niFile.Header is the NiHeader.
+            NiHeader header = nif.GetHeader();
+
+            var blockCount = header.GetNumBlocks();
+            for (uint id = 0; id < blockCount; id++)
+            {
+                NiObject block = header.GetBlockById(id);
+                if (block is BSShaderTextureSet textureSet)
+                {
+                    // Access the texture paths safely
+                    using var texturesArray = textureSet.textures;           // textures is a container (e.g. NiTArray<NiString>)
+                    using var textureItems = texturesArray.items();          // items() gives an enumerable collection of NiString
+                    foreach (NiString tex in textureItems)
+                    {
+                        if (tex != null)
+                        {
+                            string path = tex.get();  // Get the actual string from NiString
+                            if (!string.IsNullOrEmpty(path))
+                            {
+                                uniqueTextures.Add(path);
+                            }
+                        }
+                        // (NiString will be disposed at end of using scope if required)
+                    }
+                }
+            }
+            return RemoveTopFolderFromPath(uniqueTextures, "textures");
         }
     }
 
