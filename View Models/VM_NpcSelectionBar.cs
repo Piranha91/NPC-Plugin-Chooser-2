@@ -678,113 +678,173 @@ namespace NPC_Plugin_Chooser_2.View_Models
             };
         }
 
-        private ObservableCollection<VM_AppearanceMod> CreateAppearanceModViewModels(VM_NpcSelection npcVM, Dictionary<string, List<(string ModName, string ImagePath)>> mugshotData)
+        private ObservableCollection<VM_AppearanceMod> CreateAppearanceModViewModels(VM_NpcSelection npcVM,
+            Dictionary<string, List<(string ModName, string ImagePath)>> mugshotData)
         {
             var modVMs = new ObservableCollection<VM_AppearanceMod>();
             if (npcVM == null) return modVMs;
 
             string npcFormKeyString = npcVM.NpcFormKey.ToString();
-            var npcMugshotList = mugshotData.GetValueOrDefault(npcFormKeyString, new List<(string ModName, string ImagePath)>());
-            var processedAppearancePlugins = new HashSet<ModKey>(); // Track plugins already added via mugshots
+            var npcMugshotList =
+                mugshotData.GetValueOrDefault(npcFormKeyString, new List<(string ModName, string ImagePath)>());
 
-            // 1) Create mods from mugshots
+            // --- Step 1: Identify all unique VM_ModSettings providing data for this NPC ---
+            var sourceModSettings =
+                new Dictionary<string, VM_ModSetting>(StringComparer.OrdinalIgnoreCase); // Key: DisplayName
+
+            // 1a: Find settings associated with mugshots
             foreach (var mugshotInfo in npcMugshotList)
             {
-                string mugshotModName = mugshotInfo.ModName; // DisplayName of the VM_ModSetting
-                string mugshotImagePath = mugshotInfo.ImagePath;
-
-                // Find the VM_ModSetting based on DisplayName (which mugshotModName represents)
-                var modSettingVM = _lazyModsVm.Value?.AllModSettings.FirstOrDefault(ms => ms.DisplayName.Equals(mugshotModName, StringComparison.OrdinalIgnoreCase));
-                if (modSettingVM == null)
+                string mugshotModName = mugshotInfo.ModName; // This is the DisplayName
+                if (!sourceModSettings.ContainsKey(mugshotModName))
                 {
-                    Debug.WriteLine($"Could not find VM_ModSetting for mugshot mod name: {mugshotModName}");
-                    continue;
-                }
-
-                // Determine the *specific* plugin key associated with *this* mugshot.
-                // The mugshot path format is .../ModName/PluginName.esp/XXXXXXXX.png
-                ModKey? specificPluginKey = null;
-                try
-                {
-                    DirectoryInfo? pluginDir = Directory.GetParent(mugshotImagePath);
-                    if (pluginDir != null && PluginRegex.IsMatch(pluginDir.Name))
+                    var modSettingVM = _lazyModsVm.Value?.AllModSettings.FirstOrDefault(ms =>
+                        ms.DisplayName.Equals(mugshotModName, StringComparison.OrdinalIgnoreCase));
+                    if (modSettingVM != null)
                     {
-                        // Attempt to match the plugin directory name with a key in the ModSetting
-                        specificPluginKey = modSettingVM.CorrespondingModKeys.FirstOrDefault(mk => mk.FileName.String.Equals(pluginDir.Name, StringComparison.OrdinalIgnoreCase));
-
-                        // If no match found by name, try parsing the directory name as a ModKey directly (less safe)
-                        if (specificPluginKey == null || specificPluginKey.Value.IsNull)
-                        {
-                            try { specificPluginKey = ModKey.FromFileName(pluginDir.Name); } catch { /* Ignore parsing error */ }
-                        }
+                        sourceModSettings[mugshotModName] = modSettingVM;
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"Could not find VM_ModSetting (mugshot source): {mugshotModName}");
                     }
                 }
-                catch (Exception ex) { Debug.WriteLine($"Error determining specific plugin key for mugshot '{mugshotImagePath}': {ex.Message}"); }
-
-                // If we couldn't determine a specific key, we might skip or use a default. Let's skip for now.
-                if (specificPluginKey == null || specificPluginKey.Value.IsNull)
-                {
-                    Debug.WriteLine($"Could not determine specific plugin key for mugshot: {mugshotImagePath}");
-                    continue;
-                }
-
-                // Create the VM_AppearanceMod, passing the *specific* key as the overrideModeKey
-                modVMs.Add(_appearanceModFactory(modSettingVM.DisplayName, npcVM.NpcFormKey, specificPluginKey, mugshotImagePath));
-
-                // Track this specific plugin as processed to avoid duplication in step 2
-                processedAppearancePlugins.Add(specificPluginKey.Value);
             }
 
-            // 2) Create mods from plugins that don't have any associated mugshots
-            if (npcVM.NpcGetter != null) // Only applicable if the NPC exists in the load order
+            // 1b: Find settings associated with plugin overrides
+            if (npcVM.NpcGetter != null) // Only if NPC record exists
             {
-                // Iterate through distinct appearance-modifying plugins for this NPC
-                foreach (var modKey in npcVM.AppearanceMods.Distinct())
+                foreach (var appearanceModKey in npcVM.AppearanceMods.Distinct())
                 {
-                    // Skip if this plugin was already added via a mugshot link
-                    if (!processedAppearancePlugins.Contains(modKey))
-                    {
-                        // Find the VM_ModSetting that claims *this specific plugin* (modKey) as its source for *this specific NPC*.
-                        var correspondingMod = _lazyModsVm.Value?.AllModSettings.FirstOrDefault(vmModSetting =>
-                                vmModSetting.NpcSourcePluginMap.TryGetValue(npcVM.NpcFormKey, out var sourceKey) && // Does the map contain this NPC?
-                                sourceKey.Equals(modKey) // Does the mapped source key match the current plugin key?
-                        );
+                    // Find the ModSetting that designates this plugin as the source for this NPC
+                    var modSettingVM = _lazyModsVm.Value?.AllModSettings.FirstOrDefault(vmModSetting =>
+                        vmModSetting.NpcSourcePluginMap.TryGetValue(npcVM.NpcFormKey, out var sourceKey) &&
+                        sourceKey.Equals(appearanceModKey)
+                    );
 
-                        if (correspondingMod != null)
+                    if (modSettingVM != null)
+                    {
+                        // Add to our dictionary if not already present from mugshots
+                        if (!sourceModSettings.ContainsKey(modSettingVM.DisplayName))
                         {
-                            // We found the correct ModSetting and confirmed this modKey is the designated source for this NPC within it.
-                            // Pass the specific modKey providing this appearance as the overrideModeKey.
-                            modVMs.Add(_appearanceModFactory(correspondingMod.DisplayName, npcVM.NpcFormKey, modKey, string.Empty));
+                            sourceModSettings[modSettingVM.DisplayName] = modSettingVM;
                         }
-                        // else: This modKey modifies the NPC's appearance but isn't the *designated single source* within any VM_ModSetting's map.
-                        // This could indicate an inconsistency or an NPC modified by a plugin not managed via a ModSetting.
-                        else
-                        {
-                            // Optional: Handle cases where an appearance-modifying plugin isn't mapped in VM_Mods (maybe log?)
-                            Debug.WriteLine($"Appearance plugin {modKey} for NPC {npcVM.NpcFormKey} has no matching VM_ModSetting.");
-                             // Could potentially create a placeholder VM here if needed, e.g., using modKey.FileName as display name.
-                             // modVMs.Add(_appearanceModFactory(modKey.FileName, npcVM.NpcFormKey, modKey, string.Empty));
-                        }
+                        // If already present, it means this setting provides both mugshot and plugin data.
+                    }
+                    else
+                    {
+                        // This appearance plugin isn't designated as the source within any known ModSetting's map.
+                        // Consider creating a placeholder VM if desired, but for now, we only create VMs for recognized sources.
+                        Debug.WriteLine(
+                            $"Appearance plugin {appearanceModKey} for NPC {npcVM.NpcFormKey} has no matching VM_ModSetting or is not the designated source in its map.");
+                        // Placeholder example (if needed):
+                        // if (!sourceModSettings.ContainsKey(appearanceModKey.FileName)) {
+                        //    // Need a way to create a temporary VM_ModSetting-like object or pass raw data
+                        //    // This complicates things significantly. Let's stick to recognized ModSettings first.
+                        // }
                     }
                 }
             }
+
+            // --- Step 2: Create a single VM_AppearanceMod for each unique source VM_ModSetting ---
+            foreach (var kvp in sourceModSettings)
+            {
+                string displayName = kvp.Key;
+                var modSettingVM = kvp.Value;
+
+                // 2a: Determine the specific plugin key (if any)
+                ModKey? specificPluginKey = null;
+                if (modSettingVM.NpcSourcePluginMap.TryGetValue(npcVM.NpcFormKey, out var sourceKey))
+                {
+                    specificPluginKey = sourceKey;
+                }
+                // We might still have a specific key if only a mugshot exists, parse from path?
+                // Let's prioritize the map first. If the map is empty but a mugshot exists,
+                // we might need to parse the mugshot path again here to find *a* key, even if not formally mapped.
+                // This adds complexity. For now, let's rely on the map or the mugshot path parsing if the map fails.
+
+                // 2b: Find the corresponding image path (if any)
+                string? imagePath = null;
+                var mugshotEntry = npcMugshotList.FirstOrDefault(m =>
+                    m.ModName.Equals(displayName, StringComparison.OrdinalIgnoreCase));
+                if (mugshotEntry != default) // Found a mugshot entry matching this display name
+                {
+                    imagePath = mugshotEntry.ImagePath;
+
+                    // If we didn't get a specificPluginKey from the map, try parsing from mugshot path as fallback
+                    if (specificPluginKey == null || specificPluginKey.Value.IsNull)
+                    {
+                        try
+                        {
+                            DirectoryInfo? pluginDir = Directory.GetParent(imagePath);
+                            if (pluginDir != null && PluginRegex.IsMatch(pluginDir.Name))
+                            {
+                                // Attempt to match the plugin directory name with a key in the ModSetting
+                                specificPluginKey = modSettingVM.CorrespondingModKeys.FirstOrDefault(mk =>
+                                    mk.FileName.String.Equals(pluginDir.Name, StringComparison.OrdinalIgnoreCase));
+                                // Fallback: try parsing directly
+                                if (specificPluginKey == null || specificPluginKey.Value.IsNull)
+                                {
+                                    try
+                                    {
+                                        specificPluginKey = ModKey.FromFileName(pluginDir.Name);
+                                    }
+                                    catch
+                                    {
+                                        /* Ignore */
+                                    }
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            /* Ignore path errors */
+                        }
+
+                        if (specificPluginKey != null)
+                            Debug.WriteLine(
+                                $"Used mugshot path parsing as fallback to find key {specificPluginKey} for {displayName}");
+                    }
+                }
+
+                // 2c: Create the ViewModel - Ensure we pass *a* ModKey if possible.
+                // If specificPluginKey is still null, maybe pass the *first* key from the setting as a last resort?
+                ModKey? keyToPass = specificPluginKey ?? modSettingVM.CorrespondingModKeys.FirstOrDefault();
+
+                // Create the single VM_AppearanceMod for this source
+                modVMs.Add(_appearanceModFactory(
+                    displayName,
+                    npcVM.NpcFormKey,
+                    keyToPass, // Pass the determined key (could be null if truly no plugin association)
+                    imagePath // Pass the found image path (or null)
+                ));
+            }
+
+
+            // --- Step 3: Sort, Apply Hidden State, Apply Selected State (Remains the Same) ---
 
             // Sort the created ViewModels alphabetically by ModName
             var sortedVMs = modVMs.OrderBy(vm => vm.ModName).ToList();
             modVMs.Clear(); // Clear the original collection
-            foreach (var vm in sortedVMs) { modVMs.Add(vm); } // Repopulate with sorted items
+            foreach (var vm in sortedVMs)
+            {
+                modVMs.Add(vm);
+            } // Repopulate with sorted items
 
             // Apply hidden states (global and per-NPC)
             foreach (var m in sortedVMs)
             {
                 bool isGloballyHidden = _hiddenModNames.Contains(m.ModName);
-                bool isPerNpcHidden = SelectedNpc != null && _hiddenModsPerNpc.TryGetValue(SelectedNpc.NpcFormKey, out var hiddenSet) && hiddenSet.Contains(m.ModName);
+                bool isPerNpcHidden = SelectedNpc != null &&
+                                      _hiddenModsPerNpc.TryGetValue(SelectedNpc.NpcFormKey, out var hiddenSet) &&
+                                      hiddenSet.Contains(m.ModName);
                 m.IsSetHidden = isGloballyHidden || isPerNpcHidden;
             }
 
             // Set the IsSelected state based on the consistency provider
             var selectedModName = _consistencyProvider.GetSelectedMod(npcVM.NpcFormKey);
-            var selectedVm = sortedVMs.FirstOrDefault(x => x.ModName.Equals(selectedModName, StringComparison.OrdinalIgnoreCase));
+            var selectedVm =
+                sortedVMs.FirstOrDefault(x => x.ModName.Equals(selectedModName, StringComparison.OrdinalIgnoreCase));
             if (selectedVm != null)
             {
                 selectedVm.IsSelected = true;
