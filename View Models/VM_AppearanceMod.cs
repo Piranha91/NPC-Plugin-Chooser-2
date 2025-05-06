@@ -72,7 +72,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ModName = modName;
             _lazyMods = lazyMods;
             AssociatedModSetting = _lazyMods.Value?.AllModSettings.FirstOrDefault(m => m.DisplayName == modName);
-            ModKey = AssociatedModSetting?.CorrespondingModKey ?? overrideModeKey;
+            // The overrideModeKey should represent the *specific* plugin providing this appearance data.
+            // If it's null, we fall back to the *first* key in the associated setting, which might not be correct.
+            // The logic in CreateAppearanceModViewModels needs to ensure overrideModeKey is passed correctly.
+            ModKey = overrideModeKey ?? AssociatedModSetting?.CorrespondingModKeys.FirstOrDefault();
 
             _npcFormKey = npcFormKey;
             _settings = settings;

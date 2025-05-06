@@ -331,32 +331,43 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // 3. Check for Plugin Record Override
                 bool hasPluginOverride = false;
                 INpcGetter? sourceNpcRecord = null;
-                ModKey? appearancePluginKey = appearanceModSetting.ModKey; // Nullable ModKey
+                
+                ModKey? specificAppearancePluginKey = null; // Track the *specific* key providing the override
+                INpcGetter? specificSourceNpcRecord = null; // Track the *specific* record
 
-                if (appearancePluginKey.HasValue && !appearancePluginKey.Value.IsNull)
+                if (appearanceModSetting.ModKeys.Any())
                 {
-                    // Resolve all contexts for the base NPC FormKey
-                    var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcFormKey);
-                    // Find the specific context matching the appearance plugin's ModKey
-                    var selectedModContext = contexts.FirstOrDefault(x => x.ModKey.Equals(appearancePluginKey.Value));
+                    // Resolve all contexts for the base NPC FormKey ONCE
+                    var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcFormKey).ToList();
 
-                    if (selectedModContext != null && selectedModContext.Record != null)
+                    // Iterate through the plugins associated with the selected ModSetting
+                    foreach(var potentialKey in appearanceModSetting.ModKeys)
                     {
-                        // Found the override record in the specified plugin
-                        hasPluginOverride = true;
-                        sourceNpcRecord = selectedModContext.Record; // Cache the record
-                        AppendLog($"    Screening: Found plugin record override in {appearancePluginKey.Value.FileName}.");
+                        if (potentialKey.IsNull) continue;
+
+                        // Find the context matching this specific potential key
+                        var selectedModContext = contexts.FirstOrDefault(x => x.ModKey.Equals(potentialKey));
+
+                        if (selectedModContext != null && selectedModContext.Record != null)
+                        {
+                            // Found an override record in this plugin
+                            hasPluginOverride = true;
+                            specificSourceNpcRecord = selectedModContext.Record; // Store the record
+                            specificAppearancePluginKey = potentialKey; // Store the key
+                            AppendLog($"    Screening: Found plugin record override in {potentialKey.FileName}. Using this as source.");
+                            break; // Stop searching once the first override is found (adjust logic if precedence needed)
+                        }
                     }
-                    else
+
+                    if (!hasPluginOverride)
                     {
-                        AppendLog($"    Screening: No plugin record override found in {appearancePluginKey.Value.FileName}.");
+                         AppendLog($"    Screening: No plugin record override found in any associated plugins ({string.Join(", ", appearanceModSetting.ModKeys.Select(k => k.FileName))}).");
                     }
                 }
                 else
                 {
-                    AppendLog($"    Screening: Mod Setting '{selectedModDisplayName}' has no associated plugin key. Checking assets only.");
+                     AppendLog($"    Screening: Mod Setting '{selectedModDisplayName}' has no associated plugin keys. Checking assets only.");
                 }
-
 
                 // 4. Check for FaceGen Assets
                 var assetSourceDirs = appearanceModSetting.CorrespondingFolderPaths ?? new List<string>();
@@ -365,7 +376,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     // Use the existing FaceGenExists but pass the *effective* plugin key (could be null if only assets defined)
                     // Pass the original NPC FormKey for path generation
-                    hasFaceGen = FaceGenExists(npcFormKey, appearancePluginKey ?? npcFormKey.ModKey, assetSourceDirs); // Use original key if no plugin override key
+                    // Use the *specific* key found above, or the original NPC's key if no override was found
+                    ModKey keyForFaceGenCheck = specificAppearancePluginKey ?? npcFormKey.ModKey;
+                    hasFaceGen = FaceGenExists(npcFormKey, keyForFaceGenCheck, assetSourceDirs);
                     AppendLog($"    Screening: FaceGen assets found in source directories: {hasFaceGen}.");
                 }
                 else
@@ -380,10 +393,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     isValid,
                     hasPluginOverride,
                     hasFaceGen,
-                    sourceNpcRecord,
+                    specificSourceNpcRecord,
                     winningNpcOverride, // Cache the winning override
                     appearanceModSetting,
-                    appearancePluginKey
+                    specificAppearancePluginKey
                 );
 
                 if (!isValid)
@@ -538,25 +551,36 @@ namespace NPC_Plugin_Chooser_2.View_Models
             else
             {
                 int totalToProcess = selectionsToProcess.Count;
-                for(int i = 0; i < totalToProcess; i++)
+                for (int i = 0; i < totalToProcess; i++)
                 {
                     var kvp = selectionsToProcess[i];
                     var npcFormKey = kvp.Key;
                     var result = kvp.Value; // The ScreeningResult
 
                     // Resolve necessary components from cache
-                    var winningNpcOverride = result.WinningNpcOverride; // Already resolved, guaranteed non-null if in cache
+                    var winningNpcOverride =
+                        result.WinningNpcOverride; // Already resolved, guaranteed non-null if in cache
                     var appearanceModSetting = result.AppearanceModSetting; // Already looked up
-                    var appearancePluginKey = result.AppearancePluginKey; // Cached, might be null
-                    var sourceNpc = result.SourceNpcRecord; // Cached, might be null
-                    string selectedModDisplayName = appearanceModSetting?.DisplayName ?? "N/A"; // Get name from cached setting
-                    string npcIdentifier = $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
+                    var specificAppearancePluginKey =
+                        result.SpecificAppearancePluginKey; // Cached specific key, might be null
+                    var sourceNpc = result.SpecificSourceNpcRecord; // Cached specific record, might be null
+                    string selectedModDisplayName =
+                        appearanceModSetting?.DisplayName ?? "N/A"; // Get name from cached setting
+                    string npcIdentifier =
+                        $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
 
                     // Apply Group Filter (still needed)
                     if (ShouldSkipNpc(winningNpcOverride, SelectedNpcGroup))
-                    { AppendLog($"  Skipping {npcIdentifier} (Group Filter)..."); skippedCount++; UpdateProgress(i + 1, totalToProcess, $"Skipped {npcIdentifier} (Group Filter)"); await Task.Delay(1); continue; }
+                    {
+                        AppendLog($"  Skipping {npcIdentifier} (Group Filter)...");
+                        skippedCount++;
+                        UpdateProgress(i + 1, totalToProcess, $"Skipped {npcIdentifier} (Group Filter)");
+                        await Task.Delay(1);
+                        continue;
+                    }
 
-                    UpdateProgress(i + 1, totalToProcess, $"Processing {winningNpcOverride.EditorID ?? npcFormKey.ToString()}");
+                    UpdateProgress(i + 1, totalToProcess,
+                        $"Processing {winningNpcOverride.EditorID ?? npcFormKey.ToString()}");
                     AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'");
 
                     Npc? patchNpc = null; // The NPC record to be placed in the patch
@@ -574,18 +598,22 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         switch (_settings.PatchingMode)
                         {
                             case PatchingMode.EasyNPC_Like:
-                                AppendLog($"      Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}).");
-                                patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride);
+                                AppendLog(
+                                    $"      Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {specificAppearancePluginKey?.FileName ?? "N/A"}.");
+                                patchNpc =
+                                    _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride);
                                 CopyAppearanceData(sourceNpc, patchNpc);
                                 break;
                             case PatchingMode.Default:
                             default:
-                                AppendLog($"      Mode: Default. Forwarding record from source plugin ({sourceNpc.FormKey.ModKey.FileName}).");
+                                AppendLog(
+                                    $"      Mode: Default. Forwarding record from source plugin ({specificAppearancePluginKey?.FileName ?? "N/A"}).");
                                 patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(sourceNpc);
                                 break;
                         }
                     }
-                    else if (result.HasFaceGenAssets) // Scenario: Plugin override missing OR invalid, but FaceGen exists
+                    else if
+                        (result.HasFaceGenAssets) // Scenario: Plugin override missing OR invalid, but FaceGen exists
                     {
                         AppendLog("    Source: FaceGen Assets Only");
                         copyOnlyFaceGenAssets = true; // Only copy FaceGen related assets
@@ -593,22 +621,31 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         switch (_settings.PatchingMode)
                         {
                             case PatchingMode.EasyNPC_Like:
-                                AppendLog($"      Mode: EasyNPC-Like. Using winning override ({winningNpcOverride.FormKey.ModKey.FileName}) as base.");
-                                patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride);
+                                AppendLog(
+                                    $"      Mode: EasyNPC-Like. Using winning override ({winningNpcOverride.FormKey.ModKey.FileName}) as base.");
+                                patchNpc =
+                                    _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride);
                                 // No appearance data copied - we're using the winning override's data but replacing assets
                                 break;
                             case PatchingMode.Default:
                             default:
                                 AppendLog($"      Mode: Default. Using original record ({npcFormKey}) as base.");
                                 // Resolve the original master record directly
-                                 if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var baseNpcRecord)) {
-                                    patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(baseNpcRecord);
-                                 } else {
-                                    AppendLog($"      ERROR: Could not resolve original master record for {npcFormKey}. Skipping this NPC.");
+                                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey,
+                                        out var baseNpcRecord))
+                                {
+                                    patchNpc =
+                                        _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(baseNpcRecord);
+                                }
+                                else
+                                {
+                                    AppendLog(
+                                        $"      ERROR: Could not resolve original master record for {npcFormKey}. Skipping this NPC.");
                                     skippedCount++;
                                     await Task.Delay(1);
                                     continue; // Skip if base record fails
-                                 }
+                                }
+
                                 break;
                         }
                         // Don't track plugin for dependencies here, as we didn't use its record override
@@ -617,7 +654,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     else
                     {
                         // This case should have been filtered by the screening result, but handle defensively
-                        AppendLog($"  UNEXPECTED: Selection for {npcIdentifier} was marked valid but has neither plugin record nor FaceGen. Skipping.");
+                        AppendLog(
+                            $"  UNEXPECTED: Selection for {npcIdentifier} was marked valid but has neither plugin record nor FaceGen. Skipping.");
                         skippedCount++;
                         await Task.Delay(1);
                         continue;
@@ -628,36 +666,44 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     // Add the *record currently in the patch* (patchNpc) to the map,
                     // keyed by the *source appearance plugin*, but only if we actually used that plugin's *record data*.
                     // We don't add if only FaceGen assets were used, as record dependencies aren't relevant then.
-                    if (usedPluginRecord && appearancePluginKey.HasValue && !appearancePluginKey.Value.IsNull && !BaseGamePlugins.Contains(appearancePluginKey.Value))
+                    // Use the *specific* key that provided the record override
+                    if (usedPluginRecord && specificAppearancePluginKey.HasValue &&
+                        !specificAppearancePluginKey.Value.IsNull &&
+                        !BaseGamePlugins.Contains(specificAppearancePluginKey.Value))
                     {
-                        ModKey sourceKey = appearancePluginKey.Value;
+                        ModKey sourceKey = specificAppearancePluginKey.Value;
                         if (!sourcePluginToPatchedRecordsMap.TryGetValue(sourceKey, out var recordList))
                         {
                             recordList = new List<IMajorRecordGetter>();
                             sourcePluginToPatchedRecordsMap[sourceKey] = recordList;
                         }
+
                         recordList.Add(patchNpc); // Add the record *from the patch*
                     }
 
                     // --- Copy Assets ---
-                    if (patchNpc != null && appearanceModSetting != null) // Ensure we have a patch record and mod settings
+                    if (patchNpc != null &&
+                        appearanceModSetting != null) // Ensure we have a patch record and mod settings
                     {
                         // The key used for path generation should ideally be the one associated with the assets.
                         // If we used a plugin override, use its key. If FaceGen only, use the original NPC's key.
-                        ModKey keyForFaceGenPath = result.HasPluginRecordOverride && appearancePluginKey.HasValue ? appearancePluginKey.Value : npcFormKey.ModKey;
+                        ModKey keyForFaceGenPath = result.HasPluginRecordOverride && specificAppearancePluginKey.HasValue ? specificAppearancePluginKey.Value : npcFormKey.ModKey;
 
                         // Determine if the NPC record being used for assets is templated
                         // If FaceGen only, templating isn't relevant to *asset copying* in the same way.
-                        bool isEffectivelyTemplated = !copyOnlyFaceGenAssets && npcForAssetLookup != null && NPCisTemplated(npcForAssetLookup);
+                        bool isEffectivelyTemplated = !copyOnlyFaceGenAssets && npcForAssetLookup != null &&
+                                                      NPCisTemplated(npcForAssetLookup);
 
-                        CopyNpcAssets(patchNpc, keyForFaceGenPath, npcForAssetLookup, appearanceModSetting, isEffectivelyTemplated, copyOnlyFaceGenAssets);
+                        CopyNpcAssets(patchNpc, keyForFaceGenPath, npcForAssetLookup, appearanceModSetting,
+                            isEffectivelyTemplated, copyOnlyFaceGenAssets);
                     }
                     else
                     {
-                         AppendLog($"  ERROR: Could not proceed with asset copying due to missing patch record or mod setting for {npcIdentifier}.");
-                         skippedCount++;
-                         await Task.Delay(1);
-                         continue;
+                        AppendLog(
+                            $"  ERROR: Could not proceed with asset copying due to missing patch record or mod setting for {npcIdentifier}.");
+                        skippedCount++;
+                        await Task.Delay(1);
+                        continue;
                     }
 
 

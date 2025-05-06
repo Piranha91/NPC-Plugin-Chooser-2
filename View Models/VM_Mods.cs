@@ -282,7 +282,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  }
                  tempList.Add(vm);
                  loadedDisplayNames.Add(vm.DisplayName);
-                 if (vm.CorrespondingModKey.HasValue) { linkedModKeys.Add(vm.CorrespondingModKey.Value); }
+                 // Add all linked keys from the existing setting
+                 if (vm.CorrespondingModKeys.Any())
+                 {
+                     foreach(var key in vm.CorrespondingModKeys) { linkedModKeys.Add(key); }
+                 }
             }
 
             // Phase 2a:  Create new VM_ModSettings from Mugshot folders
@@ -343,7 +347,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
              foreach (var vm in vmsLinkedToModFolder)
              {
-                 if (vm.CorrespondingModKey.HasValue) continue;
+                 // Skip if already linked, but allow adding MORE keys later
+                 // if (vm.CorrespondingModKeys.Any()) continue; // Decide if we only link once or allow multiple additions
                  string folderPath = vm.CorrespondingFolderPaths.First();
                  if (Directory.Exists(folderPath))
                  {
@@ -358,7 +363,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                  if (fileName.Equals(modKey.ToString(), StringComparison.OrdinalIgnoreCase) ||
                                      fileNameWithExt.Equals(modKey.FileName, StringComparison.OrdinalIgnoreCase))
                                  {
-                                     vm.CorrespondingModKey = modKey;
+                                     // Add the found ModKey if not already present
+                                     if (!vm.CorrespondingModKeys.Contains(modKey))
+                                     {
+                                         vm.CorrespondingModKeys.Add(modKey);
+                                     }
                                      linkedModKeys.Add(modKey);
                                      goto NextVmInPhase2c;
                                  }
@@ -373,7 +382,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Add Phase 2 VMs to temp list: 
             foreach(var vm in vmsFromMugshots)
             {
-                if (vm.CorrespondingFolderPaths.Any() || vm.CorrespondingModKey.HasValue)
+                if (vm.CorrespondingFolderPaths.Any() || vm.CorrespondingModKeys.Any())
                 {
                     vm.IsMugshotOnlyEntry = false;
                 }
@@ -430,7 +439,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 var modKey = kvp.Key;
                 var folderPaths = kvp.Value;
-                if (tempList.Any(vm => vm.CorrespondingModKey == modKey)) continue;
+                // Check if any existing VM already contains this specific mod key
+                if (tempList.Any(vm => vm.CorrespondingModKeys.Contains(modKey))) continue;
 
                 // create new display name
                 var folderNames = folderPaths.Select(folderPath => Path.GetFileName(folderPath));
@@ -438,7 +448,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 
                 var vm = new VM_ModSetting(displayName, this)
                 {
-                    CorrespondingModKey = modKey,
+                    // Add the orphaned key to the new VM's collection
+                    CorrespondingModKeys = new ObservableCollection<ModKey> { modKey },
                     CorrespondingFolderPaths = new ObservableCollection<string>(folderPaths)
                 };
                  if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
@@ -523,10 +534,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
              if (!string.IsNullOrWhiteSpace(PluginFilterText))
              {
-                 filtered = filtered.Where(vm => vm.CorrespondingModKey.HasValue &&
-                                                (vm.CorrespondingModKey.Value.FileName.String.Contains(PluginFilterText, StringComparison.OrdinalIgnoreCase) ||
-                                                 vm.CorrespondingModKey.Value.ToString().Contains(PluginFilterText, StringComparison.OrdinalIgnoreCase) // Also check full key string
-                                                 ));
+                 filtered = filtered.Where(vm => vm.CorrespondingModKeys.Any(key =>
+                     key.FileName.String.Contains(PluginFilterText, StringComparison.OrdinalIgnoreCase) ||
+                     key.ToString().Contains(PluginFilterText, StringComparison.OrdinalIgnoreCase)
+                 ));
              }
 
              // *** Apply NPC Filter ***
@@ -587,13 +598,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
              {
                  // Only save if it has meaningful data (Key, Folder Paths, or Mugshot Path)
                  if (!string.IsNullOrWhiteSpace(vm.DisplayName) &&
-                     (vm.CorrespondingModKey.HasValue || vm.CorrespondingFolderPaths.Any()))
+                     (vm.CorrespondingModKeys.Any() || vm.CorrespondingFolderPaths.Any())) // Check if any keys exist
                  {
                      // Create a new ModSetting model instance
                      var model = new Models.ModSetting
                      {
                          DisplayName = vm.DisplayName,
-                         ModKey = vm.CorrespondingModKey,
+                         ModKeys = vm.CorrespondingModKeys.ToList(),
                          // Important: Create new lists/collections when saving to the model
                          // to avoid potential issues with shared references if the VM is reused.
                          CorrespondingFolderPaths = vm.CorrespondingFolderPaths.ToList()
@@ -638,10 +649,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             // Search the internal list of all loaded/created mod settings.
-            // The comparison checks if the CorrespondingModKey property of a VM matches the input key.
-            // Ensure vm.CorrespondingModKey is not null before comparing.
-            foundVm = _allModSettingsInternal.FirstOrDefault(vm => vm.CorrespondingModKey.HasValue && vm.CorrespondingModKey.Value.Equals(appearancePluginKey));
-
+            // Find the first VM where *any* of its CorrespondingModKeys matches the input key.
+            foundVm = _allModSettingsInternal.FirstOrDefault(vm => vm.CorrespondingModKeys.Any(key => key.Equals(appearancePluginKey)));
             // Check if a VM was found
             if (foundVm != null)
             {
@@ -760,10 +769,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         winner.CorrespondingFolderPaths.Add(path);
                     }
                 }
-                // Corresponding Mod Key (prioritize winner's if set, otherwise take loser's)
-                if (!winner.CorrespondingModKey.HasValue && loser.CorrespondingModKey.HasValue)
+                // Merge Corresponding Mod Keys (add keys from loser not already in winner)
+                foreach (var key in loser.CorrespondingModKeys)
                 {
-                    winner.CorrespondingModKey = loser.CorrespondingModKey;
+                    if (!winner.CorrespondingModKeys.Contains(key))
+                    {
+                        winner.CorrespondingModKeys.Add(key);
+                    }
                 }
                 // IsMugshotOnlyEntry should remain based on the WINNER's original status
                  // Although, if a merge happens, it's unlikely the winner was mugshot-only. Let's set it to false.

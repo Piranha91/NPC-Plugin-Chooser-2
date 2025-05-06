@@ -373,7 +373,9 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                     catch (Exception ex) { errors.Add($"Line {lineNum}: Cannot parse Appearance Plugin '{appearancePluginName}'. {ex.Message}"); continue; }
 
                     // Check if a VM_ModSetting exists for the appearance plugin
-                    if (!_modListVM.TryGetModSettingForPlugin(appearanceKey, out _, out string targetModDisplayName))
+                    // TryGetModSettingForPlugin now finds a VM where *any* key matches.
+                    // We still need the DisplayName for the consistency provider.
+                    if (!_modListVM.TryGetModSettingForPlugin(appearanceKey, out var foundModSettingVm, out string targetModDisplayName))
                     {
                         // Not found - track it and skip adding to potentialChanges for now
                         missingAppearancePlugins.Add(appearanceKey);
@@ -589,11 +591,17 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                  }
 
                  // Get the CorrespondingModKey from the found VM_ModSetting. This is the plugin we need for the output.
-                 appearancePlugin = appearanceMod.CorrespondingModKey;
-                 if (appearancePlugin == null || appearancePlugin.Value.IsNull) // Check HasValue and IsNull
+                 if (appearanceMod.CorrespondingModKeys.Any())
                  {
-                     // If the VM_ModSetting exists but doesn't have a valid plugin key assigned, record error.
-                     appearanceModErrors.Add($"NPC {formString}: Mod Setting entry '{appearanceModName}' has no valid Corresponding Plugin assigned.");
+                     // Use the first valid key found in the collection for export.
+                     // Consider more sophisticated logic if needed (e.g., find key matching folder name).
+                     appearancePlugin = appearanceMod.CorrespondingModKeys.First();
+                 }
+
+                 if (appearancePlugin == null || appearancePlugin.Value.IsNull) // Check if a valid key was found
+                 {
+                     // If the VM_ModSetting exists but has no valid plugin keys assigned, record error.
+                     appearanceModErrors.Add($"NPC {formString}: Mod Setting entry '{appearanceModName}' has no valid Corresponding Plugins assigned.");
                      continue; // Skip this NPC
                  }
 
@@ -815,12 +823,14 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                     lookupErrors.Add($"Skipping NPC {formString}: Cannot find Mod Setting entry named '{selectedAppearanceModName}'.");
                     continue;
                 }
-                if (!appearanceModSetting.CorrespondingModKey.HasValue || appearanceModSetting.CorrespondingModKey.Value.IsNull)
+                // Use the first valid key found in the collection for updating the profile.
+                ModKey? appearancePluginKeyNullable = appearanceModSetting.CorrespondingModKeys.FirstOrDefault();
+                if (!appearancePluginKeyNullable.HasValue || appearancePluginKeyNullable.Value.IsNull)
                 {
-                    lookupErrors.Add($"Skipping NPC {formString}: Mod Setting '{selectedAppearanceModName}' has no valid Corresponding Plugin.");
+                    lookupErrors.Add($"Skipping NPC {formString}: Mod Setting '{selectedAppearanceModName}' has no valid Corresponding Plugins.");
                     continue;
                 }
-                ModKey appearancePluginKey = appearanceModSetting.CorrespondingModKey.Value;
+                ModKey appearancePluginKey = appearancePluginKeyNullable.Value;
 
                 // --- 4c: Determine Default Plugin ---
                 ModKey defaultPluginKey = default;

@@ -29,7 +29,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- Properties ---
         [Reactive] public string DisplayName { get; set; } = string.Empty;
         [Reactive] public string MugShotFolderPath { get; set; } = string.Empty; // Path to the mugshot folder for this mod
-        [Reactive] public ModKey? CorrespondingModKey { get; set; }
+        [Reactive] public ObservableCollection<ModKey> CorrespondingModKeys { get; set; } = new();
         [Reactive] public ObservableCollection<string> CorrespondingFolderPaths { get; set; } = new();
         public List<string> NpcNames { get; set; } = new();
         public List<string> NpcEditorIDs { get; set; } = new();
@@ -72,7 +72,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             : this(model.DisplayName, parentVm, isMugshotOnly: false) // Chain constructor, explicitly false for IsMugshotOnlyEntry
         {
             // Properties specific to loading existing model
-            CorrespondingModKey = model.ModKey;
+            CorrespondingModKeys = new ObservableCollection<ModKey>(model.ModKeys ?? new List<ModKey>());
             CorrespondingFolderPaths = new ObservableCollection<string>(model.CorrespondingFolderPaths ?? new List<string>()); // Handle potential null
             // IsMugshotOnlyEntry is set to false via chaining
         }
@@ -101,14 +101,28 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _skyrimRelease = parentVm.SkyrimRelease; // Get SkyrimRelease from parent
 
             // --- Setup for ModKeyDisplaySuffix ---
-            _modKeyDisplaySuffix = this.WhenAnyValue(x => x.DisplayName, x => x.CorrespondingModKey)
-                .Select(tuple => {
-                    var name = tuple.Item1;
-                    var key = tuple.Item2;
-                    if (!key.HasValue) return string.Empty;
-                    return !string.IsNullOrEmpty(name) && name.Equals(key.Value.FileName, StringComparison.OrdinalIgnoreCase)
-                        ? "(Base Mod)"
-                        : $"({key.Value})";
+            _modKeyDisplaySuffix = this.WhenAnyValue(x => x.DisplayName, x => x.CorrespondingModKeys.Count) // Trigger on count change
+                .Select(_ => {
+                    var name = DisplayName;
+                    var keys = CorrespondingModKeys;
+                    if (keys == null || !keys.Any()) return string.Empty;
+
+                    var keyStrings = keys.Select(k => k.ToString()).ToList();
+
+                    // Try to find a key matching the display name
+                    var matchingKey = keys.FirstOrDefault(k => !string.IsNullOrEmpty(name) && name.Equals(k.FileName, StringComparison.OrdinalIgnoreCase));
+                    if (matchingKey != default(ModKey))
+                    {
+                        return "(Base Mod)"; // Indicate if a key matches the folder/display name
+                    }
+                    else if (keys.Count == 1)
+                    {
+                        return $"({keys.First()})"; // Display single key if no match
+                    }
+                    else
+                    {
+                        return $"({keys.Count} Plugins)"; // Indicate multiple plugins
+                    }
                 })
                 .ToProperty(this, x => x.ModKeyDisplaySuffix, scheduler: RxApp.MainThreadScheduler);
 
@@ -141,7 +155,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // Optionally, trigger RefreshNpcLists when ModKey or Paths change?
             // Could be intensive. Let's assume it's done during initial load for now.
-            // this.WhenAnyValue(x => x.CorrespondingModKey, x => x.CorrespondingFolderPaths.Count)
+            // this.WhenAnyValue(x => x.CorrespondingModKeys.Count, x => x.CorrespondingFolderPaths.Count) // Check counts
             //    .Throttle(TimeSpan.FromSeconds(1)) // Avoid rapid calls
             //    .ObserveOn(TaskPoolScheduler.Default) // Run on background thread
             //    .Subscribe(_ => RefreshNpcLists());
@@ -274,51 +288,73 @@ namespace NPC_Plugin_Chooser_2.View_Models
             NpcFormKeysToDisplayName.Clear();
 
             // Use the reactive helper property HasModPathsAssigned
-            if (CorrespondingModKey.HasValue && HasModPathsAssigned)
+            // Check if there are any keys AND paths assigned
+            if (CorrespondingModKeys.Any() && HasModPathsAssigned)
             {
-                foreach (var dirPath in CorrespondingFolderPaths)
+                // Iterate through each potential plugin associated with this mod setting
+                foreach (var modKey in CorrespondingModKeys)
                 {
-                     if (!CorrespondingModKey.HasValue) continue; // Safety check
+                    // Iterate through each potential folder path for this mod setting
+                    foreach (var dirPath in CorrespondingFolderPaths)
+                    {
+                        string pluginFileName = modKey.FileName;
+                        string potentialPluginPath = Path.Combine(dirPath, pluginFileName);
+                        string? actualPluginPath = null; // Use nullable string
 
-                     string pluginFileName = CorrespondingModKey.Value.FileName;
-                     string potentialPluginPath = Path.Combine(dirPath, pluginFileName);
-                     string actualPluginPath = null;
+                        if (File.Exists(potentialPluginPath))
+                        {
+                            actualPluginPath = potentialPluginPath;
+                        }
+                        // else: Try finding plugin case-insensitively if needed (more complex)
 
-                     if (File.Exists(potentialPluginPath)) { actualPluginPath = potentialPluginPath; }
+                        if (actualPluginPath != null) // If a valid path for this plugin was found in this folder
+                        {
+                            try
+                            {
+                                using var mod =
+                                    SkyrimMod.CreateFromBinaryOverlay(actualPluginPath,
+                                        _skyrimRelease); // Use correct release
+                                {
+                                    foreach (var npcGetter in mod.Npcs)
+                                    {
+                                        if (!NpcFormKeys.Contains(npcGetter
+                                                .FormKey)) // Avoid duplicates if NPC in multiple paths/plugins
+                                        {
+                                            var npc = npcGetter; // Use the getter interface
+                                            string displayName = string.Empty;
+                                            NpcFormKeys.Add(npc.FormKey);
 
-                     if (actualPluginPath != null) // Check if a valid path was found
-                     {
-                         try
-                         {
-                             using var mod = SkyrimMod.CreateFromBinaryOverlay(actualPluginPath, _skyrimRelease); // Use correct release
-                             {
-                                 foreach (var npcGetter in mod.Npcs)
-                                 {
-                                     if (!NpcFormKeys.Contains(npcGetter.FormKey)) // Avoid duplicates if NPC in multiple paths/plugins
-                                     {
-                                         var npc = npcGetter; // Use the getter interface
-                                         string displayName = string.Empty;
-                                         NpcFormKeys.Add(npc.FormKey);
+                                            if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String))
+                                            {
+                                                NpcNames.Add(npc.Name.String);
+                                                displayName = npc.Name.String;
+                                            }
 
-                                         if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String)) { NpcNames.Add(npc.Name.String); displayName = npc.Name.String; }
-                                         if (!string.IsNullOrEmpty(npc.EditorID)) { NpcEditorIDs.Add(npc.EditorID); if (string.IsNullOrEmpty(displayName)) displayName = npc.EditorID; }
-                                         if (string.IsNullOrEmpty(displayName)) displayName = npc.FormKey.ToString();
+                                            if (!string.IsNullOrEmpty(npc.EditorID))
+                                            {
+                                                NpcEditorIDs.Add(npc.EditorID);
+                                                if (string.IsNullOrEmpty(displayName)) displayName = npc.EditorID;
+                                            }
 
-                                         NpcFormKeysToDisplayName.Add(npc.FormKey, displayName);
-                                     }
-                                 }
-                             }
-                         }
-                         catch (Exception e)
-                         {
-                             Debug.WriteLine($"Error loading NPC data from {actualPluginPath} for '{DisplayName}': {e.Message}");
-                             // Optionally add to a warning list to show user?
-                             continue; // Skip to next folder path on error
-                         }
-                     }
-                 }
-             }
-             // Note: This method modifies collections directly. If these lists were bound to UI
+                                            if (string.IsNullOrEmpty(displayName)) displayName = npc.FormKey.ToString();
+
+                                            NpcFormKeysToDisplayName.Add(npc.FormKey, displayName);
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                Debug.WriteLine(
+                                    $"Error loading NPC data from {actualPluginPath} for '{DisplayName}': {e.Message}");
+                                // Optionally add to a warning list to show user?
+                                continue; // Skip to next folder path on error
+                            }
+                        }
+                    }
+                }
+            }
+            // Note: This method modifies collections directly. If these lists were bound to UI
              // elements that require ObservableCollections, adjustments would be needed.
              // Currently, they are used for filtering logic within VM_Mods.
         }
