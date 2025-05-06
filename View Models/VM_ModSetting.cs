@@ -36,6 +36,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public List<FormKey> NpcFormKeys { get; set; } = new();
         public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
 
+        // Maps NPC FormKey to the SINGLE ModKey within this setting that provides its record.
+        public Dictionary<FormKey, ModKey> NpcSourcePluginMap { get; private set; } = new();
+        // Stores FormKeys of NPCs found in multiple plugins within this setting (Error State)
+        public HashSet<FormKey> AmbiguousNpcFormKeys { get; private set; } = new();
         private readonly SkyrimRelease _skyrimRelease;
 
         // Flag indicating if this VM was created dynamically only from a Mugshot folder
@@ -287,76 +291,93 @@ namespace NPC_Plugin_Chooser_2.View_Models
             NpcFormKeys.Clear();
             NpcFormKeysToDisplayName.Clear();
 
-            // Use the reactive helper property HasModPathsAssigned
+            NpcSourcePluginMap.Clear();
+            AmbiguousNpcFormKeys.Clear();
+            var npcFoundInPlugins = new Dictionary<FormKey, List<ModKey>>(); // Temp track sources
+
             // Check if there are any keys AND paths assigned
             if (CorrespondingModKeys.Any() && HasModPathsAssigned)
             {
                 // Iterate through each potential plugin associated with this mod setting
                 foreach (var modKey in CorrespondingModKeys)
                 {
-                    // Iterate through each potential folder path for this mod setting
+                    string? foundPluginPath = null;
+                    // Iterate through each potential folder path *to find this specific plugin*
                     foreach (var dirPath in CorrespondingFolderPaths)
                     {
                         string pluginFileName = modKey.FileName;
                         string potentialPluginPath = Path.Combine(dirPath, pluginFileName);
-                        string? actualPluginPath = null; // Use nullable string
 
                         if (File.Exists(potentialPluginPath))
                         {
-                            actualPluginPath = potentialPluginPath;
-                        }
-                        // else: Try finding plugin case-insensitively if needed (more complex)
-
-                        if (actualPluginPath != null) // If a valid path for this plugin was found in this folder
-                        {
-                            try
-                            {
-                                using var mod =
-                                    SkyrimMod.CreateFromBinaryOverlay(actualPluginPath,
-                                        _skyrimRelease); // Use correct release
-                                {
-                                    foreach (var npcGetter in mod.Npcs)
-                                    {
-                                        if (!NpcFormKeys.Contains(npcGetter
-                                                .FormKey)) // Avoid duplicates if NPC in multiple paths/plugins
-                                        {
-                                            var npc = npcGetter; // Use the getter interface
-                                            string displayName = string.Empty;
-                                            NpcFormKeys.Add(npc.FormKey);
-
-                                            if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String))
-                                            {
-                                                NpcNames.Add(npc.Name.String);
-                                                displayName = npc.Name.String;
-                                            }
-
-                                            if (!string.IsNullOrEmpty(npc.EditorID))
-                                            {
-                                                NpcEditorIDs.Add(npc.EditorID);
-                                                if (string.IsNullOrEmpty(displayName)) displayName = npc.EditorID;
-                                            }
-
-                                            if (string.IsNullOrEmpty(displayName)) displayName = npc.FormKey.ToString();
-
-                                            NpcFormKeysToDisplayName.Add(npc.FormKey, displayName);
-                                        }
-                                    }
-                                }
-                            }
-                            catch (Exception e)
-                            {
-                                Debug.WriteLine(
-                                    $"Error loading NPC data from {actualPluginPath} for '{DisplayName}': {e.Message}");
-                                // Optionally add to a warning list to show user?
-                                continue; // Skip to next folder path on error
-                            }
+                            foundPluginPath = potentialPluginPath;
+                            break; // Found the plugin in this folder, no need to check others for this key
                         }
                     }
+
+                    if (foundPluginPath != null) // If a valid path for this plugin was found
+                    {
+                        try
+                        {
+                            using var mod = SkyrimMod.CreateFromBinaryOverlay(foundPluginPath, _skyrimRelease);
+                            foreach (var npcGetter in mod.Npcs)
+                            {
+                                FormKey currentNpcKey = npcGetter.FormKey;
+
+                                // --- Track which plugins contain this NPC ---
+                                if (!npcFoundInPlugins.TryGetValue(currentNpcKey, out var sourceList))
+                                {
+                                    sourceList = new List<ModKey>();
+                                    npcFoundInPlugins[currentNpcKey] = sourceList;
+                                }
+                                if (!sourceList.Contains(modKey)) // Avoid adding same key twice if plugin in multiple folders
+                                {
+                                     sourceList.Add(modKey);
+                                }
+                                // --- End Tracking ---
+
+                                // --- Populate display info (only once per NPC) ---
+                                if (!NpcFormKeys.Contains(currentNpcKey))
+                                {
+                                    NpcFormKeys.Add(currentNpcKey); // Add to overall list for filtering
+                                    var npc = npcGetter;
+                                    string displayName = string.Empty;
+                                    if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String)) { NpcNames.Add(npc.Name.String); displayName = npc.Name.String; }
+                                    if (!string.IsNullOrEmpty(npc.EditorID)) { NpcEditorIDs.Add(npc.EditorID); if (string.IsNullOrEmpty(displayName)) displayName = npc.EditorID; }
+                                    if (string.IsNullOrEmpty(displayName)) displayName = npc.FormKey.ToString();
+                                    NpcFormKeysToDisplayName.Add(currentNpcKey, displayName);
+                                }
+                                // --- End display info ---
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.WriteLine($"Error loading NPC data from {foundPluginPath} for ModSetting '{DisplayName}': {e.Message}");
+                        }
+                    }
+                } // End foreach modKey
+            } // End if keys and paths exist
+
+            // --- Post-Processing: Populate Map and Detect Ambiguity ---
+            foreach(var kvp in npcFoundInPlugins)
+            {
+                FormKey npcKey = kvp.Key;
+                List<ModKey> sources = kvp.Value;
+
+                if (sources.Count == 1)
+                {
+                    // Exactly one source plugin found within this ModSetting - this is valid
+                    NpcSourcePluginMap[npcKey] = sources[0];
                 }
+                else if (sources.Count > 1)
+                {
+                    // Multiple source plugins found within this ModSetting - this is an error
+                    AmbiguousNpcFormKeys.Add(npcKey);
+                    Debug.WriteLine($"ERROR for ModSetting '{DisplayName}': NPC {npcKey} found in multiple associated plugins: {string.Join(", ", sources.Select(k=>k.FileName))}. This NPC will be skipped for this Mod Setting.");
+                    // Optionally: Add to a persistent warning list for the user?
+                }
+                // If sources.Count == 0, something went wrong, but it won't be in the map.
             }
-            // Note: This method modifies collections directly. If these lists were bound to UI
-             // elements that require ObservableCollections, adjustments would be needed.
-             // Currently, they are used for filtering logic within VM_Mods.
         }
     }
 }

@@ -744,15 +744,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     // Skip if this plugin was already added via a mugshot link
                     if (!processedAppearancePlugins.Contains(modKey))
                     {
-                        // Find the VM_ModSetting associated with this plugin ModKey
-                        var correspondingMod = _lazyModsVm.Value?.AllModSettings.FirstOrDefault(x => x.CorrespondingModKeys.Contains(modKey));
+                        // Find the VM_ModSetting that claims *this specific plugin* (modKey) as its source for *this specific NPC*.
+                        var correspondingMod = _lazyModsVm.Value?.AllModSettings.FirstOrDefault(vmModSetting =>
+                                vmModSetting.NpcSourcePluginMap.TryGetValue(npcVM.NpcFormKey, out var sourceKey) && // Does the map contain this NPC?
+                                sourceKey.Equals(modKey) // Does the mapped source key match the current plugin key?
+                        );
+
                         if (correspondingMod != null)
                         {
-                            // Create VM, passing an empty string for the image path
-                            // Pass the *specific* modKey providing this appearance as the overrideModeKey
+                            // We found the correct ModSetting and confirmed this modKey is the designated source for this NPC within it.
+                            // Pass the specific modKey providing this appearance as the overrideModeKey.
                             modVMs.Add(_appearanceModFactory(correspondingMod.DisplayName, npcVM.NpcFormKey, modKey, string.Empty));
-                            // No need to add to processedAppearancePlugins here as we check before adding
                         }
+                        // else: This modKey modifies the NPC's appearance but isn't the *designated single source* within any VM_ModSetting's map.
+                        // This could indicate an inconsistency or an NPC modified by a plugin not managed via a ModSetting.
                         else
                         {
                             // Optional: Handle cases where an appearance-modifying plugin isn't mapped in VM_Mods (maybe log?)

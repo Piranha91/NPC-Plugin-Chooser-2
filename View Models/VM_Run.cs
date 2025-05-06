@@ -335,33 +335,53 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 ModKey? specificAppearancePluginKey = null; // Track the *specific* key providing the override
                 INpcGetter? specificSourceNpcRecord = null; // Track the *specific* record
 
+                int overrideCount = 0;
+                List<string> sourcePluginNames = new List<string>(); // For logging ambiguity
+
                 if (appearanceModSetting.ModKeys.Any())
                 {
-                    // Resolve all contexts for the base NPC FormKey ONCE
+                    // Resolve all contexts ONCE
                     var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcFormKey).ToList();
 
-                    // Iterate through the plugins associated with the selected ModSetting
                     foreach(var potentialKey in appearanceModSetting.ModKeys)
                     {
                         if (potentialKey.IsNull) continue;
+                        var context = contexts.FirstOrDefault(x => x.ModKey.Equals(potentialKey));
 
-                        // Find the context matching this specific potential key
-                        var selectedModContext = contexts.FirstOrDefault(x => x.ModKey.Equals(potentialKey));
-
-                        if (selectedModContext != null && selectedModContext.Record != null)
+                        if (context != null && context.Record != null)
                         {
-                            // Found an override record in this plugin
-                            hasPluginOverride = true;
-                            specificSourceNpcRecord = selectedModContext.Record; // Store the record
-                            specificAppearancePluginKey = potentialKey; // Store the key
-                            AppendLog($"    Screening: Found plugin record override in {potentialKey.FileName}. Using this as source.");
-                            break; // Stop searching once the first override is found (adjust logic if precedence needed)
+                            overrideCount++;
+                            sourcePluginNames.Add(potentialKey.FileName);
+                            if (overrideCount == 1) // Store the first one found
+                            {
+                                specificSourceNpcRecord = context.Record;
+                                specificAppearancePluginKey = potentialKey;
+                            }
+                            else // Found more than one
+                            {
+                                // Clear the stored specifics as it's now ambiguous *for this selection*
+                                specificSourceNpcRecord = null;
+                                specificAppearancePluginKey = null;
+                            }
                         }
                     }
 
-                    if (!hasPluginOverride)
+                    if (overrideCount == 1)
                     {
-                         AppendLog($"    Screening: No plugin record override found in any associated plugins ({string.Join(", ", appearanceModSetting.ModKeys.Select(k => k.FileName))}).");
+                        hasPluginOverride = true; // Valid override found
+                        AppendLog($"    Screening: Found unique plugin record override in {specificAppearancePluginKey.Value.FileName}. Using this as source.");
+                    }
+                    else if (overrideCount > 1)
+                    {
+                        // Ambiguous: Found in multiple plugins *within this ModSetting*
+                        hasPluginOverride = false; // Treat as invalid for override purposes
+                        AppendLog($"    SCREENING ERROR (Ambiguous): NPC {npcIdentifier} found in multiple plugins within ModSetting '{selectedModDisplayName}': {string.Join(", ", sourcePluginNames)}. Cannot determine unique source record.");
+                        // This selection is invalid for plugin override, but might still be valid if FaceGen exists.
+                        // Add to invalidSelections list *if* FaceGen is also missing later.
+                    }
+                    else // overrideCount == 0
+                    {
+                        AppendLog($"    Screening: No plugin record override found in any associated plugins ({string.Join(", ", appearanceModSetting.ModKeys.Select(k => k.FileName))}).");
                     }
                 }
                 else
@@ -401,8 +421,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 if (!isValid)
                 {
-                    AppendLog($"  SCREENING INVALID: NPC {npcIdentifier} -> Selected Mod '{selectedModDisplayName}' provides neither a plugin record override nor FaceGen assets.");
-                    invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (No plugin override or FaceGen found)");
+                    string reason = "";
+                    if (overrideCount > 1) reason = "Ambiguous plugin sources";
+                    else if (overrideCount == 0) reason = "No plugin override found";
+
+                    if (!hasFaceGen)
+                    {
+                        if (!string.IsNullOrEmpty(reason)) reason += " and ";
+                        reason += "No FaceGen assets found";
+                    }
+                    AppendLog($"  SCREENING INVALID: NPC {npcIdentifier} -> Selected Mod '{selectedModDisplayName}'. Reason: {reason}.");
+                    invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' ({reason})");
                 }
 
                 await Task.Delay(1); // Throttle loop slightly

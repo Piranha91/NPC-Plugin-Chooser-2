@@ -591,19 +591,25 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                  }
 
                  // Get the CorrespondingModKey from the found VM_ModSetting. This is the plugin we need for the output.
-                 if (appearanceMod.CorrespondingModKeys.Any())
+                 // *** Use the NpcSourcePluginMap to find the specific key for this NPC within this ModSetting ***
+                 if (appearanceMod.NpcSourcePluginMap.TryGetValue(npcFormKey, out var specificKey))
                  {
-                     // Use the first valid key found in the collection for export.
-                     // Consider more sophisticated logic if needed (e.g., find key matching folder name).
-                     appearancePlugin = appearanceMod.CorrespondingModKeys.First();
+                     appearancePlugin = specificKey;
                  }
-
-                 if (appearancePlugin == null || appearancePlugin.Value.IsNull) // Check if a valid key was found
+                 else if (appearanceMod.AmbiguousNpcFormKeys.Contains(npcFormKey))
                  {
-                     // If the VM_ModSetting exists but has no valid plugin keys assigned, record error.
-                     appearanceModErrors.Add($"NPC {formString}: Mod Setting entry '{appearanceModName}' has no valid Corresponding Plugins assigned.");
+                     // NPC is ambiguous within this setting
+                     appearanceModErrors.Add($"NPC {formString}: Source plugin is ambiguous within Mod Setting '{appearanceModName}'. Cannot export.");
                      continue; // Skip this NPC
                  }
+                 else
+                 {
+                     // NPC not found in this setting's map (or setting has no plugins)
+                     appearanceModErrors.Add($"NPC {formString}: Mod Setting '{appearanceModName}' does not list a unique source plugin for this NPC.");
+                     continue; // Skip this NPC
+                 }
+
+                 // No need to check IsNull here, as TryGetValue succeeded with a valid key from the map.
 
                  // --- 3c: Determine the Default Plugin ModKey ---
                  ModKey defaultPlugin = default; // Use default ModKey struct (represents null/invalid state)
@@ -823,14 +829,22 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                     lookupErrors.Add($"Skipping NPC {formString}: Cannot find Mod Setting entry named '{selectedAppearanceModName}'.");
                     continue;
                 }
-                // Use the first valid key found in the collection for updating the profile.
-                ModKey? appearancePluginKeyNullable = appearanceModSetting.CorrespondingModKeys.FirstOrDefault();
-                if (!appearancePluginKeyNullable.HasValue || appearancePluginKeyNullable.Value.IsNull)
+                // *** Use the NpcSourcePluginMap to find the specific key for this NPC within this ModSetting ***
+                ModKey appearancePluginKey;
+                if (appearanceModSetting.NpcSourcePluginMap.TryGetValue(npcFormKey, out var specificKey))
                 {
-                    lookupErrors.Add($"Skipping NPC {formString}: Mod Setting '{selectedAppearanceModName}' has no valid Corresponding Plugins.");
+                    appearancePluginKey = specificKey;
+                }
+                else if (appearanceModSetting.AmbiguousNpcFormKeys.Contains(npcFormKey))
+                {
+                    lookupErrors.Add($"Skipping NPC {formString}: Source plugin is ambiguous within Mod Setting '{selectedAppearanceModName}'.");
                     continue;
                 }
-                ModKey appearancePluginKey = appearancePluginKeyNullable.Value;
+                else
+                {
+                    lookupErrors.Add($"Skipping NPC {formString}: Mod Setting '{selectedAppearanceModName}' does not list a unique source plugin for this NPC.");
+                    continue;
+                }
 
                 // --- 4c: Determine Default Plugin ---
                 ModKey defaultPluginKey = default;
