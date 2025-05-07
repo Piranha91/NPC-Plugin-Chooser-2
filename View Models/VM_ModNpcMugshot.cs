@@ -52,8 +52,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ToggleFullScreenCommand = ReactiveCommand.Create(ToggleFullScreen, this.WhenAnyValue(x => x.HasMugshot));
             JumpToNpcCommand = ReactiveCommand.Create(JumpToNpc);
 
-            ToggleFullScreenCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error showing image: {ex.Message}"));
-            JumpToNpcCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error jumping to NPC: {ex.Message}"));
+            ToggleFullScreenCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error showing image: {ex.Message}"));
+            JumpToNpcCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error jumping to NPC: {ex.Message}"));
         }
 
         private void ToggleFullScreen()
@@ -70,12 +70,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
                 else
                 {
-                    MessageBox.Show($"Could not create FullScreenImageView.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    ScrollableMessageBox.ShowError("Could not create FullScreenImageView.");
                 }
             }
             else
             {
-                MessageBox.Show($"Mugshot not found or path is invalid:\n{ImagePath}", "Image Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ScrollableMessageBox.ShowWarning($"Mugshot not found or path is invalid:\n{ImagePath}");
             }
         }
 

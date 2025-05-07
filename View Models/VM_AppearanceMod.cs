@@ -145,14 +145,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
             UnhideAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnhideAllFromMod(this));
             JumpToModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.JumpToMod(this), this.WhenAnyValue(x => x.CanJumpToMod));
 
-            SelectCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error selecting mod: {ex.Message}")).DisposeWith(Disposables);
-            ToggleFullScreenCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error showing image: {ex.Message}")).DisposeWith(Disposables);
-            HideCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error hiding mod: {ex.Message}")).DisposeWith(Disposables);
-            UnhideCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error unhiding mod: {ex.Message}")).DisposeWith(Disposables);
-            SelectAllFromThisModCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error selecting all from mod: {ex.Message}")).DisposeWith(Disposables);
-            HideAllFromThisModCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error hiding all from mod: {ex.Message}")).DisposeWith(Disposables);
-            UnhideAllFromThisModCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error unhiding all from mod: {ex.Message}")).DisposeWith(Disposables);
-            JumpToModCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error jumping to mod: {ex.Message}")).DisposeWith(Disposables);
+            SelectCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error selecting mod: {ex.Message}")).DisposeWith(Disposables);
+            ToggleFullScreenCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error showing image: {ex.Message}")).DisposeWith(Disposables);
+            HideCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error hiding mod: {ex.Message}")).DisposeWith(Disposables);
+            UnhideCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error unhiding mod: {ex.Message}")).DisposeWith(Disposables);
+            SelectAllFromThisModCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error selecting all from mod: {ex.Message}")).DisposeWith(Disposables);
+            HideAllFromThisModCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error hiding all from mod: {ex.Message}")).DisposeWith(Disposables);
+            UnhideAllFromThisModCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error unhiding all from mod: {ex.Message}")).DisposeWith(Disposables);
+            JumpToModCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error jumping to mod: {ex.Message}")).DisposeWith(Disposables);
 
 
             _consistencyProvider.NpcSelectionChanged
@@ -199,17 +199,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
                      }
                      else
                      {
-                          MessageBox.Show("Could not create or resolve the FullScreenImageView.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                         ScrollableMessageBox.ShowError("Could not create or resolve the FullScreenImageView.");
                      }
                  }
                  catch (Exception ex)
                  {
-                      MessageBox.Show($"Error displaying full screen image:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                     ScrollableMessageBox.ShowWarning($"Mugshot not found or path is invalid:\n{ImagePath}");
                  }
              }
              else
              {
-                 MessageBox.Show($"Mugshot not found or path is invalid:\n{ImagePath}", "Image Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                 ScrollableMessageBox.ShowWarning($"Mugshot not found or path is invalid:\n{ImagePath}");
              }
         }
 

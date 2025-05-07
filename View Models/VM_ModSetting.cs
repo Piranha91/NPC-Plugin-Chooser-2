@@ -11,7 +11,8 @@ using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using System.Linq;
 using Mutagen.Bethesda.Skyrim;
-using NPC_Plugin_Chooser_2.Models; // Assuming Models namespace
+using NPC_Plugin_Chooser_2.Models;
+using NPC_Plugin_Chooser_2.Views; // Assuming Models namespace
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -224,11 +225,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     else if (index >= 0 && newPath.Equals(existingPath, StringComparison.OrdinalIgnoreCase)) { /* No change needed */ }
                     else if (index >= 0) // Path didn't change but new path already exists elsewhere
                     {
-                         System.Windows.MessageBox.Show($"Cannot change path. The new path '{newPath}' already exists in the list.", "Browse Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                        ScrollableMessageBox.ShowWarning($"Cannot change path. The new path '{newPath}' already exists in the list.", "Browse Error");
                     }
                     else // index < 0
                     {
-                         System.Windows.MessageBox.Show($"Cannot change path. The original path '{existingPath}' was not found.", "Browse Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                        ScrollableMessageBox.ShowWarning($"Cannot change path. The original path '{existingPath}' was not found.", "Browse Error");
                     }
                 }
             }
@@ -269,7 +270,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                     else if (!Directory.Exists(newPath))
                     {
-                         System.Windows.MessageBox.Show($"The selected folder does not exist: '{newPath}'", "Browse Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                        ScrollableMessageBox.ShowWarning($"The selected folder does not exist: '{newPath}'", "Browse Error");
                     }
                     // else: Path didn't change or wasn't valid - no action needed
                 }

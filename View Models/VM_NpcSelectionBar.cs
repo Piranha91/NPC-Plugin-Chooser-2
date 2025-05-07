@@ -267,10 +267,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             RemoveAllVisibleNpcsFromGroupCommand = ReactiveCommand.Create(RemoveAllVisibleNpcsFromGroup, canExecuteAllGroupAction);
 
             // Exception Handling for Commands
-            AddCurrentNpcToGroupCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error adding NPC to group: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error)).DisposeWith(_disposables);
-            RemoveCurrentNpcFromGroupCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error removing NPC from group: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error)).DisposeWith(_disposables);
-            AddAllVisibleNpcsToGroupCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error adding all visible NPCs to group: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error)).DisposeWith(_disposables);
-            RemoveAllVisibleNpcsFromGroupCommand.ThrownExceptions.Subscribe(ex => MessageBox.Show($"Error removing all visible NPCs from group: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error)).DisposeWith(_disposables);
+            AddCurrentNpcToGroupCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error adding NPC to group: {ex.Message}")).DisposeWith(_disposables);
+            RemoveCurrentNpcFromGroupCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error removing NPC from group: {ex.Message}")).DisposeWith(_disposables);
+            AddAllVisibleNpcsToGroupCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error adding all visible NPCs to group: {ex.Message}")).DisposeWith(_disposables);
+            RemoveAllVisibleNpcsFromGroupCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error removing all visible NPCs from group: {ex.Message}")).DisposeWith(_disposables);
             // --- End NPC Group Command Setup ---
 
             // Populate available groups initially from settings
@@ -319,7 +319,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var modsVm = _lazyModsVm.Value;
             if (modsVm == null)
             {
-                MessageBox.Show("Mods view model is not available.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ScrollableMessageBox.ShowError("Mods view model is not available.");
                 return;
             }
 
@@ -331,7 +331,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 var mainWindowVm = _lazyMainWindowVm.Value;
                 if (mainWindowVm == null)
                 {
-                    MessageBox.Show("Main window view model is not available.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    ScrollableMessageBox.ShowError("Main window view model is not available.");
                     return;
                 }
                 mainWindowVm.IsModsTabSelected = true; // Switch to Mods tab
@@ -362,7 +362,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             else
             {
                 Debug.WriteLine($"Could not find VM_ModSetting with DisplayName: {targetModName}");
-                MessageBox.Show($"Could not find the mod '{targetModName}' in the Mods list.", "Mod Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ScrollableMessageBox.ShowWarning($"Could not find the mod '{targetModName}' in the Mods list.", "Mod Not Found");
             }
         }
 
@@ -475,7 +475,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             if (!_environmentStateProvider.EnvironmentIsValid)
             {
-                MessageBox.Show($"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}", "Environment Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ScrollableMessageBox.ShowWarning($"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}", "Environment Error");
                 _mugshotData.Clear(); // Clear potentially stale mugshot data
                 return;
             }
@@ -1177,9 +1177,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (!AreAnyFiltersActive())
             {
                 // No filters are active, meaning FilteredNpcs == AllNpcs
-                var result = MessageBox.Show($"No filters are currently applied. Are you sure you want to add ALL {totalNpcCount} NPCs in your game to the group '{groupName}'?",
-                                             "Confirm Add All NPCs", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                if (result == MessageBoxResult.No)
+                if (ScrollableMessageBox.Confirm($"No filters are currently applied. Are you sure you want to add ALL {totalNpcCount} NPCs in your game to the group '{groupName}'?",
+                        "Confirm Add All NPCs"))
                 {
                     Debug.WriteLine("Add All Visible NPCs to Group cancelled by user (no filters active).");
                     return;
@@ -1188,9 +1187,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             else
             {
                  // Filters are active, confirm adding only the visible ones
-                 var result = MessageBox.Show($"Add all {count} currently visible NPCs to the group '{groupName}'?",
-                                              "Confirm Add Visible NPCs", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                 if (result == MessageBoxResult.No)
+                 if (ScrollableMessageBox.Confirm($"Add all {count} currently visible NPCs to the group '{groupName}'?",
+                         "Confirm Add Visible NPCs"))
                  {
                      Debug.WriteLine("Add All Visible NPCs to Group cancelled by user.");
                      return;
@@ -1219,7 +1217,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (groupListChanged) { UpdateAvailableNpcGroups(); }
             ApplyFilter(false); // Re-apply filter in case the view depends on group membership
             Debug.WriteLine($"Added {addedCount} visible NPCs to group '{groupName}'.");
-            MessageBox.Show($"Added {addedCount} visible NPCs to group '{groupName}'.", "Operation Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            ScrollableMessageBox.Show($"Added {addedCount} visible NPCs to group '{groupName}'.", "Operation Complete");
         }
 
         private void RemoveAllVisibleNpcsFromGroup()
@@ -1232,9 +1230,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Confirmation Dialog
             if (!AreAnyFiltersActive())
             {
-                var result = MessageBox.Show($"No filters are currently applied. Are you sure you want to attempt removing ALL {totalNpcCount} NPCs in your game from the group '{groupName}'?",
-                                             "Confirm Remove All NPCs", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                 if (result == MessageBoxResult.No)
+                 if (ScrollableMessageBox.Confirm($"No filters are currently applied. Are you sure you want to attempt removing ALL {totalNpcCount} NPCs in your game from the group '{groupName}'?",
+                         "Confirm Remove All NPCs", MessageBoxImage.Warning))
                  {
                      Debug.WriteLine("Remove All Visible NPCs from Group cancelled by user (no filters active).");
                      return;
@@ -1242,9 +1239,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             else
             {
-                 var result = MessageBox.Show($"Remove all {count} currently visible NPCs from the group '{groupName}'?",
-                                              "Confirm Remove Visible NPCs", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                 if (result == MessageBoxResult.No)
+                 if (ScrollableMessageBox.Confirm($"Remove all {count} currently visible NPCs from the group '{groupName}'?",
+                         "Confirm Remove Visible NPCs"))
                  {
                      Debug.WriteLine("Remove All Visible NPCs from Group cancelled by user.");
                      return;
@@ -1276,7 +1272,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (groupListMayNeedUpdate) { UpdateAvailableNpcGroups(); }
             ApplyFilter(false); // Re-apply filter
             Debug.WriteLine($"Removed {removedCount} visible NPCs from group '{groupName}'.");
-            MessageBox.Show($"Removed {removedCount} visible NPCs from group '{groupName}'.", "Operation Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            ScrollableMessageBox.Show($"Removed {removedCount} visible NPCs from group '{groupName}'.", "Operation Complete");
         }
 
         private void UpdateAvailableNpcGroups()

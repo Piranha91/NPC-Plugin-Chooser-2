@@ -22,7 +22,8 @@ using System.Windows;
 using Mutagen.Bethesda.Archives;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
-using Noggog; // Needed for LinkCache Interface
+using Noggog;
+using NPC_Plugin_Chooser_2.Views; // Needed for LinkCache Interface
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -514,9 +515,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 Application.Current?.Dispatcher.Invoke(() =>
                 {
                     System.Diagnostics.Debug.WriteLine($"[VM_Run.RunPatchingLogic] Showing MessageBox on Thread: {System.Threading.Thread.CurrentThread.ManagedThreadId}");
-                    var result = MessageBox.Show(message.ToString(), "Invalid Selections Found", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                    continuePatching = (result == MessageBoxResult.Yes);
-                    System.Diagnostics.Debug.WriteLine($"[VM_Run.RunPatchingLogic] MessageBox result: {result}, continuePatching: {continuePatching}");
+                    continuePatching = ScrollableMessageBox.Confirm(message.ToString(), "Invalid Selections Found");
+                    System.Diagnostics.Debug.WriteLine($"[VM_Run.RunPatchingLogic] continuePatching: {continuePatching}");
                 });
 
                 // Execution of RunPatchingLogic will pause here until the MessageBox is closed

@@ -17,6 +17,7 @@ using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
+using NPC_Plugin_Chooser_2.Views;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Splat; // For Locator
@@ -81,7 +82,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ShowMugshotsCommand = ReactiveCommand.CreateFromTask<VM_ModSetting>(ShowMugshotsAsync);
             ShowMugshotsCommand.ThrownExceptions.Subscribe(ex =>
             {
-                MessageBox.Show($"Error loading mugshots: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ScrollableMessageBox.ShowError($"Error loading mugshots: {ex.Message}");
                 IsLoadingMugshots = false;
             });
 
@@ -190,7 +191,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             catch (Exception ex)
             {
                  // Catch errors during Task.Run or directory enumeration
-                 MessageBox.Show($"Failed to load mugshots from {selectedModSetting.MugShotFolderPath}:\n{ex.Message}", "Mugshot Load Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                 ScrollableMessageBox.ShowWarning($"Failed to load mugshots from {selectedModSetting.MugShotFolderPath}:\n{ex.Message}", "Mugshot Load Error");
                  CurrentModNpcMugshots.Clear(); // Clear potentially partial list
             }
             finally
@@ -239,7 +240,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  }
                  else
                  {
-                     MessageBox.Show($"Could not find NPC with FormKey {npcFormKey} in the main NPC list.", "NPC Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                     ScrollableMessageBox.ShowWarning($"Could not find NPC with FormKey {npcFormKey} in the main NPC list.", "NPC Not Found");
                  }
              });
         }
@@ -465,7 +466,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     {
                         var warningMessage = new StringBuilder("Warnings encountered during Mod Settings population:\n\n");
                         foreach (var warning in warnings) { warningMessage.AppendLine($"- {warning}"); }
-                        MessageBox.Show(warningMessage.ToString(), "Mod Settings Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        ScrollableMessageBox.ShowWarning(warningMessage.ToString(), "Mod Settings Warning");
                     }
                 });
 
@@ -774,11 +775,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
 
                 // 5. Inform User
-                 MessageBox.Show(
-                     $"Automatically merged mod settings:\n\n'{loserName}' was merged into '{winnerName}'.\n\nNPC assignments using '{loserName}' have been updated.",
-                     "Mod Settings Merged",
-                     MessageBoxButton.OK,
-                     MessageBoxImage.Information);
+                ScrollableMessageBox.Show(
+                    $"Automatically merged mod settings:\n\n'{loserName}' was merged into '{winnerName}'.\n\nNPC assignments using '{loserName}' have been updated.",
+                    "Mod Settings Merged"
+                    );
             }
         }
     }

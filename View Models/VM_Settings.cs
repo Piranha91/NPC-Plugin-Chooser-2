@@ -16,6 +16,7 @@ using Mutagen.Bethesda.Skyrim;
 using Noggog; // For IsNullOrWhitespace
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
+using NPC_Plugin_Chooser_2.Views;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 
@@ -172,7 +173,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  loadedSettings = JSONhandler<Settings>.LoadJSONFile(settingsPath, out bool success, out string exception);
                  if (!success)
                  {
-                     MessageBox.Show($"Error loading settings from {settingsPath}:\n{exception}\n\nDefault settings will be used.", "Settings Load Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                     ScrollableMessageBox.ShowWarning($"Error loading settings from {settingsPath}:\n{exception}\n\nDefault settings will be used.", "Settings Load Error");
                      loadedSettings = new Settings(); // Use defaults on error
                  }
             }
@@ -316,7 +317,7 @@ EasyNPC-Like:
 NPC plugins are imported from their conflict-winning override in your load order, and their appearance is modified to match their selected Appearance Mod.
 When the ouptut plugin is generated, put it at the end of your load order.";
 
-            MessageBox.Show(helpText, "Patching Mode Information", MessageBoxButton.OK, MessageBoxImage.Information);
+            ScrollableMessageBox.Show(helpText, "Patching Mode Information");
         }
 
         private void ImportEasyNpc()
@@ -392,7 +393,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error reading file '{filePath}':\n{ex.Message}", "File Read Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ScrollableMessageBox.ShowError($"Error reading file '{filePath}':\n{ex.Message}", "File Read Error");
                 return;
             }
 
@@ -403,7 +404,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                 errorMsg.AppendLine(string.Join("\n", errors.Take(20)));
                 if (errors.Count > 20) errorMsg.AppendLine("\n...");
                 errorMsg.AppendLine("\nThese lines were skipped. Continue processing?");
-                if (MessageBox.Show(errorMsg.ToString(), "Parsing Errors", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.No)
+                if (!ScrollableMessageBox.Confirm(errorMsg.ToString(), "Parsing Errors"))
                 {
                     return; // Cancel based on parsing errors
                 }
@@ -426,10 +427,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                 missingMsg.AppendLine("\n[Yes] = Continue and Skip NPCs assigned these plugins");
                 missingMsg.AppendLine("[No]  = Cancel Import");
 
-
-                MessageBoxResult choice = MessageBox.Show(missingMsg.ToString(), "Missing Appearance Plugin Mappings", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-
-                if (choice == MessageBoxResult.No) // User chose Cancel
+                if (!ScrollableMessageBox.Confirm(missingMsg.ToString(), "Missing Appearance Plugin Mappings", MessageBoxImage.Warning)) // User chose Cancel
                 {
                     MessageBox.Show("Import cancelled.", "Import Cancelled", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
@@ -442,7 +440,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
             // Check if there are any changes left to process
             if (!potentialChanges.Any())
             {
-                MessageBox.Show("No valid changes found to apply after processing the file (possibly due to skipping or parsing errors).", "Import Empty", MessageBoxButton.OK, MessageBoxImage.Information);
+                ScrollableMessageBox.Show("No valid changes found to apply after processing the file (possibly due to skipping or parsing errors).", "Import Empty");
                 return;
             }
 
@@ -490,7 +488,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
             // No longer need message about adding Mods list entries
             confirmationMessage += "\n\nDo you want to apply these changes?";
 
-            if (MessageBox.Show(confirmationMessage, "Confirm Import", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            if (ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Import"))
             {
                 // --- Apply Changes ---
                 int appliedCount = 0;
@@ -509,11 +507,11 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                 // Refresh NPC list filter in case selection state changed
                 _npcSelectionBar.ApplyFilter(false);
 
-                MessageBox.Show($"Successfully imported settings for {appliedCount} NPCs.", "Import Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                ScrollableMessageBox.Show($"Successfully imported settings for {appliedCount} NPCs.", "Import Complete");
             }
             else
             {
-                 MessageBox.Show("Import cancelled.", "Import Cancelled", MessageBoxButton.OK, MessageBoxImage.Information);
+                 ScrollableMessageBox.Show("Import cancelled.", "Import Cancelled");
             }
         }
 
@@ -533,7 +531,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
              // Check if there are any assignments to export.
              if (!assignedAppearanceNpcFormKeys.Any())
              {
-                 MessageBox.Show("No NPC appearance assignments have been made yet. Nothing to export.", "Export Empty", MessageBoxButton.OK, MessageBoxImage.Information);
+                 ScrollableMessageBox.Show("No NPC appearance assignments have been made yet. Nothing to export.", "Export Empty");
                  return;
              }
 
@@ -677,7 +675,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                  if (allErrors.Count > 20) errorMsg.AppendLine("\n...");
                  errorMsg.AppendLine("\nDo you want to save the successfully processed entries?");
 
-                 if (MessageBox.Show(errorMsg.ToString(), "Export Errors", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.No)
+                 if (!ScrollableMessageBox.Confirm(errorMsg.ToString(), "Export Errors"))
                  {
                      MessageBox.Show("Export cancelled due to errors.", "Export Cancelled", MessageBoxButton.OK, MessageBoxImage.Information);
                      return; // Cancel the export.
@@ -688,7 +686,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
             // Check if there's anything to save after potential errors/skips
             if (!outputStrs.Any())
             {
-                 MessageBox.Show("No valid NPC assignments could be exported.", "Export Empty", MessageBoxButton.OK, MessageBoxImage.Information);
+                 ScrollableMessageBox.Show("No valid NPC assignments could be exported.", "Export Empty");
                  return;
             }
 
@@ -704,7 +702,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
 
              if (saveFileDialog.ShowDialog() != true)
              {
-                 MessageBox.Show("Export cancelled by user.", "Export Cancelled", MessageBoxButton.OK, MessageBoxImage.Information);
+                 ScrollableMessageBox.Show("Export cancelled by user.", "Export Cancelled");
                  return; // User cancelled the save dialog.
              }
              string outputFilePath = saveFileDialog.FileName;
@@ -718,12 +716,12 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                  // Use UTF-8 encoding without BOM, which is common for config files.
                  File.WriteAllLines(outputFilePath, outputStrs, new UTF8Encoding(false));
 
-                 MessageBox.Show($"Successfully exported assignments for {outputStrs.Count} NPCs to:\n{outputFilePath}", "Export Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                 ScrollableMessageBox.Show($"Successfully exported assignments for {outputStrs.Count} NPCs to:\n{outputFilePath}", "Export Complete");
              }
              catch (Exception ex)
              {
                  // Handle potential file writing errors (permissions, disk full, etc.).
-                 MessageBox.Show($"Failed to save the export file:\n{ex.Message}", "File Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                 ScrollableMessageBox.ShowError($"Failed to save the export file:\n{ex.Message}", "File Save Error");
              }
         }
         
@@ -782,7 +780,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error reading existing profile file '{filePath}':\n{ex.Message}", "File Read Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ScrollableMessageBox.ShowError($"Error reading existing profile file '{filePath}':\n{ex.Message}", "File Read Error");
                 return;
             }
 
@@ -790,7 +788,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
              var appNpcSelections = _model.SelectedAppearanceMods.ToList(); // Get current selections as pairs
              if (!appNpcSelections.Any())
              {
-                 MessageBox.Show("No NPC appearance assignments are currently selected in the application. Nothing to update.", "Update Empty", MessageBoxButton.OK, MessageBoxImage.Information);
+                 ScrollableMessageBox.Show("No NPC appearance assignments are currently selected in the application. Nothing to update.", "Update Empty");
                  return;
              }
 
@@ -917,9 +915,9 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                 }
                 reportMsg.AppendLine("Do you want to save the updates for the successfully processed NPCs?");
 
-                if (MessageBox.Show(reportMsg.ToString(), "Update Issues", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.No)
+                if (!ScrollableMessageBox.Confirm(reportMsg.ToString(), "Update Issues"))
                 {
-                     MessageBox.Show("Update cancelled.", "Update Cancelled", MessageBoxButton.OK, MessageBoxImage.Information);
+                    ScrollableMessageBox.Show("Update cancelled.", "Update Cancelled");
                      return;
                 }
             }
@@ -935,7 +933,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
 
             if (updatedCount == 0 && addedCount == 0)
             {
-                 MessageBox.Show("No changes were made to the profile file (assignments might already match).", "No Changes", MessageBoxButton.OK, MessageBoxImage.Information);
+                 ScrollableMessageBox.Show("No changes were made to the profile file (assignments might already match).", "No Changes");
                  return;
             }
 
@@ -950,7 +948,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
 
             if (saveFileDialog.ShowDialog() != true)
             {
-                MessageBox.Show("Update cancelled by user.", "Update Cancelled", MessageBoxButton.OK, MessageBoxImage.Information);
+                ScrollableMessageBox.Show("Update cancelled by user.", "Update Cancelled");
                 return;
             }
             string outputFilePath = saveFileDialog.FileName;
@@ -965,11 +963,11 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                  successMessage += $"Existing NPCs Updated: {updatedCount}\n";
                  successMessage += $"Missing NPCs Added: {addedCount}";
 
-                 MessageBox.Show(successMessage, "Update Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                 ScrollableMessageBox.Show(successMessage, "Update Complete");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to save the updated profile file:\n{ex.Message}", "File Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ScrollableMessageBox.ShowError($"Failed to save the updated profile file:\n{ex.Message}", "File Save Error");
             }
         }
     }
