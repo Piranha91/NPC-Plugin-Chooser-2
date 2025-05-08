@@ -281,187 +281,216 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _allModSettingsInternal.Clear();
             var warnings = new List<string>();
             var loadedDisplayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var linkedModKeys = new HashSet<ModKey>(); // Tracks keys linked via settings or folders
             var tempList = new List<VM_ModSetting>();
-            IsLoadingNpcData = true; // Still indicates background NPC list loading later
+            IsLoadingNpcData = true;
+
+            var claimedMugshotPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // Tracks mugshot paths already assigned
 
             // --- Ensure Environment is Ready ---
             if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
             {
                 warnings.Add("Environment is not valid. Cannot accurately link plugins.");
-                // Proceed cautiously, might load from settings but linking will be incomplete.
             }
             var enabledKeys = _environmentStateProvider.EnvironmentIsValid
                             ? _environmentStateProvider.LoadOrder.Keys.ToHashSet()
-                            : new HashSet<ModKey>(); // Empty set if environment is invalid
+                            : new HashSet<ModKey>();
 
 
-            // Phase 1: Load existing data from Settings
-            foreach (var setting in _settings.ModSettings)
+            // Phase 1: Load existing data from _settings.ModSettings
+            foreach (var settingModel in _settings.ModSettings)
             {
-                 if (string.IsNullOrWhiteSpace(setting.DisplayName)) continue;
-                 var vm = new VM_ModSetting(setting, this); // Constructor now handles model.ModKeys
-                 // Attempt to link mugshot path based on display name
-                 if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
-                 {
-                     string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, vm.DisplayName);
-                     if (Directory.Exists(potentialMugshotPath)) { vm.MugShotFolderPath = potentialMugshotPath; }
-                 }
-                 tempList.Add(vm);
-                 loadedDisplayNames.Add(vm.DisplayName);
-                 // Add all linked keys from the existing setting to tracking
-                 if (vm.CorrespondingModKeys.Any())
-                 {
-                     foreach(var key in vm.CorrespondingModKeys) { linkedModKeys.Add(key); }
-                 }
+                if (string.IsNullOrWhiteSpace(settingModel.DisplayName)) continue;
+
+                var vm = new VM_ModSetting(settingModel, this); // Constructor now loads MugShotFolderPath from model
+
+                // If MugShotFolderPath was loaded from settings and is valid, claim it
+                if (!string.IsNullOrWhiteSpace(vm.MugShotFolderPath) && Directory.Exists(vm.MugShotFolderPath))
+                {
+                    claimedMugshotPaths.Add(vm.MugShotFolderPath);
+                }
+                // Else if MugShotFolderPath was NOT in settings (empty/null), try to derive it from DisplayName
+                else if (string.IsNullOrWhiteSpace(vm.MugShotFolderPath))
+                {
+                    if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
+                    {
+                        string potentialPathByName = Path.Combine(_settings.MugshotsFolder, vm.DisplayName);
+                        if (Directory.Exists(potentialPathByName) && !claimedMugshotPaths.Contains(potentialPathByName))
+                        {
+                            vm.MugShotFolderPath = potentialPathByName;
+                            claimedMugshotPaths.Add(potentialPathByName);
+                        }
+                    }
+                }
+                // If after these steps, vm.MugShotFolderPath is still empty, it means it either had no persisted path,
+                // and no mugshot folder matching its DisplayName was found (or was already claimed).
+
+                tempList.Add(vm);
+                loadedDisplayNames.Add(vm.DisplayName);
             }
 
-            // Phase 2a: Create potential VM_ModSettings from Mugshot folders (if not already loaded)
-             var vmsFromMugshots = new List<VM_ModSetting>();
-             if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
-             {
-                 try
-                 {
+            // Phase 2a: Discover unassigned Mugshot folders and create VMs for them if necessary
+            var vmsFromMugshotsOnly = new List<VM_ModSetting>();
+            if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
+            {
+                try
+                {
                     var mugShotDirs = Directory.EnumerateDirectories(_settings.MugshotsFolder);
                     foreach (var dirPath in mugShotDirs)
                     {
-                        string folderName = Path.GetFileName(dirPath);
-                        // Only create if a VM with this DisplayName wasn't loaded from settings
-                        if (!loadedDisplayNames.Contains(folderName))
+                        if (!claimedMugshotPaths.Contains(dirPath)) // Only process if not already claimed by a setting from JSON
                         {
-                            // Create VM with mugshot path, but defer adding to tempList
-                            var vm = new VM_ModSetting(folderName, dirPath, this); // Uses constructor for mugshot-only initially
-                            vmsFromMugshots.Add(vm);
+                            string folderName = Path.GetFileName(dirPath);
+                            // Check if a VM with this DisplayName already exists from settings (Phase 1)
+                            // If it does, that VM didn't claim this path (e.g., its MugShotFolderPath was different or empty)
+                            // So, this mugshot folder is truly unassigned or belongs to a new entity.
+                            if (!loadedDisplayNames.Contains(folderName))
+                            {
+                                var vm = new VM_ModSetting(folderName, dirPath, this); // Mugshot-only constructor
+                                vmsFromMugshotsOnly.Add(vm);
+                                // No need to add to claimedMugshotPaths here, as it's for a new temp VM
+                            }
+                            // If loadedDisplayNames.Contains(folderName), it means a VM_ModSetting with this name exists
+                            // but its MugShotFolderPath is either empty or points elsewhere.
+                            // In this case, this dirPath is an "orphaned" mugshot folder that doesn't match by name
+                            // to an existing VM that *could* take it. We let it be for now; it won't get a VM.
+                            // It could be assigned later via drag-drop.
                         }
                     }
-                 }
-                 catch (Exception ex) { warnings.Add($"Error scanning Mugshots folder '{_settings.MugshotsFolder}': {ex.Message}"); }
-             }
+                }
+                catch (Exception ex) { warnings.Add($"Error scanning Mugshots folder '{_settings.MugshotsFolder}': {ex.Message}"); }
+            }
 
             // Phase 2b: Scan Mod Folders, Link Paths and ENABLED Plugins
-             if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
-             {
-                 try
-                 {
-                     foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
-                     {
-                         string modFolderName = Path.GetFileName(modFolderPath);
-                         var foundEnabledKeysInFolder = new List<ModKey>();
+            if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
+            {
+                try
+                {
+                    foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
+                    {
+                        string modFolderName = Path.GetFileName(modFolderPath);
+                        var foundEnabledKeysInFolder = new List<ModKey>();
 
-                         // Scan for enabled plugins within this folder
-                         try
-                         {
-                             foreach (var filePath in Directory.EnumerateFiles(modFolderPath, "*.es*", SearchOption.TopDirectoryOnly)) // Only top level
-                             {
+                        // Scan for enabled plugins within this folder (same as before)
+                        try
+                        {
+                            foreach (var filePath in Directory.EnumerateFiles(modFolderPath, "*.es*", SearchOption.TopDirectoryOnly))
+                            {
                                 string fileNameWithExt = Path.GetFileName(filePath);
                                 if (fileNameWithExt.EndsWith(".esp", StringComparison.OrdinalIgnoreCase) ||
                                     fileNameWithExt.EndsWith(".esm", StringComparison.OrdinalIgnoreCase) ||
                                     fileNameWithExt.EndsWith(".esl", StringComparison.OrdinalIgnoreCase))
                                 {
-                                     try
-                                     {
-                                         ModKey parsedKey = ModKey.FromFileName(fileNameWithExt);
-                                         if (enabledKeys.Contains(parsedKey)) // Check if the found plugin is enabled
-                                         {
-                                             foundEnabledKeysInFolder.Add(parsedKey);
-                                         }
-                                     }
-                                     catch (Exception parseEx) { warnings.Add($"Could not parse plugin filename '{fileNameWithExt}' in folder '{modFolderName}': {parseEx.Message}"); }
-                                 }
-                             }
-                         }
-                         catch (Exception fileScanEx) { warnings.Add($"Error scanning files in Mod folder '{modFolderName}': {fileScanEx.Message}"); }
+                                    try
+                                    {
+                                        ModKey parsedKey = ModKey.FromFileName(fileNameWithExt);
+                                        if (enabledKeys.Contains(parsedKey))
+                                        {
+                                            foundEnabledKeysInFolder.Add(parsedKey);
+                                        }
+                                    }
+                                    catch (Exception parseEx) { warnings.Add($"Could not parse plugin filename '{fileNameWithExt}' in folder '{modFolderName}': {parseEx.Message}"); }
+                                }
+                            }
+                        }
+                        catch (Exception fileScanEx) { warnings.Add($"Error scanning files in Mod folder '{modFolderName}': {fileScanEx.Message}"); }
 
+                        // Try to link to existing VM (from settings) or upgrade a mugshot-only VM, or create new
+                        var existingVmFromSettings = tempList.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
+                        var mugshotOnlyVmToUpgrade = vmsFromMugshotsOnly.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
 
-                         // Try to link to existing VM (from settings or mugshots) or create new VM
-                         var existingVm = tempList.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
-                         var mugshotVm = vmsFromMugshots.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
-
-                         if (existingVm != null) // Priority 1: Link to VM loaded from settings
-                         {
-                             if (!existingVm.CorrespondingFolderPaths.Contains(modFolderPath, StringComparer.OrdinalIgnoreCase))
-                                existingVm.CorrespondingFolderPaths.Add(modFolderPath);
-                             foreach (var key in foundEnabledKeysInFolder)
-                             {
-                                 if (!existingVm.CorrespondingModKeys.Contains(key)) existingVm.CorrespondingModKeys.Add(key);
-                                 linkedModKeys.Add(key); // Track linked key
-                             }
-                         }
-                         else if (mugshotVm != null) // Priority 2: Link to VM created from mugshots
-                         {
-                             // Add folder path and keys to the mugshot VM
-                             mugshotVm.CorrespondingFolderPaths.Add(modFolderPath);
-                             foreach (var key in foundEnabledKeysInFolder)
-                             {
-                                 if (!mugshotVm.CorrespondingModKeys.Contains(key)) mugshotVm.CorrespondingModKeys.Add(key);
-                                 linkedModKeys.Add(key); // Track linked key
-                             }
-                             // Now add this completed VM (which is no longer mugshot-only) to the main list
-                             tempList.Add(mugshotVm);
-                             vmsFromMugshots.Remove(mugshotVm); // Remove from temp mugshot list
-                             loadedDisplayNames.Add(mugshotVm.DisplayName); // Mark display name as processed
-                         }
-                         else if (foundEnabledKeysInFolder.Any()) // Priority 3: Create new VM if plugins were found and no existing match
-                         {
-                             var newVm = new VM_ModSetting(modFolderName, this) // Base constructor
-                             {
-                                 CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath },
-                                 CorrespondingModKeys = new ObservableCollection<ModKey>(foundEnabledKeysInFolder)
-                             };
-                             tempList.Add(newVm);
-                             loadedDisplayNames.Add(newVm.DisplayName); // Mark display name as processed
-                             foreach(var key in foundEnabledKeysInFolder) { linkedModKeys.Add(key); } // Track linked keys
-                         }
-                         // Else: Folder exists but contains no enabled plugins and doesn't match existing VMs - do nothing.
-                     }
-                 }
-                 catch (Exception ex) { warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}' for linking: {ex.Message}"); }
-             }
-
-            // Phase 2c: Add remaining mugshot-only VMs (those that couldn't be linked to a mod folder)
-            foreach(var mugshotVm in vmsFromMugshots)
-            {
-                 // These VMs definitely don't have paths or keys linked in Phase 2b
-                 mugshotVm.IsMugshotOnlyEntry = true;
-                 if (!tempList.Any(existing => existing.DisplayName.Equals(mugshotVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
-                 {
-                      tempList.Add(mugshotVm);
-                 }
+                        if (existingVmFromSettings != null)
+                        {
+                            if (!existingVmFromSettings.CorrespondingFolderPaths.Contains(modFolderPath, StringComparer.OrdinalIgnoreCase))
+                                existingVmFromSettings.CorrespondingFolderPaths.Add(modFolderPath);
+                            foreach (var key in foundEnabledKeysInFolder)
+                            {
+                                if (!existingVmFromSettings.CorrespondingModKeys.Contains(key)) existingVmFromSettings.CorrespondingModKeys.Add(key);
+                            }
+                        }
+                        else if (mugshotOnlyVmToUpgrade != null)
+                        {
+                            mugshotOnlyVmToUpgrade.CorrespondingFolderPaths.Add(modFolderPath);
+                            foreach (var key in foundEnabledKeysInFolder)
+                            {
+                                if (!mugshotOnlyVmToUpgrade.CorrespondingModKeys.Contains(key)) mugshotOnlyVmToUpgrade.CorrespondingModKeys.Add(key);
+                            }
+                            tempList.Add(mugshotOnlyVmToUpgrade); // Move to main list
+                            vmsFromMugshotsOnly.Remove(mugshotOnlyVmToUpgrade);
+                            loadedDisplayNames.Add(mugshotOnlyVmToUpgrade.DisplayName); // Mark as fully processed
+                        }
+                        else if (foundEnabledKeysInFolder.Any()) // Create new VM if plugins were found and no existing match
+                        {
+                            var newVm = new VM_ModSetting(modFolderName, this)
+                            {
+                                CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath },
+                                CorrespondingModKeys = new ObservableCollection<ModKey>(foundEnabledKeysInFolder)
+                            };
+                            // Attempt to link mugshot path by name if available and unclaimed
+                            string potentialMugshotPathForNewVm = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
+                            if (Directory.Exists(potentialMugshotPathForNewVm) && !claimedMugshotPaths.Contains(potentialMugshotPathForNewVm))
+                            {
+                                newVm.MugShotFolderPath = potentialMugshotPathForNewVm;
+                                claimedMugshotPaths.Add(potentialMugshotPathForNewVm);
+                            }
+                            tempList.Add(newVm);
+                            loadedDisplayNames.Add(newVm.DisplayName);
+                        }
+                    }
+                }
+                catch (Exception ex) { warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}' for linking: {ex.Message}"); }
             }
 
-            // *** Phase 3 (Orphaned Key Handling) is now removed/integrated into Phase 2b ***
-            // We no longer rely on VM_NpcSelectionBar here.
+            // Phase 2c: Add remaining mugshot-only VMs that couldn't be linked to a mod folder
+            foreach (var mugshotVm in vmsFromMugshotsOnly)
+            {
+                // These are truly mugshot-only: no settings entry, no matching mod folder by name.
+                if (!tempList.Any(existing => existing.DisplayName.Equals(mugshotVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    tempList.Add(mugshotVm); // MugShotFolderPath is already set from its constructor
+                }
+            }
 
-            // Set IsMugshotOnlyEntry flag correctly for all VMs *before* refreshing NPC lists
+            // Set IsMugshotOnlyEntry flag correctly and Refresh NPC Lists
             foreach (var vm in tempList)
             {
-                 vm.IsMugshotOnlyEntry = !(vm.CorrespondingFolderPaths.Any() || vm.CorrespondingModKeys.Any());
+                vm.IsMugshotOnlyEntry = string.IsNullOrWhiteSpace(vm.MugShotFolderPath) && !vm.CorrespondingFolderPaths.Any() && !vm.CorrespondingModKeys.Any()
+                                     || (!vm.CorrespondingFolderPaths.Any() && !vm.CorrespondingModKeys.Any() && !string.IsNullOrWhiteSpace(vm.MugShotFolderPath)); // Simplified: it's mugshot-only if it ONLY has a mugshot path OR is completely empty. More accurately: has mugshots but no mod data.
+                // A better definition for IsMugshotOnlyEntry: Does it have a mugshot path, but no mod keys/folders?
+                // This flag is mostly for UI warnings if it won't be saved.
+                // If it has a MugShotFolderPath set (either from JSON or derived), and no ModKeys/FolderPaths, it might be considered mugshot-only.
+                // For saving: an entry is saved if it has a DisplayName AND (ModKeys OR FolderPaths OR a non-empty MugShotFolderPath).
+                // Let's refine `IsMugshotOnlyEntry` based on whether it would be saved.
+                // It's primarily for entries auto-created from mugshot folders that don't get linked to mod data.
+                 bool willBeSaved = !string.IsNullOrWhiteSpace(vm.DisplayName) &&
+                                   (vm.CorrespondingModKeys.Any() || 
+                                    vm.CorrespondingFolderPaths.Any() ||
+                                    !string.IsNullOrWhiteSpace(vm.MugShotFolderPath)); // If it has a mugshot path, it should be saved.
+
+                 // IsMugshotOnlyEntry is true if it was *created* as such and hasn't gained mod data.
+                 // The original `vm.IsMugshotOnlyEntry` (from constructor) is more indicative of its origin.
+                 // Let's ensure it's false if it gains mod data.
+                 if (vm.IsMugshotOnlyEntry && (vm.CorrespondingFolderPaths.Any() || vm.CorrespondingModKeys.Any()))
+                 {
+                     vm.IsMugshotOnlyEntry = false;
+                 }
             }
 
-            // Asynchronously refresh NPC lists for each created/updated VM
+            // Asynchronously refresh NPC lists (same as before)
             var refreshTasks = tempList.Select(vm => Task.Run(() => vm.RefreshNpcLists())).ToList();
             Task.WhenAll(refreshTasks).ContinueWith(t =>
             {
-                // This continuation runs on a background thread by default
                 if (t.IsFaulted)
                 {
-                    // Flatten and log aggregate exceptions if needed
                     var flattenedExceptions = t.Exception?.Flatten().InnerExceptions;
                     if (flattenedExceptions != null)
                     {
-                         foreach(var ex in flattenedExceptions)
-                         {
-                              Debug.WriteLine($"Error during async NPC list refresh: {ex.Message}");
-                         }
+                        foreach (var ex in flattenedExceptions) { Debug.WriteLine($"Error during async NPC list refresh: {ex.Message}"); }
                     }
                 }
-
-                // *** Dispatch UI updates back to the main thread ***
                 RxApp.MainThreadScheduler.Schedule(() =>
                 {
-                    IsLoadingNpcData = false; // *** Clear loading flag on UI thread ***
-                    ApplyFilters(); // *** Re-apply filters now that data is loaded ***
-                    // Show warnings (if any accumulated) on UI thread
+                    IsLoadingNpcData = false;
+                    ApplyFilters();
                     if (warnings.Any())
                     {
                         var warningMessage = new StringBuilder("Warnings encountered during Mod Settings population:\n\n");
@@ -469,20 +498,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         ScrollableMessageBox.ShowWarning(warningMessage.ToString(), "Mod Settings Warning");
                     }
                 });
+            }, TaskScheduler.Default);
 
-            }, TaskScheduler.Default); // Specify scheduler for the continuation itself if needed, default is fine here
-
-            // Populate _allModSettingsInternal immediately (NPC lists will populate in the background)
-            // Final Step 1: Populate and Sort the source list
             _allModSettingsInternal = tempList.OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
 
-            // Final Step 2: Check Mugshot Validity for UI (Can be done before NPC lists finish)
             foreach (var vm in _allModSettingsInternal)
             {
                 vm.HasValidMugshots = CheckMugshotValidity(vm.MugShotFolderPath);
             }
 
-            // Apply initial filters immediately, they will be re-applied when NPC data finishes loading
             ApplyFilters();
         }
 
@@ -571,8 +595,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                          ModKeys = vm.CorrespondingModKeys.ToList(),
                          // Important: Create new lists/collections when saving to the model
                          // to avoid potential issues with shared references if the VM is reused.
-                         CorrespondingFolderPaths = vm.CorrespondingFolderPaths.ToList()
-                         // Note: MugShotFolderPath is NOT saved in ModSetting model, it's derived/managed by VM
+                         CorrespondingFolderPaths = vm.CorrespondingFolderPaths.ToList(),
+                         MugShotFolderPath = vm.MugShotFolderPath, // Save the mugshot folder path
                      };
                      _settings.ModSettings.Add(model);
                  }
@@ -585,6 +609,34 @@ namespace NPC_Plugin_Chooser_2.View_Models
              // JSONhandler<Settings>.SaveJSONFile(_settings, settingsPath, out bool success, out string exception);
              // if (!success) { MessageBox.Show($"Error saving settings: {exception}", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error); }
              // else { System.Diagnostics.Debug.WriteLine("DEBUG: Settings successfully updated in memory by SaveModSettingsToModel."); }
+         }
+         
+         /// <summary>
+         /// Removes the specified VM_ModSetting from the internal list and refreshes the filtered view.
+         /// </summary>
+         /// <param name="modSettingToRemove">The VM_ModSetting to remove.</param>
+         /// <returns>True if the item was successfully found and removed; otherwise, false.</returns>
+         public bool RemoveModSetting(VM_ModSetting modSettingToRemove)
+         {
+             if (modSettingToRemove == null) return false;
+
+             bool removed = _allModSettingsInternal.Remove(modSettingToRemove);
+             if (removed)
+             {
+                 Debug.WriteLine($"VM_Mods: Removed ModSetting '{modSettingToRemove.DisplayName}' from internal list.");
+                 // If the removed mod was selected for mugshots, clear the selection
+                 if (SelectedModForMugshots == modSettingToRemove)
+                 {
+                     SelectedModForMugshots = null;
+                     CurrentModNpcMugshots.Clear();
+                 }
+                 ApplyFilters(); // Refresh the ModSettingsList (left panel)
+             }
+             else
+             {
+                 Debug.WriteLine($"VM_Mods: ModSetting '{modSettingToRemove.DisplayName}' not found in internal list for removal.");
+             }
+             return removed;
          }
          
         /// <summary>

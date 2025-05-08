@@ -79,6 +79,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Properties specific to loading existing model
             CorrespondingModKeys = new ObservableCollection<ModKey>(model.ModKeys ?? new List<ModKey>());
             CorrespondingFolderPaths = new ObservableCollection<string>(model.CorrespondingFolderPaths ?? new List<string>()); // Handle potential null
+            MugShotFolderPath = model.MugShotFolderPath; // Load persisted mugshot folder path
             // IsMugshotOnlyEntry is set to false via chaining
         }
 

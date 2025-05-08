@@ -1,5 +1,6 @@
-﻿// [VM_AppearanceMod.cs] - Refactored for Delegate Factory
+﻿// [VM_AppearanceMod.cs]
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Drawing;
 using System.Reactive;
@@ -14,11 +15,15 @@ using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Splat;
 using System.Linq;
+using GongSolutions.Wpf.DragDrop; // Added
+using System.Text; // Added for StringBuilder in Drop logic
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
-    public class VM_AppearanceMod : ReactiveObject, IDisposable, IHasMugshotImage
+    // Add IDragSource, IDropTarget
+    public class VM_AppearanceMod : ReactiveObject, IDisposable, IHasMugshotImage, IDragSource, IDropTarget
     {
+        // --- Existing fields ---
         private readonly FormKey _npcFormKey;
         private readonly Settings _settings;
         private readonly NpcConsistencyProvider _consistencyProvider;
@@ -26,6 +31,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Lazy<VM_Mods> _lazyMods;             // Keep this dependency
         private readonly CompositeDisposable Disposables = new();
 
+        // --- Existing properties ---
         public ModKey? ModKey { get; }
         public string ModName { get; }
         [Reactive] public string ImagePath { get;  set; } = string.Empty;
@@ -38,6 +44,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool CanJumpToMod { get; set; } = false;
         public VM_ModSetting? AssociatedModSetting { get; }
 
+        // --- Existing Commands ---
         public ReactiveCommand<Unit, Unit> SelectCommand { get; }
         public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
         public ReactiveCommand<Unit, Unit> HideCommand { get; }
@@ -46,96 +53,48 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> HideAllFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> UnhideAllFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> JumpToModCommand { get; }
-        
-        // --- Placeholder Image Configuration ---
-        // Relative path from the application's base directory
-        private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
-        // Calculate the full path once
-        private static readonly string FullPlaceholderPath = Path.Combine(AppContext.BaseDirectory, PlaceholderResourceRelativePath);
-        // Check if the placeholder file actually exists at runtime
-        private static readonly bool PlaceholderExists = File.Exists(FullPlaceholderPath);
-        // --- End Placeholder Configuration ---
 
-        // *** Constructor is public again ***
-        // Parameters that vary per instance are listed first by convention
+        // --- Placeholder Image Configuration --- (Keep as is)
+        private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
+        private static readonly string FullPlaceholderPath = Path.Combine(AppContext.BaseDirectory, PlaceholderResourceRelativePath);
+        private static readonly bool PlaceholderExists = File.Exists(FullPlaceholderPath);
+
+        // --- Constructor --- (Keep as is)
         public VM_AppearanceMod(
-            string modName,             // Varies
-            FormKey npcFormKey,         // Varies
-            ModKey? overrideModeKey,    // Varies - Only supply if modName is the source plugin name
-            string? imagePath,          // Varies
-            // ---- Dependencies Resolved by Autofac ----
+            string modName,
+            FormKey npcFormKey,
+            ModKey? overrideModeKey,
+            string? imagePath,
             Settings settings,
             NpcConsistencyProvider consistencyProvider,
-            VM_NpcSelectionBar vmNpcSelectionBar, // Autofac injects the singleton instance
-            Lazy<VM_Mods> lazyMods)             // Autofac injects the singleton instance
+            VM_NpcSelectionBar vmNpcSelectionBar,
+            Lazy<VM_Mods> lazyMods)
         {
             ModName = modName;
             _lazyMods = lazyMods;
             AssociatedModSetting = _lazyMods.Value?.AllModSettings.FirstOrDefault(m => m.DisplayName == modName);
-            // The overrideModeKey should represent the *specific* plugin providing this appearance data.
-            // If it's null, we fall back to the *first* key in the associated setting, which might not be correct.
-            // The logic in CreateAppearanceModViewModels needs to ensure overrideModeKey is passed correctly.
             ModKey = overrideModeKey ?? AssociatedModSetting?.CorrespondingModKeys.FirstOrDefault();
-
             _npcFormKey = npcFormKey;
             _settings = settings;
             _consistencyProvider = consistencyProvider;
-            _vmNpcSelectionBar = vmNpcSelectionBar;
+            _vmNpcSelectionBar = vmNpcSelectionBar; // Ensure this is assigned
 
-            // --- Image Path and HasMugshot Logic ---
-            // 1. Check if a *real* mugshot path was provided and exists
+            // --- Image Path and HasMugshot Logic --- (Keep as is)
             bool realMugshotExists = !string.IsNullOrWhiteSpace(imagePath) && File.Exists(imagePath);
-            HasMugshot = realMugshotExists; // Set based on *real* mugshot presence
-
-            // 2. Assign ImagePath: Prioritize real mugshot, then placeholder, then empty
-            if (realMugshotExists)
-            {
-                ImagePath = imagePath!; // Use the valid real mugshot path
-            }
-            else if (PlaceholderExists)
-            {
-                ImagePath = FullPlaceholderPath; // Use the placeholder path
-                 // HasMugshot remains false because it's not a *real* mugshot for this mod
-            }
-            else
-            {
-                ImagePath = string.Empty; // Fallback: No real mugshot AND no placeholder found
-                HasMugshot = false;       // Ensure HasMugshot is false
-            }
-
-            // 3. Try to get dimensions if *any* image path was set (real or placeholder)
+            HasMugshot = realMugshotExists;
+            if (realMugshotExists) { ImagePath = imagePath!; }
+            else if (PlaceholderExists) { ImagePath = FullPlaceholderPath; }
+            else { ImagePath = string.Empty; HasMugshot = false; }
             if (!string.IsNullOrWhiteSpace(ImagePath))
             {
-                try
-                {
-                    var (width, height) = ImagePacker.GetImageDimensionsInDIPs(ImagePath);
-                    ImageWidth = width;
-                    ImageHeight = height;
-                }
-                catch (Exception ex)
-                {
-                    // Log error if dimensions couldn't be read (e.g., invalid image file, permissions)
-                    System.Diagnostics.Debug.WriteLine($"Error getting dimensions for '{ImagePath}': {ex.Message}");
-                    // Reset state if the image (even placeholder) is unusable
-                    ImagePath = string.Empty;
-                    HasMugshot = false; // Can't display it, so treat as no mugshot
-                    ImageWidth = 0;
-                    ImageHeight = 0;
-                }
-            }
-            else // No image path set (no real, no placeholder)
-            {
-                ImageWidth = 0; // Ensure dimensions are zero
-                ImageHeight = 0;
-            }
-            // --- End Image Path Logic ---
+                try { var (width, height) = ImagePacker.GetImageDimensionsInDIPs(ImagePath); ImageWidth = width; ImageHeight = height; }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Error getting dimensions for '{ImagePath}': {ex.Message}"); ImagePath = string.Empty; HasMugshot = false; ImageWidth = 0; ImageHeight = 0; }
+            } else { ImageWidth = 0; ImageHeight = 0; }
 
-
-            CanJumpToMod = _vmNpcSelectionBar.CanJumpToMod(modName); // Use injected instance
+            // --- Command and Property Setup --- (Keep as is)
+            CanJumpToMod = _vmNpcSelectionBar.CanJumpToMod(modName);
             IsSelected = _consistencyProvider.IsModSelected(_npcFormKey, ModName);
-
             SelectCommand = ReactiveCommand.Create(SelectThisMod);
-            // Can toggle full screen if *any* image path is valid (real or placeholder)
             var canToggleFullScreen = this.WhenAnyValue(x => x.ImagePath, path => !string.IsNullOrEmpty(path) && File.Exists(path));
             ToggleFullScreenCommand = ReactiveCommand.Create(ToggleFullScreen, canToggleFullScreen);
             HideCommand = ReactiveCommand.Create(HideThisMod);
@@ -144,7 +103,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             HideAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.HideAllFromMod(this));
             UnhideAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnhideAllFromMod(this));
             JumpToModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.JumpToMod(this), this.WhenAnyValue(x => x.CanJumpToMod));
-
             SelectCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error selecting mod: {ex.Message}")).DisposeWith(Disposables);
             ToggleFullScreenCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error showing image: {ex.Message}")).DisposeWith(Disposables);
             HideCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error hiding mod: {ex.Message}")).DisposeWith(Disposables);
@@ -153,8 +111,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             HideAllFromThisModCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error hiding all from mod: {ex.Message}")).DisposeWith(Disposables);
             UnhideAllFromThisModCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error unhiding all from mod: {ex.Message}")).DisposeWith(Disposables);
             JumpToModCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error jumping to mod: {ex.Message}")).DisposeWith(Disposables);
-
-
             _consistencyProvider.NpcSelectionChanged
                 .Where(args => args.NpcFormKey == _npcFormKey)
                 .ObserveOn(RxApp.MainThreadScheduler)
@@ -162,8 +118,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .DisposeWith(Disposables);
         }
 
-        // Static Create method removed
-
+        // --- Existing Methods --- (Keep as is)
         private void SelectThisMod()
         {
             // Check the *current* state before deciding action
@@ -217,10 +172,187 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             _vmNpcSelectionBar.HideSelectedMod(this);
         }
+        public void Dispose() { Disposables.Dispose(); }
 
-        public void Dispose()
+        // --- IDragSource Implementation ---
+
+        public bool CanStartDrag(IDragInfo dragInfo)
         {
-            Disposables.Dispose();
+            // Any item can be dragged
+            return true;
+        }
+
+        public void StartDrag(IDragInfo dragInfo)
+        {
+            // The data is this VM instance itself
+            dragInfo.Data = this;
+            // Set allowed effects
+            dragInfo.Effects = DragDropEffects.Move | DragDropEffects.Copy; // Allow Move
+            Debug.WriteLine($"VM_AppearanceMod.StartDrag: Dragging '{this.ModName}'");
+        }
+
+        public void Dropped(IDropInfo dropInfo)
+        {
+            // Called on the source after a successful drop occurred elsewhere
+            // No action needed here for the Move/Associate logic
+             Debug.WriteLine($"VM_AppearanceMod.Dropped (Source): '{this.ModName}' was dropped with effect {dropInfo.Effects}");
+        }
+
+        public void DragCancelled()
+        {
+            Debug.WriteLine($"VM_AppearanceMod.DragCancelled: Drag of '{this.ModName}' cancelled.");
+        }
+
+        public void DragDropOperationFinished(DragDropEffects operationResult, IDragInfo dragInfo)
+        {
+            Debug.WriteLine($"VM_AppearanceMod.DragDropOperationFinished: Operation for '{this.ModName}' finished with result {operationResult}.");
+        }
+
+        public bool TryMove(IDropInfo dropInfo)
+        {
+            // Not used for this type of operation
+            return false;
+        }
+
+        public bool TryCatchOccurredException(Exception exception)
+        {
+            Debug.WriteLine($"ERROR VM_AppearanceMod.TryCatchOccurredException (Source): Exception during D&D for '{this.ModName}': {exception}");
+            return true; // Handle (log) the exception
+        }
+
+        // --- IDropTarget Implementation ---
+
+        void IDropTarget.DragOver(IDropInfo dropInfo)
+        {
+            // 'this' is the potential target item
+            var sourceItem = dropInfo.Data as VM_AppearanceMod;
+
+            // Default to no drop
+            dropInfo.Effects = DragDropEffects.None;
+
+            if (sourceItem == null || sourceItem == this)
+            {
+                // Can't drop onto self or if data is wrong type
+                return;
+            }
+
+            // Check the core condition: One is real mugshot, the other is placeholder
+            bool sourceIsRealMugshot = sourceItem.HasMugshot;
+            bool targetIsRealMugshot = this.HasMugshot; // 'this' is the target
+
+            if (!((sourceIsRealMugshot && !targetIsRealMugshot) || (!sourceIsRealMugshot && targetIsRealMugshot)))
+            {
+                // Not a valid pair
+                return;
+            }
+
+            // Identify which is which based on HasMugshot
+            var mugshotVmApp = sourceIsRealMugshot ? sourceItem : this;
+            var placeholderVmApp = sourceIsRealMugshot ? this : sourceItem;
+
+            // Get associated settings
+            var mugshotModSetting = mugshotVmApp.AssociatedModSetting;
+            var placeholderModSetting = placeholderVmApp.AssociatedModSetting;
+
+            // Check validity for drop operation
+            bool mugshotPathValid = mugshotModSetting != null &&
+                                     !string.IsNullOrWhiteSpace(mugshotModSetting.MugShotFolderPath) &&
+                                     Directory.Exists(mugshotModSetting.MugShotFolderPath);
+            bool placeholderPathsValid = placeholderModSetting != null &&
+                                          placeholderModSetting.CorrespondingFolderPaths.Any();
+
+            if (mugshotPathValid && placeholderPathsValid)
+            {
+                // Conditions met, allow drop
+                dropInfo.DropTargetAdorner = DropTargetAdorners.Highlight; // Highlight the target item
+                dropInfo.Effects = DragDropEffects.Move;
+            }
+             // else: Effects remain None
+        }
+
+        void IDropTarget.Drop(IDropInfo dropInfo)
+        {
+            // 'this' is the target item where the drop occurred
+            var sourceItem = dropInfo.Data as VM_AppearanceMod;
+
+            // --- Repeat validation checks from DragOver for safety ---
+            if (sourceItem == null || sourceItem == this) return;
+
+            bool sourceIsRealMugshot = sourceItem.HasMugshot;
+            bool targetIsRealMugshot = this.HasMugshot;
+
+            if (!((sourceIsRealMugshot && !targetIsRealMugshot) || (!sourceIsRealMugshot && targetIsRealMugshot))) return;
+
+            var mugshotVmApp = sourceIsRealMugshot ? sourceItem : this;
+            var placeholderVmApp = sourceIsRealMugshot ? this : sourceItem;
+
+            var mugshotSourceModSetting = mugshotVmApp.AssociatedModSetting;
+            var placeholderTargetModSetting = placeholderVmApp.AssociatedModSetting; // 'this' is the placeholder if targetIsRealMugshot is false
+
+             if (mugshotSourceModSetting == null || placeholderTargetModSetting == null ||
+                 string.IsNullOrWhiteSpace(mugshotSourceModSetting.MugShotFolderPath) || !Directory.Exists(mugshotSourceModSetting.MugShotFolderPath) ||
+                 !placeholderTargetModSetting.CorrespondingFolderPaths.Any())
+            {
+                ScrollableMessageBox.ShowError("Drop conditions not met (Validation failed in Drop). Ensure mugshot provider has valid path and placeholder has mod folders.", "Drop Error");
+                return;
+            }
+            // --- End validation checks ---
+
+            // --- Confirmation Dialog ---
+            var sb = new StringBuilder();
+            sb.AppendLine($"Are you sure you want to associate the Mugshots from [{mugshotSourceModSetting.DisplayName}] with the Mod Folder(s) from [{placeholderTargetModSetting.DisplayName}]?");
+            bool mugshotProviderHasGameDataFolders = mugshotSourceModSetting.CorrespondingFolderPaths.Any();
+
+            if (mugshotProviderHasGameDataFolders)
+            {
+                sb.AppendLine($"\n[{placeholderTargetModSetting.DisplayName}] will now use mugshots from [{mugshotSourceModSetting.DisplayName}]. Both mod entries will remain.");
+            }
+            else
+            {
+                sb.AppendLine($"\n[{placeholderTargetModSetting.DisplayName}] will take over the mugshots from [{mugshotSourceModSetting.DisplayName}].");
+                sb.AppendLine($"The separate entry for [{mugshotSourceModSetting.DisplayName}] will be removed.");
+                if (!string.IsNullOrWhiteSpace(placeholderTargetModSetting.MugShotFolderPath) &&
+                    !placeholderTargetModSetting.MugShotFolderPath.Equals(mugshotSourceModSetting.MugShotFolderPath, StringComparison.OrdinalIgnoreCase))
+                { sb.AppendLine($"Warning: [{placeholderTargetModSetting.DisplayName}] currently points to a different mugshot path ({Path.GetFileName(placeholderTargetModSetting.MugShotFolderPath)}). This will be overwritten."); }
+            }
+            // --- End Confirmation Dialog ---
+
+            string imagePath = @"Resources\Dragon Drop.png"; // Relative path from executable
+
+            if (ScrollableMessageBox.Confirm(
+                    message: sb.ToString(), 
+                    title: "Confirm Dragon Drop Operation", 
+                    displayImagePath: imagePath)) // Pass the relative path here
+            {
+                // --- Perform Association/Merge ---
+                placeholderTargetModSetting.MugShotFolderPath = mugshotSourceModSetting.MugShotFolderPath;
+                // Notify VM_Mods to update validity check (important for UI updates)
+                _lazyMods.Value?.RecalculateMugshotValidity(placeholderTargetModSetting);
+
+                if (!mugshotProviderHasGameDataFolders) // Case 1: Merge and Remove Source
+                {
+                    // Update NPC selections pointing to the old source
+                    var npcKeysToUpdate = _settings.SelectedAppearanceMods
+                        .Where(kvp => kvp.Value.Equals(mugshotSourceModSetting.DisplayName, StringComparison.OrdinalIgnoreCase))
+                        .Select(kvp => kvp.Key).ToList();
+                    foreach (var npcKey in npcKeysToUpdate) { _consistencyProvider.SetSelectedMod(npcKey, placeholderTargetModSetting.DisplayName); }
+
+                    // Remove the source VM_ModSetting from VM_Mods
+                    bool wasRemoved = _lazyMods.Value?.RemoveModSetting(mugshotSourceModSetting) ?? false;
+                    if (!wasRemoved) { Debug.WriteLine($"Warning: Failed to remove mugshotSourceModSetting '{mugshotSourceModSetting.DisplayName}' via VM_Mods.RemoveModSetting."); }
+
+                    Debug.WriteLine($"Merge complete. [{placeholderTargetModSetting.DisplayName}] now uses mugshots from the former [{mugshotSourceModSetting.DisplayName}] entry, which has been removed.");
+                }
+                else // Case 2: Associate, both remain
+                {
+                     Debug.WriteLine($"Association complete. [{placeholderTargetModSetting.DisplayName}] will now use mugshots from [{mugshotSourceModSetting.DisplayName}].");
+                }
+
+                // Trigger UI Refresh in VM_NpcSelectionBar
+                // Use the injected reference
+                _vmNpcSelectionBar?.RefreshAppearanceSources();
+                // --- End Perform Association/Merge ---
+            }
         }
     }
 }

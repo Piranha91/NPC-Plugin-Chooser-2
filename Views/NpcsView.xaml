@@ -1,4 +1,4 @@
-﻿<!-- NpcsView.xaml -->
+﻿<!-- NpcsView.xaml (Full UI with VM_AppearanceMod D&D Handlers) -->
 <reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.NpcsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -8,6 +8,7 @@
              xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
              xmlns:reactiveui="http://reactiveui.net"
              xmlns:System="clr-namespace:System;assembly=mscorlib"
+             xmlns:dd="urn:gong-wpf-dragdrop"
              mc:Ignorable="d"
              x:TypeArguments="vm:VM_NpcSelectionBar"
              d:DataContext="{d:DesignInstance Type=vm:VM_NpcSelectionBar}"
@@ -19,21 +20,27 @@
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         <local:EnumDescriptionConverter x:Key="EnumDescConverter"/>
 
-        <ObjectDataProvider x:Key="NpcSearchTypeEnumValues"
-                            MethodName="GetValues"
-                            ObjectType="{x:Type System:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="vm:NpcSearchType"/>
-            </ObjectDataProvider.MethodParameters>
+        <!-- Data Providers for Enums (Keep original) -->
+        <ObjectDataProvider x:Key="NpcSearchTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters> <x:Type TypeName="vm:NpcSearchType"/> </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
-
-         <ObjectDataProvider x:Key="SelectionStateFilterTypeEnumValues"
-                             MethodName="GetValues"
-                             ObjectType="{x:Type System:Enum}">
-             <ObjectDataProvider.MethodParameters>
-                 <x:Type TypeName="vm:SelectionStateFilterType"/>
-             </ObjectDataProvider.MethodParameters>
+         <ObjectDataProvider x:Key="SelectionStateFilterTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
+             <ObjectDataProvider.MethodParameters> <x:Type TypeName="vm:SelectionStateFilterType"/> </ObjectDataProvider.MethodParameters>
          </ObjectDataProvider>
+
+        <!-- Custom Drag Adorner (Required since default failed) -->
+        <DataTemplate x:Key="AppearanceModDragAdorner" DataType="{x:Type vm:VM_AppearanceMod}">
+            <Border BorderThickness="1" BorderBrush="DimGray" Background="LightGoldenrodYellow"
+                    Opacity="0.75" CornerRadius="2" Padding="2"
+                    Width="100" Height="100"> <!-- Adjust size as desired -->
+                <Grid>
+                    <Image Source="{Binding ImagePath}" Stretch="Uniform" />
+                    <TextBlock Text="{Binding ModName}" VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                               Background="#AA000000" Foreground="White" FontSize="9" Padding="2,0"
+                               TextTrimming="CharacterEllipsis"/>
+                </Grid>
+            </Border>
+        </DataTemplate>
 
     </UserControl.Resources>
 
@@ -44,43 +51,23 @@
             <RowDefinition Height="Auto"/> <!-- Description Row -->
         </Grid.RowDefinitions>
 
-        <!-- Settings Row (Grid.Row="0") -->
+        <!-- Settings Row (Grid.Row="0") (Keep original) -->
         <Border Grid.Row="0" Background="#F0F0F0" BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="5">
             <DockPanel LastChildFill="False">
-                 <!-- NPC Groups Section -->
                  <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,15,0">
                      <TextBlock Text="NPC Groups:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                     <ComboBox MinWidth="120" MaxWidth="200" Margin="0,0,5,0" VerticalAlignment="Center"
-                               IsEditable="True"
-                               ItemsSource="{Binding AvailableNpcGroups}"
-                               Text="{Binding SelectedGroupName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                               ToolTip="Select or type a group name"/>
-                     <Button Content="Add Cur" Margin="2,0" Padding="3,1" VerticalAlignment="Center"
-                             Command="{Binding AddCurrentNpcToGroupCommand}"
-                             ToolTip="Add the currently selected NPC to the specified group"/>
-                     <Button Content="Rem Cur" Margin="2,0" Padding="3,1" VerticalAlignment="Center"
-                             Command="{Binding RemoveCurrentNpcFromGroupCommand}"
-                             ToolTip="Remove the currently selected NPC from the specified group"/>
-                     <Button Content="Add Vis" Margin="2,0" Padding="3,1" VerticalAlignment="Center"
-                             Command="{Binding AddAllVisibleNpcsToGroupCommand}"
-                             ToolTip="Add all NPCs currently visible in the list below to the specified group"/>
-                     <Button Content="Rem Vis" Margin="2,0" Padding="3,1" VerticalAlignment="Center"
-                             Command="{Binding RemoveAllVisibleNpcsFromGroupCommand}"
-                             ToolTip="Remove all NPCs currently visible in the list below from the specified group"/>
+                     <ComboBox MinWidth="120" MaxWidth="200" Margin="0,0,5,0" VerticalAlignment="Center" IsEditable="True" ItemsSource="{Binding AvailableNpcGroups}" Text="{Binding SelectedGroupName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Select or type a group name"/>
+                     <Button Content="Add Cur" Margin="2,0" Padding="3,1" VerticalAlignment="Center" Command="{Binding AddCurrentNpcToGroupCommand}" ToolTip="Add the currently selected NPC to the specified group"/>
+                     <Button Content="Rem Cur" Margin="2,0" Padding="3,1" VerticalAlignment="Center" Command="{Binding RemoveCurrentNpcFromGroupCommand}" ToolTip="Remove the currently selected NPC from the specified group"/>
+                     <Button Content="Add Vis" Margin="2,0" Padding="3,1" VerticalAlignment="Center" Command="{Binding AddAllVisibleNpcsToGroupCommand}" ToolTip="Add all NPCs currently visible in the list below to the specified group"/>
+                     <Button Content="Rem Vis" Margin="2,0" Padding="3,1" VerticalAlignment="Center" Command="{Binding RemoveAllVisibleNpcsFromGroupCommand}" ToolTip="Remove all NPCs currently visible in the list below from the specified group"/>
                  </StackPanel>
-                <!-- Other Settings -->
-                 <CheckBox DockPanel.Dock="Left" Content="Show Hidden Mods" Margin="15,0,0,0"
-                           IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}"
-                           VerticalAlignment="Center"
-                           ToolTip="Toggle visibility of hidden appearance mods"/>
-                 <CheckBox DockPanel.Dock="Left" Content="Show NPC Descriptions" Margin="15,0,0,0"
-                           IsChecked="{Binding ShowNpcDescriptions, Mode=TwoWay}"
-                           VerticalAlignment="Center"
-                           ToolTip="If checked, shows descriptions for selected base game NPCs from online sources." />
+                 <CheckBox DockPanel.Dock="Left" Content="Show Hidden Mods" Margin="15,0,0,0" IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Toggle visibility of hidden appearance mods"/>
+                 <CheckBox DockPanel.Dock="Left" Content="Show NPC Descriptions" Margin="15,0,0,0" IsChecked="{Binding ShowNpcDescriptions, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If checked, shows descriptions for selected base game NPCs from online sources." />
             </DockPanel>
         </Border>
 
-        <!-- Main Content Row (Grid.Row="1") -->
+        <!-- Main Content Row (Grid.Row="1") (Keep original structure) -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="250" MinWidth="200"/> <!-- NPC List + Search -->
@@ -88,206 +75,78 @@
                 <ColumnDefinition Width="*" MinWidth="250" x:Name="NpcDisplayColumn" />   <!-- Appearance Mod Images -->
             </Grid.ColumnDefinitions>
 
-            <!-- Left Column: Search + NPC List -->
+            <!-- Left Column: Search + NPC List (Keep original) -->
             <DockPanel Grid.Column="0" LastChildFill="True">
                 <!-- Search Area -->
                 <Border DockPanel.Dock="Top" BorderThickness="0,0,1,1" BorderBrush="DarkGray" Padding="5">
                     <StackPanel Orientation="Vertical">
-
                         <!-- Search Term 1 -->
                         <Grid Margin="0,0,0,5">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/> <!-- Type ComboBox -->
-                                <ColumnDefinition Width="*"/>    <!-- Input Control Area -->
-                            </Grid.ColumnDefinitions>
-
-                            <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
-                                      ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}"
-                                      SelectedItem="{Binding SearchType1, Mode=TwoWay}"
-                                      ToolTip="Select search field 1">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-
-                            <!-- Input Area (TextBox OR State ComboBox OR Group ComboBox) -->
-                            <Grid Grid.Column="1">
-                                <!-- Text Box (Visible when NOT SelectionState AND NOT Group) -->
-                                <TextBox VerticalAlignment="Center"
-                                         Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="Enter search term 1">
-                                     <TextBox.Style>
-                                         <Style TargetType="TextBox">
-                                             <Setter Property="Visibility" Value="Visible"/>
-                                             <Style.Triggers>
-                                                 <DataTrigger Binding="{Binding IsSelectionStateSearch1}" Value="True">
-                                                     <Setter Property="Visibility" Value="Collapsed"/>
-                                                 </DataTrigger>
-                                                 <DataTrigger Binding="{Binding IsGroupSearch1}" Value="True">
-                                                     <Setter Property="Visibility" Value="Collapsed"/>
-                                                 </DataTrigger>
-                                             </Style.Triggers>
-                                         </Style>
-                                     </TextBox.Style>
-                                </TextBox>
-
-                                <!-- State ComboBox (Visible ONLY for SelectionState) -->
-                                <ComboBox VerticalAlignment="Center"
-                                          ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}"
-                                          SelectedItem="{Binding SelectedStateFilter1, Mode=TwoWay}"
-                                          ToolTip="Filter by selection state"
-                                          Visibility="{Binding IsSelectionStateSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                     <ComboBox.ItemTemplate>
-                                         <DataTemplate>
-                                             <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
-                                         </DataTemplate>
-                                     </ComboBox.ItemTemplate>
-                                </ComboBox>
-
-                                <!-- *** NEW: Group ComboBox (Visible ONLY for Group) *** -->
-                                <ComboBox VerticalAlignment="Center"
-                                          ItemsSource="{Binding AvailableNpcGroups}"
-                                          SelectedItem="{Binding SelectedGroupFilter1, Mode=TwoWay}"
-                                          ToolTip="Select group to filter by"
-                                          Visibility="{Binding IsGroupSearch1, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            </Grid>
+                           <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                           <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType1, Mode=TwoWay}" ToolTip="Select search field 1">
+                               <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                           </ComboBox>
+                           <Grid Grid.Column="1">
+                               <TextBox VerticalAlignment="Center" Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 1">
+                                    <TextBox.Style><Style TargetType="TextBox"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding IsSelectionStateSearch1}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger><DataTrigger Binding="{Binding IsGroupSearch1}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBox.Style>
+                               </TextBox>
+                               <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}" SelectedItem="{Binding SelectedStateFilter1, Mode=TwoWay}" ToolTip="Filter by selection state" Visibility="{Binding IsSelectionStateSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                               </ComboBox>
+                               <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter1, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch1, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                           </Grid>
                         </Grid>
-
-                        <!-- Search Term 2 (Repeat pattern) -->
+                        <!-- Search Term 2 -->
                         <Grid Margin="0,0,0,5">
-                             <Grid.ColumnDefinitions>
-                                 <ColumnDefinition Width="Auto"/>
-                                 <ColumnDefinition Width="*"/>
-                             </Grid.ColumnDefinitions>
-                             <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
-                                       ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}"
-                                       SelectedItem="{Binding SearchType2, Mode=TwoWay}"
-                                       ToolTip="Select search field 2">
-                                 <ComboBox.ItemTemplate>
-                                     <DataTemplate>
-                                         <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
-                                     </DataTemplate>
-                                 </ComboBox.ItemTemplate>
-                             </ComboBox>
-                             <Grid Grid.Column="1">
-                                 <!-- Text Box -->
-                                 <TextBox VerticalAlignment="Center" Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 2">
-                                      <TextBox.Style>
-                                         <Style TargetType="TextBox">
-                                             <Setter Property="Visibility" Value="Visible"/>
-                                             <Style.Triggers>
-                                                 <DataTrigger Binding="{Binding IsSelectionStateSearch2}" Value="True">
-                                                     <Setter Property="Visibility" Value="Collapsed"/>
-                                                 </DataTrigger>
-                                                 <DataTrigger Binding="{Binding IsGroupSearch2}" Value="True">
-                                                     <Setter Property="Visibility" Value="Collapsed"/>
-                                                 </DataTrigger>
-                                             </Style.Triggers>
-                                         </Style>
-                                     </TextBox.Style>
-                                 </TextBox>
-                                 <!-- State ComboBox -->
-                                 <ComboBox VerticalAlignment="Center"
-                                           ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}"
-                                           SelectedItem="{Binding SelectedStateFilter2, Mode=TwoWay}" ToolTip="Filter by selection state"
-                                           Visibility="{Binding IsSelectionStateSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                     <ComboBox.ItemTemplate>
-                                          <DataTemplate>
-                                              <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
-                                          </DataTemplate>
-                                     </ComboBox.ItemTemplate>
-                                 </ComboBox>
-                                 <!-- Group ComboBox -->
-                                 <ComboBox VerticalAlignment="Center"
-                                           ItemsSource="{Binding AvailableNpcGroups}"
-                                           SelectedItem="{Binding SelectedGroupFilter2, Mode=TwoWay}"
-                                           ToolTip="Select group to filter by"
-                                           Visibility="{Binding IsGroupSearch2, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            </Grid>
-                         </Grid>
-
-                        <!-- Search Term 3 (Repeat pattern) -->
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType2, Mode=TwoWay}" ToolTip="Select search field 2">
+                                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Grid Grid.Column="1">
+                                <TextBox VerticalAlignment="Center" Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 2">
+                                    <TextBox.Style><Style TargetType="TextBox"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding IsSelectionStateSearch2}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger><DataTrigger Binding="{Binding IsGroupSearch2}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBox.Style>
+                                </TextBox>
+                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}" SelectedItem="{Binding SelectedStateFilter2, Mode=TwoWay}" ToolTip="Filter by selection state" Visibility="{Binding IsSelectionStateSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                     <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter2, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch2, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                           </Grid>
+                        </Grid>
+                        <!-- Search Term 3 -->
                         <Grid Margin="0,0,0,5">
-                             <Grid.ColumnDefinitions>
-                                 <ColumnDefinition Width="Auto"/>
-                                 <ColumnDefinition Width="*"/>
-                             </Grid.ColumnDefinitions>
-                             <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center"
-                                       ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}"
-                                       SelectedItem="{Binding SearchType3, Mode=TwoWay}"
-                                       ToolTip="Select search field 3">
-                                 <ComboBox.ItemTemplate>
-                                     <DataTemplate>
-                                         <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
-                                     </DataTemplate>
-                                 </ComboBox.ItemTemplate>
+                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                             <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType3, Mode=TwoWay}" ToolTip="Select search field 3">
+                                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                              </ComboBox>
                               <Grid Grid.Column="1">
-                                 <!-- Text Box -->
                                  <TextBox VerticalAlignment="Center" Text="{Binding SearchText3, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 3">
-                                     <TextBox.Style>
-                                         <Style TargetType="TextBox">
-                                             <Setter Property="Visibility" Value="Visible"/>
-                                             <Style.Triggers>
-                                                 <DataTrigger Binding="{Binding IsSelectionStateSearch3}" Value="True">
-                                                     <Setter Property="Visibility" Value="Collapsed"/>
-                                                 </DataTrigger>
-                                                 <DataTrigger Binding="{Binding IsGroupSearch3}" Value="True">
-                                                     <Setter Property="Visibility" Value="Collapsed"/>
-                                                 </DataTrigger>
-                                             </Style.Triggers>
-                                         </Style>
-                                     </TextBox.Style>
+                                     <TextBox.Style><Style TargetType="TextBox"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding IsSelectionStateSearch3}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger><DataTrigger Binding="{Binding IsGroupSearch3}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBox.Style>
                                  </TextBox>
-                                 <!-- State ComboBox -->
-                                 <ComboBox VerticalAlignment="Center"
-                                           ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}"
-                                           SelectedItem="{Binding SelectedStateFilter3, Mode=TwoWay}" ToolTip="Filter by selection state"
-                                           Visibility="{Binding IsSelectionStateSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                      <ComboBox.ItemTemplate>
-                                          <DataTemplate>
-                                              <TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/>
-                                          </DataTemplate>
-                                      </ComboBox.ItemTemplate>
+                                 <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}" SelectedItem="{Binding SelectedStateFilter3, Mode=TwoWay}" ToolTip="Filter by selection state" Visibility="{Binding IsSelectionStateSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                      <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                                  </ComboBox>
-                                  <!-- Group ComboBox -->
-                                 <ComboBox VerticalAlignment="Center"
-                                           ItemsSource="{Binding AvailableNpcGroups}"
-                                           SelectedItem="{Binding SelectedGroupFilter3, Mode=TwoWay}"
-                                           ToolTip="Select group to filter by"
-                                           Visibility="{Binding IsGroupSearch3, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                 <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter3, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch3, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                              </Grid>
                          </Grid>
-
-                        <!-- Logic Selector (Unchanged) -->
+                        <!-- Logic Selector -->
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                             <RadioButton Content="AND (Match All)" GroupName="SearchLogic" VerticalAlignment="Center" Margin="0,0,10,0" IsChecked="{Binding IsSearchAndLogic, Mode=TwoWay}" ToolTip="Results must match all active search terms"/>
                             <RadioButton Content="OR (Match Any)" GroupName="SearchLogic" VerticalAlignment="Center" ToolTip="Results must match at least one active search term"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
-
-                <!-- NPC List Area (Unchanged) -->
+                <!-- NPC List Area (Keep original) -->
                  <Border BorderThickness="0,0,1,0" BorderBrush="DarkGray">
                     <ListBox x:Name="NpcListBox" ItemsSource="{Binding FilteredNpcs}"
                              SelectedItem="{Binding SelectedNpc, Mode=TwoWay}"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                              VerticalContentAlignment="Stretch"
                              SelectionChanged="NpcListBox_OnSelectionChanged">
-                         <!-- ListBox Template Unchanged -->
                          <ListBox.ItemTemplate>
                              <DataTemplate>
                                  <Border>
                                      <Border.ToolTip>
-                                         <ToolTip>
-                                             <StackPanel>
-                                                 <TextBlock Text="{Binding NpcName}" />
-                                                 <TextBlock Text="{Binding NpcEditorId}" />
-                                                 <TextBlock Text="{Binding NpcFormKeyString}" />
-                                             </StackPanel>
-                                         </ToolTip>
+                                         <ToolTip> <StackPanel> <TextBlock Text="{Binding NpcName}" /> <TextBlock Text="{Binding NpcEditorId}" /> <TextBlock Text="{Binding NpcFormKeyString}" /> </StackPanel> </ToolTip>
                                      </Border.ToolTip>
                                      <TextBlock Text="{Binding DisplayName}" />
                                  </Border>
@@ -297,48 +156,55 @@
                 </Border>
             </DockPanel>
 
-            <!-- GridSplitter (Unchanged) -->
+            <!-- GridSplitter (Keep original) -->
             <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="LightGray" ResizeBehavior="PreviousAndNext"/>
 
-            <!-- Right Column: Appearance Mod Images (Unchanged) -->
+            <!-- Right Column: Appearance Mod Images (Restore ScrollViewer) -->
              <ScrollViewer Grid.Column="2" x:Name="ImageDisplayScrollViewer"
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"
                           SizeChanged="ImageDisplayScrollViewer_SizeChanged"
                           PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
-                 <!-- ItemsControl and Template Unchanged -->
-                 <ItemsControl x:Name="AppearanceModsItemsControl" ItemsSource="{Binding CurrentNpcAppearanceMods}">
+                 <ItemsControl x:Name="AppearanceModsItemsControl" ItemsSource="{Binding CurrentNpcAppearanceMods}"
+                               AllowDrop="True"> <!-- Container AllowDrop -->
+                               <!-- Removed Gong DropHandler and native events from ItemsControl -->
                      <ItemsControl.ItemsPanel>
                          <ItemsPanelTemplate>
                              <WrapPanel Orientation="Horizontal"
-                                        Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
-                                        />
+                                        Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"/>
                          </ItemsPanelTemplate>
                      </ItemsControl.ItemsPanel>
                      <ItemsControl.ItemTemplate>
                          <DataTemplate DataType="{x:Type vm:VM_AppearanceMod}">
+                             <!-- This Border handles Drag and Drop -->
                              <Border BorderThickness="2" Margin="5"
                                      Visibility="{Binding IsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
                                      BorderBrush="{Binding IsSelected, Converter={StaticResource BooleanToBrushConverter}, ConverterParameter=LimeGreen|Transparent}"
                                      Width="{Binding ImageWidth}"
-                                     Height="{Binding ImageHeight}">
-                                 <!-- Grid, Image, TextBlock Unchanged -->
+                                     Height="{Binding ImageHeight}"
+                                     dd:DragDrop.IsDragSource="True"
+                                     dd:DragDrop.IsDropTarget="True"
+                                     dd:DragDrop.DragHandler="{Binding}" 
+                                     dd:DragDrop.DropHandler="{Binding}"
+                                     dd:DragDrop.DragDropContext="{Binding}" 
+                                     AllowDrop="True"
+                                     dd:DragDrop.DragAdornerTemplate="{StaticResource AppearanceModDragAdorner}">
+
+                                 <!-- Original Content Grid -->
                                  <Grid Background="LightGray">
-                                     <Image Source="{Binding ImagePath}" Stretch="Uniform" ToolTip="{Binding ModName}" PreviewMouseRightButtonDown="Image_PreviewMouseRightButtonDown">
-                                         <Image.InputBindings>
+                                     <Image Source="{Binding ImagePath}" Stretch="Uniform" ToolTip="{Binding ModName}"
+                                            PreviewMouseRightButtonDown="Image_PreviewMouseRightButtonDown">
+                                          <!-- InputBindings RESTORED (Commented out, enable if needed and test carefully) -->
+                                         <!-- <Image.InputBindings>
                                              <MouseBinding MouseAction="LeftClick" Command="{Binding SelectCommand}" />
-                                         </Image.InputBindings>
+                                         </Image.InputBindings> -->
                                          <Image.Style>
                                              <Style TargetType="Image">
                                                  <Setter Property="Opacity" Value="1.0" />
                                                  <Style.Triggers>
-                                                     <DataTrigger Binding="{Binding ImagePath}" Value="{x:Null}">
-                                                         <Setter Property="Opacity" Value="0.5"/>
-                                                     </DataTrigger>
-                                                     <DataTrigger Binding="{Binding ImagePath}" Value="">
-                                                         <Setter Property="Opacity" Value="0.5"/>
-                                                     </DataTrigger>
+                                                     <DataTrigger Binding="{Binding ImagePath}" Value="{x:Null}"> <Setter Property="Opacity" Value="0.5"/> </DataTrigger>
+                                                     <DataTrigger Binding="{Binding ImagePath}" Value=""> <Setter Property="Opacity" Value="0.5"/> </DataTrigger>
                                                  </Style.Triggers>
                                              </Style>
                                          </Image.Style>
@@ -347,7 +213,7 @@
                                                 Background="#AAFFFFFF" FontSize="10" Padding="3,1"
                                                 TextTrimming="CharacterEllipsis" ToolTip="{Binding ModName}"/>
                                  </Grid>
-                                 <!-- ContextMenu Unchanged -->
+                                 <!-- Original Context Menu -->
                                  <Border.ContextMenu>
                                      <ContextMenu>
                                          <MenuItem Header="Select" Command="{Binding SelectCommand}" />
@@ -358,9 +224,7 @@
                                          <MenuItem Header="Hide All From This Mod" Command="{Binding HideAllFromThisModCommand}" />
                                          <MenuItem Header="Unhide All From This Mod" Command="{Binding UnhideAllFromThisModCommand}" />
                                          <Separator />
-                                         <MenuItem Header="Jump to Mod"
-                                                   Command="{Binding JumpToModCommand}"
-                                                   Visibility="{Binding CanJumpToMod, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         <MenuItem Header="Jump to Mod" Command="{Binding JumpToModCommand}" Visibility="{Binding CanJumpToMod, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          <MenuItem Header="Show Full Image" Command="{Binding ToggleFullScreenCommand}"/>
                                      </ContextMenu>
                                  </Border.ContextMenu>
@@ -370,25 +234,16 @@
                  </ItemsControl>
              </ScrollViewer>
 
-            <!-- Placeholder Text Block (Unchanged) -->
-            <TextBlock Grid.Column="2" Text="Select an NPC..."
-                       HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" Foreground="Gray" TextWrapping="Wrap" Margin="20">
-                <!-- Style Unchanged -->
+            <!-- Placeholder Text Block (Keep original) -->
+            <TextBlock Grid.Column="2" Text="Select an NPC..." HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" Foreground="Gray" TextWrapping="Wrap" Margin="20">
                  <TextBlock.Style>
                     <Style TargetType="TextBlock">
                         <Setter Property="Visibility" Value="Collapsed"/>
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding SelectedNpc}" Value="{x:Null}">
-                                <Setter Property="Visibility" Value="Visible"/>
-                                <Setter Property="Text" Value="Select an NPC from the list on the left to see appearance options."/>
-                            </DataTrigger>
+                            <DataTrigger Binding="{Binding SelectedNpc}" Value="{x:Null}"> <Setter Property="Visibility" Value="Visible"/> <Setter Property="Text" Value="Select an NPC from the list on the left to see appearance options."/> </DataTrigger>
                             <MultiDataTrigger>
-                                <MultiDataTrigger.Conditions>
-                                    <Condition Binding="{Binding SelectedNpc, Converter={StaticResource IsNotNullConverter}}" Value="True" />
-                                    <Condition Binding="{Binding CurrentNpcAppearanceMods.Count}" Value="0" />
-                                </MultiDataTrigger.Conditions>
-                                <Setter Property="Visibility" Value="Visible" />
-                                <Setter Property="Text" Value="No appearance options found for the selected NPC."/>
+                                <MultiDataTrigger.Conditions> <Condition Binding="{Binding SelectedNpc, Converter={StaticResource IsNotNullConverter}}" Value="True" /> <Condition Binding="{Binding CurrentNpcAppearanceMods.Count}" Value="0" /> </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible" /> <Setter Property="Text" Value="No appearance options found for the selected NPC."/>
                             </MultiDataTrigger>
                         </Style.Triggers>
                     </Style>
@@ -396,35 +251,23 @@
             </TextBlock>
         </Grid>
 
-        <!-- Description Panel (Grid.Row="2") (Unchanged) -->
-        <Border Grid.Row="2" BorderBrush="Gray" BorderThickness="0,1,0,0"
-                Background="#FAFAD2"
-                Padding="5">
-            <!-- Style Unchanged -->
+        <!-- Description Panel (Grid.Row="2") (Keep original) -->
+        <Border Grid.Row="2" BorderBrush="Gray" BorderThickness="0,1,0,0" Background="#FAFAD2" Padding="5">
             <Border.Style>
                 <Style TargetType="Border">
                     <Setter Property="Visibility" Value="Visible"/>
                     <Style.Triggers>
-                         <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Null}">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Static System:String.Empty}">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding ShowNpcDescriptions}" Value="False">
-                             <Setter Property="Visibility" Value="Collapsed"/>
-                         </DataTrigger>
+                         <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Null}"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
+                         <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Static System:String.Empty}"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
+                         <DataTrigger Binding="{Binding ShowNpcDescriptions}" Value="False"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
                     </Style.Triggers>
                 </Style>
             </Border.Style>
-            <!-- Grid, ScrollViewer, TextBlocks Unchanged -->
              <Grid>
                  <ScrollViewer MaxHeight="40" VerticalScrollBarVisibility="Auto">
                      <TextBlock Text="{Binding CurrentNpcDescription}" TextWrapping="Wrap"/>
                  </ScrollViewer>
-                 <TextBlock Text="Loading description..." FontStyle="Italic" Foreground="Gray"
-                            HorizontalAlignment="Center" VerticalAlignment="Center"
-                            Visibility="{Binding IsLoadingDescription, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                 <TextBlock Text="Loading description..." FontStyle="Italic" Foreground="Gray" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsLoadingDescription, Converter={StaticResource BooleanToVisibilityConverter}}"/>
             </Grid>
         </Border>
 
