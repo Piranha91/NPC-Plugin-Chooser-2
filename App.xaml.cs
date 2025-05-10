@@ -144,18 +144,31 @@ namespace NPC_Plugin_Chooser_2
             // If MainWindow resolves its VM correctly in its constructor using Splat, this works fine.
             if (mainWindow == null)
             {
-                 mainWindow = new MainWindow();
+                mainWindow = new MainWindow();
             }
 
             if (mainWindow != null)
             {
-                 mainWindow.Show();
+                mainWindow.Show();
+
+                // Initialize application state after window is shown
+                VM_MainWindow? mainWindowViewModel = null;
+                if (mainWindow.DataContext is VM_MainWindow vm) {
+                    mainWindowViewModel = vm;
+                } else if (mainWindow is MainWindow mwInstance) { // Specific cast if DataContext is not yet VM_MainWindow
+                    mainWindowViewModel = mwInstance.ViewModel;
+                }
+                
+                // Fallback if still null (e.g. DataContext set later or different view type)
+                mainWindowViewModel ??= Locator.Current.GetService<VM_MainWindow>();
+
+                mainWindowViewModel?.InitializeApplicationState(isStartup: true);
             }
-             else
+            else
             {
-                 // Handle error - main window view couldn't be resolved or created
-                 MessageBox.Show("Fatal Error: Could not resolve or create the MainWindow view.", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                 // Consider Application.Current.Shutdown();
+                // Handle error - main window view couldn't be resolved or created
+                MessageBox.Show("Fatal Error: Could not resolve or create the MainWindow view.", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                // Consider Application.Current.Shutdown();
             }
         }
     }
