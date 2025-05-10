@@ -58,12 +58,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // Flag indicating if the MugShotFolderPath contains validly structured image files.
         // Used to enable/disable the clickable DisplayName link.
         [Reactive] public bool HasValidMugshots { get; set; }
+        
+        private readonly ObservableAsPropertyHelper<bool> _canUnlinkMugshots;
+        public bool CanUnlinkMugshots => _canUnlinkMugshots.Value;
 
         // --- Commands ---
         public ReactiveCommand<Unit, Unit> AddFolderPathCommand { get; }
         public ReactiveCommand<string, Unit> BrowseFolderPathCommand { get; }
         public ReactiveCommand<string, Unit> RemoveFolderPathCommand { get; }
         public ReactiveCommand<Unit, Unit> BrowseMugshotFolderCommand { get; }
+        public ReactiveCommand<Unit, Unit> UnlinkMugshotDataCommand { get; }
 
         // --- Private Fields ---
         private readonly VM_Mods _parentVm; // Reference to the parent VM (VM_Mods)
@@ -143,12 +147,56 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  )
                  .DistinctUntilChanged()
                  .ToPropertyEx(this, x => x.HasModPathsAssigned);
+             
+             // --- Setup for CanUnlinkMugshots ---
+             _canUnlinkMugshots = this.WhenAnyValue(
+                x => x.MugShotFolderPath,
+                x => x.CorrespondingFolderPaths.Count, // React to count changes
+                (mugshotPath, folderCount) => // folderCount is needed to trigger re-evaluation when collection changes
+                {
+                    // Condition 1: Must have an assigned mugshot path
+                    if (string.IsNullOrWhiteSpace(mugshotPath))
+                    {
+                        return false;
+                    }
+
+                    // Condition 2: Must have at least one corresponding mod data folder path
+                    // If no data folders, it's already "mugshot-only" (or should be), so unlinking isn't applicable.
+                    if (!this.CorrespondingFolderPaths.Any()) // Use this.CorrespondingFolderPaths for direct access
+                    {
+                        return false;
+                    }
+
+                    // Condition 3: The mugshot folder's name must NOT match the name of ANY of the data folders.
+                    try // Add try-catch for Path.GetFileName in case of invalid paths
+                    {
+                        string mugshotFolderName = Path.GetFileName(mugshotPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                        
+                        // Check if ANY data folder name matches the mugshot folder name
+                        bool matchesAnyDataFolder = this.CorrespondingFolderPaths.Any(dataPath =>
+                        {
+                            if (string.IsNullOrWhiteSpace(dataPath)) return false;
+                            string dataFolderName = Path.GetFileName(dataPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                            return mugshotFolderName.Equals(dataFolderName, StringComparison.OrdinalIgnoreCase);
+                        });
+
+                        return !matchesAnyDataFolder; // Can unlink if it does NOT match any
+                    }
+                    catch (ArgumentException ex) // Path.GetFileName can throw if path contains invalid chars
+                    {
+                        Debug.WriteLine($"Error in CanUnlinkMugshots logic while getting folder names: {ex.Message}");
+                        return false; // Safety: if paths are invalid, don't allow unlink
+                    }
+                })
+                .ToProperty(this, x => x.CanUnlinkMugshots, scheduler: RxApp.MainThreadScheduler);
 
             // --- Command Initializations ---
             AddFolderPathCommand = ReactiveCommand.Create(AddFolderPath);
             BrowseFolderPathCommand = ReactiveCommand.Create<string>(BrowseFolderPath);
             RemoveFolderPathCommand = ReactiveCommand.Create<string>(RemoveFolderPath);
             BrowseMugshotFolderCommand = ReactiveCommand.Create(BrowseMugshotFolder);
+            UnlinkMugshotDataCommand = ReactiveCommand.Create(UnlinkMugshotData, this.WhenAnyValue(x => x.CanUnlinkMugshots));
+            UnlinkMugshotDataCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error unlinking mugshot data: {ex.Message}"));
 
             // --- Subscribe to Property Changes for Dependent Logic ---
              this.WhenAnyValue(x => x.MugShotFolderPath)
@@ -158,6 +206,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                      // Notify parent to recheck if the folder contains valid images
                      _parentVm?.RecalculateMugshotValidity(this);
                  });
+             
+             this.WhenAnyValue(x => x.CorrespondingFolderPaths.Count)
+                 .Subscribe(_ => this.RaisePropertyChanged(nameof(CanUnlinkMugshots))); // Manually trigger update if needed, though WhenAnyValue should handle it
 
             // Optionally, trigger RefreshNpcLists when ModKey or Paths change?
             // Could be intensive. Let's assume it's done during initial load for now.
@@ -380,6 +431,51 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
                 // If sources.Count == 0, something went wrong, but it won't be in the map.
             }
+        }
+        
+        private void UnlinkMugshotData()
+        {
+            if (!CanUnlinkMugshots) return; // Should be caught by CanExecute, but defensive check
+
+            string originalMugshotPath = this.MugShotFolderPath;
+            string mugshotDirName = Path.GetFileName(originalMugshotPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+            // Confirm with user
+            if (!ScrollableMessageBox.Confirm(
+                $"Are you sure you want to unlink the mugshot folder '{mugshotDirName}' from '{this.DisplayName}'?\n\n" +
+                $"This will create a new, separate entry for '{mugshotDirName}' (mugshots only), " +
+                $"and '{this.DisplayName}' will no longer have these mugshots associated.",
+                "Confirm Unlink Mugshot Data"))
+            {
+                return;
+            }
+
+            // 1. Create the new "Mugshot-Only" VM
+            // It will be mugshot-only by definition because it has no CorrespondingFolderPaths/ModKeys initially
+            var newMugshotOnlyVm = new VM_ModSetting(displayName: mugshotDirName, mugshotPath: originalMugshotPath, parentVm: _parentVm);
+            // Ensure IsMugshotOnlyEntry is correctly set based on its initial state
+            newMugshotOnlyVm.IsMugshotOnlyEntry = true; 
+            // It won't have NPC lists immediately, that will be populated if/when VM_Mods calls RefreshNpcLists on all.
+            // Or, if it's purely for mugshots, NPC lists aren't relevant for *its* data.
+
+            // 2. Modify the current VM (this instance) to be "Data-Only" regarding this mugshot path
+            this.MugShotFolderPath = string.Empty; // Clear the mugshot path
+            // HasValidMugshots will update reactively via RecalculateMugshotValidity call below.
+            // IsMugshotOnlyEntry status of 'this' vm might also change if it now has no paths at all.
+            // This will be re-evaluated by VM_Mods.PopulateModSettings next time or by logic within VM_Mods
+            this.IsMugshotOnlyEntry = !this.CorrespondingFolderPaths.Any() && !this.CorrespondingModKeys.Any();
+
+
+            // 3. Add the new VM to VM_Mods and refresh
+            _parentVm.AddAndRefreshModSetting(newMugshotOnlyVm); // Parent VM handles adding and refreshing its lists
+
+            // 4. Trigger a recalculation of valid mugshots for the current (now data-only) VM
+            _parentVm.RecalculateMugshotValidity(this);
+
+            // 5. Notify selection bar to refresh appearance sources for current NPC if necessary
+            _parentVm.RequestNpcSelectionBarRefresh();
+
+            //ScrollableMessageBox.Show($"Mugshot folder '{mugshotDirName}' has been unlinked from '{this.DisplayName}' and is now a separate entry.", "Unlink Successful");
         }
     }
 }

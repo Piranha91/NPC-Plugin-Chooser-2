@@ -112,6 +112,44 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             ApplyFilters(); // Apply initial filter
         }
+        
+        /// <summary>
+        /// Adds a new VM_ModSetting (typically created by Unlink operation) to the internal list
+        /// and refreshes dependent UI.
+        /// </summary>
+        public void AddAndRefreshModSetting(VM_ModSetting newVm)
+        {
+            if (newVm == null || _allModSettingsInternal.Any(vm => vm.DisplayName.Equals(newVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
+            {
+                Debug.WriteLine($"VM_Mods: Not adding VM '{newVm?.DisplayName}' either because it's null or a VM with that DisplayName already exists.");
+                // Optionally, if it exists, consider merging properties, but for unlink, it should be a new entry.
+                return;
+            }
+
+            _allModSettingsInternal.Add(newVm);
+            // Re-sort the internal list by DisplayName
+            _allModSettingsInternal = _allModSettingsInternal.OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+            
+            // Recalculate its mugshot validity (it might be a new mugshot-only entry)
+            RecalculateMugshotValidity(newVm);
+
+            // Refresh the filtered list in the UI
+            ApplyFilters();
+
+            // Asynchronously refresh its NPC lists if it might have mod data (though unlink usually makes it mugshot-only)
+            // For a new mugshot-only entry, RefreshNpcLists won't find much, but it's harmless.
+            Task.Run(() => newVm.RefreshNpcLists()); 
+        }
+
+        /// <summary>
+        /// Requests the VM_NpcSelectionBar to refresh its current NPC's appearance sources.
+        /// </summary>
+        public void RequestNpcSelectionBarRefresh()
+        {
+            // This relies on VM_NpcSelectionBar being accessible, e.g., if injected or via a message bus.
+            // Assuming _npcSelectionBar is the injected instance.
+            _npcSelectionBar?.RefreshAppearanceSources();
+        }
 
         private async Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
         {
