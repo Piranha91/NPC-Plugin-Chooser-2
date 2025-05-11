@@ -33,6 +33,7 @@
                       MinWidth="150"
                       ItemsSource="{Binding AvailableNpcGroups}"
                       SelectedItem="{Binding SelectedNpcGroup, Mode=TwoWay}"
+                      DisplayMemberPath="."
                       VerticalAlignment="Center"
                       ToolTip="Select an NPC group to process, or 'All NPCs' to process all selected NPCs."/>
             <!-- Add spacer or adjust alignment if needed -->
