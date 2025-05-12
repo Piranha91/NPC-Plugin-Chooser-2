@@ -4,6 +4,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
              xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
              xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
              xmlns:reactiveui="http://reactiveui.net"
@@ -180,7 +181,7 @@
                              <!-- This Border handles Drag and Drop -->
                              <Border BorderThickness="2" Margin="5"
                                      Visibility="{Binding IsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                     BorderBrush="{Binding IsSelected, Converter={StaticResource BooleanToBrushConverter}, ConverterParameter=LimeGreen|Transparent}"
+                                     BorderBrush="{Binding BorderColor}"
                                      Width="{Binding ImageWidth}"
                                      Height="{Binding ImageHeight}"
                                      dd:DragDrop.IsDragSource="True"
@@ -190,15 +191,21 @@
                                      dd:DragDrop.DragDropContext="{Binding}" 
                                      AllowDrop="True"
                                      dd:DragDrop.DragAdornerTemplate="{StaticResource AppearanceModDragAdorner}">
+                                 
+                                 <i:Interaction.Triggers>
+                                     <!-- Trigger on the MouseLeftButtonUp event -->
+                                     <i:EventTrigger EventName="MouseLeftButtonUp">
+                                         <!-- Execute the SelectCommand when the event fires -->
+                                         <i:InvokeCommandAction Command="{Binding SelectCommand}" />
+                                         <!-- Or using the older EventToCommand syntax if your library uses it: -->
+                                         <!-- <cmd:EventToCommand Command="{Binding SelectCommand}" /> -->
+                                     </i:EventTrigger>
+                                 </i:Interaction.Triggers>
 
                                  <!-- Original Content Grid -->
                                  <Grid Background="LightGray">
-                                     <Image Source="{Binding ImagePath}" Stretch="Uniform" ToolTip="{Binding ModName}"
+                                     <Image Source="{Binding ImagePath}" Stretch="Uniform" ToolTip="{Binding ToolTipString}"
                                             PreviewMouseRightButtonDown="Image_PreviewMouseRightButtonDown">
-                                          <!-- InputBindings RESTORED (Commented out, enable if needed and test carefully) -->
-                                         <!-- <Image.InputBindings>
-                                             <MouseBinding MouseAction="LeftClick" Command="{Binding SelectCommand}" />
-                                         </Image.InputBindings> -->
                                          <Image.Style>
                                              <Style TargetType="Image">
                                                  <Setter Property="Opacity" Value="1.0" />

@@ -14,6 +14,7 @@
       <PackageReference Include="gong-wpf-dragdrop" Version="4.0.0" />
       <PackageReference Include="HtmlAgilityPack" Version="1.12.0" />
       <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.4" />
+      <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.135" />
       <PackageReference Include="Mutagen.Bethesda.FormKeys.SkyrimSE" Version="3.4.0" />
       <PackageReference Include="Mutagen.Bethesda.Json" Version="0.49.0" />
       <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.49.0" />

@@ -16,7 +16,8 @@ using ReactiveUI.Fody.Helpers;
 using Splat;
 using System.Linq;
 using GongSolutions.Wpf.DragDrop; // Added
-using System.Text; // Added for StringBuilder in Drop logic
+using System.Text;
+using System.Windows.Media; // Added for StringBuilder in Drop logic
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -31,6 +32,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Lazy<VM_Mods> _lazyMods;             // Keep this dependency
         private readonly CompositeDisposable Disposables = new();
 
+        private readonly SolidColorBrush _selectedWithDataBrush = new(Colors.LimeGreen);
+        private readonly SolidColorBrush _selectedWithoutDataBrush = new(Colors.DarkMagenta);
+        private readonly SolidColorBrush _deselectedWithDataBrush = new(Colors.Transparent);
+        private readonly SolidColorBrush _deselectedWithoutDataBrush = new(Colors.Coral);
+        
+
         // --- Existing properties ---
         public ModKey? ModKey { get; }
         public string ModName { get; }
@@ -38,11 +45,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public double ImageWidth { get; set; }
         [Reactive] public double ImageHeight { get; set; }
         [Reactive] public bool IsSelected { get; set; }
+        [Reactive] public SolidColorBrush BorderColor { get; set; } = new(Colors.Transparent);
         [Reactive] public bool HasMugshot { get; private set; }
         [Reactive] public bool IsVisible { get; set; } = true;
         [Reactive] public bool IsSetHidden { get; set; } = false;
         [Reactive] public bool CanJumpToMod { get; set; } = false;
         public VM_ModSetting? AssociatedModSetting { get; }
+        [Reactive] public string ToolTipString { get; set; } = string.Empty;
 
         // --- Existing Commands ---
         public ReactiveCommand<Unit, Unit> SelectCommand { get; }
@@ -91,6 +100,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Error getting dimensions for '{ImagePath}': {ex.Message}"); ImagePath = string.Empty; HasMugshot = false; ImageWidth = 0; ImageHeight = 0; }
             } else { ImageWidth = 0; ImageHeight = 0; }
 
+            this.WhenAnyValue(x => x.IsSelected)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(isSelected => SetBorderAndTooltip(isSelected))
+                .DisposeWith(Disposables);
+            
             // --- Command and Property Setup --- (Keep as is)
             CanJumpToMod = _vmNpcSelectionBar.CanJumpToMod(modName);
             IsSelected = _consistencyProvider.IsModSelected(_npcFormKey, ModName);
@@ -116,6 +130,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(args => IsSelected = (args.SelectedMod == ModName))
                 .DisposeWith(Disposables);
+            
+            SetBorderAndTooltip(IsSelected);
         }
 
         // --- Existing Methods --- (Keep as is)
@@ -136,6 +152,31 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             // The IsSelected property will be updated reactively via the
             // _consistencyProvider.NpcSelectionChanged subscription in the constructor.
+        }
+
+        private void SetBorderAndTooltip(bool isSelected)
+        {
+            bool hasData = AssociatedModSetting?.CorrespondingFolderPaths.Any() ?? false;
+            if (isSelected && hasData)
+            {
+                BorderColor = _selectedWithDataBrush;
+                ToolTipString = "Selected. Mugshot has associated Mod Data and is ready for patch generation.";
+            }
+            else if (isSelected && !hasData)
+            {
+                BorderColor = _selectedWithoutDataBrush;
+                ToolTipString = "Selected but Mugshot has no associated Mod Data. Patcher run will skip this NPC until Mod Data is linked to this mugshot";
+            }
+            if (!isSelected && hasData)
+            {
+                BorderColor = _deselectedWithDataBrush;
+                ToolTipString = "Not Selected. Mugshot has associated Mod Data and is ready to go if you select it.";
+            }
+            else if (!isSelected && !hasData)
+            {
+                BorderColor = _deselectedWithoutDataBrush;
+                ToolTipString = "Not Selected. Mugshot has no associated Mod Data. If you select it, Patcher run will skip this NPC until Mod Data is linked to this mugshot";
+            }
         }
 
         private void ToggleFullScreen()
