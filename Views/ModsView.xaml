@@ -18,6 +18,7 @@
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         <local:IsNotNullConverter x:Key="IsNotNullConverter"/>
         <local:ModStatusToolTipMultiConverter x:Key="ModStatusToolTipMultiConverter"/>
+        <local:PathExistenceToBrushConverter x:Key="PathExistenceToBrushConverter"/>
 
         <!-- Style for the clickable mod name button -->
         <Style x:Key="LinkButtonStyle" TargetType="Button">
@@ -250,7 +251,12 @@
                                                          <ColumnDefinition Width="Auto"/>
                                                          <ColumnDefinition Width="Auto"/>
                                                      </Grid.ColumnDefinitions>
-                                                     <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" ToolTip="{Binding}" TextTrimming="CharacterEllipsis"/>
+                                                     <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" ToolTip="{Binding}" TextTrimming="CharacterEllipsis">
+                                                         <!-- Apply converter to change text color based on path existence -->
+                                                         <TextBlock.Foreground>
+                                                             <Binding Path="." Converter="{StaticResource PathExistenceToBrushConverter}"/>
+                                                         </TextBlock.Foreground>
+                                                     </TextBlock>
                                                      <Button Grid.Column="1" Content="Browse..." Command="{Binding DataContext.BrowseFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}" CommandParameter="{Binding}" Padding="5,1" Margin="5,0" VerticalAlignment="Center"/>
                                                      <Button Grid.Column="2" Content="X" Foreground="Red" FontWeight="Bold" Command="{Binding DataContext.RemoveFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}" CommandParameter="{Binding}" Padding="5,1" Margin="0,0,5,0" VerticalAlignment="Center"/>
                                                  </Grid>
@@ -265,6 +271,15 @@
                                              Margin="0,10,0,0" Padding="5,2"
                                              ToolTip="Separates the assigned mugshot folder into its own entry, if its name differs from the primary mod data folder."
                                              Visibility="{Binding CanUnlinkMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                     
+                                     <Button Grid.Row="3" Grid.Column="0"
+                                             Content="Delete"
+                                             Command="{Binding DeleteCommand}"
+                                             HorizontalAlignment="Left"
+                                             Margin="0,5,0,0" Padding="5,2"
+                                             Foreground="Red" FontWeight="Bold"
+                                             ToolTip="Permanently delete this empty entry. Only visible if no paths or mugshots are assigned."
+                                             Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
                                  </Grid> <!-- End Mod Entry Content Grid -->
                              </Border> <!-- End Main Mod Entry Border -->

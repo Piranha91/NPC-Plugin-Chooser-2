@@ -61,6 +61,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         private readonly ObservableAsPropertyHelper<bool> _canUnlinkMugshots;
         public bool CanUnlinkMugshots => _canUnlinkMugshots.Value;
+        // Reactive property to control Delete button visibility ***
+        [ObservableAsProperty] public bool CanDelete { get; }
 
         // --- Commands ---
         public ReactiveCommand<Unit, Unit> AddFolderPathCommand { get; }
@@ -68,6 +70,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<string, Unit> RemoveFolderPathCommand { get; }
         public ReactiveCommand<Unit, Unit> BrowseMugshotFolderCommand { get; }
         public ReactiveCommand<Unit, Unit> UnlinkMugshotDataCommand { get; }
+        // Command for deleting the mod setting ***
+        public ReactiveCommand<Unit, Unit> DeleteCommand { get; }
 
         // --- Private Fields ---
         private readonly VM_Mods _parentVm; // Reference to the parent VM (VM_Mods)
@@ -190,6 +194,31 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 })
                 .ToProperty(this, x => x.CanUnlinkMugshots, scheduler: RxApp.MainThreadScheduler);
 
+             // --- Setup for CanDelete ---
+             // Condition: MugShotFolderPath is empty AND NO CorrespondingFolderPaths are assigned OR exist on disk.
+             this.WhenAnyValue(
+                     x => x.MugShotFolderPath,
+                     // React to count changes in CorrespondingFolderPaths (add/remove)
+                     // This doesn't react to changes *within* the strings or filesystem status,
+                     // but provides reasonable reactivity for UI state changes (add/remove paths, change mugshot path).
+                     x => x.CorrespondingFolderPaths.Count,
+                     (mugshotPath, _) =>
+                     {
+                         bool mugshotIsEmpty = string.IsNullOrWhiteSpace(mugshotPath);
+
+                         // Check if ANY path in the CorrespondingFolderPaths collection is assigned AND exists.
+                         // If any such path exists, the item cannot be deleted.
+                         bool anyModPathExists = CorrespondingFolderPaths.Any(path =>
+                             !string.IsNullOrWhiteSpace(path) && System.IO.Directory.Exists(path)
+                         );
+
+                         // Can delete if mugshot path is empty AND no corresponding mod path exists on disk.
+                         return mugshotIsEmpty && !anyModPathExists;
+                     }
+                 )
+                 .DistinctUntilChanged()
+                 .ToPropertyEx(this, x => x.CanDelete);
+             
             // --- Command Initializations ---
             AddFolderPathCommand = ReactiveCommand.Create(AddFolderPath);
             BrowseFolderPathCommand = ReactiveCommand.Create<string>(BrowseFolderPath);
@@ -197,7 +226,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             BrowseMugshotFolderCommand = ReactiveCommand.Create(BrowseMugshotFolder);
             UnlinkMugshotDataCommand = ReactiveCommand.Create(UnlinkMugshotData, this.WhenAnyValue(x => x.CanUnlinkMugshots));
             UnlinkMugshotDataCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error unlinking mugshot data: {ex.Message}"));
-
+            DeleteCommand = ReactiveCommand.Create(Delete, this.WhenAnyValue(x => x.CanDelete));
+            DeleteCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error executing DeleteCommand: {ex.Message}"));
+            
             // --- Subscribe to Property Changes for Dependent Logic ---
              this.WhenAnyValue(x => x.MugShotFolderPath)
                  .Throttle(TimeSpan.FromMilliseconds(100))
@@ -474,8 +505,33 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // 5. Notify selection bar to refresh appearance sources for current NPC if necessary
             _parentVm.RequestNpcSelectionBarRefresh();
+        }
+        
+        // Method executed by DeleteCommand ***
+        private void Delete()
+        {
+            // The CanExecute already prevents this if paths/mugshot are assigned,
+            // but a final check is good practice.
+            if (!CanDelete)
+            {
+                Debug.WriteLine($"Attempted to delete VM_ModSetting '{DisplayName}' but CanDelete was false.");
+                return;
+            }
 
-            //ScrollableMessageBox.Show($"Mugshot folder '{mugshotDirName}' has been unlinked from '{this.DisplayName}' and is now a separate entry.", "Unlink Successful");
+            // Confirm with user
+            if (!ScrollableMessageBox.Confirm(
+                    $"Are you sure you want to permanently delete the entry for '{DisplayName}'?\n\n" +
+                    "This action cannot be undone.",
+                    "Confirm Deletion"))
+            {
+                return;
+            }
+
+            // Request the parent VM to remove this instance from its list
+            _parentVm.RemoveModSetting(this);
+
+            // Note: The removal from the underlying Settings model list
+            // will happen when VM_Mods.SaveModSettingsToModel is called.
         }
     }
 }
