@@ -1,4 +1,4 @@
-﻿<!-- NpcsView.xaml (Full UI with VM_AppearanceMod D&D Handlers) -->
+﻿<!-- NpcsView.xaml -->
 <reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.NpcsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -21,7 +21,6 @@
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         <local:EnumDescriptionConverter x:Key="EnumDescConverter"/>
 
-        <!-- Data Providers for Enums (Keep original) -->
         <ObjectDataProvider x:Key="NpcSearchTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters> <x:Type TypeName="vm:NpcSearchType"/> </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
@@ -29,11 +28,10 @@
              <ObjectDataProvider.MethodParameters> <x:Type TypeName="vm:SelectionStateFilterType"/> </ObjectDataProvider.MethodParameters>
          </ObjectDataProvider>
 
-        <!-- Custom Drag Adorner (Required since default failed) -->
         <DataTemplate x:Key="AppearanceModDragAdorner" DataType="{x:Type vm:VM_AppearanceMod}">
             <Border BorderThickness="1" BorderBrush="DimGray" Background="LightGoldenrodYellow"
                     Opacity="0.75" CornerRadius="2" Padding="2"
-                    Width="100" Height="100"> <!-- Adjust size as desired -->
+                    Width="100" Height="100"> 
                 <Grid>
                     <Image Source="{Binding ImagePath}" Stretch="Uniform" />
                     <TextBlock Text="{Binding ModName}" VerticalAlignment="Bottom" HorizontalAlignment="Center"
@@ -42,17 +40,16 @@
                 </Grid>
             </Border>
         </DataTemplate>
-
     </UserControl.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/> <!-- Settings -->
-            <RowDefinition Height="*"/>    <!-- Main Content -->
-            <RowDefinition Height="Auto"/> <!-- Description Row -->
+            <RowDefinition Height="Auto"/> 
+            <RowDefinition Height="*"/>    
+            <RowDefinition Height="Auto"/> 
         </Grid.RowDefinitions>
 
-        <!-- Settings Row (Grid.Row="0") (Keep original) -->
+        <!-- Settings Row (Grid.Row="0") -->
         <Border Grid.Row="0" Background="#F0F0F0" BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="5">
             <DockPanel LastChildFill="False">
                  <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,15,0">
@@ -68,17 +65,16 @@
             </DockPanel>
         </Border>
 
-        <!-- Main Content Row (Grid.Row="1") (Keep original structure) -->
+        <!-- Main Content Row (Grid.Row="1") -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="250" MinWidth="200"/> <!-- NPC List + Search -->
-                <ColumnDefinition Width="Auto"/>               <!-- Splitter -->
-                <ColumnDefinition Width="*" MinWidth="250" x:Name="NpcDisplayColumn" />   <!-- Appearance Mod Images -->
+                <ColumnDefinition Width="250" MinWidth="200"/> 
+                <ColumnDefinition Width="Auto"/>               
+                <ColumnDefinition Width="*" MinWidth="250" x:Name="NpcDisplayColumn" />   
             </Grid.ColumnDefinitions>
 
-            <!-- Left Column: Search + NPC List (Keep original) -->
+            <!-- Left Column: Search + NPC List -->
             <DockPanel Grid.Column="0" LastChildFill="True">
-                <!-- Search Area -->
                 <Border DockPanel.Dock="Top" BorderThickness="0,0,1,1" BorderBrush="DarkGray" Padding="5">
                     <StackPanel Orientation="Vertical">
                         <!-- Search Term 1 -->
@@ -129,14 +125,12 @@
                                  <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter3, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch3, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                              </Grid>
                          </Grid>
-                        <!-- Logic Selector -->
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                             <RadioButton Content="AND (Match All)" GroupName="SearchLogic" VerticalAlignment="Center" Margin="0,0,10,0" IsChecked="{Binding IsSearchAndLogic, Mode=TwoWay}" ToolTip="Results must match all active search terms"/>
                             <RadioButton Content="OR (Match Any)" GroupName="SearchLogic" VerticalAlignment="Center" ToolTip="Results must match at least one active search term"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
-                <!-- NPC List Area (Keep original) -->
                  <Border BorderThickness="0,0,1,0" BorderBrush="DarkGray">
                     <ListBox x:Name="NpcListBox" ItemsSource="{Binding FilteredNpcs}"
                              SelectedItem="{Binding SelectedNpc, Mode=TwoWay}"
@@ -157,19 +151,14 @@
                 </Border>
             </DockPanel>
 
-            <!-- GridSplitter (Keep original) -->
             <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="LightGray" ResizeBehavior="PreviousAndNext"/>
 
-            <!-- Right Column: Appearance Mod Images (Restore ScrollViewer) -->
-             <ScrollViewer Grid.Column="2" x:Name="ImageDisplayScrollViewer"
+            <ScrollViewer Grid.Column="2" x:Name="ImageDisplayScrollViewer"
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                          HorizontalAlignment="Stretch"
-                          VerticalAlignment="Stretch"
+                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                           SizeChanged="ImageDisplayScrollViewer_SizeChanged"
                           PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
-                 <ItemsControl x:Name="AppearanceModsItemsControl" ItemsSource="{Binding CurrentNpcAppearanceMods}"
-                               AllowDrop="True"> <!-- Container AllowDrop -->
-                               <!-- Removed Gong DropHandler and native events from ItemsControl -->
+                 <ItemsControl x:Name="AppearanceModsItemsControl" ItemsSource="{Binding CurrentNpcAppearanceMods}" AllowDrop="True"> 
                      <ItemsControl.ItemsPanel>
                          <ItemsPanelTemplate>
                              <WrapPanel Orientation="Horizontal"
@@ -178,7 +167,6 @@
                      </ItemsControl.ItemsPanel>
                      <ItemsControl.ItemTemplate>
                          <DataTemplate DataType="{x:Type vm:VM_AppearanceMod}">
-                             <!-- This Border handles Drag and Drop -->
                              <Border BorderThickness="2" Margin="5"
                                      Visibility="{Binding IsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
                                      BorderBrush="{Binding BorderColor}"
@@ -191,18 +179,11 @@
                                      dd:DragDrop.DragDropContext="{Binding}" 
                                      AllowDrop="True"
                                      dd:DragDrop.DragAdornerTemplate="{StaticResource AppearanceModDragAdorner}">
-                                 
                                  <i:Interaction.Triggers>
-                                     <!-- Trigger on the MouseLeftButtonUp event -->
                                      <i:EventTrigger EventName="MouseLeftButtonUp">
-                                         <!-- Execute the SelectCommand when the event fires -->
                                          <i:InvokeCommandAction Command="{Binding SelectCommand}" />
-                                         <!-- Or using the older EventToCommand syntax if your library uses it: -->
-                                         <!-- <cmd:EventToCommand Command="{Binding SelectCommand}" /> -->
                                      </i:EventTrigger>
                                  </i:Interaction.Triggers>
-
-                                 <!-- Original Content Grid -->
                                  <Grid Background="LightGray">
                                      <Image Source="{Binding ImagePath}" Stretch="Uniform" ToolTip="{Binding ToolTipString}"
                                             PreviewMouseRightButtonDown="Image_PreviewMouseRightButtonDown">
@@ -220,7 +201,6 @@
                                                 Background="#AAFFFFFF" FontSize="10" Padding="3,1"
                                                 TextTrimming="CharacterEllipsis" ToolTip="{Binding ModName}"/>
                                  </Grid>
-                                 <!-- Original Context Menu -->
                                  <Border.ContextMenu>
                                      <ContextMenu>
                                          <MenuItem Header="Select" Command="{Binding SelectCommand}" />
@@ -241,7 +221,6 @@
                  </ItemsControl>
              </ScrollViewer>
 
-            <!-- Placeholder Text Block (Keep original) -->
             <TextBlock Grid.Column="2" Text="Select an NPC..." HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" Foreground="Gray" TextWrapping="Wrap" Margin="20">
                  <TextBlock.Style>
                     <Style TargetType="TextBlock">
@@ -258,25 +237,47 @@
             </TextBlock>
         </Grid>
 
-        <!-- Description Panel (Grid.Row="2") (Keep original) -->
-        <Border Grid.Row="2" BorderBrush="Gray" BorderThickness="0,1,0,0" Background="#FAFAD2" Padding="5">
-            <Border.Style>
-                <Style TargetType="Border">
-                    <Setter Property="Visibility" Value="Visible"/>
-                    <Style.Triggers>
-                         <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Null}"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
-                         <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Static System:String.Empty}"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
-                         <DataTrigger Binding="{Binding ShowNpcDescriptions}" Value="False"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </Border.Style>
-             <Grid>
-                 <ScrollViewer MaxHeight="40" VerticalScrollBarVisibility="Auto">
-                     <TextBlock Text="{Binding CurrentNpcDescription}" TextWrapping="Wrap"/>
-                 </ScrollViewer>
-                 <TextBlock Text="Loading description..." FontStyle="Italic" Foreground="Gray" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsLoadingDescription, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+        <!-- Description Panel & Zoom Controls (Grid.Row="2") -->
+        <Border Grid.Row="2" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="5">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/> <!-- Description Area -->
+                    <ColumnDefinition Width="Auto"/> <!-- Zoom Controls -->
+                </Grid.ColumnDefinitions>
+
+                <!-- Description Area (Left) -->
+                <Border Grid.Column="0" Background="#FAFAD2" Padding="0" VerticalAlignment="Center"
+                        Visibility="{Binding ShowNpcDescriptions, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                 <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Null}"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
+                                 <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Static System:String.Empty}"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
+                                 <DataTrigger Binding="{Binding ShowNpcDescriptions}" Value="False"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                     <Grid MinHeight="25"> <!-- Ensure the description area has some min height -->
+                         <ScrollViewer MaxHeight="40" VerticalScrollBarVisibility="Auto">
+                             <TextBlock Text="{Binding CurrentNpcDescription}" TextWrapping="Wrap"/>
+                         </ScrollViewer>
+                         <TextBlock Text="Loading description..." FontStyle="Italic" Foreground="Gray" HorizontalAlignment="Center" VerticalAlignment="Center" 
+                                    Visibility="{Binding IsLoadingDescription, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </Grid>
+                </Border>
+                
+                <!-- Zoom Controls (Right) -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button x:Name="ZoomOutButton" Content="-" Width="25" Height="25" Margin="2,0" ToolTip="Zoom Out (Ctrl+Scroll Wheel)"/>
+                    <TextBox x:Name="ZoomPercentageTextBox" Width="50" Height="25" Margin="2,0" TextAlignment="Center" VerticalContentAlignment="Center"
+                             PreviewMouseWheel="ZoomPercentageTextBox_PreviewMouseWheel"
+                             ToolTip="Current Zoom Level. Editable. Ctrl+Scroll Wheel in image area or Scroll Wheel here to adjust."/>
+                    <TextBlock Text="%" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <Button x:Name="ZoomInButton" Content="+" Width="25" Height="25" Margin="2,0" ToolTip="Zoom In (Ctrl+Scroll Wheel)"/>
+                    <CheckBox x:Name="LockZoomCheckBox" Content="Lock Zoom" Margin="10,0,0,0" VerticalAlignment="Center" ToolTip="Lock the current zoom level. If unchecked, zoom adjusts to fit images."/>
+                </StackPanel>
             </Grid>
         </Border>
-
     </Grid>
 </reactiveui:ReactiveUserControl>

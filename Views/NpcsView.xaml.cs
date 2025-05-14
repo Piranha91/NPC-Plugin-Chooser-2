@@ -1,220 +1,237 @@
-﻿// NpcsView.xaml.cs (Updated with Disposal Logic)
-
+﻿// NpcsView.xaml.cs (Revised RefreshImageSizes)
+using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Linq; 
 using System.Reactive;
+using System.Reactive.Disposables; 
+using System.Reactive.Linq;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;        
+using System.Windows.Threading; 
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
-using System.Windows;
-using System.Reactive.Disposables; // Required for CompositeDisposable and DisposeWith
-using System.Windows.Input;        // Required for MouseWheelEventArgs
 using Splat;
-using System.Reactive.Linq;
-using System.Windows.Controls;
-using System.Windows.Threading; // Required for .Subscribe()
+
 
 namespace NPC_Plugin_Chooser_2.Views
 {
     public partial class NpcsView : ReactiveUserControl<VM_NpcSelectionBar>
     {
-        // 1. Field to hold disposables tied to the View's activation lifecycle
         private readonly CompositeDisposable _viewBindings = new CompositeDisposable();
-        private const double ImageSizeStepFactor = 15.0; // Pixel change per standard wheel tick
-        private bool hasUsedScrollWheel = false;
 
         public NpcsView()
         {
             InitializeComponent();
 
-            // Manual DataContext logic (keep if needed)
             if (this.DataContext == null) {
                 try {
                     var vm = Locator.Current.GetService<VM_NpcSelectionBar>();
                     if (vm != null) {
-                        System.Diagnostics.Debug.WriteLine("DEBUG: Manually setting DataContext/ViewModel in NpcsView constructor!");
                         this.DataContext = vm; this.ViewModel = vm;
-                    } else {
-                        System.Diagnostics.Debug.WriteLine("DEBUG: Failed to resolve VM_NpcSelectionBar manually in constructor (GetService returned null).");
-                    }
+                    } 
                 } catch (Exception ex) {
-                    System.Diagnostics.Debug.WriteLine($"DEBUG: Error manually resolving/setting DataContext in NpcsView: {ex.Message}");
+                    Debug.WriteLine($"DEBUG: Error manually resolving/setting DataContext in NpcsView: {ex.Message}");
                 }
             }
 
-            this.WhenActivated(d => // 'd' is the CompositeDisposable for this activation
+            this.WhenActivated(d => 
             {
-                // 2. Ensure the view's disposable field is disposed when the view deactivates.
-                d.DisposeWith(_viewBindings); // Add the WhenActivated disposable itself to our field
+                d.DisposeWith(_viewBindings); 
 
-                // Bindings (from previous steps)
-                this.OneWayBind(ViewModel, vm => vm.FilteredNpcs, v => v.NpcListBox.ItemsSource)
-                    .DisposeWith(d); // Dispose these specific bindings with the activation disposable
-                this.Bind(ViewModel, vm => vm.SelectedNpc, v => v.NpcListBox.SelectedItem)
-                    .DisposeWith(d);
-                this.OneWayBind(ViewModel, vm => vm.CurrentNpcAppearanceMods, v => v.AppearanceModsItemsControl.ItemsSource)
-                    .DisposeWith(d);
-                this.WhenAnyValue(x => x.ViewModel.ShowHiddenMods)
-                    .Where(_ => ViewModel?.CurrentNpcAppearanceMods != null && !hasUsedScrollWheel)
-                    .Throttle(TimeSpan.FromMilliseconds(100))
-                    .ObserveOnDispatcher()
+                if (ViewModel == null) return;
+
+                this.OneWayBind(ViewModel, vm => vm.FilteredNpcs, v => v.NpcListBox.ItemsSource).DisposeWith(d); 
+                this.Bind(ViewModel, vm => vm.SelectedNpc, v => v.NpcListBox.SelectedItem).DisposeWith(d);
+                this.OneWayBind(ViewModel, vm => vm.CurrentNpcAppearanceMods, v => v.AppearanceModsItemsControl.ItemsSource).DisposeWith(d);
+                
+                this.Bind(ViewModel, vm => vm.NpcsViewZoomLevel, v => v.ZoomPercentageTextBox.Text,
+                    vmToViewConverter: val => val.ToString("F0"), 
+                    viewToVmConverter: text => {
+                        if (ViewModel != null) ViewModel.NpcsViewHasUserManuallyZoomed = true;
+                        return double.TryParse(text, out double result) ? Math.Max(10, Math.Min(500, result)) : 100.0;
+                    }
+                ).DisposeWith(d);
+                
+                this.BindCommand(ViewModel, vm => vm.ZoomInNpcsCommand, v => v.ZoomInButton).DisposeWith(d);
+                this.BindCommand(ViewModel, vm => vm.ZoomOutNpcsCommand, v => v.ZoomOutButton).DisposeWith(d);
+                this.Bind(ViewModel, vm => vm.NpcsViewIsZoomLocked, v => v.LockZoomCheckBox.IsChecked).DisposeWith(d);
+
+
+                ViewModel.RefreshImageSizesObservable // This subject is signaled by VM when things like SelectedNpc, ShowHidden, ZoomLevel, or LockState change
+                    .ObserveOn(RxApp.MainThreadScheduler)
                     .Subscribe(_ => RefreshImageSizes())
                     .DisposeWith(d);
-                
-                // Subscribe to the refresh observable.
-                ViewModel?.RefreshImageSizesObservable
-                    .ObserveOn(RxApp.MainThreadScheduler)
-                    .Subscribe(_ =>
-                    {
-                        if (!hasUsedScrollWheel)
-                        {
-                            RefreshImageSizes();
-                        }
-                    })
-                    .DisposeWith(d);
-
-                // Any other view-specific subscriptions or bindings set up here
-                // should also use .DisposeWith(d)
                 
                 ViewModel.ScrollToNpcInteraction.RegisterHandler(interaction =>
                 {
                     var npcToScrollTo = interaction.Input;
-                    Debug.WriteLine($"NpcsView Interaction Handler: Received request to scroll to {npcToScrollTo?.DisplayName ?? "NULL NPC"}");
-
                     if (npcToScrollTo != null)
                     {
-                        // Ensure the operation happens on the UI thread
                         Dispatcher.InvokeAsync(() =>
                         {
                             try
                             {
-                                // Check if the item is actually in the ListBox's ItemsSource
                                 if (NpcListBox.Items.Contains(npcToScrollTo))
                                 {
                                     NpcListBox.ScrollIntoView(npcToScrollTo);
-                                    Debug.WriteLine($"NpcsView Interaction Handler: Called ScrollIntoView for {npcToScrollTo.DisplayName}");
-                                    // Optionally ensure selection if it didn't happen automatically
-                                    // if (NpcListBox.SelectedItem != npcToScrollTo) {
-                                    //     NpcListBox.SelectedItem = npcToScrollTo;
-                                    // }
                                 }
-                                else
-                                {
-                                     Debug.WriteLine($"NpcsView Interaction Handler: NPC {npcToScrollTo.DisplayName} not found in NpcListBox.Items.");
-                                     // This can happen if filters changed between selection and scroll request
-                                }
-                                interaction.SetOutput(Unit.Default); // Complete the interaction
+                                interaction.SetOutput(Unit.Default); 
                             }
                             catch (Exception ex)
                             {
                                 Debug.WriteLine($"NpcsView Interaction Handler: Error during ScrollIntoView: {ex.Message}");
-                                // Complete the interaction even on error to prevent hangs
                                 interaction.SetOutput(Unit.Default);
                             }
                         });
                     }
-                    else
-                    {
-                        // Complete interaction if input was null
-                        interaction.SetOutput(Unit.Default);
-                    }
-                }).DisposeWith(d); // Dispose the handler registration when the view deactivates
+                    else { interaction.SetOutput(Unit.Default); }
+                }).DisposeWith(d); 
+
+                if (ViewModel.CurrentNpcAppearanceMods != null && ViewModel.CurrentNpcAppearanceMods.Any())
+                {
+                    RefreshImageSizes(); // Initial call
+                }
             });
         }
 
-        // Event Handler for Scroll Wheel (Using View's Disposables)
         private void ScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            // Check if ViewModel and command exist
-            if (ViewModel != null & ViewModel?.CurrentNpcAppearanceMods != null)
+            if (ViewModel == null) return;
+
+            if (sender is ScrollViewer scrollViewer)
             {
-                try
+                if (scrollViewer.Name == "ImageDisplayScrollViewer" && Keyboard.Modifiers == ModifierKeys.Control)
                 {
-                    if (Keyboard.Modifiers == ModifierKeys.Control)
-                    {
-                        // Ctrl + Scroll → Resize images
-                        if (ViewModel?.CurrentNpcAppearanceMods != null)
-                        {
-                            double change = (e.Delta / 120.0) * ImageSizeStepFactor;
-
-                            foreach (var vm in ViewModel.CurrentNpcAppearanceMods)
-                            {
-                                vm.ImageHeight += change;
-                                vm.ImageWidth += change;
-                            }
-
-                            hasUsedScrollWheel = true; // ✅ Track zoom usage
-                            // Prevent normal scroll behavior
-                            e.Handled = true;
-                        }
-                    }
-                    // Else: allow normal scroll behavior
-                }
-                catch (Exception ex)
-                {
-                    // Catch synchronous errors during Execute dispatch (less common)
-                    System.Diagnostics.Debug.WriteLine($"Synchronous error calling ChangeImageSizeCommand.Execute: {ex.Message}");
+                    double change = (e.Delta > 0 ? 1 : -1) * 10.0; 
+                    ViewModel.NpcsViewHasUserManuallyZoomed = true; 
+                    ViewModel.NpcsViewZoomLevel = Math.Max(10, Math.Min(500, ViewModel.NpcsViewZoomLevel + change));
+                    e.Handled = true;
                 }
             }
         }
         
         private void ImageDisplayScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            if (ViewModel != null && ViewModel.CurrentNpcAppearanceMods != null)
+            if (ViewModel != null && !ViewModel.NpcsViewIsZoomLocked)
             {
-                //ImagePacker.MaximizeStartingImageSizes(ViewModel.CurrentNpcAppearanceMods, e.NewSize.Height, e.NewSize.Width, 5, 5);
+                ViewModel.NpcsViewHasUserManuallyZoomed = false; // Size change should allow packer to take over if unlocked
             }
+            RefreshImageSizes();
         }
-
-
-        // Optional: Explicitly dispose if the view might be reused without full destruction/recreation
-        // Usually not needed if WhenActivated handles disposal correctly on deactivation.
-        // protected override void OnClosed(EventArgs e) // Or similar lifecycle method if applicable
-        // {
-        //     _viewBindings.Dispose();
-        //     base.OnClosed(e);
-        // }
-        
         
         private void NpcListBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            hasUsedScrollWheel = false; // ✅ Reset zoom state on NPC change
-            RefreshImageSizes();
+            // VM_NpcSelectionBar's subscription to SelectedNpc already handles resetting NpcsViewHasUserManuallyZoomed
+            // RefreshImageSizes is called via the CurrentNpcAppearanceMods changing or _refreshImageSizesSubject
         }
         
         private void RefreshImageSizes()
         {
-            if (ViewModel != null && ViewModel.CurrentNpcAppearanceMods != null)
+            if (ViewModel?.CurrentNpcAppearanceMods == null) return;
+
+            var imagesToProcess = ViewModel.CurrentNpcAppearanceMods; // This is ObservableCollection<VM_AppearanceMod>
+            if (!imagesToProcess.Any()) {
+                 // If no images, nothing to do for sizing.
+                 // The displayed zoom level in textbox remains what it was.
+                return;
+            }
+
+            Dispatcher.BeginInvoke(new Action(() =>
             {
-                Dispatcher.BeginInvoke(() =>
+                if (ViewModel == null || ViewModel.CurrentNpcAppearanceMods == null || !ImageDisplayScrollViewer.IsLoaded) return;
+
+                var visibleImages = imagesToProcess
+                                    .Where(img => img.IsVisible && img.OriginalDipDiagonal > 0)
+                                    .ToList<IHasMugshotImage>(); // Cast to list of interface
+
+                if (!visibleImages.Any())
                 {
+                    // Set all to 0 if no visible images with valid diagonals
+                    foreach (var img in imagesToProcess) { img.ImageWidth = 0; img.ImageHeight = 0; }
+                    return;
+                }
+
+                // This is the core logic change:
+                if (ViewModel.NpcsViewIsZoomLocked || ViewModel.NpcsViewHasUserManuallyZoomed)
+                {
+                    // Apply direct scaling based on user's (locked or manual) zoom level
+                    double sumOfDiagonals = visibleImages.Sum(img => img.OriginalDipDiagonal);
+                    double averageOriginalDipDiagonal = sumOfDiagonals / visibleImages.Count;
+                    if (averageOriginalDipDiagonal <= 0) averageOriginalDipDiagonal = 100.0; // Fallback
+
+                    double userZoomFactor = ViewModel.NpcsViewZoomLevel / 100.0;
+
+                    foreach (var img in imagesToProcess) // Iterate over the master list to set all, visible or not
+                    {
+                        if (img.IsVisible && img.OriginalDipDiagonal > 0)
+                        {
+                            double individualScaleFactor = (averageOriginalDipDiagonal / img.OriginalDipDiagonal) * userZoomFactor;
+                            img.ImageWidth = img.OriginalDipWidth * individualScaleFactor;
+                            img.ImageHeight = img.OriginalDipHeight * individualScaleFactor;
+                        }
+                        else
+                        {
+                            img.ImageWidth = 0; // Not visible or invalid
+                            img.ImageHeight = 0;
+                        }
+                    }
+                }
+                else
+                {
+                    // Unlocked and not manually zoomed: Let packer fit original DIPs
                     var availableHeight = ImageDisplayScrollViewer.ViewportHeight;
                     var availableWidth = ImageDisplayScrollViewer.ViewportWidth;
 
-                    // Only scale if layout has been finalized
                     if (availableHeight > 0 && availableWidth > 0)
                     {
-                        var images = new ObservableCollection<IHasMugshotImage>(ViewModel.CurrentNpcAppearanceMods);
-                        ImagePacker.MaximizeStartingImageSizes(
-                            images,
+                        // ImagePacker needs ObservableCollection<IHasMugshotImage>
+                        var imagesForPacker = new ObservableCollection<IHasMugshotImage>(imagesToProcess.Cast<IHasMugshotImage>());
+                        
+                        double packerScaleFactor = ImagePacker.FitOriginalImagesToContainer(
+                            imagesForPacker, // This collection will have its ImageWidth/Height updated by the packer
                             availableHeight,
                             availableWidth,
-                            5, 5);
+                            5, 5 
+                        );
+                        
+                        // Update the ViewModel's zoom level to reflect what the packer did
+                        // No need to set NpcsViewHasUserManuallyZoomed false here, it should already be false to reach this branch
+                        ViewModel.NpcsViewZoomLevel = packerScaleFactor * 100.0;
                     }
-                }, System.Windows.Threading.DispatcherPriority.Loaded);
-            }
+                }
+            }), DispatcherPriority.Loaded);
         }
 
         private void Image_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (Keyboard.Modifiers == ModifierKeys.Control)
             {
-                if (sender is Image image && image.DataContext is VM_AppearanceMod vm)
+                if (sender is FrameworkElement element && element.DataContext is VM_AppearanceMod vm)
                 {
-                    vm.ToggleFullScreenCommand.Execute().Subscribe(); // ReactiveUI-friendly execution
+                    if (vm.ToggleFullScreenCommand.CanExecute.FirstAsync().Wait())
+                    {
+                        vm.ToggleFullScreenCommand.Execute(Unit.Default).Subscribe().DisposeWith(_viewBindings);
+                    }
                     e.Handled = true;
                 }
             }
-            // else: allow normal context menu behavior
+        }
+
+        private void ZoomPercentageTextBox_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (ViewModel == null || !(sender is TextBox textBox)) return;
+
+            double currentValue = ViewModel.NpcsViewZoomLevel;
+            double change = (e.Delta > 0 ? 1 : -1) * 10.0; 
+            
+            ViewModel.NpcsViewHasUserManuallyZoomed = true; 
+            ViewModel.NpcsViewZoomLevel = Math.Max(10, Math.Min(500, currentValue + change));
+            
+            textBox.CaretIndex = textBox.Text.Length;
+            textBox.SelectAll();
+            e.Handled = true;
         }
     }
 }

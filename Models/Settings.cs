@@ -34,4 +34,10 @@ public class Settings
     // EasyNPC Interchangeability / Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); // not used by this program, but kept as a holding variable to facilitate interchangeability with EasyNPC
     public HashSet<ModKey> EasyNpcDefaultPluginExclusions { get; set; } = new() { ModKey.FromFileName("Synthesis.esp")};
+
+    // *** NEW: Zoom Control Settings ***
+    public double NpcsViewZoomLevel { get; set; } = 100.0; // Percentage, e.g., 100.0 for 100%
+    public bool NpcsViewIsZoomLocked { get; set; } = false;
+    public double ModsViewZoomLevel { get; set; } = 100.0; // Percentage, e.g., 100.0 for 100%
+    public bool ModsViewIsZoomLocked { get; set; } = false;
 }

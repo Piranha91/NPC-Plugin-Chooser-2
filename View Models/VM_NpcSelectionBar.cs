@@ -95,6 +95,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [ObservableAsProperty] public bool IsLoadingDescription { get; }
         public IObservable<Unit> RefreshImageSizesObservable => _refreshImageSizesSubject.AsObservable();
         public Interaction<VM_NpcSelection, Unit> ScrollToNpcInteraction { get; }
+        // --- NEW: Zoom Control Properties & Commands for NpcsView ---
+        [Reactive] public double NpcsViewZoomLevel { get; set; }
+        [Reactive] public bool NpcsViewIsZoomLocked { get; set; }
+        public ReactiveCommand<Unit, Unit> ZoomInNpcsCommand { get; }
+        public ReactiveCommand<Unit, Unit> ZoomOutNpcsCommand { get; }
+
+        // This is used by the View to know when the user has manually adjusted zoom with Ctrl+Scroll
+        // or used the +/- buttons. If true, automatic resizing might be skipped or handled differently.
+        [Reactive] public bool NpcsViewHasUserManuallyZoomed { get; set; } = false;
 
         // --- NPC Group Properties ---
         [Reactive] public string SelectedGroupName { get; set; } = string.Empty;
@@ -124,15 +133,37 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _lazyMainWindowVm = lazyMainWindowVm;
             _appearanceModFactory = appearanceModFactory;
 
-            // Initialize internal state from settings
-            _hiddenModNames = _settings.HiddenModNames ?? new(StringComparer.OrdinalIgnoreCase); // Use comparer
+            _hiddenModNames = _settings.HiddenModNames ?? new(StringComparer.OrdinalIgnoreCase);
             _hiddenModsPerNpc = _settings.HiddenModsPerNpc ?? new();
-            _settings.NpcGroupAssignments ??= new(); // Ensure group dictionary is initialized
-
-            // Initialize UI elements
+            _settings.NpcGroupAssignments ??= new(); 
             ScrollToNpcInteraction = new Interaction<VM_NpcSelection, Unit>();
 
-            // --- Property Setup ---
+            NpcsViewZoomLevel = _settings.NpcsViewZoomLevel;
+            NpcsViewIsZoomLocked = _settings.NpcsViewIsZoomLocked;
+
+            ZoomInNpcsCommand = ReactiveCommand.Create(() =>
+            {
+                NpcsViewHasUserManuallyZoomed = true; 
+                NpcsViewZoomLevel = Math.Min(500, NpcsViewZoomLevel + 10);
+            });
+            ZoomOutNpcsCommand = ReactiveCommand.Create(() =>
+            {
+                NpcsViewHasUserManuallyZoomed = true; 
+                NpcsViewZoomLevel = Math.Max(10, NpcsViewZoomLevel - 10); 
+            });
+            ZoomInNpcsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomInNpcsCommand: {ex.Message}")).DisposeWith(_disposables);
+            ZoomOutNpcsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomOutNpcsCommand: {ex.Message}")).DisposeWith(_disposables);
+
+            this.WhenAnyValue(x => x.SelectedNpc)
+                .Subscribe(_ => 
+                {
+                    if (!NpcsViewIsZoomLocked)
+                    {
+                        NpcsViewHasUserManuallyZoomed = false;
+                    }
+                })
+                .DisposeWith(_disposables);
+            
             this.WhenAnyValue(x => x.SelectedNpc)
                 .Select(selectedNpc => selectedNpc != null
                     ? CreateAppearanceModViewModels(selectedNpc, _mugshotData)
@@ -142,7 +173,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             this.WhenAnyValue(x => x.CurrentNpcAppearanceMods)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(_ => ToggleModVisibility()) // Also handles initial size refresh via ToggleModVisibility
+                .Subscribe(_ =>
+                {
+                    ToggleModVisibility(); 
+                    _refreshImageSizesSubject.OnNext(Unit.Default);
+                })
                 .DisposeWith(_disposables);
 
             _consistencyProvider.NpcSelectionChanged
@@ -150,7 +185,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                .Subscribe(args => UpdateSelectionState(args.NpcFormKey, args.SelectedMod))
                .DisposeWith(_disposables);
 
-            // --- Search Type -> Visibility Property Setup ---
             this.WhenAnyValue(x => x.SearchType1)
                 .Select(type => type == NpcSearchType.SelectionState)
                 .ToPropertyEx(this, x => x.IsSelectionStateSearch1);
@@ -171,9 +205,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.SearchType3)
                 .Select(type => type == NpcSearchType.Group)
                 .ToPropertyEx(this, x => x.IsGroupSearch3);
-            // --- End Search Type -> Visibility ---
 
-            // --- Clear irrelevant search inputs when type changes ---
             this.WhenAnyValue(x => x.SearchType1)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(type => {
@@ -195,9 +227,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     if (type != NpcSearchType.Group) SelectedGroupFilter3 = null;
                 })
                 .DisposeWith(_disposables);
-            // --- End Clear Logic ---
 
-            // --- Observe changes in filter groups and logic ---
             var filter1Changes = this.WhenAnyValue(
                 x => x.SearchText1, x => x.SearchType1, x => x.SelectedStateFilter1, x => x.SelectedGroupFilter1
             ).Select(_ => Unit.Default);
@@ -212,45 +242,46 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ).Select(_ => Unit.Default);
 
             Observable.Merge(filter1Changes, filter2Changes, filter3Changes, logicChanges)
-                .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler) // Debounce filter changes
+                .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler) 
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(_ => ApplyFilter(false)) // Apply filter on UI thread
+                .Subscribe(_ => ApplyFilter(false)) 
                 .DisposeWith(_disposables);
-            // --- End Filter Trigger Setup ---
 
-            // Observe ShowHiddenMods toggle
             this.WhenAnyValue(x => x.ShowHiddenMods)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(_ => ToggleModVisibility())
+                .Subscribe(_ => 
+                {
+                    if (!NpcsViewIsZoomLocked)
+                    {
+                        NpcsViewHasUserManuallyZoomed = false;
+                    }
+                    ToggleModVisibility(); 
+                })
                 .DisposeWith(_disposables);
 
-            // --- Description Command Setup ---
             ShowNpcDescriptions = _settings.ShowNpcDescriptions;
             this.WhenAnyValue(x => x.ShowNpcDescriptions)
-                .Subscribe(b => _settings.ShowNpcDescriptions = b) // Save setting change
+                .Subscribe(b => _settings.ShowNpcDescriptions = b) 
                 .DisposeWith(_disposables);
 
             LoadDescriptionCommand = ReactiveCommand.CreateFromTask<Unit, string?>(
                 async (_, ct) =>
                 {
                     var npc = SelectedNpc;
-                    if (npc != null && ShowNpcDescriptions) // Check the local VM property
+                    if (npc != null && ShowNpcDescriptions) 
                     {
                         try { return await _descriptionProvider.GetDescriptionAsync(npc.NpcFormKey, npc.DisplayName, npc.NpcGetter?.EditorID); }
                         catch (Exception ex) { Debug.WriteLine($"Error executing LoadDescriptionCommand: {ex}"); return null; }
                     } return null;
                 },
-                this.WhenAnyValue(x => x.SelectedNpc, x => x.ShowNpcDescriptions, (npc, show) => npc != null && show) // Command CanExecute depends on local property
+                this.WhenAnyValue(x => x.SelectedNpc, x => x.ShowNpcDescriptions, (npc, show) => npc != null && show) 
             );
             LoadDescriptionCommand.ObserveOn(RxApp.MainThreadScheduler).BindTo(this, x => x.CurrentNpcDescription).DisposeWith(_disposables);
             LoadDescriptionCommand.IsExecuting.ToPropertyEx(this, x => x.IsLoadingDescription).DisposeWith(_disposables);
-            // Trigger description load when selected NPC or ShowNpcDescriptions changes
             this.WhenAnyValue(x => x.SelectedNpc, x => x.ShowNpcDescriptions)
                 .Throttle(TimeSpan.FromMilliseconds(200)).Select(_ => Unit.Default)
                 .InvokeCommand(LoadDescriptionCommand).DisposeWith(_disposables);
-            // --- End Description Command Setup ---
 
-            // --- NPC Group Command Setup ---
             var canExecuteGroupAction = this.WhenAnyValue(
                 x => x.SelectedNpc,
                 x => x.SelectedGroupName,
@@ -266,17 +297,48 @@ namespace NPC_Plugin_Chooser_2.View_Models
             AddAllVisibleNpcsToGroupCommand = ReactiveCommand.Create(AddAllVisibleNpcsToGroup, canExecuteAllGroupAction);
             RemoveAllVisibleNpcsFromGroupCommand = ReactiveCommand.Create(RemoveAllVisibleNpcsFromGroup, canExecuteAllGroupAction);
 
-            // Exception Handling for Commands
             AddCurrentNpcToGroupCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error adding NPC to group: {ex.Message}")).DisposeWith(_disposables);
             RemoveCurrentNpcFromGroupCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error removing NPC from group: {ex.Message}")).DisposeWith(_disposables);
             AddAllVisibleNpcsToGroupCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error adding all visible NPCs to group: {ex.Message}")).DisposeWith(_disposables);
             RemoveAllVisibleNpcsFromGroupCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error removing all visible NPCs from group: {ex.Message}")).DisposeWith(_disposables);
-            // --- End NPC Group Command Setup ---
-
-            // Populate available groups initially from settings
+            
             UpdateAvailableNpcGroups();
 
-            // NOTE: Initialize() is called externally (e.g., by VM_Settings after environment validation)
+            this.WhenAnyValue(x => x.NpcsViewZoomLevel)
+                .Skip(1) 
+                .Throttle(TimeSpan.FromMilliseconds(50)) 
+                .Subscribe(zoom =>
+                {
+                    var clampedZoom = Math.Max(10, Math.Min(500, zoom));
+                    if (clampedZoom != zoom)
+                    {
+                        NpcsViewZoomLevel = clampedZoom; 
+                        return; 
+                    }
+
+                    _settings.NpcsViewZoomLevel = clampedZoom;
+                    
+                    if (NpcsViewIsZoomLocked || (!NpcsViewIsZoomLocked && NpcsViewHasUserManuallyZoomed) )
+                    {
+                        _refreshImageSizesSubject.OnNext(Unit.Default);
+                    }
+                })
+                .DisposeWith(_disposables);
+
+            this.WhenAnyValue(x => x.NpcsViewIsZoomLocked)
+                .Skip(1) 
+                .Subscribe(isLocked =>
+                {
+                    _settings.NpcsViewIsZoomLocked = isLocked;
+                    NpcsViewHasUserManuallyZoomed = false; 
+                    _refreshImageSizesSubject.OnNext(Unit.Default); 
+                })
+                .DisposeWith(_disposables);
+
+            if (CurrentNpcAppearanceMods != null && CurrentNpcAppearanceMods.Any())
+            {
+                 _refreshImageSizesSubject.OnNext(Unit.Default);
+            }
         }
 
         // --- Methods ---

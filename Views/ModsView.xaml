@@ -20,12 +20,11 @@
         <local:ModStatusToolTipMultiConverter x:Key="ModStatusToolTipMultiConverter"/>
         <local:PathExistenceToBrushConverter x:Key="PathExistenceToBrushConverter"/>
 
-        <!-- Style for the clickable mod name button -->
         <Style x:Key="LinkButtonStyle" TargetType="Button">
              <Setter Property="Cursor" Value="Hand"/>
              <Setter Property="ToolTip" Value="Show NPC Mugshots for this mod"/>
-             <Setter Property="BorderThickness" Value="0"/> <!-- Remove border for link look -->
-             <Setter Property="Padding" Value="0"/> <!-- Adjust padding as needed -->
+             <Setter Property="BorderThickness" Value="0"/> 
+             <Setter Property="Padding" Value="0"/> 
              <Setter Property="Foreground" Value="DodgerBlue"/>
              <Setter Property="Background" Value="Transparent"/>
              <Setter Property="HorizontalAlignment" Value="Left"/>
@@ -45,7 +44,6 @@
                          <ControlTemplate.Triggers>
                              <Trigger Property="IsMouseOver" Value="True">
                                  <Setter Property="Foreground" Value="Blue"/>
-                                 <!-- Optional: <Setter TargetName="PART_Text" Property="FontWeight" Value="Bold"/> -->
                              </Trigger>
                              <Trigger Property="IsPressed" Value="True">
                                  <Setter Property="Foreground" Value="DarkBlue"/>
@@ -64,337 +62,314 @@
     </UserControl.Resources>
 
     <Grid Margin="5">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="4*" MinWidth="350"/> <!-- Left Panel: Mod List -->
-            <ColumnDefinition Width="Auto"/>             <!-- Splitter -->
-            <ColumnDefinition Width="6*" MinWidth="300"/> <!-- Right Panel: Mugshots -->
-        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/> <!-- Main Content -->
+            <RowDefinition Height="Auto"/> <!-- Zoom Control Row -->
+        </Grid.RowDefinitions>
+        
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="4*" MinWidth="350"/> 
+                <ColumnDefinition Width="Auto"/>             
+                <ColumnDefinition Width="6*" MinWidth="300"/> 
+            </Grid.ColumnDefinitions>
 
-        <!-- Left Panel Content -->
-        <Grid Grid.Column="0">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/> <!-- Filter Controls -->
-                <RowDefinition Height="*"/>    <!-- List -->
-            </Grid.RowDefinitions>
+            <!-- Left Panel Content -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/> 
+                    <RowDefinition Height="*"/>    
+                </Grid.RowDefinitions>
 
-            <!-- Filter Area -->
-            <Border Grid.Row="0" BorderBrush="LightGray" BorderThickness="0,0,0,1" Margin="0,0,0,5" Padding="5">
-                <WrapPanel Orientation="Horizontal">
-                    <!-- Name Filter -->
-                    <StackPanel Orientation="Horizontal" Margin="0,2,15,2">
-                         <TextBlock Text="Filter Name:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                         <TextBox Text="{Binding NameFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="120" VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <!-- Plugin Filter -->
-                     <StackPanel Orientation="Horizontal" Margin="0,2,15,2">
-                        <TextBlock Text="Filter Plugin:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                        <TextBox Text="{Binding PluginFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="120" VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <!-- NPC Filter -->
-                     <StackPanel Orientation="Horizontal" Margin="0,2,15,2">
-                        <TextBlock Text="Filter NPC:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                        <ComboBox ItemsSource="{Binding AvailableNpcSearchTypes}"
-                                  SelectedItem="{Binding SelectedNpcSearchType, Mode=TwoWay}"
-                                  MinWidth="80" VerticalAlignment="Center" Margin="0,0,5,0"
-                                  IsEnabled="{Binding IsLoadingNpcData, Converter={StaticResource BooleanNegationConverter}}"
-                                  ToolTip="Select NPC field to filter by (active after initial load)"/>
-                        <TextBox Text="{Binding NpcSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 MinWidth="120" VerticalAlignment="Center"
-                                 IsEnabled="{Binding IsLoadingNpcData, Converter={StaticResource BooleanNegationConverter}}"
-                                 ToolTip="Enter NPC search term (active after initial load)"/>
-                    </StackPanel>
-                    <!-- Optional: Display loading status -->
-                    <TextBlock Text="Loading NPC data..." Foreground="Gray" FontStyle="Italic"
-                               Margin="15,0,0,0" VerticalAlignment="Center"
-                               Visibility="{Binding IsLoadingNpcData, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                </WrapPanel>
-            </Border>
+                <Border Grid.Row="0" BorderBrush="LightGray" BorderThickness="0,0,0,1" Margin="0,0,0,5" Padding="5">
+                    <WrapPanel Orientation="Horizontal">
+                        <StackPanel Orientation="Horizontal" Margin="0,2,15,2">
+                             <TextBlock Text="Filter Name:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                             <TextBox Text="{Binding NameFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="120" VerticalAlignment="Center"/>
+                        </StackPanel>
+                         <StackPanel Orientation="Horizontal" Margin="0,2,15,2">
+                            <TextBlock Text="Filter Plugin:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBox Text="{Binding PluginFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="120" VerticalAlignment="Center"/>
+                        </StackPanel>
+                         <StackPanel Orientation="Horizontal" Margin="0,2,15,2">
+                            <TextBlock Text="Filter NPC:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <ComboBox ItemsSource="{Binding AvailableNpcSearchTypes}"
+                                      SelectedItem="{Binding SelectedNpcSearchType, Mode=TwoWay}"
+                                      MinWidth="80" VerticalAlignment="Center" Margin="0,0,5,0"
+                                      IsEnabled="{Binding IsLoadingNpcData, Converter={StaticResource BooleanNegationConverter}}"
+                                      ToolTip="Select NPC field to filter by (active after initial load)"/>
+                            <TextBox Text="{Binding NpcSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     MinWidth="120" VerticalAlignment="Center"
+                                     IsEnabled="{Binding IsLoadingNpcData, Converter={StaticResource BooleanNegationConverter}}"
+                                     ToolTip="Enter NPC search term (active after initial load)"/>
+                        </StackPanel>
+                        <TextBlock Text="Loading NPC data..." Foreground="Gray" FontStyle="Italic"
+                                   Margin="15,0,0,0" VerticalAlignment="Center"
+                                   Visibility="{Binding IsLoadingNpcData, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </WrapPanel>
+                </Border>
 
-            <!-- List Area (Grid.Row="1") -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                 <ItemsControl ItemsSource="{Binding ModSettingsList}" x:Name="ModSettingsItemsControl">
-                     <ItemsControl.ItemTemplate>
-                         <DataTemplate DataType="{x:Type vm:VM_ModSetting}">
-                             <!-- *** Main Border for the Mod Entry *** -->
-                             <Border BorderThickness="1" Margin="0,5" Padding="10" CornerRadius="3">
-                                 <!-- *** Border Style for Coloring and ToolTip *** -->
-                                 <Border.Style>
-                                     <Style TargetType="Border">
-                                         <!-- Default State (Incomplete) -->
-                                         <Setter Property="BorderBrush" Value="DarkGray"/>
-                                         <Setter Property="ToolTip" Value="Status: Incomplete (Requires Mugshot Path and/or Mod Data Path assignment)."/>
-                                         <!-- Optional: Add subtle background for clarity -->
-                                         <Setter Property="Background" Value="White"/>
-                                         <Style.Triggers>
-                                             <!-- Green: Has Mugshot Path AND Mod Paths -->
-                                             <MultiDataTrigger>
-                                                 <MultiDataTrigger.Conditions>
-                                                     <Condition Binding="{Binding HasMugshotPathAssigned}" Value="True"/>
-                                                     <Condition Binding="{Binding HasModPathsAssigned}" Value="True"/>
-                                                 </MultiDataTrigger.Conditions>
-                                                 <Setter Property="BorderBrush" Value="Green"/>
-                                                 <Setter Property="ToolTip" Value="Status: OK (Has Mugshot path and Mod Data path(s))."/>
-                                             </MultiDataTrigger>
-                                             <!-- Grey: No Mugshot Path BUT Has Mod Paths -->
-                                             <MultiDataTrigger>
-                                                 <MultiDataTrigger.Conditions>
-                                                     <Condition Binding="{Binding HasMugshotPathAssigned}" Value="False"/>
-                                                     <Condition Binding="{Binding HasModPathsAssigned}" Value="True"/>
-                                                 </MultiDataTrigger.Conditions>
-                                                 <Setter Property="BorderBrush" Value="DimGray"/> <!-- Use DimGray for visibility -->
-                                                 <Setter Property="ToolTip" Value="Status: Partial (Has Mod Data path(s), but no Mugshot path assigned)."/>
-                                             </MultiDataTrigger>
-                                             <!-- Red: Has Mugshot Path BUT No Mod Paths -->
-                                             <MultiDataTrigger>
-                                                 <MultiDataTrigger.Conditions>
-                                                     <Condition Binding="{Binding HasMugshotPathAssigned}" Value="True"/>
-                                                     <Condition Binding="{Binding HasModPathsAssigned}" Value="False"/>
-                                                 </MultiDataTrigger.Conditions>
-                                                 <Setter Property="BorderBrush" Value="Red"/>
-                                                 <Setter Property="ToolTip" Value="Status: Partial (Has Mugshot path, but no Mod Data path(s) assigned)."/>
-                                             </MultiDataTrigger>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                     <ItemsControl ItemsSource="{Binding ModSettingsList}" x:Name="ModSettingsItemsControl">
+                         <ItemsControl.ItemTemplate>
+                             <DataTemplate DataType="{x:Type vm:VM_ModSetting}">
+                                 <Border BorderThickness="1" Margin="0,5" Padding="10" CornerRadius="3">
+                                     <Border.Style>
+                                         <Style TargetType="Border">
+                                             <Setter Property="BorderBrush" Value="DarkGray"/>
+                                             <Setter Property="ToolTip" Value="Status: Incomplete (Requires Mugshot Path and/or Mod Data Path assignment)."/>
+                                             <Setter Property="Background" Value="White"/>
+                                             <Style.Triggers>
+                                                 <MultiDataTrigger>
+                                                     <MultiDataTrigger.Conditions>
+                                                         <Condition Binding="{Binding HasMugshotPathAssigned}" Value="True"/>
+                                                         <Condition Binding="{Binding HasModPathsAssigned}" Value="True"/>
+                                                     </MultiDataTrigger.Conditions>
+                                                     <Setter Property="BorderBrush" Value="Green"/>
+                                                     <Setter Property="ToolTip" Value="Status: OK (Has Mugshot path and Mod Data path(s))."/>
+                                                 </MultiDataTrigger>
+                                                 <MultiDataTrigger>
+                                                     <MultiDataTrigger.Conditions>
+                                                         <Condition Binding="{Binding HasMugshotPathAssigned}" Value="False"/>
+                                                         <Condition Binding="{Binding HasModPathsAssigned}" Value="True"/>
+                                                     </MultiDataTrigger.Conditions>
+                                                     <Setter Property="BorderBrush" Value="DimGray"/> 
+                                                     <Setter Property="ToolTip" Value="Status: Partial (Has Mod Data path(s), but no Mugshot path assigned)."/>
+                                                 </MultiDataTrigger>
+                                                 <MultiDataTrigger>
+                                                     <MultiDataTrigger.Conditions>
+                                                         <Condition Binding="{Binding HasMugshotPathAssigned}" Value="True"/>
+                                                         <Condition Binding="{Binding HasModPathsAssigned}" Value="False"/>
+                                                     </MultiDataTrigger.Conditions>
+                                                     <Setter Property="BorderBrush" Value="Red"/>
+                                                     <Setter Property="ToolTip" Value="Status: Partial (Has Mugshot path, but no Mod Data path(s) assigned)."/>
+                                                 </MultiDataTrigger>
+                                                  <DataTrigger Binding="{Binding IsMugshotOnlyEntry}" Value="True">
+                                                      <Setter Property="Background" Value="#FFF8F8F8"/>
+                                                       <Setter Property="ToolTip">
+                                                            <Setter.Value>
+                                                                 <MultiBinding Converter="{StaticResource ModStatusToolTipMultiConverter}"> 
+                                                                     <Binding Path="HasMugshotPathAssigned"/>
+                                                                     <Binding Path="HasModPathsAssigned"/>
+                                                                     <Binding Path="IsMugshotOnlyEntry"/>
+                                                                 </MultiBinding>
+                                                            </Setter.Value>
+                                                       </Setter>
+                                                  </DataTrigger>
+                                             </Style.Triggers>
+                                         </Style>
+                                     </Border.Style>
+                                     <Grid>
+                                         <Grid.RowDefinitions>
+                                             <RowDefinition Height="Auto"/> 
+                                             <RowDefinition Height="Auto"/> 
+                                             <RowDefinition Height="Auto"/> 
+                                             <RowDefinition Height="Auto"/> 
+                                         </Grid.RowDefinitions>
+                                         <Grid.ColumnDefinitions>
+                                             <ColumnDefinition Width="*"/>
+                                         </Grid.ColumnDefinitions>
 
-                                             <!-- Optional: Subtle background for Mugshot-Only entries -->
-                                              <DataTrigger Binding="{Binding IsMugshotOnlyEntry}" Value="True">
-                                                  <Setter Property="Background" Value="#FFF8F8F8"/>
-                                                  <!-- Override ToolTip specifically for Mugshot-Only entries -->
-                                                   <Setter Property="ToolTip">
-                                                        <Setter.Value>
-                                                            <!-- Determine base status first -->
-                                                             <MultiBinding Converter="{StaticResource ModStatusToolTipMultiConverter}"> <!-- Requires the MultiConverter -->
-                                                                 <Binding Path="HasMugshotPathAssigned"/>
-                                                                 <Binding Path="HasModPathsAssigned"/>
-                                                                 <Binding Path="IsMugshotOnlyEntry"/>
-                                                             </MultiBinding>
-                                                        </Setter.Value>
-                                                   </Setter>
-                                              </DataTrigger>
-                                         </Style.Triggers>
-                                     </Style>
-                                 </Border.Style>
-                                 <!-- *** END BORDER STYLE *** -->
-
-                                 <!-- Grid Content for the Mod Entry -->
-                                 <Grid>
-                                     <Grid.RowDefinitions>
-                                         <RowDefinition Height="Auto"/> <!-- Display Name/ModKey & Mugshot -->
-                                         <RowDefinition Height="Auto"/> <!-- Corresponding Folders Header & Add Button -->
-                                         <RowDefinition Height="Auto"/> <!-- Corresponding Folders List -->
-                                         <RowDefinition Height="Auto"/> <!-- Unlink Button Row -->
-                                     </Grid.RowDefinitions>
-                                     <Grid.ColumnDefinitions>
-                                         <ColumnDefinition Width="*"/>
-                                     </Grid.ColumnDefinitions>
-
-                                     <!-- Row 0: Basic Info -->
-                                     <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,5">
-                                         <!-- Combined DisplayName (Clickable Button) and Suffix -->
-                                         <StackPanel Orientation="Horizontal">
-                                              <Button Style="{StaticResource LinkButtonStyle}"
-                                                      Command="{Binding DataContext.ShowMugshotsCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"
-                                                      CommandParameter="{Binding}"
-                                                      IsEnabled="{Binding HasValidMugshots}"
-                                                      ToolTip="Show NPC Mugshots (Requires valid images in folder)">
-                                                    <!-- Content is the TextBlock for proper formatting -->
-                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="14"/>
-                                              </Button>
-                                             <!-- ModKey Suffix TextBlock -->
-                                             <TextBlock Text="{Binding ModKeyDisplaySuffix}"
-                                                        FontWeight="Normal" 
-                                                        FontSize="12" Margin="5,0,0,0" VerticalAlignment="Center" Foreground="DarkSlateGray">
-                                                 <TextBlock.Style>
-                                                     <Style TargetType="TextBlock">
-                                                         <Setter Property="Visibility" Value="Visible"/>
-                                                         <Style.Triggers>
-                                                             <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Static System:String.Empty}">
-                                                                 <Setter Property="Visibility" Value="Collapsed"/>
-                                                             </DataTrigger>
-                                                             <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Null}">
-                                                                 <Setter Property="Visibility" Value="Collapsed"/>
-                                                             </DataTrigger>
-                                                         </Style.Triggers>
-                                                     </Style>
-                                                 </TextBlock.Style>
-                                             </TextBlock>
+                                         <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,5">
+                                             <StackPanel Orientation="Horizontal">
+                                                  <Button Style="{StaticResource LinkButtonStyle}"
+                                                          Command="{Binding DataContext.ShowMugshotsCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"
+                                                          CommandParameter="{Binding}"
+                                                          IsEnabled="{Binding HasValidMugshots}"
+                                                          ToolTip="Show NPC Mugshots (Requires valid images in folder)">
+                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="14"/>
+                                                  </Button>
+                                                 <TextBlock Text="{Binding ModKeyDisplaySuffix}"
+                                                            FontWeight="Normal" 
+                                                            FontSize="12" Margin="5,0,0,0" VerticalAlignment="Center" Foreground="DarkSlateGray">
+                                                     <TextBlock.Style>
+                                                         <Style TargetType="TextBlock">
+                                                             <Setter Property="Visibility" Value="Visible"/>
+                                                             <Style.Triggers>
+                                                                 <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Static System:String.Empty}">
+                                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                                 </DataTrigger>
+                                                                 <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Null}">
+                                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                                 </DataTrigger>
+                                                             </Style.Triggers>
+                                                         </Style>
+                                                     </TextBlock.Style>
+                                                 </TextBlock>
+                                             </StackPanel>
+                                             <Grid Margin="10,5,0,0">
+                                                 <Grid.ColumnDefinitions>
+                                                     <ColumnDefinition Width="Auto"/>
+                                                     <ColumnDefinition Width="*"/>
+                                                     <ColumnDefinition Width="Auto"/>
+                                                 </Grid.ColumnDefinitions>
+                                                 <TextBlock Grid.Column="0" Text="Mugshot Folder:" VerticalAlignment="Center"/>
+                                                 <TextBlock Grid.Column="1" Text="{Binding MugShotFolderPath, TargetNullValue='(Not Set)'}" VerticalAlignment="Center" Margin="5,0" ToolTip="{Binding MugShotFolderPath}" TextTrimming="CharacterEllipsis"/>
+                                                 <Button Grid.Column="2" Content="Browse..." Command="{Binding BrowseMugshotFolderCommand}" Padding="5,1" VerticalAlignment="Center"/>
+                                             </Grid>
                                          </StackPanel>
-                                         <!-- Mugshot Folder Path -->
-                                         <Grid Margin="10,5,0,0">
-                                             <Grid.ColumnDefinitions>
-                                                 <ColumnDefinition Width="Auto"/>
-                                                 <ColumnDefinition Width="*"/>
-                                                 <ColumnDefinition Width="Auto"/>
-                                             </Grid.ColumnDefinitions>
-                                             <TextBlock Grid.Column="0" Text="Mugshot Folder:" VerticalAlignment="Center"/>
-                                             <TextBlock Grid.Column="1" Text="{Binding MugShotFolderPath, TargetNullValue='(Not Set)'}" VerticalAlignment="Center" Margin="5,0" ToolTip="{Binding MugShotFolderPath}" TextTrimming="CharacterEllipsis"/>
-                                             <Button Grid.Column="2" Content="Browse..." Command="{Binding BrowseMugshotFolderCommand}" Padding="5,1" VerticalAlignment="Center"/>
+
+                                         <Grid Grid.Row="1" Grid.Column="0" Margin="0,5,0,5">
+                                              <Grid.ColumnDefinitions>
+                                                  <ColumnDefinition Width="Auto"/>
+                                                  <ColumnDefinition Width="*"/>
+                                                  <ColumnDefinition Width="Auto"/>
+                                              </Grid.ColumnDefinitions>
+                                              <TextBlock Grid.Column="0" Text="Corresponding Mod Folder Paths:" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                              <Button Grid.Column="2" Content="Add" Command="{Binding AddFolderPathCommand}" Padding="5,1" VerticalAlignment="Center"/>
                                          </Grid>
-                                     </StackPanel>
 
-                                     <!-- Row 1: Folders Header & Add Button -->
-                                     <Grid Grid.Row="1" Grid.Column="0" Margin="0,5,0,5">
-                                          <Grid.ColumnDefinitions>
-                                              <ColumnDefinition Width="Auto"/>
-                                              <ColumnDefinition Width="*"/>
-                                              <ColumnDefinition Width="Auto"/>
-                                          </Grid.ColumnDefinitions>
-                                          <TextBlock Grid.Column="0" Text="Corresponding Mod Folder Paths:" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                          <Button Grid.Column="2" Content="Add" Command="{Binding AddFolderPathCommand}" Padding="5,1" VerticalAlignment="Center"/>
+                                          <ItemsControl Grid.Row="2" Grid.Column="0" ItemsSource="{Binding CorrespondingFolderPaths}" Margin="10,0,0,0">
+                                             <ItemsControl.ItemTemplate>
+                                                 <DataTemplate>
+                                                     <Grid Margin="0,2">
+                                                         <Grid.ColumnDefinitions>
+                                                             <ColumnDefinition Width="*"/>
+                                                             <ColumnDefinition Width="Auto"/>
+                                                             <ColumnDefinition Width="Auto"/>
+                                                         </Grid.ColumnDefinitions>
+                                                         <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" ToolTip="{Binding}" TextTrimming="CharacterEllipsis">
+                                                             <TextBlock.Foreground>
+                                                                 <Binding Path="." Converter="{StaticResource PathExistenceToBrushConverter}"/>
+                                                             </TextBlock.Foreground>
+                                                         </TextBlock>
+                                                         <Button Grid.Column="1" Content="Browse..." Command="{Binding DataContext.BrowseFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}" CommandParameter="{Binding}" Padding="5,1" Margin="5,0" VerticalAlignment="Center"/>
+                                                         <Button Grid.Column="2" Content="X" Foreground="Red" FontWeight="Bold" Command="{Binding DataContext.RemoveFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}" CommandParameter="{Binding}" Padding="5,1" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                                     </Grid>
+                                                 </DataTemplate>
+                                             </ItemsControl.ItemTemplate>
+                                         </ItemsControl>
+                                         <Button Grid.Row="3" Grid.Column="0"
+                                                 Content="Unlink Mugshot Data"
+                                                 Command="{Binding UnlinkMugshotDataCommand}"
+                                                 HorizontalAlignment="Left"
+                                                 Margin="0,10,0,0" Padding="5,2"
+                                                 ToolTip="Separates the assigned mugshot folder into its own entry, if its name differs from the primary mod data folder."
+                                                 Visibility="{Binding CanUnlinkMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         
+                                         <Button Grid.Row="3" Grid.Column="0"
+                                                 Content="Delete"
+                                                 Command="{Binding DeleteCommand}"
+                                                 HorizontalAlignment="Right"
+                                                 Margin="0,5,0,0" Padding="5,2"
+                                                 Foreground="Red" FontWeight="Bold"
+                                                 ToolTip="Permanently delete this empty entry. Only visible if no paths or mugshots are assigned."
+                                                 Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+                                     </Grid> 
+                                 </Border> 
+                             </DataTemplate>
+                         </ItemsControl.ItemTemplate>
+                     </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="LightGray"/>
+
+            <Grid Grid.Column="2">
+                 <Grid.RowDefinitions>
+                     <RowDefinition Height="Auto"/> 
+                     <RowDefinition Height="*"/>    
+                 </Grid.RowDefinitions>
+
+                 <Border Grid.Row="0" BorderBrush="LightGray" BorderThickness="0,0,0,1" Padding="5" MinHeight="30">
+                     <Grid>
+                          <TextBlock Text="{Binding SelectedModForMugshots.DisplayName, StringFormat='Mugshots for: {0}', TargetNullValue='Select a mod from the left panel'}"
+                                     FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Left" TextTrimming="CharacterEllipsis"/>
+                          <TextBlock Text="Loading Mugshots..." Foreground="Gray" FontStyle="Italic"
+                                     VerticalAlignment="Center" HorizontalAlignment="Right"
+                                     Visibility="{Binding IsLoadingMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                     </Grid>
+                 </Border>
+
+                 <ScrollViewer Grid.Row="1" x:Name="MugshotScrollViewer"
+                               VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                               HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                               SizeChanged="MugshotScrollViewer_SizeChanged"
+                               PreviewMouseWheel="MugshotScrollViewer_PreviewMouseWheel">
+                     <ItemsControl x:Name="MugshotsItemsControl" ItemsSource="{Binding CurrentModNpcMugshots}">
+                         <ItemsControl.ItemsPanel>
+                             <ItemsPanelTemplate>
+                                 <WrapPanel Orientation="Horizontal"
+                                            Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"/>
+                             </ItemsPanelTemplate>
+                         </ItemsControl.ItemsPanel>
+                         <ItemsControl.ItemTemplate>
+                             <DataTemplate DataType="{x:Type vm:VM_ModNpcMugshot}">
+                                 <Border BorderThickness="1" BorderBrush="Gray" Margin="5" CornerRadius="2"
+                                         Width="{Binding ImageWidth}" Height="{Binding ImageHeight}"
+                                         PreviewMouseRightButtonDown="MugshotItem_PreviewMouseRightButtonDown"
+                                         ToolTip="{Binding NpcDisplayName}"> 
+                                     <Grid Background="WhiteSmoke"> 
+                                         <Image Source="{Binding ImagePath}" Stretch="Uniform" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                                             <Image.Style>
+                                                 <Style TargetType="Image">
+                                                     <Setter Property="Opacity" Value="1.0" />
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding HasMugshot}" Value="False">
+                                                              <Setter Property="Opacity" Value="0.3"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </Image.Style>
+                                         </Image>
+                                         <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Background="#AA000000" Padding="3,1">
+                                              <TextBlock Text="{Binding NpcDisplayName}" Foreground="White" FontSize="10"
+                                                         TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
+                                         </Border>
                                      </Grid>
+                                     <Border.ContextMenu>
+                                          <ContextMenu>
+                                               <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/>
+                                               <MenuItem Header="View Full Screen (Ctrl+RClick)" Command="{Binding ToggleFullScreenCommand}"/>
+                                          </ContextMenu>
+                                     </Border.ContextMenu>
+                                 </Border>
+                             </DataTemplate>
+                         </ItemsControl.ItemTemplate>
+                     </ItemsControl>
+                 </ScrollViewer>
 
-                                     <!-- Row 2: Folders List -->
-                                      <ItemsControl Grid.Row="2" Grid.Column="0" ItemsSource="{Binding CorrespondingFolderPaths}" Margin="10,0,0,0">
-                                         <ItemsControl.ItemTemplate>
-                                             <DataTemplate>
-                                                 <Grid Margin="0,2">
-                                                     <Grid.ColumnDefinitions>
-                                                         <ColumnDefinition Width="*"/>
-                                                         <ColumnDefinition Width="Auto"/>
-                                                         <ColumnDefinition Width="Auto"/>
-                                                     </Grid.ColumnDefinitions>
-                                                     <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" ToolTip="{Binding}" TextTrimming="CharacterEllipsis">
-                                                         <!-- Apply converter to change text color based on path existence -->
-                                                         <TextBlock.Foreground>
-                                                             <Binding Path="." Converter="{StaticResource PathExistenceToBrushConverter}"/>
-                                                         </TextBlock.Foreground>
-                                                     </TextBlock>
-                                                     <Button Grid.Column="1" Content="Browse..." Command="{Binding DataContext.BrowseFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}" CommandParameter="{Binding}" Padding="5,1" Margin="5,0" VerticalAlignment="Center"/>
-                                                     <Button Grid.Column="2" Content="X" Foreground="Red" FontWeight="Bold" Command="{Binding DataContext.RemoveFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}" CommandParameter="{Binding}" Padding="5,1" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                                                 </Grid>
-                                             </DataTemplate>
-                                         </ItemsControl.ItemTemplate>
-                                     </ItemsControl>
-                                     <!-- Row 3: NEW Unlink Button -->
-                                     <Button Grid.Row="3" Grid.Column="0"
-                                             Content="Unlink Mugshot Data"
-                                             Command="{Binding UnlinkMugshotDataCommand}"
-                                             HorizontalAlignment="Left"
-                                             Margin="0,10,0,0" Padding="5,2"
-                                             ToolTip="Separates the assigned mugshot folder into its own entry, if its name differs from the primary mod data folder."
-                                             Visibility="{Binding CanUnlinkMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                     
-                                     <Button Grid.Row="3" Grid.Column="0"
-                                             Content="Delete"
-                                             Command="{Binding DeleteCommand}"
-                                             HorizontalAlignment="Left"
-                                             Margin="0,5,0,0" Padding="5,2"
-                                             Foreground="Red" FontWeight="Bold"
-                                             ToolTip="Permanently delete this empty entry. Only visible if no paths or mugshots are assigned."
-                                             Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-
-                                 </Grid> <!-- End Mod Entry Content Grid -->
-                             </Border> <!-- End Main Mod Entry Border -->
-                         </DataTemplate>
-                     </ItemsControl.ItemTemplate>
-                 </ItemsControl>
-            </ScrollViewer>
+                  <TextBlock Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14" Foreground="Gray" TextWrapping="Wrap" Margin="20">
+                      <TextBlock.Style>
+                           <Style TargetType="TextBlock">
+                              <Setter Property="Visibility" Value="Collapsed"/> 
+                              <Style.Triggers>
+                                  <DataTrigger Binding="{Binding SelectedModForMugshots}" Value="{x:Null}">
+                                       <Setter Property="Visibility" Value="Visible"/>
+                                       <Setter Property="Text" Value="Click a mod name link in the left panel to view its NPC mugshots."/>
+                                  </DataTrigger>
+                                  <MultiDataTrigger>
+                                      <MultiDataTrigger.Conditions>
+                                          <Condition Binding="{Binding SelectedModForMugshots, Converter={StaticResource IsNotNullConverter}}" Value="True"/>
+                                          <Condition Binding="{Binding IsLoadingMugshots}" Value="False"/>
+                                          <Condition Binding="{Binding CurrentModNpcMugshots.Count}" Value="0"/>
+                                      </MultiDataTrigger.Conditions>
+                                      <Setter Property="Visibility" Value="Visible"/>
+                                      <Setter Property="Text" Value="No valid mugshot images found in the specified folder for the selected mod, or the folder path is invalid/inaccessible."/>
+                                  </MultiDataTrigger>
+                                  <DataTrigger Binding="{Binding IsLoadingMugshots}" Value="True">
+                                      <Setter Property="Visibility" Value="Collapsed"/>
+                                  </DataTrigger>
+                              </Style.Triggers>
+                          </Style>
+                      </TextBlock.Style>
+                  </TextBlock>
+            </Grid>
         </Grid>
 
-        <!-- Grid Splitter -->
-        <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="LightGray"/>
-
-        <!-- Right Panel Content: Mugshot Display -->
-        <Grid Grid.Column="2">
-             <Grid.RowDefinitions>
-                 <RowDefinition Height="Auto"/> <!-- Header/Status -->
-                 <RowDefinition Height="*"/>    <!-- Image Area -->
-             </Grid.RowDefinitions>
-
-             <!-- Header/Status Area -->
-             <Border Grid.Row="0" BorderBrush="LightGray" BorderThickness="0,0,0,1" Padding="5" MinHeight="30">
-                 <Grid>
-                      <TextBlock Text="{Binding SelectedModForMugshots.DisplayName, StringFormat='Mugshots for: {0}', TargetNullValue='Select a mod from the left panel'}"
-                                 FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Left" TextTrimming="CharacterEllipsis"/>
-                      <TextBlock Text="Loading Mugshots..." Foreground="Gray" FontStyle="Italic"
-                                 VerticalAlignment="Center" HorizontalAlignment="Right"
-                                 Visibility="{Binding IsLoadingMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                 </Grid>
-             </Border>
-
-             <!-- Image Display Area -->
-             <ScrollViewer Grid.Row="1" x:Name="MugshotScrollViewer"
-                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                           HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                           SizeChanged="MugshotScrollViewer_SizeChanged"
-                           PreviewMouseWheel="MugshotScrollViewer_PreviewMouseWheel">
-                 <ItemsControl x:Name="MugshotsItemsControl" ItemsSource="{Binding CurrentModNpcMugshots}">
-                     <ItemsControl.ItemsPanel>
-                         <ItemsPanelTemplate>
-                             <WrapPanel Orientation="Horizontal"
-                                        ItemWidth="{Binding MugshotItemWidth}" 
-                                        ItemHeight="{Binding MugshotItemHeight}"
-                                        Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"/>
-                         </ItemsPanelTemplate>
-                     </ItemsControl.ItemsPanel>
-                     <ItemsControl.ItemTemplate>
-                         <!-- DataTemplate for VM_ModNpcMugshot -->
-                         <DataTemplate DataType="{x:Type vm:VM_ModNpcMugshot}">
-                             <Border BorderThickness="1" BorderBrush="Gray" Margin="5" CornerRadius="2"
-                                     Width="{Binding ImageWidth}" Height="{Binding ImageHeight}"
-                                     PreviewMouseRightButtonDown="MugshotItem_PreviewMouseRightButtonDown"
-                                     ToolTip="{Binding NpcDisplayName}"> <!-- Tooltip on border -->
-                                 <Grid Background="WhiteSmoke"> <!-- Light background for images -->
-                                     <Image Source="{Binding ImagePath}" Stretch="Uniform" UseLayoutRounding="True" SnapsToDevicePixels="True">
-                                         <Image.Style>
-                                             <Style TargetType="Image">
-                                                 <Setter Property="Opacity" Value="1.0" />
-                                                 <Style.Triggers>
-                                                     <!-- Dim image slightly if mugshot file is missing (though VM shouldn't be created ideally) -->
-                                                     <DataTrigger Binding="{Binding HasMugshot}" Value="False">
-                                                          <Setter Property="Opacity" Value="0.3"/>
-                                                     </DataTrigger>
-                                                 </Style.Triggers>
-                                             </Style>
-                                         </Image.Style>
-                                     </Image>
-                                     <!-- Overlay Text for NPC Name -->
-                                     <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Background="#AA000000" Padding="3,1">
-                                          <TextBlock Text="{Binding NpcDisplayName}" Foreground="White" FontSize="10"
-                                                     TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
-                                     </Border>
-                                 </Grid>
-                                 <!-- Context Menu -->
-                                 <Border.ContextMenu>
-                                      <ContextMenu>
-                                           <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/>
-                                           <MenuItem Header="View Full Screen (Ctrl+RClick)" Command="{Binding ToggleFullScreenCommand}"/>
-                                           <!-- Add other options later if needed -->
-                                      </ContextMenu>
-                                 </Border.ContextMenu>
-                             </Border>
-                         </DataTemplate>
-                     </ItemsControl.ItemTemplate>
-                 </ItemsControl>
-             </ScrollViewer>
-
-             <!-- Placeholder Text for Right Panel -->
-              <TextBlock Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14" Foreground="Gray" TextWrapping="Wrap" Margin="20">
-                  <TextBlock.Style>
-                       <Style TargetType="TextBlock">
-                          <Setter Property="Visibility" Value="Collapsed"/> <!-- Default hidden -->
-                          <Style.Triggers>
-                              <!-- Show if SelectedModForMugshots is null -->
-                              <DataTrigger Binding="{Binding SelectedModForMugshots}" Value="{x:Null}">
-                                   <Setter Property="Visibility" Value="Visible"/>
-                                   <Setter Property="Text" Value="Click a mod name link in the left panel to view its NPC mugshots."/>
-                              </DataTrigger>
-                              <!-- Show if SelectedModForMugshots is NOT null, BUT CurrentModNpcMugshots is empty AND not loading -->
-                              <MultiDataTrigger>
-                                  <MultiDataTrigger.Conditions>
-                                      <Condition Binding="{Binding SelectedModForMugshots, Converter={StaticResource IsNotNullConverter}}" Value="True"/>
-                                      <Condition Binding="{Binding IsLoadingMugshots}" Value="False"/>
-                                      <Condition Binding="{Binding CurrentModNpcMugshots.Count}" Value="0"/>
-                                  </MultiDataTrigger.Conditions>
-                                  <Setter Property="Visibility" Value="Visible"/>
-                                  <Setter Property="Text" Value="No valid mugshot images found in the specified folder for the selected mod, or the folder path is invalid/inaccessible."/>
-                              </MultiDataTrigger>
-                               <!-- Hide if loading -->
-                              <DataTrigger Binding="{Binding IsLoadingMugshots}" Value="True">
-                                  <Setter Property="Visibility" Value="Collapsed"/>
-                              </DataTrigger>
-                          </Style.Triggers>
-                      </Style>
-                  </TextBlock.Style>
-              </TextBlock>
-        </Grid>
+        <!-- NEW Zoom Control Row -->
+        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="5">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button x:Name="ZoomOutButtonMods" Content="-" Width="25" Height="25" Margin="2,0" ToolTip="Zoom Out (Ctrl+Scroll Wheel)"/>
+                <TextBox x:Name="ZoomPercentageTextBoxMods" Width="50" Height="25" Margin="2,0" TextAlignment="Center" VerticalContentAlignment="Center"
+                         PreviewMouseWheel="ZoomPercentageTextBoxMods_PreviewMouseWheel"
+                         ToolTip="Current Zoom Level. Editable. Ctrl+Scroll Wheel in image area or Scroll Wheel here to adjust."/>
+                <TextBlock Text="%" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <Button x:Name="ZoomInButtonMods" Content="+" Width="25" Height="25" Margin="2,0" ToolTip="Zoom In (Ctrl+Scroll Wheel)"/>
+                <CheckBox x:Name="LockZoomCheckBoxMods" Content="Lock Zoom" Margin="10,0,0,0" VerticalAlignment="Center" ToolTip="Lock the current zoom level. If unchecked, zoom adjusts to fit images."/>
+            </StackPanel>
+        </Border>
+        
     </Grid>
 </reactiveui:ReactiveUserControl>

@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Concurrency;
+using System.Reactive.Disposables;
 using System.Reactive.Linq; // Added for Throttle, ObserveOn
 using System.Reactive.Subjects; // Added for Subject
 using System.Text;
@@ -32,6 +33,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly VM_NpcSelectionBar _npcSelectionBar; // To access AllNpcs and navigate
         private readonly NpcConsistencyProvider _consistencyProvider;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm; // *** NEW: To switch tabs ***
+        private readonly CompositeDisposable _disposables = new();
 
         // --- Filtering Properties (Left Panel) ---
         [Reactive] public string NameFilterText { get; set; } = string.Empty;
@@ -50,11 +52,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public VM_ModSetting? SelectedModForMugshots { get; private set; }
         public ObservableCollection<VM_ModNpcMugshot> CurrentModNpcMugshots { get; } = new();
         [Reactive] public bool IsLoadingMugshots { get; private set; }
-        [Reactive] public bool HasUsedMugshotZoom { get; set; } = false; // Track zoom state for right panel
+        // This property will be set to true by the View (ModsView.xaml.cs) when the user
+        // directly interacts with zoom (Ctrl+Scroll, +/- buttons).
+        [Reactive] public bool ModsViewHasUserManuallyZoomed { get; set; } = false;
 
         // Subject for triggering right panel image refresh
         private readonly Subject<Unit> _refreshMugshotSizesSubject = new Subject<Unit>();
         public IObservable<Unit> RefreshMugshotSizesObservable => _refreshMugshotSizesSubject.AsObservable();
+        
+        // --- NEW: Zoom Control Properties & Commands for ModsView ---
+        [Reactive] public double ModsViewZoomLevel { get; set; }
+        [Reactive] public bool ModsViewIsZoomLocked { get; set; }
+        public ReactiveCommand<Unit, Unit> ZoomInModsCommand { get; }
+        public ReactiveCommand<Unit, Unit> ZoomOutModsCommand { get; }
 
         // --- Commands ---
         public ReactiveCommand<VM_ModSetting, Unit> ShowMugshotsCommand { get; }
@@ -73,18 +83,32 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _consistencyProvider = consistencyProvider;
             _lazyMainWindowVm = lazyMainWindowVm;
 
-            if (!_npcSelectionBar.AllNpcs.Any())
-            {
-                 System.Diagnostics.Debug.WriteLine("Warning: VM_Mods initialized before VM_NpcSelectionBar potentially finished. NPC data might be incomplete for linking.");
-            }
-
-            // Initialize commands
+            // ... (previous constructor logic like ShowMugshotsCommand, Filter setup)
             ShowMugshotsCommand = ReactiveCommand.CreateFromTask<VM_ModSetting>(ShowMugshotsAsync);
             ShowMugshotsCommand.ThrownExceptions.Subscribe(ex =>
             {
                 ScrollableMessageBox.ShowError($"Error loading mugshots: {ex.Message}");
                 IsLoadingMugshots = false;
+            }).DisposeWith(_disposables);
+
+
+            // --- NEW: Initialize Zoom Settings from _settings ---
+            ModsViewZoomLevel = _settings.ModsViewZoomLevel;
+            ModsViewIsZoomLocked = _settings.ModsViewIsZoomLocked;
+
+            // --- NEW: Zoom Commands ---
+            ZoomInModsCommand = ReactiveCommand.Create(() =>
+            {
+                ModsViewZoomLevel = Math.Min(500, ModsViewZoomLevel + 10); // Max 500%
+                ModsViewHasUserManuallyZoomed = true; // User interaction
             });
+            ZoomOutModsCommand = ReactiveCommand.Create(() =>
+            {
+                ModsViewZoomLevel = Math.Max(10, ModsViewZoomLevel - 10); // Min 10%
+                ModsViewHasUserManuallyZoomed = true; // User interaction
+            });
+            ZoomInModsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomInModsCommand: {ex.Message}")).DisposeWith(_disposables);
+            ZoomOutModsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomOutModsCommand: {ex.Message}")).DisposeWith(_disposables);
 
 
             PopulateModSettings(); // Populates and sorts _allModSettingsInternal
@@ -93,22 +117,62 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText, x => x.NpcSearchText, x => x.SelectedNpcSearchType) // Added NpcSearchType
                 .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(_ => ApplyFilters());
-
-            // --- Clear right panel when filters change? (Optional) ---
-            // this.WhenAnyValue(...) above could also clear SelectedModForMugshots/CurrentModNpcMugshots
-            // This prevents showing potentially incorrect mugshots if the selected mod is filtered out.
+                .Subscribe(_ => ApplyFilters())
+                .DisposeWith(_disposables);
+            
             this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText, x => x.NpcSearchText, x => x.SelectedNpcSearchType)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(_ => {
-                    // If the currently selected mod for mugshots is no longer in the filtered list, clear the right panel
                     if (SelectedModForMugshots != null && !ModSettingsList.Contains(SelectedModForMugshots))
                     {
                         SelectedModForMugshots = null;
                         CurrentModNpcMugshots.Clear();
                     }
-                });
+                })
+                .DisposeWith(_disposables);
 
+            // --- NEW: Persist Zoom Settings and Trigger Refresh ---
+            this.WhenAnyValue(x => x.ModsViewZoomLevel)
+                .Skip(1) // Skip initial value from settings
+                .Throttle(TimeSpan.FromMilliseconds(50))
+                .Subscribe(zoom =>
+                {
+                    var clampedZoom = Math.Max(10, Math.Min(500, zoom));
+                    if (clampedZoom != zoom)
+                    {
+                        ModsViewZoomLevel = clampedZoom; // Will re-trigger if changed
+                        return;
+                    }
+                    _settings.ModsViewZoomLevel = clampedZoom;
+                    if (ModsViewIsZoomLocked || ModsViewHasUserManuallyZoomed)
+                    {
+                        _refreshMugshotSizesSubject.OnNext(Unit.Default);
+                    }
+                })
+                .DisposeWith(_disposables);
+
+            this.WhenAnyValue(x => x.ModsViewIsZoomLocked)
+                .Skip(1) // Skip initial value
+                .Subscribe(isLocked =>
+                {
+                    _settings.ModsViewIsZoomLocked = isLocked;
+                    ModsViewHasUserManuallyZoomed = false; // Reset manual flag
+                    _refreshMugshotSizesSubject.OnNext(Unit.Default); // Always refresh packer
+                })
+                .DisposeWith(_disposables);
+
+            // MODIFIED: When SelectedModForMugshots changes, reset manual zoom state if not locked.
+            this.WhenAnyValue(x => x.SelectedModForMugshots)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(selectedMod => {
+                    if (!ModsViewIsZoomLocked)
+                    {
+                        ModsViewHasUserManuallyZoomed = false;
+                    }
+                    // The ShowMugshotsAsync method, called when SelectedModForMugshots changes (usually via command),
+                    // is already responsible for triggering _refreshMugshotSizesSubject.
+                })
+                .DisposeWith(_disposables);
 
             ApplyFilters(); // Apply initial filter
         }
@@ -163,7 +227,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
             IsLoadingMugshots = true;
             SelectedModForMugshots = selectedModSetting;
             CurrentModNpcMugshots.Clear();
-            HasUsedMugshotZoom = false; // Reset zoom state
+
+            // MODIFIED: Reset manual zoom flag if zoom is not locked
+            if (!ModsViewIsZoomLocked)
+            {
+                ModsViewHasUserManuallyZoomed = false; 
+            }
 
             var mugshotVMs = new List<VM_ModNpcMugshot>();
 
@@ -184,7 +253,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         if (pluginDir != null && Regex.IsMatch(pluginDir.Name, @"^.+\.(esm|esp|esl)$", RegexOptions.IgnoreCase))
                         {
                             string pluginName = pluginDir.Name;
-                            string formIdHex = hexPart.Substring(Math.Max(0, hexPart.Length - 6)); // Get last 6 chars, safely
+                            string formIdHex = hexPart.Substring(Math.Max(0, hexPart.Length - 6)); 
                             string formKeyString = $"{formIdHex}:{pluginName}";
 
                             try
@@ -213,34 +282,37 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             catch (Exception ex)
                             {
                                 Debug.WriteLine($"Error creating FormKey or VM for mugshot {imagePath}: {ex.Message}");
-                                // Optionally add a placeholder VM or skip
                             }
                         }
                     }
                 });
 
-                // Update collection on UI thread
-                CurrentModNpcMugshots.Clear(); // Ensure it's clear before adding
-                foreach (var vm in mugshotVMs.OrderBy(vm => vm.NpcDisplayName)) // Sort by NPC name
+                CurrentModNpcMugshots.Clear(); 
+                foreach (var vm in mugshotVMs.OrderBy(vm => vm.NpcDisplayName)) 
                 {
                     CurrentModNpcMugshots.Add(vm);
                 }
             }
             catch (Exception ex)
             {
-                 // Catch errors during Task.Run or directory enumeration
                  ScrollableMessageBox.ShowWarning($"Failed to load mugshots from {selectedModSetting.MugShotFolderPath}:\n{ex.Message}", "Mugshot Load Error");
-                 CurrentModNpcMugshots.Clear(); // Clear potentially partial list
+                 CurrentModNpcMugshots.Clear(); 
             }
             finally
             {
                 IsLoadingMugshots = false;
-                 // Trigger initial image sizing after VMs are added
                  if (CurrentModNpcMugshots.Any())
                  {
-                      _refreshMugshotSizesSubject.OnNext(Unit.Default);
+                      _refreshMugshotSizesSubject.OnNext(Unit.Default); // This will trigger packing in the view
                  }
             }
+        }
+
+        // --- NEW or MODIFIED IF NEEDED: Dispose method for cleaning up subscriptions ---
+        public void Dispose() // If VM_Mods needs to be disposable
+        {
+            _disposables.Dispose();
+            // Any other cleanup
         }
 
         // *** NEW: Method to handle navigation triggered by VM_ModNpcMugshot ***

@@ -1,206 +1,162 @@
-﻿// [ImagePacker.cs] - Modified to include placeholders in scaling
+﻿// [ImagePacker.cs] - Corrected CanPackAll with epsilon
+using System;
+using System.Collections.Generic; 
 using System.Collections.ObjectModel;
-using System.Drawing;
+using System.Drawing; 
 using System.IO;
-using System.Linq; // Ensure Linq is imported
-using NPC_Plugin_Chooser_2.View_Models; // Assuming IHasMugshotImage is here
+using System.Linq; 
+using NPC_Plugin_Chooser_2.View_Models; 
 
 namespace NPC_Plugin_Chooser_2.Views
 {
     public class ImagePacker
     {
-        public static void MaximizeStartingImageSizes(
-            ObservableCollection<IHasMugshotImage> appearanceMods,
+        public static double FitOriginalImagesToContainer(
+            ObservableCollection<IHasMugshotImage> imagesToPackCollection,
             double availableHeight, double availableWidth,
             int verticalMargin, int horizontalMargin)
         {
-            // --- MODIFICATION START ---
-            // Consider all mods that have an image PATH and dimensions, not just HasMugshot == true
-            // This means they have something to display, whether real or placeholder.
-            var allModsWithDisplayableImages = appearanceMods
-                .Where(x => !string.IsNullOrEmpty(x.ImagePath) && x.ImageWidth > 0 && x.ImageHeight > 0)
+            var visibleImages = imagesToPackCollection
+                .Where(x => x.IsVisible && x.OriginalDipWidth > 0 && x.OriginalDipHeight > 0 && !string.IsNullOrEmpty(x.ImagePath))
                 .ToList();
 
-            if (!allModsWithDisplayableImages.Any())
-                return; // Nothing to pack
-
-            // Store each mod’s original dimensions in a dictionary.
-            // Use the same filtered list.
-            var originalSizes = allModsWithDisplayableImages
-                .ToDictionary(mod => mod, mod => (mod.ImageWidth, mod.ImageHeight));
-
-            // For the purpose of computing the scaling factor,
-            // consider only the VISIBLE mods from the displayable list.
-            var visibleMods = allModsWithDisplayableImages
-                .Where(x => x.IsVisible)
-                .ToList();
-            // --- MODIFICATION END ---
-
-
-            // In case none are visible, we might choose to return or handle it differently.
-            if (!visibleMods.Any())
+            if (!visibleImages.Any())
             {
-                // If no mods are visible, we don't have a basis for scaling.
-                // We could potentially reset all *displayable* mods to a default size,
-                // but for now, just returning leaves them at their initial calculated size.
-                 return;
-            }
-
-            // Use the original sizes derived from the visible subset for calculation
-            var visibleSizes = visibleMods
-                .Select(vm => originalSizes[vm]) // Get dimensions from the dictionary
-                .ToList();
-
-            // Set up initial binary search bounds based on the first visible mod.
-            var firstVisible = visibleMods.First();
-            var firstOriginal = originalSizes[firstVisible];
-
-            // Initial high bound estimation (can be refined)
-            double high = double.MaxValue;
-            if (firstOriginal.Item1 > 0) high = Math.Min(high, availableWidth / firstOriginal.Item1);
-            if (firstOriginal.Item2 > 0) high = Math.Min(high, availableHeight / firstOriginal.Item2);
-            high = Math.Max(0.01, high); // Ensure a small positive value
-
-            double low = 0;
-
-            // Optional: Tighten the upper bound further based on all visible mods (might be slightly redundant with CanPackAll but can help)
-            foreach (var (w, h) in visibleSizes)
-            {
-                 if (w > 0) high = Math.Min(high, availableWidth / w);
-                 if (h > 0) high = Math.Min(high, availableHeight / h);
-            }
-            high = Math.Max(low, high); // Ensure high >= low
-
-
-            // Binary search to find the optimal scale factor.
-            const double epsilon = 0.01;
-            int iterations = 0;
-            const int maxIterations = 100; // Safety break
-
-            while (high - low > epsilon && iterations < maxIterations)
-            {
-                double mid = low + (high - low) / 2; // Avoid overflow with large high/low
-                if (mid <= 0) break; // Scale must be positive
-
-                if (CanPackAll(visibleSizes, mid, availableWidth, availableHeight, horizontalMargin, verticalMargin))
+                foreach (var img in imagesToPackCollection)
                 {
-                    // This scale `mid` works, try larger
-                    low = mid;
+                    img.ImageWidth = 0;
+                    img.ImageHeight = 0;
+                }
+                return 1.0; 
+            }
+
+            var baseDimensionsForPacking = visibleImages
+                .Select(img => (img.OriginalDipWidth, img.OriginalDipHeight)) 
+                .ToList();
+            
+            double low = 0;
+            double high = 10.0; 
+            if (baseDimensionsForPacking.Any())
+            {
+                var firstBaseDim = baseDimensionsForPacking.First();
+                if (firstBaseDim.Item1 > 0.001) high = Math.Min(high, availableWidth / firstBaseDim.Item1); else high = 0.001;
+                if (firstBaseDim.Item2 > 0.001) high = Math.Min(high, availableHeight / firstBaseDim.Item2); else high = Math.Min(high, 0.001);
+                high = Math.Max(0.001, high); 
+            }
+
+            int iterations = 0;
+            const int maxIterations = 100;
+            const double epsilonForBinarySearch = 0.001; // Epsilon for the binary search loop itself
+
+            while (high - low > epsilonForBinarySearch && iterations < maxIterations)
+            {
+                double midPackerScale = low + (high - low) / 2;
+                if (midPackerScale <= 0) { low = 0; break; }
+
+                if (CanPackAll(baseDimensionsForPacking, midPackerScale, availableWidth, availableHeight, horizontalMargin, verticalMargin))
+                {
+                    low = midPackerScale; 
                 }
                 else
                 {
-                    // This scale `mid` is too large
-                    high = mid;
+                    high = midPackerScale; 
                 }
                 iterations++;
             }
-             if (iterations >= maxIterations) System.Diagnostics.Debug.WriteLine($"Warning: ImagePacker binary search hit max iterations ({maxIterations}).");
+            
+            double finalPackerScale = Math.Max(0.0, low); 
 
-
-            // --- MODIFICATION START ---
-            // Apply the computed scale factor (low) to ALL mods that have displayable images
-            // (including the placeholder if it met the initial criteria).
-            foreach (var mod in allModsWithDisplayableImages)
+            foreach (var img in imagesToPackCollection)
             {
-                if (originalSizes.TryGetValue(mod, out var original))
+                if (img.IsVisible && img.OriginalDipWidth > 0 && img.OriginalDipHeight > 0 && !string.IsNullOrEmpty(img.ImagePath))
                 {
-                     // Ensure scale factor 'low' is non-negative
-                     double effectiveScale = Math.Max(0.0, low);
-                     mod.ImageWidth = original.Item1 * effectiveScale;
-                     mod.ImageHeight = original.Item2 * effectiveScale;
+                    img.ImageWidth = img.OriginalDipWidth * finalPackerScale;
+                    img.ImageHeight = img.OriginalDipHeight * finalPackerScale;
                 }
-                else
+                else 
                 {
-                    // This shouldn't happen if the list wasn't modified elsewhere
-                    System.Diagnostics.Debug.WriteLine($"Error: Mod {mod.ImagePath} not found in originalSizes during scaling application.");
+                    img.ImageWidth = 0;
+                    img.ImageHeight = 0;
                 }
             }
-            // --- MODIFICATION END ---
+            
+            return finalPackerScale;
         }
 
-        // CanPackAll remains the same
         private static bool CanPackAll(
-            List<(double ImageWidth, double ImageHeight)> sizes, // These are ORIGINAL dimensions
-            double scale,
+            List<(double Width, double Height)> baseSizes, 
+            double packerScale,
             double containerWidth,
             double containerHeight,
             int horizontalMargin,
             int verticalMargin)
         {
-            double currentX = horizontalMargin; // Start with left margin
-            double currentY = verticalMargin; // Start with top margin
+            // *** DEFINE EPSILON FOR COMPARISONS WITHIN THIS METHOD ***
+            const double epsilon = 0.00001; // A small value for floating point comparisons
+
+            double currentX = horizontalMargin; 
+            double currentY = verticalMargin; 
             double currentRowHeight = 0;
 
-            // Basic check if container is usable at all
-             if (containerWidth <= horizontalMargin * 2 || containerHeight <= verticalMargin * 2)
-             {
-                 return !sizes.Any(); // Only possible if no items need packing
-             }
-
-            foreach (var (originalW, originalH) in sizes)
+            if (containerWidth <= horizontalMargin * 2 || containerHeight <= verticalMargin * 2)
             {
-                // Calculate scaled dimensions for this item
-                double scaledW = originalW * scale;
-                double scaledH = originalH * scale;
-
-                 // Check if item *itself* is too big for the container at this scale
-                 // Account for minimal margins needed around a single item
-                 if (scaledW + horizontalMargin * 2 > containerWidth || scaledH + verticalMargin * 2 > containerHeight)
-                 {
-                      return false;
-                 }
-
-                // Check if adding this item horizontally overflows the current row
-                // Need space for the item width AND its right margin within the container width limit
-                if (currentX + scaledW + horizontalMargin > containerWidth)
-                {
-                    // Move to the next row
-                    currentY += currentRowHeight + verticalMargin; // Add space below the previous row
-                    currentX = horizontalMargin;                  // Reset X to left margin
-                    currentRowHeight = 0;                         // Reset row height for the new row
-                }
-
-                // Check if adding this item vertically overflows the container height
-                // Need space for the item height AND the bottom margin (implicitly checked by the start of the next row or end of loop)
-                 if (currentY + scaledH + verticalMargin > containerHeight)
-                 {
-                     // This item would start or extend below the allowed container height
-                     return false;
-                 }
-
-                // Place the item conceptually
-                currentX += scaledW + horizontalMargin; // Move X position past the item and its right margin
-                currentRowHeight = Math.Max(currentRowHeight, scaledH); // Update the maximum height encountered in this row
+                 return !baseSizes.Any(); 
             }
 
-            // If we successfully iterated through all items without returning false, the scale is valid
+            foreach (var (baseW, baseH) in baseSizes) 
+            {
+                double scaledW = baseW * packerScale;
+                double scaledH = baseH * packerScale;
+
+                 if (scaledW < 0.1 || scaledH < 0.1) 
+                 {
+                 }
+                 // Use epsilon in comparisons
+                 else if (scaledW + horizontalMargin * 2 > containerWidth + epsilon || scaledH + verticalMargin * 2 > containerHeight + epsilon) 
+                 {
+                      return false; 
+                 }
+
+                // Use epsilon in comparisons
+                if (currentX + scaledW + horizontalMargin > containerWidth + epsilon) 
+                {
+                    currentY += currentRowHeight + verticalMargin; 
+                    currentX = horizontalMargin;                  
+                    currentRowHeight = 0;                         
+                }
+
+                // Use epsilon in comparisons
+                 if (currentY + scaledH + verticalMargin > containerHeight + epsilon) 
+                 {
+                     return false;
+                 }
+                
+                currentX += scaledW + horizontalMargin; 
+                currentRowHeight = Math.Max(currentRowHeight, scaledH); 
+            }
             return true;
         }
 
-
-        // GetImageDimensionsInDIPs remains the same - ensure it's robust
-        public static (double WidthInDIPs, double HeightInDIPs) GetImageDimensionsInDIPs(string imagePath)
+        public static (int PixelWidth, int PixelHeight, double DipWidth, double DipHeight) GetImageDimensions(string imagePath)
         {
+            if (string.IsNullOrEmpty(imagePath))
+                return (0,0,0,0);
             try
             {
                 using var stream = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                // Ensure validation is off if files might be slightly non-conformant
                 using var img = Image.FromStream(stream, useEmbeddedColorManagement: false, validateImageData: false);
-
-                // Use 96.0 as the reference DPI for WPF DIPs
-                // Handle potential 0 DPI values in metadata
+                int pixelWidth = img.Width;
+                int pixelHeight = img.Height;
                 double horizontalResolution = img.HorizontalResolution > 1 ? img.HorizontalResolution : 96.0;
                 double verticalResolution = img.VerticalResolution > 1 ? img.VerticalResolution : 96.0;
-
-                double widthInDIPs = img.Width * (96.0 / horizontalResolution);
-                double heightInDIPs = img.Height * (96.0 / verticalResolution);
-
-                return (widthInDIPs, heightInDIPs);
+                double dipWidth = pixelWidth * (96.0 / horizontalResolution);
+                double dipHeight = pixelHeight * (96.0 / verticalResolution);
+                return (pixelWidth, pixelHeight, dipWidth, dipHeight);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in GetImageDimensionsInDIPs for {imagePath}: {ex.Message}");
-                return (0, 0); // Return 0 dimensions on error to prevent inclusion in packing
+                System.Diagnostics.Debug.WriteLine($"Error in GetImageDimensions for {imagePath}: {ex.Message}");
+                return (0, 0, 0, 0); 
             }
         }
     }
