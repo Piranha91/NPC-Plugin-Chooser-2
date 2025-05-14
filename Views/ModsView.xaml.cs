@@ -163,7 +163,7 @@ namespace NPC_Plugin_Chooser_2.Views
                             imagesForPacker,
                             availableHeight,
                             availableWidth,
-                            5, 5
+                            5 // xamlItemUniformMargin (from XAML Margin="5")
                         );
 
                         ViewModel.ModsViewZoomLevel = packerScaleFactor * 100.0;

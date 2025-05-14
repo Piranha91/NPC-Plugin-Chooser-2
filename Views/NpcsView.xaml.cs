@@ -190,10 +190,10 @@ namespace NPC_Plugin_Chooser_2.Views
                         var imagesForPacker = new ObservableCollection<IHasMugshotImage>(imagesToProcess.Cast<IHasMugshotImage>());
                         
                         double packerScaleFactor = ImagePacker.FitOriginalImagesToContainer(
-                            imagesForPacker, // This collection will have its ImageWidth/Height updated by the packer
+                            imagesForPacker, 
                             availableHeight,
                             availableWidth,
-                            5, 5 
+                            5 // xamlItemUniformMargin (from XAML Margin="5")
                         );
                         
                         // Update the ViewModel's zoom level to reflect what the packer did
