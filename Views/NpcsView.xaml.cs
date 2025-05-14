@@ -47,7 +47,7 @@ namespace NPC_Plugin_Chooser_2.Views
                 this.OneWayBind(ViewModel, vm => vm.CurrentNpcAppearanceMods, v => v.AppearanceModsItemsControl.ItemsSource).DisposeWith(d);
                 
                 this.Bind(ViewModel, vm => vm.NpcsViewZoomLevel, v => v.ZoomPercentageTextBox.Text,
-                    vmToViewConverter: val => val.ToString("F0"), 
+                    vmToViewConverter: val => val.ToString("F2"), 
                     viewToVmConverter: text => {
                         if (ViewModel != null) ViewModel.NpcsViewHasUserManuallyZoomed = true;
                         return double.TryParse(text, out double result) ? Math.Max(10, Math.Min(500, result)) : 100.0;
@@ -104,7 +104,7 @@ namespace NPC_Plugin_Chooser_2.Views
             {
                 if (scrollViewer.Name == "ImageDisplayScrollViewer" && Keyboard.Modifiers == ModifierKeys.Control)
                 {
-                    double change = (e.Delta > 0 ? 1 : -1) * 10.0; 
+                    double change = (e.Delta > 0 ? 1 : -1) * 1.0; 
                     ViewModel.NpcsViewHasUserManuallyZoomed = true; 
                     ViewModel.NpcsViewZoomLevel = Math.Max(10, Math.Min(500, ViewModel.NpcsViewZoomLevel + change));
                     e.Handled = true;
@@ -224,7 +224,7 @@ namespace NPC_Plugin_Chooser_2.Views
             if (ViewModel == null || !(sender is TextBox textBox)) return;
 
             double currentValue = ViewModel.NpcsViewZoomLevel;
-            double change = (e.Delta > 0 ? 1 : -1) * 10.0; 
+            double change = (e.Delta > 0 ? 1 : -1) * 1.0; 
             
             ViewModel.NpcsViewHasUserManuallyZoomed = true; 
             ViewModel.NpcsViewZoomLevel = Math.Max(10, Math.Min(500, currentValue + change));

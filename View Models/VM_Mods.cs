@@ -99,12 +99,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // --- NEW: Zoom Commands ---
             ZoomInModsCommand = ReactiveCommand.Create(() =>
             {
-                ModsViewZoomLevel = Math.Min(500, ModsViewZoomLevel + 10); // Max 500%
+                ModsViewZoomLevel = Math.Min(500, ModsViewZoomLevel + 2.5); // Max 500%
                 ModsViewHasUserManuallyZoomed = true; // User interaction
             });
             ZoomOutModsCommand = ReactiveCommand.Create(() =>
             {
-                ModsViewZoomLevel = Math.Max(10, ModsViewZoomLevel - 10); // Min 10%
+                ModsViewZoomLevel = Math.Max(10, ModsViewZoomLevel - 2.5); // Min 10%
                 ModsViewHasUserManuallyZoomed = true; // User interaction
             });
             ZoomInModsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomInModsCommand: {ex.Message}")).DisposeWith(_disposables);

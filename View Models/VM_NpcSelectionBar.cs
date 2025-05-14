@@ -144,12 +144,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ZoomInNpcsCommand = ReactiveCommand.Create(() =>
             {
                 NpcsViewHasUserManuallyZoomed = true; 
-                NpcsViewZoomLevel = Math.Min(500, NpcsViewZoomLevel + 10);
+                NpcsViewZoomLevel = Math.Min(500, NpcsViewZoomLevel + 2.5);
             });
             ZoomOutNpcsCommand = ReactiveCommand.Create(() =>
             {
                 NpcsViewHasUserManuallyZoomed = true; 
-                NpcsViewZoomLevel = Math.Max(10, NpcsViewZoomLevel - 10); 
+                NpcsViewZoomLevel = Math.Max(10, NpcsViewZoomLevel - 2.5); 
             });
             ZoomInNpcsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomInNpcsCommand: {ex.Message}")).DisposeWith(_disposables);
             ZoomOutNpcsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomOutNpcsCommand: {ex.Message}")).DisposeWith(_disposables);

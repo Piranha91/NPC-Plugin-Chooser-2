@@ -40,7 +40,7 @@ namespace NPC_Plugin_Chooser_2.Views
                 if (ViewModel == null) return;
 
                 this.Bind(ViewModel, vm => vm.ModsViewZoomLevel, v => v.ZoomPercentageTextBoxMods.Text,
-                    vmToViewConverter: val => val.ToString("F0"),
+                    vmToViewConverter: val => val.ToString("F2"),
                     viewToVmConverter: text => {
                         if(ViewModel != null) ViewModel.ModsViewHasUserManuallyZoomed = true;
                         return double.TryParse(text, out double result) ? Math.Max(10, Math.Min(500, result)) : 100.0;
@@ -80,7 +80,7 @@ namespace NPC_Plugin_Chooser_2.Views
 
             if (Keyboard.Modifiers == ModifierKeys.Control)
             {
-                 double change = (e.Delta > 0 ? 1 : -1) * 10.0; 
+                 double change = (e.Delta > 0 ? 1 : -1) * 1.0; 
                  ViewModel.ModsViewHasUserManuallyZoomed = true; 
                  ViewModel.ModsViewZoomLevel = Math.Max(10, Math.Min(500, ViewModel.ModsViewZoomLevel + change));
                  e.Handled = true; 
@@ -177,7 +177,7 @@ namespace NPC_Plugin_Chooser_2.Views
             if (ViewModel == null || !(sender is TextBox textBox)) return;
 
             double currentValue = ViewModel.ModsViewZoomLevel;
-            double change = (e.Delta > 0 ? 1 : -1) * 10.0; 
+            double change = (e.Delta > 0 ? 1 : -1) * 1.0; 
             
             ViewModel.ModsViewHasUserManuallyZoomed = true; 
             ViewModel.ModsViewZoomLevel = Math.Max(10, Math.Min(500, currentValue + change));
