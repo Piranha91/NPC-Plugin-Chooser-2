@@ -4,7 +4,8 @@ using ReactiveUI;
 using Splat; 
 using System;
 using System.Collections.ObjectModel;
-using System.Diagnostics; 
+using System.Diagnostics;
+using System.Globalization;
 using System.Linq;      
 using System.Reactive; 
 using System.Reactive.Linq; 
@@ -39,13 +40,40 @@ namespace NPC_Plugin_Chooser_2.Views
                 d.DisposeWith(_viewBindings);
                 if (ViewModel == null) return;
 
-                this.Bind(ViewModel, vm => vm.ModsViewZoomLevel, v => v.ZoomPercentageTextBoxMods.Text,
-                    vmToViewConverter: val => val.ToString("F2"),
-                    viewToVmConverter: text => {
-                        if(ViewModel != null) ViewModel.ModsViewHasUserManuallyZoomed = true;
-                        return double.TryParse(text, out double result) ? Math.Max(10, Math.Min(500, result)) : 100.0;
-                    }
-                ).DisposeWith(d);
+                // --- TextBox Zoom Level Binding with Throttle ---
+                // One-way from VM to View (for display, formatted)
+                this.WhenAnyValue(x => x.ViewModel.ModsViewZoomLevel)
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Select(val => val.ToString("F2", CultureInfo.InvariantCulture))
+                    .BindTo(this, v => v.ZoomPercentageTextBoxMods.Text)
+                    .DisposeWith(d);
+
+                // From View (TextBox) to VM, with throttle
+                Observable.FromEventPattern<TextChangedEventArgs>(ZoomPercentageTextBoxMods, nameof(ZoomPercentageTextBoxMods.TextChanged))
+                    .Select(ep => ((TextBox)ep.Sender).Text)
+                    .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler) // Adjust throttle time as needed
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(text =>
+                    {
+                        if (ViewModel != null)
+                        {
+                            if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out double result))
+                            {
+                                ViewModel.ModsViewHasUserManuallyZoomed = true;
+                                double clampedResult = Math.Max(10.0, Math.Min(500.0, result));
+                                if (Math.Abs(ViewModel.ModsViewZoomLevel - clampedResult) > 0.001)
+                                {
+                                     ViewModel.ModsViewZoomLevel = clampedResult;
+                                }
+                            }
+                            else if (!string.IsNullOrWhiteSpace(text))
+                            {
+                                ZoomPercentageTextBoxMods.Text = ViewModel.ModsViewZoomLevel.ToString("F2", CultureInfo.InvariantCulture);
+                            }
+                        }
+                    })
+                    .DisposeWith(d);
+                // --- End TextBox Zoom Level Binding ---
                 
                 this.BindCommand(ViewModel, vm => vm.ZoomInModsCommand, v => v.ZoomInButtonMods).DisposeWith(d);
                 this.BindCommand(ViewModel, vm => vm.ZoomOutModsCommand, v => v.ZoomOutButtonMods).DisposeWith(d);
@@ -182,8 +210,8 @@ namespace NPC_Plugin_Chooser_2.Views
             ViewModel.ModsViewHasUserManuallyZoomed = true; 
             ViewModel.ModsViewZoomLevel = Math.Max(10, Math.Min(500, currentValue + change));
             
-            textBox.CaretIndex = textBox.Text.Length;
-            textBox.SelectAll();
+            // The WhenAnyValue binding from VM to Textbox will update the display.
+            // The explicit TextChanged subscription will push it back to VM after throttle.
             e.Handled = true;
         }
     }
