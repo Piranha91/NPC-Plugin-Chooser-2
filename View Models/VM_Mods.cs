@@ -321,27 +321,38 @@ namespace NPC_Plugin_Chooser_2.View_Models
              // 1. Switch Tab
              _lazyMainWindowVm.Value.IsNpcsTabSelected = true;
 
-             // 2. Find and Select NPC in NpcSelectionBar
-             RxApp.MainThreadScheduler.Schedule(() => // Ensure runs on UI thread after tab switch might complete
+             // 2. Find and Select NPC in NpcSelectionBar, then signal scroll
+             // Schedule the entire operation to ensure tab switch has a chance to complete UI-wise
+             RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () => // Small delay for tab switch
              {
                  var npcToSelect = _npcSelectionBar.AllNpcs.FirstOrDefault(npc => npc.NpcFormKey == npcFormKey);
                  if (npcToSelect != null)
                  {
-                     // Check if filters need adjustment or clearing
-                     // This is complex: maybe just clear filters? Or try applying a FormKey filter?
-                     // Simplest: Clear filters to ensure the NPC is visible.
+                     Debug.WriteLine($"VM_Mods.NavigateToNpc: Found NPC {npcToSelect.DisplayName}. Clearing filters and selecting.");
+                     // Clear filters to ensure the NPC is visible.
                      _npcSelectionBar.SearchText1 = "";
                      _npcSelectionBar.SearchText2 = "";
                      _npcSelectionBar.SearchText3 = "";
+                     // Note: Setting search texts to empty will trigger _npcSelectionBar.ApplyFilter due to its WhenAnyValue subscriptions.
 
-                     // Ensure the NPC is in the filtered list after clearing filters (should be)
+                     // Explicitly apply filter if somehow the reactive chain didn't catch it immediately
+                     // or if AllNpcs was searched but FilteredNpcs needs explicit update before selection.
                      if (!_npcSelectionBar.FilteredNpcs.Contains(npcToSelect))
                      {
-                         _npcSelectionBar.ApplyFilter(false); // Re-apply (now empty) filter
+                          _npcSelectionBar.ApplyFilter(false); // Re-apply (now empty) filter
                      }
 
                      // Now select the NPC
                      _npcSelectionBar.SelectedNpc = npcToSelect;
+
+                     // After selection, explicitly signal the NpcSelectionBar to request a scroll
+                     // Give another small delay for SelectedNpc change to propagate and UI to potentially update ItemSource
+                     RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () => {
+                        if (_npcSelectionBar.SelectedNpc == npcToSelect) // Ensure it's still the one we want
+                        {
+                            _npcSelectionBar.SignalScrollToNpc(npcToSelect);
+                        }
+                     });
                  }
                  else
                  {

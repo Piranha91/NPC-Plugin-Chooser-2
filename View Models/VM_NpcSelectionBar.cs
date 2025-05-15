@@ -645,6 +645,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 _requestScrollToNpcSubject.OnNext(null); // Signal no scroll needed or clear previous
             }
         }
+        
+        public void SignalScrollToNpc(VM_NpcSelection? npc)
+        {
+            if (npc != null)
+            {
+                Debug.WriteLine($"VM_NpcSelectionBar: Explicit signal to scroll to {npc.DisplayName}");
+                _requestScrollToNpcSubject.OnNext(npc);
+            }
+            else
+            {
+                _requestScrollToNpcSubject.OnNext(null); // Clear any pending scroll if npc is null
+            }
+        }
 
         public void ApplyFilter(bool initializing)
         {
