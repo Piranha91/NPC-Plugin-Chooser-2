@@ -155,8 +155,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ZoomOutNpcsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomOutNpcsCommand: {ex.Message}")).DisposeWith(_disposables);
 
             this.WhenAnyValue(x => x.SelectedNpc)
-                .Subscribe(_ => 
+                .Subscribe(npc =>
                 {
+                    if (npc != null)
+                    {
+                        _settings.LastSelectedNpcFormKey = npc.NpcFormKey;
+                        // Part b) Save settings (will be handled by NpcConsistencyProvider or a dedicated save service)
+                    }
+                    else
+                    {
+                        // If SelectedNpc becomes null, you might want to clear the setting
+                        // or leave it as the last valid one. For now, let's leave it.
+                        // _settings.LastSelectedNpcFormKey = FormKey.NullOrEmpty; // Optional
+                    }
+
+                    // Reset manual zoom flag when NPC changes if zoom is not locked (existing logic)
                     if (!NpcsViewIsZoomLocked)
                     {
                         NpcsViewHasUserManuallyZoomed = false;
@@ -529,7 +542,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public void Initialize()
         {
-            var previouslySelectedNpcKey = SelectedNpc?.NpcFormKey;
             SelectedNpc = null; // Deselect NPC
             AllNpcs.Clear();
             FilteredNpcs.Clear();
@@ -615,12 +627,38 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             ApplyFilter(true); // Apply filter to populate FilteredNpcs initially
 
-            // Restore previous selection if possible
-            if (previouslySelectedNpcKey != null)
+            VM_NpcSelection? npcToSelectOnLoad = null;
+
+            if (!_settings.LastSelectedNpcFormKey.IsNull)
             {
-                SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey));
+                npcToSelectOnLoad = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey))
+                                    ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey));
+                
+                if (npcToSelectOnLoad == null)
+                {
+                    _settings.LastSelectedNpcFormKey = FormKey.Null; 
+                    if (FilteredNpcs.Any()) npcToSelectOnLoad = FilteredNpcs[0];
+                }
             }
-            else if (!FilteredNpcs.Any()) // Explicitly null if no results after filter
+            else if (FilteredNpcs.Any())
+            {
+                npcToSelectOnLoad = FilteredNpcs[0];
+            }
+
+            if (npcToSelectOnLoad != null)
+            {
+                SelectedNpc = npcToSelectOnLoad;
+
+                // Schedule scroll for later to ensure UI is ready
+                RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(100), () => { // Added a small explicit delay
+                    // Check again if still selected and in list, as things might change rapidly during init
+                    if (SelectedNpc != null && SelectedNpc == npcToSelectOnLoad && FilteredNpcs.Contains(SelectedNpc)) 
+                    {
+                        _ = RequestScrollIntoView(SelectedNpc);
+                    }
+                });
+            }
+            else
             {
                 SelectedNpc = null;
             }

@@ -5,7 +5,9 @@ using System.Diagnostics;
 using System.Windows;
 using System.IO;
 using System.Reactive;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Text;
 using Microsoft.Win32;
 using Microsoft.WindowsAPICodePack.Dialogs;
@@ -22,13 +24,15 @@ using ReactiveUI.Fody.Helpers;
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
-    public class VM_Settings : ReactiveObject
+    public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     {
         private readonly EnvironmentStateProvider _environmentStateProvider;
         private readonly Settings _model; // Renamed from settings to _model for clarity
-        private readonly VM_NpcSelectionBar _npcSelectionBar;
-        private readonly VM_Mods _modListVM;
+        private readonly Lazy<VM_NpcSelectionBar> _lazyNpcSelectionBar;
+        private readonly Lazy<VM_Mods> _lazyModListVM;
         private readonly NpcConsistencyProvider _consistencyProvider; 
+        
+        public ViewModelActivator Activator { get; } = new ViewModelActivator(); 
 
         // --- Existing & Modified Properties ---
         [Reactive] public string ModsFolder { get; set; }
@@ -57,6 +61,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         // --- Properties for modifying EasyNPC Import/Export ---
         [Reactive] public bool AddMissingNpcsOnUpdate { get; set; } = true; // Default to true
+        
+        // For throttled saving
+        private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
+        private readonly CompositeDisposable _disposables = new CompositeDisposable(); // To manage subscriptions
+        private readonly TimeSpan _saveThrottleTime = TimeSpan.FromMilliseconds(1500);
 
         // --- Commands ---
         public ReactiveCommand<Unit, Unit> SelectGameFolderCommand { get; }
@@ -68,11 +77,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> ExportEasyNpcCommand { get; } // New
         public ReactiveCommand<bool, Unit> UpdateEasyNpcProfileCommand { get; } // Takes bool parameter
 
-        public VM_Settings(EnvironmentStateProvider environmentStateProvider, Settings settings, VM_NpcSelectionBar npcSelectionBar, VM_Mods modListVM, NpcConsistencyProvider consistencyProvider)
+        public VM_Settings(EnvironmentStateProvider environmentStateProvider, Settings settings, Lazy<VM_NpcSelectionBar> lazyNpcSelectionBar, Lazy<VM_Mods> lazyModListVm, NpcConsistencyProvider consistencyProvider)
         {
             _environmentStateProvider = environmentStateProvider;
-            _npcSelectionBar = npcSelectionBar;
-            _modListVM = modListVM;
+            _lazyNpcSelectionBar = lazyNpcSelectionBar;
+            _lazyModListVM = lazyModListVm;
             _model = settings; // Use the injected model instance
             _consistencyProvider = consistencyProvider;
 
@@ -91,11 +100,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ExclusionSelectorViewModel.LoadFromModel(_environmentStateProvider.LoadOrder.Keys, _model.EasyNpcDefaultPluginExclusions);
 
             // Update model when VM properties change
-            this.WhenAnyValue(x => x.ModsFolder).Subscribe(s => _model.ModsFolder = s);
-            this.WhenAnyValue(x => x.MugshotsFolder).Subscribe(s => _model.MugshotsFolder = s);
-            this.WhenAnyValue(x => x.OutputDirectory).Subscribe(s => _model.OutputDirectory = s);
-            this.WhenAnyValue(x => x.AppendTimestampToOutputDirectory).Subscribe(b => _model.AppendTimestampToOutputDirectory = b);
-            this.WhenAnyValue(x => x.SelectedPatchingMode).Subscribe(pm => _model.PatchingMode = pm);
+            this.WhenAnyValue(x => x.ModsFolder).Subscribe(s => _model.ModsFolder = s).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.MugshotsFolder).Subscribe(s => _model.MugshotsFolder = s).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.OutputDirectory).Subscribe(s => _model.OutputDirectory = s).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.AppendTimestampToOutputDirectory).Subscribe(b => _model.AppendTimestampToOutputDirectory = b).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.SelectedPatchingMode).Subscribe(pm => _model.PatchingMode = pm).DisposeWith(_disposables);
 
             // Properties that trigger environment update
             this.WhenAnyValue(x => x.SkyrimGamePath).Subscribe(s =>
@@ -103,13 +112,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 _model.SkyrimGamePath = s;
                 _environmentStateProvider.DataFolderPath = s;
                 UpdateEnvironmentAndNotify();
-            });
+            }).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.SkyrimRelease).Subscribe(r =>
             {
                 _model.SkyrimRelease = r;
                 _environmentStateProvider.SkyrimVersion = r;
                 UpdateEnvironmentAndNotify();
-            });
+            }).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.OutputPluginName) // Trigger on actual plugin name change
                 .Where(x => !x.IsNullOrWhitespace())
                 .Subscribe(s =>
@@ -118,15 +127,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     // Update the provider's understanding of the output mod's name
                     _environmentStateProvider.OutputPluginName = s;
                     UpdateEnvironmentAndNotify();
-                });
+                }).DisposeWith(_disposables);
 
             // Expose environment state reactively
             this.WhenAnyValue(x => x._environmentStateProvider.EnvironmentIsValid)
-                .ToPropertyEx(this, x => x.EnvironmentIsValid);
+                .ToPropertyEx(this, x => x.EnvironmentIsValid).DisposeWith(_disposables);
 
             this.WhenAnyValue(x => x._environmentStateProvider.EnvironmentBuilderError)
                  .Select(err => string.IsNullOrWhiteSpace(err) ? string.Empty : $"Environment Error: {err}")
-                .ToPropertyEx(this, x => x.EnvironmentErrorText);
+                .ToPropertyEx(this, x => x.EnvironmentErrorText).DisposeWith(_disposables);
 
             // Populate AvailablePluginsForExclusion (existing code...)
             this.WhenAnyValue(x => x.EnvironmentIsValid)
@@ -134,7 +143,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     ? _environmentStateProvider.LoadOrder.Keys.ToList()
                     : Enumerable.Empty<ModKey>())
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .ToPropertyEx(this, x => x.AvailablePluginsForExclusion);
+                .ToPropertyEx(this, x => x.AvailablePluginsForExclusion).DisposeWith(_disposables);
 
             // --- Update ModSelectorViewModel when available plugins change --- NEW
             this.WhenAnyValue(x => x.AvailablePluginsForExclusion)
@@ -147,7 +156,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                     // --- Reload using the current UI selections, not the model's ---
                     ExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentUISelctions);
-                });
+                }).DisposeWith(_disposables);
 
 
             // Folder Browser Commands
@@ -159,9 +168,36 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ImportEasyNpcCommand = ReactiveCommand.Create(ImportEasyNpc); // New
             ExportEasyNpcCommand = ReactiveCommand.Create(ExportEasyNpc); // New
             UpdateEasyNpcProfileCommand = ReactiveCommand.CreateFromTask<bool>(UpdateEasyNpcProfile);
+            
+            // Setup throttled save subscription
+            _saveRequestSubject
+                .Throttle(_saveThrottleTime, RxApp.TaskpoolScheduler) 
+                .ObserveOn(RxApp.MainThreadScheduler) 
+                .Subscribe(_ => SaveSettings())
+                .DisposeWith(_disposables); // Manage this subscription
 
-            // Initial environment check
-            UpdateEnvironmentAndNotify();
+            // --- Moved initializations and subscriptions that depend on other VMs to WhenActivated ---
+            this.WhenActivated(disposables =>
+            {
+                // This block executes when VM_Settings becomes active.
+                // By this time, other VMs should also be resolvable and potentially activating.
+
+                Debug.WriteLine("VM_Settings Activated. Initializing environment and dependent VMs.");
+                UpdateEnvironmentAndNotify(); // This calls _lazyNpcSelectionBar.Value.Initialize() internally
+
+                // Subscribe to NpcSelectionBar's SelectedNpc to update LastSelectedNpcFormKey
+                // Ensure NpcSelectionBar is initialized before subscribing to its properties.
+                // UpdateEnvironmentAndNotify already calls Initialize on it.
+                _lazyNpcSelectionBar.Value // Access .Value now, should be safe after UpdateEnvironmentAndNotify
+                    .WhenAnyValue(x => x.SelectedNpc)
+                    .Skip(1) 
+                    .Subscribe(npc =>
+                    {
+                        _model.LastSelectedNpcFormKey = npc?.NpcFormKey ?? FormKey.Null;
+                        RequestThrottledSave(); 
+                    })
+                    .DisposeWith(disposables); 
+            });
         }
 
         public static Settings LoadSettings()
@@ -192,6 +228,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             return loadedSettings;
         }
+        
+        public void RequestThrottledSave()
+        {
+            _saveRequestSubject.OnNext(Unit.Default);
+        }
 
         private void SaveSettings()
         {
@@ -215,9 +256,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.RaisePropertyChanged(nameof(EnvironmentIsValid));
             this.RaisePropertyChanged(nameof(EnvironmentErrorText));
 
-            _npcSelectionBar.Initialize();
-            _modListVM.PopulateModSettings();
-            _modListVM.ApplyFilters(); // Re-apply filters after mods repopulate
+            _lazyNpcSelectionBar.Value.Initialize();
+            _lazyModListVM.Value.PopulateModSettings();
+            _lazyModListVM.Value.ApplyFilters(); // Re-apply filters after mods repopulate
          }
 
         // --- Folder Selection Methods ---
@@ -249,8 +290,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
              if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
              {
                  ModsFolder = dialog.FileName;
-                 _modListVM.PopulateModSettings(); // Refresh mods list view
-                 _modListVM.ApplyFilters();
+                 _lazyModListVM.Value.PopulateModSettings(); // Refresh mods list view
+                 _lazyModListVM.Value.ApplyFilters();
              }
         }
 
@@ -266,9 +307,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
             {
                 MugshotsFolder = dialog.FileName;
-                _npcSelectionBar.Initialize();
-                _modListVM.PopulateModSettings();
-                _modListVM.ApplyFilters();
+                _lazyNpcSelectionBar.Value.Initialize();
+                _lazyModListVM.Value.PopulateModSettings();
+                _lazyModListVM.Value.ApplyFilters();
             }
         }
 
@@ -376,7 +417,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                     // Check if a VM_ModSetting exists for the appearance plugin
                     // TryGetModSettingForPlugin now finds a VM where *any* key matches.
                     // We still need the DisplayName for the consistency provider.
-                    if (!_modListVM.TryGetModSettingForPlugin(appearanceKey, out var foundModSettingVm, out string targetModDisplayName))
+                    if (!_lazyModListVM.Value.TryGetModSettingForPlugin(appearanceKey, out var foundModSettingVm, out string targetModDisplayName))
                     {
                         // Not found - track it and skip adding to potentialChanges for now
                         missingAppearancePlugins.Add(appearanceKey);
@@ -386,7 +427,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                     else
                     {
                         // Found - add to potential changes
-                        string npcName = _npcSelectionBar.AllNpcs.FirstOrDefault(n => n.NpcFormKey == npcKey)?.DisplayName ?? npcKey.ToString();
+                        string npcName = _lazyNpcSelectionBar.Value.AllNpcs.FirstOrDefault(n => n.NpcFormKey == npcKey)?.DisplayName ?? npcKey.ToString();
                         potentialChanges.Add((npcKey, defaultKey, appearanceKey, npcName, targetModDisplayName));
                     }
                 } // End foreach line
@@ -505,7 +546,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                 // No longer need to check modSettingAdded or call ResortAndRefreshFilters
 
                 // Refresh NPC list filter in case selection state changed
-                _npcSelectionBar.ApplyFilter(false);
+                _lazyNpcSelectionBar.Value.ApplyFilter(false);
 
                 ScrollableMessageBox.Show($"Successfully imported settings for {appliedCount} NPCs.", "Import Complete");
             }
@@ -580,7 +621,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                  var appearanceModName = _model.SelectedAppearanceMods[npcFormKey];
 
                  // Find the VM_ModSetting in the Mods View list that corresponds to this display name.
-                 var appearanceMod = _modListVM.AllModSettings.FirstOrDefault(mod => mod.DisplayName == appearanceModName);
+                 var appearanceMod = _lazyModListVM.Value.AllModSettings.FirstOrDefault(mod => mod.DisplayName == appearanceModName);
                  if (appearanceMod == null)
                  {
                      // If no VM_ModSetting is found (e.g., inconsistency after import/manual changes), record error.
@@ -821,7 +862,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                 }
 
                 // --- 4b: Get Appearance Plugin ModKey from selected VM_ModSetting name ---
-                var appearanceModSetting = _modListVM.AllModSettings.FirstOrDefault(m => m.DisplayName == selectedAppearanceModName);
+                var appearanceModSetting = _lazyModListVM.Value.AllModSettings.FirstOrDefault(m => m.DisplayName == selectedAppearanceModName);
                 if (appearanceModSetting == null)
                 {
                     lookupErrors.Add($"Skipping NPC {formString}: Cannot find Mod Setting entry named '{selectedAppearanceModName}'.");
@@ -969,6 +1010,11 @@ When the ouptut plugin is generated, put it at the end of your load order.";
             {
                 ScrollableMessageBox.ShowError($"Failed to save the updated profile file:\n{ex.Message}", "File Save Error");
             }
+        }
+        
+        public void Dispose()
+        {
+            _disposables.Dispose(); // Dispose all subscriptions
         }
     }
 }

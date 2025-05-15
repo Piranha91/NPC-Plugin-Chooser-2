@@ -5,6 +5,7 @@ using System.Reactive.Subjects; // For Subject
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.Models; // For Settings (to load/save)
+using NPC_Plugin_Chooser_2.View_Models; // For Settings Save
 using ReactiveUI; // For MessageBus or Subjects
 
 namespace NPC_Plugin_Chooser_2.BackEnd
@@ -25,19 +26,21 @@ namespace NPC_Plugin_Chooser_2.BackEnd
     // Manages the state of which mod is selected for each NPC
     public class NpcConsistencyProvider
     {
-        private readonly Settings _settings;
+        private readonly Settings _settingsModel; 
         private readonly Dictionary<FormKey, string> _selectedMods; // Internal cache
+        private readonly Lazy<VM_Settings> _lazyVmSettings; // Direct reference to VM_Settings
 
         // Observable to notify when a selection changes
         private readonly Subject<NpcSelectionChangedEventArgs> _npcSelectionChanged = new Subject<NpcSelectionChangedEventArgs>();
         public IObservable<NpcSelectionChangedEventArgs> NpcSelectionChanged => _npcSelectionChanged;
 
 
-        public NpcConsistencyProvider(Settings settings)
+        public NpcConsistencyProvider(Settings settings, Lazy<VM_Settings> lazyVmSettings)
         {
-            _settings = settings;
+            _settingsModel  = settings;
+            _lazyVmSettings = lazyVmSettings;
             // Initialize from persistent settings
-            _selectedMods = new Dictionary<FormKey, string>(_settings.SelectedAppearanceMods ?? new());
+            _selectedMods = new Dictionary<FormKey, string>(_settingsModel .SelectedAppearanceMods ?? new());
         }
 
         public void SetSelectedMod(FormKey npcFormKey, string selectedMod)
@@ -49,7 +52,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             if (!_selectedMods.TryGetValue(npcFormKey, out var currentModKey) || currentModKey != selectedMod)
             {
                 _selectedMods[npcFormKey] = selectedMod;
-                _settings.SelectedAppearanceMods[npcFormKey] = selectedMod; // Update persistent settings
+                _settingsModel .SelectedAppearanceMods[npcFormKey] = selectedMod; // Update persistent settings
                 changed = true;
             }
 
@@ -57,8 +60,11 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             {
                 // Notify subscribers
                 _npcSelectionChanged.OnNext(new NpcSelectionChangedEventArgs(npcFormKey, selectedMod));
-                // Consider adding save logic here or elsewhere periodically/on exit
-                 // SaveSettings();
+                var vmSettings = _lazyVmSettings.Value;
+                if (vmSettings != null)
+                {
+                    vmSettings.RequestThrottledSave();
+                }
             }
         }
         
@@ -73,7 +79,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             {
                 _selectedMods.Remove(npcFormKey);
                 // Also remove from the persistent settings model
-                _settings.SelectedAppearanceMods.Remove(npcFormKey);
+                _settingsModel .SelectedAppearanceMods.Remove(npcFormKey);
                 changed = true;
             }
 
@@ -81,6 +87,11 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             {
                 // Notify subscribers, passing null for selectedMod to indicate deselection
                 _npcSelectionChanged.OnNext(new NpcSelectionChangedEventArgs(npcFormKey, null));
+                var vmSettings = _lazyVmSettings.Value;
+                if (vmSettings != null)
+                {
+                    vmSettings.RequestThrottledSave();
+                }
             }
         }
 
