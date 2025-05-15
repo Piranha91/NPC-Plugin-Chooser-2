@@ -1,6 +1,7 @@
 ﻿using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
-using System.Collections.Generic; // Required for HashSet
+using System.Collections.Generic;
+using System.Windows; // Required for HashSet
 
 namespace NPC_Plugin_Chooser_2.Models;
 
@@ -38,6 +39,13 @@ public class Settings
     public double ModsViewZoomLevel { get; set; } = 100.0; 
     public bool ModsViewIsZoomLocked { get; set; } = false;
 
-    // *** NEW: Last Selected NPC ***
+    // Last Selected NPC ***
     public FormKey LastSelectedNpcFormKey { get; set; } // Will be FormKey.Null if none or invalid
+    
+    // --- Window State Properties ---
+    public double MainWindowTop { get; set; } = 100; // Default a reasonable position
+    public double MainWindowLeft { get; set; } = 100;
+    public double MainWindowHeight { get; set; } = 700; // Default to your design height
+    public double MainWindowWidth { get; set; } = 1000; // Default to your design width
+    public WindowState MainWindowState { get; set; } = WindowState.Normal;
 }
