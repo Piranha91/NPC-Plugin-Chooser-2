@@ -68,6 +68,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool ModsViewIsZoomLocked { get; set; }
         public ReactiveCommand<Unit, Unit> ZoomInModsCommand { get; }
         public ReactiveCommand<Unit, Unit> ZoomOutModsCommand { get; }
+        public ReactiveCommand<Unit, Unit> ResetZoomModsCommand { get; }
+        private const double _minZoomPercentage = 1.0;
+        private const double _maxZoomPercentage = 1000.0;
+        private const double _zoomStepPercentage = 2.5; // For +/- buttons and scroll wheel
 
         // --- Commands ---
         public ReactiveCommand<VM_ModSetting, Unit> ShowMugshotsCommand { get; }
@@ -96,23 +100,41 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
 
             // --- NEW: Initialize Zoom Settings from _settings ---
-            ModsViewZoomLevel = _settings.ModsViewZoomLevel;
+            ModsViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, _settings.ModsViewZoomLevel)); // Clamp initial load
             ModsViewIsZoomLocked = _settings.ModsViewIsZoomLocked;
+            Debug.WriteLine($"VM_Mods.Constructor: Initial ZoomLevel: {ModsViewZoomLevel:F2}, IsZoomLocked: {ModsViewIsZoomLocked}");
 
             // --- NEW: Zoom Commands ---
             ZoomInModsCommand = ReactiveCommand.Create(() =>
             {
-                ModsViewZoomLevel = Math.Min(500, ModsViewZoomLevel + 2.5); // Max 500%
-                ModsViewHasUserManuallyZoomed = true; // User interaction
+                Debug.WriteLine("VM_Mods: ZoomInModsCommand executed.");
+                ModsViewHasUserManuallyZoomed = true; 
+                ModsViewZoomLevel = Math.Min(_maxZoomPercentage, ModsViewZoomLevel + _zoomStepPercentage);
             });
             ZoomOutModsCommand = ReactiveCommand.Create(() =>
             {
-                ModsViewZoomLevel = Math.Max(10, ModsViewZoomLevel - 2.5); // Min 10%
-                ModsViewHasUserManuallyZoomed = true; // User interaction
+                Debug.WriteLine("VM_Mods: ZoomOutModsCommand executed.");
+                ModsViewHasUserManuallyZoomed = true; 
+                ModsViewZoomLevel = Math.Max(_minZoomPercentage, ModsViewZoomLevel - _zoomStepPercentage); 
             });
+            ResetZoomModsCommand = ReactiveCommand.Create(() =>
+            {
+                Debug.WriteLine("VM_Mods: ResetZoomModsCommand executed.");
+                ModsViewIsZoomLocked = false;
+                ModsViewHasUserManuallyZoomed = false; // This allows packer to take over
+                // The key is that the VIEW needs to be told to re-evaluate its layout
+                // BEFORE the packer uses the ScrollViewer's dimensions.
+                // So, just signaling the subject might not be enough if the view's layout
+                // isn't guaranteed to be updated first.
+                // This subject will trigger RefreshMugshotImageSizes in the view.
+                _refreshMugshotSizesSubject.OnNext(Unit.Default);
+            });
+            // ... (exception handlers for commands) ...
             ZoomInModsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomInModsCommand: {ex.Message}")).DisposeWith(_disposables);
             ZoomOutModsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomOutModsCommand: {ex.Message}")).DisposeWith(_disposables);
-
+            ResetZoomModsCommand.ThrownExceptions
+                .Subscribe(ex => Debug.WriteLine($"Error ResetZoomModsCommand: {ex.Message}"))
+                .DisposeWith(_disposables);
 
             PopulateModSettings(); // Populates and sorts _allModSettingsInternal
 
@@ -136,44 +158,63 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // --- NEW: Persist Zoom Settings and Trigger Refresh ---
             this.WhenAnyValue(x => x.ModsViewZoomLevel)
-                .Skip(1) // Skip initial value from settings
-                .Throttle(TimeSpan.FromMilliseconds(50))
+                .Skip(1) 
+                .Throttle(TimeSpan.FromMilliseconds(100)) 
                 .Subscribe(zoom =>
                 {
-                    var clampedZoom = Math.Max(10, Math.Min(500, zoom));
-                    if (clampedZoom != zoom)
+                    bool isFromPackerUpdate = !ModsViewIsZoomLocked && !ModsViewHasUserManuallyZoomed;
+                    Debug.WriteLine($"VM_Mods: ModsViewZoomLevel RAW input {zoom:F2}. IsFromPacker: {isFromPackerUpdate}, IsLocked: {ModsViewIsZoomLocked}, ManualZoom: {ModsViewHasUserManuallyZoomed}");
+                    
+                    double previousVmZoomLevel = _settings.ModsViewZoomLevel; 
+                    double newClampedZoom = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, zoom));
+
+                    if (Math.Abs(_settings.ModsViewZoomLevel - newClampedZoom) > 0.001)
                     {
-                        ModsViewZoomLevel = clampedZoom; // Will re-trigger if changed
-                        return;
+                        _settings.ModsViewZoomLevel = newClampedZoom;
+                        Debug.WriteLine($"VM_Mods: Settings.ModsViewZoomLevel updated to {newClampedZoom:F2}.");
                     }
-                    _settings.ModsViewZoomLevel = clampedZoom;
+
+                    if (Math.Abs(newClampedZoom - zoom) > 0.001) 
+                    {
+                        Debug.WriteLine($"VM_Mods: ZoomLevel IS being clamped from {zoom:F2} to {newClampedZoom:F2}. Updating property.");
+                        ModsViewZoomLevel = newClampedZoom; 
+                        return; 
+                    }
+                    
                     if (ModsViewIsZoomLocked || ModsViewHasUserManuallyZoomed)
                     {
+                        Debug.WriteLine($"VM_Mods: ZoomLevel processed. IsLocked or ManualZoom. Triggering refresh. Value: {newClampedZoom:F2}");
                         _refreshMugshotSizesSubject.OnNext(Unit.Default);
+                    } else {
+                        Debug.WriteLine($"VM_Mods: ZoomLevel processed. Unlocked & not manual. No VM-initiated refresh. Value: {newClampedZoom:F2}");
                     }
                 })
                 .DisposeWith(_disposables);
 
             this.WhenAnyValue(x => x.ModsViewIsZoomLocked)
-                .Skip(1) // Skip initial value
+                .Skip(1) 
                 .Subscribe(isLocked =>
                 {
+                    Debug.WriteLine($"VM_Mods: ModsViewIsZoomLocked changed to {isLocked}.");
                     _settings.ModsViewIsZoomLocked = isLocked;
-                    ModsViewHasUserManuallyZoomed = false; // Reset manual flag
-                    _refreshMugshotSizesSubject.OnNext(Unit.Default); // Always refresh packer
+                    ModsViewHasUserManuallyZoomed = false; 
+                    Debug.WriteLine("VM_Mods: ModsViewIsZoomLocked changed - Triggering _refreshMugshotSizesSubject.");
+                    _refreshMugshotSizesSubject.OnNext(Unit.Default); 
                 })
                 .DisposeWith(_disposables);
 
             // MODIFIED: When SelectedModForMugshots changes, reset manual zoom state if not locked.
             this.WhenAnyValue(x => x.SelectedModForMugshots)
+                .Skip(1)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(selectedMod => {
+                    Debug.WriteLine($"VM_Mods: SelectedModForMugshots changed to {selectedMod?.DisplayName ?? "null"}.");
                     if (!ModsViewIsZoomLocked)
                     {
+                        Debug.WriteLine("VM_Mods: SelectedModForMugshots changed - Zoom not locked, setting ModsViewHasUserManuallyZoomed = false");
                         ModsViewHasUserManuallyZoomed = false;
                     }
-                    // The ShowMugshotsAsync method, called when SelectedModForMugshots changes (usually via command),
-                    // is already responsible for triggering _refreshMugshotSizesSubject.
+                    // ShowMugshotsAsync (called when this property changes, typically via command) will trigger _refreshMugshotSizesSubject
                 })
                 .DisposeWith(_disposables);
             

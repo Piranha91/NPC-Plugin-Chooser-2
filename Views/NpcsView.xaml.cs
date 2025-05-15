@@ -21,6 +21,9 @@ namespace NPC_Plugin_Chooser_2.Views
     public partial class NpcsView : ReactiveUserControl<VM_NpcSelectionBar>
     {
         private readonly CompositeDisposable _viewBindings = new CompositeDisposable();
+        private const double _minZoomPercentage = 1.0;
+        private const double _maxZoomPercentage = 1000.0;
+        private const double _zoomStepPercentage = 2.5; // For +/- buttons and scroll wheel
 
         public NpcsView()
         {
@@ -58,29 +61,26 @@ namespace NPC_Plugin_Chooser_2.Views
                 // From View (TextBox) to VM, with throttle
                 Observable.FromEventPattern<TextChangedEventArgs>(ZoomPercentageTextBox, nameof(ZoomPercentageTextBox.TextChanged))
                     .Select(ep => ((TextBox)ep.Sender).Text)
-                    .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler) // Adjust throttle time as needed
-                    .ObserveOn(RxApp.MainThreadScheduler) // Ensure update happens on UI thread if VM property change has UI effects immediately
+                    .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler) 
+                    .ObserveOn(RxApp.MainThreadScheduler) 
                     .Subscribe(text =>
                     {
+                        Debug.WriteLine($"NpcsView: ZoomPercentageTextBox TextChanged to '{text}' (throttled)");
                         if (ViewModel != null)
                         {
                             if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out double result))
                             {
                                 ViewModel.NpcsViewHasUserManuallyZoomed = true;
-                                double clampedResult = Math.Max(10.0, Math.Min(500.0, result));
-                                // Only update if the parsed and clamped value is different from current VM value
-                                // to avoid redundant updates and potential loops if formatting causes slight changes.
+                                double clampedResult = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, result)); // Use field
                                 if (Math.Abs(ViewModel.NpcsViewZoomLevel - clampedResult) > 0.001) 
                                 {
-                                     ViewModel.NpcsViewZoomLevel = clampedResult;
+                                    Debug.WriteLine($"NpcsView: Textbox updating VM.NpcsViewZoomLevel to {clampedResult}");
+                                    ViewModel.NpcsViewZoomLevel = clampedResult;
                                 }
                             }
-                            // Optional: handle parse failure, e.g., revert textbox to VM value or show error
-                            // else if the textbox is not empty, it means invalid input.
-                            // Could reset textbox text to current ViewModel.NpcsViewZoomLevel.ToString("F2")
                             else if (!string.IsNullOrWhiteSpace(text))
                             {
-                                // Re-set the textbox from VM if parsing fails to avoid inconsistent state
+                                Debug.WriteLine($"NpcsView: Textbox parse failed for '{text}', resetting to VM value.");
                                 ZoomPercentageTextBox.Text = ViewModel.NpcsViewZoomLevel.ToString("F2", CultureInfo.InvariantCulture);
                             }
                         }
@@ -91,6 +91,7 @@ namespace NPC_Plugin_Chooser_2.Views
                 this.BindCommand(ViewModel, vm => vm.ZoomInNpcsCommand, v => v.ZoomInButton).DisposeWith(d);
                 this.BindCommand(ViewModel, vm => vm.ZoomOutNpcsCommand, v => v.ZoomOutButton).DisposeWith(d);
                 this.Bind(ViewModel, vm => vm.NpcsViewIsZoomLocked, v => v.LockZoomCheckBox.IsChecked).DisposeWith(d);
+                this.BindCommand(ViewModel, vm => vm.ResetZoomNpcsCommand, v => v.ResetZoomNpcsButton).DisposeWith(d);
 
 
                 ViewModel.RefreshImageSizesObservable // This subject is signaled by VM when things like SelectedNpc, ShowHidden, ZoomLevel, or LockState change
@@ -157,16 +158,12 @@ namespace NPC_Plugin_Chooser_2.Views
         private void ScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             if (ViewModel == null) return;
-
-            if (sender is ScrollViewer scrollViewer)
+            if (sender is ScrollViewer scrollViewer && scrollViewer.Name == "ImageDisplayScrollViewer" && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                if (scrollViewer.Name == "ImageDisplayScrollViewer" && Keyboard.Modifiers == ModifierKeys.Control)
-                {
-                    double change = (e.Delta > 0 ? 1 : -1) * 1.0; 
-                    ViewModel.NpcsViewHasUserManuallyZoomed = true; 
-                    ViewModel.NpcsViewZoomLevel = Math.Max(10, Math.Min(500, ViewModel.NpcsViewZoomLevel + change));
-                    e.Handled = true;
-                }
+                double change = (e.Delta > 0 ? 1 : -1) * _zoomStepPercentage; // Use field
+                ViewModel.NpcsViewHasUserManuallyZoomed = true; 
+                ViewModel.NpcsViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, ViewModel.NpcsViewZoomLevel + change)); // Use fields
+                e.Handled = true;
             }
         }
         
@@ -280,15 +277,16 @@ namespace NPC_Plugin_Chooser_2.Views
         private void ZoomPercentageTextBox_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             if (ViewModel == null || !(sender is TextBox textBox)) return;
-
             double currentValue = ViewModel.NpcsViewZoomLevel;
-            double change = (e.Delta > 0 ? 1 : -1) * 1.0; 
+            double change = (e.Delta > 0 ? 1 : -1) * _zoomStepPercentage; // Use field
             
             ViewModel.NpcsViewHasUserManuallyZoomed = true; 
-            ViewModel.NpcsViewZoomLevel = Math.Max(10, Math.Min(500, currentValue + change));
+            ViewModel.NpcsViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, currentValue + change)); // Use fields
             
-            // The WhenAnyValue binding from VM to Textbox will update the display.
-            // The explicit TextChanged subscription will push it back to VM after throttle.
+            var binding = textBox.GetBindingExpression(TextBox.TextProperty);
+            binding?.UpdateSource();
+            textBox.CaretIndex = textBox.Text.Length;
+            textBox.SelectAll();
             e.Handled = true;
         }
     }

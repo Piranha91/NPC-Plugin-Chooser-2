@@ -102,6 +102,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool NpcsViewIsZoomLocked { get; set; }
         public ReactiveCommand<Unit, Unit> ZoomInNpcsCommand { get; }
         public ReactiveCommand<Unit, Unit> ZoomOutNpcsCommand { get; }
+        public ReactiveCommand<Unit, Unit> ResetZoomNpcsCommand { get; }
+        private const double _minZoomPercentage = 1.0;
+        private const double _maxZoomPercentage = 1000.0;
+        private const double _zoomStepPercentage = 2.5; // For +/- buttons and scroll wheel
 
         // This is used by the View to know when the user has manually adjusted zoom with Ctrl+Scroll
         // or used the +/- buttons. If true, automatic resizing might be skipped or handled differently.
@@ -139,21 +143,37 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _hiddenModsPerNpc = _settings.HiddenModsPerNpc ?? new();
             _settings.NpcGroupAssignments ??= new(); 
 
-            NpcsViewZoomLevel = _settings.NpcsViewZoomLevel;
+            NpcsViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, _settings.NpcsViewZoomLevel)); // Clamp initial load
             NpcsViewIsZoomLocked = _settings.NpcsViewIsZoomLocked;
-
+            Debug.WriteLine($"VM_NpcSelectionBar.Constructor: Initial ZoomLevel: {NpcsViewZoomLevel:F2}, IsZoomLocked: {NpcsViewIsZoomLocked}");
+            
             ZoomInNpcsCommand = ReactiveCommand.Create(() =>
             {
+                Debug.WriteLine("VM_NpcSelectionBar: ZoomInNpcsCommand executed.");
                 NpcsViewHasUserManuallyZoomed = true; 
-                NpcsViewZoomLevel = Math.Min(500, NpcsViewZoomLevel + 2.5);
+                NpcsViewZoomLevel = Math.Min(_maxZoomPercentage, NpcsViewZoomLevel + _zoomStepPercentage);
             });
             ZoomOutNpcsCommand = ReactiveCommand.Create(() =>
             {
+                Debug.WriteLine("VM_NpcSelectionBar: ZoomOutNpcsCommand executed.");
                 NpcsViewHasUserManuallyZoomed = true; 
-                NpcsViewZoomLevel = Math.Max(10, NpcsViewZoomLevel - 2.5); 
+                NpcsViewZoomLevel = Math.Max(_minZoomPercentage, NpcsViewZoomLevel - _zoomStepPercentage); 
             });
+            ResetZoomNpcsCommand = ReactiveCommand.Create(() =>
+            {
+                Debug.WriteLine("VM_NpcSelectionBar: ResetZoomNpcsCommand executed.");
+                NpcsViewIsZoomLocked = false;
+                NpcsViewHasUserManuallyZoomed = false;
+                // ViewModel's NpcsViewZoomLevel will be updated by the packer when RefreshImageSizes runs.
+                // We signal the view to re-evaluate and potentially re-pack.
+                _refreshImageSizesSubject.OnNext(Unit.Default);
+            });
+
             ZoomInNpcsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomInNpcsCommand: {ex.Message}")).DisposeWith(_disposables);
             ZoomOutNpcsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomOutNpcsCommand: {ex.Message}")).DisposeWith(_disposables);
+            ResetZoomNpcsCommand.ThrownExceptions
+                .Subscribe(ex => Debug.WriteLine($"Error ResetZoomNpcsCommand: {ex.Message}"))
+                .DisposeWith(_disposables);
 
             this.WhenAnyValue(x => x.SelectedNpc)
                 .Subscribe(npc =>
@@ -320,21 +340,34 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             this.WhenAnyValue(x => x.NpcsViewZoomLevel)
                 .Skip(1) 
-                .Throttle(TimeSpan.FromMilliseconds(50)) 
+                .Throttle(TimeSpan.FromMilliseconds(100)) 
                 .Subscribe(zoom =>
                 {
-                    var clampedZoom = Math.Max(10, Math.Min(500, zoom));
-                    if (clampedZoom != zoom)
+                    bool isFromPackerUpdate = !NpcsViewIsZoomLocked && !NpcsViewHasUserManuallyZoomed;
+                    Debug.WriteLine($"VM_NpcSelectionBar: NpcsViewZoomLevel RAW input {zoom:F2}. IsFromPacker: {isFromPackerUpdate}, IsLocked: {NpcsViewIsZoomLocked}, ManualZoom: {NpcsViewHasUserManuallyZoomed}");
+                    
+                    double previousVmZoomLevel = _settings.NpcsViewZoomLevel; 
+                    double newClampedZoom = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, zoom));
+
+                    if (Math.Abs(_settings.NpcsViewZoomLevel - newClampedZoom) > 0.001)
                     {
-                        NpcsViewZoomLevel = clampedZoom; 
-                        return; 
+                        _settings.NpcsViewZoomLevel = newClampedZoom;
+                        Debug.WriteLine($"VM_NpcSelectionBar: Settings.NpcsViewZoomLevel updated to {newClampedZoom:F2}.");
                     }
 
-                    _settings.NpcsViewZoomLevel = clampedZoom;
-                    
-                    if (NpcsViewIsZoomLocked || (!NpcsViewIsZoomLocked && NpcsViewHasUserManuallyZoomed) )
+                    if (Math.Abs(newClampedZoom - zoom) > 0.001) 
                     {
+                        Debug.WriteLine($"VM_NpcSelectionBar: ZoomLevel IS being clamped from {zoom:F2} to {newClampedZoom:F2}. Updating property.");
+                        NpcsViewZoomLevel = newClampedZoom; 
+                        return; 
+                    }
+                    
+                    if (NpcsViewIsZoomLocked || NpcsViewHasUserManuallyZoomed)
+                    {
+                        Debug.WriteLine($"VM_NpcSelectionBar: ZoomLevel processed. IsLocked or ManualZoom. Triggering refresh. Value: {newClampedZoom:F2}");
                         _refreshImageSizesSubject.OnNext(Unit.Default);
+                    } else {
+                        Debug.WriteLine($"VM_NpcSelectionBar: ZoomLevel processed. Unlocked & not manual. No VM-initiated refresh. Value: {newClampedZoom:F2}");
                     }
                 })
                 .DisposeWith(_disposables);
