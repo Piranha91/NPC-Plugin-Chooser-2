@@ -53,6 +53,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private Dictionary<FormKey, HashSet<string>> _hiddenModsPerNpc = new();
         private Dictionary<string, List<(string ModName, string ImagePath)>> _mugshotData = new();
         private readonly ISubject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
+        private readonly BehaviorSubject<VM_NpcSelection?> _requestScrollToNpcSubject = new BehaviorSubject<VM_NpcSelection?>(null);
+        public IObservable<VM_NpcSelection?> RequestScrollToNpcObservable => _requestScrollToNpcSubject.AsObservable();
 
         // --- Search Properties ---
         [Reactive] public string SearchText1 { get; set; } = string.Empty;
@@ -94,7 +96,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, string?> LoadDescriptionCommand { get; }
         [ObservableAsProperty] public bool IsLoadingDescription { get; }
         public IObservable<Unit> RefreshImageSizesObservable => _refreshImageSizesSubject.AsObservable();
-        public Interaction<VM_NpcSelection, Unit> ScrollToNpcInteraction { get; }
+        
         // --- NEW: Zoom Control Properties & Commands for NpcsView ---
         [Reactive] public double NpcsViewZoomLevel { get; set; }
         [Reactive] public bool NpcsViewIsZoomLocked { get; set; }
@@ -136,7 +138,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _hiddenModNames = _settings.HiddenModNames ?? new(StringComparer.OrdinalIgnoreCase);
             _hiddenModsPerNpc = _settings.HiddenModsPerNpc ?? new();
             _settings.NpcGroupAssignments ??= new(); 
-            ScrollToNpcInteraction = new Interaction<VM_NpcSelection, Unit>();
 
             NpcsViewZoomLevel = _settings.NpcsViewZoomLevel;
             NpcsViewIsZoomLocked = _settings.NpcsViewIsZoomLocked;
@@ -355,22 +356,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         // --- Methods ---
-
-        public async Task RequestScrollIntoView(VM_NpcSelection npcToScrollTo)
-        {
-            if (npcToScrollTo == null) return;
-            try
-            {
-                await ScrollToNpcInteraction.Handle(npcToScrollTo);
-                Debug.WriteLine($"Requested scroll for {npcToScrollTo.DisplayName}");
-            }
-            catch (Exception ex)
-            {
-                // Handle cases where the interaction wasn't handled by the view (e.g., View not ready)
-                Debug.WriteLine($"Error invoking ScrollToNpcInteraction: {ex.Message}. Was the handler registered in NpcsView?");
-            }
-        }
-
         public bool CanJumpToMod(string appearanceModName)
         {
             var modsVm = _lazyModsVm.Value;
@@ -633,7 +618,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 npcToSelectOnLoad = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey))
                                     ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey));
-                
+            
                 if (npcToSelectOnLoad == null)
                 {
                     _settings.LastSelectedNpcFormKey = FormKey.Null; 
@@ -647,20 +632,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             if (npcToSelectOnLoad != null)
             {
-                SelectedNpc = npcToSelectOnLoad;
+                SelectedNpc = npcToSelectOnLoad; // Set the selected NPC
 
-                // Schedule scroll for later to ensure UI is ready
-                RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(100), () => { // Added a small explicit delay
-                    // Check again if still selected and in list, as things might change rapidly during init
-                    if (SelectedNpc != null && SelectedNpc == npcToSelectOnLoad && FilteredNpcs.Contains(SelectedNpc)) 
-                    {
-                        _ = RequestScrollIntoView(SelectedNpc);
-                    }
-                });
+                // Signal that this NPC should be scrolled to.
+                // The View will subscribe to this and act when ready.
+                _requestScrollToNpcSubject.OnNext(npcToSelectOnLoad); 
+                Debug.WriteLine($"VM_NpcSelectionBar.Initialize: Signaled scroll request for {npcToSelectOnLoad.DisplayName}");
             }
             else
             {
                 SelectedNpc = null;
+                _requestScrollToNpcSubject.OnNext(null); // Signal no scroll needed or clear previous
             }
         }
 

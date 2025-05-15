@@ -342,11 +342,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                      // Now select the NPC
                      _npcSelectionBar.SelectedNpc = npcToSelect;
-
-                     // Attempt to scroll into view (Requires reference or messaging)
-                     // This is often better handled with an Attached Property or Behavior on the ListBox in the View.
-                     // For now, just selecting it is the primary goal.
-                     _npcSelectionBar.RequestScrollIntoView(npcToSelect); // Assuming VM_NpcSelectionBar has such a method/mechanism
                  }
                  else
                  {

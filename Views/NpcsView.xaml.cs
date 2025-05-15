@@ -98,29 +98,53 @@ namespace NPC_Plugin_Chooser_2.Views
                     .Subscribe(_ => RefreshImageSizes())
                     .DisposeWith(d);
                 
-                ViewModel.ScrollToNpcInteraction.RegisterHandler(interaction =>
+                // Subscribe to the ViewModel's scroll request observable
+        ViewModel.RequestScrollToNpcObservable
+            .Where(npcToScrollTo => npcToScrollTo != null) // Only act if there's an NPC
+            .ObserveOn(RxApp.MainThreadScheduler) // Ensure UI operations are on the UI thread
+            .Subscribe(async npcToScrollTo => // Make lambda async
+            {
+                Debug.WriteLine($"NpcsView.WhenActivated: Received scroll request for {npcToScrollTo.DisplayName}");
+                try
                 {
-                    var npcToScrollTo = interaction.Input;
-                    if (npcToScrollTo != null)
+                    // Give the ListBox a moment to update its items after SelectedNpc might have changed
+                    await Task.Delay(100); // Adjust delay as needed, or try DispatcherPriority.Loaded/Render
+                    NpcListBox.UpdateLayout(); // Force layout to ensure containers are generated
+
+                    if (NpcListBox.Items.Contains(npcToScrollTo))
                     {
-                        Dispatcher.InvokeAsync(() =>
+                        var listBoxItem = NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) as ListBoxItem;
+                        if (listBoxItem != null)
                         {
-                            try
+                            //listBoxItem.Focus(); // Optional
+                            NpcListBox.ScrollIntoView(npcToScrollTo);
+                            Debug.WriteLine($"NpcsView: Scrolled to {npcToScrollTo.DisplayName} (ListBoxItem found).");
+                        }
+                        else
+                        {
+                            // Fallback if container not immediately found (common with virtualization)
+                            NpcListBox.ScrollIntoView(npcToScrollTo);
+                            Debug.WriteLine($"NpcsView: Scrolled to {npcToScrollTo.DisplayName} (general ScrollIntoView, item container might still be virtualized).");
+                            
+                            // Optional: A slightly more robust retry for virtualized items
+                            await Task.Delay(50); // Brief wait for virtualization
+                            NpcListBox.UpdateLayout();
+                            if (NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) is ListBoxItem finalItem)
                             {
-                                if (NpcListBox.Items.Contains(npcToScrollTo))
-                                {
-                                    NpcListBox.ScrollIntoView(npcToScrollTo);
-                                }
-                                interaction.SetOutput(Unit.Default); 
+                                NpcListBox.ScrollIntoView(finalItem); // Scroll to the actual container
+                                Debug.WriteLine($"NpcsView: Retry scroll for {npcToScrollTo.DisplayName} using ListBoxItem successful.");
                             }
-                            catch (Exception ex)
-                            {
-                                Debug.WriteLine($"NpcsView Interaction Handler: Error during ScrollIntoView: {ex.Message}");
-                                interaction.SetOutput(Unit.Default);
-                            }
-                        });
+                        }
                     }
-                    else { interaction.SetOutput(Unit.Default); }
+                    else
+                    {
+                        Debug.WriteLine($"NpcsView: NPC {npcToScrollTo.DisplayName} not in ListBox items when trying to scroll.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"NpcsView: Error during scroll attempt for {npcToScrollTo.DisplayName}: {ex.Message}");
+                }
                 }).DisposeWith(d); 
 
                 if (ViewModel.CurrentNpcAppearanceMods != null && ViewModel.CurrentNpcAppearanceMods.Any())
