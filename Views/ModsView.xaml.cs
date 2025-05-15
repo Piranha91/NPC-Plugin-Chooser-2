@@ -12,7 +12,8 @@ using System.Reactive.Linq;
 using System.Reactive.Disposables;
 using System.Windows.Controls; 
 using System.Windows.Input;  
-using System.Windows;      
+using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading; 
 
 namespace NPC_Plugin_Chooser_2.Views
@@ -89,6 +90,55 @@ namespace NPC_Plugin_Chooser_2.Views
                 {
                     RefreshMugshotImageSizes();
                 }
+                
+                // NEW: Subscribe to the ViewModel's scroll request observable for Mods
+                ViewModel.RequestScrollToModObservable
+            .Where(modToScrollTo => modToScrollTo != null) 
+            .ObserveOn(RxApp.MainThreadScheduler) 
+            .Subscribe(async modSettingToScrollTo => 
+            {
+                Debug.WriteLine($"ModsView.WhenActivated: Received scroll request for ModSetting {modSettingToScrollTo.DisplayName}");
+                try
+                {
+                    await Task.Delay(150); // Increased delay slightly for UI to settle
+                    ModSettingsItemsControl.UpdateLayout(); 
+
+                    if (ModSettingsItemsControl.Items.Contains(modSettingToScrollTo))
+                    {
+                        var container = ModSettingsItemsControl.ItemContainerGenerator.ContainerFromItem(modSettingToScrollTo) as FrameworkElement;
+                        
+                        if (container != null)
+                        {
+                            container.BringIntoView();
+                            Debug.WriteLine($"ModsView: Scrolled to {modSettingToScrollTo.DisplayName} using BringIntoView on container.");
+                        }
+                        else
+                        {
+                            Debug.WriteLine($"ModsView: Container for {modSettingToScrollTo.DisplayName} not found after initial UpdateLayout. Item might be virtualized or not yet rendered.");
+                            // For a plain ItemsControl that isn't virtualizing heavily, if the container is null,
+                            // it often means the item is simply not visible or not yet part of the visual tree.
+                            // If ModSettingsItemsControl *is* virtualizing (e.g. its ItemsPanel is VirtualizingStackPanel),
+                            // then this is a harder problem without ListBox.ScrollIntoView.
+                            // One advanced technique would be to calculate the approximate offset based on item index and average item height,
+                            // then use ScrollViewer.ScrollToVerticalOffset. This is complex.
+
+                            // As a simpler fallback, if your ItemsControl is NOT virtualizing,
+                            // this else block might mean the item isn't present or an issue with ItemContainerGenerator.
+                            // If it IS virtualizing, and BringIntoView on the container is the goal,
+                            // and the container is null, we are a bit stuck with simple methods.
+                        }
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"ModsView: ModSetting {modSettingToScrollTo.DisplayName} not in ModSettingsItemsControl items when trying to scroll.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"ModsView: Error during scroll attempt for {modSettingToScrollTo.DisplayName}: {ex.Message}");
+                }
+            })
+            .DisposeWith(d); 
             });
         }
 
@@ -213,6 +263,21 @@ namespace NPC_Plugin_Chooser_2.Views
             // The WhenAnyValue binding from VM to Textbox will update the display.
             // The explicit TextChanged subscription will push it back to VM after throttle.
             e.Handled = true;
+        }
+    }
+    
+    // Helper extension method (place in a utility class or at the bottom of ModsView.xaml.cs if local)
+    public static class FrameworkElementExtensions
+    {
+        public static T? TryFindParent<T>(this DependencyObject child) where T : DependencyObject
+        {
+            DependencyObject parentObject = VisualTreeHelper.GetParent(child);
+            if (parentObject == null) return null;
+            T parent = parentObject as T;
+            if (parent != null)
+                return parent;
+            else
+                return TryFindParent<T>(parentObject);
         }
     }
 }

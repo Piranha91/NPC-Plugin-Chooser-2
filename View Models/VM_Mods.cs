@@ -34,6 +34,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly NpcConsistencyProvider _consistencyProvider;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm; // *** NEW: To switch tabs ***
         private readonly CompositeDisposable _disposables = new();
+        // Subject and Observable for scroll requests
+        private readonly BehaviorSubject<VM_ModSetting?> _requestScrollToModSubject = new BehaviorSubject<VM_ModSetting?>(null);
+        public IObservable<VM_ModSetting?> RequestScrollToModObservable => _requestScrollToModSubject.AsObservable();
 
         // --- Filtering Properties (Left Panel) ---
         [Reactive] public string NameFilterText { get; set; } = string.Empty;
@@ -171,6 +174,31 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                     // The ShowMugshotsAsync method, called when SelectedModForMugshots changes (usually via command),
                     // is already responsible for triggering _refreshMugshotSizesSubject.
+                })
+                .DisposeWith(_disposables);
+            
+            // When SelectedModForMugshots changes (which happens when ShowMugshotsCommand is executed),
+            // signal a scroll request for this newly selected mod.
+            this.WhenAnyValue(x => x.SelectedModForMugshots)
+                .Skip(1) // Skip initial null or first value
+                .ObserveOn(RxApp.MainThreadScheduler) // Ensure subject is updated on UI thread if needed, though OnNext is thread-safe
+                .Subscribe(modToScrollTo =>
+                {
+                    if (modToScrollTo != null)
+                    {
+                        Debug.WriteLine($"VM_Mods: SelectedModForMugshots changed to {modToScrollTo.DisplayName}. Signaling scroll.");
+                        _requestScrollToModSubject.OnNext(modToScrollTo);
+                    }
+                    else
+                    {
+                        _requestScrollToModSubject.OnNext(null); // Clear scroll request if selection is cleared
+                    }
+
+                    // Reset manual zoom flag if not locked (existing logic)
+                    if (!ModsViewIsZoomLocked)
+                    {
+                        ModsViewHasUserManuallyZoomed = false;
+                    }
                 })
                 .DisposeWith(_disposables);
 
@@ -313,6 +341,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             _disposables.Dispose();
             // Any other cleanup
+            _requestScrollToModSubject.Dispose(); // Dispose the subject
         }
 
         // *** NEW: Method to handle navigation triggered by VM_ModNpcMugshot ***
@@ -947,6 +976,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     $"Automatically merged mod settings:\n\n'{loserName}' was merged into '{winnerName}'.\n\nNPC assignments using '{loserName}' have been updated.",
                     "Mod Settings Merged"
                     );
+            }
+        }
+        
+        public void SignalScrollToMod(VM_ModSetting? modSetting)
+        {
+            if (modSetting != null)
+            {
+                Debug.WriteLine($"VM_Mods: Explicit signal to scroll to ModSetting {modSetting.DisplayName}");
+                _requestScrollToModSubject.OnNext(modSetting);
+            }
+            else
+            {
+                _requestScrollToModSubject.OnNext(null);
             }
         }
     }

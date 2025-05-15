@@ -374,7 +374,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (appearanceMod == null || string.IsNullOrWhiteSpace(appearanceMod.ModName)) return;
 
             string targetModName = appearanceMod.ModName;
-            Debug.WriteLine($"JumpToMod requested for: {targetModName}");
+            Debug.WriteLine($"VM_NpcSelectionBar.JumpToMod: Requested for {targetModName}");
 
             var modsVm = _lazyModsVm.Value;
             if (modsVm == null)
@@ -387,7 +387,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             if (targetModSetting != null)
             {
-                Debug.WriteLine($"Found target VM_ModSetting: {targetModSetting.DisplayName}");
+                Debug.WriteLine($"VM_NpcSelectionBar.JumpToMod: Found target VM_ModSetting: {targetModSetting.DisplayName}");
                 var mainWindowVm = _lazyMainWindowVm.Value;
                 if (mainWindowVm == null)
                 {
@@ -397,31 +397,38 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 mainWindowVm.IsModsTabSelected = true; // Switch to Mods tab
 
                 // Schedule the rest to run after the tab switch might have occurred
-                RxApp.MainThreadScheduler.Schedule(() =>
+                RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(100), () => // Added a small delay
                 {
                     // Ensure the target mod is visible in the filtered list if possible
                     if (!modsVm.ModSettingsList.Contains(targetModSetting))
                     {
-                        Debug.WriteLine($"Target mod {targetModSetting.DisplayName} not in filtered list. Clearing filters.");
+                        Debug.WriteLine($"VM_NpcSelectionBar.JumpToMod: Target mod {targetModSetting.DisplayName} not in filtered list. Clearing filters.");
                         modsVm.NameFilterText = string.Empty;
                         modsVm.PluginFilterText = string.Empty;
                         modsVm.NpcSearchText = string.Empty;
-                        // ApplyFilters() will be called automatically due to property changes
+                        // modsVm.ApplyFilters() will be called reactively due to property changes
                     }
 
-                    // Execute the command to show mugshots for the target mod
-                    modsVm.ShowMugshotsCommand.Execute(targetModSetting).Subscribe(
-                        _ => { Debug.WriteLine($"Successfully triggered ShowMugshots for {targetModSetting.DisplayName}"); },
-                        ex => { Debug.WriteLine($"Error executing ShowMugshotsCommand: {ex}"); }
-                    ).DisposeWith(_disposables); // Dispose subscription when viewmodel is disposed
-
-                    // TODO: Implement scrolling in ModsView if needed.
-                    Debug.WriteLine($"Scrolling to {targetModSetting.DisplayName} in ModsView is not yet implemented.");
+                    // Execute the command to show mugshots for the target mod.
+                    // This command, upon setting modsVm.SelectedModForMugshots, will trigger the
+                    // WhenAnyValue in VM_Mods, which then pushes to _requestScrollToModSubject.
+                    modsVm.ShowMugshotsCommand.Execute(targetModSetting)
+                        .ObserveOn(RxApp.MainThreadScheduler) // Ensure next step is on UI thread
+                        .Subscribe(
+                            _ => {
+                                Debug.WriteLine($"VM_NpcSelectionBar.JumpToMod: Successfully triggered ShowMugshots for {targetModSetting.DisplayName}. VM_Mods will signal scroll.");
+                                // Optionally, if the WhenAnyValue in VM_Mods isn't picking it up fast enough or there's a race,
+                                // you could explicitly call:
+                                // RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () => modsVm.SignalScrollToMod(targetModSetting));
+                                // But ideally, the reactive property change is sufficient.
+                            },
+                            ex => { Debug.WriteLine($"VM_NpcSelectionBar.JumpToMod: Error executing ShowMugshotsCommand: {ex.Message}"); }
+                        ).DisposeWith(_disposables); 
                 });
             }
             else
             {
-                Debug.WriteLine($"Could not find VM_ModSetting with DisplayName: {targetModName}");
+                Debug.WriteLine($"VM_NpcSelectionBar.JumpToMod: Could not find VM_ModSetting with DisplayName: {targetModName}");
                 ScrollableMessageBox.ShowWarning($"Could not find the mod '{targetModName}' in the Mods list.", "Mod Not Found");
             }
         }
