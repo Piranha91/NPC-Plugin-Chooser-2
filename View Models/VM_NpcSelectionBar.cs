@@ -30,7 +30,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
     public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     {
         // --- Define the Factory Delegate ---
-        public delegate VM_AppearanceMod AppearanceModFactory(
+        public delegate VM_NpcsMenuMugshot AppearanceModFactory(
             string modName,
             FormKey npcFormKey,
             ModKey? overrideModeKey,
@@ -53,8 +53,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private Dictionary<FormKey, HashSet<string>> _hiddenModsPerNpc = new();
         private Dictionary<string, List<(string ModName, string ImagePath)>> _mugshotData = new();
         private readonly ISubject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
-        private readonly BehaviorSubject<VM_NpcSelection?> _requestScrollToNpcSubject = new BehaviorSubject<VM_NpcSelection?>(null);
-        public IObservable<VM_NpcSelection?> RequestScrollToNpcObservable => _requestScrollToNpcSubject.AsObservable();
+        private readonly BehaviorSubject<VM_NpcsMenuSelection?> _requestScrollToNpcSubject = new BehaviorSubject<VM_NpcsMenuSelection?>(null);
+        public IObservable<VM_NpcsMenuSelection?> RequestScrollToNpcObservable => _requestScrollToNpcSubject.AsObservable();
 
         // --- Search Properties ---
         [Reactive] public string SearchText1 { get; set; } = string.Empty;
@@ -88,10 +88,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- UI / Display Properties ---
         [Reactive] public bool ShowHiddenMods { get; set; } = false;
         [Reactive] public bool ShowNpcDescriptions { get; set; }
-        public List<VM_NpcSelection> AllNpcs { get; } = new();
-        public ObservableCollection<VM_NpcSelection> FilteredNpcs { get; } = new();
-        [Reactive] public VM_NpcSelection? SelectedNpc { get; set; }
-        [ObservableAsProperty] public ObservableCollection<VM_AppearanceMod>? CurrentNpcAppearanceMods { get; }
+        public List<VM_NpcsMenuSelection> AllNpcs { get; } = new();
+        public ObservableCollection<VM_NpcsMenuSelection> FilteredNpcs { get; } = new();
+        [Reactive] public VM_NpcsMenuSelection? SelectedNpc { get; set; }
+        [ObservableAsProperty] public ObservableCollection<VM_NpcsMenuMugshot>? CurrentNpcAppearanceMods { get; }
         [Reactive] public string? CurrentNpcDescription { get; private set; }
         public ReactiveCommand<Unit, string?> LoadDescriptionCommand { get; }
         [ObservableAsProperty] public bool IsLoadingDescription { get; }
@@ -201,7 +201,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.SelectedNpc)
                 .Select(selectedNpc => selectedNpc != null
                     ? CreateAppearanceModViewModels(selectedNpc, _mugshotData)
-                    : new ObservableCollection<VM_AppearanceMod>())
+                    : new ObservableCollection<VM_NpcsMenuMugshot>())
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .ToPropertyEx(this, x => x.CurrentNpcAppearanceMods);
 
@@ -402,11 +402,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             return targetModSetting != null;
         }
 
-        public void JumpToMod(VM_AppearanceMod appearanceMod)
+        public void JumpToMod(VM_NpcsMenuMugshot npcsMenuMugshot)
         {
-            if (appearanceMod == null || string.IsNullOrWhiteSpace(appearanceMod.ModName)) return;
+            if (npcsMenuMugshot == null || string.IsNullOrWhiteSpace(npcsMenuMugshot.ModName)) return;
 
-            string targetModName = appearanceMod.ModName;
+            string targetModName = npcsMenuMugshot.ModName;
             Debug.WriteLine($"VM_NpcSelectionBar.JumpToMod: Requested for {targetModName}");
 
             var modsVm = _lazyModsVm.Value;
@@ -599,12 +599,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 select npc
             ).ToArray(); // Execute query
 
-            // Create VM_NpcSelection for each valid NPC record
+            // Create VM_NpcsMenuSelection for each valid NPC record
             foreach (var npc in npcRecords)
             {
                 try
                 {
-                    var npcSelector = new VM_NpcSelection(npc, _environmentStateProvider, _consistencyProvider);
+                    var npcSelector = new VM_NpcsMenuSelection(npc, _environmentStateProvider, _consistencyProvider);
                     AllNpcs.Add(npcSelector);
                     string npcFormKeyString = npc.FormKey.ToString();
                     // Mark if this NPC's FormKey was found in mugshots (for later processing)
@@ -619,7 +619,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
 
-            // Create VM_NpcSelection for NPCs found ONLY in mugshots
+            // Create VM_NpcsMenuSelection for NPCs found ONLY in mugshots
             foreach (var kvp in _mugshotData)
             {
                 string mugshotFormKeyString = kvp.Key;
@@ -631,7 +631,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     try
                     {
                         FormKey mugshotFormKey = FormKey.Factory(mugshotFormKeyString);
-                        var npcSelector = new VM_NpcSelection(mugshotFormKey, _environmentStateProvider, _consistencyProvider);
+                        var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider, _consistencyProvider);
 
                         // If the display name defaults to the FormKey string, it likely means the NPC record is missing
                         if (npcSelector.DisplayName == mugshotFormKeyString)
@@ -652,7 +652,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             ApplyFilter(true); // Apply filter to populate FilteredNpcs initially
 
-            VM_NpcSelection? npcToSelectOnLoad = null;
+            VM_NpcsMenuSelection? npcToSelectOnLoad = null;
 
             if (!_settings.LastSelectedNpcFormKey.IsNull)
             {
@@ -686,7 +686,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
         
-        public void SignalScrollToNpc(VM_NpcSelection? npc)
+        public void SignalScrollToNpc(VM_NpcsMenuSelection? npc)
         {
             if (npc != null)
             {
@@ -701,8 +701,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public void ApplyFilter(bool initializing)
         {
-            IEnumerable<VM_NpcSelection> results = AllNpcs;
-            var predicates = new List<Func<VM_NpcSelection, bool>>();
+            IEnumerable<VM_NpcsMenuSelection> results = AllNpcs;
+            var predicates = new List<Func<VM_NpcsMenuSelection, bool>>();
 
             // --- Build individual filter predicates ---
 
@@ -763,14 +763,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        private bool CheckSelectionState(VM_NpcSelection npc, SelectionStateFilterType filterState)
+        private bool CheckSelectionState(VM_NpcsMenuSelection npcsMenu, SelectionStateFilterType filterState)
         {
             // Check if a specific appearance mod has been chosen via the consistency provider.
-            bool isSelected = !string.IsNullOrEmpty(_consistencyProvider.GetSelectedMod(npc.NpcFormKey));
+            bool isSelected = !string.IsNullOrEmpty(_consistencyProvider.GetSelectedMod(npcsMenu.NpcFormKey));
             return filterState == SelectionStateFilterType.Made ? isSelected : !isSelected;
         }
 
-        private Func<VM_NpcSelection, bool>? BuildGroupPredicate(string? selectedGroup)
+        private Func<VM_NpcsMenuSelection, bool>? BuildGroupPredicate(string? selectedGroup)
         {
             if (string.IsNullOrWhiteSpace(selectedGroup)) return null; // No group selected/typed
 
@@ -780,7 +780,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                           groups.Contains(selectedGroup); // HashSet uses its comparer (OrdinalIgnoreCase set in Add method)
         }
 
-        private Func<VM_NpcSelection, bool>? BuildTextPredicate(NpcSearchType type, string searchText)
+        private Func<VM_NpcsMenuSelection, bool>? BuildTextPredicate(NpcSearchType type, string searchText)
         {
             // Ignore SelectionState and Group types here, handled by other methods
             if (type == NpcSearchType.SelectionState || type == NpcSearchType.Group || string.IsNullOrWhiteSpace(searchText))
@@ -813,14 +813,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
             };
         }
 
-        private ObservableCollection<VM_AppearanceMod> CreateAppearanceModViewModels(VM_NpcSelection npcVM,
+        private ObservableCollection<VM_NpcsMenuMugshot> CreateAppearanceModViewModels(VM_NpcsMenuSelection npcsMenuVm,
             Dictionary<string, List<(string ModName, string ImagePath)>> mugshotData) // mugshotData is the _mugshotData cache
         {
             // Use a dictionary for the final VMs to prevent duplicates by display name
-            var finalModVMs = new Dictionary<string, VM_AppearanceMod>(StringComparer.OrdinalIgnoreCase);
-            if (npcVM == null) return new ObservableCollection<VM_AppearanceMod>(); // Return empty observable
+            var finalModVMs = new Dictionary<string, VM_NpcsMenuMugshot>(StringComparer.OrdinalIgnoreCase);
+            if (npcsMenuVm == null) return new ObservableCollection<VM_NpcsMenuMugshot>(); // Return empty observable
 
-            string npcFormKeyString = npcVM.NpcFormKey.ToString();
+            string npcFormKeyString = npcsMenuVm.NpcFormKey.ToString();
 
             // --- Step 1: Identify all unique VM_ModSettings that could provide an appearance for this NPC ---
             var relevantModSettings = new HashSet<VM_ModSetting>();
@@ -849,9 +849,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             // 1b: Add ModSettings associated with plugins that alter this NPC's appearance.
-            if (npcVM.NpcGetter != null)
+            if (npcsMenuVm.NpcGetter != null)
             {
-                foreach (var appearanceModKey in npcVM.AppearanceMods.Distinct())
+                foreach (var appearanceModKey in npcsMenuVm.AppearanceMods.Distinct())
                 {
                     var modSettingsForPlugin = _lazyModsVm.Value?.AllModSettings
                         .Where(ms => ms.CorrespondingModKeys.Contains(appearanceModKey))
@@ -861,7 +861,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             // 1c: Ensure the ModSetting for the NPC's base plugin is included (if it exists).
-            ModKey baseModKey = npcVM.NpcFormKey.ModKey;
+            ModKey baseModKey = npcsMenuVm.NpcFormKey.ModKey;
             if (!baseModKey.IsNull)
             {
                 var modSettingsForBasePlugin = _lazyModsVm.Value?.AllModSettings
@@ -870,7 +870,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 if (modSettingsForBasePlugin != null) { foreach (var ms in modSettingsForBasePlugin) relevantModSettings.Add(ms); }
             }
 
-            // --- Step 2: Create a VM_AppearanceMod for each relevant VM_ModSetting ---
+            // --- Step 2: Create a VM_NpcsMenuMugshot for each relevant VM_ModSetting ---
             bool baseKeyHandledByAModSettingVM = false;
 
             foreach (var modSettingVM in relevantModSettings)
@@ -878,10 +878,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 string displayName = modSettingVM.DisplayName;
                 ModKey? specificPluginKey = null;
 
-                if (modSettingVM.NpcSourcePluginMap.TryGetValue(npcVM.NpcFormKey, out var mappedSourceKey)) { specificPluginKey = mappedSourceKey; }
-                if ((specificPluginKey == null || specificPluginKey.Value.IsNull) && npcVM.NpcGetter != null)
+                if (modSettingVM.NpcSourcePluginMap.TryGetValue(npcsMenuVm.NpcFormKey, out var mappedSourceKey)) { specificPluginKey = mappedSourceKey; }
+                if ((specificPluginKey == null || specificPluginKey.Value.IsNull) && npcsMenuVm.NpcGetter != null)
                 {
-                    var commonKeys = modSettingVM.CorrespondingModKeys.Intersect(npcVM.AppearanceMods).ToList();
+                    var commonKeys = modSettingVM.CorrespondingModKeys.Intersect(npcsMenuVm.AppearanceMods).ToList();
                     if (commonKeys.Any()) { specificPluginKey = commonKeys.FirstOrDefault(); }
                 }
                 if ((specificPluginKey == null || specificPluginKey.Value.IsNull) && !baseModKey.IsNull && modSettingVM.CorrespondingModKeys.Contains(baseModKey)) { specificPluginKey = baseModKey; }
@@ -915,19 +915,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                 }
 
-                var appearanceVM = _appearanceModFactory(displayName, npcVM.NpcFormKey, specificPluginKey, imagePath);
+                var appearanceVM = _appearanceModFactory(displayName, npcsMenuVm.NpcFormKey, specificPluginKey, imagePath);
                 finalModVMs[displayName] = appearanceVM;
 
                 if (!baseModKey.IsNull && specificPluginKey != null && specificPluginKey.Value.Equals(baseModKey)) { baseKeyHandledByAModSettingVM = true; }
             }
 
-            // --- Step 3: Create a Placeholder VM_AppearanceMod for the Base Plugin if not already handled ---
+            // --- Step 3: Create a Placeholder VM_NpcsMenuMugshot for the Base Plugin if not already handled ---
             if (!baseModKey.IsNull && !baseKeyHandledByAModSettingVM)
             {
                 if (!finalModVMs.ContainsKey(baseModKey.FileName))
                 {
-                    Debug.WriteLine($"Creating placeholder VM_AppearanceMod for unhandled base plugin: {baseModKey.FileName} for NPC {npcVM.NpcFormKey}");
-                    var placeholderBaseVM = _appearanceModFactory(baseModKey.FileName, npcVM.NpcFormKey, baseModKey, null);
+                    Debug.WriteLine($"Creating placeholder VM_NpcsMenuMugshot for unhandled base plugin: {baseModKey.FileName} for NPC {npcsMenuVm.NpcFormKey}");
+                    var placeholderBaseVM = _appearanceModFactory(baseModKey.FileName, npcsMenuVm.NpcFormKey, baseModKey, null);
                     finalModVMs[baseModKey.FileName] = placeholderBaseVM;
                 }
             }
@@ -938,21 +938,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
             foreach (var m in sortedVMs)
             {
                 bool isGloballyHidden = _hiddenModNames.Contains(m.ModName);
-                bool isPerNpcHidden = _hiddenModsPerNpc.TryGetValue(npcVM.NpcFormKey, out var hiddenSet) && hiddenSet.Contains(m.ModName);
+                bool isPerNpcHidden = _hiddenModsPerNpc.TryGetValue(npcsMenuVm.NpcFormKey, out var hiddenSet) && hiddenSet.Contains(m.ModName);
                 m.IsSetHidden = isGloballyHidden || isPerNpcHidden;
             }
 
-            var selectedModName = _consistencyProvider.GetSelectedMod(npcVM.NpcFormKey);
+            var selectedModName = _consistencyProvider.GetSelectedMod(npcsMenuVm.NpcFormKey);
             if (!string.IsNullOrEmpty(selectedModName))
             {
                 var selectedVmInstance = sortedVMs.FirstOrDefault(x => x.ModName.Equals(selectedModName, StringComparison.OrdinalIgnoreCase));
                 if (selectedVmInstance != null) { selectedVmInstance.IsSelected = true; }
             }
 
-            return new ObservableCollection<VM_AppearanceMod>(sortedVMs);
+            return new ObservableCollection<VM_NpcsMenuMugshot>(sortedVMs);
         }
         
-        // Called by VM_AppearanceMod after a successful drop operation modifies underlying data.
+        // Called by VM_NpcsMenuMugshot after a successful drop operation modifies underlying data.
         public void RefreshAppearanceSources()
         {
             Debug.WriteLine("VM_NpcSelectionBar: Refreshing appearance sources after drop...");
@@ -966,7 +966,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        public void HideSelectedMod(VM_AppearanceMod referenceMod)
+        public void HideSelectedMod(VM_NpcsMenuMugshot referenceMod)
         {
             if (referenceMod == null) return;
             referenceMod.IsSetHidden = true; // Mark the VM itself as hidden
@@ -984,7 +984,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ToggleModVisibility(); // Update visibility of mods for the current NPC
         }
 
-        public void UnhideSelectedMod(VM_AppearanceMod referenceMod)
+        public void UnhideSelectedMod(VM_NpcsMenuMugshot referenceMod)
         {
              if (referenceMod == null) return;
              referenceMod.IsSetHidden = false; // Mark the VM itself as not hidden (initially)
@@ -1005,7 +1005,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
              ToggleModVisibility();
         }
 
-        public void SelectAllFromMod(VM_AppearanceMod referenceMod)
+        public void SelectAllFromMod(VM_NpcsMenuMugshot referenceMod)
         {
             if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName))
             {
@@ -1036,12 +1036,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Consider adding user feedback like a status message or MessageBox
         }
 
-        private bool IsModAnAppearanceSourceForNpc(VM_NpcSelection npcVM, VM_AppearanceMod referenceMod)
+        private bool IsModAnAppearanceSourceForNpc(VM_NpcsMenuSelection npcsMenuVm, VM_NpcsMenuMugshot referenceMod)
         {
-            if (npcVM == null || referenceMod == null || string.IsNullOrEmpty(referenceMod.ModName)) return false;
+            if (npcsMenuVm == null || referenceMod == null || string.IsNullOrEmpty(referenceMod.ModName)) return false;
 
             // Check 1: Does the NPC have a mugshot associated with this reference Mod's display name?
-            string npcFormKeyString = npcVM.NpcFormKey.ToString();
+            string npcFormKeyString = npcsMenuVm.NpcFormKey.ToString();
             if (_mugshotData.TryGetValue(npcFormKeyString, out var mugshots))
             {
                 // Check if any mugshot entry for this NPC has a matching ModName (folder name derived from VM_ModSetting)
@@ -1052,7 +1052,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             // Check 2: Does *any* CorrespondingModKey from the associated ModSetting appear in the NPC's list of appearance-altering plugins?
-            if (referenceMod.AssociatedModSetting != null && referenceMod.AssociatedModSetting.CorrespondingModKeys.Any(key => npcVM.AppearanceMods.Contains(key)))
+            if (referenceMod.AssociatedModSetting != null && referenceMod.AssociatedModSetting.CorrespondingModKeys.Any(key => npcsMenuVm.AppearanceMods.Contains(key)))
             {
                 // This confirms the plugin associated with the reference mod *does* modify this NPC's appearance.
                 return true;
@@ -1063,7 +1063,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             return false; // Not found as a source via mugshot or plugin check
         }
 
-        public void HideAllFromMod(VM_AppearanceMod referenceMod)
+        public void HideAllFromMod(VM_NpcsMenuMugshot referenceMod)
         {
              if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName)) return;
 
@@ -1085,7 +1085,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
              ToggleModVisibility(); // Update visibility for the current NPC based on new hidden state
         }
 
-        public void UnhideAllFromMod(VM_AppearanceMod referenceMod)
+        public void UnhideAllFromMod(VM_NpcsMenuMugshot referenceMod)
         {
             if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName)) return;
 

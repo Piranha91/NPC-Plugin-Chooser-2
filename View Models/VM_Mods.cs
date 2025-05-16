@@ -53,7 +53,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         // --- Right Panel Properties ---
         [Reactive] public VM_ModSetting? SelectedModForMugshots { get; private set; }
-        public ObservableCollection<VM_ModNpcMugshot> CurrentModNpcMugshots { get; } = new();
+        public ObservableCollection<VM_ModsMenuMugshot> CurrentModNpcMugshots { get; } = new();
         [Reactive] public bool IsLoadingMugshots { get; private set; }
         // This property will be set to true by the View (ModsView.xaml.cs) when the user
         // directly interacts with zoom (Ctrl+Scroll, +/- buttons).
@@ -303,7 +303,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 ModsViewHasUserManuallyZoomed = false; 
             }
 
-            var mugshotVMs = new List<VM_ModNpcMugshot>();
+            var mugshotVMs = new List<VM_ModsMenuMugshot>();
 
             try
             {
@@ -346,7 +346,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     }
                                 }
 
-                                mugshotVMs.Add(new VM_ModNpcMugshot(imagePath, npcFormKey, npcDisplayName, this));
+                                mugshotVMs.Add(new VM_ModsMenuMugshot(imagePath, npcFormKey, npcDisplayName, this));
                             }
                             catch (Exception ex)
                             {
@@ -385,7 +385,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _requestScrollToModSubject.Dispose(); // Dispose the subject
         }
 
-        // *** NEW: Method to handle navigation triggered by VM_ModNpcMugshot ***
+        // *** NEW: Method to handle navigation triggered by VM_ModsMenuMugshot ***
         public void NavigateToNpc(FormKey npcFormKey)
         {
              // 1. Switch Tab

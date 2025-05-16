@@ -1,4 +1,4 @@
-﻿// View Models/VM_ModNpcMugshot.cs
+﻿// View Models/VM_ModsMenuMugshot.cs
 using System;
 using System.IO;
 using System.Reactive;
@@ -11,7 +11,7 @@ using Splat;
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
-    public class VM_ModNpcMugshot : ReactiveObject, IHasMugshotImage
+    public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage
     {
         private readonly VM_Mods _parentVm;
 
@@ -36,7 +36,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
         public ReactiveCommand<Unit, Unit> JumpToNpcCommand { get; }
 
-        public VM_ModNpcMugshot(string imagePath, FormKey npcFormKey, string npcDisplayName, VM_Mods parentVm)
+        public VM_ModsMenuMugshot(string imagePath, FormKey npcFormKey, string npcDisplayName, VM_Mods parentVm)
         {
             _parentVm = parentVm;
             ImagePath = imagePath; // This is always expected to be a valid image path for this VM
@@ -62,7 +62,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Error getting dimensions for '{ImagePath}' in VM_ModNpcMugshot: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"Error getting dimensions for '{ImagePath}' in VM_ModsMenuMugshot: {ex.Message}");
                     // Handle case where image file might have been deleted/corrupted between scan and VM creation
                     ImageWidth = 100; // Default size
                     ImageHeight = 100;

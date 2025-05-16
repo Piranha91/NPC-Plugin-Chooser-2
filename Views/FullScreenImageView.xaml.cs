@@ -16,7 +16,7 @@ namespace NPC_Plugin_Chooser_2.Views
             InitializeComponent();
             this.WhenActivated(d =>
             {
-                // ViewModel should be set by the caller (VM_AppearanceMod)
+                // ViewModel should be set by the caller (VM_NpcsMenuMugshot)
                 this.OneWayBind(ViewModel, vm => vm.ImagePath, v => v.FullScreenImage.Source).DisposeWith(d);
                 // You might want to bind MaxWidth/MaxHeight for very large images,
                 // though Stretch="Uniform" handles most cases visually.

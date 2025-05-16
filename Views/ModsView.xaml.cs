@@ -296,7 +296,7 @@ namespace NPC_Plugin_Chooser_2.Views
          {
              if (Keyboard.Modifiers == ModifierKeys.Control)
              {
-                 if (sender is FrameworkElement element && element.DataContext is VM_ModNpcMugshot vm)
+                 if (sender is FrameworkElement element && element.DataContext is VM_ModsMenuMugshot vm)
                  {
                       if (vm.ToggleFullScreenCommand.CanExecute.FirstAsync().Wait())
                       {
@@ -406,8 +406,8 @@ namespace NPC_Plugin_Chooser_2.Views
                     {
                         // ImagePacker.FitOriginalImagesToContainer expects ObservableCollection<IHasMugshotImage>
                         // and will modify the ImageWidth/ImageHeight of the items within it.
-                        // Since imagesForPacker from ViewModel is already ObservableCollection<VM_ModNpcMugshot>
-                        // and VM_ModNpcMugshot implements IHasMugshotImage, we can cast.
+                        // Since imagesForPacker from ViewModel is already ObservableCollection<VM_ModsMenuMugshot>
+                        // and VM_ModsMenuMugshot implements IHasMugshotImage, we can cast.
                         // However, the method signature is specific.
                         // It's better if the ImagePacker can take IEnumerable<IHasMugshotImage>
                         // or if we pass a new ObservableCollection as it expects.

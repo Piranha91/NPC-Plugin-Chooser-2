@@ -186,7 +186,7 @@ namespace NPC_Plugin_Chooser_2.Views
         {
             if (ViewModel?.CurrentNpcAppearanceMods == null) return;
 
-            var imagesToProcess = ViewModel.CurrentNpcAppearanceMods; // This is ObservableCollection<VM_AppearanceMod>
+            var imagesToProcess = ViewModel.CurrentNpcAppearanceMods; // This is ObservableCollection<VM_NpcsMenuMugshot>
             if (!imagesToProcess.Any()) {
                  // If no images, nothing to do for sizing.
                  // The displayed zoom level in textbox remains what it was.
@@ -263,7 +263,7 @@ namespace NPC_Plugin_Chooser_2.Views
         {
             if (Keyboard.Modifiers == ModifierKeys.Control)
             {
-                if (sender is FrameworkElement element && element.DataContext is VM_AppearanceMod vm)
+                if (sender is FrameworkElement element && element.DataContext is VM_NpcsMenuMugshot vm)
                 {
                     if (vm.ToggleFullScreenCommand.CanExecute.FirstAsync().Wait())
                     {
