@@ -1,4 +1,5 @@
-﻿using System;
+﻿// [VM_NpcsMenuMugshot.cs] - Full Code After Modifications
+using System;
 using System.Diagnostics;
 using System.IO;
 // System.Drawing is removed as ImagePacker now handles raw pixel dimensions internally if needed
@@ -57,6 +58,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public double OriginalDipWidth { get; set; }
         public double OriginalDipHeight { get; set; }
         public double OriginalDipDiagonal { get; set; }
+
+        // --- NEW Property for Compare Checkbox ---
+        [Reactive] public bool IsCheckedForCompare { get; set; } = false;
 
 
         // --- Existing Commands ---

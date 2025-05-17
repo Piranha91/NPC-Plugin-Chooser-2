@@ -1,0 +1,82 @@
+﻿<!-- [MultiImageDisplayView.xaml] -->
+<reactiveui:ReactiveWindow x:Class="NPC_Plugin_Chooser_2.Views.MultiImageDisplayView"
+                           xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                           xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                           xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                           xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                           xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
+                           xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+                           xmlns:reactiveui="http://reactiveui.net"
+                           mc:Ignorable="d"
+                           x:TypeArguments="vm:VM_MultiImageDisplay"
+                           Title="Compare Selected Mugshots"
+                           WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+                           WindowState="Maximized" ShowInTaskbar="False"
+                           d:DataContext="{d:DesignInstance Type=vm:VM_MultiImageDisplay}">
+    <Window.Resources>
+        <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </Window.Resources>
+
+    <Grid Background="#DD000000" MouseDown="CloseOnClick"> <!-- Slightly more opaque background -->
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/> <!-- Image Area -->
+            <RowDefinition Height="Auto"/> <!-- Controls Area -->
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" x:Name="ImageDisplayScrollViewer"
+                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                      HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                      SizeChanged="ImageDisplayScrollViewer_SizeChanged"
+                      PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
+            <ItemsControl x:Name="ImageItemsControl" ItemsSource="{Binding ImagesToDisplay}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <!-- Using a WrapPanel to arrange images. ActualWidth will be bound to the ScrollViewer's ViewportWidth -->
+                        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Width="{Binding Path=ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:IHasMugshotImage}">
+                        <Border BorderBrush="DimGray" BorderThickness="1" Margin="5"
+                                Background="LightGray"
+                                Width="{Binding ImageWidth}"
+                                Height="{Binding ImageHeight}">
+                            <Grid>
+                                <Image Source="{Binding ImagePath}" Stretch="Uniform"
+                                       ToolTip="{Binding Path=DataContext.ModName, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/> 
+                                        <!-- Tooltip might need adjustment if ModName isn't directly on IHasMugshotImage -->
+                                
+                                <!-- If IHasMugshotImage comes from VM_NpcsMenuMugshot, you can display ModName -->
+                                <TextBlock Text="{Binding ModName}" VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                                           Background="#AAFFFFFF" FontSize="10" Padding="3,1"
+                                           TextTrimming="CharacterEllipsis"
+                                           Visibility="{Binding Path=ModName, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Controls Area -->
+        <Border Grid.Row="1" Background="#55000000" Padding="8">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Button x:Name="ZoomOutButton" Content="-" Width="30" Height="30" Margin="2,0" ToolTip="Zoom Out (Ctrl+Scroll Wheel)"/>
+                <TextBox x:Name="ZoomPercentageTextBox" Width="70" Height="30" Margin="2,0" TextAlignment="Center" VerticalContentAlignment="Center"
+                         Foreground="White" Background="Transparent" BorderBrush="Gray"
+                         Text="{Binding ZoomLevel, StringFormat='F0', Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         PreviewMouseWheel="ZoomPercentageTextBox_PreviewMouseWheel"
+                         ToolTip="Current Zoom Level. Editable. Ctrl+Scroll Wheel in image area or Scroll Wheel here to adjust."/>
+                <TextBlock Text="%" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="White"/>
+                <Button x:Name="ZoomInButton" Content="+" Width="30" Height="30" Margin="2,0" ToolTip="Zoom In (Ctrl+Scroll Wheel)"/>
+                <CheckBox x:Name="LockZoomCheckBox" Content="Lock Zoom" Margin="15,0,5,0" VerticalAlignment="Center" Foreground="White"
+                          ToolTip="Lock the current zoom level. If unchecked, zoom adjusts to fit images."/>
+                <Button x:Name="ResetZoomButton" Content="Reset Zoom" Margin="5,0,0,0" Padding="8,4" Foreground="White" Background="#33FFFFFF" BorderBrush="Gray"
+                        ToolTip="Reset zoom to automatically fit images."/>
+                <Button Content="Close" Margin="20,0,0,0" Padding="10,4" Foreground="White" Background="#33FFFFFF" BorderBrush="Gray"
+                        Click="CloseButton_Click" ToolTip="Close this comparison view (Esc or Click Background)"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</reactiveui:ReactiveWindow>

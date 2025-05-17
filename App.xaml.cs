@@ -98,6 +98,7 @@ namespace NPC_Plugin_Chooser_2
             Locator.CurrentMutable.Register(() => new RunView(), typeof(IViewFor<VM_Run>));
             Locator.CurrentMutable.Register(() => new ModsView(), typeof(IViewFor<VM_Mods>)); // *** NEW: Register Mods View Factory ***
             Locator.CurrentMutable.Register(() => new FullScreenImageView(), typeof(IViewFor<VM_FullScreenImage>));
+            Locator.CurrentMutable.Register(() => new MultiImageDisplayView(), typeof(IViewFor<VM_MultiImageDisplay>));
 
             var container = builder.Build();
             autofacResolver.SetLifetimeScope(container);

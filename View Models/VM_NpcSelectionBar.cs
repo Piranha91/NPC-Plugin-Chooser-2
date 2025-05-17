@@ -19,7 +19,7 @@ using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
-using NPC_Plugin_Chooser_2.Views;
+using NPC_Plugin_Chooser_2.Views; 
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Splat;
@@ -106,9 +106,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private const double _minZoomPercentage = 1.0;
         private const double _maxZoomPercentage = 1000.0;
         private const double _zoomStepPercentage = 2.5; // For +/- buttons and scroll wheel
-
-        // This is used by the View to know when the user has manually adjusted zoom with Ctrl+Scroll
-        // or used the +/- buttons. If true, automatic resizing might be skipped or handled differently.
         [Reactive] public bool NpcsViewHasUserManuallyZoomed { get; set; } = false;
 
         // --- NPC Group Properties ---
@@ -119,6 +116,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> AddAllVisibleNpcsToGroupCommand { get; }
         public ReactiveCommand<Unit, Unit> RemoveAllVisibleNpcsFromGroupCommand { get; }
         // --- End NPC Group Properties ---
+
+        // --- NEW: Compare/Hide/Deselect Functionality ---
+        [ObservableAsProperty] public int CheckedMugshotCount { get; }
+        public ReactiveCommand<Unit, Unit> CompareSelectedCommand { get; }
+        public ReactiveCommand<Unit, Unit> HideAllSelectedCommand { get; }
+        public ReactiveCommand<Unit, Unit> HideAllButSelectedCommand { get; }
+        public ReactiveCommand<Unit, Unit> UnhideAllSelectedCommand { get; }
+        public ReactiveCommand<Unit, Unit> UnhideAllButSelectedCommand { get; }
+        public ReactiveCommand<Unit, Unit> DeselectAllCommand { get; }
+        // --- End NEW Compare/Hide/Deselect ---
+
 
         // --- Constructor ---
         public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider,
@@ -164,8 +172,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 Debug.WriteLine("VM_NpcSelectionBar: ResetZoomNpcsCommand executed.");
                 NpcsViewIsZoomLocked = false;
                 NpcsViewHasUserManuallyZoomed = false;
-                // ViewModel's NpcsViewZoomLevel will be updated by the packer when RefreshImageSizes runs.
-                // We signal the view to re-evaluate and potentially re-pack.
                 _refreshImageSizesSubject.OnNext(Unit.Default);
             });
 
@@ -181,16 +187,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     if (npc != null)
                     {
                         _settings.LastSelectedNpcFormKey = npc.NpcFormKey;
-                        // Part b) Save settings (will be handled by NpcConsistencyProvider or a dedicated save service)
                     }
-                    else
-                    {
-                        // If SelectedNpc becomes null, you might want to clear the setting
-                        // or leave it as the last valid one. For now, let's leave it.
-                        // _settings.LastSelectedNpcFormKey = FormKey.NullOrEmpty; // Optional
-                    }
-
-                    // Reset manual zoom flag when NPC changes if zoom is not locked (existing logic)
                     if (!NpcsViewIsZoomLocked)
                     {
                         NpcsViewHasUserManuallyZoomed = false;
@@ -382,6 +379,56 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 })
                 .DisposeWith(_disposables);
 
+
+            // --- NEW: Setup for Compare/Hide/Deselect ---
+            var checkedMugshotCountObservable = this.WhenAnyValue(x => x.CurrentNpcAppearanceMods)
+                .Select(mods =>
+                {
+                    if (mods == null || !mods.Any())
+                        return Observable.Return(0);
+
+                    var itemCheckedObservables = mods.Select(m =>
+                        m.WhenAnyValue(x => x.IsCheckedForCompare)
+                         .Select(_ => m.IsCheckedForCompare) 
+                    ).ToList();
+
+                    if (!itemCheckedObservables.Any()) 
+                        return Observable.Return(0);
+
+                    return Observable.CombineLatest(itemCheckedObservables)
+                                     .Select(statuses => statuses.Count(isChecked => isChecked));
+                })
+                .Switch() 
+                .StartWith(0); 
+
+            checkedMugshotCountObservable
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .ToPropertyEx(this, x => x.CheckedMugshotCount)
+                .DisposeWith(_disposables);
+
+            var canCompareSelected = this.WhenAnyValue(x => x.CheckedMugshotCount)
+                .Select(count => count >= 2);
+            CompareSelectedCommand = ReactiveCommand.Create(ExecuteCompareSelected, canCompareSelected);
+            CompareSelectedCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error comparing selected: {ex.Message}")).DisposeWith(_disposables);
+
+            var atLeastOneSelected = this.WhenAnyValue(x => x.CheckedMugshotCount)
+                .Select(count => count >= 1);
+            HideAllButSelectedCommand = ReactiveCommand.Create(ExecuteHideAllButSelected, Observable.Return(true));
+            HideAllButSelectedCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error hiding unselected: {ex.Message}")).DisposeWith(_disposables);
+            HideAllSelectedCommand = ReactiveCommand.Create(ExecuteHideAllSelected, Observable.Return(true));
+            HideAllSelectedCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error hiding selected: {ex.Message}")).DisposeWith(_disposables);
+            UnhideAllSelectedCommand = ReactiveCommand.Create(ExecuteUnhideAllSelected, Observable.Return(true));
+            UnhideAllSelectedCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error unhiding selected: {ex.Message}")).DisposeWith(_disposables);
+            UnhideAllButSelectedCommand = ReactiveCommand.Create(ExecuteUnhideAllButSelected, Observable.Return(true));
+            UnhideAllButSelectedCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error unhiding unselected: {ex.Message}")).DisposeWith(_disposables);
+            
+            var canDeselectAll = this.WhenAnyValue(x => x.CheckedMugshotCount)
+                .Select(count => count >=1); 
+            DeselectAllCommand = ReactiveCommand.Create(ExecuteDeselectAll, canDeselectAll);
+            DeselectAllCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error deselecting all: {ex.Message}")).DisposeWith(_disposables);
+            // --- End NEW Setup ---
+
+
             if (CurrentNpcAppearanceMods != null && CurrentNpcAppearanceMods.Any())
             {
                  _refreshImageSizesSubject.OnNext(Unit.Default);
@@ -389,6 +436,149 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         // --- Methods ---
+
+        // --- NEW: Command Execution Methods ---
+        private void ExecuteCompareSelected()
+        {
+            if (CurrentNpcAppearanceMods == null) return;
+
+            var selectedMugshotVMs = CurrentNpcAppearanceMods
+                .Where(m => m.IsCheckedForCompare && m.HasMugshot && !string.IsNullOrEmpty(m.ImagePath) && File.Exists(m.ImagePath))
+                .ToList(); 
+
+            if (selectedMugshotVMs.Count < 2)
+            {
+                ScrollableMessageBox.ShowWarning("Please select at least two valid mugshots to compare.", "Compare Selected");
+                return;
+            }
+            
+            Debug.WriteLine($"CompareSelected: {selectedMugshotVMs.Count} mugshots selected for comparison.");
+
+            try
+            {
+                var multiImageVM = new VM_MultiImageDisplay(selectedMugshotVMs.Cast<IHasMugshotImage>() /*, _settings */);
+                // It's good practice to ensure the new window has an owner if it's a dialog
+                var currentWindow = Application.Current.Windows.OfType<Window>().FirstOrDefault(x => x.IsActive);
+
+                var multiImageView = new MultiImageDisplayView 
+                { 
+                    DataContext = multiImageVM, 
+                    ViewModel = multiImageVM,
+                    Owner = currentWindow // Set owner for proper dialog behavior
+                };
+                
+                multiImageView.ShowDialog();
+
+                // After the dialog closes, trigger a refresh in NpcsView to reset sizes based on its context
+                _refreshImageSizesSubject.OnNext(Unit.Default);
+                Debug.WriteLine("VM_NpcSelectionBar: Triggered NpcsView refresh after compare dialog closed.");
+            }
+            catch (Exception ex)
+            {
+                 ScrollableMessageBox.ShowError($"Could not open comparison window: {ex.Message}", "Error Comparing");
+                 Debug.WriteLine($"Error in ExecuteCompareSelected: {ex}");
+            }
+        }
+
+        private void ExecuteHideAllSelected()
+        {
+            if (CurrentNpcAppearanceMods == null) return;
+            bool refreshNeeded = false;
+
+            foreach (var mugshotVM in CurrentNpcAppearanceMods)
+            {
+                if (mugshotVM.IsCheckedForCompare)
+                {
+                    if (!mugshotVM.IsSetHidden) // Only hide if *not* already hidden
+                    {
+                        HideSelectedMod(mugshotVM);
+                        refreshNeeded = true;
+                    }
+                }
+            }
+
+            if (refreshNeeded)
+            {
+                ToggleModVisibility();
+            }
+
+            Debug.WriteLine("HideAllSelected: Marked checked mugshots as hidden.");
+        }
+
+        private void ExecuteHideAllButSelected()
+        {
+            if (CurrentNpcAppearanceMods == null) return;
+            bool refreshNeeded = false;
+
+            foreach (var mugshotVM in CurrentNpcAppearanceMods)
+            {
+                if (!mugshotVM.IsCheckedForCompare)
+                {
+                   // Call the standard hiding function on this view model.
+                    if (!mugshotVM.IsSetHidden) // Prevent duplicate hiding
+                    {
+                        HideSelectedMod(mugshotVM);
+                        refreshNeeded = true;
+                    }
+                }
+            }
+            if (refreshNeeded) { ToggleModVisibility(); }
+            Debug.WriteLine("HideAllButSelected: Non-checked mugshots marked as hidden.");
+        }
+
+        private void ExecuteUnhideAllSelected()
+        {
+            if (CurrentNpcAppearanceMods == null) return;
+            bool refreshNeeded = false;
+
+            foreach (var mugshotVM in CurrentNpcAppearanceMods)
+            {
+                if (mugshotVM.IsCheckedForCompare)
+                {
+                    if (mugshotVM.IsSetHidden) // Only unhide if *currently* hidden
+                    {
+                        UnhideSelectedMod(mugshotVM);
+                        refreshNeeded = true;
+                    }
+                }
+            }
+            if (refreshNeeded) { ToggleModVisibility(); }
+            Debug.WriteLine("UnhideAllSelected: Unhid checked mugshots");
+        }
+        
+        private void ExecuteUnhideAllButSelected()
+        {
+            if (CurrentNpcAppearanceMods == null) return;
+            bool refreshNeeded = false;
+
+            foreach (var mugshotVM in CurrentNpcAppearanceMods)
+            {
+                if (!mugshotVM.IsCheckedForCompare)
+                {
+                    if (mugshotVM.IsSetHidden) // Only unhide if *currently* hidden
+                    {
+                        UnhideSelectedMod(mugshotVM);
+                        refreshNeeded = true;
+                    }
+                }
+            }
+            if (refreshNeeded) { ToggleModVisibility(); }
+            Debug.WriteLine("UnhideAllSelected: Unhid checked mugshots");
+        }
+        
+        // Added new version of Deselect
+        private void ExecuteDeselectAll()
+        {
+            if (CurrentNpcAppearanceMods == null) return;
+            foreach (var mugshotVM in CurrentNpcAppearanceMods)
+            {
+                mugshotVM.IsCheckedForCompare = false; // Clears the compare selection
+            }
+            Debug.WriteLine("DeselectAll: All mugshot compare checkboxes cleared.");
+        }
+        // --- End NEW Command Execution Methods ---
+
+
         public bool CanJumpToMod(string appearanceModName)
         {
             var modsVm = _lazyModsVm.Value;
@@ -396,8 +586,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 return false;
             }
-
-            // Check if any mod setting in the full list matches the display name
             var targetModSetting = modsVm.AllModSettings.FirstOrDefault(ms => ms.DisplayName.Equals(appearanceModName, StringComparison.OrdinalIgnoreCase));
             return targetModSetting != null;
         }
@@ -427,33 +615,22 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     ScrollableMessageBox.ShowError("Main window view model is not available.");
                     return;
                 }
-                mainWindowVm.IsModsTabSelected = true; // Switch to Mods tab
+                mainWindowVm.IsModsTabSelected = true; 
 
-                // Schedule the rest to run after the tab switch might have occurred
-                RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(100), () => // Added a small delay
+                RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(100), () => 
                 {
-                    // Ensure the target mod is visible in the filtered list if possible
                     if (!modsVm.ModSettingsList.Contains(targetModSetting))
                     {
                         Debug.WriteLine($"VM_NpcSelectionBar.JumpToMod: Target mod {targetModSetting.DisplayName} not in filtered list. Clearing filters.");
                         modsVm.NameFilterText = string.Empty;
                         modsVm.PluginFilterText = string.Empty;
                         modsVm.NpcSearchText = string.Empty;
-                        // modsVm.ApplyFilters() will be called reactively due to property changes
                     }
-
-                    // Execute the command to show mugshots for the target mod.
-                    // This command, upon setting modsVm.SelectedModForMugshots, will trigger the
-                    // WhenAnyValue in VM_Mods, which then pushes to _requestScrollToModSubject.
                     modsVm.ShowMugshotsCommand.Execute(targetModSetting)
-                        .ObserveOn(RxApp.MainThreadScheduler) // Ensure next step is on UI thread
+                        .ObserveOn(RxApp.MainThreadScheduler) 
                         .Subscribe(
                             _ => {
                                 Debug.WriteLine($"VM_NpcSelectionBar.JumpToMod: Successfully triggered ShowMugshots for {targetModSetting.DisplayName}. VM_Mods will signal scroll.");
-                                // Optionally, if the WhenAnyValue in VM_Mods isn't picking it up fast enough or there's a race,
-                                // you could explicitly call:
-                                // RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () => modsVm.SignalScrollToMod(targetModSetting));
-                                // But ideally, the reactive property change is sufficient.
                             },
                             ex => { Debug.WriteLine($"VM_NpcSelectionBar.JumpToMod: Error executing ShowMugshotsCommand: {ex.Message}"); }
                         ).DisposeWith(_disposables); 
@@ -468,16 +645,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private void UpdateSelectionState(FormKey npcFormKey, string selectedMod)
         {
-            // Find the VM in either the filtered or the full list
             var npcVM = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(npcFormKey))
                      ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(npcFormKey));
 
             if (npcVM != null)
             {
-                // Update the selected appearance mod property on the NPC VM
                 npcVM.SelectedAppearanceMod = selectedMod;
-
-                // If this NPC is the currently selected one in the UI, update the IsSelected state of its appearance mod VMs
                 if (SelectedNpc == npcVM && CurrentNpcAppearanceMods != null)
                 {
                     foreach (var modVM in CurrentNpcAppearanceMods)
@@ -488,7 +661,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        // Regex for parsing mugshot file structure
         private static readonly Regex PluginRegex = new(@"^.+\.(esm|esp|esl)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex HexFileRegex = new(@"^[0-9A-F]{8}\.(png|jpg|jpeg|bmp)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -502,7 +674,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             try
             {
-                // Find all files matching the hex pattern within the mugshot directory structure
                 var potentialFiles = Directory.EnumerateFiles(_settings.MugshotsFolder, "*.*", SearchOption.AllDirectories)
                                               .Where(f => HexFileRegex.IsMatch(Path.GetFileName(f)));
 
@@ -512,31 +683,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     {
                         var fileInfo = new FileInfo(filePath);
                         string hexFileName = fileInfo.Name;
-
-                        // Traverse up to find plugin and mod directories
                         DirectoryInfo? pluginDir = fileInfo.Directory;
-                        if (pluginDir == null || !PluginRegex.IsMatch(pluginDir.Name)) continue; // Directory name must be a plugin
+                        if (pluginDir == null || !PluginRegex.IsMatch(pluginDir.Name)) continue; 
                         string pluginName = pluginDir.Name;
-
                         DirectoryInfo? modDir = pluginDir.Parent;
-                        if (modDir == null || string.IsNullOrWhiteSpace(modDir.Name)) continue; // Mod directory must exist
+                        if (modDir == null || string.IsNullOrWhiteSpace(modDir.Name)) continue; 
                         string modName = modDir.Name;
-
-                        // Ensure the structure is ModName/PluginName/HexFile.ext directly under the MugshotsFolder
                         if (modDir.Parent == null || !modDir.Parent.FullName.Equals(expectedParentPath, StringComparison.OrdinalIgnoreCase)) continue;
-
-                        // Extract FormID hex part and construct FormKey string
                         string hexPart = Path.GetFileNameWithoutExtension(hexFileName);
-                        if (hexPart.Length != 8) continue; // Ensure correct hex length
-                        string formKeyString = $"{hexPart.Substring(hexPart.Length - 6)}:{pluginName}"; // Last 6 digits for FormID
-
-                        // Validate the constructed FormKey string before adding
+                        if (hexPart.Length != 8) continue; 
+                        string formKeyString = $"{hexPart.Substring(hexPart.Length - 6)}:{pluginName}"; 
                         try { FormKey.Factory(formKeyString); }
-                        catch { continue; } // Skip if invalid format
-
+                        catch { continue; } 
                         var mugshotInfo = (ModName: modName, ImagePath: filePath);
-
-                        // Add to results, avoiding duplicate entries for the same NPC/Mod combination
                         if (results.TryGetValue(formKeyString, out var list))
                         {
                             if (!list.Any(i => i.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase)))
@@ -551,14 +710,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                     catch (Exception ex)
                     {
-                        // Log individual file processing errors but continue scanning
                         Debug.WriteLine($"Error processing mugshot file '{filePath}': {ex.Message}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                 // Log directory access errors
                  Debug.WriteLine($"Error scanning mugshot directory '{_settings.MugshotsFolder}': {ex.Message}");
             }
             System.Diagnostics.Debug.WriteLine($"Mugshot scan complete. Found entries for {results.Count} unique FormKeys.");
@@ -567,39 +724,35 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public void Initialize()
         {
-            SelectedNpc = null; // Deselect NPC
+            SelectedNpc = null; 
             AllNpcs.Clear();
             FilteredNpcs.Clear();
-            CurrentNpcDescription = null; // Clear description
+            CurrentNpcDescription = null; 
 
             if (!_environmentStateProvider.EnvironmentIsValid)
             {
                 ScrollableMessageBox.ShowWarning($"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}", "Environment Error");
-                _mugshotData.Clear(); // Clear potentially stale mugshot data
+                _mugshotData.Clear(); 
                 return;
             }
 
-            // Scan for mugshots and update available groups from settings
             _mugshotData = ScanMugshotDirectory();
-            UpdateAvailableNpcGroups(); // Update groups based on loaded settings
+            UpdateAvailableNpcGroups(); 
 
             var processedMugshotKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            // Query and filter NPC records from the load order
             var npcRecords = (
                 from npc in _environmentStateProvider.LoadOrder.PriorityOrder.WinningOverrides<INpcGetter>()
-                let resolvedRace = npc.Race.TryResolve(_environmentStateProvider.LinkCache) // Resolve race once
+                let resolvedRace = npc.Race.TryResolve(_environmentStateProvider.LinkCache) 
                 where npc.EditorID?.Contains("Preset", StringComparison.OrdinalIgnoreCase) == false &&
                       !npc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.IsCharGenFacePreset) &&
                       !npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits) &&
                       !npc.Race.IsNull &&
-                      resolvedRace is not null && // Check resolved race
-                      (resolvedRace.Keywords?.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Keyword.ActorTypeNPC) ?? false) // Check keyword on resolved race
-                orderby _auxilliary.FormKeyStringToFormIDString(npc.FormKey.ToString()) // Order by FormID
+                      resolvedRace is not null && 
+                      (resolvedRace.Keywords?.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Keyword.ActorTypeNPC) ?? false) 
+                orderby _auxilliary.FormKeyStringToFormIDString(npc.FormKey.ToString()) 
                 select npc
-            ).ToArray(); // Execute query
+            ).ToArray(); 
 
-            // Create VM_NpcsMenuSelection for each valid NPC record
             foreach (var npc in npcRecords)
             {
                 try
@@ -607,7 +760,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     var npcSelector = new VM_NpcsMenuSelection(npc, _environmentStateProvider, _consistencyProvider);
                     AllNpcs.Add(npcSelector);
                     string npcFormKeyString = npc.FormKey.ToString();
-                    // Mark if this NPC's FormKey was found in mugshots (for later processing)
                     if (_mugshotData.ContainsKey(npcFormKeyString))
                     {
                         processedMugshotKeys.Add(npcFormKeyString);
@@ -619,24 +771,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
 
-            // Create VM_NpcsMenuSelection for NPCs found ONLY in mugshots
             foreach (var kvp in _mugshotData)
             {
                 string mugshotFormKeyString = kvp.Key;
                 List<(string ModName, string ImagePath)> mugshots = kvp.Value;
-
-                // If this FormKey wasn't processed from game records and has mugshots
                 if (!processedMugshotKeys.Contains(mugshotFormKeyString) && mugshots.Any())
                 {
                     try
                     {
                         FormKey mugshotFormKey = FormKey.Factory(mugshotFormKeyString);
                         var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider, _consistencyProvider);
-
-                        // If the display name defaults to the FormKey string, it likely means the NPC record is missing
                         if (npcSelector.DisplayName == mugshotFormKeyString)
                         {
-                            npcSelector.DisplayName += " (Missing)"; // Indicate missing record
+                            npcSelector.DisplayName += " (Missing)"; 
                             string containedIn = string.Join(", ", mugshots.Select(m => m.ModName));
                             npcSelector.NpcName = "Imported from Mugshots: " + containedIn;
                             npcSelector.NpcEditorId = "Not in current Load Order";
@@ -650,7 +797,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
 
-            ApplyFilter(true); // Apply filter to populate FilteredNpcs initially
+            ApplyFilter(true); 
 
             VM_NpcsMenuSelection? npcToSelectOnLoad = null;
 
@@ -672,17 +819,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             if (npcToSelectOnLoad != null)
             {
-                SelectedNpc = npcToSelectOnLoad; // Set the selected NPC
-
-                // Signal that this NPC should be scrolled to.
-                // The View will subscribe to this and act when ready.
+                SelectedNpc = npcToSelectOnLoad; 
                 _requestScrollToNpcSubject.OnNext(npcToSelectOnLoad); 
                 Debug.WriteLine($"VM_NpcSelectionBar.Initialize: Signaled scroll request for {npcToSelectOnLoad.DisplayName}");
             }
             else
             {
                 SelectedNpc = null;
-                _requestScrollToNpcSubject.OnNext(null); // Signal no scroll needed or clear previous
+                _requestScrollToNpcSubject.OnNext(null); 
             }
         }
         
@@ -695,7 +839,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             else
             {
-                _requestScrollToNpcSubject.OnNext(null); // Clear any pending scroll if npc is null
+                _requestScrollToNpcSubject.OnNext(null); 
             }
         }
 
@@ -704,60 +848,45 @@ namespace NPC_Plugin_Chooser_2.View_Models
             IEnumerable<VM_NpcsMenuSelection> results = AllNpcs;
             var predicates = new List<Func<VM_NpcsMenuSelection, bool>>();
 
-            // --- Build individual filter predicates ---
-
-            // Filter 1
             if (SearchType1 == NpcSearchType.SelectionState) { predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter1)); }
-            else if (SearchType1 == NpcSearchType.Group) { var p = BuildGroupPredicate(SelectedGroupFilter1); if (p != null) predicates.Add(p); } // Use group predicate
+            else if (SearchType1 == NpcSearchType.Group) { var p = BuildGroupPredicate(SelectedGroupFilter1); if (p != null) predicates.Add(p); } 
             else if (!string.IsNullOrWhiteSpace(SearchText1)) { var p = BuildTextPredicate(SearchType1, SearchText1); if (p != null) predicates.Add(p); }
 
-            // Filter 2
             if (SearchType2 == NpcSearchType.SelectionState) { predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter2)); }
             else if (SearchType2 == NpcSearchType.Group) { var p = BuildGroupPredicate(SelectedGroupFilter2); if (p != null) predicates.Add(p); }
             else if (!string.IsNullOrWhiteSpace(SearchText2)) { var p = BuildTextPredicate(SearchType2, SearchText2); if (p != null) predicates.Add(p); }
 
-            // Filter 3
             if (SearchType3 == NpcSearchType.SelectionState) { predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter3)); }
             else if (SearchType3 == NpcSearchType.Group) { var p = BuildGroupPredicate(SelectedGroupFilter3); if (p != null) predicates.Add(p); }
             else if (!string.IsNullOrWhiteSpace(SearchText3)) { var p = BuildTextPredicate(SearchType3, SearchText3); if (p != null) predicates.Add(p); }
-            // --- End building predicates ---
 
-
-            // Apply combined filter logic
             if (predicates.Any())
             {
-                if (IsSearchAndLogic) // AND logic: Must match ALL predicates
+                if (IsSearchAndLogic) 
                 {
                     results = results.Where(npc => predicates.All(p => p(npc)));
                 }
-                else // OR logic: Must match AT LEAST ONE predicate
+                else 
                 {
                     results = results.Where(npc => predicates.Any(p => p(npc)));
                 }
             }
 
-            // Preserve selection if possible
             var previouslySelectedNpcKey = SelectedNpc?.NpcFormKey;
-
-            // Order results and update the observable collection
             var orderedResults = results.OrderBy(x => _auxilliary.FormKeyStringToFormIDString(x.NpcFormKey.ToString())).ToList();
 
-            // Efficiently update ObservableCollection
             FilteredNpcs.Clear();
             foreach (var npc in orderedResults) { FilteredNpcs.Add(npc); }
 
-
-            // Restore selection or select the first item if list is not empty
             if (previouslySelectedNpcKey != null)
             {
                 SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey));
             }
-            // Select the first item only if selection was lost AND the list is not empty AND not during initial load
             if (SelectedNpc == null && FilteredNpcs.Any() && !initializing)
             {
                 SelectedNpc = FilteredNpcs[0];
             }
-            else if (!FilteredNpcs.Any()) // Ensure selection is null if list becomes empty
+            else if (!FilteredNpcs.Any()) 
             {
                 SelectedNpc = null;
             }
@@ -765,70 +894,56 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private bool CheckSelectionState(VM_NpcsMenuSelection npcsMenu, SelectionStateFilterType filterState)
         {
-            // Check if a specific appearance mod has been chosen via the consistency provider.
             bool isSelected = !string.IsNullOrEmpty(_consistencyProvider.GetSelectedMod(npcsMenu.NpcFormKey));
             return filterState == SelectionStateFilterType.Made ? isSelected : !isSelected;
         }
 
         private Func<VM_NpcsMenuSelection, bool>? BuildGroupPredicate(string? selectedGroup)
         {
-            if (string.IsNullOrWhiteSpace(selectedGroup)) return null; // No group selected/typed
-
-            // Case-insensitive check against the stored groups for the NPC
+            if (string.IsNullOrWhiteSpace(selectedGroup)) return null; 
             return npc => _settings.NpcGroupAssignments.TryGetValue(npc.NpcFormKey, out var groups) &&
                           groups != null &&
-                          groups.Contains(selectedGroup); // HashSet uses its comparer (OrdinalIgnoreCase set in Add method)
+                          groups.Contains(selectedGroup); 
         }
 
         private Func<VM_NpcsMenuSelection, bool>? BuildTextPredicate(NpcSearchType type, string searchText)
         {
-            // Ignore SelectionState and Group types here, handled by other methods
             if (type == NpcSearchType.SelectionState || type == NpcSearchType.Group || string.IsNullOrWhiteSpace(searchText))
             {
                 return null;
             }
-
-            string searchTextLower = searchText.Trim().ToLowerInvariant(); // Optimization for case-insensitive checks
-
+            string searchTextLower = searchText.Trim().ToLowerInvariant(); 
             switch (type)
             {
                 case NpcSearchType.Name:
                     return npc => npc.DisplayName?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false;
                 case NpcSearchType.EditorID:
-                    // Null-conditional access for NpcGetter
                     return npc => npc.NpcGetter?.EditorID?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false;
                 case NpcSearchType.InAppearanceMod:
-                    // Check both plugin-based appearance mods and mugshot-based ones
                     return npc => npc.AppearanceMods.Any(m => m.FileName.String.Contains(searchText, StringComparison.OrdinalIgnoreCase)) ||
                                   (_mugshotData.TryGetValue(npc.NpcFormKey.ToString(), out var mugshots) &&
                                    mugshots.Any(m => m.ModName.Contains(searchText, StringComparison.OrdinalIgnoreCase)));
                 case NpcSearchType.FromMod:
-                    // Check the filename of the NPC's base record ModKey
                     return npc => npc.NpcFormKey.ModKey.FileName.String.Contains(searchText, StringComparison.OrdinalIgnoreCase);
                 case NpcSearchType.FormKey:
-                    // Check the full FormKey string representation
                     return npc => npc.NpcFormKey.ToString().Contains(searchText, StringComparison.OrdinalIgnoreCase);
                 default:
-                    return null; // Should not happen with current enum values
+                    return null; 
             };
         }
 
         private ObservableCollection<VM_NpcsMenuMugshot> CreateAppearanceModViewModels(VM_NpcsMenuSelection npcsMenuVm,
-            Dictionary<string, List<(string ModName, string ImagePath)>> mugshotData) // mugshotData is the _mugshotData cache
+            Dictionary<string, List<(string ModName, string ImagePath)>> mugshotData) 
         {
-            // Use a dictionary for the final VMs to prevent duplicates by display name
             var finalModVMs = new Dictionary<string, VM_NpcsMenuMugshot>(StringComparer.OrdinalIgnoreCase);
-            if (npcsMenuVm == null) return new ObservableCollection<VM_NpcsMenuMugshot>(); // Return empty observable
+            if (npcsMenuVm == null) return new ObservableCollection<VM_NpcsMenuMugshot>(); 
 
             string npcFormKeyString = npcsMenuVm.NpcFormKey.ToString();
-
-            // --- Step 1: Identify all unique VM_ModSettings that could provide an appearance for this NPC ---
             var relevantModSettings = new HashSet<VM_ModSetting>();
 
-            // 1a: Add ModSettings that have a direct mugshot for this NPC.
             if (mugshotData.TryGetValue(npcFormKeyString, out var npcMugshotListForThisNpc))
             {
-                foreach (var mugshotInfo in npcMugshotListForThisNpc) // mugshotInfo.ModName is the DisplayName of a VM_ModSetting
+                foreach (var mugshotInfo in npcMugshotListForThisNpc) 
                 {
                     var modSettingViaMugshotName = _lazyModsVm.Value?.AllModSettings.FirstOrDefault(ms =>
                         ms.DisplayName.Equals(mugshotInfo.ModName, StringComparison.OrdinalIgnoreCase));
@@ -848,7 +963,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
 
-            // 1b: Add ModSettings associated with plugins that alter this NPC's appearance.
             if (npcsMenuVm.NpcGetter != null)
             {
                 foreach (var appearanceModKey in npcsMenuVm.AppearanceMods.Distinct())
@@ -860,7 +974,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
 
-            // 1c: Ensure the ModSetting for the NPC's base plugin is included (if it exists).
             ModKey baseModKey = npcsMenuVm.NpcFormKey.ModKey;
             if (!baseModKey.IsNull)
             {
@@ -870,14 +983,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 if (modSettingsForBasePlugin != null) { foreach (var ms in modSettingsForBasePlugin) relevantModSettings.Add(ms); }
             }
 
-            // --- Step 2: Create a VM_NpcsMenuMugshot for each relevant VM_ModSetting ---
             bool baseKeyHandledByAModSettingVM = false;
-
             foreach (var modSettingVM in relevantModSettings)
             {
                 string displayName = modSettingVM.DisplayName;
                 ModKey? specificPluginKey = null;
-
                 if (modSettingVM.NpcSourcePluginMap.TryGetValue(npcsMenuVm.NpcFormKey, out var mappedSourceKey)) { specificPluginKey = mappedSourceKey; }
                 if ((specificPluginKey == null || specificPluginKey.Value.IsNull) && npcsMenuVm.NpcGetter != null)
                 {
@@ -917,11 +1027,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 var appearanceVM = _appearanceModFactory(displayName, npcsMenuVm.NpcFormKey, specificPluginKey, imagePath);
                 finalModVMs[displayName] = appearanceVM;
-
                 if (!baseModKey.IsNull && specificPluginKey != null && specificPluginKey.Value.Equals(baseModKey)) { baseKeyHandledByAModSettingVM = true; }
             }
 
-            // --- Step 3: Create a Placeholder VM_NpcsMenuMugshot for the Base Plugin if not already handled ---
             if (!baseModKey.IsNull && !baseKeyHandledByAModSettingVM)
             {
                 if (!finalModVMs.ContainsKey(baseModKey.FileName))
@@ -931,15 +1039,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     finalModVMs[baseModKey.FileName] = placeholderBaseVM;
                 }
             }
-
-            // --- Step 4: Sort, Apply Hidden State, Apply Selected State ---
+            
             var sortedVMs = finalModVMs.Values.OrderBy(vm => vm.ModName).ToList();
-
             foreach (var m in sortedVMs)
             {
                 bool isGloballyHidden = _hiddenModNames.Contains(m.ModName);
                 bool isPerNpcHidden = _hiddenModsPerNpc.TryGetValue(npcsMenuVm.NpcFormKey, out var hiddenSet) && hiddenSet.Contains(m.ModName);
                 m.IsSetHidden = isGloballyHidden || isPerNpcHidden;
+                m.IsCheckedForCompare = false; 
             }
 
             var selectedModName = _consistencyProvider.GetSelectedMod(npcsMenuVm.NpcFormKey);
@@ -952,56 +1059,47 @@ namespace NPC_Plugin_Chooser_2.View_Models
             return new ObservableCollection<VM_NpcsMenuMugshot>(sortedVMs);
         }
         
-        // Called by VM_NpcsMenuMugshot after a successful drop operation modifies underlying data.
         public void RefreshAppearanceSources()
         {
             Debug.WriteLine("VM_NpcSelectionBar: Refreshing appearance sources after drop...");
-            // Re-setting SelectedNpc triggers the reactive chain that rebuilds CurrentNpcAppearanceMods
-            // It uses the updated VM_ModSetting data when CreateAppearanceModViewModels runs again.
             var currentNpc = this.SelectedNpc;
-            if (currentNpc != null) // Only refresh if an NPC is actually selected
+            if (currentNpc != null) 
             {
-                this.SelectedNpc = null; // Temporarily set to null
-                this.SelectedNpc = currentNpc; // Set back to trigger update
+                this.SelectedNpc = null; 
+                this.SelectedNpc = currentNpc; 
             }
         }
 
         public void HideSelectedMod(VM_NpcsMenuMugshot referenceMod)
         {
             if (referenceMod == null) return;
-            referenceMod.IsSetHidden = true; // Mark the VM itself as hidden
+            referenceMod.IsSetHidden = true; 
 
-            if (SelectedNpc != null) // Check if an NPC is actually selected
+            if (SelectedNpc != null) 
             {
-                // Ensure the dictionary entry exists for this NPC
                 if (!_hiddenModsPerNpc.ContainsKey(SelectedNpc.NpcFormKey))
                 {
                     _hiddenModsPerNpc[SelectedNpc.NpcFormKey] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 }
-                // Add the mod name to the per-NPC hidden set
                 _hiddenModsPerNpc[SelectedNpc.NpcFormKey].Add(referenceMod.ModName);
             }
-            ToggleModVisibility(); // Update visibility of mods for the current NPC
+            ToggleModVisibility(); 
         }
 
         public void UnhideSelectedMod(VM_NpcsMenuMugshot referenceMod)
         {
              if (referenceMod == null) return;
-             referenceMod.IsSetHidden = false; // Mark the VM itself as not hidden (initially)
-
-             // Remove from the per-NPC hidden list if it exists
+             referenceMod.IsSetHidden = false; 
              if (SelectedNpc != null && _hiddenModsPerNpc.TryGetValue(SelectedNpc.NpcFormKey, out var hiddenSet))
              {
-                 if (hiddenSet.Remove(referenceMod.ModName)) // Returns true if removed
+                 if (hiddenSet.Remove(referenceMod.ModName)) 
                  {
-                     // Optional: Clean up dictionary if set becomes empty
                      if (!hiddenSet.Any())
                      {
                           _hiddenModsPerNpc.Remove(SelectedNpc.NpcFormKey);
                      }
                  }
              }
-             // Recalculate visibility (it might still be hidden globally)
              ToggleModVisibility();
         }
 
@@ -1012,94 +1110,69 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 Debug.WriteLine("SelectAllFromMod: referenceMod or its ModName is null/empty.");
                 return;
             }
-
             string targetModName = referenceMod.ModName;
             int updatedCount = 0;
-
             Debug.WriteLine($"SelectAllFromMod: Attempting to select '{targetModName}' for all applicable NPCs.");
-
-            // Iterate through the master list of all NPCs
             foreach (var npcVM in AllNpcs)
             {
-                if (npcVM == null) continue; // Safety check
-
-                // Check if the target mod is a valid source for this NPC
+                if (npcVM == null) continue; 
                 if (IsModAnAppearanceSourceForNpc(npcVM, referenceMod))
                 {
-                    // Set the selected mod using the consistency provider
                     _consistencyProvider.SetSelectedMod(npcVM.NpcFormKey, targetModName);
-                    updatedCount++; // Increment count
+                    updatedCount++; 
                 }
             }
-
             Debug.WriteLine($"SelectAllFromMod: Finished processing. Attempted to set '{targetModName}' for {updatedCount} NPCs where it was an available source.");
-            // Consider adding user feedback like a status message or MessageBox
         }
 
         private bool IsModAnAppearanceSourceForNpc(VM_NpcsMenuSelection npcsMenuVm, VM_NpcsMenuMugshot referenceMod)
         {
             if (npcsMenuVm == null || referenceMod == null || string.IsNullOrEmpty(referenceMod.ModName)) return false;
-
-            // Check 1: Does the NPC have a mugshot associated with this reference Mod's display name?
             string npcFormKeyString = npcsMenuVm.NpcFormKey.ToString();
             if (_mugshotData.TryGetValue(npcFormKeyString, out var mugshots))
             {
-                // Check if any mugshot entry for this NPC has a matching ModName (folder name derived from VM_ModSetting)
                 if (mugshots.Any(m => m.ModName.Equals(referenceMod.ModName, StringComparison.OrdinalIgnoreCase)))
                 {
                     return true;
                 }
             }
-
-            // Check 2: Does *any* CorrespondingModKey from the associated ModSetting appear in the NPC's list of appearance-altering plugins?
             if (referenceMod.AssociatedModSetting != null && referenceMod.AssociatedModSetting.CorrespondingModKeys.Any(key => npcsMenuVm.AppearanceMods.Contains(key)))
             {
-                // This confirms the plugin associated with the reference mod *does* modify this NPC's appearance.
                 return true;
-                // Potential enhancement: Ensure this ModKey is uniquely tied to this VM_ModSetting.DisplayName
-                // if multiple VM_ModSettings could theoretically share a ModKey.
             }
-
-            return false; // Not found as a source via mugshot or plugin check
+            return false; 
         }
 
         public void HideAllFromMod(VM_NpcsMenuMugshot referenceMod)
         {
              if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName)) return;
-
-             // Add the mod name to the global hidden set. HashSet.Add returns true if it wasn't already present.
              if (_hiddenModNames.Add(referenceMod.ModName))
              {
-                 // If added globally, update the IsSetHidden state for the *current* NPC's mods if they are visible
                  if (CurrentNpcAppearanceMods != null)
                  {
                       foreach (var modVM in CurrentNpcAppearanceMods)
                       {
                           if (modVM.ModName.Equals(referenceMod.ModName, StringComparison.OrdinalIgnoreCase))
                           {
-                              modVM.IsSetHidden = true; // Ensure the current view reflects the change
+                              modVM.IsSetHidden = true; 
                           }
                       }
                  }
              }
-             ToggleModVisibility(); // Update visibility for the current NPC based on new hidden state
+             ToggleModVisibility(); 
         }
 
         public void UnhideAllFromMod(VM_NpcsMenuMugshot referenceMod)
         {
             if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName)) return;
-
-            // Remove the mod name from the global hidden set. HashSet.Remove returns true if it was present.
              if (_hiddenModNames.Remove(referenceMod.ModName))
              {
-                 // If removed globally, update the IsSetHidden state for the *current* NPC's mods if visible
                  if (CurrentNpcAppearanceMods != null)
                  {
                       foreach (var modVM in CurrentNpcAppearanceMods)
                       {
                           if (modVM.ModName.Equals(referenceMod.ModName, StringComparison.OrdinalIgnoreCase))
                           {
-                               // Recalculate IsSetHidden based only on per-NPC state now
                                bool isHiddenPerNpc = SelectedNpc != null &&
                                                     _hiddenModsPerNpc.TryGetValue(SelectedNpc.NpcFormKey, out var hiddenSet) &&
                                                     hiddenSet.Contains(modVM.ModName);
@@ -1108,7 +1181,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                       }
                  }
              }
-             ToggleModVisibility(); // Update visibility for the current NPC
+             ToggleModVisibility(); 
         }
 
         public void ToggleModVisibility()
@@ -1116,114 +1189,82 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (CurrentNpcAppearanceMods == null || !CurrentNpcAppearanceMods.Any()) return;
 
             bool needsRefresh = false;
-            // Get the per-NPC hidden set for the currently selected NPC (if any)
             var npcSpecificHidden = SelectedNpc != null ? _hiddenModsPerNpc.GetValueOrDefault(SelectedNpc.NpcFormKey) : null;
 
             foreach (var mod in CurrentNpcAppearanceMods)
             {
-                // Determine the definitive hidden state based on global AND specific lists
                 bool isGloballyHidden = _hiddenModNames.Contains(mod.ModName);
                 bool isSpecificallyHidden = npcSpecificHidden?.Contains(mod.ModName) ?? false;
                 bool shouldBeHidden = isGloballyHidden || isSpecificallyHidden;
-
-                mod.IsSetHidden = shouldBeHidden; // Update the source-of-truth hidden state
-
-                // Determine if it should be VISIBLE based on the ShowHiddenMods toggle
+                mod.IsSetHidden = shouldBeHidden; 
                 bool shouldBeVisible = ShowHiddenMods || !mod.IsSetHidden;
-
-                // Update IsVisible only if it changes, to avoid unnecessary UI updates
                 if (mod.IsVisible != shouldBeVisible)
                 {
                      mod.IsVisible = shouldBeVisible;
-                     needsRefresh = true; // Visibility actually changed
+                     needsRefresh = true; 
                 }
             }
-
-            // If any mod's visibility changed, signal the View to potentially repack/resize images
             if (needsRefresh)
             {
                 _refreshImageSizesSubject.OnNext(Unit.Default);
             }
         }
 
-
         // --- NPC Group Methods ---
-
         private void AddCurrentNpcToGroup()
         {
             if (SelectedNpc == null || string.IsNullOrWhiteSpace(SelectedGroupName)) return;
             var npcKey = SelectedNpc.NpcFormKey;
-            var groupName = SelectedGroupName.Trim(); // Use trimmed name
-
+            var groupName = SelectedGroupName.Trim(); 
             if (!_settings.NpcGroupAssignments.TryGetValue(npcKey, out var groups))
             {
-                // Use case-insensitive comparer for the set
                 groups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 _settings.NpcGroupAssignments[npcKey] = groups;
             }
-
-            if (groups.Add(groupName)) // Add returns true if the item was added (not already present)
+            if (groups.Add(groupName)) 
             {
                 Debug.WriteLine($"Added NPC {npcKey} to group '{groupName}'");
-                UpdateAvailableNpcGroups(); // Update dropdown if a new group was effectively created
-                ApplyFilter(false); // Re-apply filter in case the group filter is active
+                UpdateAvailableNpcGroups(); 
+                ApplyFilter(false); 
             }
-            else
-            {
-                Debug.WriteLine($"NPC {npcKey} already in group '{groupName}'");
-            }
+            else { Debug.WriteLine($"NPC {npcKey} already in group '{groupName}'"); }
         }
 
         private void RemoveCurrentNpcFromGroup()
         {
             if (SelectedNpc == null || string.IsNullOrWhiteSpace(SelectedGroupName)) return;
             var npcKey = SelectedNpc.NpcFormKey;
-            var groupName = SelectedGroupName.Trim(); // Use trimmed name
-
+            var groupName = SelectedGroupName.Trim(); 
             if (_settings.NpcGroupAssignments.TryGetValue(npcKey, out var groups))
             {
-                if (groups.Remove(groupName)) // Remove returns true if the item was found and removed
+                if (groups.Remove(groupName)) 
                 {
                     Debug.WriteLine($"Removed NPC {npcKey} from group '{groupName}'");
-                    // Optional: Remove NPC entry from dictionary if no groups left
                     if (!groups.Any())
                     {
                         _settings.NpcGroupAssignments.Remove(npcKey);
                         Debug.WriteLine($"Removed group entry for NPC {npcKey} as it's now empty.");
                     }
-                    UpdateAvailableNpcGroups(); // Update dropdown in case this was the last NPC in a group
-                    ApplyFilter(false); // Re-apply filter in case the group filter is active
+                    UpdateAvailableNpcGroups(); 
+                    ApplyFilter(false); 
                 }
-                else
-                {
-                     Debug.WriteLine($"NPC {npcKey} was not in group '{groupName}'");
-                }
+                else { Debug.WriteLine($"NPC {npcKey} was not in group '{groupName}'"); }
             }
-             else
-             {
-                 // The NPC wasn't assigned to any groups
-                 Debug.WriteLine($"NPC {npcKey} has no group assignments.");
-             }
+             else { Debug.WriteLine($"NPC {npcKey} has no group assignments."); }
         }
 
         private bool AreAnyFiltersActive()
         {
-            // Check text filters (excluding state/group types)
             if (SearchType1 != NpcSearchType.SelectionState && SearchType1 != NpcSearchType.Group && !string.IsNullOrWhiteSpace(SearchText1)) return true;
             if (SearchType2 != NpcSearchType.SelectionState && SearchType2 != NpcSearchType.Group && !string.IsNullOrWhiteSpace(SearchText2)) return true;
             if (SearchType3 != NpcSearchType.SelectionState && SearchType3 != NpcSearchType.Group && !string.IsNullOrWhiteSpace(SearchText3)) return true;
-
-            // Check if SelectionState filter is active
             if (SearchType1 == NpcSearchType.SelectionState) return true;
             if (SearchType2 == NpcSearchType.SelectionState) return true;
             if (SearchType3 == NpcSearchType.SelectionState) return true;
-
-            // Check if Group filter is active (requires a selection)
             if (SearchType1 == NpcSearchType.Group && !string.IsNullOrWhiteSpace(SelectedGroupFilter1)) return true;
             if (SearchType2 == NpcSearchType.Group && !string.IsNullOrWhiteSpace(SelectedGroupFilter2)) return true;
             if (SearchType3 == NpcSearchType.Group && !string.IsNullOrWhiteSpace(SelectedGroupFilter3)) return true;
-
-            return false; // No filters active
+            return false; 
         }
 
         private void AddAllVisibleNpcsToGroup()
@@ -1231,12 +1272,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (FilteredNpcs.Count == 0 || string.IsNullOrWhiteSpace(SelectedGroupName)) return;
             var groupName = SelectedGroupName.Trim();
             int count = FilteredNpcs.Count;
-            int totalNpcCount = AllNpcs.Count; // Get total count for confirmation message
-
-            // Confirmation Dialog
+            int totalNpcCount = AllNpcs.Count; 
             if (!AreAnyFiltersActive())
             {
-                // No filters are active, meaning FilteredNpcs == AllNpcs
                 if (ScrollableMessageBox.Confirm($"No filters are currently applied. Are you sure you want to add ALL {totalNpcCount} NPCs in your game to the group '{groupName}'?",
                         "Confirm Add All NPCs"))
                 {
@@ -1246,7 +1284,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             else
             {
-                 // Filters are active, confirm adding only the visible ones
                  if (ScrollableMessageBox.Confirm($"Add all {count} currently visible NPCs to the group '{groupName}'?",
                          "Confirm Add Visible NPCs"))
                  {
@@ -1254,11 +1291,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                      return;
                  }
             }
-
             int addedCount = 0;
-            bool groupListChanged = false; // Track if a potentially new group name was added anywhere
-
-            // Add each visible NPC to the group
+            bool groupListChanged = false; 
             foreach (var npc in FilteredNpcs)
             {
                 if (!_settings.NpcGroupAssignments.TryGetValue(npc.NpcFormKey, out var groups))
@@ -1266,16 +1300,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     groups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     _settings.NpcGroupAssignments[npc.NpcFormKey] = groups;
                 }
-                if (groups.Add(groupName)) // If the NPC was not already in the group
+                if (groups.Add(groupName)) 
                 {
                     addedCount++;
-                    groupListChanged = true; // A group was added to at least one NPC
+                    groupListChanged = true; 
                 }
             }
-
-            // Update the available groups list if a new group might have been created overall
             if (groupListChanged) { UpdateAvailableNpcGroups(); }
-            ApplyFilter(false); // Re-apply filter in case the view depends on group membership
+            ApplyFilter(false); 
             Debug.WriteLine($"Added {addedCount} visible NPCs to group '{groupName}'.");
             ScrollableMessageBox.Show($"Added {addedCount} visible NPCs to group '{groupName}'.", "Operation Complete");
         }
@@ -1286,8 +1318,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var groupName = SelectedGroupName.Trim();
             int count = FilteredNpcs.Count;
             int totalNpcCount = AllNpcs.Count;
-
-            // Confirmation Dialog
             if (!AreAnyFiltersActive())
             {
                  if (ScrollableMessageBox.Confirm($"No filters are currently applied. Are you sure you want to attempt removing ALL {totalNpcCount} NPCs in your game from the group '{groupName}'?",
@@ -1306,20 +1336,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                      return;
                  }
             }
-
             int removedCount = 0;
-            bool groupListMayNeedUpdate = false; // Track if a group might have become empty overall
-
-            // Remove each visible NPC from the group
+            bool groupListMayNeedUpdate = false; 
             foreach (var npc in FilteredNpcs)
             {
                 if (_settings.NpcGroupAssignments.TryGetValue(npc.NpcFormKey, out var groups))
                 {
-                    if (groups.Remove(groupName)) // If the NPC was in the group
+                    if (groups.Remove(groupName)) 
                     {
                         removedCount++;
-                        groupListMayNeedUpdate = true; // A removal happened, group might need update
-                        // Optional: Clean up empty sets
+                        groupListMayNeedUpdate = true; 
                         if (!groups.Any())
                         {
                             _settings.NpcGroupAssignments.Remove(npc.NpcFormKey);
@@ -1327,17 +1353,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                 }
             }
-
-            // Update the available groups list if any removals happened
             if (groupListMayNeedUpdate) { UpdateAvailableNpcGroups(); }
-            ApplyFilter(false); // Re-apply filter
+            ApplyFilter(false); 
             Debug.WriteLine($"Removed {removedCount} visible NPCs from group '{groupName}'.");
             ScrollableMessageBox.Show($"Removed {removedCount} visible NPCs from group '{groupName}'.", "Operation Complete");
         }
 
         private void UpdateAvailableNpcGroups()
         {
-            // Use a case-insensitive HashSet to get distinct group names from settings
             var distinctGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (_settings.NpcGroupAssignments != null)
             {
@@ -1347,27 +1370,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     {
                         foreach (var groupName in groupSet)
                         {
-                             if (!string.IsNullOrWhiteSpace(groupName)) // Avoid adding empty/whitespace groups
+                             if (!string.IsNullOrWhiteSpace(groupName)) 
                              {
-                                 distinctGroups.Add(groupName.Trim()); // Store trimmed version
+                                 distinctGroups.Add(groupName.Trim()); 
                              }
                         }
                     }
                 }
             }
-
-            // Order the distinct groups alphabetically
             var sortedGroups = distinctGroups.OrderBy(g => g).ToList();
-
-            // Efficiently update the ObservableCollection bound to the UI
-            // Preserve selection in the main group combo box if possible
             string? currentSelection = SelectedGroupName;
             bool selectionStillExists = false;
-
-            // Use a temporary list for comparison to minimize UI churn
-            var tempNewList = new List<string>();
-
-            AvailableNpcGroups.Clear(); // Clear the existing list first
+            AvailableNpcGroups.Clear(); 
             foreach (var group in sortedGroups)
             {
                 AvailableNpcGroups.Add(group);
@@ -1376,35 +1390,28 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     selectionStillExists = true;
                 }
             }
-
-            // Restore selection if it no longer exists in the list (e.g., last member removed)
             if (!selectionStillExists)
             {
-                SelectedGroupName = string.Empty; // Or set to null, depending on desired behavior
+                SelectedGroupName = string.Empty; 
             }
-            
-            MessageBus.Current.SendMessage(new NpcGroupsChangedMessage());  // Send a message indicating groups might have changed
-
+            MessageBus.Current.SendMessage(new NpcGroupsChangedMessage());  
             Debug.WriteLine($"Updated AvailableNpcGroups. Count: {AvailableNpcGroups.Count}");
         }
-
         // --- End NPC Group Methods ---
 
         // --- Disposal ---
         public void Dispose()
         {
-            _disposables.Dispose(); // Dispose all subscriptions
-            ClearAppearanceModViewModels(); // Clean up child VMs
+            _disposables.Dispose(); 
+            ClearAppearanceModViewModels(); 
         }
 
         private void ClearAppearanceModViewModels()
         {
-            // Dispose child VMs to prevent memory leaks
             if (CurrentNpcAppearanceMods != null)
             {
-                // Create a temporary list to iterate over, as modifying the collection while iterating can cause issues
                 var vmsToDispose = CurrentNpcAppearanceMods.ToList();
-                CurrentNpcAppearanceMods.Clear(); // Clear the bound collection
+                CurrentNpcAppearanceMods.Clear(); 
                 foreach (var vm in vmsToDispose)
                 {
                     vm.Dispose();

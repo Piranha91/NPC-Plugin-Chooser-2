@@ -1,16 +1,19 @@
-﻿// NpcsView.xaml.cs (Revised RefreshImageSizes)
+﻿// NpcsView.xaml.cs (Full Code)
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
-using System.Linq; 
+using System.Linq;
 using System.Reactive;
-using System.Reactive.Disposables; 
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Threading.Tasks; // Added this
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;        
-using System.Windows.Threading; 
+using System.Windows.Controls.Primitives;
+using System.Windows.Data; // For PlacementMode
+using System.Windows.Input;
+using System.Windows.Threading;
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
 using Splat;
@@ -28,41 +31,90 @@ namespace NPC_Plugin_Chooser_2.Views
         public NpcsView()
         {
             InitializeComponent();
+            
+            // Set the DataContext for the proxy resource
+            if (this.Resources["DataContextProxy"] is FrameworkElement proxy)
+            {
+                // Bind the proxy's DataContext to the UserControl's DataContext.
+                // This binding will ensure that if the UserControl's DataContext changes,
+                // the proxy's DataContext also changes.
+                var binding = new Binding("DataContext") { Source = this };
+                BindingOperations.SetBinding(proxy, FrameworkElement.DataContextProperty, binding);
+                // For immediate check during debugging:
+                // proxy.DataContext = this.DataContext; // This would also work if DC doesn't change after this point
+            }
+            else
+            {
+                Debug.WriteLine("!!!!!!!!!!!!!!!! CRITICAL: DataContextProxy RESOURCE NOT FOUND !!!!!!!!!!!!!!!!");
+            }
+            
+            this.Loaded += (s, e) => {
+                if (this.DataContext is VM_NpcSelectionBar vm)
+                {
+                    Debug.WriteLine("NpcsView DataContext is VM_NpcSelectionBar - OK");
+                    if (vm.HideAllSelectedCommand == null)
+                    {
+                        Debug.WriteLine("!!!!!!!!!!!!!!!! VM.HideAllSelectedCommand IS NULL !!!!!!!!!!!!!!!!");
+                    }
+                    else
+                    {
+                        Debug.WriteLine("VM.HideAllSelectedCommand is NOT NULL - OK");
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine($"!!!!!!!!!!!!!!!! NpcsView DataContext IS UNEXPECTED: {this.DataContext?.GetType().Name ?? "null"} !!!!!!!!!!!!!!!!");
+                }
 
+                if (this.Resources["DataContextProxy"] is FrameworkElement proxy)
+                {
+                    if (proxy.DataContext is VM_NpcSelectionBar proxyVm)
+                    {
+                        Debug.WriteLine("Proxy DataContext is VM_NpcSelectionBar - OK");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"!!!!!!!!!!!!!!!! Proxy DataContext IS UNEXPECTED: {proxy.DataContext?.GetType().Name ?? "null"} !!!!!!!!!!!!!!!!");
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine("!!!!!!!!!!!!!!!! DataContextProxy RESOURCE NOT FOUND OR NOT FRAMEWORKELEMENT !!!!!!!!!!!!!!!!");
+                }
+            };
+            
             if (this.DataContext == null) {
                 try {
                     var vm = Locator.Current.GetService<VM_NpcSelectionBar>();
                     if (vm != null) {
                         this.DataContext = vm; this.ViewModel = vm;
-                    } 
+                    }
                 } catch (Exception ex) {
                     Debug.WriteLine($"DEBUG: Error manually resolving/setting DataContext in NpcsView: {ex.Message}");
                 }
             }
 
-            this.WhenActivated(d => 
+            this.WhenActivated(d =>
             {
-                d.DisposeWith(_viewBindings); 
+                // d.DisposeWith(_viewBindings); // This was potentially causing issues if _viewBindings was used elsewhere.
+                                               // 'd' itself is the disposable for WhenActivated subscriptions.
 
                 if (ViewModel == null) return;
 
-                this.OneWayBind(ViewModel, vm => vm.FilteredNpcs, v => v.NpcListBox.ItemsSource).DisposeWith(d); 
+                this.OneWayBind(ViewModel, vm => vm.FilteredNpcs, v => v.NpcListBox.ItemsSource).DisposeWith(d);
                 this.Bind(ViewModel, vm => vm.SelectedNpc, v => v.NpcListBox.SelectedItem).DisposeWith(d);
                 this.OneWayBind(ViewModel, vm => vm.CurrentNpcAppearanceMods, v => v.AppearanceModsItemsControl.ItemsSource).DisposeWith(d);
-                
-                // --- TextBox Zoom Level Binding with Throttle ---
-                // One-way from VM to View (for display, formatted)
+
                 this.WhenAnyValue(x => x.ViewModel.NpcsViewZoomLevel)
                     .ObserveOn(RxApp.MainThreadScheduler)
                     .Select(val => val.ToString("F2", CultureInfo.InvariantCulture))
                     .BindTo(this, v => v.ZoomPercentageTextBox.Text)
                     .DisposeWith(d);
 
-                // From View (TextBox) to VM, with throttle
                 Observable.FromEventPattern<TextChangedEventArgs>(ZoomPercentageTextBox, nameof(ZoomPercentageTextBox.TextChanged))
                     .Select(ep => ((TextBox)ep.Sender).Text)
-                    .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler) 
-                    .ObserveOn(RxApp.MainThreadScheduler) 
+                    .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler)
+                    .ObserveOn(RxApp.MainThreadScheduler)
                     .Subscribe(text =>
                     {
                         Debug.WriteLine($"NpcsView: ZoomPercentageTextBox TextChanged to '{text}' (throttled)");
@@ -71,8 +123,8 @@ namespace NPC_Plugin_Chooser_2.Views
                             if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out double result))
                             {
                                 ViewModel.NpcsViewHasUserManuallyZoomed = true;
-                                double clampedResult = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, result)); // Use field
-                                if (Math.Abs(ViewModel.NpcsViewZoomLevel - clampedResult) > 0.001) 
+                                double clampedResult = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, result));
+                                if (Math.Abs(ViewModel.NpcsViewZoomLevel - clampedResult) > 0.001)
                                 {
                                     Debug.WriteLine($"NpcsView: Textbox updating VM.NpcsViewZoomLevel to {clampedResult}");
                                     ViewModel.NpcsViewZoomLevel = clampedResult;
@@ -86,73 +138,80 @@ namespace NPC_Plugin_Chooser_2.Views
                         }
                     })
                     .DisposeWith(d);
-                // --- End TextBox Zoom Level Binding ---
-                
+
                 this.BindCommand(ViewModel, vm => vm.ZoomInNpcsCommand, v => v.ZoomInButton).DisposeWith(d);
                 this.BindCommand(ViewModel, vm => vm.ZoomOutNpcsCommand, v => v.ZoomOutButton).DisposeWith(d);
                 this.Bind(ViewModel, vm => vm.NpcsViewIsZoomLocked, v => v.LockZoomCheckBox.IsChecked).DisposeWith(d);
                 this.BindCommand(ViewModel, vm => vm.ResetZoomNpcsCommand, v => v.ResetZoomNpcsButton).DisposeWith(d);
 
 
-                ViewModel.RefreshImageSizesObservable // This subject is signaled by VM when things like SelectedNpc, ShowHidden, ZoomLevel, or LockState change
+                ViewModel.RefreshImageSizesObservable
                     .ObserveOn(RxApp.MainThreadScheduler)
                     .Subscribe(_ => RefreshImageSizes())
                     .DisposeWith(d);
-                
-                // Subscribe to the ViewModel's scroll request observable
-        ViewModel.RequestScrollToNpcObservable
-            .Where(npcToScrollTo => npcToScrollTo != null) // Only act if there's an NPC
-            .ObserveOn(RxApp.MainThreadScheduler) // Ensure UI operations are on the UI thread
-            .Subscribe(async npcToScrollTo => // Make lambda async
-            {
-                Debug.WriteLine($"NpcsView.WhenActivated: Received scroll request for {npcToScrollTo.DisplayName}");
-                try
-                {
-                    // Give the ListBox a moment to update its items after SelectedNpc might have changed
-                    await Task.Delay(100); // Adjust delay as needed, or try DispatcherPriority.Loaded/Render
-                    NpcListBox.UpdateLayout(); // Force layout to ensure containers are generated
 
-                    if (NpcListBox.Items.Contains(npcToScrollTo))
+                ViewModel.RequestScrollToNpcObservable
+                    .Where(npcToScrollTo => npcToScrollTo != null)
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(async npcToScrollTo =>
                     {
-                        var listBoxItem = NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) as ListBoxItem;
-                        if (listBoxItem != null)
+                        Debug.WriteLine($"NpcsView.WhenActivated: Received scroll request for {npcToScrollTo.DisplayName}");
+                        try
                         {
-                            //listBoxItem.Focus(); // Optional
-                            NpcListBox.ScrollIntoView(npcToScrollTo);
-                            Debug.WriteLine($"NpcsView: Scrolled to {npcToScrollTo.DisplayName} (ListBoxItem found).");
-                        }
-                        else
-                        {
-                            // Fallback if container not immediately found (common with virtualization)
-                            NpcListBox.ScrollIntoView(npcToScrollTo);
-                            Debug.WriteLine($"NpcsView: Scrolled to {npcToScrollTo.DisplayName} (general ScrollIntoView, item container might still be virtualized).");
-                            
-                            // Optional: A slightly more robust retry for virtualized items
-                            await Task.Delay(50); // Brief wait for virtualization
-                            NpcListBox.UpdateLayout();
-                            if (NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) is ListBoxItem finalItem)
+                            await Task.Delay(100); 
+                            NpcListBox.UpdateLayout(); 
+
+                            if (NpcListBox.Items.Contains(npcToScrollTo))
                             {
-                                NpcListBox.ScrollIntoView(finalItem); // Scroll to the actual container
-                                Debug.WriteLine($"NpcsView: Retry scroll for {npcToScrollTo.DisplayName} using ListBoxItem successful.");
+                                var listBoxItem = NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) as ListBoxItem;
+                                if (listBoxItem != null)
+                                {
+                                    NpcListBox.ScrollIntoView(npcToScrollTo);
+                                    Debug.WriteLine($"NpcsView: Scrolled to {npcToScrollTo.DisplayName} (ListBoxItem found).");
+                                }
+                                else
+                                {
+                                    NpcListBox.ScrollIntoView(npcToScrollTo);
+                                    Debug.WriteLine($"NpcsView: Scrolled to {npcToScrollTo.DisplayName} (general ScrollIntoView).");
+                                    await Task.Delay(50); 
+                                    NpcListBox.UpdateLayout();
+                                    if (NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) is ListBoxItem finalItem)
+                                    {
+                                        NpcListBox.ScrollIntoView(finalItem);
+                                        Debug.WriteLine($"NpcsView: Retry scroll for {npcToScrollTo.DisplayName} successful.");
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                Debug.WriteLine($"NpcsView: NPC {npcToScrollTo.DisplayName} not in ListBox items.");
                             }
                         }
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"NpcsView: NPC {npcToScrollTo.DisplayName} not in ListBox items when trying to scroll.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"NpcsView: Error during scroll attempt for {npcToScrollTo.DisplayName}: {ex.Message}");
-                }
-                }).DisposeWith(d); 
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"NpcsView: Error during scroll attempt: {ex.Message}");
+                        }
+                    }).DisposeWith(d);
 
                 if (ViewModel.CurrentNpcAppearanceMods != null && ViewModel.CurrentNpcAppearanceMods.Any())
                 {
-                    RefreshImageSizes(); // Initial call
+                    RefreshImageSizes();
                 }
+
+                // Add other view-specific subscriptions to 'd'
+                _viewBindings.Add(d); // If you want to manage 'd' within _viewBindings
             });
+        }
+
+        private void HideUnhideButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.ContextMenu != null)
+            {
+                // Crucial: This sets the PlacementTarget that the MenuItem bindings rely on
+                button.ContextMenu.PlacementTarget = button; 
+                button.ContextMenu.Placement = PlacementMode.Bottom; 
+                button.ContextMenu.IsOpen = true;
+            }
         }
 
         private void ScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -160,36 +219,33 @@ namespace NPC_Plugin_Chooser_2.Views
             if (ViewModel == null) return;
             if (sender is ScrollViewer scrollViewer && scrollViewer.Name == "ImageDisplayScrollViewer" && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                double change = (e.Delta > 0 ? 1 : -1) * _zoomStepPercentage; // Use field
-                ViewModel.NpcsViewHasUserManuallyZoomed = true; 
-                ViewModel.NpcsViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, ViewModel.NpcsViewZoomLevel + change)); // Use fields
+                double change = (e.Delta > 0 ? 1 : -1) * _zoomStepPercentage;
+                ViewModel.NpcsViewHasUserManuallyZoomed = true;
+                ViewModel.NpcsViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, ViewModel.NpcsViewZoomLevel + change));
                 e.Handled = true;
             }
         }
-        
+
         private void ImageDisplayScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             if (ViewModel != null && !ViewModel.NpcsViewIsZoomLocked)
             {
-                ViewModel.NpcsViewHasUserManuallyZoomed = false; // Size change should allow packer to take over if unlocked
+                ViewModel.NpcsViewHasUserManuallyZoomed = false;
             }
             RefreshImageSizes();
         }
-        
+
         private void NpcListBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            // VM_NpcSelectionBar's subscription to SelectedNpc already handles resetting NpcsViewHasUserManuallyZoomed
-            // RefreshImageSizes is called via the CurrentNpcAppearanceMods changing or _refreshImageSizesSubject
+            // Logic handled by VM
         }
-        
+
         private void RefreshImageSizes()
         {
             if (ViewModel?.CurrentNpcAppearanceMods == null) return;
 
-            var imagesToProcess = ViewModel.CurrentNpcAppearanceMods; // This is ObservableCollection<VM_NpcsMenuMugshot>
+            var imagesToProcess = ViewModel.CurrentNpcAppearanceMods;
             if (!imagesToProcess.Any()) {
-                 // If no images, nothing to do for sizing.
-                 // The displayed zoom level in textbox remains what it was.
                 return;
             }
 
@@ -199,26 +255,23 @@ namespace NPC_Plugin_Chooser_2.Views
 
                 var visibleImages = imagesToProcess
                                     .Where(img => img.IsVisible && img.OriginalDipDiagonal > 0)
-                                    .ToList<IHasMugshotImage>(); // Cast to list of interface
+                                    .ToList<IHasMugshotImage>();
 
                 if (!visibleImages.Any())
                 {
-                    // Set all to 0 if no visible images with valid diagonals
                     foreach (var img in imagesToProcess) { img.ImageWidth = 0; img.ImageHeight = 0; }
                     return;
                 }
 
-                // This is the core logic change:
                 if (ViewModel.NpcsViewIsZoomLocked || ViewModel.NpcsViewHasUserManuallyZoomed)
                 {
-                    // Apply direct scaling based on user's (locked or manual) zoom level
                     double sumOfDiagonals = visibleImages.Sum(img => img.OriginalDipDiagonal);
                     double averageOriginalDipDiagonal = sumOfDiagonals / visibleImages.Count;
-                    if (averageOriginalDipDiagonal <= 0) averageOriginalDipDiagonal = 100.0; // Fallback
+                    if (averageOriginalDipDiagonal <= 0) averageOriginalDipDiagonal = 100.0; 
 
                     double userZoomFactor = ViewModel.NpcsViewZoomLevel / 100.0;
 
-                    foreach (var img in imagesToProcess) // Iterate over the master list to set all, visible or not
+                    foreach (var img in imagesToProcess) 
                     {
                         if (img.IsVisible && img.OriginalDipDiagonal > 0)
                         {
@@ -228,31 +281,26 @@ namespace NPC_Plugin_Chooser_2.Views
                         }
                         else
                         {
-                            img.ImageWidth = 0; // Not visible or invalid
+                            img.ImageWidth = 0; 
                             img.ImageHeight = 0;
                         }
                     }
                 }
                 else
                 {
-                    // Unlocked and not manually zoomed: Let packer fit original DIPs
                     var availableHeight = ImageDisplayScrollViewer.ViewportHeight;
                     var availableWidth = ImageDisplayScrollViewer.ViewportWidth;
 
                     if (availableHeight > 0 && availableWidth > 0)
                     {
-                        // ImagePacker needs ObservableCollection<IHasMugshotImage>
                         var imagesForPacker = new ObservableCollection<IHasMugshotImage>(imagesToProcess.Cast<IHasMugshotImage>());
                         
                         double packerScaleFactor = ImagePacker.FitOriginalImagesToContainer(
-                            imagesForPacker, 
+                            imagesForPacker,
                             availableHeight,
                             availableWidth,
-                            5 // xamlItemUniformMargin (from XAML Margin="5")
+                            5 
                         );
-                        
-                        // Update the ViewModel's zoom level to reflect what the packer did
-                        // No need to set NpcsViewHasUserManuallyZoomed false here, it should already be false to reach this branch
                         ViewModel.NpcsViewZoomLevel = packerScaleFactor * 100.0;
                     }
                 }
@@ -265,29 +313,39 @@ namespace NPC_Plugin_Chooser_2.Views
             {
                 if (sender is FrameworkElement element && element.DataContext is VM_NpcsMenuMugshot vm)
                 {
-                    if (vm.ToggleFullScreenCommand.CanExecute.FirstAsync().Wait())
+                    // Check if command can execute before invoking
+                    vm.ToggleFullScreenCommand.CanExecute.Take(1).Subscribe(canExecute =>
                     {
-                        vm.ToggleFullScreenCommand.Execute(Unit.Default).Subscribe().DisposeWith(_viewBindings);
-                    }
+                        if (canExecute)
+                        {
+                            vm.ToggleFullScreenCommand.Execute(Unit.Default).Subscribe().DisposeWith(_viewBindings); // Or manage disposal per click
+                        }
+                    }).DisposeWith(_viewBindings); // Ensure this outer subscription is also managed
                     e.Handled = true;
                 }
             }
         }
 
+
         private void ZoomPercentageTextBox_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             if (ViewModel == null || !(sender is TextBox textBox)) return;
             double currentValue = ViewModel.NpcsViewZoomLevel;
-            double change = (e.Delta > 0 ? 1 : -1) * _zoomStepPercentage; // Use field
-            
-            ViewModel.NpcsViewHasUserManuallyZoomed = true; 
-            ViewModel.NpcsViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, currentValue + change)); // Use fields
-            
+            double change = (e.Delta > 0 ? 1 : -1) * _zoomStepPercentage;
+
+            ViewModel.NpcsViewHasUserManuallyZoomed = true;
+            ViewModel.NpcsViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, currentValue + change));
+
             var binding = textBox.GetBindingExpression(TextBox.TextProperty);
             binding?.UpdateSource();
             textBox.CaretIndex = textBox.Text.Length;
             textBox.SelectAll();
             e.Handled = true;
         }
+        
+        // Make sure to dispose _viewBindings if the UserControl is unloaded or disposed
+        // For ReactiveUserControl, WhenActivated handles many cases, but if you have subscriptions
+        // outside of it, you might need an explicit Dispose pattern or Unloaded event.
+        // For simplicity, I'm assuming WhenActivated covers most UI-related subscriptions.
     }
 }
