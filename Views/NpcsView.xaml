@@ -94,7 +94,8 @@
                     <Button Content="Hide/Unhide" Margin="2,0,2,0" Padding="5,2"
                             ContextMenu="{StaticResource HideUnhideContextMenuResource}"
                             Click="HideUnhideButton_Click"
-                            ToolTip="Hide or unhide mugshots. Right-click or click for options."/>
+                            IsEnabled="{Binding CanOpenHideUnhideMenu}"
+                            ToolTip="Hide or unhide mugshots. Right-click or click for options (enabled if at least one mugshot is checked)."/>
                     
                     <Button Content="Deselect all" Margin="2,0,0,0" Padding="5,2"
                             Command="{Binding DeselectAllCommand}"

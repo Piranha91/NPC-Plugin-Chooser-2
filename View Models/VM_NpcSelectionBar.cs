@@ -119,6 +119,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         // --- NEW: Compare/Hide/Deselect Functionality ---
         [ObservableAsProperty] public int CheckedMugshotCount { get; }
+        [ObservableAsProperty] public bool CanOpenHideUnhideMenu { get; } 
         public ReactiveCommand<Unit, Unit> CompareSelectedCommand { get; }
         public ReactiveCommand<Unit, Unit> HideAllSelectedCommand { get; }
         public ReactiveCommand<Unit, Unit> HideAllButSelectedCommand { get; }
@@ -411,15 +412,25 @@ namespace NPC_Plugin_Chooser_2.View_Models
             CompareSelectedCommand = ReactiveCommand.Create(ExecuteCompareSelected, canCompareSelected);
             CompareSelectedCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error comparing selected: {ex.Message}")).DisposeWith(_disposables);
 
+            // Define the observable for enabling the Hide/Unhide menu button
             var atLeastOneSelected = this.WhenAnyValue(x => x.CheckedMugshotCount)
-                .Select(count => count >= 1);
-            HideAllButSelectedCommand = ReactiveCommand.Create(ExecuteHideAllButSelected, Observable.Return(true));
+                .Select(count => count >= 1)
+                .StartWith(false); // Start disabled until count is known
+
+            // Convert it to a property
+            atLeastOneSelected
+                .ToPropertyEx(this, x => x.CanOpenHideUnhideMenu)
+                .DisposeWith(_disposables);
+            
+            var canExecuteHideUnhideActions = atLeastOneSelected; // Reuse the observable
+            
+            HideAllButSelectedCommand = ReactiveCommand.Create(ExecuteHideAllButSelected, canExecuteHideUnhideActions);
             HideAllButSelectedCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error hiding unselected: {ex.Message}")).DisposeWith(_disposables);
-            HideAllSelectedCommand = ReactiveCommand.Create(ExecuteHideAllSelected, Observable.Return(true));
+            HideAllSelectedCommand = ReactiveCommand.Create(ExecuteHideAllSelected, canExecuteHideUnhideActions);
             HideAllSelectedCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error hiding selected: {ex.Message}")).DisposeWith(_disposables);
-            UnhideAllSelectedCommand = ReactiveCommand.Create(ExecuteUnhideAllSelected, Observable.Return(true));
+            UnhideAllSelectedCommand = ReactiveCommand.Create(ExecuteUnhideAllSelected, canExecuteHideUnhideActions);
             UnhideAllSelectedCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error unhiding selected: {ex.Message}")).DisposeWith(_disposables);
-            UnhideAllButSelectedCommand = ReactiveCommand.Create(ExecuteUnhideAllButSelected, Observable.Return(true));
+            UnhideAllButSelectedCommand = ReactiveCommand.Create(ExecuteUnhideAllButSelected, canExecuteHideUnhideActions);
             UnhideAllButSelectedCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error unhiding unselected: {ex.Message}")).DisposeWith(_disposables);
             
             var canDeselectAll = this.WhenAnyValue(x => x.CheckedMugshotCount)
