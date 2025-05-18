@@ -82,121 +82,171 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _environmentStateProvider = environmentStateProvider;
             _lazyNpcSelectionBar = lazyNpcSelectionBar;
             _lazyModListVM = lazyModListVm;
-            _model = settings; // Use the injected model instance
+            _model = settings; // settings is already loaded/newed by DI or caller
             _consistencyProvider = consistencyProvider;
 
             Application.Current.Exit += (_, __) => { SaveSettings(); };
 
-            // Initialize VM properties from the model
+            // --- Step 1: Initialize VM properties from the model ---
+            // These assignments happen BEFORE any WhenAnyValue subscriptions for them are set up.
             ModsFolder = _model.ModsFolder;
             MugshotsFolder = _model.MugshotsFolder;
             SkyrimRelease = _model.SkyrimRelease;
             SkyrimGamePath = _model.SkyrimGamePath;
-            OutputPluginName = _model.OutputPluginName; 
+            OutputPluginName = _model.OutputPluginName; // This is the conceptual name / actual filename
+            OutputModName = _model.OutputPluginName; // Keep OutputModName in sync if it represents the same thing
             OutputDirectory = _model.OutputDirectory;
             AppendTimestampToOutputDirectory = _model.AppendTimestampToOutputDirectory;
             SelectedPatchingMode = _model.PatchingMode;
+            AddMissingNpcsOnUpdate = _model.AddMissingNpcsOnUpdate; // Assuming this is in your model
+
+            // --- Step 2: Directly set initial values on _environmentStateProvider ---
+            // This ensures the provider has the correct state BEFORE the first UpdateEnvironment() call.
+            _environmentStateProvider.DataFolderPath = _model.SkyrimGamePath;
+            _environmentStateProvider.SkyrimVersion = _model.SkyrimRelease;
+            _environmentStateProvider.OutputPluginName = _model.OutputPluginName;
+
+            // --- Step 3: Initialize ExclusionSelectorViewModel ---
+            // It's initialized here. It will be reactively updated with AvailablePluginsForExclusion later.
             ExclusionSelectorViewModel = new VM_ModSelector();
-            ExclusionSelectorViewModel.LoadFromModel(_environmentStateProvider.LoadOrder.Keys, _model.EasyNpcDefaultPluginExclusions);
+            ExclusionSelectorViewModel.LoadFromModel(
+                _environmentStateProvider.LoadOrder?.Keys ?? Enumerable.Empty<ModKey>(), // Use current (possibly empty) load order
+                _model.EasyNpcDefaultPluginExclusions
+            );
 
-            // Update model when VM properties change
-            this.WhenAnyValue(x => x.ModsFolder).Subscribe(s => _model.ModsFolder = s).DisposeWith(_disposables);
-            this.WhenAnyValue(x => x.MugshotsFolder).Subscribe(s => _model.MugshotsFolder = s).DisposeWith(_disposables);
-            this.WhenAnyValue(x => x.OutputDirectory).Subscribe(s => _model.OutputDirectory = s).DisposeWith(_disposables);
-            this.WhenAnyValue(x => x.AppendTimestampToOutputDirectory).Subscribe(b => _model.AppendTimestampToOutputDirectory = b).DisposeWith(_disposables);
-            this.WhenAnyValue(x => x.SelectedPatchingMode).Subscribe(pm => _model.PatchingMode = pm).DisposeWith(_disposables);
+            // --- Step 4: Perform the SINGLE initial environment update ---
+            // This is the crucial one-time call for startup, using the settings loaded above.
+            Debug.WriteLine("VM_Settings Constructor: Performing initial UpdateEnvironmentAndNotify.");
+            UpdateEnvironmentAndNotify();
 
-            // Properties that trigger environment update
-            this.WhenAnyValue(x => x.SkyrimGamePath).Subscribe(s =>
-            {
-                _model.SkyrimGamePath = s;
-                _environmentStateProvider.DataFolderPath = s;
-                UpdateEnvironmentAndNotify();
-            }).DisposeWith(_disposables);
-            this.WhenAnyValue(x => x.SkyrimRelease).Subscribe(r =>
-            {
-                _model.SkyrimRelease = r;
-                _environmentStateProvider.SkyrimVersion = r;
-                UpdateEnvironmentAndNotify();
-            }).DisposeWith(_disposables);
-            this.WhenAnyValue(x => x.OutputPluginName) // Trigger on actual plugin name change
+            // --- Step 5: Set up subscriptions to update the model and/or trigger further updates ---
+            // Use .Skip(1) to ignore the initial values that were just programmatically set.
+
+            // Subscriptions that only update the model
+            this.WhenAnyValue(x => x.ModsFolder).Skip(1).Subscribe(s => _model.ModsFolder = s).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.MugshotsFolder).Skip(1).Subscribe(s => _model.MugshotsFolder = s).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.OutputDirectory).Skip(1).Subscribe(s => _model.OutputDirectory = s).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.AppendTimestampToOutputDirectory).Skip(1).Subscribe(b => _model.AppendTimestampToOutputDirectory = b).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.SelectedPatchingMode).Skip(1).Subscribe(pm => _model.PatchingMode = pm).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b).DisposeWith(_disposables);
+
+            // Subscriptions for properties that trigger environment update (for *subsequent* changes)
+            this.WhenAnyValue(x => x.SkyrimGamePath)
+                .Skip(1) // Skip the initial value set during construction
+                .Do(s => // For subsequent changes, update model and provider's direct property
+                {
+                    _model.SkyrimGamePath = s;
+                    _environmentStateProvider.DataFolderPath = s;
+                })
+                .Subscribe(_ => UpdateEnvironmentAndNotify()) // Then call the full update
+                .DisposeWith(_disposables);
+
+            this.WhenAnyValue(x => x.SkyrimRelease)
+                .Skip(1)
+                .Do(r =>
+                {
+                    _model.SkyrimRelease = r;
+                    _environmentStateProvider.SkyrimVersion = r;
+                })
+                .Subscribe(_ => UpdateEnvironmentAndNotify())
+                .DisposeWith(_disposables);
+
+            // OutputPluginName is the source of truth for the plugin's filename.
+            // OutputModName is also observed if it means the same thing or has other UI implications.
+            this.WhenAnyValue(x => x.OutputPluginName)
                 .Where(x => !x.IsNullOrWhitespace())
-                .Subscribe(s =>
+                .Skip(1)
+                .Do(s =>
                 {
                     _model.OutputPluginName = s;
-                    // Update the provider's understanding of the output mod's name
-                    _environmentStateProvider.OutputPluginName = s;
-                    UpdateEnvironmentAndNotify();
-                }).DisposeWith(_disposables);
+                    _environmentStateProvider.OutputPluginName = s; // Critical: update provider
+                    if (OutputModName != s) OutputModName = s; // Keep OutputModName in sync if it's meant to be the same
+                })
+                .Subscribe(_ => UpdateEnvironmentAndNotify())
+                .DisposeWith(_disposables);
 
-            // Expose environment state reactively
-            this.WhenAnyValue(x => x._environmentStateProvider.EnvironmentIsValid)
-                .ToPropertyEx(this, x => x.EnvironmentIsValid).DisposeWith(_disposables);
+            // If OutputModName can be independently changed and should also drive OutputPluginName:
+            this.WhenAnyValue(x => x.OutputModName)
+                .Where(x => !x.IsNullOrWhitespace())
+                .Skip(1) // If OutputModName is initialized from _model.OutputPluginName, skip initial
+                .Subscribe(s => {
+                    if (OutputPluginName != s) OutputPluginName = s; // This will trigger the OutputPluginName subscription
+                })
+                .DisposeWith(_disposables);
 
-            this.WhenAnyValue(x => x._environmentStateProvider.EnvironmentBuilderError)
+
+            // --- Step 6: Expose environment state reactively (OAPHs) ---
+            // These will reflect the state changes from the initial UpdateEnvironmentAndNotify call.
+            _environmentStateProvider.WhenAnyValue(x => x.EnvironmentIsValid)
+                .ToPropertyEx(this, x => x.EnvironmentIsValid)
+                .DisposeWith(_disposables);
+
+            _environmentStateProvider.WhenAnyValue(x => x.EnvironmentBuilderError)
                  .Select(err => string.IsNullOrWhiteSpace(err) ? string.Empty : $"Environment Error: {err}")
-                .ToPropertyEx(this, x => x.EnvironmentErrorText).DisposeWith(_disposables);
+                .ToPropertyEx(this, x => x.EnvironmentErrorText)
+                .DisposeWith(_disposables);
 
-            // Populate AvailablePluginsForExclusion (existing code...)
-            this.WhenAnyValue(x => x.EnvironmentIsValid)
-                .Select(_ => _environmentStateProvider.EnvironmentIsValid
-                    ? _environmentStateProvider.LoadOrder.Keys.ToList()
+            // Populate AvailablePluginsForExclusion (reacts to EnvironmentIsValid)
+            this.WhenAnyValue(x => x.EnvironmentIsValid) // Triggered by the initial UpdateEnvironmentAndNotify
+                .Select(_ => _environmentStateProvider.EnvironmentIsValid && _environmentStateProvider.LoadOrder != null
+                    ? _environmentStateProvider.LoadOrder.Keys.OrderBy(k => k.ToString(), StringComparer.OrdinalIgnoreCase).ToList()
                     : Enumerable.Empty<ModKey>())
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .ToPropertyEx(this, x => x.AvailablePluginsForExclusion).DisposeWith(_disposables);
+                .ToPropertyEx(this, x => x.AvailablePluginsForExclusion)
+                .DisposeWith(_disposables);
 
-            // --- Update ModSelectorViewModel when available plugins change --- NEW
+            // Update ModSelectorViewModel when available plugins change
             this.WhenAnyValue(x => x.AvailablePluginsForExclusion)
-                .Where(list => list != null)
+                .Where(list => list != null) // An empty list is valid for LoadFromModel
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(availablePlugins =>
                 {
-                    // --- Get the currently selected items from the UI's ViewModel ---
                     var currentUISelctions = ExclusionSelectorViewModel.SaveToModel();
-
-                    // --- Reload using the current UI selections, not the model's ---
                     ExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentUISelctions);
                 }).DisposeWith(_disposables);
 
-
-            // Folder Browser Commands
+            // --- Step 7: Commands ---
             SelectGameFolderCommand = ReactiveCommand.Create(SelectGameFolder);
             SelectModsFolderCommand = ReactiveCommand.Create(SelectModsFolder);
             SelectMugshotsFolderCommand = ReactiveCommand.Create(SelectMugshotsFolder);
-            SelectOutputDirectoryCommand = ReactiveCommand.Create(SelectOutputDirectory); // New
-            ShowPatchingModeHelpCommand = ReactiveCommand.Create(ShowPatchingModeHelp); // New
-            ImportEasyNpcCommand = ReactiveCommand.Create(ImportEasyNpc); // New
-            ExportEasyNpcCommand = ReactiveCommand.Create(ExportEasyNpc); // New
+            SelectOutputDirectoryCommand = ReactiveCommand.Create(SelectOutputDirectory);
+            ShowPatchingModeHelpCommand = ReactiveCommand.Create(ShowPatchingModeHelp);
+            ImportEasyNpcCommand = ReactiveCommand.Create(ImportEasyNpc);
+            ExportEasyNpcCommand = ReactiveCommand.Create(ExportEasyNpc);
             UpdateEasyNpcProfileCommand = ReactiveCommand.CreateFromTask<bool>(UpdateEasyNpcProfile);
-            
-            // Setup throttled save subscription
-            _saveRequestSubject
-                .Throttle(_saveThrottleTime, RxApp.TaskpoolScheduler) 
-                .ObserveOn(RxApp.MainThreadScheduler) 
-                .Subscribe(_ => SaveSettings())
-                .DisposeWith(_disposables); // Manage this subscription
 
-            // --- Moved initializations and subscriptions that depend on other VMs to WhenActivated ---
+            // Throttled save
+            _saveRequestSubject
+                .Throttle(_saveThrottleTime, RxApp.TaskpoolScheduler)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(_ => SaveSettings())
+                .DisposeWith(_disposables);
+
+            // --- Step 8: WhenActivated for UI-dependent subscriptions or interactions ---
             this.WhenActivated(disposables =>
             {
-                // This block executes when VM_Settings becomes active.
-                // By this time, other VMs should also be resolvable and potentially activating.
+                Debug.WriteLine("VM_Settings Activated. Setting up NpcSelectionBar subscription.");
+                // Environment should be initialized by now.
+                // This is a good place for subscriptions that depend on other VMs being ready
+                // or for UI events that only make sense when the view is active.
 
-                Debug.WriteLine("VM_Settings Activated. Initializing environment and dependent VMs.");
-                UpdateEnvironmentAndNotify(); // This calls _lazyNpcSelectionBar.Value.Initialize() internally
-
-                // Subscribe to NpcSelectionBar's SelectedNpc to update LastSelectedNpcFormKey
-                // Ensure NpcSelectionBar is initialized before subscribing to its properties.
-                // UpdateEnvironmentAndNotify already calls Initialize on it.
-                _lazyNpcSelectionBar.Value // Access .Value now, should be safe after UpdateEnvironmentAndNotify
-                    .WhenAnyValue(x => x.SelectedNpc)
-                    .Skip(1) 
-                    .Subscribe(npc =>
-                    {
-                        _model.LastSelectedNpcFormKey = npc?.NpcFormKey ?? FormKey.Null;
-                        RequestThrottledSave(); 
-                    })
-                    .DisposeWith(disposables); 
+                if (_lazyNpcSelectionBar.IsValueCreated) // Initialize() was called in UpdateEnvironmentAndNotify
+                {
+                    _lazyNpcSelectionBar.Value
+                        .WhenAnyValue(x => x.SelectedNpc)
+                        .Skip(1) // Skip initial null/default
+                        .Subscribe(npc =>
+                        {
+                            _model.LastSelectedNpcFormKey = npc?.NpcFormKey ?? FormKey.Null;
+                            RequestThrottledSave();
+                        })
+                        .DisposeWith(disposables);
+                }
+                else
+                {
+                    // This could happen if UpdateEnvironmentAndNotify didn't run or failed to initialize it.
+                    Debug.WriteLine("WARNING: VM_Settings activated, but NpcSelectionBar is not yet initialized. Subscription might be missed or delayed.");
+                }
             });
         }
 
