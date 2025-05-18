@@ -1,6 +1,7 @@
 ﻿// View Models/VM_ModSetting.cs
 using System;
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.Diagnostics; // For Debug.WriteLine
 using System.IO;
 using System.Reactive;
@@ -11,6 +12,7 @@ using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using System.Linq;
 using Mutagen.Bethesda.Skyrim;
+using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views; // Assuming Models namespace
 
@@ -37,11 +39,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public List<FormKey> NpcFormKeys { get; set; } = new();
         public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
 
+        // New Property: Maps NPC FormKey to the ModKey from which it should inherit data,
+        // specifically for NPCs appearing in multiple plugins within this ModSetting.
+        // This is loaded from and saved to Models.ModSetting.
+        public Dictionary<FormKey, ModKey> NpcPluginDisambiguation { get; set; }
+
+        // DEPRECATED---------------------------
         // Maps NPC FormKey to the SINGLE ModKey within this setting that provides its record.
         public Dictionary<FormKey, ModKey> NpcSourcePluginMap { get; private set; } = new();
         // Stores FormKeys of NPCs found in multiple plugins within this setting (Error State)
         public HashSet<FormKey> AmbiguousNpcFormKeys { get; private set; } = new();
+        // DEPRECATED---------------------------
+        
         private readonly SkyrimRelease _skyrimRelease;
+        private readonly EnvironmentStateProvider _environmentStateProvider;
 
         // Flag indicating if this VM was created dynamically only from a Mugshot folder
         // and wasn't loaded from the persisted ModSettings.
@@ -55,8 +66,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly ObservableAsPropertyHelper<string> _modKeyDisplaySuffix;
         public string ModKeyDisplaySuffix => _modKeyDisplaySuffix.Value;
 
-        // Flag indicating if the MugShotFolderPath contains validly structured image files.
-        // Used to enable/disable the clickable DisplayName link.
+        // HasValidMugshots now indicates if *actual* mugshots are present.
+        // If false, but MugShotFolderPath is assigned (or even if not),
+        // the mod is still "clickable" to show placeholders.
         [Reactive] public bool HasValidMugshots { get; set; }
         
         private readonly ObservableAsPropertyHelper<bool> _canUnlinkMugshots;
@@ -88,6 +100,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             CorrespondingModKeys = new ObservableCollection<ModKey>(model.ModKeys ?? new List<ModKey>());
             CorrespondingFolderPaths = new ObservableCollection<string>(model.CorrespondingFolderPaths ?? new List<string>()); // Handle potential null
             MugShotFolderPath = model.MugShotFolderPath; // Load persisted mugshot folder path
+            NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(model.NpcPluginDisambiguation ?? new Dictionary<FormKey, ModKey>());
             // IsMugshotOnlyEntry is set to false via chaining
         }
 
@@ -113,6 +126,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
             DisplayName = displayName;
             IsMugshotOnlyEntry = isMugshotOnly; // Set the flag based on how it was created
             _skyrimRelease = parentVm.SkyrimRelease; // Get SkyrimRelease from parent
+            _environmentStateProvider = parentVm.EnvironmentStateProvider; // Get EnvironmentStateProvider from parent
+
+            // Initialize NpcPluginDisambiguation if not loaded from model (chained constructors handle this)
+            if (NpcPluginDisambiguation == null) // Should only be null if this base constructor is called directly without chaining from model constructor
+            {
+                NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>();
+            }
 
             // --- Setup for ModKeyDisplaySuffix ---
             _modKeyDisplaySuffix = this.WhenAnyValue(x => x.DisplayName, x => x.CorrespondingModKeys.Count) // Trigger on count change
@@ -151,6 +171,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  )
                  .DistinctUntilChanged()
                  .ToPropertyEx(this, x => x.HasModPathsAssigned);
+             
+             // When MugShotFolderPath changes OR CorrespondingModKeys.Count changes,
+             // re-evaluate HasValidMugshots.
+             Observable.Merge(
+                     this.WhenAnyValue(x => x.MugShotFolderPath).Select(_ => Unit.Default),
+                     this.WhenAnyValue(x => x.CorrespondingModKeys.Count).Select(_ => Unit.Default) // Use Count property
+                 )
+                 .Throttle(TimeSpan.FromMilliseconds(100))
+                 .ObserveOn(RxApp.MainThreadScheduler) 
+                 .Subscribe(_ => {
+                     _parentVm?.RecalculateMugshotValidity(this);
+                 });
              
              // --- Setup for CanUnlinkMugshots ---
              _canUnlinkMugshots = this.WhenAnyValue(
@@ -369,37 +401,36 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// </summary>
         public void RefreshNpcLists()
         {
-            // Reset lists before potentially repopulating
+            if (this.DisplayName == "WICO - Windsong Immersive Chracter Overhaul")
+            {
+                Debug.WriteLine($"RefreshNpcListsAsync: Loading placeholders for {DisplayName}");
+            }
             NpcNames.Clear();
             NpcEditorIDs.Clear();
             NpcFormKeys.Clear();
             NpcFormKeysToDisplayName.Clear();
-
             NpcSourcePluginMap.Clear();
-            AmbiguousNpcFormKeys.Clear();
-            var npcFoundInPlugins = new Dictionary<FormKey, List<ModKey>>(); // Temp track sources
+            // AmbiguousNpcFormKeys is cleared and repopulated below
+            
+            var npcFoundInPlugins = new Dictionary<FormKey, List<ModKey>>(); 
 
-            // Check if there are any keys AND paths assigned
             if (CorrespondingModKeys.Any() && HasModPathsAssigned)
             {
-                // Iterate through each potential plugin associated with this mod setting
                 foreach (var modKey in CorrespondingModKeys)
                 {
                     string? foundPluginPath = null;
-                    // Iterate through each potential folder path *to find this specific plugin*
                     foreach (var dirPath in CorrespondingFolderPaths)
                     {
                         string pluginFileName = modKey.FileName;
                         string potentialPluginPath = Path.Combine(dirPath, pluginFileName);
-
                         if (File.Exists(potentialPluginPath))
                         {
                             foundPluginPath = potentialPluginPath;
-                            break; // Found the plugin in this folder, no need to check others for this key
+                            break; 
                         }
                     }
 
-                    if (foundPluginPath != null) // If a valid path for this plugin was found
+                    if (foundPluginPath != null) 
                     {
                         try
                         {
@@ -408,22 +439,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             {
                                 FormKey currentNpcKey = npcGetter.FormKey;
 
-                                // --- Track which plugins contain this NPC ---
                                 if (!npcFoundInPlugins.TryGetValue(currentNpcKey, out var sourceList))
                                 {
                                     sourceList = new List<ModKey>();
                                     npcFoundInPlugins[currentNpcKey] = sourceList;
                                 }
-                                if (!sourceList.Contains(modKey)) // Avoid adding same key twice if plugin in multiple folders
+                                if (!sourceList.Contains(modKey)) 
                                 {
                                      sourceList.Add(modKey);
                                 }
-                                // --- End Tracking ---
-
-                                // --- Populate display info (only once per NPC) ---
+                                
                                 if (!NpcFormKeys.Contains(currentNpcKey))
                                 {
-                                    NpcFormKeys.Add(currentNpcKey); // Add to overall list for filtering
+                                    NpcFormKeys.Add(currentNpcKey); 
                                     var npc = npcGetter;
                                     string displayName = string.Empty;
                                     if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String)) { NpcNames.Add(npc.Name.String); displayName = npc.Name.String; }
@@ -431,7 +459,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     if (string.IsNullOrEmpty(displayName)) displayName = npc.FormKey.ToString();
                                     NpcFormKeysToDisplayName.Add(currentNpcKey, displayName);
                                 }
-                                // --- End display info ---
                             }
                         }
                         catch (Exception e)
@@ -439,10 +466,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             Debug.WriteLine($"Error loading NPC data from {foundPluginPath} for ModSetting '{DisplayName}': {e.Message}");
                         }
                     }
-                } // End foreach modKey
-            } // End if keys and paths exist
+                } 
+            } 
 
-            // --- Post-Processing: Populate Map and Detect Ambiguity ---
+            // --- Post-Processing: Populate NpcSourcePluginMap and NpcPluginDisambiguation, identify AmbiguousNpcFormKeys ---
+            AmbiguousNpcFormKeys.Clear(); // Clear before repopulating
+
             foreach(var kvp in npcFoundInPlugins)
             {
                 FormKey npcKey = kvp.Key;
@@ -450,17 +479,179 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 if (sources.Count == 1)
                 {
-                    // Exactly one source plugin found within this ModSetting - this is valid
                     NpcSourcePluginMap[npcKey] = sources[0];
+                    NpcPluginDisambiguation.Remove(npcKey); // Not ambiguous, no disambiguation needed
                 }
                 else if (sources.Count > 1)
                 {
-                    // Multiple source plugins found within this ModSetting - this is an error
-                    AmbiguousNpcFormKeys.Add(npcKey);
-                    Debug.WriteLine($"ERROR for ModSetting '{DisplayName}': NPC {npcKey} found in multiple associated plugins: {string.Join(", ", sources.Select(k=>k.FileName))}. This NPC will be skipped for this Mod Setting.");
-                    // Optionally: Add to a persistent warning list for the user?
+                    AmbiguousNpcFormKeys.Add(npcKey); // Mark as having multiple origins within this ModSetting
+
+                    ModKey resolvedSource;
+                    if (NpcPluginDisambiguation.TryGetValue(npcKey, out var preferredKey) && sources.Contains(preferredKey))
+                    {
+                        resolvedSource = preferredKey;
+                    }
+                    else
+                    {
+                        // No valid disambiguation or preferred key is no longer a source. Determine default.
+                        var loadOrder = _environmentStateProvider?.LoadOrder;
+                        if (loadOrder == null || loadOrder.ListedOrder == null)
+                        {
+                            Debug.WriteLine($"CRITICAL ERROR for ModSetting '{DisplayName}': Load order not available from EnvironmentStateProvider. Cannot resolve default source for NPC {npcKey}. This NPC will be skipped.");
+                            continue; 
+                        }
+                        var loadOrderList = loadOrder.ListedOrder.Select(x => x.ModKey).ToList();
+                        
+                        ModKey defaultSource = sources
+                            .Where(s => !s.IsNull && loadOrderList.Contains(s)) 
+                            .OrderBy(s => loadOrderList.IndexOf(s))
+                            .FirstOrDefault();
+
+                        if (!defaultSource.IsNull)
+                        {
+                            resolvedSource = defaultSource;
+                            NpcPluginDisambiguation[npcKey] = resolvedSource; // Persist the default choice
+                        }
+                        else
+                        {
+                            Debug.WriteLine($"ERROR for ModSetting '{DisplayName}': NPC {npcKey} found in multiple associated plugins: {string.Join(", ", sources.Select(k=>k.FileName))}, but no valid default source could be determined (e.g., none of the sources are in the active load order). This NPC will be skipped for this Mod Setting.");
+                            continue; 
+                        }
+                    }
+                    NpcSourcePluginMap[npcKey] = resolvedSource;
                 }
-                // If sources.Count == 0, something went wrong, but it won't be in the map.
+            }
+
+            // Cleanup NpcPluginDisambiguation: remove entries for NPCs no longer found or no longer ambiguous (i.e. now only in 1 plugin)
+            var keysInDisambiguation = NpcPluginDisambiguation.Keys.ToList(); // ToList() for safe removal while iterating
+            foreach (var npcKeyInDisambiguation in keysInDisambiguation)
+            {
+                if (!npcFoundInPlugins.TryGetValue(npcKeyInDisambiguation, out var currentSources) || currentSources.Count <= 1)
+                {
+                    NpcPluginDisambiguation.Remove(npcKeyInDisambiguation);
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Sets the source plugin for a single NPC that has multiple potential source plugins within this ModSetting.
+        /// </summary>
+        public void SetSingleNpcSourcePlugin(FormKey npcKey, ModKey newSourcePlugin)
+        {
+            if (!AmbiguousNpcFormKeys.Contains(npcKey))
+            {
+                Debug.WriteLine($"NPC {npcKey} ({NpcFormKeysToDisplayName.GetValueOrDefault(npcKey, "N/A")}) in ModSetting '{DisplayName}' is not from multiple internal plugins or choice is not needed. Ignoring SetSingleNpcSourcePlugin.");
+                return;
+            }
+            
+            if (!CorrespondingModKeys.Contains(newSourcePlugin))
+            {
+                Debug.WriteLine($"Error: Plugin {newSourcePlugin.FileName} is not a valid source choice within ModSetting '{DisplayName}'.");
+                ScrollableMessageBox.ShowError($"Cannot set {newSourcePlugin.FileName} as source for {NpcFormKeysToDisplayName.GetValueOrDefault(npcKey, npcKey.ToString())} because {newSourcePlugin.FileName} is not one of the plugins associated with the '{DisplayName}' mod entry.", "Invalid Source Plugin");
+                return;
+            }
+
+            // Further check: Does newSourcePlugin actually contain this NPC?
+            // RefreshNpcLists populates npcFoundInPlugins. We need to ensure 'newSourcePlugin' is in 'npcFoundInPlugins[npcKey]'.
+            // This check is implicitly handled by RefreshNpcLists if the choice is invalid, it would revert to default.
+            // For immediate feedback or stricter control, one might re-verify here.
+
+            bool changed = false;
+            if (!NpcPluginDisambiguation.TryGetValue(npcKey, out var currentDisambiguation) || currentDisambiguation != newSourcePlugin)
+            {
+                NpcPluginDisambiguation[npcKey] = newSourcePlugin;
+                changed = true;
+                Debug.WriteLine($"User changed source for NPC {npcKey} in ModSetting '{DisplayName}' to {newSourcePlugin.FileName}.");
+            }
+
+            if (changed)
+            {
+                if (DisplayName == "WICO - Windsong Immersive Chracter Overhaul")
+                {
+                    Debug.WriteLine("Calling RefreshNpcLists for WICO from SetSingleNpcSourcePlugin()");
+                }
+                RefreshNpcLists(); // This will update NpcSourcePluginMap using the new disambiguation.
+                _parentVm.NotifyNpcSourceChanged(this, npcKey); // Notify parent for potential broader UI updates
+            }
+        }
+
+        /// <summary>
+        /// Sets a given plugin as the source for all NPCs in this ModSetting that are found within that plugin
+        /// AND are listed in AmbiguousNpcFormKeys (i.e., they have multiple potential sources within this ModSetting).
+        /// </summary>
+        public void SetSourcePluginForAllApplicableNpcs(ModKey newGlobalSourcePlugin)
+        {
+            if (!CorrespondingModKeys.Contains(newGlobalSourcePlugin))
+            {
+                Debug.WriteLine($"Error: Plugin {newGlobalSourcePlugin.FileName} is not part of this ModSetting '{DisplayName}'. Cannot set as global source.");
+                ScrollableMessageBox.ShowError($"Plugin {newGlobalSourcePlugin.FileName} is not associated with the mod entry '{DisplayName}'.", "Invalid Global Source Plugin");
+                return;
+            }
+
+            string? pluginFilePath = null;
+            foreach (var dirPath in CorrespondingFolderPaths)
+            {
+                string potentialPath = Path.Combine(dirPath, newGlobalSourcePlugin.FileName);
+                if (File.Exists(potentialPath))
+                {
+                    pluginFilePath = potentialPath;
+                    break;
+                }
+            }
+
+            if (pluginFilePath == null)
+            {
+                Debug.WriteLine($"Error: Could not find plugin file {newGlobalSourcePlugin.FileName} for ModSetting '{DisplayName}'.");
+                ScrollableMessageBox.ShowError($"Could not locate the file for plugin {newGlobalSourcePlugin.FileName} within the specified mod folders for '{DisplayName}'.", "Plugin File Not Found");
+                return;
+            }
+
+            HashSet<FormKey> npcsActuallyInSelectedPlugin = new HashSet<FormKey>();
+            try
+            {
+                using var mod = SkyrimMod.CreateFromBinaryOverlay(pluginFilePath, _skyrimRelease);
+                foreach (var npcGetter in mod.Npcs)
+                {
+                    npcsActuallyInSelectedPlugin.Add(npcGetter.FormKey);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine($"Error reading NPCs from {newGlobalSourcePlugin.FileName} for ModSetting '{DisplayName}': {e.Message}");
+                ScrollableMessageBox.ShowError($"Error reading NPC data from plugin {newGlobalSourcePlugin.FileName}:\n{e.Message}", "Plugin Read Error");
+                return;
+            }
+            
+            bool changed = false;
+            // Iterate all NPCs currently marked as having multiple origins within this ModSetting.
+            // AmbiguousNpcFormKeys should be up-to-date from the last RefreshNpcLists() call.
+            foreach (FormKey ambiguousNpcKey in AmbiguousNpcFormKeys.ToList()) // ToList for safe iteration if NpcPluginDisambiguation changes trigger complex reactions
+            {
+                // If this multi-origin NPC *can* be sourced from the 'newGlobalSourcePlugin'
+                if (npcsActuallyInSelectedPlugin.Contains(ambiguousNpcKey))
+                {
+                    if (!NpcPluginDisambiguation.TryGetValue(ambiguousNpcKey, out var currentDisambiguation) || currentDisambiguation != newGlobalSourcePlugin)
+                    {
+                        NpcPluginDisambiguation[ambiguousNpcKey] = newGlobalSourcePlugin;
+                        changed = true;
+                        Debug.WriteLine($"ModSetting '{DisplayName}': Globally set source for NPC {ambiguousNpcKey} to {newGlobalSourcePlugin.FileName}.");
+                    }
+                }
+            }
+
+            if (changed)
+            {
+                if (DisplayName == "WICO - Windsong Immersive Chracter Overhaul")
+                {
+                    Debug.WriteLine("Calling RefreshNpcLists for WICO from SetSourcePluginForAllApplicableNpcs()");
+                }
+                RefreshNpcLists();
+                _parentVm.NotifyMultipleNpcSourcesChanged(this); // Notify parent for broader UI updates
+                ScrollableMessageBox.Show($"Set {newGlobalSourcePlugin.FileName} as the source for applicable NPCs in '{DisplayName}'.\nCheck the log for details.", "Global Source Set");
+            }
+            else
+            {
+                 ScrollableMessageBox.Show($"No NPC source plugin assignments were changed for '{DisplayName}'. This may be because all relevant NPCs already used {newGlobalSourcePlugin.FileName} as their source, or no ambiguous NPCs are present in that plugin.", "No Changes Made");
             }
         }
         

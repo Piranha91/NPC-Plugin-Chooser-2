@@ -20,10 +20,13 @@
         <local:IsNotNullConverter x:Key="IsNotNullConverter"/>
         <local:ModStatusToolTipMultiConverter x:Key="ModStatusToolTipMultiConverter"/>
         <local:PathExistenceToBrushConverter x:Key="PathExistenceToBrushConverter"/>
+        <local:ModSettingLinkButtonTooltipConverter x:Key="ModSettingLinkButtonTooltipConverter"/>
+        <local:ModKeyToStringConverter x:Key="ModKeyToStringConverter"/>
+        <local:AreModKeysEqualMultiConverter x:Key="AreModKeysEqualMultiConverter"/>
 
         <Style x:Key="LinkButtonStyle" TargetType="Button">
              <Setter Property="Cursor" Value="Hand"/>
-             <Setter Property="ToolTip" Value="Show NPC Mugshots for this mod"/>
+             <Setter Property="ToolTip" Value="Show NPCs for this mod"/>
              <Setter Property="BorderThickness" Value="0"/> 
              <Setter Property="Padding" Value="0"/> 
              <Setter Property="Foreground" Value="DodgerBlue"/>
@@ -48,12 +51,6 @@
                              </Trigger>
                              <Trigger Property="IsPressed" Value="True">
                                  <Setter Property="Foreground" Value="DarkBlue"/>
-                             </Trigger>
-                             <Trigger Property="IsEnabled" Value="False">
-                                 <Setter Property="Foreground" Value="Gray"/>
-                                 <Setter TargetName="PART_Text" Property="TextDecorations" Value="{x:Null}"/>
-                                 <Setter Property="Cursor" Value="Arrow"/>
-                                 <Setter Property="ToolTip" Value="(No valid mugshot folder found, folder is empty, or path is invalid)"/>
                              </Trigger>
                          </ControlTemplate.Triggers>
                      </ControlTemplate>
@@ -181,10 +178,15 @@
                                                   <Button Style="{StaticResource LinkButtonStyle}"
                                                           Command="{Binding DataContext.ShowMugshotsCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"
                                                           CommandParameter="{Binding}"
-                                                          IsEnabled="{Binding HasValidMugshots}"
-                                                          ToolTip="Show NPC Mugshots (Requires valid images in folder)">
-                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="14"/>
-                                                  </Button>
+                                                          ToolTipService.ShowOnDisabled="False">
+                                                 <Button.ToolTip>
+                                                     <MultiBinding Converter="{StaticResource ModSettingLinkButtonTooltipConverter}">
+                                                         <Binding Path="HasValidMugshots"/>
+                                                         <Binding Path="NpcFormKeysToDisplayName.Count"/>
+                                                     </MultiBinding>
+                                                 </Button.ToolTip>
+                                                 <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="14"/>
+                                                 </Button>
                                                  <TextBlock Text="{Binding ModKeyDisplaySuffix}"
                                                             FontWeight="Normal" 
                                                             FontSize="12" Margin="5,0,0,0" VerticalAlignment="Center" Foreground="DarkSlateGray">
@@ -328,6 +330,28 @@
                                           <ContextMenu>
                                                <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/>
                                                <MenuItem Header="View Full Screen (Ctrl+RClick)" Command="{Binding ToggleFullScreenCommand}"/>
+                                               <MenuItem Header="Select Source Plugin"
+                                                         Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                         ItemsSource="{Binding AvailableSourcePlugins}">
+                                                   <MenuItem.ItemContainerStyle>
+                                                       <Style TargetType="MenuItem">
+                                                           <Setter Property="Header" Value="{Binding Converter={StaticResource ModKeyToStringConverter}}"/>
+                                                           <Setter Property="Command" Value="{Binding DataContext.SetNpcSourcePluginCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                                           <Setter Property="CommandParameter" Value="{Binding}"/>
+                                                           <Setter Property="IsCheckable" Value="True"/>
+                                                           <Setter Property="IsChecked">
+                                                               <Setter.Value>
+                                                                   <MultiBinding Converter="{StaticResource AreModKeysEqualMultiConverter}">
+                                                                       <!-- AreModKeysEqualMultiConverter checks if the current menu item's ModKey (value[0])
+                                                                            equals the VM_ModsMenuMugshot's CurrentSourcePlugin (value[1]) -->
+                                                                       <Binding Path="."/> <!-- The ModKey for this MenuItem -->
+                                                                       <Binding Path="DataContext.CurrentSourcePlugin" RelativeSource="{RelativeSource AncestorType=ContextMenu}"/>
+                                                                   </MultiBinding>
+                                                               </Setter.Value>
+                                                           </Setter>
+                                                       </Style>
+                                                   </MenuItem.ItemContainerStyle>
+                                               </MenuItem>
                                           </ContextMenu>
                                      </Border.ContextMenu>
                                  </Border>
@@ -364,9 +388,29 @@
             </Grid>
         </Grid>
 
+
         <!-- NEW Zoom Control Row -->
         <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="5">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center"
+                            Visibility="{Binding ShowSourcePluginControls, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock Text="Source Plugin for Ambiguous NPCs:" VerticalAlignment="Center" Margin="10,0,5,0"
+                           ToolTip="Select a plugin to be the default source for NPCs found in multiple plugins within this mod setting."/>
+                <ComboBox ItemsSource="{Binding AvailableSourcePluginsForSelectedMod}" 
+                          SelectedItem="{Binding SelectedSourcePluginForDisambiguation, Mode=TwoWay}"
+                          DisplayMemberPath="FileName"
+                          MinWidth="150" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <Button Content="Set as Source Plugin" Command="{Binding SetGlobalSourcePluginCommand}" 
+                        Padding="5,2" VerticalAlignment="Center"
+                        ToolTip="Set the selected plugin as the primary source for all NPCs in this mod setting that are found in multiple plugins."/>
+            </StackPanel>
+                
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                 <Button x:Name="ZoomOutButtonMods" Content="-" Width="25" Height="25" Margin="2,0" ToolTip="Zoom Out (Ctrl+Scroll Wheel)"/>
                 <TextBox x:Name="ZoomPercentageTextBoxMods" Width="60" Height="25" Margin="2,0" TextAlignment="Center" VerticalContentAlignment="Center"
                          Text="{Binding ModsViewZoomLevel, StringFormat='F2', Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -380,6 +424,7 @@
                         Command="{Binding ResetZoomModsCommand}"
                         ToolTip="Reset zoom to automatically fit images."/>
             </StackPanel>
+            </Grid>
         </Border>
         
     </Grid>
