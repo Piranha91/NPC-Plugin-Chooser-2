@@ -179,11 +179,35 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 if (SelectedModForMugshots != null && SelectedSourcePluginForDisambiguation.HasValue && !SelectedSourcePluginForDisambiguation.Value.IsNull)
                 {
-                    SelectedModForMugshots.SetSourcePluginForAllApplicableNpcs(SelectedSourcePluginForDisambiguation.Value);
-                    // RefreshMugshots might be needed if display changes based on source
-                    // This is handled by NotifyMultipleNpcSourcesChanged -> ShowMugshotsCommand.Execute
+                    // SetSourcePluginForAllApplicableNpcs now returns a list of changed FormKeys
+                    List<FormKey> changedKeys = SelectedModForMugshots.SetSourcePluginForAllApplicableNpcs(SelectedSourcePluginForDisambiguation.Value);
+
+                    if (changedKeys.Any())
+                    {
+                        // Manually update the CurrentSourcePlugin for displayed mugshots
+                        // This ensures their context menu checkmarks are correct without a full panel reload.
+                        foreach (var mugshotVM in CurrentModNpcMugshots)
+                        {
+                            if (changedKeys.Contains(mugshotVM.NpcFormKey))
+                            {
+                                // Fetch the new source from the definitive map in VM_ModSetting
+                                if (SelectedModForMugshots.NpcSourcePluginMap.TryGetValue(mugshotVM.NpcFormKey, out var newSource))
+                                {
+                                    mugshotVM.CurrentSourcePlugin = newSource;
+                                }
+                                else
+                                {
+                                    // Should be rare if SetSourcePluginForAllApplicableNpcs updated the map
+                                    mugshotVM.CurrentSourcePlugin = null; 
+                                    Debug.WriteLine($"Warning: NPC {mugshotVM.NpcFormKey} was in changedKeys but not found in NpcSourcePluginMap after global set.");
+                                }
+                            }
+                        }
+                        Debug.WriteLine($"VM_Mods: Updated CurrentSourcePlugin for {changedKeys.Count} displayed mugshots after global source set.");
+                    }
                 }
-            }, canSetGlobalSource);
+            }, canSetGlobalSource); // canSetGlobalSource is the WhenAnyValue observable
+            
             SetGlobalSourcePluginCommand.ThrownExceptions.Subscribe(ex =>
             {
                 ScrollableMessageBox.ShowError($"Error setting global source plugin: {ex.Message}");

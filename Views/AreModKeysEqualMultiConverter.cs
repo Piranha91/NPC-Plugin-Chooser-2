@@ -2,6 +2,7 @@
 using System;
 using System.Globalization;
 using System.Linq;
+using System.Windows;
 using System.Windows.Data;
 using Mutagen.Bethesda.Plugins;
 
@@ -29,7 +30,15 @@ namespace NPC_Plugin_Chooser_2.Views // Or NPC_Plugin_Chooser_2.Views.Converters
 
         public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
         {
-            throw new NotImplementedException();
+            // This converter is used for a one-way check (source -> IsChecked).
+            // ConvertBack is not expected to be called or meaningful here.
+            // Returning an array of UnsetValue or DoNothing is conventional.
+            return targetTypes.Select(t => DependencyProperty.UnsetValue).ToArray();
+            // Or, more simply for this case where it's unlikely to be robustly used:
+            // return new object[] { Binding.DoNothing, Binding.DoNothing }; 
+            // Or even:
+            // throw new NotSupportedException("ConvertBack is not supported for AreModKeysEqualMultiConverter.");
+            // However, returning UnsetValue is generally safer to prevent binding errors if the system *does* try.
         }
     }
 }

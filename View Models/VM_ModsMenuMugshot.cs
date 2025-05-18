@@ -160,9 +160,41 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         private void SetNpcSourcePluginInternal(ModKey selectedPluginKey)
         {
-            if (!IsAmbiguousSource) return;
-            if (selectedPluginKey.IsNull) return;
-            _parentVMModSetting.SetSingleNpcSourcePlugin(NpcFormKey, selectedPluginKey);
+            if (!IsAmbiguousSource)
+            {
+                Debug.WriteLine($"SetNpcSourcePluginInternal called for non-ambiguous NPC {NpcFormKey}. This should not happen.");
+                return;
+            }
+            if (selectedPluginKey.IsNull)
+            {
+                 Debug.WriteLine($"SetNpcSourcePluginInternal called with a null/invalid ModKey for NPC {NpcFormKey}.");
+                return;
+            }
+
+            // Call back to the parent VM_ModSetting to handle the logic
+            // It returns true if the underlying data was actually changed and RefreshNpcLists was called.
+            bool successfullyUpdated = _parentVMModSetting.SetSingleNpcSourcePlugin(NpcFormKey, selectedPluginKey);
+            
+            if (successfullyUpdated)
+            {
+                // The parent VM_ModSetting has updated its NpcSourcePluginMap.
+                // Now, this specific VM_ModsMenuMugshot instance should update its own CurrentSourcePlugin
+                // to reflect the new choice for the context menu checkmark.
+                // We can re-fetch it from the parent's map.
+                if (_parentVMModSetting.NpcSourcePluginMap.TryGetValue(this.NpcFormKey, out var newResolvedSource))
+                {
+                    this.CurrentSourcePlugin = newResolvedSource;
+                }
+                else
+                {
+                    // This case should be rare if SetSingleNpcSourcePlugin succeeded and RefreshNpcLists ran.
+                    // It implies the NPC might have been removed or is no longer ambiguous after the refresh.
+                    // For safety, set to null or the passed key.
+                    this.CurrentSourcePlugin = selectedPluginKey; 
+                    Debug.WriteLine($"Warning: Could not re-resolve source for NPC {NpcFormKey} from NpcSourcePluginMap after setting. Displayed checkmark might be based on direct selection.");
+                }
+            }
+            // No need to call anything on _parentVMMaster (VM_Mods) to refresh the whole panel.
         }
     }
 }

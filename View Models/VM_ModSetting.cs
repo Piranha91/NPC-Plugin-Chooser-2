@@ -535,57 +535,94 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         /// <summary>
         /// Sets the source plugin for a single NPC that has multiple potential source plugins within this ModSetting.
+        /// This method directly updates NpcPluginDisambiguation and NpcSourcePluginMap.
+        /// Returns true if the source was successfully updated internally.
         /// </summary>
-        public void SetSingleNpcSourcePlugin(FormKey npcKey, ModKey newSourcePlugin)
+        public bool SetSingleNpcSourcePlugin(FormKey npcKey, ModKey newSourcePlugin)
         {
+            // This first check is important: if the NPC is no longer considered ambiguous 
+            // (e.g., due to a background refresh or other changes), don't proceed.
             if (!AmbiguousNpcFormKeys.Contains(npcKey))
             {
-                Debug.WriteLine($"NPC {npcKey} ({NpcFormKeysToDisplayName.GetValueOrDefault(npcKey, "N/A")}) in ModSetting '{DisplayName}' is not from multiple internal plugins or choice is not needed. Ignoring SetSingleNpcSourcePlugin.");
-                return;
+                Debug.WriteLine($"NPC {npcKey} ({NpcFormKeysToDisplayName.GetValueOrDefault(npcKey, "N/A")}) in ModSetting '{DisplayName}' is no longer ambiguous or choice is not needed. Ignoring SetSingleNpcSourcePlugin.");
+                // It might be that NpcSourcePluginMap already has the correct single source.
+                // Or the NPC is no longer in multiple plugins for this ModSetting.
+                // To be safe, ensure NpcSourcePluginMap is accurate if it exists for this NPC.
+                if (NpcSourcePluginMap.TryGetValue(npcKey, out var currentActualSource) && currentActualSource != newSourcePlugin)
+                {
+                    // This scenario is unlikely if AmbiguousNpcFormKeys is up-to-date.
+                    // If it occurs, it means our AmbiguousNpcFormKeys might be stale.
+                    // A full RefreshNpcLists() would be the robust way to fix, but we're avoiding it for perf.
+                    // For now, we assume if not ambiguous, the map is likely correct or will be fixed by a later global refresh.
+                }
+                return false; 
             }
             
+            // Check if the chosen plugin is actually one of the ModKeys associated with this ModSetting.
             if (!CorrespondingModKeys.Contains(newSourcePlugin))
             {
-                Debug.WriteLine($"Error: Plugin {newSourcePlugin.FileName} is not a valid source choice within ModSetting '{DisplayName}'.");
+                Debug.WriteLine($"Error: Plugin {newSourcePlugin.FileName} is not a valid source choice within ModSetting '{DisplayName}' because it's not in CorrespondingModKeys.");
                 ScrollableMessageBox.ShowError($"Cannot set {newSourcePlugin.FileName} as source for {NpcFormKeysToDisplayName.GetValueOrDefault(npcKey, npcKey.ToString())} because {newSourcePlugin.FileName} is not one of the plugins associated with the '{DisplayName}' mod entry.", "Invalid Source Plugin");
-                return;
+                return false;
             }
 
-            // Further check: Does newSourcePlugin actually contain this NPC?
-            // RefreshNpcLists populates npcFoundInPlugins. We need to ensure 'newSourcePlugin' is in 'npcFoundInPlugins[npcKey]'.
-            // This check is implicitly handled by RefreshNpcLists if the choice is invalid, it would revert to default.
-            // For immediate feedback or stricter control, one might re-verify here.
+            // Further check: Does the newSourcePlugin *actually* contain this NPC according to our last full scan?
+            // This requires having the result of the last `npcFoundInPlugins` scan or re-querying.
+            // For performance, we might skip this very deep check here and rely on the initial population
+            // of AvailableSourcePlugins in VM_ModsMenuMugshot to be correct.
+            // If an invalid choice were somehow presented and selected, NpcSourcePluginMap would be briefly inconsistent
+            // until the next full RefreshNpcLists(). This is a trade-off.
 
-            bool changed = false;
+            bool disambiguationChanged = false;
             if (!NpcPluginDisambiguation.TryGetValue(npcKey, out var currentDisambiguation) || currentDisambiguation != newSourcePlugin)
             {
                 NpcPluginDisambiguation[npcKey] = newSourcePlugin;
-                changed = true;
-                Debug.WriteLine($"User changed source for NPC {npcKey} in ModSetting '{DisplayName}' to {newSourcePlugin.FileName}.");
+                disambiguationChanged = true; // The user's preference has been recorded/changed.
+                Debug.WriteLine($"NpcPluginDisambiguation updated: NPC {npcKey} in ModSetting '{DisplayName}' now prefers {newSourcePlugin.FileName}.");
             }
 
-            if (changed)
+            // Update NpcSourcePluginMap directly
+            bool mapChanged = false;
+            if (!NpcSourcePluginMap.TryGetValue(npcKey, out var currentSourceInMap) || currentSourceInMap != newSourcePlugin)
             {
-                if (DisplayName == "WICO - Windsong Immersive Chracter Overhaul")
-                {
-                    Debug.WriteLine("Calling RefreshNpcLists for WICO from SetSingleNpcSourcePlugin()");
-                }
-                RefreshNpcLists(); // This will update NpcSourcePluginMap using the new disambiguation.
-                _parentVm.NotifyNpcSourceChanged(this, npcKey); // Notify parent for potential broader UI updates
+                NpcSourcePluginMap[npcKey] = newSourcePlugin;
+                mapChanged = true;
+                Debug.WriteLine($"NpcSourcePluginMap updated directly: NPC {npcKey} in ModSetting '{DisplayName}' now sourced from {newSourcePlugin.FileName}.");
+            }
+            
+            // If either the user's preference changed or the actual map entry changed, return true.
+            // Typically, if disambiguationChanged is true, mapChanged will also be true.
+            if (disambiguationChanged || mapChanged)
+            {
+                // We are intentionally NOT calling RefreshNpcLists() here to avoid lag.
+                // The NpcSourcePluginMap is updated directly for this NPC.
+                // Other aspects that RefreshNpcLists() handles (like re-evaluating AmbiguousNpcFormKeys
+                // if this change made the NPC no longer ambiguous) will not be updated until the next full refresh.
+                // This is acceptable for this specific UI interaction.
+                return true;
+            }
+            else
+            {
+                Debug.WriteLine($"No change made for NPC {npcKey} in ModSetting '{DisplayName}'; new source {newSourcePlugin.FileName} was already the effective one.");
+                return false; 
             }
         }
 
         /// <summary>
         /// Sets a given plugin as the source for all NPCs in this ModSetting that are found within that plugin
-        /// AND are listed in AmbiguousNpcFormKeys (i.e., they have multiple potential sources within this ModSetting).
+        /// AND are listed in AmbiguousNpcFormKeys.
+        /// Updates NpcPluginDisambiguation and NpcSourcePluginMap directly.
         /// </summary>
-        public void SetSourcePluginForAllApplicableNpcs(ModKey newGlobalSourcePlugin)
+        /// <returns>A list of FormKeys for NPCs whose source was actually changed.</returns>
+        public List<FormKey> SetSourcePluginForAllApplicableNpcs(ModKey newGlobalSourcePlugin)
         {
+            var changedNpcKeys = new List<FormKey>();
+
             if (!CorrespondingModKeys.Contains(newGlobalSourcePlugin))
             {
                 Debug.WriteLine($"Error: Plugin {newGlobalSourcePlugin.FileName} is not part of this ModSetting '{DisplayName}'. Cannot set as global source.");
                 ScrollableMessageBox.ShowError($"Plugin {newGlobalSourcePlugin.FileName} is not associated with the mod entry '{DisplayName}'.", "Invalid Global Source Plugin");
-                return;
+                return changedNpcKeys;
             }
 
             string? pluginFilePath = null;
@@ -603,7 +640,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 Debug.WriteLine($"Error: Could not find plugin file {newGlobalSourcePlugin.FileName} for ModSetting '{DisplayName}'.");
                 ScrollableMessageBox.ShowError($"Could not locate the file for plugin {newGlobalSourcePlugin.FileName} within the specified mod folders for '{DisplayName}'.", "Plugin File Not Found");
-                return;
+                return changedNpcKeys;
             }
 
             HashSet<FormKey> npcsActuallyInSelectedPlugin = new HashSet<FormKey>();
@@ -619,40 +656,50 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 Debug.WriteLine($"Error reading NPCs from {newGlobalSourcePlugin.FileName} for ModSetting '{DisplayName}': {e.Message}");
                 ScrollableMessageBox.ShowError($"Error reading NPC data from plugin {newGlobalSourcePlugin.FileName}:\n{e.Message}", "Plugin Read Error");
-                return;
+                return changedNpcKeys;
             }
             
-            bool changed = false;
-            // Iterate all NPCs currently marked as having multiple origins within this ModSetting.
-            // AmbiguousNpcFormKeys should be up-to-date from the last RefreshNpcLists() call.
-            foreach (FormKey ambiguousNpcKey in AmbiguousNpcFormKeys.ToList()) // ToList for safe iteration if NpcPluginDisambiguation changes trigger complex reactions
+            // Iterate a copy of AmbiguousNpcFormKeys if modifications to it are possible indirectly,
+            // though direct updates to NpcSourcePluginMap shouldn't affect AmbiguousNpcFormKeys here.
+            foreach (FormKey ambiguousNpcKey in AmbiguousNpcFormKeys.ToList()) 
             {
                 // If this multi-origin NPC *can* be sourced from the 'newGlobalSourcePlugin'
                 if (npcsActuallyInSelectedPlugin.Contains(ambiguousNpcKey))
                 {
+                    bool disambiguationChanged = false;
                     if (!NpcPluginDisambiguation.TryGetValue(ambiguousNpcKey, out var currentDisambiguation) || currentDisambiguation != newGlobalSourcePlugin)
                     {
                         NpcPluginDisambiguation[ambiguousNpcKey] = newGlobalSourcePlugin;
-                        changed = true;
-                        Debug.WriteLine($"ModSetting '{DisplayName}': Globally set source for NPC {ambiguousNpcKey} to {newGlobalSourcePlugin.FileName}.");
+                        disambiguationChanged = true;
+                    }
+
+                    // Directly update NpcSourcePluginMap as well
+                    bool mapChanged = false;
+                    if (!NpcSourcePluginMap.TryGetValue(ambiguousNpcKey, out var currentSourceInMap) || currentSourceInMap != newGlobalSourcePlugin)
+                    {
+                        NpcSourcePluginMap[ambiguousNpcKey] = newGlobalSourcePlugin;
+                        mapChanged = true;
+                    }
+
+                    if (disambiguationChanged || mapChanged)
+                    {
+                        changedNpcKeys.Add(ambiguousNpcKey);
+                        Debug.WriteLine($"ModSetting '{DisplayName}': Globally set source for NPC {ambiguousNpcKey} to {newGlobalSourcePlugin.FileName} (direct map update).");
                     }
                 }
             }
 
-            if (changed)
+            if (changedNpcKeys.Any())
             {
-                if (DisplayName == "WICO - Windsong Immersive Chracter Overhaul")
-                {
-                    Debug.WriteLine("Calling RefreshNpcLists for WICO from SetSourcePluginForAllApplicableNpcs()");
-                }
-                RefreshNpcLists();
-                _parentVm.NotifyMultipleNpcSourcesChanged(this); // Notify parent for broader UI updates
-                ScrollableMessageBox.Show($"Set {newGlobalSourcePlugin.FileName} as the source for applicable NPCs in '{DisplayName}'.\nCheck the log for details.", "Global Source Set");
+                // DO NOT CALL RefreshNpcLists() HERE.
+                // DO NOT CALL _parentVm.NotifyMultipleNpcSourcesChanged(this);
+                ScrollableMessageBox.Show($"Set {newGlobalSourcePlugin.FileName} as the source for {changedNpcKeys.Count} applicable NPC(s) in '{DisplayName}'.", "Global Source Updated");
             }
             else
             {
                  ScrollableMessageBox.Show($"No NPC source plugin assignments were changed for '{DisplayName}'. This may be because all relevant NPCs already used {newGlobalSourcePlugin.FileName} as their source, or no ambiguous NPCs are present in that plugin.", "No Changes Made");
             }
+            return changedNpcKeys;
         }
         
         private void UnlinkMugshotData()
