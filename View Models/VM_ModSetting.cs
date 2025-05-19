@@ -38,18 +38,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public List<string> NpcEditorIDs { get; set; } = new();
         public List<FormKey> NpcFormKeys { get; set; } = new();
         public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
+        
+        public Dictionary<FormKey, List<ModKey>> AvailablePluginsForNpcs { get; set; } = new(); // tracks which plugins contain which Npc entry
 
         // New Property: Maps NPC FormKey to the ModKey from which it should inherit data,
         // specifically for NPCs appearing in multiple plugins within this ModSetting.
         // This is loaded from and saved to Models.ModSetting.
         public Dictionary<FormKey, ModKey> NpcPluginDisambiguation { get; set; }
-
-        // DEPRECATED---------------------------
-        // Maps NPC FormKey to the SINGLE ModKey within this setting that provides its record.
-        public Dictionary<FormKey, ModKey> NpcSourcePluginMap { get; private set; } = new();
+        
         // Stores FormKeys of NPCs found in multiple plugins within this setting (Error State)
         public HashSet<FormKey> AmbiguousNpcFormKeys { get; private set; } = new();
-        // DEPRECATED---------------------------
         
         private readonly SkyrimRelease _skyrimRelease;
         private readonly EnvironmentStateProvider _environmentStateProvider;
@@ -409,10 +407,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             NpcEditorIDs.Clear();
             NpcFormKeys.Clear();
             NpcFormKeysToDisplayName.Clear();
-            NpcSourcePluginMap.Clear();
+            AvailablePluginsForNpcs.Clear();
             // AmbiguousNpcFormKeys is cleared and repopulated below
-            
-            var npcFoundInPlugins = new Dictionary<FormKey, List<ModKey>>(); 
 
             if (CorrespondingModKeys.Any() && HasModPathsAssigned)
             {
@@ -439,10 +435,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             {
                                 FormKey currentNpcKey = npcGetter.FormKey;
 
-                                if (!npcFoundInPlugins.TryGetValue(currentNpcKey, out var sourceList))
+                                if (!AvailablePluginsForNpcs.TryGetValue(currentNpcKey, out var sourceList))
                                 {
                                     sourceList = new List<ModKey>();
-                                    npcFoundInPlugins[currentNpcKey] = sourceList;
+                                    AvailablePluginsForNpcs[currentNpcKey] = sourceList;
                                 }
                                 if (!sourceList.Contains(modKey)) 
                                 {
@@ -469,17 +465,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 } 
             } 
 
-            // --- Post-Processing: Populate NpcSourcePluginMap and NpcPluginDisambiguation, identify AmbiguousNpcFormKeys ---
+            // --- Post-Processing: Populate NpcPluginDisambiguation, identify AmbiguousNpcFormKeys ---
             AmbiguousNpcFormKeys.Clear(); // Clear before repopulating
 
-            foreach(var kvp in npcFoundInPlugins)
+            foreach(var kvp in AvailablePluginsForNpcs)
             {
                 FormKey npcKey = kvp.Key;
                 List<ModKey> sources = kvp.Value;
 
                 if (sources.Count == 1)
                 {
-                    NpcSourcePluginMap[npcKey] = sources[0];
                     NpcPluginDisambiguation.Remove(npcKey); // Not ambiguous, no disambiguation needed
                 }
                 else if (sources.Count > 1)
@@ -518,7 +513,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             continue; 
                         }
                     }
-                    NpcSourcePluginMap[npcKey] = resolvedSource;
                 }
             }
 
@@ -526,7 +520,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var keysInDisambiguation = NpcPluginDisambiguation.Keys.ToList(); // ToList() for safe removal while iterating
             foreach (var npcKeyInDisambiguation in keysInDisambiguation)
             {
-                if (!npcFoundInPlugins.TryGetValue(npcKeyInDisambiguation, out var currentSources) || currentSources.Count <= 1)
+                if (!AvailablePluginsForNpcs.TryGetValue(npcKeyInDisambiguation, out var currentSources) || currentSources.Count <= 1)
                 {
                     NpcPluginDisambiguation.Remove(npcKeyInDisambiguation);
                 }
@@ -545,16 +539,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (!AmbiguousNpcFormKeys.Contains(npcKey))
             {
                 Debug.WriteLine($"NPC {npcKey} ({NpcFormKeysToDisplayName.GetValueOrDefault(npcKey, "N/A")}) in ModSetting '{DisplayName}' is no longer ambiguous or choice is not needed. Ignoring SetSingleNpcSourcePlugin.");
-                // It might be that NpcSourcePluginMap already has the correct single source.
-                // Or the NPC is no longer in multiple plugins for this ModSetting.
-                // To be safe, ensure NpcSourcePluginMap is accurate if it exists for this NPC.
-                if (NpcSourcePluginMap.TryGetValue(npcKey, out var currentActualSource) && currentActualSource != newSourcePlugin)
-                {
-                    // This scenario is unlikely if AmbiguousNpcFormKeys is up-to-date.
-                    // If it occurs, it means our AmbiguousNpcFormKeys might be stale.
-                    // A full RefreshNpcLists() would be the robust way to fix, but we're avoiding it for perf.
-                    // For now, we assume if not ambiguous, the map is likely correct or will be fixed by a later global refresh.
-                }
                 return false; 
             }
             
@@ -580,19 +564,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 disambiguationChanged = true; // The user's preference has been recorded/changed.
                 Debug.WriteLine($"NpcPluginDisambiguation updated: NPC {npcKey} in ModSetting '{DisplayName}' now prefers {newSourcePlugin.FileName}.");
             }
-
-            // Update NpcSourcePluginMap directly
-            bool mapChanged = false;
-            if (!NpcSourcePluginMap.TryGetValue(npcKey, out var currentSourceInMap) || currentSourceInMap != newSourcePlugin)
-            {
-                NpcSourcePluginMap[npcKey] = newSourcePlugin;
-                mapChanged = true;
-                Debug.WriteLine($"NpcSourcePluginMap updated directly: NPC {npcKey} in ModSetting '{DisplayName}' now sourced from {newSourcePlugin.FileName}.");
-            }
             
             // If either the user's preference changed or the actual map entry changed, return true.
             // Typically, if disambiguationChanged is true, mapChanged will also be true.
-            if (disambiguationChanged || mapChanged)
+            if (disambiguationChanged)
             {
                 // We are intentionally NOT calling RefreshNpcLists() here to avoid lag.
                 // The NpcSourcePluginMap is updated directly for this NPC.
@@ -673,15 +648,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         disambiguationChanged = true;
                     }
 
-                    // Directly update NpcSourcePluginMap as well
-                    bool mapChanged = false;
-                    if (!NpcSourcePluginMap.TryGetValue(ambiguousNpcKey, out var currentSourceInMap) || currentSourceInMap != newGlobalSourcePlugin)
-                    {
-                        NpcSourcePluginMap[ambiguousNpcKey] = newGlobalSourcePlugin;
-                        mapChanged = true;
-                    }
-
-                    if (disambiguationChanged || mapChanged)
+                    if (disambiguationChanged)
                     {
                         changedNpcKeys.Add(ambiguousNpcKey);
                         Debug.WriteLine($"ModSetting '{DisplayName}': Globally set source for NPC {ambiguousNpcKey} to {newGlobalSourcePlugin.FileName} (direct map update).");

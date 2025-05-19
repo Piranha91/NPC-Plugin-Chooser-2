@@ -999,7 +999,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 string displayName = modSettingVM.DisplayName;
                 ModKey? specificPluginKey = null;
-                if (modSettingVM.NpcSourcePluginMap.TryGetValue(npcsMenuVm.NpcFormKey, out var mappedSourceKey)) { specificPluginKey = mappedSourceKey; }
+                if (modSettingVM.NpcPluginDisambiguation.TryGetValue(npcsMenuVm.NpcFormKey, out var mappedSourceKey)) { specificPluginKey = mappedSourceKey; }
                 if ((specificPluginKey == null || specificPluginKey.Value.IsNull) && npcsMenuVm.NpcGetter != null)
                 {
                     var commonKeys = modSettingVM.CorrespondingModKeys.Intersect(npcsMenuVm.AppearanceMods).ToList();

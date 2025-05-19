@@ -56,7 +56,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             string npcDisplayName, 
             VM_Mods parentVMMaster,
             bool isAmbiguousSource,                 
-            List<ModKey>? availableSourcePlugins,   
+            List<ModKey> availableSourcePlugins,   
             ModKey? currentSourcePlugin,            
             VM_ModSetting parentVMModSetting)       
         {
@@ -181,7 +181,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // Now, this specific VM_ModsMenuMugshot instance should update its own CurrentSourcePlugin
                 // to reflect the new choice for the context menu checkmark.
                 // We can re-fetch it from the parent's map.
-                if (_parentVMModSetting.NpcSourcePluginMap.TryGetValue(this.NpcFormKey, out var newResolvedSource))
+                if (_parentVMModSetting.NpcPluginDisambiguation.TryGetValue(this.NpcFormKey, out var newResolvedSource))
                 {
                     this.CurrentSourcePlugin = newResolvedSource;
                 }

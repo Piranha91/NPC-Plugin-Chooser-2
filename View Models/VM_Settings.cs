@@ -681,7 +681,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
 
                  // Get the CorrespondingModKey from the found VM_ModSetting. This is the plugin we need for the output.
                  // *** Use the NpcSourcePluginMap to find the specific key for this NPC within this ModSetting ***
-                 if (appearanceMod.NpcSourcePluginMap.TryGetValue(npcFormKey, out var specificKey))
+                 if (appearanceMod.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var specificKey))
                  {
                      appearancePlugin = specificKey;
                  }
@@ -920,7 +920,7 @@ When the ouptut plugin is generated, put it at the end of your load order.";
                 }
                 // *** Use the NpcSourcePluginMap to find the specific key for this NPC within this ModSetting ***
                 ModKey appearancePluginKey;
-                if (appearanceModSetting.NpcSourcePluginMap.TryGetValue(npcFormKey, out var specificKey))
+                if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var specificKey))
                 {
                     appearancePluginKey = specificKey;
                 }

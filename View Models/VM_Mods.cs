@@ -190,17 +190,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         {
                             if (changedKeys.Contains(mugshotVM.NpcFormKey))
                             {
-                                // Fetch the new source from the definitive map in VM_ModSetting
-                                if (SelectedModForMugshots.NpcSourcePluginMap.TryGetValue(mugshotVM.NpcFormKey, out var newSource))
-                                {
-                                    mugshotVM.CurrentSourcePlugin = newSource;
-                                }
-                                else
-                                {
-                                    // Should be rare if SetSourcePluginForAllApplicableNpcs updated the map
-                                    mugshotVM.CurrentSourcePlugin = null; 
-                                    Debug.WriteLine($"Warning: NPC {mugshotVM.NpcFormKey} was in changedKeys but not found in NpcSourcePluginMap after global set.");
-                                }
+                                mugshotVM.CurrentSourcePlugin = SelectedSourcePluginForDisambiguation;
                             }
                         }
                         Debug.WriteLine($"VM_Mods: Updated CurrentSourcePlugin for {changedKeys.Count} displayed mugshots after global source set.");
@@ -431,10 +421,25 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     }
 
                                     bool isAmbiguous = selectedModSetting.AmbiguousNpcFormKeys.Contains(npcFormKey);
-                                    List<ModKey>? availableSources = isAmbiguous ? selectedModSetting.CorrespondingModKeys.ToList() : null;
-                                    selectedModSetting.NpcSourcePluginMap.TryGetValue(npcFormKey, out ModKey currentSource);
 
-                                    mugshotVMs.Add(new VM_ModsMenuMugshot(imagePath, npcFormKey, npcDisplayName, this, isAmbiguous, availableSources, currentSource, selectedModSetting));
+                                    List<ModKey> availableModKeys = new();
+                                    ModKey? currentSource = null;
+
+                                    if (selectedModSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey,
+                                            out List<ModKey>? availableModKeysForNpc))
+                                    {
+                                        availableModKeys = availableModKeysForNpc;
+                                        if (selectedModSetting.NpcPluginDisambiguation.ContainsKey(npcFormKey))
+                                        {
+                                            currentSource = selectedModSetting.NpcPluginDisambiguation[npcFormKey];
+                                        }
+                                        else
+                                        {
+                                            currentSource = availableModKeys.FirstOrDefault();
+                                        }
+                                    }
+
+                                    mugshotVMs.Add(new VM_ModsMenuMugshot(imagePath, npcFormKey, npcDisplayName, this, isAmbiguous, availableModKeys, currentSource, selectedModSetting));
                                 }
                                 catch (Exception ex) { Debug.WriteLine($"Error creating FormKey/VM for real mugshot {imagePath}: {ex.Message}"); }
                             }
@@ -460,10 +465,25 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 string npcDisplayName = npcEntry.Value;
 
                                 bool isAmbiguous = selectedModSetting.AmbiguousNpcFormKeys.Contains(npcFormKey);
-                                List<ModKey>? availableSources = isAmbiguous ? selectedModSetting.CorrespondingModKeys.ToList() : null;
-                                selectedModSetting.NpcSourcePluginMap.TryGetValue(npcFormKey, out ModKey currentSource);
 
-                                mugshotVMs.Add(new VM_ModsMenuMugshot(FullPlaceholderPath, npcFormKey, npcDisplayName, this, isAmbiguous, availableSources, currentSource, selectedModSetting));
+                                List<ModKey> availableModKeys = new();
+                                ModKey? currentSource = null;
+
+                                if (selectedModSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey,
+                                        out List<ModKey>? availableModKeysForNpc))
+                                {
+                                    availableModKeys = availableModKeysForNpc;
+                                    if (selectedModSetting.NpcPluginDisambiguation.ContainsKey(npcFormKey))
+                                    {
+                                        currentSource = selectedModSetting.NpcPluginDisambiguation[npcFormKey];
+                                    }
+                                    else
+                                    {
+                                        currentSource = availableModKeys.FirstOrDefault();
+                                    }
+                                }
+
+                                mugshotVMs.Add(new VM_ModsMenuMugshot(FullPlaceholderPath, npcFormKey, npcDisplayName, this, isAmbiguous, availableModKeys, currentSource, selectedModSetting));
                             }
                         });
                     }
