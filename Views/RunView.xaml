@@ -9,6 +9,8 @@
                                 xmlns:reactiveui="http://reactiveui.net"
                                 mc:Ignorable="d"
                                 x:TypeArguments="vm:VM_Run"
+                                MinHeight="400"
+                                VerticalAlignment="Stretch"
                                 d:DataContext="{d:DesignInstance Type=vm:VM_Run}"
                                 d:DesignHeight="550" d:DesignWidth="800">
     <Grid Margin="10"

@@ -93,8 +93,12 @@
         </StackPanel>
 
         <!-- Content Area -->
-        <Border Grid.Row="1" BorderThickness="1" BorderBrush="DarkGray" Margin="5">
-            <reactiveui:ViewModelViewHost x:Name="ViewModelViewHost" ViewModel="{Binding CurrentViewModel}" />
+        <Border Grid.Row="1" BorderThickness="1" BorderBrush="DarkGray" Margin="5" VerticalAlignment="Stretch">
+            <reactiveui:ViewModelViewHost x:Name="ViewModelViewHost" ViewModel="{Binding CurrentViewModel}" 
+                                          VerticalAlignment="Stretch"
+                                          HorizontalAlignment="Stretch"
+                                          HorizontalContentAlignment="Stretch"
+                                          VerticalContentAlignment="Stretch"/>
         </Border>
     </Grid>
 </reactiveui:ReactiveWindow>
