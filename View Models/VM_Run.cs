@@ -1,4 +1,4 @@
-﻿// VM_Run.cs (Revised based on clarifications)
+﻿// VM_Run.cs
 using System;
 using System.Linq;
 using System.Reactive;
@@ -56,6 +56,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool IsRunning { get; private set; }
         [Reactive] public double ProgressValue { get; private set; } = 0;
         [Reactive] public string ProgressText { get; private set; } = string.Empty;
+        [Reactive] public bool IsVerboseModeEnabled { get; set; } = false; // Default to non-verbose
 
 
         // --- Group Filtering ---
@@ -113,9 +114,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Log exceptions from the command
             RunCommand.ThrownExceptions.Subscribe(ex =>
             {
-                AppendLog($"ERROR: {ex.GetType().Name} - {ex.Message}");
-                AppendLog(ExceptionLogger.GetExceptionStack(ex)); // Use ExceptionLogger
-                AppendLog("Patching failed.");
+                AppendLog($"ERROR: {ex.GetType().Name} - {ex.Message}", true);
+                AppendLog(ExceptionLogger.GetExceptionStack(ex), true); // Use ExceptionLogger
+                AppendLog("ERROR: Patching failed.", true);
                 ResetProgress();
             });
 
@@ -133,7 +134,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  .ObserveOn(RxApp.MainThreadScheduler) // Ensure update happens on UI thread
                  .Subscribe(_ =>
                  {
-                     AppendLog("NPC Groups potentially changed. Refreshing dropdown...");
+                     AppendLog("NPC Groups potentially changed. Refreshing dropdown..."); // Verbose only
                      UpdateAvailableGroups();
                  })
                  .DisposeWith(_disposables); // Add subscription to disposables
@@ -196,7 +197,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private bool LoadAuxiliaryFiles()
         {
-            AppendLog("Loading auxiliary configuration files...");
+            AppendLog("Loading auxiliary configuration files..."); // Verbose only
             bool success = true;
             // **Correction 3:** Use Resources path
             string resourcesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources");
@@ -212,17 +213,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     if (loadSuccess && tempList != null)
                     {
                          _pathsToIgnore = new HashSet<string>(tempList.Select(p => p.Replace(@"\\", @"\")), StringComparer.OrdinalIgnoreCase);
-                         AppendLog($"Loaded {_pathsToIgnore.Count} paths to ignore.");
+                         AppendLog($"Loaded {_pathsToIgnore.Count} paths to ignore."); // Verbose only
                     }
                     else { throw new Exception(loadEx); }
                 }
                 catch (Exception ex)
                 {
                      // **Correction 4:** Use ExceptionLogger
-                     AppendLog($"WARNING: Could not load or parse '{ignorePathFile}'. No paths will be ignored. Error: {ExceptionLogger.GetExceptionStack(ex)}");
+                     AppendLog($"WARNING: Could not load or parse '{ignorePathFile}'. No paths will be ignored. Error: {ExceptionLogger.GetExceptionStack(ex)}"); // Verbose only (Warning)
                 }
             } else {
-                AppendLog($"INFO: Ignore paths file not found at '{ignorePathFile}'. No paths will be ignored.");
+                AppendLog($"INFO: Ignore paths file not found at '{ignorePathFile}'. No paths will be ignored."); // Verbose only
             }
 
 
@@ -251,18 +252,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                  _warningsToSuppress[pluginKeyLower] = cleanedPaths;
                              }
                          }
-                         AppendLog($"Loaded suppressed warnings for {_warningsToSuppress.Count} specific plugins and global scope.");
+                         AppendLog($"Loaded suppressed warnings for {_warningsToSuppress.Count} specific plugins and global scope."); // Verbose only
                      }
                      else { throw new Exception(loadEx); }
                  }
                  catch (Exception ex)
                  {
                       // **Correction 4:** Use ExceptionLogger
-                      AppendLog($"ERROR: Could not load or parse '{suppressWarningsFile}'. Suppressed warnings will not be used. Error: {ExceptionLogger.GetExceptionStack(ex)}");
+                      AppendLog($"ERROR: Could not load or parse '{suppressWarningsFile}'. Suppressed warnings will not be used. Error: {ExceptionLogger.GetExceptionStack(ex)}", true);
                       success = false;
                  }
             } else {
-                 AppendLog($"ERROR: Suppressed warnings file not found at '{suppressWarningsFile}'. Cannot proceed.");
+                 AppendLog($"ERROR: Suppressed warnings file not found at '{suppressWarningsFile}'. Cannot proceed.", true);
                  success = false;
             }
 
@@ -286,14 +287,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private async Task<(Dictionary<FormKey, ScreeningResult> screeningCache, List<string> invalidSelections)> ScreenSelectionsAsync()
         {
-            AppendLog("\nStarting pre-run screening of NPC selections...");
+            AppendLog("\nStarting pre-run screening of NPC selections..."); // Verbose only
             var screeningCache = new Dictionary<FormKey, ScreeningResult>();
             var invalidSelections = new List<string>(); // List of strings for user message
             var selections = _settings.SelectedAppearanceMods;
 
             if (selections == null || !selections.Any())
             {
-                AppendLog("No selections to screen.");
+                AppendLog("No selections to screen."); // Verbose only
                 return (screeningCache, invalidSelections);
             }
 
@@ -312,7 +313,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // 1. Resolve winning override (needed for context and potentially EasyNPC mode base)
                 if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var winningNpcOverride))
                 {
-                    AppendLog($"  SCREENING WARNING: Could not resolve base/winning NPC {npcFormKey}. Skipping screening for this NPC.");
+                    AppendLog($"  SCREENING WARNING: Could not resolve base/winning NPC {npcFormKey}. Skipping screening for this NPC."); // Verbose only (Warning)
                     // Don't add to cache or invalid list if the base NPC itself is unresolvable
                     await Task.Delay(1); // Throttle slightly
                     continue;
@@ -322,7 +323,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // 2. Find the ModSetting for the selection
                 if (!_modSettingsMap.TryGetValue(selectedModDisplayName, out var appearanceModSetting))
                 {
-                    AppendLog($"  SCREENING ERROR: Cannot find Mod Setting '{selectedModDisplayName}' for NPC {npcIdentifier}. Invalid selection.");
+                    AppendLog($"  SCREENING ERROR: Cannot find Mod Setting '{selectedModDisplayName}' for NPC {npcIdentifier}. Invalid selection.", true);
                     invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod Setting not found)");
                     // Add a placeholder invalid result to cache? Or just rely on the invalidSelections list? Let's rely on the list for now.
                     await Task.Delay(1);
@@ -350,16 +351,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             specificAppearancePluginKey = disambiguatedContext.ModKey;
                             specificSourceNpcRecord = disambiguatedContext.Record;
                             hasPluginOverride = true;
-                            AppendLog($"    Screening: Found assigned plugin record override in {specificAppearancePluginKey.Value.FileName}. Using this as source.");
+                            AppendLog($"    Screening: Found assigned plugin record override in {specificAppearancePluginKey.Value.FileName}. Using this as source."); // Verbose only
                         }
                         else
                         {
-                            AppendLog($"    Screening: Source plugin is set to {disambiguation.FileName} but this plugin doesn't contain this NPC. Falling back to first available plugin");
+                            AppendLog($"    Screening: Source plugin is set to {disambiguation.FileName} but this plugin doesn't contain this NPC. Falling back to first available plugin"); // Verbose only
                         }
                     }
                     else
                     {
-                        AppendLog($"    Screening: Source plugin is set to {disambiguation.FileName} but this plugin is not in the load order. Falling back to first available plugin");
+                        AppendLog($"    Screening: Source plugin is set to {disambiguation.FileName} but this plugin is not in the load order. Falling back to first available plugin"); // Verbose only
                     }
                 }
 
@@ -375,14 +376,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 specificAppearancePluginKey = context.ModKey;
                                 specificSourceNpcRecord = context.Record;
                                 hasPluginOverride = true;
-                                AppendLog($"    Screening: Selected plugin record override in {specificAppearancePluginKey.Value.FileName}. Using this as source.");
+                                AppendLog($"    Screening: Selected plugin record override in {specificAppearancePluginKey.Value.FileName}. Using this as source."); // Verbose only
                                 break;
                             }
                         }
                     }
                     else
                     {
-                        AppendLog($"    Screening: Mod Setting '{selectedModDisplayName}' has no associated plugin keys. Checking assets only.");
+                        AppendLog($"    Screening: Mod Setting '{selectedModDisplayName}' has no associated plugin keys. Checking assets only."); // Verbose only
                     }
                 }
 
@@ -396,11 +397,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     // Use the *specific* key found above, or the original NPC's key if no override was found
                     ModKey keyForFaceGenCheck = specificAppearancePluginKey ?? npcFormKey.ModKey;
                     hasFaceGen = FaceGenExists(npcFormKey, keyForFaceGenCheck, assetSourceDirs);
-                    AppendLog($"    Screening: FaceGen assets found in source directories: {hasFaceGen}.");
+                    AppendLog($"    Screening: FaceGen assets found in source directories: {hasFaceGen}."); // Verbose only
                 }
                 else
                 {
-                    AppendLog($"    Screening: Mod Setting '{selectedModDisplayName}' has no asset source directories defined.");
+                    AppendLog($"    Screening: Mod Setting '{selectedModDisplayName}' has no asset source directories defined."); // Verbose only
                 }
 
 
@@ -430,7 +431,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         if (!string.IsNullOrEmpty(reason)) reason += " and ";
                         reason += "No FaceGen assets found";
                     }
-                    AppendLog($"  SCREENING INVALID: NPC {npcIdentifier} -> Selected Mod '{selectedModDisplayName}'. Reason: {reason}.");
+                    AppendLog($"ERROR: SCREENING INVALID: NPC {npcIdentifier} -> Selected Mod '{selectedModDisplayName}'. Reason: {reason}.", true);
                     invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' ({reason})");
                 }
 
@@ -438,7 +439,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             } // End foreach selection
 
             UpdateProgress(totalToScreen, totalToScreen, "Screening Complete.");
-            AppendLog($"Screening finished. Found {invalidSelections.Count} invalid selections.");
+            AppendLog($"Screening finished. Found {invalidSelections.Count} invalid selections."); // Verbose only (summarizes errors previously logged)
 
             return (screeningCache, invalidSelections);
         }
@@ -454,13 +455,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
             LogOutput = string.Empty;
             ResetProgress();
             UpdateProgress(0, 1, "Initializing...");
-            AppendLog("Starting patch generation...");
+            AppendLog("Starting patch generation..."); // Verbose only
 
             // --- Pre-Run Checks ---
             if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
-             { AppendLog("Environment is not valid..."); ResetProgress(); return; }
+             { AppendLog("ERROR: Environment is not valid. Aborting.", true); ResetProgress(); return; }
             if (string.IsNullOrWhiteSpace(_settings.OutputDirectory))
-             { AppendLog("Output Directory is not set..."); ResetProgress(); return; }
+             { AppendLog("ERROR: Output Directory is not set. Aborting.", true); ResetProgress(); return; }
             
             // --- *** Save Mod Settings Before Proceeding *** ---
             try
@@ -475,8 +476,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             catch (Exception ex)
             {
-                AppendLog($"CRITICAL ERROR: Failed to save Mod Settings before patching: {ExceptionLogger.GetExceptionStack(ex)}");
-                AppendLog("Aborting patch generation as settings may be inconsistent.");
+                AppendLog($"CRITICAL ERROR: Failed to save Mod Settings before patching: {ExceptionLogger.GetExceptionStack(ex)}", true);
+                AppendLog("ERROR: Aborting patch generation as settings may be inconsistent.", true);
                 ResetProgress();
                 return; // Stop if save fails
             }
@@ -484,18 +485,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // --- Now check if ModSettings list itself is populated after saving ---
             if (_settings.ModSettings == null || !_settings.ModSettings.Any())
-            { AppendLog("No Mod Settings configured (or saved from Mods tab). Cannot determine asset sources."); ResetProgress(); return; }
+            { AppendLog("ERROR: No Mod Settings configured (or saved from Mods tab). Cannot determine asset sources. Aborting.", true); ResetProgress(); return; }
 
             // --- Load Auxiliary Config Files ---
             if (!LoadAuxiliaryFiles())
-             { AppendLog("Failed to load auxiliary files..."); ResetProgress(); return; }
+             { AppendLog("ERROR: Failed to load auxiliary files. Aborting.", true); ResetProgress(); return; }
 
             // --- Build Mod Settings Map ---
             _modSettingsMap = _settings.ModSettings
                 .Where(ms => !string.IsNullOrWhiteSpace(ms.DisplayName))
                 .GroupBy(ms => ms.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-             AppendLog($"Built lookup map for {_modSettingsMap.Count} unique Mod Settings.");
+             AppendLog($"Built lookup map for {_modSettingsMap.Count} unique Mod Settings."); // Verbose only
 
             // --- *** Pre-Run Screening (Requirement 2) *** ---
             UpdateProgress(0, 1, "Screening selections...");
@@ -523,11 +524,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 if (!continuePatching)
                 {
-                    AppendLog("Patching cancelled by user due to invalid selections.");
+                    AppendLog("Patching cancelled by user due to invalid selections."); // Verbose only
                     ResetProgress();
                     return; // Exit RunPatchingLogic
                 }
-                AppendLog("Proceeding with valid selections, skipping invalid ones...");
+                AppendLog("Proceeding with valid selections, skipping invalid ones..."); // Verbose only
             }
             // --- *** End Screening *** ---
 
@@ -538,26 +539,26 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var testSplit = _settings.OutputDirectory.Split(Path.DirectorySeparatorChar);
             if (testSplit.Length > 1 && Directory.Exists(_settings.OutputDirectory)) { baseOutputDirectory = _settings.OutputDirectory; isSpecifiedDirectory = true; }
             else if (testSplit.Length == 1) { baseOutputDirectory = Path.Combine(_settings.ModsFolder, _settings.OutputDirectory); }
-            else { AppendLog("Error: Could not locate directory " + _settings.OutputDirectory); ResetProgress(); return; }
+            else { AppendLog("ERROR: Could not locate directory " + _settings.OutputDirectory, true); ResetProgress(); return; }
 
             _currentRunOutputAssetPath = baseOutputDirectory;
             if (_settings.AppendTimestampToOutputDirectory && !isSpecifiedDirectory)
             { string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss"); _currentRunOutputAssetPath = Path.Combine(baseOutputDirectory, timestamp); }
-            AppendLog($"Using output asset directory: {_currentRunOutputAssetPath}");
-            try { Directory.CreateDirectory(_currentRunOutputAssetPath); AppendLog("Ensured output asset directory exists."); }
-            catch (Exception ex) { AppendLog($"ERROR: Could not create output asset directory... Aborting. Error: {ExceptionLogger.GetExceptionStack(ex)}"); ResetProgress(); return; }
+            AppendLog($"Using output asset directory: {_currentRunOutputAssetPath}"); // Verbose only
+            try { Directory.CreateDirectory(_currentRunOutputAssetPath); AppendLog("Ensured output asset directory exists."); /* Verbose only */ }
+            catch (Exception ex) { AppendLog($"ERROR: Could not create output asset directory... Aborting. Error: {ExceptionLogger.GetExceptionStack(ex)}", true); ResetProgress(); return; }
 
 
             // --- Initialize Output Mod ---
             _environmentStateProvider.OutputMod = new SkyrimMod(ModKey.FromName(_environmentStateProvider.OutputPluginName, ModType.Plugin), _environmentStateProvider.SkyrimVersion);
-             AppendLog($"Initialized output mod: {_environmentStateProvider.OutputPluginName}");
+             AppendLog($"Initialized output mod: {_environmentStateProvider.OutputPluginName}"); // Verbose only
 
             // --- Clear Output Asset Directory ---
             if (ClearOutputDirectoryOnRun)
             { /* (Logic remains the same) */
-                AppendLog("Clearing output asset directory...");
-                try { ClearDirectory(_currentRunOutputAssetPath); AppendLog("Output asset directory cleared."); }
-                catch (Exception ex) { AppendLog($"ERROR: Failed to clear output asset directory: {ExceptionLogger.GetExceptionStack(ex)}. Aborting."); ResetProgress(); return; }
+                AppendLog("Clearing output asset directory..."); // Verbose only
+                try { ClearDirectory(_currentRunOutputAssetPath); AppendLog("Output asset directory cleared."); /* Verbose only */ }
+                catch (Exception ex) { AppendLog($"ERROR: Failed to clear output asset directory: {ExceptionLogger.GetExceptionStack(ex)}. Aborting.", true); ResetProgress(); return; }
             }
             
             // --- *** Data Collection for Custom Dependency Duplication *** ---
@@ -566,7 +567,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var sourcePluginToPatchedRecordsMap = new Dictionary<ModKey, List<IMajorRecordGetter>>();
 
             // --- Main Processing Loop (Using Screening Cache) ---
-            AppendLog("\nProcessing Valid NPC Appearance Selections...");
+            AppendLog("\nProcessing Valid NPC Appearance Selections..."); // Verbose only
             int processedCount = 0;
             int skippedCount = 0; // Counts skips *within* this loop (invalid were already accounted for)
 
@@ -574,7 +575,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             if (!selectionsToProcess.Any())
             {
-                AppendLog("No valid NPC selections found or remaining after screening.");
+                AppendLog("No valid NPC selections found or remaining after screening."); // Verbose only
             }
             else
             {
@@ -600,7 +601,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     // Apply Group Filter (still needed)
                     if (ShouldSkipNpc(winningNpcOverride, SelectedNpcGroup))
                     {
-                        AppendLog($"  Skipping {npcIdentifier} (Group Filter)...");
+                        AppendLog($"  Skipping {npcIdentifier} (Group Filter)..."); // Verbose only
                         skippedCount++;
                         UpdateProgress(i + 1, totalToProcess, $"Skipped {npcIdentifier} (Group Filter)");
                         await Task.Delay(1);
@@ -609,7 +610,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                     UpdateProgress(i + 1, totalToProcess,
                         $"Processing {winningNpcOverride.EditorID ?? npcFormKey.ToString()}");
-                    AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'");
+                    AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'"); // Verbose only
 
                     Npc? patchNpc = null; // The NPC record to be placed in the patch
                     INpcGetter? npcForAssetLookup = null; // Which NPC record to use for finding *extra* assets
@@ -619,7 +620,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     // --- *** Apply Logic Based on Screening Result (Requirement 1) *** ---
                     if (result.HasPluginRecordOverride && sourceNpc != null) // Scenario: Plugin override exists
                     {
-                        AppendLog("    Source: Plugin Record Override");
+                        AppendLog("    Source: Plugin Record Override"); // Verbose only
                         npcForAssetLookup = sourceNpc; // Use appearance mod's record for extra asset lookup
                         usedPluginRecord = true;
 
@@ -627,7 +628,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         {
                             case PatchingMode.EasyNPC_Like:
                                 AppendLog(
-                                    $"      Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {specificAppearancePluginKey?.FileName ?? "N/A"}.");
+                                    $"      Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {specificAppearancePluginKey?.FileName ?? "N/A"}."); // Verbose only
                                 patchNpc =
                                     _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride);
                                 CopyAppearanceData(sourceNpc, patchNpc);
@@ -635,7 +636,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             case PatchingMode.Default:
                             default:
                                 AppendLog(
-                                    $"      Mode: Default. Forwarding record from source plugin ({specificAppearancePluginKey?.FileName ?? "N/A"}).");
+                                    $"      Mode: Default. Forwarding record from source plugin ({specificAppearancePluginKey?.FileName ?? "N/A"})."); // Verbose only
                                 patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(sourceNpc);
                                 break;
                         }
@@ -643,21 +644,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     else if
                         (result.HasFaceGenAssets) // Scenario: Plugin override missing OR invalid, but FaceGen exists
                     {
-                        AppendLog("    Source: FaceGen Assets Only");
+                        AppendLog("    Source: FaceGen Assets Only"); // Verbose only
                         copyOnlyFaceGenAssets = true; // Only copy FaceGen related assets
 
                         switch (_settings.PatchingMode)
                         {
                             case PatchingMode.EasyNPC_Like:
                                 AppendLog(
-                                    $"      Mode: EasyNPC-Like. Using winning override ({winningNpcOverride.FormKey.ModKey.FileName}) as base.");
+                                    $"      Mode: EasyNPC-Like. Using winning override ({winningNpcOverride.FormKey.ModKey.FileName}) as base."); // Verbose only
                                 patchNpc =
                                     _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride);
                                 // No appearance data copied - we're using the winning override's data but replacing assets
                                 break;
                             case PatchingMode.Default:
                             default:
-                                AppendLog($"      Mode: Default. Using original record ({npcFormKey}) as base.");
+                                AppendLog($"      Mode: Default. Using original record ({npcFormKey}) as base."); // Verbose only
                                 // Resolve the original master record directly
                                 if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey,
                                         out var baseNpcRecord))
@@ -668,7 +669,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 else
                                 {
                                     AppendLog(
-                                        $"      ERROR: Could not resolve original master record for {npcFormKey}. Skipping this NPC.");
+                                        $"      ERROR: Could not resolve original master record for {npcFormKey}. Skipping this NPC.", true);
                                     skippedCount++;
                                     await Task.Delay(1);
                                     continue; // Skip if base record fails
@@ -683,7 +684,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     {
                         // This case should have been filtered by the screening result, but handle defensively
                         AppendLog(
-                            $"  UNEXPECTED: Selection for {npcIdentifier} was marked valid but has neither plugin record nor FaceGen. Skipping.");
+                            $"ERROR: UNEXPECTED: Selection for {npcIdentifier} was marked valid but has neither plugin record nor FaceGen. Skipping.", true);
                         skippedCount++;
                         await Task.Delay(1);
                         continue;
@@ -728,7 +729,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     else
                     {
                         AppendLog(
-                            $"  ERROR: Could not proceed with asset copying due to missing patch record or mod setting for {npcIdentifier}.");
+                            $"ERROR: Could not proceed with asset copying due to missing patch record or mod setting for {npcIdentifier}.", true);
                         skippedCount++;
                         await Task.Delay(1);
                         continue;
@@ -745,7 +746,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // --- *** Post-Processing: Duplicate Dependencies (Using Custom Function) *** ---
             // Initialize the *single* mapping dictionary that will accumulate results
             Dictionary<FormKey, FormKey> globalMapping = new();
-            AppendLog($"\nDuplicating referenced records using custom function...");
+            AppendLog($"\nDuplicating referenced records using custom function..."); // Verbose only
             int totalDuplicatedCount = 0;
 
             // Iterate through the map we built
@@ -756,7 +757,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                  if (!recordsInPatchSourcedFromMod.Any()) continue; // Skip if list is empty
 
-                 AppendLog($"  Processing dependencies for: {modToDuplicateFrom.FileName} (from {recordsInPatchSourcedFromMod.Count} patched records)");
+                 AppendLog($"  Processing dependencies for: {modToDuplicateFrom.FileName} (from {recordsInPatchSourcedFromMod.Count} patched records)"); // Verbose only
                  try
                  {
                      // Call the custom extension method, passing the list of records from the *output patch*
@@ -770,15 +771,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                      );
                      // Note: The custom function internally handles adding to the mapping and removing old links
                      // We don't get a count back directly from this version. We can infer from mapping size change if needed.
-                     AppendLog($"    Completed dependency processing for {modToDuplicateFrom.FileName}.");
+                     AppendLog($"    Completed dependency processing for {modToDuplicateFrom.FileName}."); // Verbose only
                  }
                  catch (Exception ex)
                  {
-                      AppendLog($"  ERROR duplicating dependencies for {modToDuplicateFrom.FileName}: {ExceptionLogger.GetExceptionStack(ex)}");
+                      AppendLog($"  ERROR duplicating dependencies for {modToDuplicateFrom.FileName}: {ExceptionLogger.GetExceptionStack(ex)}", true);
                       // Continue processing other plugins
                  }
             }
-            AppendLog($"Finished dependency duplication. Total mappings created/accumulated: {globalMapping.Count}.");
+            AppendLog($"Finished dependency duplication. Total mappings created/accumulated: {globalMapping.Count}."); // Verbose only
 
             // --- *** Final Remapping (Potentially Redundant but Safe) *** ---
             // Although the custom function calls RemapLinks internally for the mappings *it* created,
@@ -787,36 +788,46 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // target was duplicated by a *later* call to the custom function.
             if (globalMapping.Any())
             {
-                AppendLog("Performing final link remapping pass...");
+                AppendLog("Performing final link remapping pass..."); // Verbose only
                 try
                 {
                     _environmentStateProvider.OutputMod.RemapLinks(globalMapping);
-                    AppendLog("Final remapping complete.");
+                    AppendLog("Final remapping complete."); // Verbose only
                 }
                 catch (Exception ex)
                 {
-                     AppendLog($"ERROR during final remapping: {ExceptionLogger.GetExceptionStack(ex)}");
+                     AppendLog($"ERROR during final remapping: {ExceptionLogger.GetExceptionStack(ex)}", true);
                 }
             }
 
             // --- Final Steps (Save Output Mod) ---
             if (processedCount > 0 || globalMapping.Any())
-            { /* (Logic remains the same) */
-                AppendLog($"\nProcessed {processedCount} NPC(s).");
-                if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.");
+            {
+                AppendLog($"\nProcessed {processedCount} NPC(s).", false, true); // Force log
+                if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.", false, true); // Force log
                 string outputPluginPath = Path.Combine(_currentRunOutputAssetPath, _environmentStateProvider.OutputPluginFileName );
-                AppendLog($"Attempting to save output mod to: {outputPluginPath}");
-                try { _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath); AppendLog($"Output mod saved successfully."); }
-                catch (Exception ex) { AppendLog($"FATAL SAVE ERROR: Could not write output plugin: {ExceptionLogger.GetExceptionStack(ex)}"); AppendLog($"Output mod NOT saved."); ResetProgress(); return; }
+                AppendLog($"Attempting to save output mod to: {outputPluginPath}", true); // Force log
+                try 
+                { 
+                    _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath); 
+                    AppendLog($"Output mod saved successfully.", false, true); // Force log
+                }
+                catch (Exception ex) 
+                { 
+                    AppendLog($"FATAL SAVE ERROR: Could not write output plugin: {ExceptionLogger.GetExceptionStack(ex)}", true); // isError true, will log
+                    AppendLog($"ERROR: Output mod NOT saved.", true); // isError true, will log
+                    ResetProgress(); 
+                    return; 
+                }
             }
             else
-            { /* (Logic remains the same) */
-                AppendLog("\nNo NPC appearances processed or dependencies duplicated.");
-                if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.");
-                AppendLog("Output mod not saved as no changes were made.");
+            {
+                AppendLog("\nNo NPC appearances processed or dependencies duplicated.", false, true); // Force log
+                if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.", false, true); // Force log
+                AppendLog("Output mod not saved as no changes were made.", false, true); // Force log
             }
 
-            AppendLog("\nPatch generation process completed.");
+            AppendLog("\nPatch generation process completed.", false, true); // Force log
             UpdateProgress(processedCount + skippedCount, processedCount + skippedCount, "Finished.");
         } // End RunPatchingLogic
 
@@ -834,7 +845,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 string dirNameLower = dir.Name.ToLowerInvariant();
                 if (dirNameLower == "meshes" || dirNameLower == "textures" || dirNameLower == "facegendata" || dirNameLower == "actors")
                 { dir.Delete(true); }
-                else { AppendLog($"  Skipping deletion of non-asset directory: {dir.Name}"); }
+                else { AppendLog($"  Skipping deletion of non-asset directory: {dir.Name}"); } // Verbose only
             }
         }
 
@@ -857,7 +868,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             targetNpc.TintLayers.Clear(); targetNpc.TintLayers.AddRange(sourceNpc.TintLayers?.Select(t => t.DeepCopy()) ?? Enumerable.Empty<TintLayer>());
             if (sourceNpc.WornArmor != null && !sourceNpc.WornArmor.IsNull) targetNpc.WornArmor.SetTo(sourceNpc.WornArmor); else targetNpc.WornArmor.SetToNull();
 
-            AppendLog($"      Copied appearance fields from {sourceNpc.FormKey.ModKey.FileName} to {targetNpc.FormKey} in patch.");
+            AppendLog($"      Copied appearance fields from {sourceNpc.FormKey.ModKey.FileName} to {targetNpc.FormKey} in patch."); // Verbose only
         }
 
         private bool NPCisTemplated(INpcGetter? npc)
@@ -885,15 +896,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
             bool isEffectivelyTemplated, // Only relevant if npcForExtraAssetLookup is not null
             bool copyOnlyFaceGenAssets)
         {
-            AppendLog($"    Copying assets for {npcInPatch.EditorID ?? npcInPatch.FormKey.ToString()} from sources related to '{appearanceModSetting.DisplayName}'...");
+            AppendLog($"    Copying assets for {npcInPatch.EditorID ?? npcInPatch.FormKey.ToString()} from sources related to '{appearanceModSetting.DisplayName}'..."); // Verbose only
 
             var assetSourceDirs = appearanceModSetting.CorrespondingFolderPaths ?? new List<string>();
             if (!assetSourceDirs.Any())
             {
-                AppendLog($"      WARNING: Mod Setting '{appearanceModSetting.DisplayName}' has no Corresponding Folder Paths. Cannot copy assets.");
+                AppendLog($"      WARNING: Mod Setting '{appearanceModSetting.DisplayName}' has no Corresponding Folder Paths. Cannot copy assets."); // Verbose only (Warning)
                 return;
             }
-            AppendLog($"      Asset source directories: {string.Join(", ", assetSourceDirs)}");
+            AppendLog($"      Asset source directories: {string.Join(", ", assetSourceDirs)}"); // Verbose only
 
             // --- Identify Required Assets ---
             HashSet<string> meshesToCopy = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -905,13 +916,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var (faceMeshPath, faceTexPath) = GetFaceGenSubPathStrings(npcInPatch.FormKey); // Use the keyForFaceGenPath here!
             meshesToCopy.Add(faceMeshPath);
             texturesToCopy.Add(faceTexPath);
-            AppendLog($"      Identified FaceGen paths (using key {keyForFaceGenPath.FileName}): {faceMeshPath}, {faceTexPath}");
+            AppendLog($"      Identified FaceGen paths (using key {keyForFaceGenPath.FileName}): {faceMeshPath}, {faceTexPath}"); // Verbose only
 
             // Check FaceGen existence using the keyForFaceGenPath
             if (!FaceGenExists(npcInPatch.FormKey, keyForFaceGenPath, assetSourceDirs))
             {
                 string errorMsg = $"Missing expected FaceGen for NPC {npcInPatch.EditorID ?? npcInPatch.FormKey.ToString()} in source directories using key {keyForFaceGenPath.FileName}.";
-                AppendLog($"      WARNING: {errorMsg}");
+                AppendLog($"      WARNING: {errorMsg}"); // Verbose only (Warning)
                 if (AbortIfMissingFaceGen)
                 { throw new FileNotFoundException(errorMsg); }
                 // If not aborting, remove the missing paths so we don't try to copy them later
@@ -922,21 +933,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // 2. Extra Assets (Only if NOT FaceGen-only AND CopyExtraAssets is true)
             if (!copyOnlyFaceGenAssets && CopyExtraAssets && npcForExtraAssetLookup != null)
             {
-                AppendLog($"      Identifying extra assets referenced by plugin record {npcForExtraAssetLookup.FormKey}...");
+                AppendLog($"      Identifying extra assets referenced by plugin record {npcForExtraAssetLookup.FormKey}..."); // Verbose only
                 GetAssetsReferencedByPlugin(npcForExtraAssetLookup, meshesToCopy, texturesToCopy);
                 effectivePluginKey = npcForExtraAssetLookup.FormKey.ModKey; // Use this plugin key for BSA/warning context if looking up extra assets
             }
             else if (copyOnlyFaceGenAssets)
             {
-                 AppendLog($"      Skipping extra asset identification (FaceGen Only mode).");
+                 AppendLog($"      Skipping extra asset identification (FaceGen Only mode)."); // Verbose only
             }
             else if (!CopyExtraAssets)
             {
-                 AppendLog($"      Skipping extra asset identification (CopyExtraAssets disabled).");
+                 AppendLog($"      Skipping extra asset identification (CopyExtraAssets disabled)."); // Verbose only
             }
              else if (npcForExtraAssetLookup == null)
             {
-                 AppendLog($"      Skipping extra asset identification (No source NPC record provided).");
+                 AppendLog($"      Skipping extra asset identification (No source NPC record provided)."); // Verbose only
             }
 
 
@@ -945,16 +956,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
             HashSet<string> extractedTextureFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (HandleBSAFiles_Patching)
             {
-                AppendLog($"      Checking BSAs associated with plugin key {effectivePluginKey.FileName} in source directories...");
+                AppendLog($"      Checking BSAs associated with plugin key {effectivePluginKey.FileName} in source directories..."); // Verbose only
                 UnpackAssetsFromBSA(meshesToCopy, texturesToCopy, extractedMeshFiles, extractedTextureFiles, effectivePluginKey, assetSourceDirs, _currentRunOutputAssetPath);
-                AppendLog($"      Extracted {extractedMeshFiles.Count} meshes and {extractedTextureFiles.Count} textures from BSAs.");
+                AppendLog($"      Extracted {extractedMeshFiles.Count} meshes and {extractedTextureFiles.Count} textures from BSAs."); // Verbose only
             }
 
             // --- Handle NIF Scanning ---
             // Scan NIFs if CopyExtraAssets OR copyOnlyFaceGenAssets (because FaceGen NIF itself needs scanning) AND FindExtraTexturesInNifs is true
             if ((CopyExtraAssets || copyOnlyFaceGenAssets) && FindExtraTexturesInNifs)
             {
-                 AppendLog($"      Scanning NIF files for additional texture references...");
+                 AppendLog($"      Scanning NIF files for additional texture references..."); // Verbose only
                  HashSet<string> texturesFromNifs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                  HashSet<string> alreadyHandledTextures = new HashSet<string>(texturesToCopy, StringComparer.OrdinalIgnoreCase);
                  alreadyHandledTextures.UnionWith(extractedTextureFiles);
@@ -964,31 +975,31 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  // Scan extracted NIFs (check output dir)
                  GetExtraTexturesFromNifSet(extractedMeshFiles, new List<string> { _currentRunOutputAssetPath }, texturesFromNifs, alreadyHandledTextures);
 
-                 AppendLog($"        Found {texturesFromNifs.Count} additional textures in NIFs.");
+                 AppendLog($"        Found {texturesFromNifs.Count} additional textures in NIFs."); // Verbose only
 
                  // Try extracting newly found textures from BSAs
                  if (HandleBSAFiles_Patching && texturesFromNifs.Any())
                  {
                      HashSet<string> newlyExtractedNifTextures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                      UnpackAssetsFromBSA(new HashSet<string>(), texturesFromNifs, new HashSet<string>(), newlyExtractedNifTextures, effectivePluginKey, assetSourceDirs, _currentRunOutputAssetPath);
-                     AppendLog($"        Extracted {newlyExtractedNifTextures.Count} of these additional textures from BSAs.");
+                     AppendLog($"        Extracted {newlyExtractedNifTextures.Count} of these additional textures from BSAs."); // Verbose only
                      texturesFromNifs.ExceptWith(newlyExtractedNifTextures);
                  }
                  texturesToCopy.UnionWith(texturesFromNifs);
             }
             else {
-                AppendLog($"      Skipping NIF scanning for textures.");
+                AppendLog($"      Skipping NIF scanning for textures."); // Verbose only
             }
 
 
             // --- Copy Loose Files ---
-            AppendLog($"      Copying {meshesToCopy.Count} loose mesh files...");
+            AppendLog($"      Copying {meshesToCopy.Count} loose mesh files..."); // Verbose only
             CopyAssetFiles(assetSourceDirs, meshesToCopy, "Meshes", effectivePluginKey.FileName.String);
 
-            AppendLog($"      Copying {texturesToCopy.Count} loose texture files...");
+            AppendLog($"      Copying {texturesToCopy.Count} loose texture files..."); // Verbose only
             CopyAssetFiles(assetSourceDirs, texturesToCopy, "Textures", effectivePluginKey.FileName.String);
 
-            AppendLog($"    Finished asset copying for {npcInPatch.EditorID ?? npcInPatch.FormKey.ToString()}.");
+            AppendLog($"    Finished asset copying for {npcInPatch.EditorID ?? npcInPatch.FormKey.ToString()}."); // Verbose only
         }
 
 
@@ -1151,7 +1162,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     extractedMeshes.Add(subPath);
                     MeshesToExtract.Remove(subPath);
-                } else { AppendLog($"          ERROR extracting winning BSA mesh: {subPath}"); }
+                } else { AppendLog($"ERROR: Failed to extract winning BSA mesh: {subPath}", true); }
             }
             foreach (var kvp in foundTextureSources)
             {
@@ -1160,7 +1171,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     extractedTextures.Add(subPath);
                     TexturesToExtract.Remove(subPath);
-                } else { AppendLog($"          ERROR extracting winning BSA texture: {subPath}"); }
+                } else { AppendLog($"ERROR: Failed to extract winning BSA texture: {subPath}", true); }
             }
         }
 
@@ -1202,7 +1213,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                          }
                      }
                      catch (Exception ex)
-                     { AppendLog($"        WARNING: Failed to scan NIF '{foundNifFullPath}': {ExceptionLogger.GetExceptionStack(ex)}"); } // Use logger
+                     { AppendLog($"        WARNING: Failed to scan NIF '{foundNifFullPath}': {ExceptionLogger.GetExceptionStack(ex)}"); } // Verbose only (Warning)
                  }
              }
         }
@@ -1244,7 +1255,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                      if (File.Exists(gameDataPath))
                      {
                          foundSourcePath = gameDataPath;
-                         AppendLog($"        Found missing asset '{relativePath}' in game data folder.");
+                         AppendLog($"        Found missing asset '{relativePath}' in game data folder."); // Verbose only
                      }
                 }
 
@@ -1259,7 +1270,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                           string errorMsg = $"Asset '{relativePath}' not found in any source directories";
                           if(GetMissingExtraAssetsFromAvailableWinners && !isFaceGen) errorMsg += " or game data folder";
                           errorMsg += $" (needed by {sourcePluginName}).";
-                          AppendLog($"      WARNING: {errorMsg}");
+                          AppendLog($"      WARNING: {errorMsg}"); // Verbose only (Warning)
                           if (AbortIfMissingExtraAssets && !isFaceGen)
                           { throw new FileNotFoundException(errorMsg, relativePath); }
                      }
@@ -1274,7 +1285,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                           File.Copy(foundSourcePath, destPath, true);
                      }
                      catch (Exception ex)
-                     { AppendLog($"      ERROR copying '{foundSourcePath}' to '{destPath}': {ExceptionLogger.GetExceptionStack(ex)}"); } // Use logger
+                     { AppendLog($"      ERROR copying '{foundSourcePath}' to '{destPath}': {ExceptionLogger.GetExceptionStack(ex)}", true); } 
                 }
             }
         }
@@ -1293,16 +1304,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
              return Path.GetExtension(input).ToLowerInvariant();
         }
 
-        private void AppendLog(string message)
+        private void AppendLog(string message, bool isError = false, bool forceLog = false)
         {
-             // (Implementation remains the same as before)
-             RxApp.MainThreadScheduler.Schedule(() =>
-             {
-                 LogOutput += message + Environment.NewLine;
-             });
+            if (IsVerboseModeEnabled || isError || forceLog)
+            {
+                RxApp.MainThreadScheduler.Schedule(() =>
+                {
+                    LogOutput += message + Environment.NewLine;
+                });
+            }
         }
     }
-
 
     // Temporary class matching V1's structure for loading JSON
     public class suppressedWarnings
@@ -1310,56 +1322,4 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public string Plugin { get; set; } = "";
         public HashSet<string> Paths { get; set; } = new HashSet<string>();
     }
-
-    // *** Need an Adapter or Modification for BSAHandler ***
-    // Add a method like this to your BSAHandler class:
-    /*
-    public static class BSAHandler // Assuming static class
-    {
-        // ... other methods ...
-
-        /// <summary>
-        /// Tries to find a file within any BSA reader in the provided set.
-        /// </summary>
-        /// <returns>True if found, false otherwise. Outputs the file if found.</returns>
-        public static bool GetFileFromReaders(string subpath, HashSet<IArchiveReader> bsaReaders, out IArchiveFile? file)
-        {
-            file = null;
-            foreach (var reader in bsaReaders)
-            {
-                // Assuming TryGetFile exists and checks reader.Files case-insensitively
-                if (TryGetFile(subpath, reader, out file))
-                {
-                    return true; // Found it
-                }
-            }
-            return false; // Not found in any reader in this set
-        }
-
-        // Make sure ExtractFileFromBSA returns bool indicating success/failure
-        public static bool ExtractFileFromBSA(IArchiveFile file, string destPath)
-        {
-            string? dirPath = Path.GetDirectoryName(destPath);
-            if (dirPath == null) return false; // Invalid destination path
-
-            try
-            {
-                Directory.CreateDirectory(dirPath); // Ensure directory exists
-                using (var fileStream = File.Create(destPath)) // Use 'using' for proper disposal
-                {
-                    file.CopyDataTo(fileStream);
-                }
-                return true; // Success
-            }
-            catch (Exception ex) // Catch specific exceptions if needed (IOException, UnauthorizedAccessException)
-            {
-                Console.WriteLine($"==========================================================================================================");
-                Console.WriteLine($"Could not extract file from BSA: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ex)}");
-                Console.WriteLine($"==========================================================================================================");
-                // Optionally re-throw or log differently
-                return false; // Failure
-            }
-        }
-    }
-    */
 }

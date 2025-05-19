@@ -4,6 +4,7 @@ using ReactiveUI;
 using System.Reactive.Disposables;
 using System.Windows.Controls;
 using Splat; // Required for TextBox ScrollToEnd
+using System; // Added for Exception
 
 namespace NPC_Plugin_Chooser_2.Views
 {
@@ -41,6 +42,9 @@ namespace NPC_Plugin_Chooser_2.Views
                 // Bind ComboBox for groups
                 this.OneWayBind(ViewModel, vm => vm.AvailableNpcGroups, v => v.GroupComboBox.ItemsSource).DisposeWith(d);
                 this.Bind(ViewModel, vm => vm.SelectedNpcGroup, v => v.GroupComboBox.SelectedItem).DisposeWith(d);
+                
+                // Bind Verbose Mode CheckBox
+                this.Bind(ViewModel, vm => vm.IsVerboseModeEnabled, v => v.VerboseModeCheckBox.IsChecked).DisposeWith(d);
 
                 // Bind Log Output and add auto-scroll
                 this.OneWayBind(ViewModel, vm => vm.LogOutput, v => v.LogTextBox.Text).DisposeWith(d);

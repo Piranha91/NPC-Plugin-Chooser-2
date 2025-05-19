@@ -28,16 +28,27 @@
                     Command="{Binding RunCommand}"
                     MinWidth="150" Padding="10,5" VerticalAlignment="Center"/>
 
-            <TextBlock Text="Patch NPCs In Group:" Margin="15,0,5,0" VerticalAlignment="Center"/>
+            <TextBlock Text="Patch NPCs In Group:" 
+                       DockPanel.Dock="Left" 
+                       Margin="15,0,5,0" 
+                       VerticalAlignment="Center"/>
             <ComboBox x:Name="GroupComboBox"
+                      DockPanel.Dock="Left"
                       MinWidth="150"
                       ItemsSource="{Binding AvailableNpcGroups}"
                       SelectedItem="{Binding SelectedNpcGroup, Mode=TwoWay}"
                       DisplayMemberPath="."
                       VerticalAlignment="Center"
                       ToolTip="Select an NPC group to process, or 'All NPCs' to process all selected NPCs."/>
-            <!-- Add spacer or adjust alignment if needed -->
-            <TextBlock/>
+            
+            <CheckBox x:Name="VerboseModeCheckBox"
+                      DockPanel.Dock="Left"
+                      Content="Verbose Logging"
+                      IsChecked="{Binding IsVerboseModeEnabled, Mode=TwoWay}"
+                      VerticalAlignment="Center"
+                      Margin="15,0,0,0"/>
+            
+            <TextBlock /> <!-- Fills remaining space as LastChildFill is true by default -->
         </DockPanel>
 
         <!-- Log Output -->
