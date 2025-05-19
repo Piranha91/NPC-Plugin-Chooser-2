@@ -881,7 +881,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                          // to avoid potential issues with shared references if the VM is reused.
                          CorrespondingFolderPaths = vm.CorrespondingFolderPaths.ToList(),
                          MugShotFolderPath = vm.MugShotFolderPath, // Save the mugshot folder path
-                         NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(vm.NpcPluginDisambiguation)
+                         NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(vm.NpcPluginDisambiguation),
+                         AvailablePluginsForNpcs = new Dictionary<FormKey, List<ModKey>>(vm.AvailablePluginsForNpcs),
                      };
                      _settings.ModSettings.Add(model);
                  }

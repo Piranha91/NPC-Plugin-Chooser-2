@@ -38,7 +38,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public List<string> NpcEditorIDs { get; set; } = new();
         public List<FormKey> NpcFormKeys { get; set; } = new();
         public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
-        
         public Dictionary<FormKey, List<ModKey>> AvailablePluginsForNpcs { get; set; } = new(); // tracks which plugins contain which Npc entry
 
         // New Property: Maps NPC FormKey to the ModKey from which it should inherit data,
@@ -99,6 +98,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             CorrespondingFolderPaths = new ObservableCollection<string>(model.CorrespondingFolderPaths ?? new List<string>()); // Handle potential null
             MugShotFolderPath = model.MugShotFolderPath; // Load persisted mugshot folder path
             NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(model.NpcPluginDisambiguation ?? new Dictionary<FormKey, ModKey>());
+            // AvailablePluginsForNpcs should be re-calculated on load.
             // IsMugshotOnlyEntry is set to false via chaining
         }
 
