@@ -20,6 +20,7 @@ public class Settings
     public bool AppendTimestampToOutputDirectory { get; set; } = false; 
     public string OutputPluginName { get; set; } = "NPC"; 
     public PatchingMode PatchingMode { get; set; } = PatchingMode.Default; 
+    public RaceHandlingMode RaceHandlingMode { get; set; } = RaceHandlingMode.ForwardWinningOverrides;
 
     // UI / Other
     public bool ShowNpcDescriptions { get; set; } = true;

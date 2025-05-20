@@ -48,6 +48,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string OutputPluginName { get; set; } // New property for the actual plugin filename
         [Reactive] public PatchingMode SelectedPatchingMode { get; set; }
         public IEnumerable<PatchingMode> PatchingModes { get; } = Enum.GetValues(typeof(PatchingMode)).Cast<PatchingMode>();
+        [Reactive] public RaceHandlingMode SelectedRaceHandlingMode { get; set; }
+        public IEnumerable<RaceHandlingMode> RaceHandlingModes { get; } = Enum.GetValues(typeof(RaceHandlingMode)).Cast<RaceHandlingMode>();
+        public ReactiveCommand<Unit, Unit> ShowRaceHandlingModeHelpCommand { get; }
 
         // --- New EasyNPC Transfer Properties ---
         // Assuming ModKeyMultiPicker binds directly to an ObservableCollection-like source
@@ -98,6 +101,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             OutputDirectory = _model.OutputDirectory;
             AppendTimestampToOutputDirectory = _model.AppendTimestampToOutputDirectory;
             SelectedPatchingMode = _model.PatchingMode;
+            SelectedRaceHandlingMode = _model.RaceHandlingMode;
             AddMissingNpcsOnUpdate = _model.AddMissingNpcsOnUpdate; // Assuming this is in your model
 
             // --- Step 2: Directly set initial values on _environmentStateProvider ---
@@ -128,6 +132,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.OutputDirectory).Skip(1).Subscribe(s => _model.OutputDirectory = s).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.AppendTimestampToOutputDirectory).Skip(1).Subscribe(b => _model.AppendTimestampToOutputDirectory = b).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.SelectedPatchingMode).Skip(1).Subscribe(pm => _model.PatchingMode = pm).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.SelectedRaceHandlingMode).Subscribe(rhm => _model.RaceHandlingMode = rhm);
             this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b).DisposeWith(_disposables);
 
             // Subscriptions for properties that trigger environment update (for *subsequent* changes)
@@ -211,6 +216,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             SelectMugshotsFolderCommand = ReactiveCommand.Create(SelectMugshotsFolder);
             SelectOutputDirectoryCommand = ReactiveCommand.Create(SelectOutputDirectory);
             ShowPatchingModeHelpCommand = ReactiveCommand.Create(ShowPatchingModeHelp);
+            ShowRaceHandlingModeHelpCommand = ReactiveCommand.Create(ShowRaceHandlingModeHelp);
             ImportEasyNpcCommand = ReactiveCommand.Create(ImportEasyNpc);
             ExportEasyNpcCommand = ReactiveCommand.Create(ExportEasyNpc);
             UpdateEasyNpcProfileCommand = ReactiveCommand.CreateFromTask<bool>(UpdateEasyNpcProfile);
@@ -409,6 +415,36 @@ NPC plugins are imported from their conflict-winning override in your load order
 When the ouptut plugin is generated, put it at the end of your load order.";
 
             ScrollableMessageBox.Show(helpText, "Patching Mode Information");
+        }
+        
+        private void ShowRaceHandlingModeHelp()
+        {
+            string helpText = @"Race Handling Mode:
+
+This setting determines how the patcher handles NPC appearance mods that either:
+1. Define a new custom race for an NPC.
+2. Modify a vanilla race (e.g., NordRace) that an NPC uses.
+
+Options:
+
+- ForwardWinningOverrides:
+  - If NPC uses a new custom race from the appearance mod: The race record and its dependencies are merged into the patch.
+  - If NPC uses a vanilla race modified by the appearance mod:
+    - EasyNPC-Like Patching Mode: If the appearance mod's version of the race differs from the NPC's original race, differing properties are copied to an override of the NPC's original race in the patch. This aims to bring over mechanical changes from the appearance mod's race edits.
+    - Default Patching Mode: The appearance mod's version of the race is copied as an override into the patch. Dependencies from the appearance mod are merged. A YAML file representing the appearance mod's race version is generated in the output 'RaceDiffs' folder. You can use the 'Forward Race Edits From YAML' button on the Run tab to apply these changes to your load order's winning race records via a new patch.
+
+- DuplicateAndRemapRace:
+  - If NPC uses a new custom race: Same as ForwardWinningOverrides.
+  - If NPC uses a vanilla race modified by the appearance mod: The modified race record from the appearance mod is cloned as a new unique race (e.g., 'NordRace_Lydia') in the patch. This new race is then assigned to the NPC. Dependencies are merged. This isolates the race changes to only the NPCs you select, avoiding direct edits to vanilla race records.
+
+- IgnoreRace:
+  - The patcher will not perform any special handling for race records based on the appearance mod. The NPC will use the race assigned by the broader Patching Mode (Default or EasyNPC-Like).
+  - If PatchingMode is Default and the source NPC from the appearance mod uses a race defined in or overridden by the appearance mod, that race and its dependencies will still be merged into the patch as part of general record forwarding.
+  - You are fully responsible for ensuring race compatibility and resolving any conflicts (e.g., using xEdit).
+
+Warning:
+If multiple selected appearance mods alter the *same* vanilla race in *different* ways, a warning will be logged. E.g., Mod A changes NordRace for NPC1, and Mod B also changes NordRace differently for NPC2.";
+            ScrollableMessageBox.Show(helpText, "Race Handling Mode Information");
         }
 
         private void ImportEasyNpc()
