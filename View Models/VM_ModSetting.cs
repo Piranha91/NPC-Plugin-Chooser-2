@@ -11,6 +11,7 @@ using Mutagen.Bethesda.Plugins;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using System.Linq;
+using DynamicData;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
@@ -50,6 +51,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         private readonly SkyrimRelease _skyrimRelease;
         private readonly EnvironmentStateProvider _environmentStateProvider;
+        private readonly Auxilliary _aux;
 
         // Flag indicating if this VM was created dynamically only from a Mugshot folder
         // and wasn't loaded from the persisted ModSettings.
@@ -90,8 +92,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// <summary>
         /// Constructor used when loading from an existing Models.ModSetting.
         /// </summary>
-        public VM_ModSetting(Models.ModSetting model, VM_Mods parentVm)
-            : this(model.DisplayName, parentVm, isMugshotOnly: false) // Chain constructor, explicitly false for IsMugshotOnlyEntry
+        public VM_ModSetting(Models.ModSetting model, VM_Mods parentVm, Auxilliary aux)
+            : this(model.DisplayName, parentVm, aux, isMugshotOnly: false) // Chain constructor, explicitly false for IsMugshotOnlyEntry
         {
             // Properties specific to loading existing model
             CorrespondingModKeys = new ObservableCollection<ModKey>(model.ModKeys ?? new List<ModKey>());
@@ -105,8 +107,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// <summary>
         /// Constructor used when creating dynamically from a Mugshot folder during initial population.
         /// </summary>
-        public VM_ModSetting(string displayName, string mugshotPath, VM_Mods parentVm)
-            : this(displayName, parentVm, isMugshotOnly: true) // Chain constructor, explicitly true for IsMugshotOnlyEntry
+        public VM_ModSetting(string displayName, string mugshotPath, VM_Mods parentVm, Auxilliary aux)
+            : this(displayName, parentVm, aux, isMugshotOnly: true) // Chain constructor, explicitly true for IsMugshotOnlyEntry
         {
              MugShotFolderPath = mugshotPath;
              // IsMugshotOnlyEntry is set to true via chaining
@@ -118,13 +120,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// <param name="displayName">The initial display name.</param>
         /// <param name="parentVm">Reference to the parent VM_Mods.</param>
         /// <param name="isMugshotOnly">Flag indicating if this VM represents an entry initially created only from a mugshot folder.</param>
-        public VM_ModSetting(string displayName, VM_Mods parentVm, bool isMugshotOnly = false)
+        public VM_ModSetting(string displayName, VM_Mods parentVm, Auxilliary aux, bool isMugshotOnly = false)
         {
             _parentVm = parentVm;
             DisplayName = displayName;
             IsMugshotOnlyEntry = isMugshotOnly; // Set the flag based on how it was created
             _skyrimRelease = parentVm.SkyrimRelease; // Get SkyrimRelease from parent
             _environmentStateProvider = parentVm.EnvironmentStateProvider; // Get EnvironmentStateProvider from parent
+            _aux = aux;
 
             // Initialize NpcPluginDisambiguation if not loaded from model (chained constructors handle this)
             if (NpcPluginDisambiguation == null) // Should only be null if this base constructor is called directly without chaining from model constructor
@@ -169,6 +172,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  )
                  .DistinctUntilChanged()
                  .ToPropertyEx(this, x => x.HasModPathsAssigned);
+             
+             // Keep corresponding ModKeys up to date when folders are added or removed
+             this.WhenAnyValue(x => x.CorrespondingFolderPaths.Count).Select(_ => Unit.Default)
+                 .Throttle(TimeSpan.FromMilliseconds(100))
+                 .ObserveOn(RxApp.MainThreadScheduler) 
+                 .Subscribe(_ =>
+                 {
+                     UpdateCorrespondingModKeys();
+                 });
+             
              
              // When MugShotFolderPath changes OR CorrespondingModKeys.Count changes,
              // re-evaluate HasValidMugshots.
@@ -355,6 +368,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 CorrespondingFolderPaths.Remove(pathToRemove);
             }
+        }
+
+        public void UpdateCorrespondingModKeys()
+        {
+            List<ModKey> correspondingModKeys = new();
+            foreach (var path in CorrespondingFolderPaths)
+            {
+                correspondingModKeys.AddRange(_aux.GetModKeysInDirectory(path, new()));
+            }
+            CorrespondingModKeys.Clear();
+            CorrespondingModKeys.AddRange(correspondingModKeys);
         }
 
         private void BrowseMugshotFolder()
@@ -688,7 +712,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // 1. Create the new "Mugshot-Only" VM
             // It will be mugshot-only by definition because it has no CorrespondingFolderPaths/ModKeys initially
-            var newMugshotOnlyVm = new VM_ModSetting(displayName: mugshotDirName, mugshotPath: originalMugshotPath, parentVm: _parentVm);
+            var newMugshotOnlyVm = new VM_ModSetting(displayName: mugshotDirName, mugshotPath: originalMugshotPath, parentVm: _parentVm, aux: _aux);
             // Ensure IsMugshotOnlyEntry is correctly set based on its initial state
             newMugshotOnlyVm.IsMugshotOnlyEntry = true; 
             // It won't have NPC lists immediately, that will be populated if/when VM_Mods calls RefreshNpcLists on all.

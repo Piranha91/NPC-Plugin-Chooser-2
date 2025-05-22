@@ -1,5 +1,4 @@
 ﻿using Mutagen.Bethesda;
-using Mutagen.Bethesda.FormKeys.SkyrimSE;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
@@ -13,13 +12,13 @@ public static class PatcherExtensions
         this TMod modToDuplicateInto,
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         ILinkCache<TMod, TModGetter> linkCache, 
-        ModKey modKeyToDuplicateFrom,
+        IEnumerable<ModKey> modKeysToDuplicateFrom,
         ref Dictionary<FormKey, FormKey> mapping,
         params Type[] typesToInspect)
         where TModGetter : class, IModGetter
         where TMod : class, TModGetter, IMod, ISkyrimMod
     {
-        if (modKeyToDuplicateFrom == modToDuplicateInto.ModKey)
+        if (modKeysToDuplicateFrom.Contains(modToDuplicateInto.ModKey))
         {
             throw new ArgumentException("Cannot pass the target mod's Key as the one to extract and self contain");
         }
@@ -40,7 +39,7 @@ public static class PatcherExtensions
                 return;
             }
 
-            if (link.FormKey.ModKey == modKeyToDuplicateFrom)
+            if (modKeysToDuplicateFrom.Contains(link.FormKey.ModKey))
             {
                 identifiedLinks.Add(link);
             }
@@ -48,7 +47,7 @@ public static class PatcherExtensions
             var containedLinks = linkRec.EnumerateFormLinks();
             foreach (var containedLink in containedLinks)
             {
-                if (containedLink.FormKey.ModKey != modKeyToDuplicateFrom) continue;
+                if (!modKeysToDuplicateFrom.Contains(containedLink.FormKey.ModKey)) continue;
                 AddAllLinks(containedLink);
             }
         }

@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using Mutagen.Bethesda.Plugins;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -9,6 +10,33 @@ public class Auxilliary
     public Auxilliary(EnvironmentStateProvider environmentStateProvider)
     {
         _environmentStateProvider = environmentStateProvider;
+    }
+
+    public List<ModKey> GetModKeysInDirectory(string modFolderPath, List<string>? warnings)
+    {
+        List<ModKey> foundEnabledKeysInFolder = new();
+        string modFolderName = Path.GetFileName(modFolderPath);
+        try
+        {
+            var enabledKeys = _environmentStateProvider.EnvironmentIsValid ? _environmentStateProvider.LoadOrder.Keys.ToHashSet() : new HashSet<ModKey>();
+
+            foreach (var filePath in Directory.EnumerateFiles(modFolderPath, "*.es*", SearchOption.TopDirectoryOnly))
+            {
+                string fileNameWithExt = Path.GetFileName(filePath);
+                if (fileNameWithExt.EndsWith(".esp", StringComparison.OrdinalIgnoreCase) || fileNameWithExt.EndsWith(".esm", StringComparison.OrdinalIgnoreCase) || fileNameWithExt.EndsWith(".esl", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        ModKey parsedKey = ModKey.FromFileName(fileNameWithExt);
+                        if (enabledKeys.Contains(parsedKey)) foundEnabledKeysInFolder.Add(parsedKey);
+                    }
+                    catch (Exception parseEx) { warnings.Add($"Could not parse plugin '{fileNameWithExt}' in '{modFolderName}': {parseEx.Message}"); }
+                }
+            }
+        }
+        catch (Exception fileScanEx) { warnings.Add($"Error scanning Mod folder '{modFolderName}': {fileScanEx.Message}"); }
+        
+        return foundEnabledKeysInFolder;
     }
     
     public string FormKeyStringToFormIDString(string formKeyString)

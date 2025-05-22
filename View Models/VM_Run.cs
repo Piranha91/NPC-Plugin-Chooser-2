@@ -1,29 +1,22 @@
 ﻿// VM_Run.cs
-using System;
-using System.Linq;
 using System.Reactive;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
-using static NPC_Plugin_Chooser_2.BackEnd.PatcherExtensions;
 using NPC_Plugin_Chooser_2.Models;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using System.IO;
 using Mutagen.Bethesda;
 using System.Collections.ObjectModel;
-using System.Collections.Generic;
 using System.Reactive.Disposables;
 using System.Reflection;
 using System.Windows;
 using Mutagen.Bethesda.Archives;
-using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
-using Noggog;
 using NPC_Plugin_Chooser_2.Views; // Needed for LinkCache Interface
 
 namespace NPC_Plugin_Chooser_2.View_Models
@@ -36,16 +29,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Auxilliary _auxilliary;
         private readonly VM_Settings _vmSettings;
         private readonly Lazy<VM_Mods> _lazyVmMods;
+        private readonly RaceHandler _raceHandler;
+        private readonly DuplicateInManager _duplicateInManager;
         private readonly CompositeDisposable _disposables = new();
-
-        // --- Data for Race Handling ---
-        private Dictionary<FormKey, List<(ModKey SourceMod, IRaceGetter RaceRecord, FormKey NpcFormKeyWhoCausedIt)>>
-            _vanillaRaceModifications = new();
-
-        private List<RaceSerializationInfo>
-            _racesToSerializeForYaml = new(); // For ForwardWinningOverrides (Default) YAML generation
-        
-        private Dictionary<INpcGetter, RaceSerializationInfo> _raceSerializationNpcAssignments = new();
 
         // --- Constants ---
         private const string ALL_NPCS_GROUP = "<All NPCs>";
@@ -107,7 +93,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             NpcConsistencyProvider consistencyProvider,
             Auxilliary auxilliary,
             VM_Settings vmSettings,
-            Lazy<VM_Mods> lazyVmMods)
+            Lazy<VM_Mods> lazyVmMods,
+            RaceHandler raceHandler,
+            DuplicateInManager duplicateInManager)
         {
             _environmentStateProvider = environmentStateProvider;
             _settings = settings;
@@ -115,6 +103,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _auxilliary = auxilliary;
             _vmSettings = vmSettings;
             _lazyVmMods = lazyVmMods;
+            _raceHandler = raceHandler;
+            _duplicateInManager = duplicateInManager;
 
             // Command can only execute if environment is valid and not already running
             var canExecute = this.WhenAnyValue(x => x.IsRunning, x => x._environmentStateProvider.EnvironmentIsValid,
@@ -514,6 +504,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ResetProgress();
             UpdateProgress(0, 1, "Initializing...");
             AppendLog("Starting patch generation..."); // Verbose only
+            
+            _raceHandler.Reinitialize();
+            _duplicateInManager.Reinitialize();
 
             // --- Pre-Run Checks ---
             if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
@@ -870,6 +863,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         continue;
                     }
 
+                    _raceHandler.ProcessNpcRace(patchNpc, sourceNpc, winningNpcOverride, specificAppearancePluginKey.Value, appearanceModSetting);
 
                     processedCount++;
                     await Task.Delay(5);
@@ -896,17 +890,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     $"  Processing dependencies for: {modToDuplicateFrom.FileName} (from {recordsInPatchSourcedFromMod.Count} patched records)"); // Verbose only
                 try
                 {
-                    // Call the custom extension method, passing the list of records from the *output patch*
-                    // and the *accumulating* mapping dictionary by reference.
-                    _environmentStateProvider.OutputMod.DuplicateFromOnlyReferencedGetters(
+                    _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
                         recordsInPatchSourcedFromMod,
-                        _environmentStateProvider.LinkCache,
-                        modToDuplicateFrom,
-                        ref globalMapping // Pass by reference
-                        // typesToInspect: null or empty array uses default behavior
-                    );
-                    // Note: The custom function internally handles adding to the mapping and removing old links
-                    // We don't get a count back directly from this version. We can infer from mapping size change if needed.
+                        modToDuplicateFrom);
                     AppendLog(
                         $"    Completed dependency processing for {modToDuplicateFrom.FileName}."); // Verbose only
                 }
@@ -1554,499 +1540,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             return Path.GetExtension(input).ToLowerInvariant();
         }
 
-        private void AppendLog(string message, bool isError = false, bool forceLog = false)
+        public void AppendLog(string message, bool isError = false, bool forceLog = false)
         {
             if (IsVerboseModeEnabled || isError || forceLog)
             {
                 RxApp.MainThreadScheduler.Schedule(() => { LogOutput += message + Environment.NewLine; });
-            }
-        }
-
-        // --- Race Processing Logic ---
-        private void ProcessNpcRace(
-            Npc patchNpc, // The NPC record in our output patch
-            INpcGetter? sourceNpcIfUsed, // The NPC record from the appearance mod (if used for NPC data)
-            INpcGetter winningNpcOverride, // The original conflict-winning NPC
-            ModKey appearanceModKey, // The .esp key of the appearance mod providing the NPC override / assets
-            ModSetting appearanceModSetting, // Full mod setting
-            Dictionary<ModKey, Dictionary<IRaceGetter, IRaceGetter>> sourcePluginToPatchedRecordsMap)
-        {
-            // Check if the selected mod provided a plugin. If not, the race could not have been modified.
-            if (sourceNpcIfUsed == null)
-            {
-                AppendLog(
-                    $"      NPC {patchNpc.EditorID} has no plugin from {appearanceModSetting.DisplayName}. Skipping race handling.");
-                return;
-            }
-
-            // Check if the selected plugin's race record exits
-            if (sourceNpcIfUsed.Race.IsNull)
-            {
-                AppendLog(
-                    $"      NPC {patchNpc.EditorID} has a null Race record from {appearanceModSetting.DisplayName}. Skipping race handling.");
-                return;
-            }
-
-            // Check if the appearance mod provides an override for the NPC's current race
-            var raceContexts =
-                _environmentStateProvider.LinkCache
-                    .ResolveAllContexts<IRace, IRaceGetter>(sourceNpcIfUsed.Race.FormKey);
-            var raceGetterFromAppearanceMod =
-                raceContexts.FirstOrDefault(x => x.ModKey.Equals(appearanceModKey)).Record ?? null;
-
-            // SCENARIO 1: NPC uses a NEW race that's defined IN ITS OWN appearance mod.
-            // Criteria:
-            // 1. The race record (`raceGetterFromAppearanceMod`) is defined by `appearanceModKey`.
-            // This scenario implies that `sourceNpcIfUsed` (if available and used for `patchNpc` creation) had this custom race.
-            bool isNewCustomRaceFromAppearanceMod = raceGetterFromAppearanceMod != null &&
-                                                    raceGetterFromAppearanceMod.FormKey.ModKey.Equals(appearanceModKey);
-
-            if (isNewCustomRaceFromAppearanceMod)
-            {
-                AppendLog(
-                    $"      NPC {patchNpc.EditorID} uses new custom race {raceGetterFromAppearanceMod.EditorID} ({raceGetterFromAppearanceMod.FormKey}) defined in its appearance mod {appearanceModKey.FileName}.");
-                AppendLog($"        Merging race and its dependencies from {appearanceModKey.FileName}.");
-
-                // Ensure patchNpc points to this race (it should if sourceNpcIfUsed was its origin and had this race)
-                patchNpc.Race.SetTo(raceGetterFromAppearanceMod);
-
-                // Add the race record (as it exists in the patch, which is an override of currentNpcRaceRecord)
-                // to the map for dependency duplication.
-                var raceInPatch =
-                    _environmentStateProvider.OutputMod.Races.GetOrAddAsOverride(raceGetterFromAppearanceMod);
-                return; // Handled
-            }
-
-            // SCENARIO 2: NPC uses an existing race, and that race is present as a record in the appearance mod
-            // (i.e., appearance mod MODIFIES a race the NPC uses).
-            // Criteria:
-            // 1. `raceGetterFromAppearanceMod` is not null (the appearance-providing mod contains this race as a new record or override)
-            // 2. `raceGetterFromAppearanceMod' has a root ModKey that's not appearanceModKey (implying that it's an overrride)
-            bool isOverriddenRace = raceGetterFromAppearanceMod != null &&
-                                    !raceGetterFromAppearanceMod.FormKey.ModKey.Equals(appearanceModKey);
-
-            if (isOverriddenRace)
-            {
-                AppendLog(
-                    $"      NPC {patchNpc.EditorID} uses overriden race {raceGetterFromAppearanceMod.EditorID} ({raceGetterFromAppearanceMod.FormKey}).");
-                AppendLog($"        Appearance mod {appearanceModKey.FileName} modifies this race.");
-
-                // Track this modification for conflict checking
-                TrackRaceModification(appearanceModKey, raceGetterFromAppearanceMod, patchNpc.FormKey);
-
-                switch (_settings.RaceHandlingMode)
-                {
-                    case RaceHandlingMode.ForwardWinningOverrides:
-                        HandleForwardWinningOverridesRace(patchNpc, raceGetterFromAppearanceMod,
-                            raceContexts, appearanceModKey);
-                        break;
-
-                    case RaceHandlingMode.DuplicateAndRemapRace:
-                        HandleDuplicateAndRemapRace(patchNpc, raceGetterFromAppearanceMod, appearanceModKey,
-                            sourcePluginToPatchedRecordsMap);
-                        break;
-
-                    case RaceHandlingMode.IgnoreRace:
-                        AppendLog(
-                            $"        Race Handling Mode: IgnoreRace. No changes made to race record {raceGetterFromAppearanceMod.EditorID} itself by this logic.");
-                        break;
-                }
-            }
-        }
-
-        private void HandleForwardWinningOverridesRace(
-            Npc patchNpc,
-            IRaceGetter appearanceModRaceVersion,
-            IEnumerable<IModContext<ISkyrimMod,ISkyrimModGetter,IRace,IRaceGetter>>? raceContexts,
-            ModKey appearanceModKey)
-        {
-
-            var originalRaceGetter = raceContexts.Last().Record;
-            if (originalRaceGetter == null)
-            {
-                AppendLog("Error: Could not determine original race context for race handling.");
-                return;
-            }
-            
-            if (_settings.PatchingMode == PatchingMode.EasyNPC_Like)
-            {
-                AppendLog(
-                    $"        Race Handling: ForwardWinningOverrides (EasyNPC-Like) for race {originalRaceGetter.EditorID}.");
-                // In EasyNPC-Like mode, patchNpc is an override of winningNpcOverride.
-                // So patchNpc.Race should already point to originalRaceContext.FormKey.
-                // We need to override originalRaceContext in the patch and forward differing properties.
-                
-                var racePropertyDeltas = RaceHelpers.GetDifferingPropertyNames(appearanceModRaceVersion, originalRaceGetter);
-                if (racePropertyDeltas.Any())
-                {
-                    var winningRaceGetter = raceContexts.First().Record;
-                    if (winningRaceGetter == null)
-                    {
-                        AppendLog("Error: Could not determine winning race context for race handling.");
-                        return;
-                    }
-                    
-                    var winningRaceRecord = _environmentStateProvider.OutputMod.Races.GetOrAddAsOverride(winningRaceGetter);
-                    RaceHelpers.CopyPropertiesToNewRace(appearanceModRaceVersion, winningRaceRecord, racePropertyDeltas);
-                }
-                else
-                {
-                    AppendLog(
-                        $"          Race properties are identical to original context. No race forwarding needed.");
-                }
-            }
-            else // Default Patching Mode
-            {
-
-                AppendLog($"          Generating YAML record of race version from {appearanceModKey.FileName} for {patchNpc.EditorID}.");
-
-                var existingSerialization = _racesToSerializeForYaml.FirstOrDefault(
-                    x => x.AppearanceModKey.Equals(appearanceModKey) &&
-                         x.OriginalRaceFormKey.Equals(originalRaceGetter.FormKey));
-                
-                if (existingSerialization != null)
-                {
-                    AppendLog($"          Applying previously generated race {existingSerialization.RaceToSerialize.EditorID}.");
-                    _raceSerializationNpcAssignments.Add(patchNpc, existingSerialization);
-                    return;
-                }
-                
-                // Schedule new YAML generation for the diff.
-                var toSerialize = new RaceSerializationInfo
-                {
-                    RaceToSerialize = appearanceModRaceVersion, // This is the one from the appearance mod
-                    OriginalRaceFormKey = originalRaceGetter.FormKey, // This is the vanilla FormKey
-                    AppearanceModKey = appearanceModKey,
-                    DiffProperties = RaceHelpers.GetDifferingPropertyNames(appearanceModRaceVersion, originalRaceGetter)
-                        .ToList()
-                };
-                
-                _racesToSerializeForYaml.Add(toSerialize);
-                _raceSerializationNpcAssignments.Add(patchNpc, toSerialize);
-                AppendLog($"          Scheduled YAML generation for race {appearanceModRaceVersion.EditorID}.");
-            }
-        }
-
-        private void HandleDuplicateAndRemapRace(
-            Npc patchNpc,
-            IRaceGetter appearanceModRaceVersion,
-            ModKey appearanceModKey,
-            Dictionary<ModKey, Dictionary<IRaceGetter, IRaceGetter>> sourcePluginToPatchedRecordsMap)
-        {
-            AppendLog($"        Race Handling: DuplicateAndRemapRace for {appearanceModRaceVersion.EditorID}.");
-            
-            // Check if a race has already been processed from this mod
-            Dictionary<IRaceGetter, IRaceGetter> currentMappings = new();
-            if (sourcePluginToPatchedRecordsMap.TryGetValue(appearanceModKey, out var mappings))
-            {
-                currentMappings = mappings;
-            }
-            else
-            {
-                sourcePluginToPatchedRecordsMap.Add(appearanceModKey, currentMappings);
-            }
-
-            if (currentMappings.TryGetValue(appearanceModRaceVersion, out var importedRace))
-            {
-                AppendLog($"        Race Handling: DuplicateAndRemapRace has previously been called for {appearanceModRaceVersion.EditorID} in {appearanceModKey.FileName}. Setting NPC to race {importedRace.EditorID ?? importedRace.FormKey.ToString()}.");
-                patchNpc.Race.SetTo(importedRace);
-                return;
-            }
-            
-            // If not cached, import the new race.
-            string baseEditorID = appearanceModRaceVersion.EditorID ?? $"Race_{appearanceModRaceVersion.FormKey.ID:X8}";
-            string newEditorID = $"{baseEditorID}_{appearanceModKey.Name}";
-            if (newEditorID.Length > 90) newEditorID = newEditorID.Substring(0, 90); // Crude truncation for EDID length
-
-            // Ensure unique EditorID in the patch
-            int attempt = 0;
-            string finalNewEditorID = newEditorID;
-            while (_environmentStateProvider.OutputMod.Races.Any(x => x.EditorID == finalNewEditorID))
-            {
-                attempt++;
-                finalNewEditorID = $"{newEditorID}_{attempt}";
-                if (finalNewEditorID.Length > 90) finalNewEditorID = finalNewEditorID.Substring(0, 90);
-            }
-
-            newEditorID = finalNewEditorID;
-
-            AppendLog($"          Cloning as new race with EditorID: {newEditorID}");
-            var clonedRace =
-                _environmentStateProvider.OutputMod.Races.DuplicateInAsNewRecord(appearanceModRaceVersion, newEditorID);
-            clonedRace.EditorID = newEditorID; // Set EditorID post-duplication as well
-
-            patchNpc.Race.SetTo(clonedRace); // Assign the new cloned race to the NPC
-            currentMappings.Add(appearanceModRaceVersion, clonedRace);
-        }
-        
-        private void TrackRaceModification(ModKey appearanceSourceMod, IRaceGetter modifiedRaceRecord,
-            FormKey npcFormKey)
-        {
-            if (!_vanillaRaceModifications.TryGetValue(modifiedRaceRecord.FormKey, out var modList))
-            {
-                modList = new List<(ModKey, IRaceGetter, FormKey)>();
-                _vanillaRaceModifications[modifiedRaceRecord.FormKey] = modList;
-            }
-
-            // Avoid adding if this exact mod+race combo for this NPC is already noted (though unlikely per NPC)
-            if (!modList.Any(x =>
-                    x.SourceMod == appearanceSourceMod && x.RaceRecord.FormKey == modifiedRaceRecord.FormKey &&
-                    x.NpcFormKeyWhoCausedIt == npcFormKey))
-            {
-                modList.Add((appearanceSourceMod, modifiedRaceRecord, npcFormKey));
-            }
-        }
-
-        private string ResolveNpcName(FormKey npcKey) =>
-            _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcKey, out var npc)
-                ? (npc.Name?.String ?? npc.EditorID ?? npcKey.ToString())
-                : npcKey.ToString();
-
-        private string ResolveRaceName(FormKey raceKey) =>
-            _environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(raceKey, out var race)
-                ? (race.Name?.String ?? race.EditorID ?? raceKey.ToString())
-                : raceKey.ToString();
-
-
-        private void GenerateRaceYamlFiles()
-        {
-            
-        }
-
-        // --- Forward Race Edits From YAML ---
-        private async Task ForwardRaceEditsFromYamlAsync()
-        {
-            AppendLog("\n--- Initiating Forward Race Edits from YAML ---");
-            if (!_environmentStateProvider.EnvironmentIsValid)
-            {
-                AppendLog("Environment not valid. Cannot proceed.");
-                return;
-            }
-
-            var openFileDialog = new Microsoft.Win32.OpenFileDialog
-            {
-                Filter = "YAML files (*.yaml)|*.yaml|All files (*.*)|*.*",
-                Title = "Select Race Diff YAML file",
-                InitialDirectory = Path.Combine(_currentRunOutputAssetPath, "RaceDiffs"), // Default to RaceDiffs folder
-                Multiselect = false // For now, one file at a time
-            };
-
-            if (openFileDialog.ShowDialog() != true)
-            {
-                AppendLog("No YAML file selected. Operation cancelled.");
-                return;
-            }
-
-            string yamlFilePath = openFileDialog.FileName;
-            AppendLog($"Processing YAML file: {yamlFilePath}");
-
-            try
-            {
-                string yamlContent = File.ReadAllText(yamlFilePath);
-
-                var yamlDeserializer = new DeserializerBuilder()
-                    .WithNamingConvention(CamelCaseNamingConvention.Instance)
-                    .WithTypeConverter(new FormLinkYamlConverter(_environmentStateProvider.LinkCache))
-                    .Build();
-
-                RaceYamlWrapper? raceWrapper = null;
-                try
-                {
-                    raceWrapper = yamlDeserializer.Deserialize<RaceYamlWrapper>(yamlContent);
-                }
-                catch (Exception ex)
-                {
-                    AppendLog(
-                        $"ERROR: Failed to deserialize YAML content from {Path.GetFileName(yamlFilePath)}. Ensure it's a valid RaceDiff YAML. Details: {ex.Message}");
-                    return;
-                }
-
-
-                if (raceWrapper == null || raceWrapper.OriginalRace.IsNull || raceWrapper.ModifiedRace == null)
-                {
-                    AppendLog("ERROR: YAML file content is invalid or missing crucial race data.");
-                    return;
-                }
-
-                FormKey originalRaceFormKey = raceWrapper.OriginalRace.FormKey;
-                IRaceGetter modifiedRaceDataFromYaml = raceWrapper.ModifiedRace; // This is a concrete Race instance
-                ModKey appearanceSourceModKeyForDependencies = raceWrapper.AppearanceSourceMod;
-
-
-                // Resolve the original race in the current load order
-                if (!_environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(originalRaceFormKey,
-                        out var currentWinningOriginalRace))
-                {
-                    AppendLog($"ERROR: Could not find original race {originalRaceFormKey} in the current load order.");
-                    return;
-                }
-
-                AppendLog(
-                    $"Found original race: {currentWinningOriginalRace.EditorID} ({currentWinningOriginalRace.FormKey}) from {currentWinningOriginalRace.FormKey.ModKey.FileName}");
-
-                // Create a new patch plugin for these edits
-                // For simplicity, let's name it based on the original YAML file.
-                string patchFileName = $"ForwardedRace_{Path.GetFileNameWithoutExtension(yamlFilePath)}.esp";
-                var raceEditPatch =
-                    new SkyrimMod(ModKey.FromName(patchFileName, ModType.Plugin), _settings.SkyrimRelease);
-                AppendLog($"Created new patch: {patchFileName}");
-
-                // Create an override of the current winning original race in the new patch
-                var raceToPatch = raceEditPatch.Races.GetOrAddAsOverride(currentWinningOriginalRace);
-                AppendLog($"Overriding {raceToPatch.EditorID} in {patchFileName}.");
-
-                // Apply the modified data from YAML to this override
-                // Important: modifiedRaceDataFromYaml.FormKey might be a temporary one from YAML.
-                // We need to preserve raceToPatch.FormKey.
-                var originalFormKeyOfPatchedRace = raceToPatch.FormKey; // Save it
-                raceToPatch.DeepCopyIn(modifiedRaceDataFromYaml,
-                    new MajorRecordContext<IRaceGetter>(raceToPatch, raceEditPatch.ModKey),
-                    out var remappedLinks);
-
-                // Restore original FormKey just in case DeepCopyIn changed it (it shouldn't if target already exists)
-                if (raceToPatch.FormKey != originalFormKeyOfPatchedRace)
-                {
-                    // This would be highly unusual for GetOrAddAsOverride target.
-                    // More likely if it was a new record. For safety:
-                    // raceToPatch.FormKey = originalFormKeyOfPatchedRace; // Mutagen doesn't allow FormKey changes like this.
-                    // Instead, ensure the source for DeepCopyIn has a throwaway FormKey or is known to not affect target's FK.
-                    // The concrete 'Race' from YAML should have its FormKey set to the OriginalRace's FormKey before DeepCopyIn
-                    // if there's any risk. Or, ensure ModifiedRace in YAML is serialized with the original FormKey.
-                    // For now, assume modifiedRaceDataFromYaml itself doesn't have a conflicting FormKey that DeepCopyIn would try to impose.
-                }
-
-
-                AppendLog($"Applied changes from YAML to {raceToPatch.EditorID}.");
-
-                // Handle dependencies from the appearance mod
-                Dictionary<FormKey, FormKey> localMapping = new();
-                var recordsForDepDuplication = new List<IMajorRecordGetter> { raceToPatch };
-
-                raceEditPatch.DuplicateFromOnlyReferencedGetters(
-                    recordsForDepDuplication,
-                    _environmentStateProvider.LinkCache, // Use the main LO link cache for resolving sources
-                    appearanceSourceModKeyForDependencies, // Source mod for dependencies
-                    ref localMapping);
-
-                if (localMapping.Any())
-                {
-                    raceEditPatch.RemapLinks(localMapping);
-                    AppendLog(
-                        $"Duplicated and remapped {localMapping.Count} dependencies from {appearanceSourceModKeyForDependencies.FileName}.");
-                }
-
-
-                // Save the new patch plugin
-                string savePath = Path.Combine(_currentRunOutputAssetPath, patchFileName); // Save alongside main patch
-                try
-                {
-                    raceEditPatch.WriteToBinary(savePath);
-                    AppendLog($"Successfully saved race edit patch to: {savePath}");
-                    AppendLog(
-                        $"IMPORTANT: Add {patchFileName} to your load order and ensure it loads AFTER any other mods modifying {originalRaceFormKey}.");
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"ERROR saving race edit patch {patchFileName}: {ExceptionLogger.GetExceptionStack(ex)}");
-                }
-            }
-            catch (Exception ex)
-            {
-                AppendLog(
-                    $"An unexpected error occurred while forwarding race edits: {ExceptionLogger.GetExceptionStack(ex)}");
-            }
-            finally
-            {
-                AppendLog("--- Finished Forward Race Edits from YAML ---");
-            }
-        }
-    }
-
-    // Helper struct for YAML data
-    internal class RaceSerializationInfo
-    {
-        public IRaceGetter RaceToSerialize { get; set; }
-        public FormKey OriginalRaceFormKey { get; set; } // FormKey of the race this is a diff against
-        public ModKey AppearanceModKey { get; set; } // Source of the modified race
-        public List<string> DiffProperties { get; set; } // Properties to forward when diff patching
-    }
-
-    // Helper class for deserializing our specific YAML structure for the "Forward Race Edits" button
-    // This is what we expect to find in the YAML files generated by "ForwardWinningOverrides" (Default)
-    public class RaceYamlWrapper
-    {
-        public FormLink<IRaceGetter> OriginalRace { get; set; }
-        public Race ModifiedRace { get; set; } // The actual race data from the appearance mod
-        public ModKey AppearanceSourceMod { get; set; }
-    }
-
-    // Comparer for checking if race records have different content
-    public class MajorRecordContentComparer<T> : IEqualityComparer<T> where T : IMajorRecordGetter
-    {
-        public bool Equals(T? x, T? y)
-        {
-            if (ReferenceEquals(x, y)) return true;
-            if (x is null || y is null) return false;
-            // ignoreFormKeyFixedUp:true compares content regardless of specific FormKey values if they were part of a duplication.
-            // ignoreTargetLinks:false means links must point to the same target FormKey.
-            return x.Equals(y); 
-        }
-
-        public int GetHashCode(T obj)
-        {
-            // This hash code might not be perfect for content equality but is required.
-            // For Distinct(), proper Equals is more important.
-            return obj.FormKey.GetHashCode();
-        }
-    }
-
-    // YamlDotNet TypeConverter for FormLink<T>
-    // This helps serialize/deserialize FormLinks in a more readable way (e.g., "Skyrim.esm:00000007")
-    public class FormLinkYamlConverter : IYamlTypeConverter
-    {
-        private readonly ILinkCache _linkCache;
-
-        public FormLinkYamlConverter(ILinkCache linkCache)
-        {
-            _linkCache = linkCache;
-        }
-
-        public bool Accepts(Type type)
-        {
-            return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(FormLink<>);
-        }
-
-        public object ReadYaml(IParser parser, Type type)
-        {
-            var scalar = parser.Consume<YamlDotNet.Core.Events.Scalar>();
-            var fk = FormKey.Factory(scalar.Value);
-            // Create a FormLink of the correct generic type, e.g. FormLink<IRaceGetter>
-            var formLinkType = typeof(FormLink<>).MakeGenericType(type.GetGenericArguments()[0]);
-            return Activator.CreateInstance(formLinkType, fk)!;
-        }
-
-        public void WriteYaml(IEmitter emitter, object? value, Type type)
-        {
-            if (value == null) return;
-            // value is FormLink<T>. Access its FormKey property.
-            var formKeyProperty = type.GetProperty("FormKey");
-            if (formKeyProperty != null)
-            {
-                var fk = (FormKey)formKeyProperty.GetValue(value)!;
-                string? editorId = null;
-                if (!fk.IsNull &&
-                    _linkCache.TryResolve<IMajorRecordGetter>(fk, out var rec)) // Attempt to resolve for EditorID
-                {
-                    editorId = rec.EditorID;
-                }
-
-                string output = fk.ToString();
-                if (!string.IsNullOrEmpty(editorId))
-                {
-                    output = $"{output} #{editorId}"; // e.g., Skyrim.esm:00013746 #NordRace
-                }
-
-                emitter.Emit(new YamlDotNet.Core.Events.Scalar(output));
             }
         }
     }

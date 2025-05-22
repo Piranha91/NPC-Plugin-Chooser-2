@@ -33,6 +33,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly VM_NpcSelectionBar _npcSelectionBar; // To access AllNpcs and navigate
         private readonly NpcConsistencyProvider _consistencyProvider;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm; // *** NEW: To switch tabs ***
+        private readonly Auxilliary _aux;
         private readonly CompositeDisposable _disposables = new();
         // Subject and Observable for scroll requests
         private readonly BehaviorSubject<VM_ModSetting?> _requestScrollToModSubject = new BehaviorSubject<VM_ModSetting?>(null);
@@ -97,15 +98,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private bool _isPopulatingModSettings = false;
 
         // *** Updated Constructor Signature ***
-        public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider, VM_NpcSelectionBar npcSelectionBar, NpcConsistencyProvider consistencyProvider, Lazy<VM_MainWindow> lazyMainWindowVm)
+        public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider, VM_NpcSelectionBar npcSelectionBar, NpcConsistencyProvider consistencyProvider, Lazy<VM_MainWindow> lazyMainWindowVm, Auxilliary aux)
         {
             _settings = settings;
             _environmentStateProvider = environmentStateProvider;
             _npcSelectionBar = npcSelectionBar;
             _consistencyProvider = consistencyProvider;
             _lazyMainWindowVm = lazyMainWindowVm;
-
-            // ... (previous constructor logic like ShowMugshotsCommand, Filter setup)
+            _aux = aux;
+            
             ShowMugshotsCommand = ReactiveCommand.CreateFromTask<VM_ModSetting>(ShowMugshotsAsync);
             ShowMugshotsCommand.ThrownExceptions.Subscribe(ex =>
             {
@@ -625,7 +626,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             foreach (var settingModel in _settings.ModSettings)
             {
                 if (string.IsNullOrWhiteSpace(settingModel.DisplayName)) continue;
-                var vm = new VM_ModSetting(settingModel, this); 
+                var vm = new VM_ModSetting(settingModel, this, _aux); 
                 if (!string.IsNullOrWhiteSpace(vm.MugShotFolderPath) && Directory.Exists(vm.MugShotFolderPath))
                     claimedMugshotPaths.Add(vm.MugShotFolderPath);
                 else if (string.IsNullOrWhiteSpace(vm.MugShotFolderPath))
@@ -655,7 +656,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         {
                             string folderName = Path.GetFileName(dirPath);
                             if (!loadedDisplayNames.Contains(folderName))
-                                vmsFromMugshotsOnly.Add(new VM_ModSetting(folderName, dirPath, this));
+                                vmsFromMugshotsOnly.Add(new VM_ModSetting(folderName, dirPath, this, _aux));
                         }
                     }
                 }
@@ -669,24 +670,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
                     {
                         string modFolderName = Path.GetFileName(modFolderPath);
-                        var foundEnabledKeysInFolder = new List<ModKey>();
-                        try
-                        {
-                            foreach (var filePath in Directory.EnumerateFiles(modFolderPath, "*.es*", SearchOption.TopDirectoryOnly))
-                            {
-                                string fileNameWithExt = Path.GetFileName(filePath);
-                                if (fileNameWithExt.EndsWith(".esp", StringComparison.OrdinalIgnoreCase) || fileNameWithExt.EndsWith(".esm", StringComparison.OrdinalIgnoreCase) || fileNameWithExt.EndsWith(".esl", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    try
-                                    {
-                                        ModKey parsedKey = ModKey.FromFileName(fileNameWithExt);
-                                        if (enabledKeys.Contains(parsedKey)) foundEnabledKeysInFolder.Add(parsedKey);
-                                    }
-                                    catch (Exception parseEx) { warnings.Add($"Could not parse plugin '{fileNameWithExt}' in '{modFolderName}': {parseEx.Message}"); }
-                                }
-                            }
-                        }
-                        catch (Exception fileScanEx) { warnings.Add($"Error scanning Mod folder '{modFolderName}': {fileScanEx.Message}"); }
+                        var foundEnabledKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings);
 
                         var existingVmFromSettings = tempList.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
                         var mugshotOnlyVmToUpgrade = vmsFromMugshotsOnly.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
@@ -709,7 +693,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         }
                         else if (foundEnabledKeysInFolder.Any()) 
                         {
-                            var newVm = new VM_ModSetting(modFolderName, this)
+                            var newVm = new VM_ModSetting(modFolderName, this, _aux)
                             {
                                 CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath },
                                 CorrespondingModKeys = new ObservableCollection<ModKey>(foundEnabledKeysInFolder)

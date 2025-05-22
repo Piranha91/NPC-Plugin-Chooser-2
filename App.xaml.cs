@@ -52,6 +52,8 @@ namespace NPC_Plugin_Chooser_2
 
             builder.RegisterType<EnvironmentStateProvider>().AsSelf().SingleInstance();
             builder.RegisterType<Auxilliary>().AsSelf().SingleInstance();
+            builder.RegisterType<RaceHandler>().AsSelf().SingleInstance();
+            builder.RegisterType<DuplicateInManager>().AsSelf().SingleInstance();
             builder.RegisterType<NpcConsistencyProvider>().AsSelf().SingleInstance(); // Added for central selection management
             builder.RegisterType<NpcDescriptionProvider>().AsSelf().SingleInstance(); // Added for central NPC Description management
 

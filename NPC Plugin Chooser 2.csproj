@@ -17,11 +17,12 @@
       <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.4" />
       <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.135" />
       <PackageReference Include="Mutagen.Bethesda.FormKeys.SkyrimSE" Version="3.4.0" />
-      <PackageReference Include="Mutagen.Bethesda.Json" Version="0.49.0" />
-      <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.49.0" />
-      <PackageReference Include="Mutagen.Bethesda.Synthesis" Version="0.33.3" />
-      <PackageReference Include="Mutagen.Bethesda.Synthesis.WPF" Version="0.33.3" />
-      <PackageReference Include="Mutagen.Bethesda.WPF" Version="0.49.0" />
+      <PackageReference Include="Mutagen.Bethesda.Json" Version="0.51.0-alpha.14" />
+      <PackageReference Include="Mutagen.Bethesda.Serialization.SourceGenerator" Version="1.37.0-alpha.0" />
+      <PackageReference Include="Mutagen.Bethesda.Serialization.Yaml" Version="1.37.0-alpha.0" />
+      <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.51.0-alpha.14" />
+      <PackageReference Include="Mutagen.Bethesda.Synthesis.WPF" Version="0.35.0-alpha.2" />
+      <PackageReference Include="Mutagen.Bethesda.WPF" Version="0.51.0-alpha.14" />
       <PackageReference Include="niflysharp" Version="1.3.0" />
       <PackageReference Include="ReactiveUI.Fody" Version="19.5.41" />
       <PackageReference Include="ReactiveUI.WPF" Version="20.2.45" />
