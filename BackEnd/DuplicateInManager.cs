@@ -7,7 +7,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public class DuplicateInManager
 {
-    private Dictionary<FormKey, FormKey> _mapping;
+    private Dictionary<FormKey, FormKey> _mapping = new();
     private readonly EnvironmentStateProvider _environmentStateProvider;
 
     public DuplicateInManager(EnvironmentStateProvider environmentStateProvider)
@@ -46,6 +46,36 @@ public class DuplicateInManager
         DuplicateFromOnlyReferencedGetters(
             modToDuplicateInto,
             recordsToDuplicate,
+            new[] { modKeyToDuplicateFrom },
+            typesToInspect);
+    }
+    
+    // convenience overload for a single Record
+    public void DuplicateFromOnlyReferencedGetters<TMod>(
+        TMod modToDuplicateInto,
+        IMajorRecordGetter recordToDuplicate,
+        IEnumerable<ModKey> modKeysToDuplicateFrom,
+        params Type[] typesToInspect)
+        where TMod : class, IMod, ISkyrimMod, IModGetter
+    {
+        DuplicateFromOnlyReferencedGetters(
+            modToDuplicateInto,
+            new[] { recordToDuplicate },
+            modKeysToDuplicateFrom,
+            typesToInspect);
+    }
+    
+    // convenience overload for a single Record and ModKey
+    public void DuplicateFromOnlyReferencedGetters<TMod>(
+        TMod modToDuplicateInto,
+        IMajorRecordGetter recordToDuplicate,
+        ModKey modKeyToDuplicateFrom,
+        params Type[] typesToInspect)
+        where TMod : class, IMod, ISkyrimMod, IModGetter
+    {
+        DuplicateFromOnlyReferencedGetters(
+            modToDuplicateInto,
+            new[] { recordToDuplicate },
             new[] { modKeyToDuplicateFrom },
             typesToInspect);
     }

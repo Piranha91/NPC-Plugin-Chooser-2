@@ -860,7 +860,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                      var model = new Models.ModSetting
                      {
                          DisplayName = vm.DisplayName,
-                         ModKeys = vm.CorrespondingModKeys.ToList(),
+                         CorrespondingModKeys = vm.CorrespondingModKeys.ToList(),
                          // Important: Create new lists/collections when saving to the model
                          // to avoid potential issues with shared references if the VM is reused.
                          CorrespondingFolderPaths = vm.CorrespondingFolderPaths.ToList(),
@@ -1069,7 +1069,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     if (!winner.NpcPluginDisambiguation.ContainsKey(disambiguationEntry.Key))
                     {
-                        // Only add if the plugin is now part of the winner's ModKeys
+                        // Only add if the plugin is now part of the winner's CorrespondingModKeys
                         if (winner.CorrespondingModKeys.Contains(disambiguationEntry.Value))
                         {
                             winner.NpcPluginDisambiguation[disambiguationEntry.Key] = disambiguationEntry.Value;

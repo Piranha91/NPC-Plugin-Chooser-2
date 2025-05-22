@@ -401,6 +401,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     {
                         AppendLog(
                             $"    Screening: Source plugin is set to {disambiguation.FileName} but this plugin is not in the load order. Falling back to first available plugin"); // Verbose only
+                        specificAppearancePluginKey = appearanceModSetting.CorrespondingModKeys.FirstOrDefault();
                     }
                 }
 
@@ -437,7 +438,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     // Use the existing FaceGenExists but pass the *effective* plugin key (could be null if only assets defined)
                     // Pass the original NPC FormKey for path generation
                     // Use the *specific* key found above, or the original NPC's key if no override was found
-                    ModKey keyForFaceGenCheck = specificAppearancePluginKey ?? npcFormKey.ModKey;
+                    ModKey keyForFaceGenCheck = npcFormKey.ModKey;
                     hasFaceGen = FaceGenExists(npcFormKey, keyForFaceGenCheck, assetSourceDirs);
                     AppendLog(
                         $"    Screening: FaceGen assets found in source directories: {hasFaceGen}."); // Verbose only
@@ -815,25 +816,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                     // --- *** End Scenario Logic *** ---
 
-                    // --- *** Populate Map for Dependency Duplication *** ---
-                    // Add the *record currently in the patch* (patchNpc) to the map,
-                    // keyed by the *source appearance plugin*, but only if we actually used that plugin's *record data*.
-                    // We don't add if only FaceGen assets were used, as record dependencies aren't relevant then.
-                    // Use the *specific* key that provided the record override
-                    if (usedPluginRecord && specificAppearancePluginKey.HasValue &&
-                        !specificAppearancePluginKey.Value.IsNull &&
-                        !BaseGamePlugins.Contains(specificAppearancePluginKey.Value))
-                    {
-                        ModKey sourceKey = specificAppearancePluginKey.Value;
-                        if (!sourcePluginToPatchedRecordsMap.TryGetValue(sourceKey, out var recordList))
-                        {
-                            recordList = new List<IMajorRecordGetter>();
-                            sourcePluginToPatchedRecordsMap[sourceKey] = recordList;
-                        }
-
-                        recordList.Add(patchNpc); // Add the record *from the patch*
-                    }
-
                     // --- Copy Assets ---
                     if (patchNpc != null &&
                         appearanceModSetting != null) // Ensure we have a patch record and mod settings
@@ -863,7 +845,25 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         continue;
                     }
 
+                    // Handle race deep-copy if needed
                     _raceHandler.ProcessNpcRace(patchNpc, sourceNpc, winningNpcOverride, specificAppearancePluginKey.Value, appearanceModSetting);
+                    
+                    // Handle record merge-in
+                    try
+                    {
+                        _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
+                            sourceNpc,
+                            appearanceModSetting.CorrespondingModKeys);
+                        AppendLog(
+                            $"    Completed dependency processing for {specificAppearancePluginKey.Value.FileName}."); // Verbose only
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendLog(
+                            $"  ERROR duplicating dependencies for {specificAppearancePluginKey.Value.FileName}: {ExceptionLogger.GetExceptionStack(ex)}",
+                            true);
+                        // Continue processing other plugins
+                    }
 
                     processedCount++;
                     await Task.Delay(5);
@@ -872,63 +872,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             UpdateProgress(processedCount + skippedCount, processedCount + skippedCount, "Finalizing...");
 
-            // --- *** Post-Processing: Duplicate Dependencies (Using Custom Function) *** ---
-            // Initialize the *single* mapping dictionary that will accumulate results
-            Dictionary<FormKey, FormKey> globalMapping = new();
-            AppendLog($"\nDuplicating referenced records using custom function..."); // Verbose only
-            int totalDuplicatedCount = 0;
-
-            // Iterate through the map we built
-            foreach (var kvp in sourcePluginToPatchedRecordsMap)
-            {
-                ModKey modToDuplicateFrom = kvp.Key;
-                List<IMajorRecordGetter> recordsInPatchSourcedFromMod = kvp.Value;
-
-                if (!recordsInPatchSourcedFromMod.Any()) continue; // Skip if list is empty
-
-                AppendLog(
-                    $"  Processing dependencies for: {modToDuplicateFrom.FileName} (from {recordsInPatchSourcedFromMod.Count} patched records)"); // Verbose only
-                try
-                {
-                    _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
-                        recordsInPatchSourcedFromMod,
-                        modToDuplicateFrom);
-                    AppendLog(
-                        $"    Completed dependency processing for {modToDuplicateFrom.FileName}."); // Verbose only
-                }
-                catch (Exception ex)
-                {
-                    AppendLog(
-                        $"  ERROR duplicating dependencies for {modToDuplicateFrom.FileName}: {ExceptionLogger.GetExceptionStack(ex)}",
-                        true);
-                    // Continue processing other plugins
-                }
-            }
-
-            AppendLog(
-                $"Finished dependency duplication. Total mappings created/accumulated: {globalMapping.Count}."); // Verbose only
-
-            // --- *** Final Remapping (Potentially Redundant but Safe) *** ---
-            // Although the custom function calls RemapLinks internally for the mappings *it* created,
-            // calling it once more at the end with the *full* accumulated mapping ensures
-            // that links in records processed *earlier* are correctly remapped if their
-            // target was duplicated by a *later* call to the custom function.
-            if (globalMapping.Any())
-            {
-                AppendLog("Performing final link remapping pass..."); // Verbose only
-                try
-                {
-                    _environmentStateProvider.OutputMod.RemapLinks(globalMapping);
-                    AppendLog("Final remapping complete."); // Verbose only
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"ERROR during final remapping: {ExceptionLogger.GetExceptionStack(ex)}", true);
-                }
-            }
-
             // --- Final Steps (Save Output Mod) ---
-            if (processedCount > 0 || globalMapping.Any())
+            if (processedCount > 0)
             {
                 AppendLog($"\nProcessed {processedCount} NPC(s).", false, true); // Force log
                 if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.", false, true); // Force log

@@ -55,9 +55,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         /// <summary>
-        /// Returns a list of ModKeys corresponding to the currently selected items.
+        /// Returns a list of CorrespondingModKeys corresponding to the currently selected items.
         /// </summary>
-        /// <returns>A List containing the ModKeys of selected items.</returns>
+        /// <returns>A List containing the CorrespondingModKeys of selected items.</returns>
         public List<ModKey> SaveToModel()
         {
             return SelectableMods

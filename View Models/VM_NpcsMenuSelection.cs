@@ -25,7 +25,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string NpcEditorId { get; set; } = "No Editor ID";
         public string NpcFormKeyString { get;  } = "No FormKey";
         
-        // Stores the ModKeys providing appearance data (from plugins)
+        // Stores the CorrespondingModKeys providing appearance data (from plugins)
         public ObservableCollection<ModKey> AppearanceMods { get; } = new();
         // Holds viewmodels for appearance sources (plugins + potentially mugshots) - managed by VM_NpcSelectionBar
         // public ObservableCollection<VM_NpcsMenuMugshot> AppearanceSources { get; } = new(); // Maybe add later if needed directly here

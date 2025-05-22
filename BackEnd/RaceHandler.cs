@@ -68,6 +68,12 @@ public class RaceHandler
             _environmentStateProvider.LinkCache
                 .ResolveAllContexts<IRace, IRaceGetter>(sourceNpcIfUsed.Race.FormKey);
         var raceContextFromAppearanceMod = raceContexts.FirstOrDefault(x => x.ModKey.Equals(appearanceModKey));
+        if (raceContextFromAppearanceMod == null)
+        {
+            _runVM.Value.AppendLog(
+                $"      {appearanceModSetting.DisplayName} does not edit the race of NPC {patchNpc.EditorID}. Skipping race handling.");
+            return;
+        }
         var raceGetterFromAppearanceMod = raceContextFromAppearanceMod.Record ?? null;
 
         // SCENARIO 1: NPC uses a NEW race that's defined IN ITS OWN appearance mod.

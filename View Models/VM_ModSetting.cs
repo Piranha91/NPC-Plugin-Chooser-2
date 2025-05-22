@@ -96,7 +96,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             : this(model.DisplayName, parentVm, aux, isMugshotOnly: false) // Chain constructor, explicitly false for IsMugshotOnlyEntry
         {
             // Properties specific to loading existing model
-            CorrespondingModKeys = new ObservableCollection<ModKey>(model.ModKeys ?? new List<ModKey>());
+            CorrespondingModKeys = new ObservableCollection<ModKey>(model.CorrespondingModKeys ?? new List<ModKey>());
             CorrespondingFolderPaths = new ObservableCollection<string>(model.CorrespondingFolderPaths ?? new List<string>()); // Handle potential null
             MugShotFolderPath = model.MugShotFolderPath; // Load persisted mugshot folder path
             NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(model.NpcPluginDisambiguation ?? new Dictionary<FormKey, ModKey>());
@@ -173,7 +173,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  .DistinctUntilChanged()
                  .ToPropertyEx(this, x => x.HasModPathsAssigned);
              
-             // Keep corresponding ModKeys up to date when folders are added or removed
+             // Keep corresponding CorrespondingModKeys up to date when folders are added or removed
              this.WhenAnyValue(x => x.CorrespondingFolderPaths.Count).Select(_ => Unit.Default)
                  .Throttle(TimeSpan.FromMilliseconds(100))
                  .ObserveOn(RxApp.MainThreadScheduler) 
@@ -566,7 +566,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 return false; 
             }
             
-            // Check if the chosen plugin is actually one of the ModKeys associated with this ModSetting.
+            // Check if the chosen plugin is actually one of the CorrespondingModKeys associated with this ModSetting.
             if (!CorrespondingModKeys.Contains(newSourcePlugin))
             {
                 Debug.WriteLine($"Error: Plugin {newSourcePlugin.FileName} is not a valid source choice within ModSetting '{DisplayName}' because it's not in CorrespondingModKeys.");
@@ -711,7 +711,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             // 1. Create the new "Mugshot-Only" VM
-            // It will be mugshot-only by definition because it has no CorrespondingFolderPaths/ModKeys initially
+            // It will be mugshot-only by definition because it has no CorrespondingFolderPaths/CorrespondingModKeys initially
             var newMugshotOnlyVm = new VM_ModSetting(displayName: mugshotDirName, mugshotPath: originalMugshotPath, parentVm: _parentVm, aux: _aux);
             // Ensure IsMugshotOnlyEntry is correctly set based on its initial state
             newMugshotOnlyVm.IsMugshotOnlyEntry = true; 

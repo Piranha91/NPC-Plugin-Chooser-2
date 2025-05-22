@@ -664,7 +664,7 @@ If multiple selected appearance mods alter the *same* vanilla race in *different
 
              // --- Step 2: Prepare Helper Data and Output Storage ---
 
-             // Retrieve the set of ModKeys that the user has configured to exclude
+             // Retrieve the set of CorrespondingModKeys that the user has configured to exclude
              // when determining the "default" plugin (usually the conflict winner).
              // Store this locally for efficient lookup within the loop.
              var excludedDefaultPlugins = new HashSet<ModKey>(ExclusionSelectorViewModel.SaveToModel()); // Ensure it's a HashSet for O(1) lookups
