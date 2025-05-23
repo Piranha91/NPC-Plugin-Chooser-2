@@ -64,18 +64,18 @@ public static class PatcherExtensions
         // Duplicate in the records
         foreach (var identifiedRec in identifiedLinks)
         {
-            if (!linkCache.TryResolveContext(identifiedRec.FormKey, identifiedRec.Type, out var rec))
+            var context = linkCache.ResolveAllContexts(identifiedRec.FormKey, identifiedRec.Type)
+                .FirstOrDefault(x => modKeysToDuplicateFrom.Contains(x.ModKey));
+            
+            if (context == null)
             {
                 throw new KeyNotFoundException($"Could not locate record to make self contained: {identifiedRec}");
             }
 
-            if (!mapping.ContainsKey(rec.Record.FormKey))
-            {
-                var newEdid = (rec.Record.EditorID ?? "NoEditorID");
-                var dup = rec.DuplicateIntoAsNewRecord(modToDuplicateInto, newEdid);
-                dup.EditorID = newEdid;
-                mapping[rec.Record.FormKey] = dup.FormKey;
-            }
+            var newEdid = (context.Record.EditorID ?? "NoEditorID");
+            var dup = context.DuplicateIntoAsNewRecord(modToDuplicateInto, newEdid);
+            dup.EditorID = newEdid;
+            mapping[context.Record.FormKey] = dup.FormKey;
             
             modToDuplicateInto.Remove(identifiedRec.FormKey, identifiedRec.Type);
         }
