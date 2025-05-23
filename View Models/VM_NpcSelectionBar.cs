@@ -736,7 +736,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public async Task InitializeAsync(VM_SplashScreen? splashReporter, double baseProgress = 0, double progressSpan = 10)
         {
             splashReporter?.UpdateProgress(baseProgress, "Initializing NPC list...");
-            SelectedNpc = null; 
+            // Clear previous state
+            var oldSelectedNpc = SelectedNpc; // Store old selection
+            SelectedNpc = null; // Clear selection to ensure change notification if re-selecting same NPC
             AllNpcs.Clear();
             FilteredNpcs.Clear();
             CurrentNpcDescription = null; 
@@ -826,18 +828,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
 
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Filtering and restoring selection...");
             ApplyFilter(true); 
 
             VM_NpcsMenuSelection? npcToSelectOnLoad = null;
-
             if (!_settings.LastSelectedNpcFormKey.IsNull)
             {
                 npcToSelectOnLoad = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey))
                                     ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey));
-            
+
                 if (npcToSelectOnLoad == null)
                 {
-                    _settings.LastSelectedNpcFormKey = FormKey.Null; 
+                    _settings.LastSelectedNpcFormKey = FormKey.Null;
                     if (FilteredNpcs.Any()) npcToSelectOnLoad = FilteredNpcs[0];
                 }
             }
@@ -846,16 +848,26 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 npcToSelectOnLoad = FilteredNpcs[0];
             }
 
+// Set SelectedNpc. This will trigger the WhenAnyValue for CurrentNpcAppearanceMods
+            // and CurrentNpcDescription.
             if (npcToSelectOnLoad != null)
             {
-                SelectedNpc = npcToSelectOnLoad; 
-                _requestScrollToNpcSubject.OnNext(npcToSelectOnLoad); 
-                Debug.WriteLine($"VM_NpcSelectionBar.Initialize: Signaled scroll request for {npcToSelectOnLoad.DisplayName}");
+                SelectedNpc = npcToSelectOnLoad; // This should trigger mugshot/description loading
+                // due to existing WhenAnyValue subscriptions in the VM constructor.
+                Debug.WriteLine($"VM_NpcSelectionBar.InitializeAsync: Set SelectedNpc to {SelectedNpc.DisplayName}.");
+        
+                // The scroll request is now handled by NpcsView.WhenActivated listening to RequestScrollToNpcObservable.
+                // We just need to ensure SelectedNpc is set, and the view will react.
+                // We still need to signal if we want an *explicit* scroll action beyond just selection.
+                // The NpcsView's WhenActivated already subscribes to RequestScrollToNpcObservable.
+                // Let's ensure we push the value *after* SelectedNpc is set.
+                _requestScrollToNpcSubject.OnNext(SelectedNpc); // Signal the view
+                Debug.WriteLine($"VM_NpcSelectionBar.InitializeAsync: Signaled scroll request for {SelectedNpc.DisplayName} via subject.");
             }
             else
             {
-                SelectedNpc = null;
-                _requestScrollToNpcSubject.OnNext(null); 
+                SelectedNpc = null; // Ensure it's null if nothing to select
+                _requestScrollToNpcSubject.OnNext(null);
             }
             
             splashReporter?.UpdateProgress(baseProgress + progressSpan, "NPC list initialized.");

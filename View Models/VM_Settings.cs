@@ -207,43 +207,42 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // New method for heavy initialization, called from App.xaml.cs
         public async Task InitializeAsync()
         {
-            // Directly use the injected _splashReporter
             _splashReporter?.UpdateProgress(62, "Updating game environment...");
-            _environmentStateProvider.UpdateEnvironment(62, 8); // Base 62%, span 8% (e.g. 62-70)
+            _environmentStateProvider.UpdateEnvironment(62, 8);
 
-            _splashReporter?.UpdateProgress(70, "Initializing NPC selection bar...");
-            await _lazyNpcSelectionBar.Value.InitializeAsync(_splashReporter, 70, 10); // Base 70%, span 10% (e.g. 70-80)
-            
-            _splashReporter?.UpdateProgress(80, "Populating mod list...");
-            await _lazyModListVM.Value.PopulateModSettingsAsync(_splashReporter, 80, 10); // Base 80%, span 10% (e.g. 80-90)
-            
-            // Trigger property changed for OAPHs that depend on the environment state
+            // **NEW ORDER: Populate mods first**
+            _splashReporter?.UpdateProgress(70, "Populating mod list...");
+            await _lazyModListVM.Value.PopulateModSettingsAsync(_splashReporter, 70, 10); // Base 70%, span 10% (e.g. 70-80)
+
+            _splashReporter?.UpdateProgress(80, "Initializing NPC selection bar...");
+            await _lazyNpcSelectionBar.Value.InitializeAsync(_splashReporter, 80, 10); // Base 80%, span 10% (e.g. 80-90)
+    
             this.RaisePropertyChanged(nameof(EnvironmentIsValid));
             this.RaisePropertyChanged(nameof(EnvironmentErrorText));
-            this.RaisePropertyChanged(nameof(AvailablePluginsForExclusion)); // Ensure this updates after env is valid
-            
-            // Initial load for ExclusionSelectorViewModel if environment is now valid
+            this.RaisePropertyChanged(nameof(AvailablePluginsForExclusion));
+    
             if (EnvironmentIsValid && AvailablePluginsForExclusion != null)
             {
                 ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions);
             }
         }
-        
-        // Internal version for property changes after initial load
+
+// Internal version also needs to respect this order if it's ever called independently
+// in a way that could lead to this state.
         private async Task InitializeAsyncInternal()
         {
-            // No detailed progress reporting here, or use a simplified message
-            _environmentStateProvider.UpdateEnvironment(); // Uses its internal default progress
+            _environmentStateProvider.UpdateEnvironment();
 
-            await _lazyNpcSelectionBar.Value.InitializeAsync(null); // No splash reporter for subsequent updates
+            // **NEW ORDER: Populate mods first**
             await _lazyModListVM.Value.PopulateModSettingsAsync(null); 
-            
+            await _lazyNpcSelectionBar.Value.InitializeAsync(null);
+    
             this.RaisePropertyChanged(nameof(EnvironmentIsValid));
             this.RaisePropertyChanged(nameof(EnvironmentErrorText));
             this.RaisePropertyChanged(nameof(AvailablePluginsForExclusion));
             if (EnvironmentIsValid && AvailablePluginsForExclusion != null)
             {
-                 ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions);
+                ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions);
             }
         }
 

@@ -31,7 +31,7 @@ namespace NPC_Plugin_Chooser_2.Views
         public NpcsView()
         {
             InitializeComponent();
-            
+
             // Set the DataContext for the proxy resource
             if (this.Resources["DataContextProxy"] is FrameworkElement proxy)
             {
@@ -47,8 +47,9 @@ namespace NPC_Plugin_Chooser_2.Views
             {
                 Debug.WriteLine("!!!!!!!!!!!!!!!! CRITICAL: DataContextProxy RESOURCE NOT FOUND !!!!!!!!!!!!!!!!");
             }
-            
-            this.Loaded += (s, e) => {
+
+            this.Loaded += (s, e) =>
+            {
                 if (this.DataContext is VM_NpcSelectionBar vm)
                 {
                     Debug.WriteLine("NpcsView DataContext is VM_NpcSelectionBar - OK");
@@ -63,7 +64,8 @@ namespace NPC_Plugin_Chooser_2.Views
                 }
                 else
                 {
-                    Debug.WriteLine($"!!!!!!!!!!!!!!!! NpcsView DataContext IS UNEXPECTED: {this.DataContext?.GetType().Name ?? "null"} !!!!!!!!!!!!!!!!");
+                    Debug.WriteLine(
+                        $"!!!!!!!!!!!!!!!! NpcsView DataContext IS UNEXPECTED: {this.DataContext?.GetType().Name ?? "null"} !!!!!!!!!!!!!!!!");
                 }
 
                 if (this.Resources["DataContextProxy"] is FrameworkElement proxy)
@@ -74,36 +76,45 @@ namespace NPC_Plugin_Chooser_2.Views
                     }
                     else
                     {
-                        Debug.WriteLine($"!!!!!!!!!!!!!!!! Proxy DataContext IS UNEXPECTED: {proxy.DataContext?.GetType().Name ?? "null"} !!!!!!!!!!!!!!!!");
+                        Debug.WriteLine(
+                            $"!!!!!!!!!!!!!!!! Proxy DataContext IS UNEXPECTED: {proxy.DataContext?.GetType().Name ?? "null"} !!!!!!!!!!!!!!!!");
                     }
                 }
                 else
                 {
-                    Debug.WriteLine("!!!!!!!!!!!!!!!! DataContextProxy RESOURCE NOT FOUND OR NOT FRAMEWORKELEMENT !!!!!!!!!!!!!!!!");
+                    Debug.WriteLine(
+                        "!!!!!!!!!!!!!!!! DataContextProxy RESOURCE NOT FOUND OR NOT FRAMEWORKELEMENT !!!!!!!!!!!!!!!!");
                 }
             };
-            
-            if (this.DataContext == null) {
-                try {
+
+            if (this.DataContext == null)
+            {
+                try
+                {
                     var vm = Locator.Current.GetService<VM_NpcSelectionBar>();
-                    if (vm != null) {
-                        this.DataContext = vm; this.ViewModel = vm;
+                    if (vm != null)
+                    {
+                        this.DataContext = vm;
+                        this.ViewModel = vm;
                     }
-                } catch (Exception ex) {
+                }
+                catch (Exception ex)
+                {
                     Debug.WriteLine($"DEBUG: Error manually resolving/setting DataContext in NpcsView: {ex.Message}");
                 }
             }
 
-            this.WhenActivated(d =>
+            this.WhenActivated((CompositeDisposable d) => // Explicitly type 'disposables'
             {
                 // d.DisposeWith(_viewBindings); // This was potentially causing issues if _viewBindings was used elsewhere.
-                                               // 'd' itself is the disposable for WhenActivated subscriptions.
+                // 'd' itself is the disposable for WhenActivated subscriptions.
 
                 if (ViewModel == null) return;
 
                 this.OneWayBind(ViewModel, vm => vm.FilteredNpcs, v => v.NpcListBox.ItemsSource).DisposeWith(d);
                 this.Bind(ViewModel, vm => vm.SelectedNpc, v => v.NpcListBox.SelectedItem).DisposeWith(d);
-                this.OneWayBind(ViewModel, vm => vm.CurrentNpcAppearanceMods, v => v.AppearanceModsItemsControl.ItemsSource).DisposeWith(d);
+                this.OneWayBind(ViewModel, vm => vm.CurrentNpcAppearanceMods,
+                    v => v.AppearanceModsItemsControl.ItemsSource).DisposeWith(d);
 
                 this.WhenAnyValue(x => x.ViewModel.NpcsViewZoomLevel)
                     .ObserveOn(RxApp.MainThreadScheduler)
@@ -111,7 +122,8 @@ namespace NPC_Plugin_Chooser_2.Views
                     .BindTo(this, v => v.ZoomPercentageTextBox.Text)
                     .DisposeWith(d);
 
-                Observable.FromEventPattern<TextChangedEventArgs>(ZoomPercentageTextBox, nameof(ZoomPercentageTextBox.TextChanged))
+                Observable.FromEventPattern<TextChangedEventArgs>(ZoomPercentageTextBox,
+                        nameof(ZoomPercentageTextBox.TextChanged))
                     .Select(ep => ((TextBox)ep.Sender).Text)
                     .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler)
                     .ObserveOn(RxApp.MainThreadScheduler)
@@ -120,20 +132,24 @@ namespace NPC_Plugin_Chooser_2.Views
                         Debug.WriteLine($"NpcsView: ZoomPercentageTextBox TextChanged to '{text}' (throttled)");
                         if (ViewModel != null)
                         {
-                            if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out double result))
+                            if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture,
+                                    out double result))
                             {
                                 ViewModel.NpcsViewHasUserManuallyZoomed = true;
-                                double clampedResult = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, result));
+                                double clampedResult = Math.Max(_minZoomPercentage,
+                                    Math.Min(_maxZoomPercentage, result));
                                 if (Math.Abs(ViewModel.NpcsViewZoomLevel - clampedResult) > 0.001)
                                 {
-                                    Debug.WriteLine($"NpcsView: Textbox updating VM.NpcsViewZoomLevel to {clampedResult}");
+                                    Debug.WriteLine(
+                                        $"NpcsView: Textbox updating VM.NpcsViewZoomLevel to {clampedResult}");
                                     ViewModel.NpcsViewZoomLevel = clampedResult;
                                 }
                             }
                             else if (!string.IsNullOrWhiteSpace(text))
                             {
                                 Debug.WriteLine($"NpcsView: Textbox parse failed for '{text}', resetting to VM value.");
-                                ZoomPercentageTextBox.Text = ViewModel.NpcsViewZoomLevel.ToString("F2", CultureInfo.InvariantCulture);
+                                ZoomPercentageTextBox.Text =
+                                    ViewModel.NpcsViewZoomLevel.ToString("F2", CultureInfo.InvariantCulture);
                             }
                         }
                     })
@@ -153,45 +169,50 @@ namespace NPC_Plugin_Chooser_2.Views
                 ViewModel.RequestScrollToNpcObservable
                     .Where(npcToScrollTo => npcToScrollTo != null)
                     .ObserveOn(RxApp.MainThreadScheduler)
-                    .Subscribe(async npcToScrollTo =>
+                    .SelectMany(async npcToScrollTo =>
                     {
                         Debug.WriteLine($"NpcsView.WhenActivated: Received scroll request for {npcToScrollTo.DisplayName}");
                         try
                         {
-                            await Task.Delay(100); 
-                            NpcListBox.UpdateLayout(); 
+                            await Task.Delay(150);
+                            NpcListBox.UpdateLayout();
 
-                            if (NpcListBox.Items.Contains(npcToScrollTo))
+                            var currentListBoxSelection = NpcListBox.SelectedItem as VM_NpcsMenuSelection; // Cast here
+
+                            if (currentListBoxSelection == npcToScrollTo && NpcListBox.Items.Contains(npcToScrollTo))
                             {
-                                var listBoxItem = NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) as ListBoxItem;
-                                if (listBoxItem != null)
+                                NpcListBox.ScrollIntoView(npcToScrollTo);
+                                Debug.WriteLine($"NpcsView: Scrolled to {npcToScrollTo.DisplayName} (SelectedItem matched).");
+                            }
+                            else if (NpcListBox.Items.Contains(npcToScrollTo))
+                            {
+                                // Corrected Debug Line:
+                                Debug.WriteLine($"NpcsView: ListBox.SelectedItem ({(currentListBoxSelection?.DisplayName ?? "null")}) != VM.SelectedNpc ({npcToScrollTo.DisplayName}). Attempting ScrollIntoView directly.");
+                                NpcListBox.ScrollIntoView(npcToScrollTo);
+                                
+                                await Task.Delay(50);
+                                NpcListBox.UpdateLayout();
+                                if (NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) is ListBoxItem item)
                                 {
-                                    NpcListBox.ScrollIntoView(npcToScrollTo);
-                                    Debug.WriteLine($"NpcsView: Scrolled to {npcToScrollTo.DisplayName} (ListBoxItem found).");
-                                }
-                                else
-                                {
-                                    NpcListBox.ScrollIntoView(npcToScrollTo);
-                                    Debug.WriteLine($"NpcsView: Scrolled to {npcToScrollTo.DisplayName} (general ScrollIntoView).");
-                                    await Task.Delay(50); 
-                                    NpcListBox.UpdateLayout();
-                                    if (NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) is ListBoxItem finalItem)
-                                    {
-                                        NpcListBox.ScrollIntoView(finalItem);
-                                        Debug.WriteLine($"NpcsView: Retry scroll for {npcToScrollTo.DisplayName} successful.");
-                                    }
+                                     item.BringIntoView();
+                                     Debug.WriteLine($"NpcsView: Scrolled using BringIntoView on ListBoxItem for {npcToScrollTo.DisplayName}.");
+                                } else {
+                                     Debug.WriteLine($"NpcsView: ListBoxItem container still not found for {npcToScrollTo.DisplayName} after scroll attempt.");
                                 }
                             }
                             else
                             {
-                                Debug.WriteLine($"NpcsView: NPC {npcToScrollTo.DisplayName} not in ListBox items.");
+                                Debug.WriteLine($"NpcsView: NPC {npcToScrollTo.DisplayName} not in ListBox items when scroll requested.");
                             }
                         }
                         catch (Exception ex)
                         {
                             Debug.WriteLine($"NpcsView: Error during scroll attempt: {ex.Message}");
                         }
-                    }).DisposeWith(d);
+                        return Unit.Default;
+                    })
+                    .Subscribe()
+                    .DisposeWith(d);
 
                 if (ViewModel.CurrentNpcAppearanceMods != null && ViewModel.CurrentNpcAppearanceMods.Any())
                 {
