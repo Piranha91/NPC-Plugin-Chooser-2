@@ -54,6 +54,8 @@
       <Resource Include="Resources\Dragon Drop.png">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Resource>
+      <None Remove="Resources\SplashScreenImage.png" />
+      <Resource Include="Resources\SplashScreenImage.png" />
     </ItemGroup>
 
 </Project>

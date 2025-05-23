@@ -205,8 +205,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }).DisposeWith(_disposables);
             // --- END: Source Plugin Disambiguation Logic ---
 
-            PopulateModSettings(); // Populates and sorts _allModSettingsInternal
-
             // --- Setup Filter Reaction ---
             this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText, x => x.NpcSearchText, x => x.SelectedNpcSearchType) // Added NpcSearchType
                 .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler)
@@ -605,178 +603,194 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
        // In VM_Mods.cs
 
-        public void PopulateModSettings()
+       public async Task PopulateModSettingsAsync(VM_SplashScreen? splashReporter, double baseProgress = 0, double progressSpan = 10)
+{
+    splashReporter?.UpdateProgress(baseProgress, "Populating mod settings...");
+    _allModSettingsInternal.Clear();
+    var warnings = new List<string>();
+    var loadedDisplayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var tempList = new List<VM_ModSetting>();
+    IsLoadingNpcData = true;
+    var claimedMugshotPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
+        warnings.Add("Environment is not valid. Cannot accurately link plugins.");
+
+    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1), "Processing configured mod settings...");
+    // --- Start of existing logic from your PopulateModSettings (Phase 1 & 2) ---
+    foreach (var settingModel in _settings.ModSettings)
+    {
+        if (string.IsNullOrWhiteSpace(settingModel.DisplayName)) continue;
+        var vm = new VM_ModSetting(settingModel, this, _aux);
+        if (!string.IsNullOrWhiteSpace(vm.MugShotFolderPath) && Directory.Exists(vm.MugShotFolderPath))
+            claimedMugshotPaths.Add(vm.MugShotFolderPath);
+        else if (string.IsNullOrWhiteSpace(vm.MugShotFolderPath))
         {
-            _allModSettingsInternal.Clear();
-            var warnings = new List<string>();
-            var loadedDisplayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var tempList = new List<VM_ModSetting>();
-            IsLoadingNpcData = true; // Set loading true at the start
-            var claimedMugshotPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
-                warnings.Add("Environment is not valid. Cannot accurately link plugins.");
-            var enabledKeys = _environmentStateProvider.EnvironmentIsValid ? _environmentStateProvider.LoadOrder.Keys.ToHashSet() : new HashSet<ModKey>();
-
-            // Phase 1 & 2: Create VM_ModSetting instances and set their paths/modkeys (synchronous part)
-            // (This part of your PopulateModSettings remains largely the same: iterating _settings.ModSettings,
-            // scanning mugshot folders, scanning mod folders, creating/upgrading VM_ModSetting instances in `tempList`)
-            // ...
-            // --- Start of existing logic from your PopulateModSettings ---
-            foreach (var settingModel in _settings.ModSettings)
-            {
-                if (string.IsNullOrWhiteSpace(settingModel.DisplayName)) continue;
-                var vm = new VM_ModSetting(settingModel, this, _aux); 
-                if (!string.IsNullOrWhiteSpace(vm.MugShotFolderPath) && Directory.Exists(vm.MugShotFolderPath))
-                    claimedMugshotPaths.Add(vm.MugShotFolderPath);
-                else if (string.IsNullOrWhiteSpace(vm.MugShotFolderPath))
-                {
-                    if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
-                    {
-                        string potentialPathByName = Path.Combine(_settings.MugshotsFolder, vm.DisplayName);
-                        if (Directory.Exists(potentialPathByName) && !claimedMugshotPaths.Contains(potentialPathByName))
-                        {
-                            vm.MugShotFolderPath = potentialPathByName;
-                            claimedMugshotPaths.Add(potentialPathByName);
-                        }
-                    }
-                }
-                tempList.Add(vm);
-                loadedDisplayNames.Add(vm.DisplayName);
-            }
-
-            var vmsFromMugshotsOnly = new List<VM_ModSetting>();
             if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
             {
-                try
+                string potentialPathByName = Path.Combine(_settings.MugshotsFolder, vm.DisplayName);
+                if (Directory.Exists(potentialPathByName) && !claimedMugshotPaths.Contains(potentialPathByName))
                 {
-                    foreach (var dirPath in Directory.EnumerateDirectories(_settings.MugshotsFolder))
-                    {
-                        if (!claimedMugshotPaths.Contains(dirPath)) 
-                        {
-                            string folderName = Path.GetFileName(dirPath);
-                            if (!loadedDisplayNames.Contains(folderName))
-                                vmsFromMugshotsOnly.Add(new VM_ModSetting(folderName, dirPath, this, _aux));
-                        }
-                    }
+                    vm.MugShotFolderPath = potentialPathByName;
+                    claimedMugshotPaths.Add(potentialPathByName);
                 }
-                catch (Exception ex) { warnings.Add($"Error scanning Mugshots folder '{_settings.MugshotsFolder}': {ex.Message}"); }
             }
+        }
+        tempList.Add(vm);
+        loadedDisplayNames.Add(vm.DisplayName);
+    }
 
-            if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
+    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.2), "Scanning mugshot folders...");
+    var vmsFromMugshotsOnly = new List<VM_ModSetting>();
+    if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
+    {
+        try
+        {
+            foreach (var dirPath in Directory.EnumerateDirectories(_settings.MugshotsFolder))
             {
-                try
+                if (!claimedMugshotPaths.Contains(dirPath))
                 {
-                    foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
-                    {
-                        string modFolderName = Path.GetFileName(modFolderPath);
-                        var foundEnabledKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings);
-
-                        var existingVmFromSettings = tempList.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
-                        var mugshotOnlyVmToUpgrade = vmsFromMugshotsOnly.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
-
-                        if (existingVmFromSettings != null)
-                        {
-                            if (!existingVmFromSettings.CorrespondingFolderPaths.Contains(modFolderPath, StringComparer.OrdinalIgnoreCase))
-                                existingVmFromSettings.CorrespondingFolderPaths.Add(modFolderPath);
-                            foreach (var key in foundEnabledKeysInFolder)
-                                if (!existingVmFromSettings.CorrespondingModKeys.Contains(key)) existingVmFromSettings.CorrespondingModKeys.Add(key);
-                        }
-                        else if (mugshotOnlyVmToUpgrade != null)
-                        {
-                            mugshotOnlyVmToUpgrade.CorrespondingFolderPaths.Add(modFolderPath);
-                            foreach (var key in foundEnabledKeysInFolder)
-                                if (!mugshotOnlyVmToUpgrade.CorrespondingModKeys.Contains(key)) mugshotOnlyVmToUpgrade.CorrespondingModKeys.Add(key);
-                            tempList.Add(mugshotOnlyVmToUpgrade); 
-                            vmsFromMugshotsOnly.Remove(mugshotOnlyVmToUpgrade);
-                            loadedDisplayNames.Add(mugshotOnlyVmToUpgrade.DisplayName); 
-                        }
-                        else if (foundEnabledKeysInFolder.Any()) 
-                        {
-                            var newVm = new VM_ModSetting(modFolderName, this, _aux)
-                            {
-                                CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath },
-                                CorrespondingModKeys = new ObservableCollection<ModKey>(foundEnabledKeysInFolder)
-                            };
-                            string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
-                            if (Directory.Exists(potentialMugshotPath) && !claimedMugshotPaths.Contains(potentialMugshotPath))
-                            {
-                                newVm.MugShotFolderPath = potentialMugshotPath;
-                                claimedMugshotPaths.Add(potentialMugshotPath);
-                            }
-                            tempList.Add(newVm);
-                            loadedDisplayNames.Add(newVm.DisplayName);
-                        }
-                    }
+                    string folderName = Path.GetFileName(dirPath);
+                    if (!loadedDisplayNames.Contains(folderName))
+                        vmsFromMugshotsOnly.Add(new VM_ModSetting(folderName, dirPath, this, _aux));
                 }
-                catch (Exception ex) { warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}': {ex.Message}"); }
             }
+        }
+        catch (Exception ex) { warnings.Add($"Error scanning Mugshots folder '{_settings.MugshotsFolder}': {ex.Message}"); }
+    }
 
-            foreach (var mugshotVm in vmsFromMugshotsOnly)
-                if (!tempList.Any(existing => existing.DisplayName.Equals(mugshotVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
-                    tempList.Add(mugshotVm); 
-
-            foreach (var vm in tempList)
+    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Scanning mod folders...");
+    if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
+    {
+        try
+        {
+            foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
             {
-                // vm.HasValidMugshots = OriginalCheckMugshotValidityLogic(vm.MugShotFolderPath); // Defer this until after RefreshNpcLists
-                if (vm.IsMugshotOnlyEntry && (vm.CorrespondingFolderPaths.Any() || vm.CorrespondingModKeys.Any()))
+                string modFolderName = Path.GetFileName(modFolderPath);
+                var foundEnabledKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings);
+
+                var existingVmFromSettings = tempList.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
+                var mugshotOnlyVmToUpgrade = vmsFromMugshotsOnly.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
+
+                if (existingVmFromSettings != null)
                 {
-                    vm.IsMugshotOnlyEntry = false;
+                    if (!existingVmFromSettings.CorrespondingFolderPaths.Contains(modFolderPath, StringComparer.OrdinalIgnoreCase))
+                        existingVmFromSettings.CorrespondingFolderPaths.Add(modFolderPath);
+                    foreach (var key in foundEnabledKeysInFolder)
+                        if (!existingVmFromSettings.CorrespondingModKeys.Contains(key)) existingVmFromSettings.CorrespondingModKeys.Add(key);
+                }
+                else if (mugshotOnlyVmToUpgrade != null)
+                {
+                    mugshotOnlyVmToUpgrade.CorrespondingFolderPaths.Add(modFolderPath);
+                    foreach (var key in foundEnabledKeysInFolder)
+                        if (!mugshotOnlyVmToUpgrade.CorrespondingModKeys.Contains(key)) mugshotOnlyVmToUpgrade.CorrespondingModKeys.Add(key);
+                    tempList.Add(mugshotOnlyVmToUpgrade);
+                    vmsFromMugshotsOnly.Remove(mugshotOnlyVmToUpgrade);
+                    loadedDisplayNames.Add(mugshotOnlyVmToUpgrade.DisplayName);
+                }
+                else if (foundEnabledKeysInFolder.Any())
+                {
+                    var newVm = new VM_ModSetting(modFolderName, this, _aux)
+                    {
+                        CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath },
+                        CorrespondingModKeys = new ObservableCollection<ModKey>(foundEnabledKeysInFolder)
+                    };
+                    string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
+                    if (Directory.Exists(potentialMugshotPath) && !claimedMugshotPaths.Contains(potentialMugshotPath))
+                    {
+                        newVm.MugShotFolderPath = potentialMugshotPath;
+                        claimedMugshotPaths.Add(potentialMugshotPath);
+                    }
+                    tempList.Add(newVm);
+                    loadedDisplayNames.Add(newVm.DisplayName);
                 }
             }
-            // --- End of existing logic from your PopulateModSettings ---
+        }
+        catch (Exception ex) { warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}': {ex.Message}"); }
+    }
 
-            _allModSettingsInternal = tempList.OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
-            // Apply filter once here so the list is initially populated in UI.
-            // It will be applied again after async operations.
+    foreach (var mugshotVm in vmsFromMugshotsOnly)
+        if (!tempList.Any(existing => existing.DisplayName.Equals(mugshotVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
+            tempList.Add(mugshotVm);
+
+    foreach (var vm in tempList)
+    {
+        if (vm.IsMugshotOnlyEntry && (vm.CorrespondingFolderPaths.Any() || vm.CorrespondingModKeys.Any()))
+        {
+            vm.IsMugshotOnlyEntry = false;
+        }
+    }
+    // --- End of existing logic ---
+
+    _allModSettingsInternal = tempList.OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+    ApplyFilters(); 
+
+    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.5), "Refreshing NPC data for mods...");
+    var refreshTasks = _allModSettingsInternal.Select((vm, index) => Task.Run(async () => // Make inner task async if vm.RefreshNpcLists becomes async
+    {
+        try
+        {
+            // If vm.RefreshNpcLists() itself becomes async: await vm.RefreshNpcLists();
+            vm.RefreshNpcLists(); // Assuming still synchronous for now
+            if (index % 10 == 0 && _allModSettingsInternal.Count > 0)
+            {
+                splashReporter?.UpdateProgress(
+                    baseProgress + (progressSpan * 0.5) + (progressSpan * 0.4 * ((double)index / _allModSettingsInternal.Count)),
+                    $"Analyzing mod '{vm.DisplayName}'..."
+                );
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error during RefreshNpcLists for {vm.DisplayName}: {ex.Message}");
+        }
+    })).ToList();
+
+    try
+    {
+        await Task.WhenAll(refreshTasks); 
+
+        splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Finalizing mod settings on UI thread...");
+
+        // Phase 4: Run UI-dependent work on the UI thread
+        // Use Dispatcher.InvokeAsync for WPF
+        await Application.Current.Dispatcher.InvokeAsync(async () =>
+        {
+            foreach (var vm in _allModSettingsInternal)
+            {
+                RecalculateMugshotValidity(vm);
+            }
+
+            IsLoadingNpcData = false;
             ApplyFilters(); 
 
-
-            // Phase 3: Asynchronously refresh NPC lists for all VMs
-            var refreshTasks = _allModSettingsInternal.Select(vm => Task.Run(() => 
-                {
-                    try 
-                    {
-                        vm.RefreshNpcLists();
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error during RefreshNpcLists for {vm.DisplayName}: {ex.Message}");
-                        // Optionally add to warnings list to show user
-                    }
-                }
-            )).ToList();
-
-            Task.WhenAll(refreshTasks).ContinueWith(t =>
+            if (warnings.Any())
             {
-                if (t.IsFaulted && t.Exception != null)
-                {
-                    foreach (var ex in t.Exception.Flatten().InnerExceptions)
-                    {
-                        Debug.WriteLine($"Async NPC list refresh error (outer): {ex.Message}");
-                        warnings.Add($"Async NPC list refresh error: {ex.Message}");
-                    }
-                }
-
-                // Phase 4: After all NPC lists are refreshed, THEN recalculate mugshot validity for all.
-                // This needs to be on the main thread if RecalculateMugshotValidity touches UI-bound properties or commands.
-                RxApp.MainThreadScheduler.Schedule(() =>
-                {
-                    foreach (var vm in _allModSettingsInternal)
-                    {
-                        RecalculateMugshotValidity(vm); // This sets vm.HasValidMugshots
-                    }
-
-                    IsLoadingNpcData = false; // Set loading to false AFTER all processing
-                    ApplyFilters(); // Re-apply filters now that all data is loaded
-
-                    if (warnings.Any())
-                    {
-                        ScrollableMessageBox.ShowWarning(string.Join("\n", warnings), "Mod Settings Population Warning");
-                    }
-                });
-            }, TaskScheduler.Default);
+                ScrollableMessageBox.ShowWarning(string.Join("\n", warnings), "Mod Settings Population Warning");
+            }
+            // If RecalculateMugshotValidity or ApplyFilters were async and returned Task,
+            // you could await them here. Since they are not, the async () => is for InvokeAsync.
+        });
+    }
+    catch (AggregateException aggEx) 
+    {
+        foreach (var ex in aggEx.Flatten().InnerExceptions)
+        {
+            Debug.WriteLine($"Async NPC list refresh error (outer): {ex.Message}");
+            // Safely add to warnings on UI thread (if warnings is a UI bound collection, otherwise direct add is fine)
+            Application.Current.Dispatcher.Invoke(() => warnings.Add($"Async NPC list refresh error: {ex.Message}"));
         }
+    }
+    catch (Exception ex) 
+    {
+        Debug.WriteLine($"Error in PopulateModSettingsAsync after WhenAll: {ex.Message}");
+        Application.Current.Dispatcher.Invoke(() => warnings.Add($"Unexpected error: {ex.Message}"));
+    }
+    finally
+    {
+        splashReporter?.UpdateProgress(baseProgress + progressSpan, "Mod settings populated.");
+    }
+}
 
          // Filtering Logic (Left Panel)
          public void ApplyFilters()

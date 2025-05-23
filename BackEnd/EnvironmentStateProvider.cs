@@ -8,6 +8,7 @@ using System.IO;
 using System.Reflection;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
+using NPC_Plugin_Chooser_2.View_Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -15,6 +16,7 @@ public class EnvironmentStateProvider
 {
     // "Core" state properties and fields
     private IGameEnvironment<ISkyrimMod, ISkyrimModGetter> _environment;
+    private readonly VM_SplashScreen? _splashReporter; // Nullable if used optionally
     public ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>> LoadOrder => _environment.LoadOrder;
     public ILinkCache<ISkyrimMod, ISkyrimModGetter> LinkCache => _environment.LinkCache;
     public SkyrimRelease SkyrimVersion { get; set; }
@@ -32,8 +34,10 @@ public class EnvironmentStateProvider
     public string LoadOrderFilePath { get; set; }
     public string EnvironmentBuilderError { get; set; }
 
-    public EnvironmentStateProvider(Settings settings)
+    public EnvironmentStateProvider(Settings settings, VM_SplashScreen? splashReporter = null)
     {
+        _splashReporter = splashReporter;
+        
         string? exeLocation = null;
         var assembly = Assembly.GetEntryAssembly();
         if (assembly != null)
@@ -59,11 +63,12 @@ public class EnvironmentStateProvider
             OutputPluginName = settings.OutputPluginName;
         }
         
-        UpdateEnvironment();
+        UpdateEnvironment(70);
     }
 
-    public void UpdateEnvironment()
+    public void UpdateEnvironment(double baseProgress = 0, double progressSpan = 5)
     {
+        _splashReporter?.UpdateProgress(baseProgress, "Initializing game environment...");
         EnvironmentBuilderError = string.Empty;
         EnvironmentIsValid = false;
         
@@ -80,6 +85,7 @@ public class EnvironmentStateProvider
 
         try
         {
+            _splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.2), "Building game environment object...");
             string notificationStr = "";
             _environment = builder
                 .TransformModListings(x =>
@@ -87,9 +93,12 @@ public class EnvironmentStateProvider
                     .WithOutputMod(OutputMod)
                 .Build();
             
+            _splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.6), "Validating load order path...");
+            
             if (!_environment.LoadOrderFilePath.Exists)
             {
                 EnvironmentBuilderError =  "Load order file path at " + _environment.LoadOrderFilePath.Path + " does not exist"; // prevent successful initialization in the wrong mode.
+                _splashReporter?.UpdateProgress(baseProgress + progressSpan, $"Environment Error: {EnvironmentBuilderError}");
                 return;
             }
 
@@ -98,10 +107,12 @@ public class EnvironmentStateProvider
             CreationClubListingsFilePath = _environment.CreationClubListingsFilePath ?? string.Empty;
             LoadOrderFilePath = _environment.LoadOrderFilePath;
             DataFolderPath = _environment.DataFolderPath; // If a custom data folder path was provided it will not change. If no custom data folder path was provided, this will set it to the default path.
+            _splashReporter?.UpdateProgress(baseProgress + progressSpan, "Game environment initialized successfully.");
         }
         catch (Exception ex)
         {
             EnvironmentBuilderError = ExceptionLogger.GetExceptionStack(ex);
+            _splashReporter?.UpdateProgress(baseProgress + progressSpan, "Error initializing game environment.");
         }
     }
 }

@@ -733,8 +733,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             return results;
         }
 
-        public void Initialize()
+        public async Task InitializeAsync(VM_SplashScreen? splashReporter, double baseProgress = 0, double progressSpan = 10)
         {
+            splashReporter?.UpdateProgress(baseProgress, "Initializing NPC list...");
             SelectedNpc = null; 
             AllNpcs.Clear();
             FilteredNpcs.Clear();
@@ -742,16 +743,24 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             if (!_environmentStateProvider.EnvironmentIsValid)
             {
+                splashReporter?.UpdateProgress(baseProgress + progressSpan, "Environment not valid for NPC list.");
                 ScrollableMessageBox.ShowWarning($"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}", "Environment Error");
                 _mugshotData.Clear(); 
                 return;
             }
 
-            _mugshotData = ScanMugshotDirectory();
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1), "Scanning mugshot directory...");
+            // ScanMugshotDirectory can be time-consuming, make it awaitable if it does heavy I/O
+            // For now, assume it's acceptably fast or refactor it to be async if needed.
+            _mugshotData = await Task.Run(() => ScanMugshotDirectory()); // Example: run on thread pool
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Updating NPC groups...");
             UpdateAvailableNpcGroups(); 
 
             var processedMugshotKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var npcRecords = (
+            
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Querying NPC records from load order...");
+            // This LINQ query can be intensive
+            var npcRecords = await Task.Run(() => (
                 from npc in _environmentStateProvider.LoadOrder.PriorityOrder.WinningOverrides<INpcGetter>()
                 let resolvedRace = npc.Race.TryResolve(_environmentStateProvider.LinkCache) 
                 where npc.EditorID?.Contains("Preset", StringComparison.OrdinalIgnoreCase) == false &&
@@ -762,10 +771,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                       (resolvedRace.Keywords?.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Keyword.ActorTypeNPC) ?? false) 
                 orderby _auxilliary.FormKeyStringToFormIDString(npc.FormKey.ToString()) 
                 select npc
-            ).ToArray(); 
+            ).ToArray()); 
 
-            foreach (var npc in npcRecords)
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.6), "Processing NPC records...");
+            int totalNpcs = npcRecords.Length;
+            for (int i = 0; i < totalNpcs; i++)
             {
+                var npc = npcRecords[i];
                 try
                 {
                     var npcSelector = new VM_NpcsMenuSelection(npc, _environmentStateProvider, _consistencyProvider);
@@ -780,7 +792,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     System.Diagnostics.Debug.WriteLine($"Error initializing VM for NPC {npc.EditorID ?? npc.FormKey.ToString()}: {ex.Message}");
                 }
+                if (i % 100 == 0) // Update progress every 100 NPCs
+                {
+                    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.6) + (progressSpan * 0.3 * ((double)i / totalNpcs)), $"Processing NPC {i + 1}/{totalNpcs}...");
+                }
             }
+            
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Processing mugshot-only entries...");
 
             foreach (var kvp in _mugshotData)
             {
@@ -839,6 +857,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 SelectedNpc = null;
                 _requestScrollToNpcSubject.OnNext(null); 
             }
+            
+            splashReporter?.UpdateProgress(baseProgress + progressSpan, "NPC list initialized.");
         }
         
         public void SignalScrollToNpc(VM_NpcsMenuSelection? npc)

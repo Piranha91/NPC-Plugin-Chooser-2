@@ -6,173 +6,201 @@ using NPC_Plugin_Chooser_2.Views;
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
 using Splat;
-using Splat.Autofac; // Ensure this using directive is present
+using Splat.Autofac; 
 using System.IO;
 using System.Reflection;
 using System.Windows;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
-using System.Collections.Generic; // Added for Dictionary
+using System.Collections.Generic;
 using System;
-using System.ComponentModel; // Added for Exception, Path, etc.
+using System.ComponentModel;
 using System.Linq;
 using System.Net.Http;
 using Autofac.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection; // Added for LINQ methods if needed
+using Microsoft.Extensions.DependencyInjection;
+using System.Threading.Tasks;
+using IContainer = Autofac.IContainer; // Added for Task
 
 namespace NPC_Plugin_Chooser_2
 {
-    /// <summary>
-    /// Interaction logic for App.xaml
-    /// </summary>
     public partial class App : Application
     {
+        private SplashScreenWindow _splashScreenWindow;
+        private VM_SplashScreen _splashVM;
+        public const string ProgramVersion = "2.0.0"; // Central version definition
+
+        // App constructor should be minimal
         public App()
         {
-            // Set up Autofac
-            var builder = new ContainerBuilder();
+            // InitializeComponent(); // Usually called by App.g.cs
+        }
+
+        protected override async void OnStartup(StartupEventArgs e)
+        {
+            base.OnStartup(e);
+
+            // 1. Create and show splash screen
+            _splashVM = new VM_SplashScreen(ProgramVersion);
+            _splashScreenWindow = new SplashScreenWindow { DataContext = _splashVM };
+            _splashScreenWindow.Show();
+
+            _splashVM.UpdateProgress(0, "Initializing application...");
+
+            // 2. Perform main application initialization asynchronously
+            var container = await InitializeCoreApplicationAsync(_splashVM);
+
+            // 3. Setup and show MainWindow
+            _splashVM.UpdateProgress(95, "Loading main window...");
+
+            MainWindow mainWindow = null;
+            try
+            {
+                // Resolve the MainWindow *View* using the service locator.
+                var mainWindowView = Locator.Current.GetService<IViewFor<VM_MainWindow>>();
+                if (mainWindowView is MainWindow mw)
+                {
+                    mainWindow = mw;
+                }
+                else if (mainWindowView is Window w) // Fallback if it's a Window but not MainWindow type
+                {
+                     // This case might indicate a registration issue or if you swapped MainWindow for another Window type.
+                     // For now, we assume it's a MainWindow or create one.
+                     w.Show(); // Show it, but we might not have the specific MainWindow instance.
+                     // Attempt to get VM if possible
+                     var mainVM = Locator.Current.GetService<VM_MainWindow>();
+                     mainVM?.InitializeApplicationState(isStartup: true);
+                     _splashVM.UpdateProgress(100, "Application loaded.");
+                     await Task.Delay(200); // Keep splash visible briefly
+                     _splashScreenWindow.Close();
+                     return; // Exit if we showed a generic window and can't proceed with MainWindow specific logic
+                }
+            }
+            catch (Exception ex)
+            {
+                _splashVM.UpdateProgress(96, $"Error resolving main window: {ex.Message.Split('\n')[0]}");
+                // Log detailed error
+                System.Diagnostics.Debug.WriteLine($"Error resolving MainWindow: {ex}");
+            }
+
+            if (mainWindow == null)
+            {
+                mainWindow = new MainWindow(); // Fallback: Create directly
+            }
             
+            mainWindow.Show();
 
-            // Register Services & Models (as singletons where appropriate)
-            // Load/Save Settings (Consider implementing persistence here)
-            TypeDescriptor.AddAttributes(typeof(FormKey), new TypeConverterAttribute(typeof(FormKeyTypeConverter))); // Required for JSON deserialization of Dictionary<FormKey, anything>
+            // Initialize application state after window is shown
+            VM_MainWindow mainWindowViewModel = null;
+            if (mainWindow.DataContext is VM_MainWindow vmFromDC) {
+                mainWindowViewModel = vmFromDC;
+            } else if (mainWindow is MainWindow mwInstance) {
+                mainWindowViewModel = mwInstance.ViewModel;
+            }
+            mainWindowViewModel ??= Locator.Current.GetService<VM_MainWindow>();
 
-            // --- Setup HttpClientFactory using Microsoft.Extensions.DependencyInjection ---
-            // 1. Create a ServiceCollection
+            mainWindowViewModel?.InitializeApplicationState(isStartup: true);
+
+            _splashVM.UpdateProgress(100, "Application loaded.");
+            await Task.Delay(250); // Keep splash visible briefly
+            _splashScreenWindow.Close();
+        }
+
+        private async Task<IContainer> InitializeCoreApplicationAsync(VM_SplashScreen splashVM)
+        {
+            splashVM.UpdateProgress(5, "Configuring type descriptors...");
+            TypeDescriptor.AddAttributes(typeof(FormKey), new TypeConverterAttribute(typeof(FormKeyTypeConverter)));
+
+            splashVM.UpdateProgress(10, "Setting up HTTP services...");
             var services = new ServiceCollection();
-            // 2. Register HttpClientFactory and related services
             services.AddHttpClient();
-            // 3. Populate the Autofac builder with the registrations from ServiceCollection
+            
+            var builder = new ContainerBuilder();
             builder.Populate(services);
-            // --- End HttpClientFactory Setup ---
-            
-            
-            var settings = VM_Settings.LoadSettings(); // Replace with actual loading logic if needed
-            builder.RegisterInstance(settings).AsSelf().SingleInstance();
 
+            splashVM.UpdateProgress(15, "Loading settings model...");
+            var settingsModel = VM_Settings.LoadSettings(); // Use the static method from your Settings model
+            builder.RegisterInstance(settingsModel).AsSelf().SingleInstance();
+
+            // Register VM_SplashScreen so it can be injected
+            builder.RegisterInstance(splashVM).As<VM_SplashScreen>().SingleInstance();
+
+            splashVM.UpdateProgress(20, "Registering core components...");
             builder.RegisterType<EnvironmentStateProvider>().AsSelf().SingleInstance();
             builder.RegisterType<Auxilliary>().AsSelf().SingleInstance();
             builder.RegisterType<RaceHandler>().AsSelf().SingleInstance();
             builder.RegisterType<DuplicateInManager>().AsSelf().SingleInstance();
-            builder.RegisterType<NpcConsistencyProvider>().AsSelf().SingleInstance(); // Added for central selection management
-            builder.RegisterType<NpcDescriptionProvider>().AsSelf().SingleInstance(); // Added for central NPC Description management
+            builder.RegisterType<NpcConsistencyProvider>().AsSelf().SingleInstance();
+            builder.RegisterType<NpcDescriptionProvider>().AsSelf().SingleInstance();
 
-            // Register ViewModels
-            builder.RegisterType<VM_MainWindow>().AsSelf().SingleInstance(); // Main window is often a singleton
-            builder.RegisterType<VM_NpcSelectionBar>().AsSelf().SingleInstance(); // Keep NPC list state
-            builder.RegisterType<VM_Settings>().AsSelf().SingleInstance(); // Keep settings state
-            builder.RegisterType<VM_Run>().AsSelf().SingleInstance(); // Keep run state
-            builder.RegisterType<VM_Mods>().AsSelf().SingleInstance(); // *** NEW: Register Mods VM ***
-            // Register VM_FullScreenImage transiently as it's created on demand
+            splashVM.UpdateProgress(30, "Registering ViewModels...");
+            builder.RegisterType<VM_MainWindow>().AsSelf().SingleInstance();
+            builder.RegisterType<VM_NpcSelectionBar>().AsSelf().SingleInstance();
+            builder.RegisterType<VM_Settings>().AsSelf().SingleInstance(); 
+            builder.RegisterType<VM_Run>().AsSelf().SingleInstance();
+            builder.RegisterType<VM_Mods>().AsSelf().SingleInstance();   
             builder.RegisterType<VM_FullScreenImage>().AsSelf();
-            // Register VM_ModsMenuMugshot transiently (created on demand)
             builder.RegisterType<VM_ModsMenuMugshot>().AsSelf();
-            // Register VM_AppearnceMod transiently (created on demand)
             builder.RegisterType<VM_NpcsMenuMugshot>().AsSelf();
+            builder.RegisterType<VM_MultiImageDisplay>().AsSelf(); // Ensure VM_MultiImageDisplay is registered
 
-            // Register Views using Splat's IViewFor convention
-            // This allows resolving Views via service locator if needed, but primarily helps ReactiveUI internals
+            splashVM.UpdateProgress(40, "Registering Views with DI...");
             builder.RegisterType<MainWindow>().As<IViewFor<VM_MainWindow>>();
             builder.RegisterType<NpcsView>().As<IViewFor<VM_NpcSelectionBar>>();
             builder.RegisterType<SettingsView>().As<IViewFor<VM_Settings>>();
             builder.RegisterType<RunView>().As<IViewFor<VM_Run>>();
-            builder.RegisterType<ModsView>().As<IViewFor<VM_Mods>>(); // *** NEW: Register Mods View ***
-            builder.RegisterType<FullScreenImageView>().As<IViewFor<VM_FullScreenImage>>(); // For full screen view
+            builder.RegisterType<ModsView>().As<IViewFor<VM_Mods>>();
+            builder.RegisterType<FullScreenImageView>().As<IViewFor<VM_FullScreenImage>>();
+            builder.RegisterType<MultiImageDisplayView>().As<IViewFor<VM_MultiImageDisplay>>();
 
-            // Use Autofac for Splat Dependency Resolution
+
+            splashVM.UpdateProgress(50, "Initializing ReactiveUI and Splat...");
             var autofacResolver = builder.UseAutofacDependencyResolver();
-
-            // Register the resolver in Autofac so it can be later resolved
             builder.RegisterInstance(autofacResolver);
-
-            // Configure Splat to use the Autofac resolver
-            // ModeDetector.OverrideModeDetector(Mode.Run); // Obsolete - Splat should detect mode automatically
-            Locator.SetLocator(autofacResolver); // Configure Splat globally
-
-            // Initialize ReactiveUI specifics AFTER setting the locator
+            Locator.SetLocator(autofacResolver);
             Locator.CurrentMutable.InitializeSplat();
             Locator.CurrentMutable.InitializeReactiveUI();
 
-            // Register Views with ReactiveUI's ViewLocator (needed for ViewModelViewHost, DataTemplates etc.)
-            // These factory registrations tell ReactiveUI how to create a View instance when it sees a specific ViewModel type.
+            splashVM.UpdateProgress(55, "Registering View Factories with Splat...");
             Locator.CurrentMutable.Register(() => new NpcsView(), typeof(IViewFor<VM_NpcSelectionBar>));
             Locator.CurrentMutable.Register(() => new SettingsView(), typeof(IViewFor<VM_Settings>));
             Locator.CurrentMutable.Register(() => new RunView(), typeof(IViewFor<VM_Run>));
-            Locator.CurrentMutable.Register(() => new ModsView(), typeof(IViewFor<VM_Mods>)); // *** NEW: Register Mods View Factory ***
+            Locator.CurrentMutable.Register(() => new ModsView(), typeof(IViewFor<VM_Mods>));
             Locator.CurrentMutable.Register(() => new FullScreenImageView(), typeof(IViewFor<VM_FullScreenImage>));
             Locator.CurrentMutable.Register(() => new MultiImageDisplayView(), typeof(IViewFor<VM_MultiImageDisplay>));
 
+            splashVM.UpdateProgress(60, "Building DI container...");
             var container = builder.Build();
             autofacResolver.SetLifetimeScope(container);
+            
+            splashVM.UpdateProgress(61, "Initializing main application services...");
+            // Resolve VM_Settings. This will trigger its constructor, which should be lightweight.
+            // Then call its InitializeAsync method.
+            var settingsViewModel = container.Resolve<VM_Settings>();
+            await settingsViewModel.InitializeAsync(); // Pass splashVM implicitly if injected, or explicitly if needed
 
-            // Hook into Exit event to save settings (including ModSettings)
-            // Ensure the SaveModSettingsToModel is called before VM_Settings saves the main settings file
+            // Hook into Exit event
             this.Exit += (s, e) =>
             {
                  var modsVm = Locator.Current.GetService<VM_Mods>();
-                 var settingsVm = Locator.Current.GetService<VM_Settings>(); // To trigger its save maybe? No, VM_Settings already hooks Exit.
+                 // var settingsVm = Locator.Current.GetService<VM_Settings>(); // VM_Settings handles its own save on exit.
 
                  if (modsVm != null)
                  {
                       try
                       {
-                          modsVm.SaveModSettingsToModel(); // Saves VM list back to Settings model instance
-                          // VM_Settings saving logic should already be hooked to App.Exit,
-                          // so it will save the updated Settings model afterwards.
+                          modsVm.SaveModSettingsToModel(); 
                       }
                       catch (Exception ex)
                       {
                            System.Diagnostics.Debug.WriteLine($"Error saving Mod Settings on exit: {ex.Message}");
-                           // Optionally show an error message to the user
                       }
                  }
+                 // VM_Settings.SaveSettings is hooked to App.Exit in its constructor.
             };
-
-            // Resolve the main window view model to start the application
-            // The MainWindow's DataContext will be set automatically by ReactiveUI's View magic
-            // if MainWindow inherits ReactiveWindow<VM_MainWindow> and its VM is resolved correctly.
-            // We don't strictly need to resolve the VM here; the View's constructor/WhenActivated handles it.
-            // var mainWindowViewModel = container.Resolve<VM_MainWindow>();
-        }
-
-        protected override void OnStartup(StartupEventArgs e)
-        {
-            base.OnStartup(e);
-            // Resolve the MainWindow *View* using the service locator.
-            // ReactiveUI's ReactiveWindow base class or ViewLocator mechanisms
-            // will typically handle associating the correct ViewModel.
-            var mainWindow = Locator.Current.GetService<IViewFor<VM_MainWindow>>() as Window;
-
-            // Fallback or alternative: Just create the window directly.
-            // If MainWindow resolves its VM correctly in its constructor using Splat, this works fine.
-            if (mainWindow == null)
-            {
-                mainWindow = new MainWindow();
-            }
-
-            if (mainWindow != null)
-            {
-                mainWindow.Show();
-
-                // Initialize application state after window is shown
-                VM_MainWindow? mainWindowViewModel = null;
-                if (mainWindow.DataContext is VM_MainWindow vm) {
-                    mainWindowViewModel = vm;
-                } else if (mainWindow is MainWindow mwInstance) { // Specific cast if DataContext is not yet VM_MainWindow
-                    mainWindowViewModel = mwInstance.ViewModel;
-                }
-                
-                // Fallback if still null (e.g. DataContext set later or different view type)
-                mainWindowViewModel ??= Locator.Current.GetService<VM_MainWindow>();
-
-                mainWindowViewModel?.InitializeApplicationState(isStartup: true);
-            }
-            else
-            {
-                // Handle error - main window view couldn't be resolved or created
-                MessageBox.Show("Fatal Error: Could not resolve or create the MainWindow view.", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                // Consider Application.Current.Shutdown();
-            }
+            
+            splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
+            return container;
         }
     }
 }
