@@ -750,7 +750,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             return results;
         }
 
-        public async Task InitializeAsync(VM_SplashScreen? splashReporter, double baseProgress = 0, double progressSpan = 10)
+        public async Task InitializeAsync(VM_SplashScreen? splashReporter, double baseProgress = 0,
+            double progressSpan = 10)
         {
             splashReporter?.UpdateProgress(baseProgress, "Initializing NPC list...");
             // Clear previous state
@@ -758,26 +759,27 @@ namespace NPC_Plugin_Chooser_2.View_Models
             SelectedNpc = null; // Clear selection to ensure change notification if re-selecting same NPC
             AllNpcs.Clear();
             FilteredNpcs.Clear();
-            CurrentNpcDescription = null; 
+            CurrentNpcDescription = null;
 
             if (!_environmentStateProvider.EnvironmentIsValid)
             {
                 splashReporter?.UpdateProgress(baseProgress + progressSpan, "Environment not valid for NPC list.");
-                ScrollableMessageBox.ShowWarning($"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}", "Environment Error");
-                _mugshotData.Clear(); 
+                ScrollableMessageBox.ShowWarning(
+                    $"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}",
+                    "Environment Error");
+                _mugshotData.Clear();
                 return;
             }
 
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1), "Scanning mugshot directory...");
-            // ScanMugshotDirectory can be time-consuming, make it awaitable if it does heavy I/O
-            // For now, assume it's acceptably fast or refactor it to be async if needed.
-            _mugshotData = await Task.Run(() => ScanMugshotDirectory(splashReporter)); // Example: run on thread pool
+            _mugshotData = await Task.Run(() => ScanMugshotDirectory(splashReporter)); 
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Updating NPC groups...");
-            UpdateAvailableNpcGroups(); 
+            UpdateAvailableNpcGroups();
 
             var processedMugshotKeys = new HashSet<FormKey>();
-            
-            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Querying NPC records from detected mods...");
+
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4),
+                "Querying NPC records from detected mods...");
 
             await Task.Run(() =>
             {
@@ -787,14 +789,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 foreach (var modSetting in _lazyModsVm.Value.AllModSettings)
                 {
                     modSettingsProcessed++;
-                    int wholePercent = (int)(100.0 * modSettingsProcessed / modSettingCount);   // 0-100
+                    int wholePercent = (int)(100.0 * modSettingsProcessed / modSettingCount); // 0-100
 
-                    if (wholePercent != lastWholePercent)             // changed at least 1 %
+                    if (wholePercent != lastWholePercent) // changed at least 1 %
                     {
                         lastWholePercent = wholePercent;
-                        splashReporter?.UpdateProgress(wholePercent, "Querying NPC records from " + modSetting.DisplayName);
+                        splashReporter?.UpdateProgress(wholePercent,
+                            "Querying NPC records from " + modSetting.DisplayName);
                     }
-                    
+
                     foreach (var npc in modSetting.NpcFormKeysToDisplayName)
                     {
                         var selector = AllNpcs.FirstOrDefault(x => x.NpcFormKey.Equals(npc.Key));
@@ -820,14 +823,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 foreach (var kvp in _mugshotData)
                 {
                     numProcessed++;
-                    int wholePercent = (int)(100.0 * numProcessed / mugshotNpcCount);   // 0-100
+                    int wholePercent = (int)(100.0 * numProcessed / mugshotNpcCount); // 0-100
 
-                    if (wholePercent != lastWholePercent)             // changed at least 1 %
+                    if (wholePercent != lastWholePercent) // changed at least 1 %
                     {
                         lastWholePercent = wholePercent;
                         splashReporter?.UpdateProgress(wholePercent, "Processing mugshot-only entries...");
                     }
-                    
+
                     FormKey mugshotFormKey = kvp.Key;
 
                     // only create a new Npc selector if it hasn't already been created from mod data above
@@ -863,13 +866,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
             });
 
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Setting up NPC List...");
-            await Task.Run(() => ApplyFilter(true)); 
+            await Task.Run(() => ApplyFilter(true));
 
             VM_NpcsMenuSelection? npcToSelectOnLoad = null;
             if (!_settings.LastSelectedNpcFormKey.IsNull)
             {
-                npcToSelectOnLoad = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey))
-                                    ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey));
+                npcToSelectOnLoad =
+                    FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey))
+                    ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey));
 
                 if (npcToSelectOnLoad == null)
                 {
@@ -882,31 +886,32 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 npcToSelectOnLoad = FilteredNpcs[0];
             }
 
-// Set SelectedNpc. This will trigger the WhenAnyValue for CurrentNpcAppearanceMods
+            // Set SelectedNpc. This will trigger the WhenAnyValue for CurrentNpcAppearanceMods
             // and CurrentNpcDescription.
             if (npcToSelectOnLoad != null)
             {
                 SelectedNpc = npcToSelectOnLoad; // This should trigger mugshot/description loading
                 // due to existing WhenAnyValue subscriptions in the VM constructor.
                 Debug.WriteLine($"VM_NpcSelectionBar.InitializeAsync: Set SelectedNpc to {SelectedNpc.DisplayName}.");
-        
+
                 // The scroll request is now handled by NpcsView.WhenActivated listening to RequestScrollToNpcObservable.
                 // We just need to ensure SelectedNpc is set, and the view will react.
                 // We still need to signal if we want an *explicit* scroll action beyond just selection.
                 // The NpcsView's WhenActivated already subscribes to RequestScrollToNpcObservable.
                 // Let's ensure we push the value *after* SelectedNpc is set.
                 _requestScrollToNpcSubject.OnNext(SelectedNpc); // Signal the view
-                Debug.WriteLine($"VM_NpcSelectionBar.InitializeAsync: Signaled scroll request for {SelectedNpc.DisplayName} via subject.");
+                Debug.WriteLine(
+                    $"VM_NpcSelectionBar.InitializeAsync: Signaled scroll request for {SelectedNpc.DisplayName} via subject.");
             }
             else
             {
                 SelectedNpc = null; // Ensure it's null if nothing to select
                 _requestScrollToNpcSubject.OnNext(null);
             }
-            
+
             splashReporter?.UpdateProgress(baseProgress + progressSpan, "NPC list initialized.");
         }
-        
+
         public void SignalScrollToNpc(VM_NpcsMenuSelection? npc)
         {
             if (npc != null)
