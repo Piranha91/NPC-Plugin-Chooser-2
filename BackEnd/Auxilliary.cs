@@ -12,7 +12,7 @@ public class Auxilliary
         _environmentStateProvider = environmentStateProvider;
     }
 
-    public List<ModKey> GetModKeysInDirectory(string modFolderPath, List<string>? warnings)
+    public List<ModKey> GetModKeysInDirectory(string modFolderPath, List<string>? warnings, bool onlyEnabled)
     {
         List<ModKey> foundEnabledKeysInFolder = new();
         string modFolderName = Path.GetFileName(modFolderPath);
@@ -28,7 +28,10 @@ public class Auxilliary
                     try
                     {
                         ModKey parsedKey = ModKey.FromFileName(fileNameWithExt);
-                        if (enabledKeys.Contains(parsedKey)) foundEnabledKeysInFolder.Add(parsedKey);
+                        if (!onlyEnabled || enabledKeys.Contains(parsedKey))
+                        {
+                            foundEnabledKeysInFolder.Add(parsedKey);
+                        }
                     }
                     catch (Exception parseEx) { warnings.Add($"Could not parse plugin '{fileNameWithExt}' in '{modFolderName}': {parseEx.Message}"); }
                 }
@@ -39,22 +42,20 @@ public class Auxilliary
         return foundEnabledKeysInFolder;
     }
     
-    public string FormKeyStringToFormIDString(string formKeyString)
+    public string FormKeyToFormIDString(FormKey formKey)
     {
-        if (TryFormKeyStringToFormIDString(formKeyString, out string formIDstr))
+        if (TryFormKeyToFormIDString(formKey, out string formIDstr))
         {
             return formIDstr;
         }
         return String.Empty;
     }
 
-    public bool TryFormKeyStringToFormIDString(string formKeyString, out string formIDstr)
+    public bool TryFormKeyToFormIDString(FormKey formKey, out string formIDstr)
     {
         formIDstr = string.Empty;
-        var split = formKeyString.Split(':');
-        if (split.Length != 2) { return false; }
 
-        if (split[1] == _environmentStateProvider.OutputPluginName + ".esp")
+        if (formKey.ModKey.FileName == _environmentStateProvider.OutputPluginName + ".esp")
         {
             formIDstr = _environmentStateProvider.LoadOrder.ListedOrder.Count().ToString("X"); // format FormID assuming the generated patch will be last in the load order
         }
@@ -63,7 +64,7 @@ public class Auxilliary
             for (int i = 0; i < _environmentStateProvider.LoadOrder.ListedOrder.Count(); i++)
             {
                 var currentListing = _environmentStateProvider.LoadOrder.ListedOrder.ElementAt(i);
-                if (currentListing.ModKey.FileName == split[1])
+                if (currentListing.ModKey.Equals(formKey.ModKey))
                 {
                     formIDstr = i.ToString("X"); // https://www.delftstack.com/howto/csharp/integer-to-hexadecimal-in-csharp/
                     break;
@@ -80,7 +81,7 @@ public class Auxilliary
             formIDstr = "0" + formIDstr;
         }
 
-        formIDstr += split[0];
+        formIDstr += formKey.IDString();
         return true;
     }
     

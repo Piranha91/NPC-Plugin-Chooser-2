@@ -56,6 +56,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // Flag indicating if this VM was created dynamically only from a Mugshot folder
         // and wasn't loaded from the persisted ModSettings.
         public bool IsMugshotOnlyEntry { get; set; } = false;
+        
+        // Flag indicating if this VM was created from a facegen-only Mod folder (in which case only NPCs with facegen
+        // rather than all NPCs in the corresponding plugins should be displayed
+        public bool IsFaceGenOnlyEntry { get; set; } = false;
+        public HashSet<FormKey> FaceGenOnlyNpcFormKeys { get; set; } = new(); // NPCs contained in the given FaceGen-only mod
 
         // Helper properties derived from other reactive properties for UI Styling/Logic
         [ObservableAsProperty] public bool HasMugshotPathAssigned { get; } // True if MugShotFolderPath is not null/whitespace
@@ -102,6 +107,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(model.NpcPluginDisambiguation ?? new Dictionary<FormKey, ModKey>());
             // AvailablePluginsForNpcs should be re-calculated on load.
             // IsMugshotOnlyEntry is set to false via chaining
+            IsFaceGenOnlyEntry = model.IsFaceGenOnlyEntry;
+            FaceGenOnlyNpcFormKeys = new(FaceGenOnlyNpcFormKeys);
         }
 
         /// <summary>
@@ -375,7 +382,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             List<ModKey> correspondingModKeys = new();
             foreach (var path in CorrespondingFolderPaths)
             {
-                correspondingModKeys.AddRange(_aux.GetModKeysInDirectory(path, new()));
+                correspondingModKeys.AddRange(_aux.GetModKeysInDirectory(path, new(), false));
             }
             CorrespondingModKeys.Clear();
             CorrespondingModKeys.AddRange(correspondingModKeys);
@@ -434,7 +441,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             AvailablePluginsForNpcs.Clear();
             // AmbiguousNpcFormKeys is cleared and repopulated below
 
-            if (CorrespondingModKeys.Any() && HasModPathsAssigned)
+            if (CorrespondingModKeys.Any() && HasModPathsAssigned && !IsFaceGenOnlyEntry)
             {
                 foreach (var modKey in CorrespondingModKeys)
                 {
@@ -488,6 +495,29 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                 } 
             } 
+            else if (IsFaceGenOnlyEntry)
+            {
+                foreach (var currentNpcKey in FaceGenOnlyNpcFormKeys)
+                {
+                    NpcFormKeys.Add(currentNpcKey);
+                    var sourcePlugin = currentNpcKey.ModKey;
+                    var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(currentNpcKey);
+                    var sourceContext = contexts.LastOrDefault();
+                    if (sourceContext is not null)
+                    {
+                        var npc = sourceContext.Record;
+                        string displayName = string.Empty;
+                        if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String)) { NpcNames.Add(npc.Name.String); displayName = npc.Name.String; }
+                        if (!string.IsNullOrEmpty(npc.EditorID)) { NpcEditorIDs.Add(npc.EditorID); if (string.IsNullOrEmpty(displayName)) displayName = npc.EditorID; }
+                        if (string.IsNullOrEmpty(displayName)) displayName = npc.FormKey.ToString();
+                        NpcFormKeysToDisplayName.Add(currentNpcKey, displayName);
+                    }
+                    else
+                    {
+                        NpcFormKeysToDisplayName.Add(currentNpcKey, currentNpcKey.ToString());
+                    }
+                }
+            }
 
             // --- Post-Processing: Populate NpcPluginDisambiguation, identify AmbiguousNpcFormKeys ---
             AmbiguousNpcFormKeys.Clear(); // Clear before repopulating

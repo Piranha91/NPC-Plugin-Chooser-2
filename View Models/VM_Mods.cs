@@ -34,9 +34,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly NpcConsistencyProvider _consistencyProvider;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm; // *** NEW: To switch tabs ***
         private readonly Auxilliary _aux;
+
         private readonly CompositeDisposable _disposables = new();
+
         // Subject and Observable for scroll requests
-        private readonly BehaviorSubject<VM_ModSetting?> _requestScrollToModSubject = new BehaviorSubject<VM_ModSetting?>(null);
+        private readonly BehaviorSubject<VM_ModSetting?> _requestScrollToModSubject =
+            new BehaviorSubject<VM_ModSetting?>(null);
+
         public IObservable<VM_ModSetting?> RequestScrollToModObservable => _requestScrollToModSubject.AsObservable();
 
         // --- Filtering Properties (Left Panel) ---
@@ -55,7 +59,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- Right Panel Properties ---
         [Reactive] public VM_ModSetting? SelectedModForMugshots { get; private set; }
         public ObservableCollection<VM_ModsMenuMugshot> CurrentModNpcMugshots { get; } = new();
+
         [Reactive] public bool IsLoadingMugshots { get; private set; }
+
         // This property will be set to true by the View (ModsView.xaml.cs) when the user
         // directly interacts with zoom (Ctrl+Scroll, +/- buttons).
         [Reactive] public bool ModsViewHasUserManuallyZoomed { get; set; } = false;
@@ -63,7 +69,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // Subject for triggering right panel image refresh
         private readonly Subject<Unit> _refreshMugshotSizesSubject = new Subject<Unit>();
         public IObservable<Unit> RefreshMugshotSizesObservable => _refreshMugshotSizesSubject.AsObservable();
-        
+
         // --- NEW: Zoom Control Properties & Commands for ModsView ---
         [Reactive] public double ModsViewZoomLevel { get; set; }
         [Reactive] public bool ModsViewIsZoomLocked { get; set; }
@@ -73,16 +79,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private const double _minZoomPercentage = 1.0;
         private const double _maxZoomPercentage = 1000.0;
         private const double _zoomStepPercentage = 2.5; // For +/- buttons and scroll wheel
-        
+
         // --- NEW: Source Plugin Disambiguation (Right Panel - Above Mugshots, below Mod Name) ---
         [Reactive] public ModKey? SelectedSourcePluginForDisambiguation { get; set; }
         [ObservableAsProperty] public bool ShowSourcePluginControls { get; }
         [ObservableAsProperty] public ObservableCollection<ModKey> AvailableSourcePluginsForSelectedMod { get; }
         public ReactiveCommand<Unit, Unit> SetGlobalSourcePluginCommand { get; }
-        
+
         // --- Placeholder Image Configuration --- 
         private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
-        private static readonly string FullPlaceholderPath = Path.Combine(AppContext.BaseDirectory, PlaceholderResourceRelativePath);
+
+        private static readonly string FullPlaceholderPath =
+            Path.Combine(AppContext.BaseDirectory, PlaceholderResourceRelativePath);
+
         private static readonly bool PlaceholderExists = File.Exists(FullPlaceholderPath);
 
         // --- Commands ---
@@ -93,12 +102,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public string MugshotsFolderSetting => _settings.MugshotsFolder; // Needed for BrowseMugshotFolder
         public SkyrimRelease SkyrimRelease => _settings.SkyrimRelease;
         public EnvironmentStateProvider EnvironmentStateProvider => _environmentStateProvider;
-        
+
         // Concurrency management
         private bool _isPopulatingModSettings = false;
 
         // *** Updated Constructor Signature ***
-        public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider, VM_NpcSelectionBar npcSelectionBar, NpcConsistencyProvider consistencyProvider, Lazy<VM_MainWindow> lazyMainWindowVm, Auxilliary aux)
+        public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider,
+            VM_NpcSelectionBar npcSelectionBar, NpcConsistencyProvider consistencyProvider,
+            Lazy<VM_MainWindow> lazyMainWindowVm, Auxilliary aux)
         {
             _settings = settings;
             _environmentStateProvider = environmentStateProvider;
@@ -106,7 +117,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _consistencyProvider = consistencyProvider;
             _lazyMainWindowVm = lazyMainWindowVm;
             _aux = aux;
-            
+
             ShowMugshotsCommand = ReactiveCommand.CreateFromTask<VM_ModSetting>(ShowMugshotsAsync);
             ShowMugshotsCommand.ThrownExceptions.Subscribe(ex =>
             {
@@ -116,22 +127,25 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
 
             // --- NEW: Initialize Zoom Settings from _settings ---
-            ModsViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, _settings.ModsViewZoomLevel)); // Clamp initial load
+            ModsViewZoomLevel =
+                Math.Max(_minZoomPercentage,
+                    Math.Min(_maxZoomPercentage, _settings.ModsViewZoomLevel)); // Clamp initial load
             ModsViewIsZoomLocked = _settings.ModsViewIsZoomLocked;
-            Debug.WriteLine($"VM_Mods.Constructor: Initial ZoomLevel: {ModsViewZoomLevel:F2}, IsZoomLocked: {ModsViewIsZoomLocked}");
+            Debug.WriteLine(
+                $"VM_Mods.Constructor: Initial ZoomLevel: {ModsViewZoomLevel:F2}, IsZoomLocked: {ModsViewIsZoomLocked}");
 
             // --- NEW: Zoom Commands ---
             ZoomInModsCommand = ReactiveCommand.Create(() =>
             {
                 Debug.WriteLine("VM_Mods: ZoomInModsCommand executed.");
-                ModsViewHasUserManuallyZoomed = true; 
+                ModsViewHasUserManuallyZoomed = true;
                 ModsViewZoomLevel = Math.Min(_maxZoomPercentage, ModsViewZoomLevel + _zoomStepPercentage);
             });
             ZoomOutModsCommand = ReactiveCommand.Create(() =>
             {
                 Debug.WriteLine("VM_Mods: ZoomOutModsCommand executed.");
-                ModsViewHasUserManuallyZoomed = true; 
-                ModsViewZoomLevel = Math.Max(_minZoomPercentage, ModsViewZoomLevel - _zoomStepPercentage); 
+                ModsViewHasUserManuallyZoomed = true;
+                ModsViewZoomLevel = Math.Max(_minZoomPercentage, ModsViewZoomLevel - _zoomStepPercentage);
             });
             ResetZoomModsCommand = ReactiveCommand.Create(() =>
             {
@@ -146,12 +160,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 _refreshMugshotSizesSubject.OnNext(Unit.Default);
             });
             // ... (exception handlers for commands) ...
-            ZoomInModsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomInModsCommand: {ex.Message}")).DisposeWith(_disposables);
-            ZoomOutModsCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error ZoomOutModsCommand: {ex.Message}")).DisposeWith(_disposables);
+            ZoomInModsCommand.ThrownExceptions
+                .Subscribe(ex => Debug.WriteLine($"Error ZoomInModsCommand: {ex.Message}")).DisposeWith(_disposables);
+            ZoomOutModsCommand.ThrownExceptions
+                .Subscribe(ex => Debug.WriteLine($"Error ZoomOutModsCommand: {ex.Message}")).DisposeWith(_disposables);
             ResetZoomModsCommand.ThrownExceptions
                 .Subscribe(ex => Debug.WriteLine($"Error ResetZoomModsCommand: {ex.Message}"))
                 .DisposeWith(_disposables);
-            
+
             // --- Source Plugin Disambiguation Logic ---
             this.WhenAnyValue(x => x.SelectedModForMugshots)
                 .Select(mod => mod != null && mod.CorrespondingModKeys.Count > 1 && mod.AmbiguousNpcFormKeys.Any())
@@ -160,11 +176,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             this.WhenAnyValue(x => x.SelectedModForMugshots)
                 .Select(mod => mod != null && mod.CorrespondingModKeys.Count > 1
-                                ? new ObservableCollection<ModKey>(mod.CorrespondingModKeys.OrderBy(mk => mk.FileName.String))
-                                : new ObservableCollection<ModKey>())
+                    ? new ObservableCollection<ModKey>(mod.CorrespondingModKeys.OrderBy(mk => mk.FileName.String))
+                    : new ObservableCollection<ModKey>())
                 .ToPropertyEx(this, x => x.AvailableSourcePluginsForSelectedMod)
                 .DisposeWith(_disposables);
-            
+
             // When SelectedModForMugshots changes, reset the SelectedSourcePluginForDisambiguation
             this.WhenAnyValue(x => x.SelectedModForMugshots)
                 .Subscribe(_ => SelectedSourcePluginForDisambiguation = null) // Reset dropdown selection
@@ -174,14 +190,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var canSetGlobalSource = this.WhenAnyValue(
                 x => x.SelectedModForMugshots,
                 x => x.SelectedSourcePluginForDisambiguation,
-                (mod, selectedPlugin) => mod != null && selectedPlugin.HasValue && !selectedPlugin.Value.IsNull && mod.CorrespondingModKeys.Count > 1);
+                (mod, selectedPlugin) => mod != null && selectedPlugin.HasValue && !selectedPlugin.Value.IsNull &&
+                                         mod.CorrespondingModKeys.Count > 1);
 
             SetGlobalSourcePluginCommand = ReactiveCommand.Create(() =>
             {
-                if (SelectedModForMugshots != null && SelectedSourcePluginForDisambiguation.HasValue && !SelectedSourcePluginForDisambiguation.Value.IsNull)
+                if (SelectedModForMugshots != null && SelectedSourcePluginForDisambiguation.HasValue &&
+                    !SelectedSourcePluginForDisambiguation.Value.IsNull)
                 {
                     // SetSourcePluginForAllApplicableNpcs now returns a list of changed FormKeys
-                    List<FormKey> changedKeys = SelectedModForMugshots.SetSourcePluginForAllApplicableNpcs(SelectedSourcePluginForDisambiguation.Value);
+                    List<FormKey> changedKeys =
+                        SelectedModForMugshots.SetSourcePluginForAllApplicableNpcs(SelectedSourcePluginForDisambiguation
+                            .Value);
 
                     if (changedKeys.Any())
                     {
@@ -194,11 +214,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 mugshotVM.CurrentSourcePlugin = SelectedSourcePluginForDisambiguation;
                             }
                         }
-                        Debug.WriteLine($"VM_Mods: Updated CurrentSourcePlugin for {changedKeys.Count} displayed mugshots after global source set.");
+
+                        Debug.WriteLine(
+                            $"VM_Mods: Updated CurrentSourcePlugin for {changedKeys.Count} displayed mugshots after global source set.");
                     }
                 }
             }, canSetGlobalSource); // canSetGlobalSource is the WhenAnyValue observable
-            
+
             SetGlobalSourcePluginCommand.ThrownExceptions.Subscribe(ex =>
             {
                 ScrollableMessageBox.ShowError($"Error setting global source plugin: {ex.Message}");
@@ -206,15 +228,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // --- END: Source Plugin Disambiguation Logic ---
 
             // --- Setup Filter Reaction ---
-            this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText, x => x.NpcSearchText, x => x.SelectedNpcSearchType) // Added NpcSearchType
+            this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText, x => x.NpcSearchText,
+                    x => x.SelectedNpcSearchType) // Added NpcSearchType
                 .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(_ => ApplyFilters())
                 .DisposeWith(_disposables);
-            
-            this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText, x => x.NpcSearchText, x => x.SelectedNpcSearchType)
+
+            this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText, x => x.NpcSearchText,
+                    x => x.SelectedNpcSearchType)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(_ => {
+                .Subscribe(_ =>
+                {
                     if (SelectedModForMugshots != null && !ModSettingsList.Contains(SelectedModForMugshots))
                     {
                         SelectedModForMugshots = null;
@@ -225,14 +250,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // --- NEW: Persist Zoom Settings and Trigger Refresh ---
             this.WhenAnyValue(x => x.ModsViewZoomLevel)
-                .Skip(1) 
-                .Throttle(TimeSpan.FromMilliseconds(100)) 
+                .Skip(1)
+                .Throttle(TimeSpan.FromMilliseconds(100))
                 .Subscribe(zoom =>
                 {
                     bool isFromPackerUpdate = !ModsViewIsZoomLocked && !ModsViewHasUserManuallyZoomed;
-                    Debug.WriteLine($"VM_Mods: ModsViewZoomLevel RAW input {zoom:F2}. IsFromPacker: {isFromPackerUpdate}, IsLocked: {ModsViewIsZoomLocked}, ManualZoom: {ModsViewHasUserManuallyZoomed}");
-                    
-                    double previousVmZoomLevel = _settings.ModsViewZoomLevel; 
+                    Debug.WriteLine(
+                        $"VM_Mods: ModsViewZoomLevel RAW input {zoom:F2}. IsFromPacker: {isFromPackerUpdate}, IsLocked: {ModsViewIsZoomLocked}, ManualZoom: {ModsViewHasUserManuallyZoomed}");
+
+                    double previousVmZoomLevel = _settings.ModsViewZoomLevel;
                     double newClampedZoom = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, zoom));
 
                     if (Math.Abs(_settings.ModsViewZoomLevel - newClampedZoom) > 0.001)
@@ -241,32 +267,37 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         Debug.WriteLine($"VM_Mods: Settings.ModsViewZoomLevel updated to {newClampedZoom:F2}.");
                     }
 
-                    if (Math.Abs(newClampedZoom - zoom) > 0.001) 
+                    if (Math.Abs(newClampedZoom - zoom) > 0.001)
                     {
-                        Debug.WriteLine($"VM_Mods: ZoomLevel IS being clamped from {zoom:F2} to {newClampedZoom:F2}. Updating property.");
-                        ModsViewZoomLevel = newClampedZoom; 
-                        return; 
+                        Debug.WriteLine(
+                            $"VM_Mods: ZoomLevel IS being clamped from {zoom:F2} to {newClampedZoom:F2}. Updating property.");
+                        ModsViewZoomLevel = newClampedZoom;
+                        return;
                     }
-                    
+
                     if (ModsViewIsZoomLocked || ModsViewHasUserManuallyZoomed)
                     {
-                        Debug.WriteLine($"VM_Mods: ZoomLevel processed. IsLocked or ManualZoom. Triggering refresh. Value: {newClampedZoom:F2}");
+                        Debug.WriteLine(
+                            $"VM_Mods: ZoomLevel processed. IsLocked or ManualZoom. Triggering refresh. Value: {newClampedZoom:F2}");
                         _refreshMugshotSizesSubject.OnNext(Unit.Default);
-                    } else {
-                        Debug.WriteLine($"VM_Mods: ZoomLevel processed. Unlocked & not manual. No VM-initiated refresh. Value: {newClampedZoom:F2}");
+                    }
+                    else
+                    {
+                        Debug.WriteLine(
+                            $"VM_Mods: ZoomLevel processed. Unlocked & not manual. No VM-initiated refresh. Value: {newClampedZoom:F2}");
                     }
                 })
                 .DisposeWith(_disposables);
 
             this.WhenAnyValue(x => x.ModsViewIsZoomLocked)
-                .Skip(1) 
+                .Skip(1)
                 .Subscribe(isLocked =>
                 {
                     Debug.WriteLine($"VM_Mods: ModsViewIsZoomLocked changed to {isLocked}.");
                     _settings.ModsViewIsZoomLocked = isLocked;
-                    ModsViewHasUserManuallyZoomed = false; 
+                    ModsViewHasUserManuallyZoomed = false;
                     Debug.WriteLine("VM_Mods: ModsViewIsZoomLocked changed - Triggering _refreshMugshotSizesSubject.");
-                    _refreshMugshotSizesSubject.OnNext(Unit.Default); 
+                    _refreshMugshotSizesSubject.OnNext(Unit.Default);
                 })
                 .DisposeWith(_disposables);
 
@@ -274,27 +305,32 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.SelectedModForMugshots)
                 .Skip(1)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(selectedMod => {
-                    Debug.WriteLine($"VM_Mods: SelectedModForMugshots changed to {selectedMod?.DisplayName ?? "null"}.");
+                .Subscribe(selectedMod =>
+                {
+                    Debug.WriteLine(
+                        $"VM_Mods: SelectedModForMugshots changed to {selectedMod?.DisplayName ?? "null"}.");
                     if (!ModsViewIsZoomLocked)
                     {
-                        Debug.WriteLine("VM_Mods: SelectedModForMugshots changed - Zoom not locked, setting ModsViewHasUserManuallyZoomed = false");
+                        Debug.WriteLine(
+                            "VM_Mods: SelectedModForMugshots changed - Zoom not locked, setting ModsViewHasUserManuallyZoomed = false");
                         ModsViewHasUserManuallyZoomed = false;
                     }
                     // ShowMugshotsAsync (called when this property changes, typically via command) will trigger _refreshMugshotSizesSubject
                 })
                 .DisposeWith(_disposables);
-            
+
             // When SelectedModForMugshots changes (which happens when ShowMugshotsCommand is executed),
             // signal a scroll request for this newly selected mod.
             this.WhenAnyValue(x => x.SelectedModForMugshots)
                 .Skip(1) // Skip initial null or first value
-                .ObserveOn(RxApp.MainThreadScheduler) // Ensure subject is updated on UI thread if needed, though OnNext is thread-safe
+                .ObserveOn(RxApp
+                    .MainThreadScheduler) // Ensure subject is updated on UI thread if needed, though OnNext is thread-safe
                 .Subscribe(modToScrollTo =>
                 {
                     if (modToScrollTo != null)
                     {
-                        Debug.WriteLine($"VM_Mods: SelectedModForMugshots changed to {modToScrollTo.DisplayName}. Signaling scroll.");
+                        Debug.WriteLine(
+                            $"VM_Mods: SelectedModForMugshots changed to {modToScrollTo.DisplayName}. Signaling scroll.");
                         _requestScrollToModSubject.OnNext(modToScrollTo);
                     }
                     else
@@ -312,24 +348,27 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             ApplyFilters(); // Apply initial filter
         }
-        
+
         /// <summary>
         /// Adds a new VM_ModSetting (typically created by Unlink operation) to the internal list
         /// and refreshes dependent UI.
         /// </summary>
         public void AddAndRefreshModSetting(VM_ModSetting newVm)
         {
-            if (newVm == null || _allModSettingsInternal.Any(vm => vm.DisplayName.Equals(newVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
+            if (newVm == null || _allModSettingsInternal.Any(vm =>
+                    vm.DisplayName.Equals(newVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
             {
-                Debug.WriteLine($"VM_Mods: Not adding VM '{newVm?.DisplayName}' either because it's null or a VM with that DisplayName already exists.");
+                Debug.WriteLine(
+                    $"VM_Mods: Not adding VM '{newVm?.DisplayName}' either because it's null or a VM with that DisplayName already exists.");
                 // Optionally, if it exists, consider merging properties, but for unlink, it should be a new entry.
                 return;
             }
 
             _allModSettingsInternal.Add(newVm);
             // Re-sort the internal list by DisplayName
-            _allModSettingsInternal = _allModSettingsInternal.OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
-            
+            _allModSettingsInternal = _allModSettingsInternal
+                .OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+
             // Recalculate its mugshot validity (it might be a new mugshot-only entry)
             RecalculateMugshotValidity(newVm);
 
@@ -342,7 +381,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 Debug.WriteLine("Calling RefreshNpcLists for WICO from AddAndRefreshModSetting()");
             }
-            Task.Run(() => newVm.RefreshNpcLists()); 
+
+            Task.Run(() => newVm.RefreshNpcLists());
         }
 
         /// <summary>
@@ -379,15 +419,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 // Attempt to load real mugshots if the path is valid and HasValidMugshots is true
                 // HasValidMugshots (from OriginalCheckMugshotValidityLogic) indicates if the folder itself contains any validly structured images.
-                if (selectedModSetting.HasValidMugshots && 
-                    !string.IsNullOrWhiteSpace(selectedModSetting.MugShotFolderPath) && 
+                if (selectedModSetting.HasValidMugshots &&
+                    !string.IsNullOrWhiteSpace(selectedModSetting.MugShotFolderPath) &&
                     Directory.Exists(selectedModSetting.MugShotFolderPath))
                 {
                     await Task.Run(() =>
                     {
-                        var imageFiles = Directory.EnumerateFiles(selectedModSetting.MugShotFolderPath, "*.*", SearchOption.AllDirectories)
-                                                .Where(f => Regex.IsMatch(Path.GetFileName(f), @"^[0-9A-F]{8}\.(png|jpg|jpeg|bmp)$", RegexOptions.IgnoreCase))
-                                                .ToList();
+                        var imageFiles = Directory.EnumerateFiles(selectedModSetting.MugShotFolderPath, "*.*",
+                                SearchOption.AllDirectories)
+                            .Where(f => Regex.IsMatch(Path.GetFileName(f), @"^[0-9A-F]{8}\.(png|jpg|jpeg|bmp)$",
+                                RegexOptions.IgnoreCase))
+                            .ToList();
 
                         foreach (var imagePath in imageFiles)
                         {
@@ -395,7 +437,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             string hexPart = Path.GetFileNameWithoutExtension(fileName);
                             DirectoryInfo? pluginDir = new FileInfo(imagePath).Directory;
 
-                            if (pluginDir != null && Regex.IsMatch(pluginDir.Name, @"^.+\.(esm|esp|esl)$", RegexOptions.IgnoreCase))
+                            if (pluginDir != null && Regex.IsMatch(pluginDir.Name, @"^.+\.(esm|esp|esl)$",
+                                    RegexOptions.IgnoreCase))
                             {
                                 string pluginName = pluginDir.Name;
                                 string formIdHex = hexPart.Substring(Math.Max(0, hexPart.Length - 6));
@@ -406,13 +449,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     FormKey npcFormKey = FormKey.Factory(formKeyString);
                                     string npcDisplayName;
 
-                                    if (selectedModSetting.NpcFormKeysToDisplayName.TryGetValue(npcFormKey, out var knownNpcName))
+                                    if (selectedModSetting.NpcFormKeysToDisplayName.TryGetValue(npcFormKey,
+                                            out var knownNpcName))
                                     {
                                         npcDisplayName = knownNpcName;
                                     }
-                                    else if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter))
+                                    else if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey,
+                                                 out var npcGetter))
                                     {
-                                        npcDisplayName = npcGetter.Name?.String ?? npcGetter.EditorID ?? npcFormKey.ToString();
+                                        npcDisplayName = npcGetter.Name?.String ??
+                                                         npcGetter.EditorID ?? npcFormKey.ToString();
                                     }
                                     else
                                     {
@@ -438,9 +484,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                         }
                                     }
 
-                                    mugshotVMs.Add(new VM_ModsMenuMugshot(imagePath, npcFormKey, npcDisplayName, this, isAmbiguous, availableModKeys, currentSource, selectedModSetting));
+                                    mugshotVMs.Add(new VM_ModsMenuMugshot(imagePath, npcFormKey, npcDisplayName, this,
+                                        isAmbiguous, availableModKeys, currentSource, selectedModSetting));
                                 }
-                                catch (Exception ex) { Debug.WriteLine($"Error creating FormKey/VM for real mugshot {imagePath}: {ex.Message}"); }
+                                catch (Exception ex)
+                                {
+                                    Debug.WriteLine(
+                                        $"Error creating FormKey/VM for real mugshot {imagePath}: {ex.Message}");
+                                }
                             }
                         }
                     });
@@ -455,7 +506,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     if (selectedModSetting.NpcFormKeysToDisplayName.Any())
                     {
-                        Debug.WriteLine($"ShowMugshotsAsync: Loading placeholders for {selectedModSetting.DisplayName} ({selectedModSetting.NpcFormKeysToDisplayName.Count} known NPCs).");
+                        Debug.WriteLine(
+                            $"ShowMugshotsAsync: Loading placeholders for {selectedModSetting.DisplayName} ({selectedModSetting.NpcFormKeysToDisplayName.Count} known NPCs).");
                         await Task.Run(() =>
                         {
                             foreach (var npcEntry in selectedModSetting.NpcFormKeysToDisplayName)
@@ -482,13 +534,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     }
                                 }
 
-                                mugshotVMs.Add(new VM_ModsMenuMugshot(FullPlaceholderPath, npcFormKey, npcDisplayName, this, isAmbiguous, availableModKeys, currentSource, selectedModSetting));
+                                mugshotVMs.Add(new VM_ModsMenuMugshot(FullPlaceholderPath, npcFormKey, npcDisplayName,
+                                    this, isAmbiguous, availableModKeys, currentSource, selectedModSetting));
                             }
                         });
                     }
                     else
                     {
-                        Debug.WriteLine($"ShowMugshotsAsync: No real mugshots for {selectedModSetting.DisplayName}, and no NPCs known to this mod setting to show placeholders for.");
+                        Debug.WriteLine(
+                            $"ShowMugshotsAsync: No real mugshots for {selectedModSetting.DisplayName}, and no NPCs known to this mod setting to show placeholders for.");
                     }
                 }
 
@@ -498,7 +552,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             catch (Exception ex)
             {
-                ScrollableMessageBox.ShowWarning($"Failed to load mugshot data for {selectedModSetting.DisplayName}:\n{ex.Message}", "Mugshot Load Error");
+                ScrollableMessageBox.ShowWarning(
+                    $"Failed to load mugshot data for {selectedModSetting.DisplayName}:\n{ex.Message}",
+                    "Mugshot Load Error");
                 CurrentModNpcMugshots.Clear();
             }
             finally
@@ -520,58 +576,62 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // *** NEW: Method to handle navigation triggered by VM_ModsMenuMugshot ***
         public void NavigateToNpc(FormKey npcFormKey)
         {
-             // 1. Switch Tab
-             _lazyMainWindowVm.Value.IsNpcsTabSelected = true;
+            // 1. Switch Tab
+            _lazyMainWindowVm.Value.IsNpcsTabSelected = true;
 
-             // 2. Find and Select NPC in NpcSelectionBar, then signal scroll
-             // Schedule the entire operation to ensure tab switch has a chance to complete UI-wise
-             RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () => // Small delay for tab switch
-             {
-                 var npcToSelect = _npcSelectionBar.AllNpcs.FirstOrDefault(npc => npc.NpcFormKey == npcFormKey);
-                 if (npcToSelect != null)
-                 {
-                     Debug.WriteLine($"VM_Mods.NavigateToNpc: Found NPC {npcToSelect.DisplayName}. Clearing filters and selecting.");
-                     // Clear filters to ensure the NPC is visible.
-                     _npcSelectionBar.SearchText1 = "";
-                     _npcSelectionBar.SearchText2 = "";
-                     _npcSelectionBar.SearchText3 = "";
-                     // Note: Setting search texts to empty will trigger _npcSelectionBar.ApplyFilter due to its WhenAnyValue subscriptions.
+            // 2. Find and Select NPC in NpcSelectionBar, then signal scroll
+            // Schedule the entire operation to ensure tab switch has a chance to complete UI-wise
+            RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () => // Small delay for tab switch
+            {
+                var npcToSelect = _npcSelectionBar.AllNpcs.FirstOrDefault(npc => npc.NpcFormKey == npcFormKey);
+                if (npcToSelect != null)
+                {
+                    Debug.WriteLine(
+                        $"VM_Mods.NavigateToNpc: Found NPC {npcToSelect.DisplayName}. Clearing filters and selecting.");
+                    // Clear filters to ensure the NPC is visible.
+                    _npcSelectionBar.SearchText1 = "";
+                    _npcSelectionBar.SearchText2 = "";
+                    _npcSelectionBar.SearchText3 = "";
+                    // Note: Setting search texts to empty will trigger _npcSelectionBar.ApplyFilter due to its WhenAnyValue subscriptions.
 
-                     // Explicitly apply filter if somehow the reactive chain didn't catch it immediately
-                     // or if AllNpcs was searched but FilteredNpcs needs explicit update before selection.
-                     if (!_npcSelectionBar.FilteredNpcs.Contains(npcToSelect))
-                     {
-                          _npcSelectionBar.ApplyFilter(false); // Re-apply (now empty) filter
-                     }
+                    // Explicitly apply filter if somehow the reactive chain didn't catch it immediately
+                    // or if AllNpcs was searched but FilteredNpcs needs explicit update before selection.
+                    if (!_npcSelectionBar.FilteredNpcs.Contains(npcToSelect))
+                    {
+                        _npcSelectionBar.ApplyFilter(false); // Re-apply (now empty) filter
+                    }
 
-                     // Now select the NPC
-                     _npcSelectionBar.SelectedNpc = npcToSelect;
+                    // Now select the NPC
+                    _npcSelectionBar.SelectedNpc = npcToSelect;
 
-                     // After selection, explicitly signal the NpcSelectionBar to request a scroll
-                     // Give another small delay for SelectedNpc change to propagate and UI to potentially update ItemSource
-                     RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () => {
+                    // After selection, explicitly signal the NpcSelectionBar to request a scroll
+                    // Give another small delay for SelectedNpc change to propagate and UI to potentially update ItemSource
+                    RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () =>
+                    {
                         if (_npcSelectionBar.SelectedNpc == npcToSelect) // Ensure it's still the one we want
                         {
                             _npcSelectionBar.SignalScrollToNpc(npcToSelect);
                         }
-                     });
-                 }
-                 else
-                 {
-                     ScrollableMessageBox.ShowWarning($"Could not find NPC with FormKey {npcFormKey} in the main NPC list.", "NPC Not Found");
-                 }
-             });
+                    });
+                }
+                else
+                {
+                    ScrollableMessageBox.ShowWarning(
+                        $"Could not find NPC with FormKey {npcFormKey} in the main NPC list.", "NPC Not Found");
+                }
+            });
         }
 
         // RecalculateMugshotValidity now sets VM_ModSetting.HasValidMugshots
         // based on whether *actual* mugshots can be found for its defined NPCs.
         public void RecalculateMugshotValidity(VM_ModSetting modSetting)
         {
-            modSetting.HasValidMugshots = CheckMugshotValidity(modSetting.MugShotFolderPath); // Pass the VM_ModSetting itself
+            modSetting.HasValidMugshots =
+                CheckMugshotValidity(modSetting.MugShotFolderPath); // Pass the VM_ModSetting itself
             // If this was the selected mod, refresh the right panel
             if (SelectedModForMugshots == modSetting)
             {
-                 // Re-run ShowMugshotsAsync to reflect potential change from real to placeholder or vice-versa
+                // Re-run ShowMugshotsAsync to reflect potential change from real to placeholder or vice-versa
                 ShowMugshotsCommand.Execute(modSetting).Subscribe().DisposeWith(_disposables);
             }
         }
@@ -601,328 +661,396 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-       // In VM_Mods.cs
+        // In VM_Mods.cs
 
-       public async Task PopulateModSettingsAsync(VM_SplashScreen? splashReporter, double baseProgress = 0, double progressSpan = 10)
-{
-    splashReporter?.UpdateProgress(baseProgress, "Populating mod settings...");
-    _allModSettingsInternal.Clear();
-    var warnings = new List<string>();
-    var loadedDisplayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    var tempList = new List<VM_ModSetting>();
-    IsLoadingNpcData = true;
-    var claimedMugshotPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-    if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
-        warnings.Add("Environment is not valid. Cannot accurately link plugins.");
-
-    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1), "Processing configured mod settings...");
-    // --- Start of existing logic from your PopulateModSettings (Phase 1 & 2) ---
-    foreach (var settingModel in _settings.ModSettings)
-    {
-        if (string.IsNullOrWhiteSpace(settingModel.DisplayName)) continue;
-        var vm = new VM_ModSetting(settingModel, this, _aux);
-        if (!string.IsNullOrWhiteSpace(vm.MugShotFolderPath) && Directory.Exists(vm.MugShotFolderPath))
-            claimedMugshotPaths.Add(vm.MugShotFolderPath);
-        else if (string.IsNullOrWhiteSpace(vm.MugShotFolderPath))
+        public async Task PopulateModSettingsAsync(VM_SplashScreen? splashReporter, double baseProgress = 0,
+            double progressSpan = 10)
         {
+            splashReporter?.UpdateProgress(baseProgress, "Populating mod settings...");
+            _allModSettingsInternal.Clear();
+            var warnings = new List<string>();
+            var loadedDisplayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var tempList = new List<VM_ModSetting>();
+            IsLoadingNpcData = true;
+            var claimedMugshotPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
+                warnings.Add("Environment is not valid. Cannot accurately link plugins.");
+
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1),
+                "Processing configured mod settings...");
+            
+            // first load mods from settings that already exist
+            foreach (var settingModel in _settings.ModSettings)
+            {
+                if (string.IsNullOrWhiteSpace(settingModel.DisplayName)) continue;
+                var vm = new VM_ModSetting(settingModel, this, _aux);
+                if (!string.IsNullOrWhiteSpace(vm.MugShotFolderPath) && Directory.Exists(vm.MugShotFolderPath))
+                    claimedMugshotPaths.Add(vm.MugShotFolderPath);
+                else if (string.IsNullOrWhiteSpace(vm.MugShotFolderPath))
+                {
+                    if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) &&
+                        Directory.Exists(_settings.MugshotsFolder))
+                    {
+                        string potentialPathByName = Path.Combine(_settings.MugshotsFolder, vm.DisplayName);
+                        if (Directory.Exists(potentialPathByName) && !claimedMugshotPaths.Contains(potentialPathByName))
+                        {
+                            vm.MugShotFolderPath = potentialPathByName;
+                            claimedMugshotPaths.Add(potentialPathByName);
+                        }
+                    }
+                }
+
+                tempList.Add(vm);
+                loadedDisplayNames.Add(vm.DisplayName);
+            }
+
+            // then load mods from mugshots (whether they exist in the Mods directory or not).
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.2), "Scanning mugshot folders...");
+            var vmsFromMugshotsOnly = new List<VM_ModSetting>();
             if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
             {
-                string potentialPathByName = Path.Combine(_settings.MugshotsFolder, vm.DisplayName);
-                if (Directory.Exists(potentialPathByName) && !claimedMugshotPaths.Contains(potentialPathByName))
+                try
                 {
-                    vm.MugShotFolderPath = potentialPathByName;
-                    claimedMugshotPaths.Add(potentialPathByName);
-                }
-            }
-        }
-        tempList.Add(vm);
-        loadedDisplayNames.Add(vm.DisplayName);
-    }
-
-    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.2), "Scanning mugshot folders...");
-    var vmsFromMugshotsOnly = new List<VM_ModSetting>();
-    if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
-    {
-        try
-        {
-            foreach (var dirPath in Directory.EnumerateDirectories(_settings.MugshotsFolder))
-            {
-                if (!claimedMugshotPaths.Contains(dirPath))
-                {
-                    string folderName = Path.GetFileName(dirPath);
-                    if (!loadedDisplayNames.Contains(folderName))
-                        vmsFromMugshotsOnly.Add(new VM_ModSetting(folderName, dirPath, this, _aux));
-                }
-            }
-        }
-        catch (Exception ex) { warnings.Add($"Error scanning Mugshots folder '{_settings.MugshotsFolder}': {ex.Message}"); }
-    }
-
-    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Scanning mod folders...");
-    if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
-    {
-        try
-        {
-            foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
-            {
-                string modFolderName = Path.GetFileName(modFolderPath);
-                var foundEnabledKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings);
-
-                var existingVmFromSettings = tempList.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
-                var mugshotOnlyVmToUpgrade = vmsFromMugshotsOnly.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
-
-                if (existingVmFromSettings != null)
-                {
-                    if (!existingVmFromSettings.CorrespondingFolderPaths.Contains(modFolderPath, StringComparer.OrdinalIgnoreCase))
-                        existingVmFromSettings.CorrespondingFolderPaths.Add(modFolderPath);
-                    foreach (var key in foundEnabledKeysInFolder)
-                        if (!existingVmFromSettings.CorrespondingModKeys.Contains(key)) existingVmFromSettings.CorrespondingModKeys.Add(key);
-                }
-                else if (mugshotOnlyVmToUpgrade != null)
-                {
-                    mugshotOnlyVmToUpgrade.CorrespondingFolderPaths.Add(modFolderPath);
-                    foreach (var key in foundEnabledKeysInFolder)
-                        if (!mugshotOnlyVmToUpgrade.CorrespondingModKeys.Contains(key)) mugshotOnlyVmToUpgrade.CorrespondingModKeys.Add(key);
-                    tempList.Add(mugshotOnlyVmToUpgrade);
-                    vmsFromMugshotsOnly.Remove(mugshotOnlyVmToUpgrade);
-                    loadedDisplayNames.Add(mugshotOnlyVmToUpgrade.DisplayName);
-                }
-                else if (foundEnabledKeysInFolder.Any())
-                {
-                    var newVm = new VM_ModSetting(modFolderName, this, _aux)
+                    foreach (var dirPath in Directory.EnumerateDirectories(_settings.MugshotsFolder))
                     {
-                        CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath },
-                        CorrespondingModKeys = new ObservableCollection<ModKey>(foundEnabledKeysInFolder)
-                    };
-                    string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
-                    if (Directory.Exists(potentialMugshotPath) && !claimedMugshotPaths.Contains(potentialMugshotPath))
-                    {
-                        newVm.MugShotFolderPath = potentialMugshotPath;
-                        claimedMugshotPaths.Add(potentialMugshotPath);
+                        if (!claimedMugshotPaths.Contains(dirPath))
+                        {
+                            string folderName = Path.GetFileName(dirPath);
+                            if (!loadedDisplayNames.Contains(folderName))
+                                vmsFromMugshotsOnly.Add(new VM_ModSetting(folderName, dirPath, this, _aux));
+                        }
                     }
-                    tempList.Add(newVm);
-                    loadedDisplayNames.Add(newVm.DisplayName);
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add($"Error scanning Mugshots folder '{_settings.MugshotsFolder}': {ex.Message}");
                 }
             }
-        }
-        catch (Exception ex) { warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}': {ex.Message}"); }
-    }
 
-    foreach (var mugshotVm in vmsFromMugshotsOnly)
-        if (!tempList.Any(existing => existing.DisplayName.Equals(mugshotVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
-            tempList.Add(mugshotVm);
-
-    foreach (var vm in tempList)
-    {
-        if (vm.IsMugshotOnlyEntry && (vm.CorrespondingFolderPaths.Any() || vm.CorrespondingModKeys.Any()))
-        {
-            vm.IsMugshotOnlyEntry = false;
-        }
-    }
-    // --- End of existing logic ---
-
-    _allModSettingsInternal = tempList.OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
-    ApplyFilters(); 
-
-    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.5), "Refreshing NPC data for mods...");
-    var refreshTasks = _allModSettingsInternal.Select((vm, index) => Task.Run(async () => // Make inner task async if vm.RefreshNpcLists becomes async
-    {
-        try
-        {
-            // If vm.RefreshNpcLists() itself becomes async: await vm.RefreshNpcLists();
-            vm.RefreshNpcLists(); // Assuming still synchronous for now
-            if (index % 10 == 0 && _allModSettingsInternal.Count > 0)
+            // Then load mods from mods folder (e.g. mods for which mugshots are not installed)
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Scanning mod folders...");
+            if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
             {
-                splashReporter?.UpdateProgress(
-                    baseProgress + (progressSpan * 0.5) + (progressSpan * 0.4 * ((double)index / _allModSettingsInternal.Count)),
-                    $"Analyzing mod '{vm.DisplayName}'..."
-                );
+                try
+                {
+                    foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
+                    {
+                        string modFolderName = Path.GetFileName(modFolderPath);
+                        var foundEnabledKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings, false);
+
+                        var existingVmFromSettings = tempList.FirstOrDefault(vm =>
+                            vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
+                        var mugshotOnlyVmToUpgrade = vmsFromMugshotsOnly.FirstOrDefault(vm =>
+                            vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
+
+                        if (existingVmFromSettings != null)
+                        {
+                            if (!existingVmFromSettings.CorrespondingFolderPaths.Contains(modFolderPath,
+                                    StringComparer.OrdinalIgnoreCase))
+                                existingVmFromSettings.CorrespondingFolderPaths.Add(modFolderPath);
+                            foreach (var key in foundEnabledKeysInFolder)
+                                if (!existingVmFromSettings.CorrespondingModKeys.Contains(key))
+                                    existingVmFromSettings.CorrespondingModKeys.Add(key);
+                        }
+                        else if (mugshotOnlyVmToUpgrade != null)
+                        {
+                            mugshotOnlyVmToUpgrade.CorrespondingFolderPaths.Add(modFolderPath);
+                            foreach (var key in foundEnabledKeysInFolder)
+                                if (!mugshotOnlyVmToUpgrade.CorrespondingModKeys.Contains(key))
+                                    mugshotOnlyVmToUpgrade.CorrespondingModKeys.Add(key);
+                            tempList.Add(mugshotOnlyVmToUpgrade);
+                            vmsFromMugshotsOnly.Remove(mugshotOnlyVmToUpgrade);
+                            loadedDisplayNames.Add(mugshotOnlyVmToUpgrade.DisplayName);
+                        }
+                        else if (foundEnabledKeysInFolder.Any())
+                        {
+                            var newVm = new VM_ModSetting(modFolderName, this, _aux)
+                            {
+                                CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath },
+                                CorrespondingModKeys = new ObservableCollection<ModKey>(foundEnabledKeysInFolder)
+                            };
+                            string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
+                            if (Directory.Exists(potentialMugshotPath) &&
+                                !claimedMugshotPaths.Contains(potentialMugshotPath))
+                            {
+                                newVm.MugShotFolderPath = potentialMugshotPath;
+                                claimedMugshotPaths.Add(potentialMugshotPath);
+                            }
+
+                            tempList.Add(newVm);
+                            loadedDisplayNames.Add(newVm.DisplayName);
+                        }
+                        else if (FaceGenScanner.CollectFaceGenFiles(modFolderPath, out var faceGenFiles, out _, out _))
+                        {
+                            var newVm = new VM_ModSetting(modFolderName, this, _aux)
+                            {
+                                CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath },
+                                IsFaceGenOnlyEntry = true
+                            };
+
+                            foreach (var pluginName in faceGenFiles.Keys)
+                            {
+                                var modKey = ModKey.FromFileName(pluginName);
+                                newVm.CorrespondingModKeys.Add(modKey);
+                                
+                                var NpcIds = faceGenFiles[pluginName];
+                                foreach (var id in NpcIds)
+                                {
+                                    if (id.Length != 8) {continue;} // not a FormID
+                                    var subId = id.Substring(2, 6);
+                                    var formKeyStr = subId + ":" + pluginName;
+                                    if (FormKey.TryFactory(formKeyStr, out var formKey))
+                                    {
+                                        newVm.FaceGenOnlyNpcFormKeys.Add(formKey);
+                                    }
+                                }
+                            }
+                            tempList.Add(newVm);
+                            loadedDisplayNames.Add(newVm.DisplayName);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}': {ex.Message}");
+                }
+            }
+
+            foreach (var mugshotVm in vmsFromMugshotsOnly)
+                if (!tempList.Any(existing =>
+                        existing.DisplayName.Equals(mugshotVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
+                    tempList.Add(mugshotVm);
+
+            foreach (var vm in tempList)
+            {
+                if (vm.IsMugshotOnlyEntry && (vm.CorrespondingFolderPaths.Any() || vm.CorrespondingModKeys.Any()))
+                {
+                    vm.IsMugshotOnlyEntry = false;
+                }
+            }
+            // --- End of existing logic ---
+
+            _allModSettingsInternal = tempList.OrderBy(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.5), "Refreshing NPC data for mods...");
+            var refreshTasks = _allModSettingsInternal.Select((vm, index) => Task.Run(
+                async () => // Make inner task async if vm.RefreshNpcLists becomes async
+                {
+                    try
+                    {
+                        // If vm.RefreshNpcLists() itself becomes async: await vm.RefreshNpcLists();
+                        vm.RefreshNpcLists(); // Assuming still synchronous for now
+                        if (index % 10 == 0 && _allModSettingsInternal.Count > 0)
+                        {
+                            splashReporter?.UpdateProgress(
+                                baseProgress + (progressSpan * 0.5) +
+                                (progressSpan * 0.4 * ((double)index / _allModSettingsInternal.Count)),
+                                $"Analyzing mod '{vm.DisplayName}'..."
+                            );
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error during RefreshNpcLists for {vm.DisplayName}: {ex.Message}");
+                    }
+                })).ToList();
+
+            try
+            {
+                await Task.WhenAll(refreshTasks);
+
+                splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9),
+                    "Finalizing mod settings on UI thread...");
+
+                // Phase 4: Run UI-dependent work on the UI thread
+                // Use Dispatcher.InvokeAsync for WPF
+                await Application.Current.Dispatcher.InvokeAsync(async () =>
+                {
+                    foreach (var vm in _allModSettingsInternal)
+                    {
+                        RecalculateMugshotValidity(vm);
+                    }
+
+                    IsLoadingNpcData = false;
+                    ApplyFilters();
+
+                    if (warnings.Any())
+                    {
+                        ScrollableMessageBox.ShowWarning(string.Join("\n", warnings),
+                            "Mod Settings Population Warning");
+                    }
+                    // If RecalculateMugshotValidity or ApplyFilters were async and returned Task,
+                    // you could await them here. Since they are not, the async () => is for InvokeAsync.
+                });
+            }
+            catch (AggregateException aggEx)
+            {
+                foreach (var ex in aggEx.Flatten().InnerExceptions)
+                {
+                    Debug.WriteLine($"Async NPC list refresh error (outer): {ex.Message}");
+                    // Safely add to warnings on UI thread (if warnings is a UI bound collection, otherwise direct add is fine)
+                    Application.Current.Dispatcher.Invoke(() =>
+                        warnings.Add($"Async NPC list refresh error: {ex.Message}"));
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in PopulateModSettingsAsync after WhenAll: {ex.Message}");
+                Application.Current.Dispatcher.Invoke(() => warnings.Add($"Unexpected error: {ex.Message}"));
+            }
+            finally
+            {
+                splashReporter?.UpdateProgress(baseProgress + progressSpan, "Mod settings populated.");
             }
         }
-        catch (Exception ex)
+
+        // Filtering Logic (Left Panel)
+        public void ApplyFilters()
         {
-            Debug.WriteLine($"Error during RefreshNpcLists for {vm.DisplayName}: {ex.Message}");
-        }
-    })).ToList();
+            IEnumerable<VM_ModSetting> filtered = _allModSettingsInternal;
 
-    try
-    {
-        await Task.WhenAll(refreshTasks); 
-
-        splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Finalizing mod settings on UI thread...");
-
-        // Phase 4: Run UI-dependent work on the UI thread
-        // Use Dispatcher.InvokeAsync for WPF
-        await Application.Current.Dispatcher.InvokeAsync(async () =>
-        {
-            foreach (var vm in _allModSettingsInternal)
+            if (!string.IsNullOrWhiteSpace(NameFilterText))
             {
-                RecalculateMugshotValidity(vm);
+                filtered = filtered.Where(vm =>
+                    vm.DisplayName.Contains(NameFilterText, StringComparison.OrdinalIgnoreCase));
             }
 
-            IsLoadingNpcData = false;
-            ApplyFilters(); 
-
-            if (warnings.Any())
+            if (!string.IsNullOrWhiteSpace(PluginFilterText))
             {
-                ScrollableMessageBox.ShowWarning(string.Join("\n", warnings), "Mod Settings Population Warning");
+                filtered = filtered.Where(vm => vm.CorrespondingModKeys.Any(key =>
+                    key.FileName.String.Contains(PluginFilterText, StringComparison.OrdinalIgnoreCase) ||
+                    key.ToString().Contains(PluginFilterText, StringComparison.OrdinalIgnoreCase)
+                ));
             }
-            // If RecalculateMugshotValidity or ApplyFilters were async and returned Task,
-            // you could await them here. Since they are not, the async () => is for InvokeAsync.
-        });
-    }
-    catch (AggregateException aggEx) 
-    {
-        foreach (var ex in aggEx.Flatten().InnerExceptions)
-        {
-            Debug.WriteLine($"Async NPC list refresh error (outer): {ex.Message}");
-            // Safely add to warnings on UI thread (if warnings is a UI bound collection, otherwise direct add is fine)
-            Application.Current.Dispatcher.Invoke(() => warnings.Add($"Async NPC list refresh error: {ex.Message}"));
+
+            // *** Apply NPC Filter ***
+            if (!IsLoadingNpcData && !string.IsNullOrWhiteSpace(NpcSearchText))
+            {
+                string searchTextLower = NpcSearchText.Trim().ToLowerInvariant(); // Use invariant culture lowercase
+
+                switch (SelectedNpcSearchType)
+                {
+                    case ModNpcSearchType.Name:
+                        filtered = filtered.Where(vm =>
+                            vm.NpcNames.Any(name =>
+                                name.Contains(searchTextLower, StringComparison.OrdinalIgnoreCase)) ||
+                            vm.NpcFormKeysToDisplayName.Values.Any(dName =>
+                                dName.Contains(searchTextLower,
+                                    StringComparison.OrdinalIgnoreCase))); // Also check dictionary values
+                        break;
+                    case ModNpcSearchType.EditorID:
+                        filtered = filtered.Where(vm =>
+                            vm.NpcEditorIDs.Any(
+                                eid => eid.Contains(searchTextLower, StringComparison.OrdinalIgnoreCase)));
+                        break;
+                    case ModNpcSearchType.FormKey:
+                        // Compare string representations of FormKeys
+                        filtered = filtered.Where(vm => vm.NpcFormKeys.Any(fk =>
+                            fk.ToString().Contains(searchTextLower, StringComparison.OrdinalIgnoreCase)));
+                        break;
+                }
+            }
+            // *** End NPC Filter ***
+
+            var previouslySelectedMod = SelectedModForMugshots; // Preserve selection if possible
+
+            ModSettingsList.Clear();
+            var filteredList = filtered.ToList(); // Materialize the list
+            foreach (var vm in filteredList)
+            {
+                ModSettingsList.Add(vm);
+            }
+
+            // Check if the previously selected item for mugshots is still in the filtered list
+            if (previouslySelectedMod != null && !filteredList.Contains(previouslySelectedMod))
+            {
+                // It was filtered out, clear the right panel
+                SelectedModForMugshots = null;
+                CurrentModNpcMugshots.Clear();
+            }
+
+
+            System.Diagnostics.Debug.WriteLine(
+                $"ApplyFilters: Displaying {ModSettingsList.Count} of {_allModSettingsInternal.Count} items.");
         }
-    }
-    catch (Exception ex) 
-    {
-        Debug.WriteLine($"Error in PopulateModSettingsAsync after WhenAll: {ex.Message}");
-        Application.Current.Dispatcher.Invoke(() => warnings.Add($"Unexpected error: {ex.Message}"));
-    }
-    finally
-    {
-        splashReporter?.UpdateProgress(baseProgress + progressSpan, "Mod settings populated.");
-    }
-}
 
-         // Filtering Logic (Left Panel)
-         public void ApplyFilters()
-         {
-             IEnumerable<VM_ModSetting> filtered = _allModSettingsInternal;
-
-             if (!string.IsNullOrWhiteSpace(NameFilterText))
-             {
-                 filtered = filtered.Where(vm => vm.DisplayName.Contains(NameFilterText, StringComparison.OrdinalIgnoreCase));
-             }
-
-             if (!string.IsNullOrWhiteSpace(PluginFilterText))
-             {
-                 filtered = filtered.Where(vm => vm.CorrespondingModKeys.Any(key =>
-                     key.FileName.String.Contains(PluginFilterText, StringComparison.OrdinalIgnoreCase) ||
-                     key.ToString().Contains(PluginFilterText, StringComparison.OrdinalIgnoreCase)
-                 ));
-             }
-
-             // *** Apply NPC Filter ***
-             if (!IsLoadingNpcData && !string.IsNullOrWhiteSpace(NpcSearchText))
-             {
-                 string searchTextLower = NpcSearchText.Trim().ToLowerInvariant(); // Use invariant culture lowercase
-
-                 switch (SelectedNpcSearchType)
-                 {
-                     case ModNpcSearchType.Name:
-                         filtered = filtered.Where(vm => vm.NpcNames.Any(name => name.Contains(searchTextLower, StringComparison.OrdinalIgnoreCase)) ||
-                                                         vm.NpcFormKeysToDisplayName.Values.Any(dName => dName.Contains(searchTextLower, StringComparison.OrdinalIgnoreCase))); // Also check dictionary values
-                         break;
-                     case ModNpcSearchType.EditorID:
-                         filtered = filtered.Where(vm => vm.NpcEditorIDs.Any(eid => eid.Contains(searchTextLower, StringComparison.OrdinalIgnoreCase)));
-                         break;
-                     case ModNpcSearchType.FormKey:
-                         // Compare string representations of FormKeys
-                         filtered = filtered.Where(vm => vm.NpcFormKeys.Any(fk => fk.ToString().Contains(searchTextLower, StringComparison.OrdinalIgnoreCase)));
-                         break;
-                 }
-             }
-             // *** End NPC Filter ***
-
-             var previouslySelectedMod = SelectedModForMugshots; // Preserve selection if possible
-
-             ModSettingsList.Clear();
-             var filteredList = filtered.ToList(); // Materialize the list
-             foreach (var vm in filteredList)
-             {
-                 ModSettingsList.Add(vm);
-             }
-
-             // Check if the previously selected item for mugshots is still in the filtered list
-             if (previouslySelectedMod != null && !filteredList.Contains(previouslySelectedMod))
-             {
-                 // It was filtered out, clear the right panel
-                 SelectedModForMugshots = null;
-                 CurrentModNpcMugshots.Clear();
-             }
+        public bool TryGetWinningNpc(FormKey fk, out INpcGetter? npcGetter)
+        {
+            var matchingNpc = _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(fk, out npcGetter);
+            return matchingNpc;
+        }
 
 
-             System.Diagnostics.Debug.WriteLine($"ApplyFilters: Displaying {ModSettingsList.Count} of {_allModSettingsInternal.Count} items.");
-         }
+        // Save Logic
+        public void SaveModSettingsToModel()
+        {
+            _settings.ModSettings.Clear();
+            foreach (var vm in _allModSettingsInternal) // Save from the full list
+            {
+                // Only save if it has meaningful data (Key, Folder Paths, or Mugshot Path)
+                if (!string.IsNullOrWhiteSpace(vm.DisplayName) &&
+                    (vm.CorrespondingModKeys.Any() || vm.CorrespondingFolderPaths.Any())) // Check if any keys exist
+                {
+                    // Create a new ModSetting model instance
+                    var model = new Models.ModSetting
+                    {
+                        DisplayName = vm.DisplayName,
+                        CorrespondingModKeys = vm.CorrespondingModKeys.ToList(),
+                        // Important: Create new lists/collections when saving to the model
+                        // to avoid potential issues with shared references if the VM is reused.
+                        CorrespondingFolderPaths = vm.CorrespondingFolderPaths.ToList(),
+                        MugShotFolderPath = vm.MugShotFolderPath, // Save the mugshot folder path
+                        NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(vm.NpcPluginDisambiguation),
+                        AvailablePluginsForNpcs = new Dictionary<FormKey, List<ModKey>>(vm.AvailablePluginsForNpcs),
+                        IsFaceGenOnlyEntry = vm.IsFaceGenOnlyEntry,
+                        FaceGenOnlyNpcFormKeys = new(vm.FaceGenOnlyNpcFormKeys)
+                    };
+                    _settings.ModSettings.Add(model);
+                }
+            }
 
-         public bool TryGetWinningNpc(FormKey fk, out INpcGetter? npcGetter)
-         {
-             var matchingNpc = _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(fk, out npcGetter);
-             return matchingNpc;
-         }
+            System.Diagnostics.Debug.WriteLine(
+                $"DEBUG: SaveModSettingsToModel preparing to save {_settings.ModSettings.Count} items.");
 
+            // Saving the main settings file is handled by VM_Settings on App Exit
+            // string settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");
+            // JSONhandler<Settings>.SaveJSONFile(_settings, settingsPath, out bool success, out string exception);
+            // if (!success) { MessageBox.Show($"Error saving settings: {exception}", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error); }
+            // else { System.Diagnostics.Debug.WriteLine("DEBUG: Settings successfully updated in memory by SaveModSettingsToModel."); }
+        }
 
-         // Save Logic
-         public void SaveModSettingsToModel()
-         {
-             _settings.ModSettings.Clear();
-             foreach (var vm in _allModSettingsInternal) // Save from the full list
-             {
-                 // Only save if it has meaningful data (Key, Folder Paths, or Mugshot Path)
-                 if (!string.IsNullOrWhiteSpace(vm.DisplayName) &&
-                     (vm.CorrespondingModKeys.Any() || vm.CorrespondingFolderPaths.Any())) // Check if any keys exist
-                 {
-                     // Create a new ModSetting model instance
-                     var model = new Models.ModSetting
-                     {
-                         DisplayName = vm.DisplayName,
-                         CorrespondingModKeys = vm.CorrespondingModKeys.ToList(),
-                         // Important: Create new lists/collections when saving to the model
-                         // to avoid potential issues with shared references if the VM is reused.
-                         CorrespondingFolderPaths = vm.CorrespondingFolderPaths.ToList(),
-                         MugShotFolderPath = vm.MugShotFolderPath, // Save the mugshot folder path
-                         NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(vm.NpcPluginDisambiguation),
-                         AvailablePluginsForNpcs = new Dictionary<FormKey, List<ModKey>>(vm.AvailablePluginsForNpcs),
-                     };
-                     _settings.ModSettings.Add(model);
-                 }
-             }
+        /// <summary>
+        /// Removes the specified VM_ModSetting from the internal list and refreshes the filtered view.
+        /// </summary>
+        /// <param name="modSettingToRemove">The VM_ModSetting to remove.</param>
+        /// <returns>True if the item was successfully found and removed; otherwise, false.</returns>
+        public bool RemoveModSetting(VM_ModSetting modSettingToRemove)
+        {
+            if (modSettingToRemove == null) return false;
 
-             System.Diagnostics.Debug.WriteLine($"DEBUG: SaveModSettingsToModel preparing to save {_settings.ModSettings.Count} items.");
+            bool removed = _allModSettingsInternal.Remove(modSettingToRemove);
+            if (removed)
+            {
+                Debug.WriteLine($"VM_Mods: Removed ModSetting '{modSettingToRemove.DisplayName}' from internal list.");
+                // If the removed mod was selected for mugshots, clear the selection
+                if (SelectedModForMugshots == modSettingToRemove)
+                {
+                    SelectedModForMugshots = null;
+                    CurrentModNpcMugshots.Clear();
+                }
 
-             // Saving the main settings file is handled by VM_Settings on App Exit
-             // string settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");
-             // JSONhandler<Settings>.SaveJSONFile(_settings, settingsPath, out bool success, out string exception);
-             // if (!success) { MessageBox.Show($"Error saving settings: {exception}", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error); }
-             // else { System.Diagnostics.Debug.WriteLine("DEBUG: Settings successfully updated in memory by SaveModSettingsToModel."); }
-         }
-         
-         /// <summary>
-         /// Removes the specified VM_ModSetting from the internal list and refreshes the filtered view.
-         /// </summary>
-         /// <param name="modSettingToRemove">The VM_ModSetting to remove.</param>
-         /// <returns>True if the item was successfully found and removed; otherwise, false.</returns>
-         public bool RemoveModSetting(VM_ModSetting modSettingToRemove)
-         {
-             if (modSettingToRemove == null) return false;
+                ApplyFilters(); // Refresh the ModSettingsList (left panel)
+            }
+            else
+            {
+                Debug.WriteLine(
+                    $"VM_Mods: ModSetting '{modSettingToRemove.DisplayName}' not found in internal list for removal.");
+            }
 
-             bool removed = _allModSettingsInternal.Remove(modSettingToRemove);
-             if (removed)
-             {
-                 Debug.WriteLine($"VM_Mods: Removed ModSetting '{modSettingToRemove.DisplayName}' from internal list.");
-                 // If the removed mod was selected for mugshots, clear the selection
-                 if (SelectedModForMugshots == modSettingToRemove)
-                 {
-                     SelectedModForMugshots = null;
-                     CurrentModNpcMugshots.Clear();
-                 }
-                 ApplyFilters(); // Refresh the ModSettingsList (left panel)
-             }
-             else
-             {
-                 Debug.WriteLine($"VM_Mods: ModSetting '{modSettingToRemove.DisplayName}' not found in internal list for removal.");
-             }
-             return removed;
-         }
-         
+            return removed;
+        }
+
         /// <summary>
         /// Tries to find an existing VM_ModSetting matching the plugin key.
         /// It searches based on the CorrespondingModKey property of the VM_ModSettings.
@@ -931,7 +1059,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// <param name="foundVm">Output: The found VM_ModSetting instance if a match exists; otherwise, null.</param>
         /// <param name="modDisplayName">Output: The display name of the found VM_ModSetting if found; otherwise, defaults to the input plugin's filename.</param>
         /// <returns>True if a matching VM_ModSetting was found based on the CorrespondingModKey, false otherwise.</returns>
-        public bool TryGetModSettingForPlugin(ModKey appearancePluginKey, out VM_ModSetting? foundVm, out string modDisplayName)
+        public bool TryGetModSettingForPlugin(ModKey appearancePluginKey, out VM_ModSetting? foundVm,
+            out string modDisplayName)
         {
             // Initialize output parameters
             foundVm = null;
@@ -950,7 +1079,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // Search the internal list of all loaded/created mod settings.
             // Find the first VM where *any* of its CorrespondingModKeys matches the input key.
-            foundVm = _allModSettingsInternal.FirstOrDefault(vm => vm.CorrespondingModKeys.Any(key => key.Equals(appearancePluginKey)));
+            foundVm = _allModSettingsInternal.FirstOrDefault(vm =>
+                vm.CorrespondingModKeys.Any(key => key.Equals(appearancePluginKey)));
             // Check if a VM was found
             if (foundVm != null)
             {
@@ -969,7 +1099,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 return false; // Indicate failure.
             }
         }
-        
+
         /// <summary>
         /// Called after a Mod Folder Path or Mugshot Folder Path is potentially changed on a VM_ModSetting.
         /// Checks if this change links it to another complementary VM (one with only mugshots, one with only mods)
@@ -980,7 +1110,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// <param name="pathType">Indicates whether a ModFolder or MugshotFolder was changed.</param>
         /// <param name="hadMugshotPathBefore">Did modifiedVm have a mugshot path BEFORE this change?</param>
         /// <param name="hadModPathsBefore">Did modifiedVm have mod paths BEFORE this change?</param>
-        public void CheckForAndPerformMerge(VM_ModSetting modifiedVm, string addedOrSetPath, PathType pathType, bool hadMugshotPathBefore, bool hadModPathsBefore)
+        public void CheckForAndPerformMerge(VM_ModSetting modifiedVm, string addedOrSetPath, PathType pathType,
+            bool hadMugshotPathBefore, bool hadModPathsBefore)
         {
             if (modifiedVm == null || string.IsNullOrEmpty(addedOrSetPath)) return;
 
@@ -992,11 +1123,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 if (vm == modifiedVm) continue; // Don't compare to self
 
                 bool pathMatches = false;
-                if (pathType == PathType.ModFolder && vm.CorrespondingFolderPaths.Contains(addedOrSetPath, StringComparer.OrdinalIgnoreCase))
+                if (pathType == PathType.ModFolder &&
+                    vm.CorrespondingFolderPaths.Contains(addedOrSetPath, StringComparer.OrdinalIgnoreCase))
                 {
                     pathMatches = true;
                 }
-                else if (pathType == PathType.MugshotFolder && addedOrSetPath.Equals(vm.MugShotFolderPath, StringComparison.OrdinalIgnoreCase))
+                else if (pathType == PathType.MugshotFolder &&
+                         addedOrSetPath.Equals(vm.MugShotFolderPath, StringComparison.OrdinalIgnoreCase))
                 {
                     pathMatches = true;
                 }
@@ -1022,8 +1155,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // 1. 'modifiedVm' previously ONLY had mugshots (hadMugshotPathBefore=true, hadModPathsBefore=false)
                 // 2. 'sourceVm' previously ONLY had this specific mod path and NO mugshots
                 bool sourceHadOnlyThisModPath = sourceVm.CorrespondingFolderPaths.Count == 1 &&
-                                               sourceVm.CorrespondingFolderPaths.Contains(addedOrSetPath, StringComparer.OrdinalIgnoreCase);
-                bool sourceHadNoMugshots = string.IsNullOrWhiteSpace(sourceVm.MugShotFolderPath); // Check current state is okay here
+                                                sourceVm.CorrespondingFolderPaths.Contains(addedOrSetPath,
+                                                    StringComparer.OrdinalIgnoreCase);
+                bool sourceHadNoMugshots =
+                    string.IsNullOrWhiteSpace(sourceVm.MugShotFolderPath); // Check current state is okay here
 
                 if (hadMugshotPathBefore && !hadModPathsBefore && sourceHadOnlyThisModPath && sourceHadNoMugshots)
                 {
@@ -1037,8 +1172,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // Conditions:
                 // 1. 'modifiedVm' previously ONLY had mod paths (hadMugshotPathBefore=false, hadModPathsBefore=true)
                 // 2. 'sourceVm' previously ONLY had this specific mugshot path and NO mod paths
-                bool sourceHadOnlyThisMugshot = addedOrSetPath.Equals(sourceVm.MugShotFolderPath, StringComparison.OrdinalIgnoreCase) &&
-                                               !sourceVm.HasModPathsAssigned; // Check current state is okay
+                bool sourceHadOnlyThisMugshot =
+                    addedOrSetPath.Equals(sourceVm.MugShotFolderPath, StringComparison.OrdinalIgnoreCase) &&
+                    !sourceVm.HasModPathsAssigned; // Check current state is okay
                 bool sourceHadNoModPaths = !sourceVm.HasModPathsAssigned; // Redundant check, but clear
 
                 if (!hadMugshotPathBefore && hadModPathsBefore && sourceHadOnlyThisMugshot)
@@ -1061,6 +1197,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     winner.MugShotFolderPath = loser.MugShotFolderPath;
                 }
+
                 // Mod Folder Paths (add paths from loser not already in winner)
                 foreach (var path in loser.CorrespondingFolderPaths)
                 {
@@ -1069,6 +1206,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         winner.CorrespondingFolderPaths.Add(path);
                     }
                 }
+
                 // Merge Corresponding Mod Keys (add keys from loser not already in winner)
                 foreach (var key in loser.CorrespondingModKeys)
                 {
@@ -1077,9 +1215,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         winner.CorrespondingModKeys.Add(key);
                     }
                 }
-                
+
                 // Merge NpcPluginDisambiguation: Loser's choices might be relevant if winner didn't have them
-                foreach(var disambiguationEntry in loser.NpcPluginDisambiguation)
+                foreach (var disambiguationEntry in loser.NpcPluginDisambiguation)
                 {
                     if (!winner.NpcPluginDisambiguation.ContainsKey(disambiguationEntry.Key))
                     {
@@ -1090,35 +1228,37 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         }
                     }
                 }
-                
-                // IsMugshotOnlyEntry should remain based on the WINNER's original status
-                 // Although, if a merge happens, it's unlikely the winner was mugshot-only. Let's set it to false.
-                 winner.IsMugshotOnlyEntry = false;
-                 
-                 // Refresh NPC lists for the winner as its sources may have changed
-                 if (winner.DisplayName == "WICO - Windsong Immersive Chracter Overhaul")
-                 {
-                     Debug.WriteLine("Calling RefreshNpcLists for WICO from CheckForAndPerformMerge()");
-                 }
-                 winner.RefreshNpcLists();
-                 
-                // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)
-                 string loserName = loser.DisplayName;
-                 string winnerName = winner.DisplayName;
-                 var npcsToUpdate = _settings.SelectedAppearanceMods
-                     .Where(kvp => kvp.Value.Equals(loserName, StringComparison.OrdinalIgnoreCase))
-                     .Select(kvp => kvp.Key) // Get FormKeys of NPCs assigned to the loser
-                     .ToList(); // Materialize the list before modifying the dictionary
 
-                 if (npcsToUpdate.Any())
-                 {
-                      Debug.WriteLine($"Updating {npcsToUpdate.Count} NPC selections from '{loserName}' to '{winnerName}'.");
-                      foreach (var npcKey in npcsToUpdate)
-                      {
-                           // Use consistency provider to update both cache and _settings model
-                           _consistencyProvider.SetSelectedMod(npcKey, winnerName);
-                      }
-                 }
+                // IsMugshotOnlyEntry should remain based on the WINNER's original status
+                // Although, if a merge happens, it's unlikely the winner was mugshot-only. Let's set it to false.
+                winner.IsMugshotOnlyEntry = false;
+
+                // Refresh NPC lists for the winner as its sources may have changed
+                if (winner.DisplayName == "WICO - Windsong Immersive Chracter Overhaul")
+                {
+                    Debug.WriteLine("Calling RefreshNpcLists for WICO from CheckForAndPerformMerge()");
+                }
+
+                winner.RefreshNpcLists();
+
+                // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)
+                string loserName = loser.DisplayName;
+                string winnerName = winner.DisplayName;
+                var npcsToUpdate = _settings.SelectedAppearanceMods
+                    .Where(kvp => kvp.Value.Equals(loserName, StringComparison.OrdinalIgnoreCase))
+                    .Select(kvp => kvp.Key) // Get FormKeys of NPCs assigned to the loser
+                    .ToList(); // Materialize the list before modifying the dictionary
+
+                if (npcsToUpdate.Any())
+                {
+                    Debug.WriteLine(
+                        $"Updating {npcsToUpdate.Count} NPC selections from '{loserName}' to '{winnerName}'.");
+                    foreach (var npcKey in npcsToUpdate)
+                    {
+                        // Use consistency provider to update both cache and _settings model
+                        _consistencyProvider.SetSelectedMod(npcKey, winnerName);
+                    }
+                }
 
 
                 // 3. Remove Loser VM
@@ -1134,10 +1274,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 ScrollableMessageBox.Show(
                     $"Automatically merged mod settings:\n\n'{loserName}' was merged into '{winnerName}'.\n\nNPC assignments using '{loserName}' have been updated.",
                     "Mod Settings Merged"
-                    );
+                );
             }
         }
-        
+
         public void SignalScrollToMod(VM_ModSetting? modSetting)
         {
             if (modSetting != null)
@@ -1150,14 +1290,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 _requestScrollToModSubject.OnNext(null);
             }
         }
-        
+
         /// <summary>
         /// Called by VM_ModSetting when a single NPC's source plugin has changed.
         /// This might trigger a refresh of the mugshots if the display depends on the chosen source.
         /// </summary>
         public void NotifyNpcSourceChanged(VM_ModSetting modSetting, FormKey npcKey)
         {
-            Debug.WriteLine($"VM_Mods: Notified that source for NPC {npcKey} changed in ModSetting '{modSetting.DisplayName}'.");
+            Debug.WriteLine(
+                $"VM_Mods: Notified that source for NPC {npcKey} changed in ModSetting '{modSetting.DisplayName}'.");
             // If the affected modSetting is the one currently displayed for mugshots,
             // and the mugshot display logic considers the *chosen* source, then refresh.
             if (SelectedModForMugshots == modSetting)
@@ -1172,7 +1313,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// </summary>
         public void NotifyMultipleNpcSourcesChanged(VM_ModSetting modSetting)
         {
-            Debug.WriteLine($"VM_Mods: Notified that multiple NPC sources may have changed in ModSetting '{modSetting.DisplayName}'.");
+            Debug.WriteLine(
+                $"VM_Mods: Notified that multiple NPC sources may have changed in ModSetting '{modSetting.DisplayName}'.");
             if (SelectedModForMugshots == modSetting)
             {
                 ShowMugshotsCommand.Execute(modSetting).Subscribe().DisposeWith(_disposables);
