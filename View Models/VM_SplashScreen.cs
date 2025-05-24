@@ -23,14 +23,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _dispatcher = Dispatcher.CurrentDispatcher;
         }
 
-        public void UpdateProgress(double percentage, string message)
+        public void UpdateProgress(double percent, string message)
         {
-            // Ensure updates run on the UI thread
-            _dispatcher.InvokeAsync(() =>
+            if (_dispatcher.CheckAccess())           // already on UI thread
             {
-                ProgressValue = percentage;
-                OperationText = message;
-            });
+                ProgressValue  = percent;
+                OperationText  = message;
+            }
+            else
+            {
+                _dispatcher.Invoke(() =>             // ← blocks calling thread
+                {
+                    ProgressValue = percent;
+                    OperationText = message;
+                }, DispatcherPriority.Send);
+            }
         }
     }
 }

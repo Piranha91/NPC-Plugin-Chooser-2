@@ -677,7 +677,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private static readonly Regex PluginRegex = new(@"^.+\.(esm|esp|esl)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex HexFileRegex = new(@"^[0-9A-F]{8}\.(png|jpg|jpeg|bmp)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        private Dictionary<FormKey, List<(string ModName, string ImagePath)>> ScanMugshotDirectory()
+        private Dictionary<FormKey, List<(string ModName, string ImagePath)>> ScanMugshotDirectory(VM_SplashScreen? splashReporter)
         {
             var results = new Dictionary<FormKey, List<(string ModName, string ImagePath)>>();
             if (string.IsNullOrWhiteSpace(_settings.MugshotsFolder) || !Directory.Exists(_settings.MugshotsFolder)) return results;
@@ -690,8 +690,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 var potentialFiles = Directory.EnumerateFiles(_settings.MugshotsFolder, "*.*", SearchOption.AllDirectories)
                                               .Where(f => HexFileRegex.IsMatch(Path.GetFileName(f)));
 
+                int fileCount = potentialFiles.Count();
+                int scannedFileCount = 0;
                 foreach (var filePath in potentialFiles)
                 {
+                    scannedFileCount++;
+                    if (scannedFileCount % 1000 == 0)
+                    {
+                        var percentComplete = scannedFileCount * 100 / fileCount;
+                        splashReporter?.UpdateProgress(percentComplete, $"Scanned {fileCount.ToString()} Mugshots.");
+                    }
                     try
                     {
                         var fileInfo = new FileInfo(filePath);
@@ -732,6 +740,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         Debug.WriteLine($"Error processing mugshot file '{filePath}': {ex.Message}");
                     }
                 }
+                splashReporter?.UpdateProgress(100, $"Finished scanning {fileCount.ToString()} Mugshots.");
             }
             catch (Exception ex)
             {
@@ -762,7 +771,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1), "Scanning mugshot directory...");
             // ScanMugshotDirectory can be time-consuming, make it awaitable if it does heavy I/O
             // For now, assume it's acceptably fast or refactor it to be async if needed.
-            _mugshotData = await Task.Run(() => ScanMugshotDirectory()); // Example: run on thread pool
+            _mugshotData = await Task.Run(() => ScanMugshotDirectory(splashReporter)); // Example: run on thread pool
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Updating NPC groups...");
             UpdateAvailableNpcGroups(); 
 
@@ -770,59 +779,94 @@ namespace NPC_Plugin_Chooser_2.View_Models
             
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Querying NPC records from detected mods...");
 
-            foreach (var modSetting in _lazyModsVm.Value.AllModSettings)
+            await Task.Run(() =>
             {
-                foreach (var npc in modSetting.NpcFormKeysToDisplayName)
+                int modSettingCount = _lazyModsVm.Value.AllModSettings.Count();
+                int modSettingsProcessed = 0;
+                int lastWholePercent = -1;
+                foreach (var modSetting in _lazyModsVm.Value.AllModSettings)
                 {
-                    var selector = AllNpcs.FirstOrDefault(x => x.NpcFormKey.Equals(npc.Key));
-                    if (selector == null)
+                    modSettingsProcessed++;
+                    int wholePercent = (int)(100.0 * modSettingsProcessed / modSettingCount);   // 0-100
+
+                    if (wholePercent != lastWholePercent)             // changed at least 1 %
                     {
-                        selector = new VM_NpcsMenuSelection(npc.Key, _environmentStateProvider, _consistencyProvider);
-                        AllNpcs.Add(selector);
+                        lastWholePercent = wholePercent;
+                        splashReporter?.UpdateProgress(wholePercent, "Querying NPC records from " + modSetting.DisplayName);
                     }
-                    selector.Update(modSetting);
+                    
+                    foreach (var npc in modSetting.NpcFormKeysToDisplayName)
+                    {
+                        var selector = AllNpcs.FirstOrDefault(x => x.NpcFormKey.Equals(npc.Key));
+                        if (selector == null)
+                        {
+                            selector = new VM_NpcsMenuSelection(npc.Key, _environmentStateProvider,
+                                _consistencyProvider);
+                            AllNpcs.Add(selector);
+                        }
+
+                        selector.Update(modSetting);
+                    }
                 }
-            }
+            });
 
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Processing mugshot-only entries...");
 
-            foreach (var kvp in _mugshotData)
+            await Task.Run(() =>
             {
-                FormKey mugshotFormKey = kvp.Key;
-                
-                // only create a new Npc selector if it hasn't already been created from mod data above
-                if (AllNpcs.Any(x => x.NpcFormKey.Equals(mugshotFormKey)))
+                int mugshotNpcCount = _mugshotData.Count();
+                int numProcessed = 0;
+                int lastWholePercent = -1;
+                foreach (var kvp in _mugshotData)
                 {
-                    continue;
-                }
-                
-                List<(string ModName, string ImagePath)> mugshots = kvp.Value;
-                if (!processedMugshotKeys.Contains(mugshotFormKey) && mugshots.Any())
-                {
-                    try
+                    numProcessed++;
+                    int wholePercent = (int)(100.0 * numProcessed / mugshotNpcCount);   // 0-100
+
+                    if (wholePercent != lastWholePercent)             // changed at least 1 %
                     {
-                        var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider, _consistencyProvider);
-                        if (npcSelector.DisplayName == mugshotFormKey.ToString())
+                        lastWholePercent = wholePercent;
+                        splashReporter?.UpdateProgress(wholePercent, "Processing mugshot-only entries...");
+                    }
+                    
+                    FormKey mugshotFormKey = kvp.Key;
+
+                    // only create a new Npc selector if it hasn't already been created from mod data above
+                    if (AllNpcs.Any(x => x.NpcFormKey.Equals(mugshotFormKey)))
+                    {
+                        continue;
+                    }
+
+                    List<(string ModName, string ImagePath)> mugshots = kvp.Value;
+                    if (!processedMugshotKeys.Contains(mugshotFormKey) && mugshots.Any())
+                    {
+                        try
                         {
-                            npcSelector.DisplayName += " (Missing)"; 
-                            string containedIn = string.Join(", ", mugshots.Select(m => m.ModName));
-                            npcSelector.NpcName = "Imported from Mugshots: " + containedIn;
-                            npcSelector.NpcEditorId = "Not in current Load Order";
+                            var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider,
+                                _consistencyProvider);
+                            if (npcSelector.DisplayName == mugshotFormKey.ToString())
+                            {
+                                npcSelector.DisplayName += " (Missing)";
+                                string containedIn = string.Join(", ", mugshots.Select(m => m.ModName));
+                                npcSelector.NpcName = "Imported from Mugshots: " + containedIn;
+                                npcSelector.NpcEditorId = "Not in current Load Order";
+                            }
+
+                            AllNpcs.Add(npcSelector);
                         }
-                        AllNpcs.Add(npcSelector);
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Error creating VM for mugshot-only NPC {mugshotFormKey.ToString()}: {ex.Message}");
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine(
+                                $"Error creating VM for mugshot-only NPC {mugshotFormKey.ToString()}: {ex.Message}");
+                        }
                     }
                 }
-            }
+            });
 
             // Sort NPCs for display (not needed since ApplyFilter will apply sort)
             //AllNpcs.SortByFormId(_auxilliary);
 
-            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Filtering and restoring selection...");
-            ApplyFilter(true); 
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Setting up NPC List...");
+            await Task.Run(() => ApplyFilter(true)); 
 
             VM_NpcsMenuSelection? npcToSelectOnLoad = null;
             if (!_settings.LastSelectedNpcFormKey.IsNull)
