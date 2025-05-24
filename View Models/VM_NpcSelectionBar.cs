@@ -13,7 +13,8 @@ using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks; // Added for Task
-using System.Windows; // Added for MessageBox
+using System.Windows;
+using System.Windows.Forms; // Added for MessageBox
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
@@ -23,6 +24,7 @@ using NPC_Plugin_Chooser_2.Views;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Splat;
+using Application = System.Windows.Application;
 
 
 namespace NPC_Plugin_Chooser_2.View_Models
@@ -51,7 +53,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- Internal State ---
         private HashSet<string> _hiddenModNames = new();
         private Dictionary<FormKey, HashSet<string>> _hiddenModsPerNpc = new();
-        private Dictionary<string, List<(string ModName, string ImagePath)>> _mugshotData = new(); 
+        private Dictionary<FormKey, List<(string ModName, string ImagePath)>> _mugshotData = new(); 
         private readonly ISubject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
         private readonly BehaviorSubject<VM_NpcsMenuSelection?> _requestScrollToNpcSubject = new BehaviorSubject<VM_NpcsMenuSelection?>(null);
         public IObservable<VM_NpcsMenuSelection?> RequestScrollToNpcObservable => _requestScrollToNpcSubject.AsObservable();
@@ -675,9 +677,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private static readonly Regex PluginRegex = new(@"^.+\.(esm|esp|esl)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex HexFileRegex = new(@"^[0-9A-F]{8}\.(png|jpg|jpeg|bmp)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        private Dictionary<string, List<(string ModName, string ImagePath)>> ScanMugshotDirectory()
+        private Dictionary<FormKey, List<(string ModName, string ImagePath)>> ScanMugshotDirectory()
         {
-            var results = new Dictionary<string, List<(string ModName, string ImagePath)>>(StringComparer.OrdinalIgnoreCase);
+            var results = new Dictionary<FormKey, List<(string ModName, string ImagePath)>>();
             if (string.IsNullOrWhiteSpace(_settings.MugshotsFolder) || !Directory.Exists(_settings.MugshotsFolder)) return results;
 
             System.Diagnostics.Debug.WriteLine($"Scanning mugshot directory: {_settings.MugshotsFolder}");
@@ -703,21 +705,27 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         if (modDir.Parent == null || !modDir.Parent.FullName.Equals(expectedParentPath, StringComparison.OrdinalIgnoreCase)) continue;
                         string hexPart = Path.GetFileNameWithoutExtension(hexFileName);
                         if (hexPart.Length != 8) continue; 
-                        string formKeyString = $"{hexPart.Substring(hexPart.Length - 6)}:{pluginName}"; 
-                        try { FormKey.Factory(formKeyString); }
-                        catch { continue; } 
-                        var mugshotInfo = (ModName: modName, ImagePath: filePath);
-                        if (results.TryGetValue(formKeyString, out var list))
+                        string formKeyString = $"{hexPart.Substring(hexPart.Length - 6)}:{pluginName}";
+                        try
                         {
-                            if (!list.Any(i => i.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase)))
+                            var formKey = FormKey.Factory(formKeyString);
+                            var mugshotInfo = (ModName: modName, ImagePath: filePath);
+                            if (results.TryGetValue(formKey, out var list))
                             {
-                                list.Add(mugshotInfo);
+                                if (!list.Any(i => i.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    list.Add(mugshotInfo);
+                                }
+                            }
+                            else
+                            {
+                                results[formKey] = new List<(string ModName, string ImagePath)> { mugshotInfo };
                             }
                         }
-                        else
+                        catch
                         {
-                            results[formKeyString] = new List<(string ModName, string ImagePath)> { mugshotInfo };
-                        }
+                            continue;
+                        } 
                     }
                     catch (Exception ex)
                     {
@@ -758,7 +766,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Updating NPC groups...");
             UpdateAvailableNpcGroups(); 
 
-            var processedMugshotKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var processedMugshotKeys = new HashSet<FormKey>();
             
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Querying NPC records from detected mods...");
 
@@ -776,60 +784,25 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
 
-            /*
-            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Querying NPC records from load order...");
-            // This LINQ query can be intensive
-            var npcRecords = await Task.Run(() => (
-                from npc in _environmentStateProvider.LoadOrder.PriorityOrder.WinningOverrides<INpcGetter>()
-                let resolvedRace = npc.Race.TryResolve(_environmentStateProvider.LinkCache) 
-                where npc.EditorID?.Contains("Preset", StringComparison.OrdinalIgnoreCase) == false &&
-                      !npc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.IsCharGenFacePreset) &&
-                      !npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits) &&
-                      !npc.Race.IsNull &&
-                      resolvedRace is not null && 
-                      (resolvedRace.Keywords?.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Keyword.ActorTypeNPC) ?? false) 
-                orderby _auxilliary.FormKeyToFormIDString(npc.FormKey.ToString()) 
-                select npc
-            ).ToArray()); 
-
-            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.6), "Processing NPC records...");
-            int totalNpcs = npcRecords.Length;
-            for (int i = 0; i < totalNpcs; i++)
-            {
-                var npc = npcRecords[i];
-                try
-                {
-                    var npcSelector = new VM_NpcsMenuSelection(npc, _environmentStateProvider, _consistencyProvider);
-                    AllNpcs.Add(npcSelector);
-                    string npcFormKeyString = npc.FormKey.ToString();
-                    if (_mugshotData.ContainsKey(npcFormKeyString))
-                    {
-                        processedMugshotKeys.Add(npcFormKeyString);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error initializing VM for NPC {npc.EditorID ?? npc.FormKey.ToString()}: {ex.Message}");
-                }
-                if (i % 100 == 0) // Update progress every 100 NPCs
-                {
-                    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.6) + (progressSpan * 0.3 * ((double)i / totalNpcs)), $"Processing NPC {i + 1}/{totalNpcs}...");
-                }
-            }
-            */
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Processing mugshot-only entries...");
 
             foreach (var kvp in _mugshotData)
             {
-                string mugshotFormKeyString = kvp.Key;
+                FormKey mugshotFormKey = kvp.Key;
+                
+                // only create a new Npc selector if it hasn't already been created from mod data above
+                if (AllNpcs.Any(x => x.NpcFormKey.Equals(mugshotFormKey)))
+                {
+                    continue;
+                }
+                
                 List<(string ModName, string ImagePath)> mugshots = kvp.Value;
-                if (!processedMugshotKeys.Contains(mugshotFormKeyString) && mugshots.Any())
+                if (!processedMugshotKeys.Contains(mugshotFormKey) && mugshots.Any())
                 {
                     try
                     {
-                        FormKey mugshotFormKey = FormKey.Factory(mugshotFormKeyString);
                         var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider, _consistencyProvider);
-                        if (npcSelector.DisplayName == mugshotFormKeyString)
+                        if (npcSelector.DisplayName == mugshotFormKey.ToString())
                         {
                             npcSelector.DisplayName += " (Missing)"; 
                             string containedIn = string.Join(", ", mugshots.Select(m => m.ModName));
@@ -840,16 +813,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Error creating VM for mugshot-only NPC {mugshotFormKeyString}: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"Error creating VM for mugshot-only NPC {mugshotFormKey.ToString()}: {ex.Message}");
                     }
                 }
             }
 
-            AllNpcs.Sort((a, b) =>
-                string.Compare(
-                    _auxilliary.FormKeyToFormIDString(a.NpcFormKey),
-                    _auxilliary.FormKeyToFormIDString(b.NpcFormKey),
-                    StringComparison.Ordinal)); 
+            // Sort NPCs for display (not needed since ApplyFilter will apply sort)
+            //AllNpcs.SortByFormId(_auxilliary);
 
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Filtering and restoring selection...");
             ApplyFilter(true); 
@@ -911,7 +881,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public void ApplyFilter(bool initializing)
         {
-            IEnumerable<VM_NpcsMenuSelection> results = AllNpcs;
+            List<VM_NpcsMenuSelection> results = AllNpcs;
             var predicates = new List<Func<VM_NpcsMenuSelection, bool>>();
 
             if (SearchType1 == NpcSearchType.SelectionState) { predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter1)); }
@@ -930,20 +900,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 if (IsSearchAndLogic) 
                 {
-                    results = results.Where(npc => predicates.All(p => p(npc)));
+                    results = results.Where(npc => predicates.All(p => p(npc))).ToList();
                 }
                 else 
                 {
-                    results = results.Where(npc => predicates.Any(p => p(npc)));
+                    results = results.Where(npc => predicates.Any(p => p(npc))).ToList();
                 }
             }
 
-            var previouslySelectedNpcKey = SelectedNpc?.NpcFormKey;
-            var orderedResults = results.OrderBy(x => _auxilliary.FormKeyToFormIDString(x.NpcFormKey)).ToList();
+            results.SortByFormId(_auxilliary);
 
             FilteredNpcs.Clear();
-            foreach (var npc in orderedResults) { FilteredNpcs.Add(npc); }
+            foreach (var npc in results) { FilteredNpcs.Add(npc); }
 
+            var previouslySelectedNpcKey = SelectedNpc?.NpcFormKey;
             if (previouslySelectedNpcKey != null)
             {
                 SelectedNpc = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(previouslySelectedNpcKey));
@@ -986,12 +956,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 case NpcSearchType.EditorID:
                     return npc => npc.NpcGetter?.EditorID?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false;
                 case NpcSearchType.InAppearanceMod:
-                    /*
-                    return npc => npc.AppearanceMods.Any(m => m.FileName.String.Contains(searchText, StringComparison.OrdinalIgnoreCase)) ||
-                                  (_mugshotData.TryGetValue(npc.NpcFormKey.ToString(), out var mugshots) &&
-                                   mugshots.Any(m => m.ModName.Contains(searchText, StringComparison.OrdinalIgnoreCase)));*/
                     return npc => npc.AppearanceMods.Any(m => m.DisplayName.Contains(searchText, StringComparison.OrdinalIgnoreCase)) ||
-                                  (_mugshotData.TryGetValue(npc.NpcFormKey.ToString(), out var mugshots) &&
+                                  (_mugshotData.TryGetValue(npc.NpcFormKey, out var mugshots) &&
                                    mugshots.Any(m => m.ModName.Contains(searchText, StringComparison.OrdinalIgnoreCase)));
                 case NpcSearchType.FromMod:
                     return npc => npc.NpcFormKey.ModKey.FileName.String.Contains(searchText, StringComparison.OrdinalIgnoreCase);
@@ -1003,15 +969,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         private ObservableCollection<VM_NpcsMenuMugshot> CreateMugShotViewModels(VM_NpcsMenuSelection selectionVm,
-            Dictionary<string, List<(string ModName, string ImagePath)>> mugshotData) 
+            Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData) 
         {
             var finalModVMs = new Dictionary<string, VM_NpcsMenuMugshot>(StringComparer.OrdinalIgnoreCase);
             if (selectionVm == null) return new ObservableCollection<VM_NpcsMenuMugshot>(); 
-
-            string npcFormKeyString = selectionVm.NpcFormKey.ToString();
+            
             var relevantModSettings = new HashSet<VM_ModSetting>();
 
-            if (mugshotData.TryGetValue(npcFormKeyString, out var npcMugshotListForThisNpc))
+            if (mugshotData.TryGetValue(selectionVm.NpcFormKey, out var npcMugshotListForThisNpc))
             {
                 foreach (var mugshotInfo in npcMugshotListForThisNpc) 
                 {
@@ -1040,18 +1005,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     relevantModSettings.Add(modSetting);
                 }
             }
-
-            /*
-            if (selectionVm.NpcGetter != null)
-            {
-                foreach (var appearanceModKey in selectionVm.AppearanceMods.Distinct())
-                {
-                    var modSettingsForPlugin = _lazyModsVm.Value?.AllModSettings
-                        .Where(ms => ms.CorrespondingModKeys.Contains(appearanceModKey))
-                        .ToList();
-                    if (modSettingsForPlugin != null) { foreach (var ms in modSettingsForPlugin) relevantModSettings.Add(ms); }
-                }
-            }*/
 
             ModKey baseModKey = selectionVm.NpcFormKey.ModKey;
             if (!baseModKey.IsNull)
@@ -1091,7 +1044,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 string? imagePath = null;
                 if (!string.IsNullOrWhiteSpace(modSettingVM.MugShotFolderPath) && Directory.Exists(modSettingVM.MugShotFolderPath) &&
-                    mugshotData.TryGetValue(npcFormKeyString, out var availableMugshotsForNpcViaCache))
+                    mugshotData.TryGetValue(selectionVm.NpcFormKey, out var availableMugshotsForNpcViaCache))
                 {
                     string mugshotDirNameForThisSetting = Path.GetFileName(modSettingVM.MugShotFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                     var specificMugshotInfo = availableMugshotsForNpcViaCache.FirstOrDefault(m => m.ModName.Equals(mugshotDirNameForThisSetting, StringComparison.OrdinalIgnoreCase));
@@ -1226,8 +1179,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 return true;
             }
-            string npcFormKeyString = npcSelectionVm.NpcFormKey.ToString();
-            if (_mugshotData.TryGetValue(npcFormKeyString, out var mugshots))
+            if (_mugshotData.TryGetValue(npcSelectionVm.NpcFormKey, out var mugshots))
             {
                 if (mugshots.Any(m => m.ModName.Equals(referenceMod.ModName, StringComparison.OrdinalIgnoreCase)))
                 {

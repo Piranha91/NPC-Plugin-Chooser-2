@@ -113,4 +113,55 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
     }
+    
+    public static class NpcListExtensions
+    {
+        /// <summary>
+        /// Sorts the list in place:
+        ///   1) NPCs whose FormKey belongs to the current load order first (by FormID)
+        ///   2) Then NPCs not in the load order (by ModKey name, then by IDString)
+        /// </summary>
+        /// <param name="npcs">The list to reorder in place.</param>
+        /// <param name="aux">
+        /// Helper that converts a FormKey to its full FormID string, returning "" if the
+        /// FormKey is not found in the current load order.
+        /// </param>
+        public static void SortByFormId(this List<VM_NpcsMenuSelection> npcs,
+                                         Auxilliary aux)
+        {
+            if (npcs is null) throw new ArgumentNullException(nameof(npcs));
+            if (aux  is null) throw new ArgumentNullException(nameof(aux));
+
+            npcs.Sort((a, b) =>
+            {
+                // --- Presence test ------------------------------------------------------
+                var aFormId = aux.FormKeyToFormIDString(a.NpcFormKey);
+                var bFormId = aux.FormKeyToFormIDString(b.NpcFormKey);
+
+                bool aInLoadOrder = aFormId.Length != 0;
+                bool bInLoadOrder = bFormId.Length != 0;
+
+                // Partition: load-order entries first
+                if (aInLoadOrder && !bInLoadOrder) return -1;
+                if (!aInLoadOrder && bInLoadOrder) return  1;
+
+                // --- Both in load order → sort by FormID ------------------------------
+                if (aInLoadOrder)                       // (true for both, since the first two returns are gone)
+                    return string.Compare(aFormId, bFormId, StringComparison.Ordinal);
+
+                // --- Both NOT in load order -------------------------------------------
+                int modCmp = string.Compare(
+                    a.NpcFormKey.ModKey.FileName,
+                    b.NpcFormKey.ModKey.FileName,
+                    StringComparison.OrdinalIgnoreCase);
+
+                if (modCmp != 0) return modCmp;
+
+                return string.Compare(
+                    a.NpcFormKey.IDString(),
+                    b.NpcFormKey.IDString(),
+                    StringComparison.OrdinalIgnoreCase);
+            });
+        }
+    }
 }
