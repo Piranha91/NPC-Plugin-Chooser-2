@@ -862,9 +862,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             });
 
-            // Sort NPCs for display (not needed since ApplyFilter will apply sort)
-            //AllNpcs.SortByFormId(_auxilliary);
-
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Setting up NPC List...");
             await Task.Run(() => ApplyFilter(true)); 
 

@@ -7,6 +7,9 @@ public class Auxilliary
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
     
+    public Dictionary<ModKey, string> ModKeyPositionCache = new Dictionary<ModKey, string>();
+    public Dictionary<FormKey, string> FormIDCache = new Dictionary<FormKey, string>();
+    
     public Auxilliary(EnvironmentStateProvider environmentStateProvider)
     {
         _environmentStateProvider = environmentStateProvider;
@@ -44,8 +47,13 @@ public class Auxilliary
     
     public string FormKeyToFormIDString(FormKey formKey)
     {
+        if (FormIDCache.ContainsKey(formKey))
+        {
+            return FormIDCache[formKey];
+        }
         if (TryFormKeyToFormIDString(formKey, out string formIDstr))
         {
+            FormIDCache[formKey] = formIDstr;
             return formIDstr;
         }
         return String.Empty;
@@ -61,13 +69,21 @@ public class Auxilliary
         }
         else
         {
-            for (int i = 0; i < _environmentStateProvider.LoadOrder.ListedOrder.Count(); i++)
+            if (ModKeyPositionCache.ContainsKey(formKey.ModKey))
             {
-                var currentListing = _environmentStateProvider.LoadOrder.ListedOrder.ElementAt(i);
-                if (currentListing.ModKey.Equals(formKey.ModKey))
+                formIDstr = ModKeyPositionCache[formKey.ModKey];
+            }
+            else
+            {
+                for (int i = 0; i < _environmentStateProvider.LoadOrder.ListedOrder.Count(); i++)
                 {
-                    formIDstr = i.ToString("X"); // https://www.delftstack.com/howto/csharp/integer-to-hexadecimal-in-csharp/
-                    break;
+                    var currentListing = _environmentStateProvider.LoadOrder.ListedOrder.ElementAt(i);
+                    if (currentListing.ModKey.Equals(formKey.ModKey))
+                    {
+                        formIDstr = i.ToString("X"); // https://www.delftstack.com/howto/csharp/integer-to-hexadecimal-in-csharp/
+                        ModKeyPositionCache[formKey.ModKey] = formIDstr;
+                        break;
+                    }
                 }
             }
         }
