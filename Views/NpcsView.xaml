@@ -206,18 +206,22 @@
                      </ItemsControl.ItemsPanel>
                      <ItemsControl.ItemTemplate>
                          <DataTemplate DataType="{x:Type vm:VM_NpcsMenuMugshot}">
-                             <Border BorderThickness="2" Margin="5"
-                                     Visibility="{Binding IsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                     BorderBrush="{Binding BorderColor}"
-                                     Width="{Binding ImageWidth}"
-                                     Height="{Binding ImageHeight}"
-                                     dd:DragDrop.IsDragSource="True"
-                                     dd:DragDrop.IsDropTarget="True"
-                                     dd:DragDrop.DragHandler="{Binding}"
-                                     dd:DragDrop.DropHandler="{Binding}"
-                                     dd:DragDrop.DragDropContext="{Binding}"
-                                     AllowDrop="True"
-                                     dd:DragDrop.DragAdornerTemplate="{StaticResource AppearanceModDragAdorner}">
+                             <Border 
+                                 BorderThickness="{Binding MugshotBorderThickness,
+                                      RelativeSource={RelativeSource AncestorType={x:Type local:NpcsView}}}"
+                                 Margin="{Binding MugshotMargin,
+                                     RelativeSource={RelativeSource AncestorType={x:Type local:NpcsView}}}"
+                                 Visibility="{Binding IsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                 BorderBrush="{Binding BorderColor}"
+                                 Width="{Binding ImageWidth}"
+                                 Height="{Binding ImageHeight}"
+                                 dd:DragDrop.IsDragSource="True"
+                                 dd:DragDrop.IsDropTarget="True"
+                                 dd:DragDrop.DragHandler="{Binding}"
+                                 dd:DragDrop.DropHandler="{Binding}"
+                                 dd:DragDrop.DragDropContext="{Binding}"
+                                 AllowDrop="True"
+                                 dd:DragDrop.DragAdornerTemplate="{StaticResource AppearanceModDragAdorner}">
                                  <i:Interaction.Triggers>
                                      <i:EventTrigger EventName="MouseLeftButtonUp">
                                          <i:InvokeCommandAction Command="{Binding SelectCommand}" />

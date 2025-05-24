@@ -27,6 +27,11 @@ namespace NPC_Plugin_Chooser_2.Views
         private const double _minZoomPercentage = 1.0;
         private const double _maxZoomPercentage = 1000.0;
         private const double _zoomStepPercentage = 2.5; // For +/- buttons and scroll wheel
+        private static int _mugshotBorderThickness = 3;
+        private static int _mugshotMargin = 2;
+        private static int MugshotMarginTotal => _mugshotBorderThickness + _mugshotMargin;
+        public Thickness MugshotBorderThickness { get; } = new Thickness(_mugshotBorderThickness);   // 3 on all sides
+        public Thickness MugshotMargin        { get; } = new Thickness(_mugshotMargin);   // uniform 2-px margin
 
         public NpcsView()
         {
@@ -320,7 +325,7 @@ namespace NPC_Plugin_Chooser_2.Views
                             imagesForPacker,
                             availableHeight,
                             availableWidth,
-                            5 
+                            _mugshotMargin 
                         );
                         ViewModel.NpcsViewZoomLevel = packerScaleFactor * 100.0;
                     }
