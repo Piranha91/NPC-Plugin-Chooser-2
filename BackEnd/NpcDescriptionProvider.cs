@@ -2,12 +2,13 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net; // Required for WebUtility
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions; // Required for Regex
+using System.Text.RegularExpressions; // Required for Regex\using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 // using System.Web; // Use System.Net if available
@@ -22,6 +23,8 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         private readonly HttpClient _httpClient;
         private readonly Settings _settings;
         private const string UserAgent = "NPC Plugin Chooser 2 (https://github.com/Piranha91/NPC-Plugin-Chooser-2; piranha9191@example.com)";
+        
+        private readonly Dictionary<FormKey, string> _overrideDescriptions = new(); // master overrides
 
         private static readonly HashSet<string> BaseGamePlugins = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -42,6 +45,52 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0) { _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent); }
             if (_httpClient.Timeout == TimeSpan.FromSeconds(100)) { _httpClient.Timeout = TimeSpan.FromSeconds(30); }
             _settings = settings;
+            Initialize();
+        }
+        
+        public void Initialize()
+        {
+            try
+            {
+                string exeDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location)!;
+                string overridesDir = Path.Combine(exeDir, "DescriptionOverrides");
+
+                bool newDir = false;
+                if (!Directory.Exists(overridesDir))
+                {
+                    Directory.CreateDirectory(overridesDir);
+                    newDir = true;
+                }
+
+                // If newly created or empty, seed with example file
+                if (newDir || !Directory.GetFiles(overridesDir).Any())
+                {
+                    string samplePath = Path.Combine(overridesDir, "ExampleOverride.json");
+                    var sampleDict = new Dictionary<FormKey, string>
+                    {
+                        { FormKey.Factory("123456:ModName.esp"), "Description goes here." }
+                    };
+                    JSONhandler<Dictionary<FormKey, string>>.SaveJSONFile(sampleDict, samplePath, out _, out _);
+                }
+
+                // Load all override files into master dictionary
+                _overrideDescriptions.Clear();
+                foreach (string jsonPath in Directory.EnumerateFiles(overridesDir, "*.json"))
+                {
+                    var currentDictionary = JSONhandler<Dictionary<FormKey, string>>.LoadJSONFile(jsonPath, out _, out _);
+                    if (currentDictionary != null)
+                    {
+                        foreach (var kvp in currentDictionary)
+                        {
+                            _overrideDescriptions[kvp.Key] = kvp.Value; // last file wins on duplicate
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[DescProvider][Initialize] Error: {ex.Message}");
+            }
         }
 
         public async Task<string?> GetDescriptionAsync(FormKey npcFormKey, string? displayName, string? editorId)
@@ -50,6 +99,11 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             if (!_settings.ShowNpcDescriptions || npcFormKey.IsNull || !BaseGamePlugins.Contains(npcFormKey.ModKey.FileName))
             {
                 return null;
+            }
+            
+            if (_overrideDescriptions.TryGetValue(npcFormKey, out string overrideDescription))
+            {
+                return overrideDescription; // skip API look-ups if override present
             }
 
             // 2. Determine base search term raw and keywords for validation
