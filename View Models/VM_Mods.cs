@@ -574,43 +574,80 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         // *** NEW: Method to handle navigation triggered by VM_ModsMenuMugshot ***
+        // In VM_Mods.cs
         public void NavigateToNpc(FormKey npcFormKey)
         {
-            // 1. Switch Tab
             _lazyMainWindowVm.Value.IsNpcsTabSelected = true;
 
-            // 2. Find and Select NPC in NpcSelectionBar, then signal scroll
-            // Schedule the entire operation to ensure tab switch has a chance to complete UI-wise
-            RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () => // Small delay for tab switch
+            // Use a slightly longer initial delay to ensure tab switch UI operations can start
+            RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(100), () =>
             {
                 var npcToSelect = _npcSelectionBar.AllNpcs.FirstOrDefault(npc => npc.NpcFormKey == npcFormKey);
                 if (npcToSelect != null)
                 {
                     Debug.WriteLine(
-                        $"VM_Mods.NavigateToNpc: Found NPC {npcToSelect.DisplayName}. Clearing filters and selecting.");
-                    // Clear filters to ensure the NPC is visible.
+                        $"VM_Mods.NavigateToNpc: Found NPC {npcToSelect.DisplayName}. Initiating navigation sequence.");
+                    _npcSelectionBar.IsProgrammaticNavigationInProgress = true; // Set flag BEFORE clearing filters
+
+                    // Clear filters. This will reactively trigger _npcSelectionBar.ApplyFilter.
+                    // ApplyFilter will see IsProgrammaticNavigationInProgress = true and will NOT auto-select.
                     _npcSelectionBar.SearchText1 = "";
                     _npcSelectionBar.SearchText2 = "";
                     _npcSelectionBar.SearchText3 = "";
-                    // Note: Setting search texts to empty will trigger _npcSelectionBar.ApplyFilter due to its WhenAnyValue subscriptions.
 
-                    // Explicitly apply filter if somehow the reactive chain didn't catch it immediately
-                    // or if AllNpcs was searched but FilteredNpcs needs explicit update before selection.
-                    if (!_npcSelectionBar.FilteredNpcs.Contains(npcToSelect))
+                    // Schedule the explicit selection and scroll signal to occur *after*
+                    // the filter clearing has triggered ApplyFilter and ApplyFilter has updated FilteredNpcs.
+                    // The WhenAnyValue for filters in VM_NpcSelectionBar is throttled by 300ms.
+                    // So, we schedule this for slightly after that throttle period.
+                    RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(350), () =>
                     {
-                        _npcSelectionBar.ApplyFilter(false); // Re-apply (now empty) filter
-                    }
+                        Debug.WriteLine(
+                            $"VM_Mods.NavigateToNpc: Attempting to explicitly select {npcToSelect.DisplayName}.");
 
-                    // Now select the NPC
-                    _npcSelectionBar.SelectedNpc = npcToSelect;
-
-                    // After selection, explicitly signal the NpcSelectionBar to request a scroll
-                    // Give another small delay for SelectedNpc change to propagate and UI to potentially update ItemSource
-                    RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () =>
-                    {
-                        if (_npcSelectionBar.SelectedNpc == npcToSelect) // Ensure it's still the one we want
+                        // It's possible FilteredNpcs doesn't contain npcToSelect if ApplyFilter somehow
+                        // didn't include it (e.g., if ApplyFilter was triggered by something else very quickly).
+                        // A safeguard: if target not in list, ApplyFilter again (though this should be rare with blank filters).
+                        if (!_npcSelectionBar.FilteredNpcs.Contains(npcToSelect))
                         {
-                            _npcSelectionBar.SignalScrollToNpc(npcToSelect);
+                            Debug.WriteLine(
+                                $"VM_Mods.NavigateToNpc: Target {npcToSelect.DisplayName} not in FilteredNpcs. Re-applying filter.");
+                            // This ApplyFilter will also see IsProgrammaticNavigationInProgress = true.
+                            _npcSelectionBar.ApplyFilter(false);
+                            // Give this ApplyFilter a moment if it was needed.
+                            RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), SelectAndSignal);
+                        }
+                        else
+                        {
+                            SelectAndSignal();
+                        }
+
+                        void SelectAndSignal()
+                        {
+                            _npcSelectionBar.SelectedNpc = npcToSelect; // Explicitly set the selection
+                            Debug.WriteLine(
+                                $"VM_Mods.NavigateToNpc: _npcSelectionBar.SelectedNpc explicitly set to {npcToSelect.DisplayName}.");
+
+                            // Schedule the scroll signal with a small delay for the selection to bind in the UI
+                            RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () =>
+                            {
+                                if (_npcSelectionBar.SelectedNpc == npcToSelect) // Final check
+                                {
+                                    Debug.WriteLine(
+                                        $"VM_Mods.NavigateToNpc: Signaling scroll for {npcToSelect.DisplayName}.");
+                                    _npcSelectionBar.SignalScrollToNpc(npcToSelect);
+                                }
+                                else
+                                {
+                                    Debug.WriteLine(
+                                        $"VM_Mods.NavigateToNpc: ERROR - SelectedNpc is now '{_npcSelectionBar.SelectedNpc?.DisplayName ?? "null"}' " +
+                                        $"but expected '{npcToSelect.DisplayName}' before signaling scroll. Scroll aborted.");
+                                }
+
+                                // Reset the flag AFTER all operations related to this navigation are complete.
+                                _npcSelectionBar.IsProgrammaticNavigationInProgress = false;
+                                Debug.WriteLine(
+                                    $"VM_Mods.NavigateToNpc: IsProgrammaticNavigationInProgress set to false for {npcToSelect.DisplayName}.");
+                            });
                         }
                     });
                 }
@@ -618,6 +655,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     ScrollableMessageBox.ShowWarning(
                         $"Could not find NPC with FormKey {npcFormKey} in the main NPC list.", "NPC Not Found");
+                    // Ensure flag is reset even if NPC not found.
+                    if (_npcSelectionBar != null) _npcSelectionBar.IsProgrammaticNavigationInProgress = false;
                 }
             });
         }
@@ -679,7 +718,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1),
                 "Processing configured mod settings...");
-            
+
             // first load mods from settings that already exist
             foreach (var settingModel in _settings.ModSettings)
             {
@@ -793,11 +832,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             {
                                 var modKey = ModKey.FromFileName(pluginName);
                                 newVm.CorrespondingModKeys.Add(modKey);
-                                
+
                                 var NpcIds = faceGenFiles[pluginName];
                                 foreach (var id in NpcIds)
                                 {
-                                    if (id.Length != 8) {continue;} // not a FormID
+                                    if (id.Length != 8)
+                                    {
+                                        continue;
+                                    } // not a FormID
+
                                     var subId = id.Substring(2, 6);
                                     var formKeyStr = subId + ":" + pluginName;
                                     if (FormKey.TryFactory(formKeyStr, out var formKey))
@@ -806,6 +849,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     }
                                 }
                             }
+
                             tempList.Add(newVm);
                             loadedDisplayNames.Add(newVm.DisplayName);
                         }

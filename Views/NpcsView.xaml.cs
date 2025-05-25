@@ -30,8 +30,8 @@ namespace NPC_Plugin_Chooser_2.Views
         private static int _mugshotBorderThickness = 3;
         private static int _mugshotMargin = 2;
         private static int MugshotMarginTotal => _mugshotBorderThickness + _mugshotMargin;
-        public Thickness MugshotBorderThickness { get; } = new Thickness(_mugshotBorderThickness);   // 3 on all sides
-        public Thickness MugshotMargin        { get; } = new Thickness(_mugshotMargin);   // uniform 2-px margin
+        public Thickness MugshotBorderThickness { get; } = new Thickness(_mugshotBorderThickness); // 3 on all sides
+        public Thickness MugshotMargin { get; } = new Thickness(_mugshotMargin); // uniform 2-px margin
 
         public NpcsView()
         {
@@ -171,49 +171,91 @@ namespace NPC_Plugin_Chooser_2.Views
                     .Subscribe(_ => RefreshImageSizes())
                     .DisposeWith(d);
 
+
                 ViewModel.RequestScrollToNpcObservable
-                    .Where(npcToScrollTo => npcToScrollTo != null)
-                    .ObserveOn(RxApp.MainThreadScheduler)
-                    .SelectMany(async npcToScrollTo =>
+                    .Where(npcToScrollTo => npcToScrollTo != null) // Already good
+                    .ObserveOn(RxApp.MainThreadScheduler) // Already good
+                    .SelectMany(async npcToScrollTo => // npcToScrollTo is the value from the observable stream
                     {
-                        Debug.WriteLine($"NpcsView.WhenActivated: Received scroll request for {npcToScrollTo.DisplayName}");
+                        Debug.WriteLine(
+                            $"NpcsView.WhenActivated: Received scroll request for {npcToScrollTo.DisplayName}");
                         try
                         {
-                            await Task.Delay(150);
-                            NpcListBox.UpdateLayout();
+                            // It's crucial to allow the ViewModel's SelectedNpc to update and bind to the ListBox
+                            // BEFORE we try to evaluate the ListBox's state or scroll.
+                            // A small delay helps ensure UI thread operations (like binding updates) can complete.
+                            await Task.Delay(50); // Delay to let VM and bindings settle. Adjust if needed.
+                            NpcListBox.UpdateLayout(); // Ensure ListBox layout is current
 
-                            var currentListBoxSelection = NpcListBox.SelectedItem as VM_NpcsMenuSelection; // Cast here
+                            // Get the *current* truth from the ViewModel
+                            var currentVmSelectedNpc = ViewModel.SelectedNpc;
 
-                            if (currentListBoxSelection == npcToScrollTo && NpcListBox.Items.Contains(npcToScrollTo))
+                            // *** THE FIX: Check if the incoming scroll request is stale ***
+                            if (npcToScrollTo != currentVmSelectedNpc)
                             {
-                                NpcListBox.ScrollIntoView(npcToScrollTo);
-                                Debug.WriteLine($"NpcsView: Scrolled to {npcToScrollTo.DisplayName} (SelectedItem matched).");
+                                Debug.WriteLine(
+                                    $"NpcsView: Scroll request for '{npcToScrollTo.DisplayName}' (from observable) " +
+                                    $"does not match current VM selection '{currentVmSelectedNpc?.DisplayName ?? "null"}'. " +
+                                    "This is likely a stale request (e.g., from BehaviorSubject replay). Ignoring.");
+                                return Unit.Default; // Abort this scroll operation
                             }
-                            else if (NpcListBox.Items.Contains(npcToScrollTo))
+
+                            // If we reach here, npcToScrollTo == currentVmSelectedNpc.
+                            // This means the scroll request is for the NPC that the ViewModel currently has selected.
+
+                            var currentListBoxSelection = NpcListBox.SelectedItem as VM_NpcsMenuSelection;
+
+                            if (NpcListBox.Items.Contains(npcToScrollTo))
                             {
-                                // Corrected Debug Line:
-                                Debug.WriteLine($"NpcsView: ListBox.SelectedItem ({(currentListBoxSelection?.DisplayName ?? "null")}) != VM.SelectedNpc ({npcToScrollTo.DisplayName}). Attempting ScrollIntoView directly.");
-                                NpcListBox.ScrollIntoView(npcToScrollTo);
-                                
-                                await Task.Delay(50);
-                                NpcListBox.UpdateLayout();
-                                if (NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) is ListBoxItem item)
+                                // If ListBox.SelectedItem is already the target, ScrollIntoView is often a no-op but safe.
+                                // If it's not, ScrollIntoView will change it and scroll.
+                                if (currentListBoxSelection == npcToScrollTo)
                                 {
-                                     item.BringIntoView();
-                                     Debug.WriteLine($"NpcsView: Scrolled using BringIntoView on ListBoxItem for {npcToScrollTo.DisplayName}.");
-                                } else {
-                                     Debug.WriteLine($"NpcsView: ListBoxItem container still not found for {npcToScrollTo.DisplayName} after scroll attempt.");
+                                    NpcListBox.ScrollIntoView(npcToScrollTo);
+                                    Debug.WriteLine(
+                                        $"NpcsView: Scrolled to {npcToScrollTo.DisplayName} (SelectedItem matched VM and ListBox).");
+                                }
+                                else
+                                {
+                                    // This case means ViewModel.SelectedNpc is npcToScrollTo, but ListBox.SelectedItem might lag
+                                    // or there's a brief inconsistency. We trust the VM.
+                                    Debug.WriteLine(
+                                        $"NpcsView: ListBox.SelectedItem ('{currentListBoxSelection?.DisplayName ?? "null"}') " +
+                                        $"might differ from VM.SelectedNpc ('{npcToScrollTo.DisplayName}'). " +
+                                        $"Scrolling to '{npcToScrollTo.DisplayName}' based on VM truth.");
+                                    NpcListBox.ScrollIntoView(npcToScrollTo);
+                                }
+
+                                // For ListBox, ScrollIntoView usually works well.
+                                // If items are virtualized and ScrollIntoView isn't enough to guarantee the container is generated,
+                                // an additional step to get the container and call BringIntoView can be more robust.
+                                await Task.Delay(50); // Short delay for ScrollIntoView to take effect
+                                NpcListBox.UpdateLayout();
+                                if (NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) is ListBoxItem
+                                    item)
+                                {
+                                    item.BringIntoView();
+                                    Debug.WriteLine(
+                                        $"NpcsView: Ensured visibility using BringIntoView on ListBoxItem for {npcToScrollTo.DisplayName}.");
+                                }
+                                else
+                                {
+                                    Debug.WriteLine(
+                                        $"NpcsView: ListBoxItem container still not found for {npcToScrollTo.DisplayName} after scroll and potential BringIntoView attempt. Item might be filtered out or list is empty.");
                                 }
                             }
                             else
                             {
-                                Debug.WriteLine($"NpcsView: NPC {npcToScrollTo.DisplayName} not in ListBox items when scroll requested.");
+                                Debug.WriteLine(
+                                    $"NpcsView: NPC {npcToScrollTo.DisplayName} not in ListBox.Items when scroll requested (and confirmed by VM).");
                             }
                         }
                         catch (Exception ex)
                         {
-                            Debug.WriteLine($"NpcsView: Error during scroll attempt: {ex.Message}");
+                            Debug.WriteLine(
+                                $"NpcsView: Error during scroll attempt for '{npcToScrollTo?.DisplayName ?? "null"}': {ex.Message}");
                         }
+
                         return Unit.Default;
                     })
                     .Subscribe()
@@ -234,8 +276,8 @@ namespace NPC_Plugin_Chooser_2.Views
             if (sender is Button button && button.ContextMenu != null)
             {
                 // Crucial: This sets the PlacementTarget that the MenuItem bindings rely on
-                button.ContextMenu.PlacementTarget = button; 
-                button.ContextMenu.Placement = PlacementMode.Bottom; 
+                button.ContextMenu.PlacementTarget = button;
+                button.ContextMenu.Placement = PlacementMode.Bottom;
                 button.ContextMenu.IsOpen = true;
             }
         }
@@ -243,11 +285,13 @@ namespace NPC_Plugin_Chooser_2.Views
         private void ScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             if (ViewModel == null) return;
-            if (sender is ScrollViewer scrollViewer && scrollViewer.Name == "ImageDisplayScrollViewer" && Keyboard.Modifiers == ModifierKeys.Control)
+            if (sender is ScrollViewer scrollViewer && scrollViewer.Name == "ImageDisplayScrollViewer" &&
+                Keyboard.Modifiers == ModifierKeys.Control)
             {
                 double change = (e.Delta > 0 ? 1 : -1) * _zoomStepPercentage;
                 ViewModel.NpcsViewHasUserManuallyZoomed = true;
-                ViewModel.NpcsViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, ViewModel.NpcsViewZoomLevel + change));
+                ViewModel.NpcsViewZoomLevel = Math.Max(_minZoomPercentage,
+                    Math.Min(_maxZoomPercentage, ViewModel.NpcsViewZoomLevel + change));
                 e.Handled = true;
             }
         }
@@ -258,6 +302,7 @@ namespace NPC_Plugin_Chooser_2.Views
             {
                 ViewModel.NpcsViewHasUserManuallyZoomed = false;
             }
+
             RefreshImageSizes();
         }
 
@@ -271,21 +316,28 @@ namespace NPC_Plugin_Chooser_2.Views
             if (ViewModel?.CurrentNpcAppearanceMods == null) return;
 
             var imagesToProcess = ViewModel.CurrentNpcAppearanceMods;
-            if (!imagesToProcess.Any()) {
+            if (!imagesToProcess.Any())
+            {
                 return;
             }
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (ViewModel == null || ViewModel.CurrentNpcAppearanceMods == null || !ImageDisplayScrollViewer.IsLoaded) return;
+                if (ViewModel == null || ViewModel.CurrentNpcAppearanceMods == null ||
+                    !ImageDisplayScrollViewer.IsLoaded) return;
 
                 var visibleImages = imagesToProcess
-                                    .Where(img => img.IsVisible && img.OriginalDipDiagonal > 0)
-                                    .ToList<IHasMugshotImage>();
+                    .Where(img => img.IsVisible && img.OriginalDipDiagonal > 0)
+                    .ToList<IHasMugshotImage>();
 
                 if (!visibleImages.Any())
                 {
-                    foreach (var img in imagesToProcess) { img.ImageWidth = 0; img.ImageHeight = 0; }
+                    foreach (var img in imagesToProcess)
+                    {
+                        img.ImageWidth = 0;
+                        img.ImageHeight = 0;
+                    }
+
                     return;
                 }
 
@@ -293,21 +345,22 @@ namespace NPC_Plugin_Chooser_2.Views
                 {
                     double sumOfDiagonals = visibleImages.Sum(img => img.OriginalDipDiagonal);
                     double averageOriginalDipDiagonal = sumOfDiagonals / visibleImages.Count;
-                    if (averageOriginalDipDiagonal <= 0) averageOriginalDipDiagonal = 100.0; 
+                    if (averageOriginalDipDiagonal <= 0) averageOriginalDipDiagonal = 100.0;
 
                     double userZoomFactor = ViewModel.NpcsViewZoomLevel / 100.0;
 
-                    foreach (var img in imagesToProcess) 
+                    foreach (var img in imagesToProcess)
                     {
                         if (img.IsVisible && img.OriginalDipDiagonal > 0)
                         {
-                            double individualScaleFactor = (averageOriginalDipDiagonal / img.OriginalDipDiagonal) * userZoomFactor;
+                            double individualScaleFactor =
+                                (averageOriginalDipDiagonal / img.OriginalDipDiagonal) * userZoomFactor;
                             img.ImageWidth = img.OriginalDipWidth * individualScaleFactor;
                             img.ImageHeight = img.OriginalDipHeight * individualScaleFactor;
                         }
                         else
                         {
-                            img.ImageWidth = 0; 
+                            img.ImageWidth = 0;
                             img.ImageHeight = 0;
                         }
                     }
@@ -319,13 +372,14 @@ namespace NPC_Plugin_Chooser_2.Views
 
                     if (availableHeight > 0 && availableWidth > 0)
                     {
-                        var imagesForPacker = new ObservableCollection<IHasMugshotImage>(imagesToProcess.Cast<IHasMugshotImage>());
-                        
+                        var imagesForPacker =
+                            new ObservableCollection<IHasMugshotImage>(imagesToProcess.Cast<IHasMugshotImage>());
+
                         double packerScaleFactor = ImagePacker.FitOriginalImagesToContainer(
                             imagesForPacker,
                             availableHeight,
                             availableWidth,
-                            _mugshotMargin 
+                            _mugshotMargin
                         );
                         ViewModel.NpcsViewZoomLevel = packerScaleFactor * 100.0;
                     }
@@ -344,7 +398,8 @@ namespace NPC_Plugin_Chooser_2.Views
                     {
                         if (canExecute)
                         {
-                            vm.ToggleFullScreenCommand.Execute(Unit.Default).Subscribe().DisposeWith(_viewBindings); // Or manage disposal per click
+                            vm.ToggleFullScreenCommand.Execute(Unit.Default).Subscribe()
+                                .DisposeWith(_viewBindings); // Or manage disposal per click
                         }
                     }).DisposeWith(_viewBindings); // Ensure this outer subscription is also managed
                     e.Handled = true;
@@ -360,7 +415,8 @@ namespace NPC_Plugin_Chooser_2.Views
             double change = (e.Delta > 0 ? 1 : -1) * _zoomStepPercentage;
 
             ViewModel.NpcsViewHasUserManuallyZoomed = true;
-            ViewModel.NpcsViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, currentValue + change));
+            ViewModel.NpcsViewZoomLevel =
+                Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, currentValue + change));
 
             var binding = textBox.GetBindingExpression(TextBox.TextProperty);
             binding?.UpdateSource();
@@ -368,7 +424,7 @@ namespace NPC_Plugin_Chooser_2.Views
             textBox.SelectAll();
             e.Handled = true;
         }
-        
+
         // Make sure to dispose _viewBindings if the UserControl is unloaded or disposed
         // For ReactiveUserControl, WhenActivated handles many cases, but if you have subscriptions
         // outside of it, you might need an explicit Dispose pattern or Unloaded event.
