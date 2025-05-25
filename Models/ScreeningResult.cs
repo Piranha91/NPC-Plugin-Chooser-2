@@ -7,11 +7,10 @@ namespace NPC_Plugin_Chooser_2.Models // Or appropriate namespace
 {
     public record ScreeningResult(
         bool SelectionIsValid,        // Overall flag: Is there at least *some* valid data?
-        bool HasPluginRecordOverride, // Does the selected plugin contain an override for this NPC?
         bool HasFaceGenAssets,        // Do FaceGen assets exist in the specified paths?
-        INpcGetter? SpecificSourceNpcRecord, // The *specific* resolved NPC record from the appearance plugin (if HasPluginRecordOverride is true)
+        INpcGetter? AppearanceModRecord, // The resolved NPC record from the appearance plugin
+        ModKey? AppearanceModKey,        // The ModKey of the context from which AppearanceModRecord is found (for logging)
         INpcGetter? WinningNpcOverride, // The winning override from the load order (always needed for context/EasyNPC mode)
-        ModSetting? AppearanceModSetting, // The looked-up ModSetting
-        ModKey? SpecificAppearancePluginKey // The *specific* ModKey from the ModSetting that provided the override (if it exists)
+        ModSetting? AppearanceModSetting // The looked-up ModSetting
     );
 }
