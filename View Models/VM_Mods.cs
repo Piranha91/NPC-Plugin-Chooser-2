@@ -628,7 +628,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 $"VM_Mods.NavigateToNpc: _npcSelectionBar.SelectedNpc explicitly set to {npcToSelect.DisplayName}.");
 
                             // Schedule the scroll signal with a small delay for the selection to bind in the UI
-                            RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () =>
+                            RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(5), () =>
                             {
                                 if (_npcSelectionBar.SelectedNpc == npcToSelect) // Final check
                                 {

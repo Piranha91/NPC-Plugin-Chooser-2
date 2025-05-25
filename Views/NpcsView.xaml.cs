@@ -184,7 +184,7 @@ namespace NPC_Plugin_Chooser_2.Views
                             // It's crucial to allow the ViewModel's SelectedNpc to update and bind to the ListBox
                             // BEFORE we try to evaluate the ListBox's state or scroll.
                             // A small delay helps ensure UI thread operations (like binding updates) can complete.
-                            await Task.Delay(50); // Delay to let VM and bindings settle. Adjust if needed.
+                            await Task.Delay(5); // Delay to let VM and bindings settle. Adjust if needed.
                             NpcListBox.UpdateLayout(); // Ensure ListBox layout is current
 
                             // Get the *current* truth from the ViewModel
@@ -229,7 +229,7 @@ namespace NPC_Plugin_Chooser_2.Views
                                 // For ListBox, ScrollIntoView usually works well.
                                 // If items are virtualized and ScrollIntoView isn't enough to guarantee the container is generated,
                                 // an additional step to get the container and call BringIntoView can be more robust.
-                                await Task.Delay(50); // Short delay for ScrollIntoView to take effect
+                                await Task.Delay(5); // Short delay for ScrollIntoView to take effect
                                 NpcListBox.UpdateLayout();
                                 if (NpcListBox.ItemContainerGenerator.ContainerFromItem(npcToScrollTo) is ListBoxItem
                                     item)

@@ -299,7 +299,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ).Select(_ => Unit.Default);
 
             Observable.Merge(filter1Changes, filter2Changes, filter3Changes, logicChanges)
-                .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler)
+                .Throttle(TimeSpan.FromMilliseconds(100), RxApp.MainThreadScheduler)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(_ => ApplyFilter(false))
                 .DisposeWith(_disposables);
