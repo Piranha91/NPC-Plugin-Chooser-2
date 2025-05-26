@@ -981,7 +981,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             });
 
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Setting up NPC List...");
-            await Task.Run(() => ApplyFilter(true));
+            await Application.Current.Dispatcher.InvokeAsync(() => ApplyFilter(initializing: true));
 
             VM_NpcsMenuSelection? npcToSelectOnLoad = null;
             if (!_settings.LastSelectedNpcFormKey.IsNull)
