@@ -324,11 +324,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  ModsFolder = dialog.FileName; // Property change might trigger save via WhenAnyValue if set up
                  // We need to manually trigger the refresh here for these specific changes
                  // as ModsFolder itself doesn't re-initialize the entire environment.
+                 
+                 var splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion); // need to create a new instance because the one at launch has permanently closed
                  if (_lazyModListVM.IsValueCreated) // Check if VM is created
                  {
-                    await _lazyModListVM.Value.PopulateModSettingsAsync(null); // Pass null for splashReporter
+                    await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 0, 100); // Pass null for splashReporter
                     _lazyModListVM.Value.ApplyFilters(); // ApplyFilters is synchronous
                  }
+                 // Same for NPC list
+                 if (_lazyNpcSelectionBar.IsValueCreated)
+                 {
+                     await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 0, 100);
+                 }
+                 await splashScreen.CloseSplashScreenAsync();
              }
         }
 
@@ -344,16 +352,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
             {
                 MugshotsFolder = dialog.FileName; // Property change might trigger save
+                
+                var splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion); // need to create a new instance because the one at launch has permanently closed
                 // Manually trigger refreshes
                 if (_lazyNpcSelectionBar.IsValueCreated)
                 {
-                    await _lazyNpcSelectionBar.Value.InitializeAsync(null); // Pass null for splashReporter
+                    await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 0, 100); // Pass null for splashReporter
                 }
                 if (_lazyModListVM.IsValueCreated)
                 {
-                    await _lazyModListVM.Value.PopulateModSettingsAsync(null); // Pass null for splashReporter
+                    await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 0, 100); // Pass null for splashReporter
                     _lazyModListVM.Value.ApplyFilters();
                 }
+                await splashScreen.CloseSplashScreenAsync();
             }
         }
 

@@ -1,7 +1,11 @@
 ﻿// ViewModels/VM_SplashScreen.cs
+
+using System.Reactive;
+using System.Reactive.Threading.Tasks;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
-using System.Windows.Threading; // Required for Dispatcher
+using System.Windows.Threading;
+using NPC_Plugin_Chooser_2.Views; // Required for Dispatcher
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -13,6 +17,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public string ImagePath => "pack://application:,,,/Resources/SplashScreenImage.png"; // Assumes image is in Resources folder, Build Action: Resource
 
         private Dispatcher _dispatcher;
+        
+        /// <summary>Interaction the View wires up to actually show the window.</summary>
+        public Interaction<Unit, Unit> RequestOpen  { get; } = new();
+
+        /// <summary>Interaction the View wires up to actually hide the window.</summary>
+        public Interaction<Unit, Unit> RequestClose { get; } = new();
 
         public VM_SplashScreen(string programVersion)
         {
@@ -38,6 +48,55 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     OperationText = message;
                 }, DispatcherPriority.Send);
             }
+        }
+        
+        /// <summary>
+        /// Creates a fresh splash‐screen VM + window, shows it, and returns the VM
+        /// so you can call UpdateProgress(...) and CloseSplashScreenAsync() on it.
+        /// </summary>
+        public static VM_SplashScreen InitializeAndShow(string programVersion)
+        {
+            // 1) Create a brand‐new VM
+            var vm = new VM_SplashScreen(programVersion);
+
+            // 2) Wire up a new window
+            var window = new SplashScreenWindow
+            {
+                DataContext = vm
+            };
+
+            // 3) Show it immediately
+            window.Show();
+
+            return vm;
+        }
+        
+        /// <summary>
+        /// Requests the splash screen window to show (via the RequestOpen interaction),
+        /// then yields so WPF has a chance to process the Show() before any further work.
+        /// </summary>
+        public async Task OpenSplashScreenAsync()
+        {
+            // Ask the View to show
+            await RequestOpen.Handle(Unit.Default)
+                .ToTask();
+
+            // Let the UI thread catch up and actually render
+            await Task.Yield();
+        }
+
+        /// <summary>
+        /// Requests the splash screen window to hide (via the RequestClose interaction),
+        /// then yields so WPF has a chance to process the Hide() before any further work.
+        /// </summary>
+        public async Task CloseSplashScreenAsync()
+        {
+            // Ask the View to hide
+            await RequestClose.Handle(Unit.Default)
+                .ToTask();
+
+            // Let the UI thread catch up
+            await Task.Yield();
         }
     }
 }

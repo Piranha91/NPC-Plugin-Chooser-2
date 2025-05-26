@@ -41,9 +41,7 @@ namespace NPC_Plugin_Chooser_2
             base.OnStartup(e);
 
             // 1. Create and show splash screen
-            _splashVM = new VM_SplashScreen(ProgramVersion);
-            _splashScreenWindow = new SplashScreenWindow { DataContext = _splashVM };
-            _splashScreenWindow.Show();
+            _splashVM = VM_SplashScreen.InitializeAndShow(App.ProgramVersion);
 
             _splashVM.UpdateProgress(0, "Initializing application...");
 
@@ -103,7 +101,7 @@ namespace NPC_Plugin_Chooser_2
 
             _splashVM.UpdateProgress(100, "Application loaded.");
             await Task.Delay(250); // Keep splash visible briefly
-            _splashScreenWindow.Close();
+            await _splashVM.CloseSplashScreenAsync();
         }
 
         private async Task<IContainer> InitializeCoreApplicationAsync(VM_SplashScreen splashVM)
