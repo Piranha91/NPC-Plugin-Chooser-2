@@ -2,11 +2,14 @@
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Archives;
 using Mutagen.Bethesda.Plugins;
+using Noggog;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public class BsaHandler
 {
+    private Dictionary<FilePath, IArchiveReader> _openBsaArchiveReaders = new();
+    
     /// <summary>
     /// Tries to find a file within any BSA reader in the provided set.
     /// Use this when checking readers associated with a specific source directory.
@@ -15,7 +18,7 @@ public class BsaHandler
     /// <param name="bsaReaders">The set of readers (usually for one directory) to check.</param>
     /// <param name="file">The found archive file, or null.</param>
     /// <returns>True if found in any reader in the set, false otherwise.</returns>
-    public static bool GetFileFromReaders(string subpath, HashSet<IArchiveReader> bsaReaders, out IArchiveFile? file)
+    public bool TryGetFileFromReaders(string subpath, HashSet<IArchiveReader> bsaReaders, out IArchiveFile? file)
     {
         file = null;
         if (bsaReaders == null || !bsaReaders.Any())
@@ -28,8 +31,8 @@ public class BsaHandler
 
         foreach (var reader in bsaReaders)
         {
-            // Use the existing TryGetFile which presumably checks a single reader efficiently
-            if (TryGetFile(normalizedSubpath, reader, out file)) // Assuming TryGetFile exists from V1
+            // Use the existing TryGetFileFromSingleReader which presumably checks a single reader efficiently
+            if (TryGetFileFromSingleReader(normalizedSubpath, reader, out file)) // Assuming TryGetFileFromSingleReader exists from V1
             {
                 return true; // Found it in this reader
             }
@@ -38,8 +41,8 @@ public class BsaHandler
         return false; // Not found in any reader in this set
     }
 
-// Ensure your existing V1 TryGetFile handles case-insensitivity correctly:
-    public static bool TryGetFile(string subpath, IArchiveReader bsaReader, out IArchiveFile? file)
+// Ensure your existing V1 TryGetFileFromSingleReader handles case-insensitivity correctly:
+    public bool TryGetFileFromSingleReader(string subpath, IArchiveReader bsaReader, out IArchiveFile? file)
     {
         file = null;
         // Use OrdinalIgnoreCase for path comparison in BSA lookups
@@ -54,11 +57,11 @@ public class BsaHandler
         return false;
     }
     
-    public static bool HaveFile(string subpath, HashSet<IArchiveReader> bsaReaders, out IArchiveFile? archiveFile)
+    public bool HaveFile(string subpath, HashSet<IArchiveReader> bsaReaders, out IArchiveFile? archiveFile)
     {
         foreach (var reader in bsaReaders)
         {
-            if (TryGetFile(subpath, reader, out archiveFile))
+            if (TryGetFileFromSingleReader(subpath, reader, out archiveFile))
             {
                 return true;
             }
@@ -68,7 +71,7 @@ public class BsaHandler
         return false;
     }
     
-    public static bool ExtractFileFromBsa(IArchiveFile file, string destPath)
+    public bool ExtractFileFromBsa(IArchiveFile file, string destPath)
     {
         string? dirPath = Path.GetDirectoryName(destPath);
         if (string.IsNullOrEmpty(dirPath)) // Also check for empty string
@@ -111,8 +114,8 @@ public class BsaHandler
         }
     }
 
-// Keep OpenBsaArchiveReaders (no change needed based on clarifications)
-    public static HashSet<IArchiveReader> OpenBsaArchiveReaders(string sourceDirectory, ModKey pluginKey)
+    // Keep OpenBsaArchiveReaders (no change needed based on clarifications)
+    public HashSet<IArchiveReader> OpenBsaArchiveReaders(string sourceDirectory, ModKey pluginKey, Action<string, bool, bool>? log = null)
     {
         var readers = new HashSet<IArchiveReader>();
         // Use the SkyrimRelease from your EnvironmentStateProvider if needed
@@ -125,11 +128,16 @@ public class BsaHandler
             {
                 try
                 {
-                    if (File.Exists(bsaFile))
+                    if (_openBsaArchiveReaders.TryGetValue(bsaFile, out var reader))
                     {
-                        // Double-check existence
+                        readers.Add(reader);
+                    }
+                    else if (File.Exists(bsaFile))
+                    {
+                        log?.Invoke($"Loading BSA archive for {bsaFile}", true, false);  // ❷  safe-invoke
                         var bsaReader = Archive.CreateReader(gameRelease, bsaFile);
                         readers.Add(bsaReader);
+                        _openBsaArchiveReaders[bsaFile] = bsaReader;
                     }
                     else
                     {
@@ -155,6 +163,10 @@ public class BsaHandler
 
         return readers;
     }
-    
-    
+
+    public bool DirectoryHasCorrespondingBsaFile(string sourceDirectory, ModKey pluginKey)
+    {
+        var gameRelease = GameRelease.SkyrimSE;
+        return Archive.GetApplicableArchivePaths(gameRelease, sourceDirectory, pluginKey).Any();
+    }
 }
