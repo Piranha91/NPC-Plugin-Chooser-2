@@ -144,6 +144,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> DeselectAllCommand { get; }
         // --- End NEW Compare/Hide/Deselect ---
 
+        // Caches to speed up initialization
+        public Dictionary<string, Dictionary<FormKey, INpcGetter>> NpcGetterCache = new();
 
         // --- Constructor ---
         public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider,
@@ -916,14 +918,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         var selector = AllNpcs.FirstOrDefault(x => x.NpcFormKey.Equals(npc.Key));
                         if (selector == null)
                         {
-                            selector = new VM_NpcsMenuSelection(npc.Key, _environmentStateProvider,
-                                _consistencyProvider);
+                            selector = new VM_NpcsMenuSelection(npc.Key, _environmentStateProvider,this);
                             AllNpcs.Add(selector);
                         }
 
                         selector.Update(modSetting);
                     }
                 }
+
+                NpcGetterCache.Clear(); // don't waste memory holding plugin data once the initialization has finished
             });
 
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Processing mugshot-only entries...");
@@ -957,8 +960,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     {
                         try
                         {
-                            var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider,
-                                _consistencyProvider);
+                            var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider,this);
                             if (npcSelector.DisplayName == mugshotFormKey.ToString())
                             {
                                 npcSelector.DisplayName += " (Missing)";

@@ -18,7 +18,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
     public class VM_NpcsMenuSelection : ReactiveObject
     {
         private readonly EnvironmentStateProvider _environmentStateProvider;
-        private readonly NpcConsistencyProvider _consistencyProvider;
+        private readonly VM_NpcSelectionBar _parentMenu;
 
         public INpcGetter? NpcGetter { get; set; } // Keep the original record (null if from mugshot only)
         public FormKey NpcFormKey { get; }
@@ -38,10 +38,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public ObservableCollection<VM_ModSetting> AppearanceMods { get; set; } = new();
 
         // Alternative constructor for NPCs found *only* via mugshots
-        public VM_NpcsMenuSelection(FormKey npcFormKey, EnvironmentStateProvider environmentStateProvider, NpcConsistencyProvider consistencyProvider)
+        public VM_NpcsMenuSelection(FormKey npcFormKey, EnvironmentStateProvider environmentStateProvider, VM_NpcSelectionBar parentMenu)
         {
             _environmentStateProvider = environmentStateProvider;
-            _consistencyProvider = consistencyProvider;
+            _parentMenu = parentMenu;
             NpcFormKey = npcFormKey;
             NpcFormKeyString = npcFormKey.ToString();
             NpcGetter = null; // No getter available
@@ -71,22 +71,30 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     foreach (var plugin in modSetting.CorrespondingModKeys)
                     {
                         var candidatePath = System.IO.Path.Combine(subDir, plugin.ToString());
-                        if (System.IO.File.Exists(candidatePath))
+                        
+                        if (!_parentMenu.NpcGetterCache.ContainsKey(candidatePath) && System.IO.File.Exists(candidatePath))
                         {
                             try
                             {
                                 var mod = SkyrimMod.CreateFromBinaryOverlay(candidatePath, SkyrimRelease.SkyrimSE);
-                                var npcGetter = mod.Npcs.FirstOrDefault(x => x.FormKey.Equals(NpcFormKey));
-                                if (npcGetter != null)
+                                Dictionary<FormKey, INpcGetter> subCache = new();
+                                _parentMenu.NpcGetterCache.Add(candidatePath, subCache);
+
+                                foreach (var npc in mod.Npcs)
                                 {
-                                    _pluginFound = true;
-                                    UpdateDisplayName(npcGetter);
+                                    subCache.Add(npc.FormKey, npc);
                                 }
                             }
                             catch
                             {
                                 // pass
                             }
+                        }
+                        
+                        if (_parentMenu.NpcGetterCache.ContainsKey(candidatePath) && _parentMenu.NpcGetterCache[candidatePath].TryGetValue(NpcFormKey, out var npcGetter))
+                        {
+                            _pluginFound = true;
+                            UpdateDisplayName(npcGetter);
                         }
                     }
                 }
