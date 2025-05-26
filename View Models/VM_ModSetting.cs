@@ -30,6 +30,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
     public class VM_ModSetting : ReactiveObject
     {
+        // --- Factory Delegates ---
+        public delegate VM_ModSetting FromModelFactory(Models.ModSetting model, VM_Mods parentVm);
+        public delegate VM_ModSetting FromMugshotPathFactory(string displayName, string mugshotPath, VM_Mods parentVm);
+        public delegate VM_ModSetting FromDisplayNameFactory(string displayName, VM_Mods parentVm);
+        
         // --- Properties ---
         [Reactive] public string DisplayName { get; set; } = string.Empty;
         [Reactive] public string MugShotFolderPath { get; set; } = string.Empty; // Path to the mugshot folder for this mod
@@ -52,6 +57,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly SkyrimRelease _skyrimRelease;
         private readonly EnvironmentStateProvider _environmentStateProvider;
         private readonly Auxilliary _aux;
+        private readonly BsaHandler _bsaHandler;
 
         // Flag indicating if this VM was created dynamically only from a Mugshot folder
         // and wasn't loaded from the persisted ModSettings.
@@ -96,9 +102,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         /// <summary>
         /// Constructor used when loading from an existing Models.ModSetting.
+        /// Called by FromModelFactory.
         /// </summary>
-        public VM_ModSetting(Models.ModSetting model, VM_Mods parentVm, Auxilliary aux)
-            : this(model.DisplayName, parentVm, aux, isMugshotOnly: false) // Chain constructor, explicitly false for IsMugshotOnlyEntry
+        public VM_ModSetting(Models.ModSetting model, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler)
+            : this(model.DisplayName, parentVm, aux, bsaHandler, isMugshotOnly: false)
         {
             // Properties specific to loading existing model
             CorrespondingModKeys = new ObservableCollection<ModKey>(model.CorrespondingModKeys ?? new List<ModKey>());
@@ -112,22 +119,31 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         /// <summary>
-        /// Constructor used when creating dynamically from a Mugshot folder during initial population.
+        /// Constructor used when creating dynamically from a Mugshot folder.
+        /// Called by FromMugshotPathFactory.
         /// </summary>
-        public VM_ModSetting(string displayName, string mugshotPath, VM_Mods parentVm, Auxilliary aux)
-            : this(displayName, parentVm, aux, isMugshotOnly: true) // Chain constructor, explicitly true for IsMugshotOnlyEntry
+        public VM_ModSetting(string displayName, string mugshotPath, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler)
+            : this(displayName, parentVm, aux, bsaHandler, isMugshotOnly: true)
         {
-             MugShotFolderPath = mugshotPath;
-             // IsMugshotOnlyEntry is set to true via chaining
+            MugShotFolderPath = mugshotPath;
+        }
+        
+        /// <summary>
+        /// Constructor used when creating from a DisplayName, typically for a new mod folder entry.
+        /// Called by FromDisplayNameFactory.
+        /// </summary>
+        public VM_ModSetting(string displayName, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler)
+            : this(displayName, parentVm, aux, bsaHandler, isMugshotOnly: false)
+        {
+            // Nothing specific to do here, base constructor handles it.
         }
 
         /// <summary>
-        /// Base constructor (used directly or chained).
+        /// Base constructor (private to enforce factory usage for specific scenarios if desired, or internal).
+        /// Making it public for simplicity with Autofac delegate factories if they directly target this,
+        /// but current setup chains to it.
         /// </summary>
-        /// <param name="displayName">The initial display name.</param>
-        /// <param name="parentVm">Reference to the parent VM_Mods.</param>
-        /// <param name="isMugshotOnly">Flag indicating if this VM represents an entry initially created only from a mugshot folder.</param>
-        public VM_ModSetting(string displayName, VM_Mods parentVm, Auxilliary aux, bool isMugshotOnly = false)
+        private VM_ModSetting(string displayName, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler, bool isMugshotOnly)
         {
             _parentVm = parentVm;
             DisplayName = displayName;
@@ -135,6 +151,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _skyrimRelease = parentVm.SkyrimRelease; // Get SkyrimRelease from parent
             _environmentStateProvider = parentVm.EnvironmentStateProvider; // Get EnvironmentStateProvider from parent
             _aux = aux;
+            _bsaHandler = bsaHandler;
 
             // Initialize NpcPluginDisambiguation if not loaded from model (chained constructors handle this)
             if (NpcPluginDisambiguation == null) // Should only be null if this base constructor is called directly without chaining from model constructor
@@ -466,6 +483,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             {
                                 FormKey currentNpcKey = npcGetter.FormKey;
 
+                                if (!FaceGenExists(currentNpcKey, CorrespondingFolderPaths))
+                                {
+                                    continue;
+                                }
+
                                 if (!AvailablePluginsForNpcs.TryGetValue(currentNpcKey, out var sourceList))
                                 {
                                     sourceList = new List<ModKey>();
@@ -579,6 +601,53 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     NpcPluginDisambiguation.Remove(npcKeyInDisambiguation);
                 }
             }
+        }
+
+        /// <summary>
+        /// Checks if FaceGen for the given FormKey exists either in the current data environment or in the provided directory
+        /// </summary>
+        public bool FaceGenExists(FormKey formKey, IEnumerable<string> modDataPaths)
+        {
+            // check BSA facegen
+            
+            // Check other facegen
+            
+            var faceGenRelPaths = Auxilliary.GetFaceGenSubPathStrings(formKey);
+
+            string faceGenMeshPathData =
+                Path.Combine(_environmentStateProvider.DataFolderPath, "Meshes", faceGenRelPaths.MeshPath);
+
+            if (File.Exists(faceGenMeshPathData))
+            {
+                return true;
+            }
+            
+            string faceGenTexPathData =
+                Path.Combine(_environmentStateProvider.DataFolderPath, "Textures", faceGenRelPaths.TexturePath);
+            if (File.Exists(faceGenTexPathData))
+            {
+                return true;
+            }
+
+            foreach (var path in modDataPaths)
+            {
+                faceGenMeshPathData =
+                    Path.Combine(path, "Meshes", faceGenRelPaths.MeshPath);
+
+                if (File.Exists(faceGenMeshPathData))
+                {
+                    return true;
+                }
+            
+                faceGenTexPathData =
+                    Path.Combine(path, "Textures", faceGenRelPaths.TexturePath);
+                if (File.Exists(faceGenTexPathData))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
         
         /// <summary>
@@ -742,7 +811,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // 1. Create the new "Mugshot-Only" VM
             // It will be mugshot-only by definition because it has no CorrespondingFolderPaths/CorrespondingModKeys initially
-            var newMugshotOnlyVm = new VM_ModSetting(displayName: mugshotDirName, mugshotPath: originalMugshotPath, parentVm: _parentVm, aux: _aux);
+            var newMugshotOnlyVm = new VM_ModSetting(displayName: mugshotDirName, mugshotPath: originalMugshotPath, parentVm: _parentVm, aux: _aux, bsaHandler: _bsaHandler);
             // Ensure IsMugshotOnlyEntry is correctly set based on its initial state
             newMugshotOnlyVm.IsMugshotOnlyEntry = true; 
             // It won't have NPC lists immediately, that will be populated if/when VM_Mods calls RefreshNpcLists on all.

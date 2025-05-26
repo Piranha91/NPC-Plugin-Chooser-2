@@ -963,7 +963,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // 1. FaceGen Assets (Always check if requested, templating handled by caller passing null npcForExtraAssetLookup)
             // Construct FaceGen paths using the provided key
             var (faceMeshRelativePath, faceTexRelativePath) =
-                GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey); // Use the keyForFaceGenPath here!
+                Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey); // Use the keyForFaceGenPath here!
             meshToCopyRelativePaths.Add(faceMeshRelativePath);
             textureToCopyRelativePaths.Add(faceTexRelativePath);
             AppendLog(
@@ -1143,34 +1143,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         /// <summary>
-        /// Gets the relative file paths for FaceGen NIF and DDS files,
-        /// ensuring the FormID component is an 8-character, zero-padded hex string.
-        /// </summary>
-        /// <param name="npcFormKey">The FormKey of the NPC.</param>
-        /// <returns>A tuple containing the relative mesh path and texture path (lowercase).</returns>
-        private (string MeshPath, string TexturePath) GetFaceGenSubPathStrings(FormKey npcFormKey)
-        {
-            // Get the plugin filename string
-            string pluginFileName = npcFormKey.ModKey.FileName.String; // Use .String property
-
-            // Get the Form ID and format it as an 8-character uppercase hex string (X8)
-            string formIDHex = npcFormKey.ID.ToString("X8"); // e.g., 0001A696
-
-            // Construct the paths
-            string meshPath = $"actors\\character\\facegendata\\facegeom\\{pluginFileName}\\{formIDHex}.nif";
-            string texPath = $"actors\\character\\facegendata\\facetint\\{pluginFileName}\\{formIDHex}.dds";
-
-            // Return lowercase paths for case-insensitive comparisons later
-            return (meshPath.ToLowerInvariant(), texPath.ToLowerInvariant());
-        }
-
-        /// <summary>
         /// Checks if FaceGen files exist loose or in BSAs within the provided source directories.
         /// **Revised for Clarification 2.**
         /// </summary>
         private bool FaceGenExists(FormKey npcFormKey, ModKey appearancePluginKey, List<string> assetSourceDirs)
         {
-            var (faceMeshPath, faceTexPath) = GetFaceGenSubPathStrings(npcFormKey);
+            var (faceMeshPath, faceTexPath) = Auxilliary.GetFaceGenSubPathStrings(npcFormKey);
             bool nifFound = false;
             bool ddsFound = false;
 

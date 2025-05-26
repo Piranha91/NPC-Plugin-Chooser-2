@@ -58,6 +58,28 @@ public class Auxilliary
         }
         return String.Empty;
     }
+    
+    /// <summary>
+    /// Gets the relative file paths for FaceGen NIF and DDS files,
+    /// ensuring the FormID component is an 8-character, zero-padded hex string.
+    /// </summary>
+    /// <param name="npcFormKey">The FormKey of the NPC.</param>
+    /// <returns>A tuple containing the relative mesh path and texture path (lowercase).</returns>
+    public static (string MeshPath, string TexturePath) GetFaceGenSubPathStrings(FormKey npcFormKey)
+    {
+        // Get the plugin filename string
+        string pluginFileName = npcFormKey.ModKey.FileName.String; // Use .String property
+
+        // Get the Form ID and format it as an 8-character uppercase hex string (X8)
+        string formIDHex = npcFormKey.ID.ToString("X8"); // e.g., 0001A696
+
+        // Construct the paths
+        string meshPath = $"actors\\character\\facegendata\\facegeom\\{pluginFileName}\\{formIDHex}.nif";
+        string texPath = $"actors\\character\\facegendata\\facetint\\{pluginFileName}\\{formIDHex}.dds";
+
+        // Return lowercase paths for case-insensitive comparisons later
+        return (meshPath.ToLowerInvariant(), texPath.ToLowerInvariant());
+    }
 
     public bool TryFormKeyToFormIDString(FormKey formKey, out string formIDstr)
     {

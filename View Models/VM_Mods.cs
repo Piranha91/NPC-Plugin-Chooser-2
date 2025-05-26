@@ -105,11 +105,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         // Concurrency management
         private bool _isPopulatingModSettings = false;
+        
+        // Factory fields
+        private readonly VM_ModSetting.FromModelFactory _modSettingFromModelFactory;
+        private readonly VM_ModSetting.FromMugshotPathFactory _modSettingFromMugshotPathFactory;
+        private readonly VM_ModSetting.FromDisplayNameFactory _modSettingFromDisplayNameFactory;
 
         // *** Updated Constructor Signature ***
         public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider,
             VM_NpcSelectionBar npcSelectionBar, NpcConsistencyProvider consistencyProvider,
-            Lazy<VM_MainWindow> lazyMainWindowVm, Auxilliary aux)
+            Lazy<VM_MainWindow> lazyMainWindowVm, Auxilliary aux,
+            VM_ModSetting.FromModelFactory modSettingFromModelFactory,
+            VM_ModSetting.FromMugshotPathFactory modSettingFromMugshotPathFactory,
+            VM_ModSetting.FromDisplayNameFactory modSettingFromDisplayNameFactory)
         {
             _settings = settings;
             _environmentStateProvider = environmentStateProvider;
@@ -117,6 +125,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _consistencyProvider = consistencyProvider;
             _lazyMainWindowVm = lazyMainWindowVm;
             _aux = aux;
+            _modSettingFromModelFactory = modSettingFromModelFactory;
+            _modSettingFromMugshotPathFactory = modSettingFromMugshotPathFactory;
+            _modSettingFromDisplayNameFactory = modSettingFromDisplayNameFactory;
 
             ShowMugshotsCommand = ReactiveCommand.CreateFromTask<VM_ModSetting>(ShowMugshotsAsync);
             ShowMugshotsCommand.ThrownExceptions.Subscribe(ex =>
@@ -723,7 +734,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             foreach (var settingModel in _settings.ModSettings)
             {
                 if (string.IsNullOrWhiteSpace(settingModel.DisplayName)) continue;
-                var vm = new VM_ModSetting(settingModel, this, _aux);
+                var vm = _modSettingFromModelFactory(settingModel, this);
                 if (!string.IsNullOrWhiteSpace(vm.MugShotFolderPath) && Directory.Exists(vm.MugShotFolderPath))
                     claimedMugshotPaths.Add(vm.MugShotFolderPath);
                 else if (string.IsNullOrWhiteSpace(vm.MugShotFolderPath))
@@ -757,7 +768,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         {
                             string folderName = Path.GetFileName(dirPath);
                             if (!loadedDisplayNames.Contains(folderName))
-                                vmsFromMugshotsOnly.Add(new VM_ModSetting(folderName, dirPath, this, _aux));
+                                vmsFromMugshotsOnly.Add(_modSettingFromMugshotPathFactory(folderName, dirPath, this));
                         }
                     }
                 }
@@ -804,11 +815,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         }
                         else if (foundEnabledKeysInFolder.Any())
                         {
-                            var newVm = new VM_ModSetting(modFolderName, this, _aux)
-                            {
-                                CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath },
-                                CorrespondingModKeys = new ObservableCollection<ModKey>(foundEnabledKeysInFolder)
-                            };
+                            var newVm = _modSettingFromDisplayNameFactory(modFolderName, this);
+                            newVm.CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath };
+                            newVm.CorrespondingModKeys = new ObservableCollection<ModKey>(foundEnabledKeysInFolder);
                             string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
                             if (Directory.Exists(potentialMugshotPath) &&
                                 !claimedMugshotPaths.Contains(potentialMugshotPath))
@@ -822,11 +831,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         }
                         else if (FaceGenScanner.CollectFaceGenFiles(modFolderPath, out var faceGenFiles, out _, out _))
                         {
-                            var newVm = new VM_ModSetting(modFolderName, this, _aux)
-                            {
-                                CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath },
-                                IsFaceGenOnlyEntry = true
-                            };
+                            var newVm = _modSettingFromDisplayNameFactory(modFolderName, this);
+                            newVm.CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath };
+                            newVm.IsFaceGenOnlyEntry = true;
 
                             foreach (var pluginName in faceGenFiles.Keys)
                             {
@@ -1363,6 +1370,22 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 ShowMugshotsCommand.Execute(modSetting).Subscribe().DisposeWith(_disposables);
             }
+        }
+        
+        // Helper methods to use factories (optional, but can centralize calls)
+        public VM_ModSetting CreateModSettingFromModel(Models.ModSetting model)
+        {
+            return _modSettingFromModelFactory(model, this);
+        }
+
+        public VM_ModSetting CreateModSettingFromMugshotPath(string displayName, string mugshotPath)
+        {
+            return _modSettingFromMugshotPathFactory(displayName, mugshotPath, this);
+        }
+
+        public VM_ModSetting CreateModSettingFromDisplayName(string displayName)
+        {
+            return _modSettingFromDisplayNameFactory(displayName, this);
         }
     }
 }

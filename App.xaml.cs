@@ -141,7 +141,8 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<VM_FullScreenImage>().AsSelf();
             builder.RegisterType<VM_ModsMenuMugshot>().AsSelf();
             builder.RegisterType<VM_NpcsMenuMugshot>().AsSelf();
-            builder.RegisterType<VM_MultiImageDisplay>().AsSelf(); // Ensure VM_MultiImageDisplay is registered
+            builder.RegisterType<VM_MultiImageDisplay>().AsSelf(); 
+            builder.RegisterType<VM_ModSetting>().AsSelf();
 
             splashVM.UpdateProgress(40, "Registering Views with DI...");
             builder.RegisterType<MainWindow>().As<IViewFor<VM_MainWindow>>();

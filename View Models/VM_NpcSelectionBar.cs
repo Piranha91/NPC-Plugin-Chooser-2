@@ -1247,8 +1247,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     relevantModSettings.Add(modSetting);
                 }
             }
-
+            
             ModKey baseModKey = selectionVm.NpcFormKey.ModKey;
+            /*            
             if (!baseModKey.IsNull)
             {
                 var modSettingsForBasePlugin = _lazyModsVm.Value?.AllModSettings
@@ -1265,10 +1266,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         DisplayName = baseModKey.ToString(),
                         CorrespondingModKeys = new() { baseModKey }
                     };
-                    var dummyVM = new VM_ModSetting(dummyModSetting, _lazyModsVm.Value, _auxilliary);
-                    relevantModSettings.Add(dummyVM);
+                    //var dummyVM = new VM_ModSetting(dummyModSetting, _lazyModsVm.Value, _auxilliary);
+                    //relevantModSettings.Add(dummyVM);
                 }
-            }
+            }*/
 
             bool baseKeyHandledByAModSettingVM = false;
             foreach (var modSettingVM in relevantModSettings)
