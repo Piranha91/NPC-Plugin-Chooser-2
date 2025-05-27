@@ -49,6 +49,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Lazy<VM_Mods> _lazyModsVm;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
         private readonly AppearanceModFactory _appearanceModFactory;
+        private readonly VM_ModSetting.FromModelFactory _modSettingFromModelFactory;
 
         // --- Internal State ---
         private HashSet<string> _hiddenModNames = new();
@@ -155,7 +156,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             NpcDescriptionProvider descriptionProvider,
             Lazy<VM_Mods> lazyModsVm,
             Lazy<VM_MainWindow> lazyMainWindowVm,
-            AppearanceModFactory appearanceModFactory)
+            AppearanceModFactory appearanceModFactory,
+            VM_ModSetting.FromModelFactory modSettingFromModelFactory)
         {
             _environmentStateProvider = environmentStateProvider;
             _settings = settings;
@@ -165,6 +167,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _lazyModsVm = lazyModsVm;
             _lazyMainWindowVm = lazyMainWindowVm;
             _appearanceModFactory = appearanceModFactory;
+            _modSettingFromModelFactory = modSettingFromModelFactory;
 
             _hiddenModNames = _settings.HiddenModNames ?? new(StringComparer.OrdinalIgnoreCase);
             _hiddenModsPerNpc = _settings.HiddenModsPerNpc ?? new();
@@ -1249,8 +1252,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             
             ModKey baseModKey = selectionVm.NpcFormKey.ModKey;
-            /*            
-            if (!baseModKey.IsNull)
+                        
+            if (!baseModKey.IsNull && _lazyModsVm.IsValueCreated && _lazyModsVm.Value != null)
             {
                 var modSettingsForBasePlugin = _lazyModsVm.Value?.AllModSettings
                     .Where(ms => ms.CorrespondingModKeys.Contains(baseModKey))
@@ -1266,10 +1269,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         DisplayName = baseModKey.ToString(),
                         CorrespondingModKeys = new() { baseModKey }
                     };
-                    //var dummyVM = new VM_ModSetting(dummyModSetting, _lazyModsVm.Value, _auxilliary);
-                    //relevantModSettings.Add(dummyVM);
+                    
+                    var dummyVM = _modSettingFromModelFactory(dummyModSetting, _lazyModsVm.Value);
+                    relevantModSettings.Add(dummyVM);
                 }
-            }*/
+            }
 
             bool baseKeyHandledByAModSettingVM = false;
             foreach (var modSettingVM in relevantModSettings)
