@@ -51,6 +51,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool CanJumpToMod { get; set; } = false;
         public VM_ModSetting? AssociatedModSetting { get; }
         [Reactive] public string ToolTipString { get; set; } = string.Empty;
+        [Reactive] public bool HasIssueNotification { get; set; } = false;
+        [Reactive] public string IssueNotificationText { get; set; } = string.Empty;
 
         // --- NEW IHasMugshotImage properties ---
         public int OriginalPixelWidth { get; set; }

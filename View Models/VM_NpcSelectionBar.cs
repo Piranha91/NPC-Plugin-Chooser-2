@@ -1355,10 +1355,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         }
                     }
                 }
-
+                
                 var appearanceVM =
                     _appearanceModFactory(displayName, selectionVm.NpcFormKey, specificPluginKey, imagePath);
+                
                 finalModVMs[displayName] = appearanceVM;
+                
+                if (modSettingVM.NpcFormKeysToNotifications.TryGetValue(selectionVm.NpcFormKey, out var notifStr))
+                {
+                    appearanceVM.HasIssueNotification = true;
+                    appearanceVM.IssueNotificationText = notifStr;
+                }
+                
                 if (!baseModKey.IsNull && specificPluginKey != null && specificPluginKey.Value.Equals(baseModKey))
                 {
                     baseKeyHandledByAModSettingVM = true;

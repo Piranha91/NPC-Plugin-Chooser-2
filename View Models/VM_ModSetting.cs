@@ -46,6 +46,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public List<FormKey> NpcFormKeys { get; set; } = new();
         public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
         public Dictionary<FormKey, List<ModKey>> AvailablePluginsForNpcs { get; set; } = new(); // tracks which plugins contain which Npc entry
+        public Dictionary<FormKey, string> NpcFormKeysToNotifications { get; set; } = new(); // tracks any notifications the user should be alerted to for the given Npc
 
         // New Property: Maps NPC FormKey to the ModKey from which it should inherit data,
         // specifically for NPCs appearing in multiple plugins within this ModSetting.
@@ -525,6 +526,30 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 if (!sourceList.Contains(modKey)) 
                                 {
                                      sourceList.Add(modKey);
+                                }
+
+                                if (npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
+                                {
+                                    string templateStr = npcGetter.Template?.FormKey.ToString() ?? "NULL TEMPLATE";
+                                    if (npcGetter.Template != null &&
+                                        _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(
+                                            npcGetter.Template.FormKey, out var templateGetter) && templateGetter != null)
+                                    {
+                                        if (templateGetter.Name != null && templateGetter.Name.String != null)
+                                        {
+                                            templateStr = templateGetter.Name.String;
+                                        }
+                                        else if (templateGetter.EditorID != null)
+                                        {
+                                            templateStr = templateGetter.EditorID;
+                                        }
+                                        else
+                                        {
+                                            templateStr = npcGetter.Template.FormKey.ToString();
+                                        }
+                                    }
+                                    
+                                    NpcFormKeysToNotifications[currentNpcKey] = $"Despite having FaceGen files, this NPC from {mod.ModKey.FileName} has the Traits flag so it inherits appearance from {templateStr}. Making a selection for this NPC will do nothing.";
                                 }
                                 
                                 if (!NpcFormKeys.Contains(currentNpcKey))

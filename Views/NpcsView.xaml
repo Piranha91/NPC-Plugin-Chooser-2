@@ -243,8 +243,29 @@
                                      <TextBlock Text="{Binding ModName}" VerticalAlignment="Bottom" HorizontalAlignment="Center"
                                                 Background="#AAFFFFFF" FontSize="10" Padding="3,1"
                                                 TextTrimming="CharacterEllipsis" ToolTip="{Binding ModName}"/>
+                                     
+                                     <!-- Outer Container for Issue Notification Indicator (Top-Left) -->
+                                     <Grid x:Name="IssueIndicatorContainerGrid"
+                                           HorizontalAlignment="Left" 
+                                           VerticalAlignment="Top"
+                                           Width="{Binding ElementName=CompareCheckBox, Path=ActualWidth}"  
+                                           Height="{Binding ElementName=CompareCheckBox, Path=ActualHeight}" 
+                                           Visibility="{Binding HasIssueNotification, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                           ToolTip="{Binding IssueNotificationText}"
+                                           Margin="0,0,0,0"> 
+                                         
+                                         <!-- Inner Viewbox to scale the "!" and center it -->
+                                         <Viewbox Stretch="Uniform" 
+                                                  HorizontalAlignment="Center" 
+                                                  VerticalAlignment="Center">
+                                             <TextBlock Text="!"
+                                                        FontWeight="Bold"
+                                                        Foreground="Red"/>
+                                         </Viewbox>
+                                     </Grid>
 
-                                     <CheckBox IsChecked="{Binding IsCheckedForCompare, Mode=TwoWay}"
+                                     <CheckBox x:Name="CompareCheckBox" 
+                                               IsChecked="{Binding IsCheckedForCompare, Mode=TwoWay}"
                                                VerticalAlignment="Top" HorizontalAlignment="Right"
                                                Margin="0" Padding="0"
                                                Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='10'}"
