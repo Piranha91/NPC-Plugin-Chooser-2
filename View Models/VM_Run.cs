@@ -38,17 +38,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- Constants ---
         private const string ALL_NPCS_GROUP = "<All NPCs>";
 
-        // Define Base Game Plugins (matching V1) - used for DuplicateFromOnlyReferenced exclusion
-        private static readonly HashSet<ModKey> BaseGamePlugins = new()
-        {
-            ModKey.FromNameAndExtension("Skyrim.esm"),
-            ModKey.FromNameAndExtension("Update.esm"),
-            ModKey.FromNameAndExtension("Dawnguard.esm"),
-            ModKey.FromNameAndExtension("HearthFires.esm"),
-            ModKey.FromNameAndExtension("Dragonborn.esm")
-            // Add USSEP potentially? V1 didn't, so let's stick to that for now.
-        };
-
 
         // --- Logging & State ---
         [Reactive] public string LogOutput { get; private set; } = string.Empty;

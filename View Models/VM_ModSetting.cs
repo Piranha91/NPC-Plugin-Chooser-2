@@ -12,6 +12,7 @@ using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using System.Linq;
 using DynamicData;
+using Mutagen.Bethesda.Archives;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
@@ -460,6 +461,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             if (CorrespondingModKeys.Any() && HasModPathsAssigned && !IsFaceGenOnlyEntry)
             {
+                var dirsWithBsa = CorrespondingFolderPaths
+                    .Where(dir => 
+                        Directory.Exists(dir) &&
+                        Directory.EnumerateFiles(dir, "*.bsa", SearchOption.TopDirectoryOnly).Any()
+                    )
+                    .ToList();
+                
                 foreach (var modKey in CorrespondingModKeys)
                 {
                     string? foundPluginPath = null;
@@ -478,12 +486,37 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     {
                         try
                         {
+                            List <IArchiveReader> bsaReaders = new();
+                            foreach (var d in dirsWithBsa)
+                            {
+                                var readers = _bsaHandler.OpenBsaArchiveReaders(d, modKey);
+                                bsaReaders.AddRange(readers);
+                            }
+                            
                             using var mod = SkyrimMod.CreateFromBinaryOverlay(foundPluginPath, _skyrimRelease);
                             foreach (var npcGetter in mod.Npcs)
                             {
-                                FormKey currentNpcKey = npcGetter.FormKey;
+                                var racefk = npcGetter.Race;
+                                if (racefk.IsNull)
+                                {
+                                    continue;
+                                }
 
-                                if (!FaceGenExists(currentNpcKey, CorrespondingFolderPaths))
+                                if (!_environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(racefk,
+                                        out var raceGetter) || raceGetter.Keywords == null)
+                                {
+                                    continue;
+                                }
+                                
+                                if (!raceGetter.Keywords.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Keyword
+                                        .ActorTypeNPC))
+                                {
+                                    continue;
+                                }
+                                
+                                FormKey currentNpcKey = npcGetter.FormKey;
+                                
+                                if (!FaceGenExists(currentNpcKey, CorrespondingFolderPaths, bsaReaders.ToHashSet()))
                                 {
                                     continue;
                                 }
@@ -606,16 +639,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// <summary>
         /// Checks if FaceGen for the given FormKey exists either in the current data environment or in the provided directory
         /// </summary>
-        public bool FaceGenExists(FormKey formKey, IEnumerable<string> modDataPaths)
+        public bool FaceGenExists(FormKey formKey, IEnumerable<string> modDataPaths, HashSet<IArchiveReader> bsaReaders)
         {
-            // check BSA facegen
-            
-            // Check other facegen
-            
             var faceGenRelPaths = Auxilliary.GetFaceGenSubPathStrings(formKey);
+            string faceGenMeshRelPath = Path.Combine("Meshes", faceGenRelPaths.MeshPath);
+            string faceGenTexRelPath = Path.Combine("Textures", faceGenRelPaths.TexturePath);
+            
+            // Check loose files
 
             string faceGenMeshPathData =
-                Path.Combine(_environmentStateProvider.DataFolderPath, "Meshes", faceGenRelPaths.MeshPath);
+                Path.Combine(_environmentStateProvider.DataFolderPath, faceGenMeshRelPath);
 
             if (File.Exists(faceGenMeshPathData))
             {
@@ -623,7 +656,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             
             string faceGenTexPathData =
-                Path.Combine(_environmentStateProvider.DataFolderPath, "Textures", faceGenRelPaths.TexturePath);
+                Path.Combine(_environmentStateProvider.DataFolderPath, faceGenTexRelPath);
             if (File.Exists(faceGenTexPathData))
             {
                 return true;
@@ -646,6 +679,24 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     return true;
                 }
             }
+            
+            // check BSA facegen
+            List<string> searchDirs = new();
+            
+            if (_aux.IsBaseGamePlugin(formKey.ModKey))
+            {
+                searchDirs.Add(_environmentStateProvider.DataFolderPath);
+            }
+            else
+            {
+                searchDirs.AddRange(modDataPaths);
+            }
+
+            if(_bsaHandler.TryGetFileFromReaders(faceGenMeshRelPath, bsaReaders, out _) ||
+               _bsaHandler.TryGetFileFromReaders(faceGenTexRelPath, bsaReaders, out _))
+            {
+                return true;
+            }   
 
             return false;
         }

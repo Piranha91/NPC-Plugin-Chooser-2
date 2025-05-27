@@ -143,4 +143,18 @@ public class Auxilliary
             return directory;
         }
     }
+
+    // Define Base Game Plugins
+    private static readonly HashSet<ModKey> BaseGamePlugins = new()
+    {
+        ModKey.FromNameAndExtension("Skyrim.esm"),
+        ModKey.FromNameAndExtension("Update.esm"),
+        ModKey.FromNameAndExtension("Dawnguard.esm"),
+        ModKey.FromNameAndExtension("HearthFires.esm"),
+        ModKey.FromNameAndExtension("Dragonborn.esm")
+    };
+    public bool IsBaseGamePlugin(ModKey modKey)
+    {
+        return BaseGamePlugins.Contains(modKey);
+    }
 }
