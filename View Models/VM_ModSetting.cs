@@ -28,6 +28,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
         MugshotFolder,
         ModFolder
     }
+    
+    /// <summary>
+    /// Enum to specify the type of issue that a given modded NPC has
+    /// </summary>
+    public enum NpcIssueType
+    {
+        Template
+    }
 
     public class VM_ModSetting : ReactiveObject
     {
@@ -46,7 +54,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public List<FormKey> NpcFormKeys { get; set; } = new();
         public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
         public Dictionary<FormKey, List<ModKey>> AvailablePluginsForNpcs { get; set; } = new(); // tracks which plugins contain which Npc entry
-        public Dictionary<FormKey, string> NpcFormKeysToNotifications { get; set; } = new(); // tracks any notifications the user should be alerted to for the given Npc
+
+        public Dictionary<FormKey, (NpcIssueType IssueType, string IssueMessage)> 
+            NpcFormKeysToNotifications
+                = new();
+        // tracks any notifications the user should be alerted to for the given Npc
 
         // New Property: Maps NPC FormKey to the ModKey from which it should inherit data,
         // specifically for NPCs appearing in multiple plugins within this ModSetting.
@@ -549,7 +561,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                         }
                                     }
                                     
-                                    NpcFormKeysToNotifications[currentNpcKey] = $"Despite having FaceGen files, this NPC from {mod.ModKey.FileName} has the Traits flag so it inherits appearance from {templateStr}. Making a selection for this NPC will do nothing.";
+                                    NpcFormKeysToNotifications[currentNpcKey] = (IssueType: NpcIssueType.Template, IssueMessage: $"Despite having FaceGen files, this NPC from {mod.ModKey.FileName} has the Traits flag so it inherits appearance from {templateStr}. Selecting this mugshot will do nothing.");
                                 }
                                 
                                 if (!NpcFormKeys.Contains(currentNpcKey))

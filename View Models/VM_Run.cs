@@ -910,11 +910,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             AppendLog(
                 $"      Copied appearance fields from {sourceNpc.FormKey.ModKey.FileName} to {targetNpc.FormKey} in patch."); // Verbose only
+
+            if (NPCisTemplated(targetNpc) && !NPCisTemplated(sourceNpc))
+            {
+                AppendLog(
+                    $"      Removing template flag from {targetNpc.FormKey} in patch."); // Verbose only
+                targetNpc.Configuration.TemplateFlags 
+                    &= ~NpcConfiguration.TemplateFlag.Traits;
+            }
         }
 
         private bool NPCisTemplated(INpcGetter? npc)
         {
-            // (Implementation remains the same as before)
             if (npc == null) return false;
             return !npc.Template.IsNull &&
                    npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits);

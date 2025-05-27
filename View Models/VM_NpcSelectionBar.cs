@@ -982,6 +982,33 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                 }
             });
+            
+            // Clean up templated NPCs if they only have templated options without MugShots
+            splashReporter?.UpdateProgress(90, "Cleaning NPC List...");
+            for (int i = 0; i < AllNpcs.Count; i++)
+            {
+                var currentNpc = AllNpcs[i];
+                for (int j = 0; j < currentNpc.AppearanceMods.Count; j++)
+                {
+                    var currentMod = currentNpc.AppearanceMods[j];
+            
+                    if (currentMod.NpcFormKeysToNotifications.TryGetValue(currentNpc.NpcFormKey, out var notif) && 
+                        notif.IssueType == NpcIssueType.Template && // NPC is templated
+                        !(_mugshotData.TryGetValue(currentNpc.NpcFormKey, out var mugshotList) // NPC does not have an explicitly supplied mugshot
+                          && mugshotList != null &&
+                          mugshotList.Any(x => x.ModName == currentMod.DisplayName)))
+                    {
+                        currentNpc.AppearanceMods.RemoveAt(j);
+                        j--;
+                    }
+                }
+
+                if (!currentNpc.AppearanceMods.Any())
+                {
+                    AllNpcs.RemoveAt(i);
+                    i--;
+                }
+            }
 
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9), "Setting up NPC List...");
             await Application.Current.Dispatcher.InvokeAsync(() => ApplyFilter(initializing: true));
@@ -1361,10 +1388,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 
                 finalModVMs[displayName] = appearanceVM;
                 
-                if (modSettingVM.NpcFormKeysToNotifications.TryGetValue(selectionVm.NpcFormKey, out var notifStr))
+                if (modSettingVM.NpcFormKeysToNotifications.TryGetValue(selectionVm.NpcFormKey, out var notif))
                 {
                     appearanceVM.HasIssueNotification = true;
-                    appearanceVM.IssueNotificationText = notifStr;
+                    appearanceVM.IssueNotificationText = notif.IssueMessage;
                 }
                 
                 if (!baseModKey.IsNull && specificPluginKey != null && specificPluginKey.Value.Equals(baseModKey))
