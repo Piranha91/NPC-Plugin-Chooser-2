@@ -388,10 +388,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // Asynchronously refresh its NPC lists if it might have mod data (though unlink usually makes it mugshot-only)
             // For a new mugshot-only entry, RefreshNpcLists won't find much, but it's harmless.
-            if (newVm.DisplayName == "WICO - Windsong Immersive Chracter Overhaul")
-            {
-                Debug.WriteLine("Calling RefreshNpcLists for WICO from AddAndRefreshModSetting()");
-            }
 
             Task.Run(() => newVm.RefreshNpcLists());
         }
@@ -1284,11 +1280,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // Although, if a merge happens, it's unlikely the winner was mugshot-only. Let's set it to false.
                 winner.IsMugshotOnlyEntry = false;
 
-                // Refresh NPC lists for the winner as its sources may have changed
-                if (winner.DisplayName == "WICO - Windsong Immersive Chracter Overhaul")
-                {
-                    Debug.WriteLine("Calling RefreshNpcLists for WICO from CheckForAndPerformMerge()");
-                }
+                // Refresh NPC lists for the winner as its sources may have changed/**/
 
                 winner.RefreshNpcLists();
 

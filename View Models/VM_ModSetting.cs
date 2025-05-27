@@ -448,10 +448,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// </summary>
         public void RefreshNpcLists()
         {
-            if (this.DisplayName == "WICO - Windsong Immersive Chracter Overhaul")
-            {
-                Debug.WriteLine($"RefreshNpcListsAsync: Loading placeholders for {DisplayName}");
-            }
             NpcNames.Clear();
             NpcEditorIDs.Clear();
             NpcFormKeys.Clear();
