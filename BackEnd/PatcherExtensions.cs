@@ -13,6 +13,7 @@ public static class PatcherExtensions
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         ILinkCache<TMod, TModGetter> linkCache, 
         IEnumerable<ModKey> modKeysToDuplicateFrom,
+        bool onlySubRecords,
         ref Dictionary<FormKey, FormKey> mapping,
         params Type[] typesToInspect)
         where TModGetter : class, IModGetter
@@ -54,10 +55,17 @@ public static class PatcherExtensions
         
         foreach (var rec in recordsToDuplicate)
         {
-            var containedLinks = rec.EnumerateFormLinks();
-            foreach (var containedLink in containedLinks)
+            if (onlySubRecords)
             {
-                AddAllLinks(containedLink);
+                var containedLinks = rec.EnumerateFormLinks();
+                foreach (var containedLink in containedLinks)
+                {
+                    AddAllLinks(containedLink);
+                }
+            }
+            else
+            {
+                AddAllLinks(rec.ToLink());
             }
         }
 
