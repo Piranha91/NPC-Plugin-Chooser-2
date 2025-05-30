@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Reflection;
 using NPC_Plugin_Chooser_2.View_Models;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Skyrim;
@@ -21,9 +22,9 @@ public class RaceHandler
     // --- Data for Race Handling ---
     private List<RaceSerializationInfo>
         _racesToSerializeForYaml = new(); // For ForwardWinningOverrides (Default) YAML generation
-
     private Dictionary<INpcGetter, RaceSerializationInfo> _raceSerializationNpcAssignments = new();
-    private Dictionary<ModKey, Dictionary<IRaceGetter, IRaceGetter>> _sourcePluginToPatchedRecordsMap = new();
+    
+    private Dictionary<FormKey, Dictionary<ModKey, List<string>>> _alteredPropertiesMap = new();
 
     public RaceHandler(EnvironmentStateProvider environmentStateProvider, Lazy<VM_Run> runVM, Settings settings, DuplicateInManager duplicateInManager)
     {
@@ -35,9 +36,8 @@ public class RaceHandler
 
     public void Reinitialize()
     {
-        _raceSerializationNpcAssignments.Clear();
+        _alteredPropertiesMap.Clear();
         _racesToSerializeForYaml.Clear();
-        _sourcePluginToPatchedRecordsMap.Clear();
     }
 
     public void ProcessNpcRace(
@@ -67,7 +67,7 @@ public class RaceHandler
         var raceContexts =
             _environmentStateProvider.LinkCache
                 .ResolveAllContexts<IRace, IRaceGetter>(sourceNpcIfUsed.Race.FormKey);
-        var raceContextFromAppearanceMod = raceContexts.FirstOrDefault(x => x.ModKey.Equals(appearanceModKey));
+        var raceContextFromAppearanceMod = raceContexts?.FirstOrDefault(x => x.ModKey.Equals(appearanceModKey));
         if (raceContextFromAppearanceMod == null)
         {
             _runVM.Value.AppendLog(
@@ -94,8 +94,9 @@ public class RaceHandler
 
             // Add the race record (as it exists in the patch, which is an override of currentNpcRaceRecord)
             // to the map for dependency duplication.
-            var raceInPatch =
-                _environmentStateProvider.OutputMod.Races.GetOrAddAsOverride(raceGetterFromAppearanceMod);
+            _duplicateInManager.DuplicateInFormLink(patchNpc.Race, raceGetterFromAppearanceMod.ToLink(),
+                _environmentStateProvider.OutputMod,
+                appearanceModSetting.CorrespondingModKeys, appearanceModKey);
             return; // Handled
         }
 
@@ -117,12 +118,14 @@ public class RaceHandler
             {
                 case RaceHandlingMode.ForwardWinningOverrides:
                     HandleForwardWinningOverridesRace(patchNpc, raceContextFromAppearanceMod,
-                        raceContexts, appearanceModKey);
+                        raceContexts, appearanceModSetting.CorrespondingModKeys, appearanceModKey);
                     break;
 
+                /*
                 case RaceHandlingMode.DuplicateAndRemapRace:
-                    HandleDuplicateAndRemapRace(patchNpc, raceGetterFromAppearanceMod, appearanceModKey);
-                    break;
+                    // currently not exposed.
+                    throw new NotImplementedException();
+                    break;*/
 
                 case RaceHandlingMode.IgnoreRace:
                     _runVM.Value.AppendLog(
@@ -136,6 +139,7 @@ public class RaceHandler
         Npc patchNpc,
         IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter> appearanceModRaceContext,
         IEnumerable<IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter>>? raceContexts,
+        List<ModKey> deepCopyEligibleModKeys,
         ModKey appearanceModKey)
     {
 
@@ -166,7 +170,19 @@ public class RaceHandler
                 }
 
                 var winningRaceRecord = _environmentStateProvider.OutputMod.Races.GetOrAddAsOverride(winningRaceGetter);
+                
+                // set the deltas
                 RaceHelpers.CopyPropertiesToNewRace(appearanceModRaceContext.Record, winningRaceRecord, racePropertyDeltas);
+                if (!_alteredPropertiesMap.ContainsKey(winningRaceRecord.FormKey))
+                {
+                    _alteredPropertiesMap[winningRaceRecord.FormKey] = new Dictionary<ModKey, List<string>>();
+                }
+                
+                _alteredPropertiesMap[winningRaceRecord.FormKey][appearanceModKey].AddRange(racePropertyDeltas);
+                
+                // remap dependencies if needed
+                _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
+                    winningRaceRecord, deepCopyEligibleModKeys, appearanceModKey, true);
             }
             else
             {
@@ -177,6 +193,7 @@ public class RaceHandler
         else // Default Patching Mode
         {
 
+            /* Skip YAML serialization for now; may come back to it
             _runVM.Value.AppendLog(
                 $"          Generating YAML record of race version from {appearanceModKey.FileName} for {patchNpc.EditorID}.");
 
@@ -206,60 +223,50 @@ public class RaceHandler
             _raceSerializationNpcAssignments.Add(patchNpc, toSerialize);
             _runVM.Value.AppendLog(
                 $"          Scheduled YAML generation for race {appearanceModRaceContext.Record.EditorID}.");
+            */
+
+            // Add race to patch exactly how it appears in the source mod
+            var appearanceRaceRecord = _environmentStateProvider.OutputMod.Races.GetOrAddAsOverride(appearanceModRaceContext.Record);
+            
+            // remap dependencies if needed
+            _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
+                appearanceRaceRecord, deepCopyEligibleModKeys, appearanceModKey, true);
         }
     }
-
-    private void HandleDuplicateAndRemapRace(
-        Npc patchNpc,
-        IRaceGetter appearanceModRaceVersion,
-        ModKey appearanceModKey)
+    
+    public bool GetClashingModifiedRaceProperties()
     {
-        _runVM.Value.AppendLog(
-            $"        Race Handling: DuplicateAndRemapRace for {appearanceModRaceVersion.EditorID}.");
-
-        // Check if a race has already been processed from this mod
-        Dictionary<IRaceGetter, IRaceGetter> currentMappings = new();
-        if (_sourcePluginToPatchedRecordsMap.TryGetValue(appearanceModKey, out var mappings))
+        string errorStr = "";
+        foreach (var kvp in _alteredPropertiesMap)
         {
-            currentMappings = mappings;
-        }
-        else
-        {
-            _sourcePluginToPatchedRecordsMap.Add(appearanceModKey, currentMappings);
-        }
+            foreach (var entry in kvp.Value)
+            {
+                var duplicates = entry.Value
+                    .GroupBy(s => s)             // group by the string’s own value
+                    .Where(g => g.Count() > 1)   // only groups that have more than one member
+                    .Select(g => new 
+                    {
+                        Value = g.Key,           // the duplicated string
+                        Count = g.Count()        // how many times it appears
+                    })
+                    .ToList();
 
-        if (currentMappings.TryGetValue(appearanceModRaceVersion, out var importedRace))
-        {
-            _runVM.Value.AppendLog(
-                $"        Race Handling: DuplicateAndRemapRace has previously been called for {appearanceModRaceVersion.EditorID} in {appearanceModKey.FileName}. Setting NPC to race {importedRace.EditorID ?? importedRace.FormKey.ToString()}.");
-            patchNpc.Race.SetTo(importedRace);
-            return;
-        }
+                if (duplicates.Any())
+                {
+                    string raceIdStr = kvp.Key.ToString();
+                    if (_environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(kvp.Key, out var raceGetter))
+                    {
+                        raceIdStr = raceGetter.Name?.String ?? raceGetter.EditorID ?? kvp.Key.ToString();
+                    }
 
-        // If not cached, import the new race.
-        string baseEditorID = appearanceModRaceVersion.EditorID ?? $"Race_{appearanceModRaceVersion.FormKey.ID:X8}";
-        string newEditorID = $"{baseEditorID}_{appearanceModKey.Name}";
-        if (newEditorID.Length > 90) newEditorID = newEditorID.Substring(0, 90); // Crude truncation for EDID length
-
-        // Ensure unique EditorID in the patch
-        int attempt = 0;
-        string finalNewEditorID = newEditorID;
-        while (_environmentStateProvider.OutputMod.Races.Any(x => x.EditorID == finalNewEditorID))
-        {
-            attempt++;
-            finalNewEditorID = $"{newEditorID}_{attempt}";
-            if (finalNewEditorID.Length > 90) finalNewEditorID = finalNewEditorID.Substring(0, 90);
+                    errorStr += raceIdStr +
+                                ": Detected multiple mods modifying the same properties. Make sure there's no conflict. Properties: " +
+                                Environment.NewLine + string.Join(", ", duplicates) + Environment.NewLine;
+                }
+            }
         }
 
-        newEditorID = finalNewEditorID;
-
-        _runVM.Value.AppendLog($"          Cloning as new race with EditorID: {newEditorID}");
-        var clonedRace =
-            _environmentStateProvider.OutputMod.Races.DuplicateInAsNewRecord(appearanceModRaceVersion, newEditorID);
-        clonedRace.EditorID = newEditorID; // Set EditorID post-duplication as well
-
-        patchNpc.Race.SetTo(clonedRace); // Assign the new cloned race to the NPC
-        currentMappings.Add(appearanceModRaceVersion, clonedRace);
+        return errorStr.Any();
     }
 
     private string ResolveNpcName(FormKey npcKey) =>
@@ -283,7 +290,7 @@ public class RaceHandler
 
         var ouputPath = Path.Combine(_serializationDir, DateTime.Now.ToString("yyyy_MM_dd_HH-mm-ss"));
 
-        MutagenYamlConverter.Instance.Serialize(tempMod, ouputPath).Wait();
+        //MutagenYamlConverter.Instance.Serialize(tempMod, ouputPath).Wait();
         _runVM.Value.AppendLog("Serialized saved races to " + ouputPath);
     }
 
@@ -344,5 +351,69 @@ public class RaceHandler
         public FormLink<IRaceGetter> OriginalRace { get; set; }
         public Race ModifiedRace { get; set; } // The actual race data from the appearance mod
         public ModKey AppearanceSourceMod { get; set; }
+    }
+}
+
+public static class RaceHelpers
+{
+    /// <summary>
+    /// Compares two <see cref="IRaceGetter"/>s and returns the names of every public
+    /// property whose values are not equal.
+    /// </summary>
+    public static IReadOnlyList<string> GetDifferingPropertyNames(
+        IRaceGetter first,
+        IRaceGetter second)
+    {
+        if (first  is null) throw new ArgumentNullException(nameof(first));
+        if (second is null) throw new ArgumentNullException(nameof(second));
+
+        var differences = new List<string>();
+
+        // All public instance properties declared on the interface
+        foreach (PropertyInfo pi in typeof(IRaceGetter)
+                                     .GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            object? a = pi.GetValue(first);
+            object? b = pi.GetValue(second);
+
+            // NB: object.Equals handles null‐checks for us
+            if (!Equals(a, b))
+                differences.Add(pi.Name);
+        }
+
+        return differences;
+    }
+
+    /// <summary>
+    /// Copies the properties named in <paramref name="propertiesToCopy"/> from
+    /// <paramref name="source"/> onto <paramref name="destinationRace"/>.
+    /// </summary>
+    public static void CopyPropertiesToNewRace(
+        IRaceGetter source,
+        Race destinationRace,
+        IEnumerable<string> propertiesToCopy)
+    {
+        if (source is null) throw new ArgumentNullException(nameof(source));
+        if (destinationRace is null) throw new ArgumentNullException(nameof(destinationRace));
+        if (propertiesToCopy is null) throw new ArgumentNullException(nameof(propertiesToCopy));
+        
+        // Cache reflection once for speed
+        var getterProps = typeof(IRaceGetter)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .ToDictionary(p => p.Name);
+
+        var setterProps = typeof(IRace)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanWrite)
+            .ToDictionary(p => p.Name);
+
+        foreach (string propName in propertiesToCopy)
+        {
+            if (!getterProps.TryGetValue(propName, out PropertyInfo? srcPi)) continue; // unknown
+            if (!setterProps.TryGetValue(propName, out PropertyInfo? dstPi)) continue; // not writable
+
+            object? value = srcPi.GetValue(source);
+            dstPi.SetValue(destinationRace, value);
+        }
     }
 }
