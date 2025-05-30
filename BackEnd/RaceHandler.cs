@@ -177,6 +177,11 @@ public class RaceHandler
                 {
                     _alteredPropertiesMap[winningRaceRecord.FormKey] = new Dictionary<ModKey, List<string>>();
                 }
+
+                if (!_alteredPropertiesMap[winningRaceRecord.FormKey].ContainsKey(appearanceModKey))
+                {
+                    _alteredPropertiesMap[winningRaceRecord.FormKey][appearanceModKey] = new List<string>();
+                }
                 
                 _alteredPropertiesMap[winningRaceRecord.FormKey][appearanceModKey].AddRange(racePropertyDeltas);
                 
@@ -389,13 +394,16 @@ public static class RaceHelpers
     /// <paramref name="source"/> onto <paramref name="destinationRace"/>.
     /// </summary>
     public static void CopyPropertiesToNewRace(
-        IRaceGetter source,
+        IRaceGetter sourceGetter,
         Race destinationRace,
         IEnumerable<string> propertiesToCopy)
     {
-        if (source is null) throw new ArgumentNullException(nameof(source));
+        if (sourceGetter is null) throw new ArgumentNullException(nameof(sourceGetter));
         if (destinationRace is null) throw new ArgumentNullException(nameof(destinationRace));
         if (propertiesToCopy is null) throw new ArgumentNullException(nameof(propertiesToCopy));
+        
+        SkyrimMod tempMod = new("tempMod.esp", SkyrimRelease.SkyrimSE);
+        var source = tempMod.Races.GetOrAddAsOverride(sourceGetter);
         
         // Cache reflection once for speed
         var getterProps = typeof(IRaceGetter)
