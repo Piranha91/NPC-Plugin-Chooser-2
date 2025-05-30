@@ -764,7 +764,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 AppendLog(
                                     $"      Mode: Default. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"})."); // Verbose only
                                 patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(appearanceNpcRecord); // copy in the NPC as it appears in the source mod
-                                CopyAppearanceData(appearanceNpcRecord, patchNpc, appearanceModSetting, appearanceModKey.Value, npcIdentifier); // still copy in appearance data for the recursive deep copy of dependencies
+                                // deep copy in all dependencies
+                                _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, patchNpc, appearanceModSetting.CorrespondingModKeys,
+                                    appearanceModKey.Value, true);
                                 break;
                         }
                     }
