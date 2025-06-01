@@ -144,6 +144,24 @@ public class Auxilliary
         }
     }
 
+    public static string AddTopFolderByExtension(string path)
+    {
+        if (path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("textures", StringComparison.OrdinalIgnoreCase))
+        {
+            return Path.Combine("Textures", path);
+        }
+        
+        if ((path.EndsWith(".nif", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".tri", StringComparison.OrdinalIgnoreCase)) &&
+            !path.StartsWith("meshes", StringComparison.OrdinalIgnoreCase))
+        {
+            return Path.Combine("Meshes", path);
+        }
+        
+        return path;
+    }
+
     // Define Base Game Plugins
     private static readonly HashSet<ModKey> BaseGamePlugins = new()
     {

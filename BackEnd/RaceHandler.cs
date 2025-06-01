@@ -2,12 +2,18 @@
 using System.Reflection;
 using NPC_Plugin_Chooser_2.View_Models;
 using Mutagen.Bethesda;
+using Mutagen.Bethesda.Archives;
+using Mutagen.Bethesda.Assets;
 using Mutagen.Bethesda.Skyrim;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Assets;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
+using Mutagen.Bethesda.Serialization;
 using NPC_Plugin_Chooser_2.Models;
 using Mutagen.Bethesda.Serialization.Yaml;
+using AssetLinkCache = Mutagen.Bethesda.Plugins.Assets.AssetLinkCache;
+using AssetLinkQuery = Mutagen.Bethesda.Plugins.Assets.AssetLinkQuery;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -17,6 +23,7 @@ public class RaceHandler
     private readonly Lazy<VM_Run> _runVM;
     private readonly Settings _settings;
     private readonly DuplicateInManager _duplicateInManager;
+    private readonly BsaHandler _bsaHandler;
     private readonly string _serializationDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Serializations");
 
     // --- Data for Race Handling ---
@@ -25,19 +32,60 @@ public class RaceHandler
     private Dictionary<INpcGetter, RaceSerializationInfo> _raceSerializationNpcAssignments = new();
     
     private Dictionary<FormKey, Dictionary<ModKey, List<string>>> _alteredPropertiesMap = new();
+    private Dictionary<ModKey, Dictionary<FormKey, RaceEditInfo>> _racesToModify = new();
 
-    public RaceHandler(EnvironmentStateProvider environmentStateProvider, Lazy<VM_Run> runVM, Settings settings, DuplicateInManager duplicateInManager)
+    public RaceHandler(EnvironmentStateProvider environmentStateProvider, Lazy<VM_Run> runVM, Settings settings, DuplicateInManager duplicateInManager, BsaHandler bsaHandler)
     {
         _environmentStateProvider = environmentStateProvider;
         _runVM = runVM;
         _settings = settings;
         _duplicateInManager = duplicateInManager;
+        _bsaHandler = bsaHandler;
+    }
+
+    internal class RaceEditInfo
+    {
+        public IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter> AppearanceModRaceContext;
+        public IEnumerable<IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter>> RaceContexts;
+        public ModSetting AppearanceModSetting;
+
+        public RaceEditInfo(IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter> appearanceModRaceContext,
+            IEnumerable<IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter>> raceContexts,
+            ModSetting appearanceModSetting)
+        {
+            AppearanceModRaceContext = appearanceModRaceContext;
+            RaceContexts = raceContexts;
+            AppearanceModSetting = appearanceModSetting;
+        }
     }
 
     public void Reinitialize()
     {
         _alteredPropertiesMap.Clear();
+        _racesToModify.Clear();
         _racesToSerializeForYaml.Clear();
+    }
+
+    public void ApplyRaceChanges()
+    {
+        if (_racesToModify.Any())
+        {
+            string modifyingRaceMods = string.Join(", ", _racesToModify.Keys.Select(x => x.FileName));
+            _runVM.Value.AppendLog(Environment.NewLine + $"Patching Race Overrides from {modifyingRaceMods}. This may take some time.",
+                false, true);
+        }
+        foreach (var entry in _racesToModify)
+        {
+            var raceModKey = entry.Key;
+            foreach (var raceToPatch in entry.Value)
+            {
+                var appearanceRaceContext = raceToPatch.Value.AppearanceModRaceContext;
+                var allRaceContexts = raceToPatch.Value.RaceContexts;
+                var modSetting = raceToPatch.Value.AppearanceModSetting;
+                
+                HandleForwardWinningOverridesRace(appearanceRaceContext, allRaceContexts, modSetting, raceModKey);
+            }
+        }
     }
 
     public void ProcessNpcRace(
@@ -66,7 +114,7 @@ public class RaceHandler
         // Check if the appearance mod provides an override for the NPC's current race
         var raceContexts =
             _environmentStateProvider.LinkCache
-                .ResolveAllContexts<IRace, IRaceGetter>(sourceNpcIfUsed.Race.FormKey);
+                .ResolveAllContexts<IRace, IRaceGetter>(sourceNpcIfUsed.Race.FormKey).ToArray();
         var raceContextFromAppearanceMod = raceContexts?.FirstOrDefault(x => x.ModKey.Equals(appearanceModKey));
         if (raceContextFromAppearanceMod == null)
         {
@@ -113,12 +161,23 @@ public class RaceHandler
             _runVM.Value.AppendLog(
                 $"      NPC {patchNpc.EditorID} uses overriden race {raceGetterFromAppearanceMod.EditorID} ({raceGetterFromAppearanceMod.FormKey}).");
             _runVM.Value.AppendLog($"        Appearance mod {appearanceModKey.FileName} modifies this race.");
+            
+            patchNpc.Race.SetTo(raceGetterFromAppearanceMod);
 
             switch (_settings.RaceHandlingMode)
             {
                 case RaceHandlingMode.ForwardWinningOverrides:
-                    HandleForwardWinningOverridesRace(patchNpc, raceContextFromAppearanceMod,
-                        raceContexts, appearanceModSetting.CorrespondingModKeys, appearanceModKey);
+                    if (!_racesToModify.ContainsKey(raceContextFromAppearanceMod.ModKey))
+                    {
+                        _racesToModify.Add(raceContextFromAppearanceMod.ModKey, new Dictionary<FormKey, RaceEditInfo>());
+                    }
+
+                    if (!_racesToModify[raceContextFromAppearanceMod.ModKey]
+                            .ContainsKey(raceContextFromAppearanceMod.Record.FormKey))
+                    {
+                        _racesToModify[raceContextFromAppearanceMod.ModKey]
+                            [raceContextFromAppearanceMod.Record.FormKey] = new RaceEditInfo(raceContextFromAppearanceMod, raceContexts, appearanceModSetting);
+                    }
                     break;
 
                 /*
@@ -136,10 +195,9 @@ public class RaceHandler
     }
 
     private void HandleForwardWinningOverridesRace(
-        Npc patchNpc,
         IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter> appearanceModRaceContext,
-        IEnumerable<IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter>>? raceContexts,
-        List<ModKey> deepCopyEligibleModKeys,
+        IEnumerable<IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter>> raceContexts,
+        ModSetting appearanceModSetting,
         ModKey appearanceModKey)
     {
 
@@ -150,6 +208,8 @@ public class RaceHandler
             return;
         }
 
+        var assetLinkCache = new AssetLinkCache(_environmentStateProvider.LinkCache);
+
         if (_settings.PatchingMode == PatchingMode.EasyNPC_Like)
         {
             _runVM.Value.AppendLog(
@@ -157,6 +217,7 @@ public class RaceHandler
             // In EasyNPC-Like mode, patchNpc is an override of winningNpcOverride.
             // So patchNpc.Race should already point to originalRaceContext.FormKey.
             // We need to override originalRaceContext in the patch and forward differing properties.
+            // Note the additional possibility that the winning appearance override set the NPC race to a DIFFERENT vanilla race, so we stil lneed to set the race first.
 
             var racePropertyDeltas =
                 RaceHelpers.GetDifferingPropertyNames(appearanceModRaceContext.Record, originalRaceGetter);
@@ -185,9 +246,107 @@ public class RaceHandler
                 
                 _alteredPropertiesMap[winningRaceRecord.FormKey][appearanceModKey].AddRange(racePropertyDeltas);
                 
+                // Get required asset file paths BEFORE remapping (to faciliate search by plugin)
+                var containedFormLinks = winningRaceGetter.EnumerateFormLinks().ToArray();
+                HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> containedRecordContexts = new();
+                foreach (var link in containedFormLinks)
+                {
+                    GetPatchedSubrecords(link, appearanceModSetting.CorrespondingModKeys, containedRecordContexts);
+                }
+
+                containedRecordContexts = containedRecordContexts.Distinct().ToHashSet();
+                foreach (var ctx in containedRecordContexts)
+                {
+                    ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
+                }
+                
+                var assetLinks = winningRaceRecord.EnumerateAssetLinks(AssetLinkQuery.Listed, assetLinkCache, null).ToList();
+                foreach (var ctx in containedRecordContexts)
+                {
+                    GetDeepAssetLinks(ctx.Record.ToLink(), assetLinks, appearanceModSetting.CorrespondingModKeys, assetLinkCache);
+                }
+                
                 // remap dependencies if needed
                 _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
-                    winningRaceRecord, deepCopyEligibleModKeys, appearanceModKey, true);
+                    winningRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
+                
+                foreach (var ctx in containedRecordContexts)
+                {
+                    _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, ctx.Record,
+                        appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
+                }
+                
+                // check for existence in associated loose or BSA files and copy over
+
+                if (!_runVM.IsValueCreated || _runVM.Value == null)
+                {
+                    return;
+                }
+
+                var outputBasePath = _runVM.Value.CurrentRunOutputAssetPath;
+                
+                var assetRelPaths = assetLinks
+                    .Select(x => x.GivenPath)
+                    .Distinct()
+                    .Select(x => Auxilliary.AddTopFolderByExtension(x))
+                    .ToList();
+
+                Dictionary<string, string> loosePaths = new();
+                Dictionary<string, IArchiveFile> bsaFiles = new();
+
+                foreach (var relPath in assetRelPaths.Distinct())
+                {
+                    bool found = false;
+                    foreach (var dirPath in appearanceModSetting.CorrespondingFolderPaths)
+                    {
+                        var candidatePath = Path.Combine(dirPath, relPath);
+                        if (File.Exists(candidatePath))
+                        {
+                            loosePaths.Add(relPath, candidatePath);
+                            found = true;
+                            break;
+                        }
+
+                        foreach (var plugin in appearanceModSetting.CorrespondingModKeys)
+                        {
+                            var readers = _bsaHandler.OpenBsaArchiveReaders(dirPath, plugin);
+                            if (_bsaHandler.TryGetFileFromReaders(relPath, readers, out var file) && file != null)
+                            {
+                                bsaFiles.Add(relPath, file);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (found) break;
+                    }
+                    if (found) continue;
+                }
+                
+                
+                // copy the files
+                foreach (var entry in loosePaths)
+                {
+                   var outputPath = Path.Combine(_settings.OutputDirectory, entry.Key);
+                   var sourcePath = entry.Value;
+
+                   try
+                   {
+                       Auxilliary.CreateDirectoryIfNeeded(outputPath, Auxilliary.PathType.File);
+                       File.Copy(sourcePath, outputPath, true);
+                   }
+                   catch (Exception ex)
+                   {
+                       // pass
+                   }
+                }
+                
+                // Extract the archives
+                foreach (var entry in bsaFiles)
+                {
+                    var outputPath = Path.Combine(outputBasePath, entry.Key);
+                    Auxilliary.CreateDirectoryIfNeeded(outputPath, Auxilliary.PathType.File);
+                    _bsaHandler.ExtractFileFromBsa(entry.Value, outputPath);
+                }
             }
             else
             {
@@ -235,7 +394,60 @@ public class RaceHandler
             
             // remap dependencies if needed
             _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
-                appearanceRaceRecord, deepCopyEligibleModKeys, appearanceModKey, true);
+                appearanceRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
+
+            var assetLinks = appearanceRaceRecord.EnumerateAssetLinks(AssetLinkQuery.Listed, assetLinkCache, null).ToList();
+            foreach (var formLink in appearanceRaceRecord.EnumerateFormLinks())
+            {
+                GetDeepAssetLinks(formLink, assetLinks, appearanceModSetting.CorrespondingModKeys, assetLinkCache);
+            }
+        }
+    }
+
+
+    public void GetDeepAssetLinks(IFormLinkGetter formLinkGetter, List<IAssetLinkGetter> assetLinkGetters, List<ModKey> relevantContextKeys, IAssetLinkCache assetLinkCache, HashSet<FormKey>? searchedFormKeys = null)
+    {
+        if (searchedFormKeys == null)
+        {
+            searchedFormKeys = new HashSet<FormKey>();
+        }
+        searchedFormKeys.Add(formLinkGetter.FormKey);
+        var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts(formLinkGetter);
+        var relevantContexts = contexts.Where(x => relevantContextKeys.Contains(x.ModKey)).ToList();
+        foreach (var context in relevantContexts)
+        {
+            assetLinkGetters.AddRange(context.Record.EnumerateAssetLinks(AssetLinkQuery.Listed, assetLinkCache, null));
+            var sublinks = context.Record.EnumerateFormLinks();
+            foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)))
+            {
+                GetDeepAssetLinks(subLink, assetLinkGetters, relevantContextKeys, assetLinkCache, searchedFormKeys);
+            }
+        }
+    }
+
+    public void GetPatchedSubrecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
+        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, HashSet<FormKey>? searchedFormKeys = null)
+    {
+        if (searchedFormKeys == null)
+        {
+            searchedFormKeys = new HashSet<FormKey>();
+        }
+        searchedFormKeys.Add(formLinkGetter.FormKey);
+        var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts(formLinkGetter).ToArray();
+        var relevantContexts = contexts.Where(x => relevantContextKeys.Contains(x.ModKey)).ToList();
+        var overrideContext = relevantContexts.FirstOrDefault();
+        if (overrideContext != null)
+        {
+            collectedRecords.Add(overrideContext);
+        }
+        
+        foreach (var context in relevantContexts)
+        {
+            var sublinks = context.Record.EnumerateFormLinks();
+            foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)))
+            {
+                GetPatchedSubrecords(subLink, relevantContextKeys, collectedRecords, searchedFormKeys);
+            }
         }
     }
     

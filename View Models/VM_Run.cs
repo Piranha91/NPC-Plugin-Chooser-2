@@ -74,6 +74,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private HashSet<string> _warningsToSuppress_Global = new();
         private Dictionary<string, ModSetting> _modSettingsMap = new(); // Key: DisplayName, Value: ModSetting
         private string _currentRunOutputAssetPath = string.Empty;
+        public string CurrentRunOutputAssetPath => _currentRunOutputAssetPath;
 
 
         public ReactiveCommand<Unit, Unit> RunCommand { get; }
@@ -804,6 +805,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     await Task.Delay(5);
                 } // End For Loop
             } // End else (selectionsToProcess.Any())
+
+            await Task.Run(() => _raceHandler.ApplyRaceChanges());
 
             UpdateProgress(processedCount + skippedCount, processedCount + skippedCount, "Finalizing...");
 
