@@ -122,8 +122,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             : this(model.DisplayName, parentVm, aux, bsaHandler, isMugshotOnly: false)
         {
             // Properties specific to loading existing model
-            CorrespondingModKeys = new ObservableCollection<ModKey>(model.CorrespondingModKeys ?? new List<ModKey>());
             CorrespondingFolderPaths = new ObservableCollection<string>(model.CorrespondingFolderPaths ?? new List<string>()); // Handle potential null
+            UpdateCorrespondingModKeys();
             MugShotFolderPath = model.MugShotFolderPath; // Load persisted mugshot folder path
             NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(model.NpcPluginDisambiguation ?? new Dictionary<FormKey, ModKey>());
             // AvailablePluginsForNpcs should be re-calculated on load.
