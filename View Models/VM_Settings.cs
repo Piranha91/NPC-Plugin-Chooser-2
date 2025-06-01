@@ -283,6 +283,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private void SaveSettings()
         {
             _model.EasyNpcDefaultPluginExclusions = new HashSet<ModKey>(ExclusionSelectorViewModel.SaveToModel());
+            _lazyModListVM.Value.SaveModSettingsToModel();
 
             string settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");
             JSONhandler<Settings>.SaveJSONFile(_model, settingsPath, out bool success, out string exception);

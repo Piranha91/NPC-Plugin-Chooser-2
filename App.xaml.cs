@@ -178,26 +178,6 @@ namespace NPC_Plugin_Chooser_2
             // Then call its InitializeAsync method.
             var settingsViewModel = container.Resolve<VM_Settings>();
             await settingsViewModel.InitializeAsync(); // Pass splashVM implicitly if injected, or explicitly if needed
-
-            // Hook into Exit event
-            this.Exit += (s, e) =>
-            {
-                 var modsVm = Locator.Current.GetService<VM_Mods>();
-                 // var settingsVm = Locator.Current.GetService<VM_Settings>(); // VM_Settings handles its own save on exit.
-
-                 if (modsVm != null)
-                 {
-                      try
-                      {
-                          modsVm.SaveModSettingsToModel(); 
-                      }
-                      catch (Exception ex)
-                      {
-                           System.Diagnostics.Debug.WriteLine($"Error saving Mod Settings on exit: {ex.Message}");
-                      }
-                 }
-                 // VM_Settings.SaveSettings is hooked to App.Exit in its constructor.
-            };
             
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
             return container;
