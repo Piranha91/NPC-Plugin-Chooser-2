@@ -289,7 +289,10 @@ public class RaceHandler
                     .Select(x => x.GivenPath)
                     .Distinct()
                     .Select(x => Auxilliary.AddTopFolderByExtension(x))
-                    .ToList();
+                    .ToHashSet();
+
+                List<string> autoPredictedRelPaths = new();
+                VM_Run.AddCorrespondingNumericalNifPaths(assetRelPaths, autoPredictedRelPaths);
 
                 Dictionary<string, string> loosePaths = new();
                 Dictionary<string, IArchiveFile> bsaFiles = new();

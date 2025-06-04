@@ -977,11 +977,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 $"      Identified FaceGen paths (using key {baseModKey.FileName}): {faceMeshRelativePath}, {faceTexRelativePath}"); // Verbose only
 
             // 2. Extra Assets (Only if CopyExtraAssets is true)
+            List<string> autoPredictedExtraAssetRelPaths = new();
             if (CopyExtraAssets)
             {
                 AppendLog(
                     $"      Identifying extra assets referenced by plugin record {appearanceNpcRecord.FormKey}..."); // Verbose only
                 GetAssetsReferencedByPlugin(appearanceNpcRecord, meshToCopyRelativePaths, textureToCopyRelativePaths);
+                AddCorrespondingNumericalNifPaths(meshToCopyRelativePaths, autoPredictedExtraAssetRelPaths);
             }
             else if (!CopyExtraAssets)
             {
@@ -1046,10 +1048,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // --- Copy Loose Files ---
             AppendLog($"      Copying {meshToCopyRelativePaths.Count} loose mesh files..."); // Verbose only
-            var texResultStatus = CopyAssetFiles(assetSourceDirs, meshToCopyRelativePaths, "Meshes", baseModKey.FileName.String);
+            var texResultStatus = CopyAssetFiles(assetSourceDirs, meshToCopyRelativePaths, "Meshes", baseModKey.FileName.String, autoPredictedExtraAssetRelPaths);
 
             AppendLog($"      Copying {textureToCopyRelativePaths.Count} loose texture files..."); // Verbose only
-            var meshResultStatus = CopyAssetFiles(assetSourceDirs, textureToCopyRelativePaths, "Textures", baseModKey.FileName.String);
+            var meshResultStatus = CopyAssetFiles(assetSourceDirs, textureToCopyRelativePaths, "Textures", baseModKey.FileName.String, autoPredictedExtraAssetRelPaths);
 
             handledRelativePaths.UnionWith(texResultStatus.Where(x => x.Value == true).Select(x => x.Key));
             handledRelativePaths.UnionWith(meshResultStatus.Where(x => x.Value == true).Select(x => x.Key));
@@ -1233,7 +1235,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     List<string> sourceDirAsList = new() { dir };
                     HashSet<string> relativePathAsSet = new() { relativePath };
                     var status = CopyAssetFiles(sourceDirAsList, relativePathAsSet, assetType,
-                        baseNpcPlugin.FileName);
+                        baseNpcPlugin.FileName, new HashSet<string>());
                     if (status[relativePath] == true)
                     {
                         return true;
@@ -1399,7 +1401,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// **Revised for Clarification 2.**
         /// </summary>
         private Dictionary<string, bool> CopyAssetFiles(List<string> sourceDataDirPaths, HashSet<string> assetRelativePathList,
-            string assetType /*"Meshes" or "Textures"*/, string sourcePluginName)
+            string assetType /*"Meshes" or "Textures"*/, string sourcePluginName, IEnumerable<string> autoPredictedExtraPaths)
         {
             Dictionary<string, bool> result = new();
             
@@ -1412,6 +1414,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 warningsToSuppressSet = specificWarnings;
             }
+            warningsToSuppressSet.UnionWith(autoPredictedExtraPaths);
 
             foreach (string relativePath in assetRelativePathList)
             {
@@ -1484,6 +1487,25 @@ namespace NPC_Plugin_Chooser_2.View_Models
             return result;
         }
 
+        // "The ArmorAddon should always point to the _1.nifs, so if they aren't I suggest you change it."
+        // https://forums.nexusmods.com/topic/11698578-_1nif-not-detected/
+        public static void AddCorrespondingNumericalNifPaths(HashSet<string> relativeNifPaths, List<string> addedRelPaths)
+        {
+                        
+            // Manually add corresponding numerical nif paths if they don't already exist
+            var iterableRelativePaths = relativeNifPaths.ToList();
+            for (int i = 0; i < iterableRelativePaths.Count; i++)
+            {
+                string relPath = iterableRelativePaths[i];
+                string replacedPath = string.Empty;
+                if (relPath.EndsWith("_0.nif"))
+                {
+                    replacedPath = relPath.Replace("_0.nif", "_1.nif");
+                    relativeNifPaths.Add(replacedPath);
+                    addedRelPaths.Add(replacedPath);
+                }
+            }
+        }
 
         private bool IsIgnored(string relativePath, HashSet<string> toIgnore)
         {
