@@ -786,7 +786,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     // --- Copy Assets ---
                     if (patchNpc != null && appearanceModSetting != null) // Ensure we have a patch record and mod settings
                     {
-                        await CopyNpcAssets(appearanceNpcRecord, appearanceModSetting);
+                        await CopyNpcAssets(appearanceNpcRecord, appearanceModSetting, appearanceModKey.Value);
                     }
                     else
                     {
@@ -946,7 +946,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// <param name="appearanceModSetting">The ModSetting chosen for the selected NPC.</param>
         private async Task CopyNpcAssets(
             INpcGetter appearanceNpcRecord,
-            ModSetting appearanceModSetting)
+            ModSetting appearanceModSetting,
+            ModKey appearancePluginKey)
         {
             AppendLog(
                 $"    Copying assets for {appearanceNpcRecord.EditorID ?? appearanceNpcRecord.FormKey.ToString()} from sources related to '{appearanceModSetting.DisplayName}'..."); // Verbose only
@@ -1000,7 +1001,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 await Task.Run(() =>
                     UnpackAssetsFromBSA(meshToCopyRelativePaths, textureToCopyRelativePaths,
                         extractedMeshFiles, extractedTextureFiles,
-                        baseModKey, assetSourceDirs, _currentRunOutputAssetPath, AppendLog));
+                        appearancePluginKey, assetSourceDirs, _currentRunOutputAssetPath, AppendLog));
                 AppendLog(
                     $"      Extracted {extractedMeshFiles.Count} meshes and {extractedTextureFiles.Count} textures from BSAs."); // Verbose only
                 
@@ -1031,7 +1032,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     HashSet<string> newlyExtractedNifTextures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     UnpackAssetsFromBSA(new HashSet<string>(), texturesFromNifsRelativePaths, new HashSet<string>(),
-                        newlyExtractedNifTextures, baseModKey, assetSourceDirs, _currentRunOutputAssetPath, AppendLog);
+                        newlyExtractedNifTextures, appearancePluginKey, assetSourceDirs, _currentRunOutputAssetPath, AppendLog);
                     AppendLog(
                         $"        Extracted {newlyExtractedNifTextures.Count} of these additional textures from BSAs."); // Verbose only
                     texturesFromNifsRelativePaths.ExceptWith(newlyExtractedNifTextures);
