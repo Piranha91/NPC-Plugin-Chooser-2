@@ -56,6 +56,10 @@
       </Resource>
       <None Remove="Resources\SplashScreenImage.png" />
       <Resource Include="Resources\SplashScreenImage.png" />
+      <None Remove="Resources\Face Bug.png" />
+      <Resource Include="Resources\Face Bug.png">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Resource>
     </ItemGroup>
 
 </Project>

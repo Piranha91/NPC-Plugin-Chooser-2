@@ -19,6 +19,7 @@ using System.Linq;
 using GongSolutions.Wpf.DragDrop;
 using System.Text;
 using System.Windows.Media;
+using Mutagen.Bethesda.Skyrim;
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -30,6 +31,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly NpcConsistencyProvider _consistencyProvider;
         private readonly VM_NpcSelectionBar _vmNpcSelectionBar;
         private readonly Lazy<VM_Mods> _lazyMods;
+        private readonly EnvironmentStateProvider _environmentStateProvider;
         private readonly CompositeDisposable Disposables = new();
         private readonly SolidColorBrush _selectedWithDataBrush = new(Colors.LimeGreen);
         private readonly SolidColorBrush _selectedWithoutDataBrush = new(Colors.DarkMagenta);
@@ -90,8 +92,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             string? imagePath, // This is the path to the *actual* mugshot if one exists for this mod/NPC combo
             Settings settings,
             NpcConsistencyProvider consistencyProvider,
-            VM_NpcSelectionBar vmNpcSelectionBar, // Injected reference
-            Lazy<VM_Mods> lazyMods)
+            VM_NpcSelectionBar vmNpcSelectionBar,
+            Lazy<VM_Mods> lazyMods,
+            EnvironmentStateProvider environmentStateProvider)
         {
             ModName = modName;
             _lazyMods = lazyMods;
@@ -101,6 +104,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _settings = settings;
             _consistencyProvider = consistencyProvider;
             _vmNpcSelectionBar = vmNpcSelectionBar;
+            _environmentStateProvider = environmentStateProvider;
 
             // --- Image Path and HasMugshot Logic ---
             bool realMugshotExists = !string.IsNullOrWhiteSpace(imagePath) && File.Exists(imagePath);
@@ -159,7 +163,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 OriginalDipHeight = 0;
                 OriginalDipDiagonal = 0;
             }
-
 
             this.WhenAnyValue(x => x.IsSelected)
                 .ObserveOn(RxApp.MainThreadScheduler)
@@ -222,6 +225,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 System.Diagnostics.Debug.WriteLine($"Selecting mod '{ModName}' for NPC '{_npcFormKey}'");
                 _consistencyProvider.SetSelectedMod(_npcFormKey, ModName);
+                
+                CheckAndHandleTemplates();
             }
         }
 
@@ -250,6 +255,78 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 BorderColor = _deselectedWithoutDataBrush;
                 ToolTipString =
                     "Not Selected. Mugshot has no associated Mod Data. If you select it, Patcher run will skip this NPC until Mod Data is linked to this mugshot";
+            }
+        }
+
+        private void CheckAndHandleTemplates()
+        {
+            if (_npcFormKey != null && ModKey != null)
+            {
+                string imagePath = @"Resources\Face Bug.png";
+                
+                var context = _environmentStateProvider.LinkCache
+                    .ResolveAllContexts<INpc, INpcGetter>(_npcFormKey)
+                    .FirstOrDefault(x => x.ModKey.Equals(ModKey));
+
+                if (context != null &&
+                    context.Record.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
+                {
+                    string message = String.Empty;
+                    string title = String.Empty;
+                    string templateDispName = String.Empty;
+                    if (context.Record.Template == null || context.Record.Template.IsNull)
+                    {
+                        message =
+                            "The associated data for this NPC shows that it is supposed to have a template, but there is no template set. This will probably result in a bugged appearnce.";
+                        title = "Are you sure?";
+                        if (!ScrollableMessageBox.Confirm(message, title, displayImagePath: imagePath))
+                        {
+                            _consistencyProvider.ClearSelectedMod(_npcFormKey);
+                        }
+                    }
+                    else if (AssociatedModSetting != null)
+                    {
+                        if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(context.Record.Template.FormKey,
+                                out INpcGetter? templateGetter) && templateGetter.EditorID != null)
+                        {
+                            templateDispName = templateGetter.EditorID + " (" +
+                                               context.Record.Template.FormKey.ToString() + ")";
+                        }
+                        else
+                        {
+                            templateDispName = context.Record.Template.FormKey.ToString();
+                        }
+                        
+                        if (!AssociatedModSetting.NpcFormKeys.Contains(context.Record.Template.FormKey))
+                        {
+                            message =
+                                "The associated data for this NPC shows that it is supposed to use " + templateDispName +
+                                " as its template, but " + (ModKey?.FileName ?? AssociatedModSetting.DisplayName) +
+                                " doesn't appear to contain this NPC. This may result in a bugged appearance.";
+                            title = "Are you sure?";
+                            if (!ScrollableMessageBox.Confirm(message, title, displayImagePath: imagePath))
+                            {
+                                _consistencyProvider.ClearSelectedMod(_npcFormKey);
+                            }
+                        }
+                        else if (AssociatedModSetting.NpcFormKeys.Contains(context.Record.Template.FormKey) &&
+                                 !_consistencyProvider.IsModSelected(context.Record.Template.FormKey,
+                                     AssociatedModSetting.DisplayName))
+                        {
+                            message =
+                                "The associated data for this NPC shows that it is supposed to use " +
+                                templateDispName +
+                                " as its template. Would you like to select " + AssociatedModSetting.DisplayName +
+                                " as the Appearance Mod for " + templateDispName + "?" +
+                                " Failing to do so is likely to result in a bugged appearance.";
+                            title = "Auto-Select Template?";
+                            if (ScrollableMessageBox.Confirm(message, title, displayImagePath: imagePath))
+                            {
+                                _consistencyProvider.SetSelectedMod(context.Record.Template.FormKey, AssociatedModSetting.DisplayName);
+                            }
+                        }
+                    }
+                }
             }
         }
 

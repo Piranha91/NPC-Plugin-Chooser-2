@@ -561,7 +561,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                         }
                                     }
                                     
-                                    NpcFormKeysToNotifications[currentNpcKey] = (IssueType: NpcIssueType.Template, IssueMessage: $"Despite having FaceGen files, this NPC from {mod.ModKey.FileName} has the Traits flag so it inherits appearance from {templateStr}. Selecting this mugshot will do nothing.");
+                                    NpcFormKeysToNotifications[currentNpcKey] = (IssueType: NpcIssueType.Template, IssueMessage: $"Despite having FaceGen files, this NPC from {mod.ModKey.FileName} has the Traits flag so it inherits appearance from {templateStr}. If the selected Appearance Mod for this NPC doesn't match that of its Template, visual glitches can occur in-game.");
                                 }
                                 
                                 if (!NpcFormKeys.Contains(currentNpcKey))
