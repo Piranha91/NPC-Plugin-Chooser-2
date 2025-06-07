@@ -278,9 +278,7 @@
                                          <Viewbox Stretch="Uniform" 
                                                   HorizontalAlignment="Center" 
                                                   VerticalAlignment="Center">
-                                             <TextBlock Text="ND"
-                                                        FontWeight="Bold"
-                                                        Foreground="Red"/>
+                                             <Image Source="/NPC Plugin Chooser 2;component/Resources/No Associated Data.png" />
                                          </Viewbox>
                                      </Grid>
 
