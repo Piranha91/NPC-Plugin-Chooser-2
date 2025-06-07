@@ -49,6 +49,29 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string MugShotFolderPath { get; set; } = string.Empty; // Path to the mugshot folder for this mod
         [Reactive] public ObservableCollection<ModKey> CorrespondingModKeys { get; set; } = new();
         [Reactive] public ObservableCollection<string> CorrespondingFolderPaths { get; set; } = new();
+        [Reactive] public RaceHandlingMode? OverrideRaceHandlingMode { get; set; }
+        public IEnumerable<KeyValuePair<RaceHandlingMode?,string>> RaceHandlingModes { get; }
+            = new[]
+                {
+                    new KeyValuePair<RaceHandlingMode?,string>(null, "Default")
+                }
+                .Concat(Enum.GetValues(typeof(RaceHandlingMode))
+                    .Cast<RaceHandlingMode>()
+                    .Select(e => 
+                        new KeyValuePair<RaceHandlingMode?,string>(e, e.ToString())
+                    ));
+        [Reactive] public RecordOverrideHandlingMode? OverrideRecordOverrideHandlingMode { get; set; }
+        public IEnumerable<KeyValuePair<RecordOverrideHandlingMode?,string>> RecordOverrideHandlingModes { get; }
+            = new[]
+                {
+                    new KeyValuePair<RecordOverrideHandlingMode?,string>(null, "Default")
+                }
+                .Concat(Enum.GetValues(typeof(RecordOverrideHandlingMode))
+                    .Cast<RecordOverrideHandlingMode>()
+                    .Select(e => 
+                        new KeyValuePair<RecordOverrideHandlingMode?,string>(e, e.ToString())
+                    ));
+
         public List<string> NpcNames { get; set; } = new();
         public List<string> NpcEditorIDs { get; set; } = new();
         public List<FormKey> NpcFormKeys { get; set; } = new();

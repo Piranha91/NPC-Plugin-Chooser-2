@@ -164,7 +164,7 @@ public class RaceHandler
             
             patchNpc.Race.SetTo(raceGetterFromAppearanceMod);
 
-            switch (_settings.RaceHandlingMode)
+            switch (_settings.DefaultRaceHandlingMode)
             {
                 case RaceHandlingMode.ForwardWinningOverrides:
                     if (!_racesToModify.ContainsKey(raceContextFromAppearanceMod.ModKey))

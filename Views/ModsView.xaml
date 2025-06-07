@@ -168,6 +168,8 @@
                                              <RowDefinition Height="Auto"/> 
                                              <RowDefinition Height="Auto"/> 
                                              <RowDefinition Height="Auto"/> 
+                                             <RowDefinition Height="Auto"/> 
+                                             <RowDefinition Height="Auto"/> 
                                          </Grid.RowDefinitions>
                                          <Grid.ColumnDefinitions>
                                              <ColumnDefinition Width="*"/>
@@ -263,7 +265,26 @@
                                                  Foreground="Red" FontWeight="Bold"
                                                  ToolTip="Permanently delete this empty entry. Only visible if no paths or mugshots are assigned."
                                                  Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-
+                                         
+                                         <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
+                                             <TextBlock Text="Race Change Handling Mode" VerticalAlignment="Center"/>
+                                             <ComboBox
+                                                 ItemsSource="{Binding RaceHandlingModes}"
+                                                 DisplayMemberPath="Value"
+                                                 SelectedValuePath="Key"
+                                                 SelectedValue="{Binding OverrideRaceHandlingMode, Mode=TwoWay}"
+                                                 Margin="5 0 0 0"/>
+                                         </StackPanel>
+                                         
+                                         <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
+                                             <TextBlock Text="Non-Appearance Record Handling Mode" VerticalAlignment="Center"/>
+                                             <ComboBox
+                                                 ItemsSource="{Binding RecordOverrideHandlingModes}"
+                                                 DisplayMemberPath="Value"
+                                                 SelectedValuePath="Key"
+                                                 SelectedValue="{Binding OverrideRecordOverrideHandlingMode, Mode=TwoWay}"
+                                                 Margin="5 0 0 0"/>
+                                         </StackPanel>
                                      </Grid> 
                                  </Border> 
                              </DataTemplate>

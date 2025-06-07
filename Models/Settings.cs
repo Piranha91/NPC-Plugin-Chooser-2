@@ -21,7 +21,11 @@ public class Settings
     public bool AppendTimestampToOutputDirectory { get; set; } = false; 
     public string OutputPluginName { get; set; } = "NPC"; 
     public PatchingMode PatchingMode { get; set; } = PatchingMode.Default; 
-    public RaceHandlingMode RaceHandlingMode { get; set; } = RaceHandlingMode.ForwardWinningOverrides;
+    
+    // Default Overrideable Settings
+    public RaceHandlingMode DefaultRaceHandlingMode { get; set; } = RaceHandlingMode.ForwardWinningOverrides;
+
+    public RecordOverrideHandlingMode DefaultRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
 
     // UI / Other
     public bool ShowNpcDescriptions { get; set; } = true;

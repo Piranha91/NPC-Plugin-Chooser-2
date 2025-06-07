@@ -51,6 +51,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public IEnumerable<PatchingMode> PatchingModes { get; } = Enum.GetValues(typeof(PatchingMode)).Cast<PatchingMode>();
         [Reactive] public RaceHandlingMode SelectedRaceHandlingMode { get; set; }
         public IEnumerable<RaceHandlingMode> RaceHandlingModes { get; } = Enum.GetValues(typeof(RaceHandlingMode)).Cast<RaceHandlingMode>();
+        [Reactive] public RecordOverrideHandlingMode SelectedRecordOverrideHandlingMode { get; set; }
+        public IEnumerable<RecordOverrideHandlingMode> RecordOverrideHandlingModes { get; } = Enum.GetValues(typeof(RecordOverrideHandlingMode)).Cast<RecordOverrideHandlingMode>();
         public ReactiveCommand<Unit, Unit> ShowRaceHandlingModeHelpCommand { get; }
 
         // --- New EasyNPC Transfer Properties ---
@@ -107,7 +109,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             OutputDirectory = _model.OutputDirectory;
             AppendTimestampToOutputDirectory = _model.AppendTimestampToOutputDirectory;
             SelectedPatchingMode = _model.PatchingMode;
-            SelectedRaceHandlingMode = _model.RaceHandlingMode;
+            SelectedRaceHandlingMode = _model.DefaultRaceHandlingMode;
+            SelectedRecordOverrideHandlingMode = _model.DefaultRecordOverrideHandlingMode;
             AddMissingNpcsOnUpdate = _model.AddMissingNpcsOnUpdate;
             
             ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
@@ -130,7 +133,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.OutputDirectory).Skip(1).Subscribe(s => _model.OutputDirectory = s).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.AppendTimestampToOutputDirectory).Skip(1).Subscribe(b => _model.AppendTimestampToOutputDirectory = b).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.SelectedPatchingMode).Skip(1).Subscribe(pm => _model.PatchingMode = pm).DisposeWith(_disposables);
-            this.WhenAnyValue(x => x.SelectedRaceHandlingMode).Skip(1).Subscribe(rhm => _model.RaceHandlingMode = rhm).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.SelectedRaceHandlingMode).Skip(1).Subscribe(rhm => _model.DefaultRaceHandlingMode = rhm).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b).DisposeWith(_disposables);
 
             // Properties that trigger full environment update via InitializeAsync (or a lighter UpdateEnvironmentAndNotify)
