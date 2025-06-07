@@ -34,6 +34,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- Define the Factory Delegate ---
         public delegate VM_NpcsMenuMugshot AppearanceModFactory(
             string modName,
+            string npcDisplayName,
             FormKey npcFormKey,
             ModKey? overrideModeKey,
             string? imagePath
@@ -1384,7 +1385,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
                 
                 var appearanceVM =
-                    _appearanceModFactory(displayName, selectionVm.NpcFormKey, specificPluginKey, imagePath);
+                    _appearanceModFactory(displayName, selectionVm.DisplayName, selectionVm.NpcFormKey, specificPluginKey, imagePath);
                 
                 finalModVMs[displayName] = appearanceVM;
                 
@@ -1407,7 +1408,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     Debug.WriteLine(
                         $"Creating placeholder VM_NpcsMenuMugshot for unhandled base plugin: {baseModKey.FileName} for NPC {selectionVm.NpcFormKey}");
                     var placeholderBaseVM =
-                        _appearanceModFactory(baseModKey.FileName, selectionVm.NpcFormKey, baseModKey, null);
+                        _appearanceModFactory(baseModKey.FileName, selectionVm.DisplayName, selectionVm.NpcFormKey, baseModKey, null);
                     finalModVMs[baseModKey.FileName] = placeholderBaseVM;
                 }
             }

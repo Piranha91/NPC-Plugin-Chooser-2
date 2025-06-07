@@ -36,7 +36,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly SolidColorBrush _selectedWithDataBrush = new(Colors.LimeGreen);
         private readonly SolidColorBrush _selectedWithoutDataBrush = new(Colors.DarkMagenta);
         private readonly SolidColorBrush _deselectedWithDataBrush = new(Colors.Transparent);
-        private readonly SolidColorBrush _deselectedWithoutDataBrush = new(Colors.Coral);
+        //private readonly SolidColorBrush _deselectedWithoutDataBrush = new(Colors.Coral); // Now handled with an overlay
 
 
         // --- Existing properties ---
@@ -48,6 +48,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool IsSelected { get; set; }
         [Reactive] public SolidColorBrush BorderColor { get; set; } = new(Colors.Transparent);
         [Reactive] public bool HasMugshot { get; private set; }
+        [Reactive] public bool HasNoData { get; private set;}
+        [Reactive] public string NoDataNotificationText { get; set; } = string.Empty;
         [Reactive] public bool IsVisible { get; set; } = true;
         [Reactive] public bool IsSetHidden { get; set; } = false;
         [Reactive] public bool CanJumpToMod { get; set; } = false;
@@ -87,6 +89,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public VM_NpcsMenuMugshot(
             string modName,
+            string npcDisplayName,
             FormKey npcFormKey,
             ModKey? overrideModeKey,
             string? imagePath, // This is the path to the *actual* mugshot if one exists for this mod/NPC combo
@@ -105,6 +108,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _consistencyProvider = consistencyProvider;
             _vmNpcSelectionBar = vmNpcSelectionBar;
             _environmentStateProvider = environmentStateProvider;
+
+            HasNoData = AssociatedModSetting == null || !AssociatedModSetting.CorrespondingFolderPaths.Any();
+
+            if (HasNoData)
+            {
+                NoDataNotificationText =
+                    $"You have Mugshots installed for {AssociatedModSetting?.DisplayName ?? "this mod"} but the mod itself is not installed. {Environment.NewLine}You can still select this as a placeholder, but {npcDisplayName} won't be included in the output until the actual mod is installed.";
+            }
 
             // --- Image Path and HasMugshot Logic ---
             bool realMugshotExists = !string.IsNullOrWhiteSpace(imagePath) && File.Exists(imagePath);
@@ -232,7 +243,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private void SetBorderAndTooltip(bool isSelected)
         {
-            bool hasData = AssociatedModSetting?.CorrespondingFolderPaths.Any() ?? false;
+            bool hasData = !HasNoData;
+            
             if (isSelected && hasData)
             {
                 BorderColor = _selectedWithDataBrush;
@@ -252,7 +264,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             else if (!isSelected && !hasData)
             {
-                BorderColor = _deselectedWithoutDataBrush;
+                //BorderColor = _deselectedWithoutDataBrush; // Now handled with an overlay
+                BorderColor = _deselectedWithDataBrush;
                 ToolTipString =
                     "Not Selected. Mugshot has no associated Mod Data. If you select it, Patcher run will skip this NPC until Mod Data is linked to this mugshot";
             }

@@ -263,6 +263,26 @@
                                                         Foreground="Red"/>
                                          </Viewbox>
                                      </Grid>
+                                     
+                                     <!-- Outer Container for No Data Notification Indicator (Bottom-Left) -->
+                                     <Grid x:Name="NoDataIndicatorContainerGrid"
+                                           HorizontalAlignment="Left" 
+                                           VerticalAlignment="Bottom"
+                                           Width="{Binding ElementName=CompareCheckBox, Path=ActualWidth}"  
+                                           Height="{Binding ElementName=CompareCheckBox, Path=ActualHeight}" 
+                                           Visibility="{Binding HasNoData, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                           ToolTip="{Binding NoDataNotificationText}"
+                                           Margin="0,0,0,0"> 
+                                         
+                                         <!-- Inner Viewbox to scale the "!" and center it -->
+                                         <Viewbox Stretch="Uniform" 
+                                                  HorizontalAlignment="Center" 
+                                                  VerticalAlignment="Center">
+                                             <TextBlock Text="ND"
+                                                        FontWeight="Bold"
+                                                        Foreground="Red"/>
+                                         </Viewbox>
+                                     </Grid>
 
                                      <CheckBox x:Name="CompareCheckBox" 
                                                IsChecked="{Binding IsCheckedForCompare, Mode=TwoWay}"
