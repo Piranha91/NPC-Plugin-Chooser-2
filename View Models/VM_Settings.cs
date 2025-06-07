@@ -286,6 +286,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _lazyModListVM.Value.SaveModSettingsToModel();
 
             string settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");
+            _model.ProgramVersion = App.ProgramVersion;
             JSONhandler<Settings>.SaveJSONFile(_model, settingsPath, out bool success, out string exception);
              if (!success)
              {

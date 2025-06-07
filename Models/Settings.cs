@@ -7,6 +7,7 @@ namespace NPC_Plugin_Chooser_2.Models;
 
 public class Settings
 {
+    public string ProgramVersion { get; set; } = string.Empty;
     // Mod Environment
     public string ModsFolder { get; set; } = string.Empty;
     public string MugshotsFolder { get; set; } = string.Empty;
