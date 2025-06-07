@@ -109,7 +109,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _vmNpcSelectionBar = vmNpcSelectionBar;
             _environmentStateProvider = environmentStateProvider;
 
-            HasNoData = AssociatedModSetting == null || !AssociatedModSetting.CorrespondingFolderPaths.Any();
+            bool isLoadedRootMod = ModName == _npcFormKey.ModKey.FileName && 
+                                _environmentStateProvider.LoadOrder.Keys.Any(x => x.FileName == _npcFormKey.ModKey); // might not have an associated mod setting, but still has data as long as it's in the load order
+            
+            HasNoData = (AssociatedModSetting == null || !AssociatedModSetting.CorrespondingFolderPaths.Any()) && !isLoadedRootMod;
 
             if (HasNoData)
             {
