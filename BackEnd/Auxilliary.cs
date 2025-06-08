@@ -196,7 +196,7 @@ public class Auxilliary
             collectedRecords.Add(overrideContext);
         }
         
-        foreach (var context in relevantContexts)
+        foreach (var context in contexts)
         {
             var sublinks = context.Record.EnumerateFormLinks();
             foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)))
@@ -231,10 +231,14 @@ public class Auxilliary
         }
         searchedFormKeys.Add(formLinkGetter.FormKey);
         var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts(formLinkGetter);
-        var relevantContexts = contexts.Where(x => relevantContextKeys.Contains(x.ModKey)).ToList();
-        foreach (var context in relevantContexts)
+        foreach (var context in contexts)
         {
-            assetLinkGetters.AddRange(context.Record.EnumerateAssetLinks(AssetLinkQuery.Listed, assetLinkCache, null));
+            if (relevantContextKeys.Contains(context.ModKey))
+            {
+                assetLinkGetters.AddRange(
+                    context.Record.EnumerateAssetLinks(AssetLinkQuery.Listed, assetLinkCache, null));
+            }
+
             var sublinks = context.Record.EnumerateFormLinks();
             foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)))
             {
