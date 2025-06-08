@@ -49,6 +49,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string MugShotFolderPath { get; set; } = string.Empty; // Path to the mugshot folder for this mod
         [Reactive] public ObservableCollection<ModKey> CorrespondingModKeys { get; set; } = new();
         [Reactive] public ObservableCollection<string> CorrespondingFolderPaths { get; set; } = new();
+        public bool MergeInDependencyRecords { get; set; } = true;
         [Reactive] public RaceHandlingMode? OverrideRaceHandlingMode { get; set; }
         public IEnumerable<KeyValuePair<RaceHandlingMode?,string>> RaceHandlingModes { get; }
             = new[]
@@ -149,6 +150,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             UpdateCorrespondingModKeys();
             MugShotFolderPath = model.MugShotFolderPath; // Load persisted mugshot folder path
             NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(model.NpcPluginDisambiguation ?? new Dictionary<FormKey, ModKey>());
+            MergeInDependencyRecords = model.MergeInDependencyRecords;
+            OverrideRaceHandlingMode = model.ModRaceHandlingMode;
+            OverrideRecordOverrideHandlingMode = model.ModRecordOverrideHandlingMode;
             // AvailablePluginsForNpcs should be re-calculated on load.
             // IsMugshotOnlyEntry is set to false via chaining
             IsFaceGenOnlyEntry = model.IsFaceGenOnlyEntry;

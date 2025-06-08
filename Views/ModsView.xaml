@@ -170,6 +170,8 @@
                                              <RowDefinition Height="Auto"/> 
                                              <RowDefinition Height="Auto"/> 
                                              <RowDefinition Height="Auto"/> 
+                                             <RowDefinition Height="Auto"/> 
+                                             <RowDefinition Height="Auto"/> 
                                          </Grid.RowDefinitions>
                                          <Grid.ColumnDefinitions>
                                              <ColumnDefinition Width="*"/>
@@ -249,22 +251,13 @@
                                                  </DataTemplate>
                                              </ItemsControl.ItemTemplate>
                                          </ItemsControl>
-                                         <Button Grid.Row="3" Grid.Column="0"
-                                                 Content="Unlink Mugshot Data"
-                                                 Command="{Binding UnlinkMugshotDataCommand}"
-                                                 HorizontalAlignment="Left"
-                                                 Margin="0,10,0,0" Padding="5,2"
-                                                 ToolTip="Separates the assigned mugshot folder into its own entry, if its name differs from the primary mod data folder."
-                                                 Visibility="{Binding CanUnlinkMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          
-                                         <Button Grid.Row="3" Grid.Column="0"
-                                                 Content="Delete"
-                                                 Command="{Binding DeleteCommand}"
-                                                 HorizontalAlignment="Right"
-                                                 Margin="0,5,0,0" Padding="5,2"
-                                                 Foreground="Red" FontWeight="Bold"
-                                                 ToolTip="Permanently delete this empty entry. Only visible if no paths or mugshots are assigned."
-                                                 Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
+                                             <TextBlock Text="Merge In Dependency Records" VerticalAlignment="Center"/>
+                                             <CheckBox
+                                                 IsChecked="{Binding MergeInDependencyRecords}"
+                                                 Margin="5 0 0 0"/>
+                                         </StackPanel>
                                          
                                          <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
                                              <TextBlock Text="Race Change Handling Mode" VerticalAlignment="Center"/>
@@ -285,6 +278,23 @@
                                                  SelectedValue="{Binding OverrideRecordOverrideHandlingMode, Mode=TwoWay}"
                                                  Margin="5 0 0 0"/>
                                          </StackPanel>
+                                         
+                                         <Button Grid.Row="6" Grid.Column="0"
+                                                 Content="Unlink Mugshot Data"
+                                                 Command="{Binding UnlinkMugshotDataCommand}"
+                                                 HorizontalAlignment="Left"
+                                                 Margin="0,10,0,0" Padding="5,2"
+                                                 ToolTip="Separates the assigned mugshot folder into its own entry, if its name differs from the primary mod data folder."
+                                                 Visibility="{Binding CanUnlinkMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         
+                                         <Button Grid.Row="7" Grid.Column="0"
+                                                 Content="Delete"
+                                                 Command="{Binding DeleteCommand}"
+                                                 HorizontalAlignment="Right"
+                                                 Margin="0,5,0,0" Padding="5,2"
+                                                 Foreground="Red" FontWeight="Bold"
+                                                 ToolTip="Permanently delete this empty entry. Only visible if no paths or mugshots are assigned."
+                                                 Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                      </Grid> 
                                  </Border> 
                              </DataTemplate>
