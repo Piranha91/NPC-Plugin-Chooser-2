@@ -727,6 +727,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     string npcIdentifier =
                         $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
                     var mergeInDependencyRecords = appearanceModSetting?.MergeInDependencyRecords ?? false;
+                    var recordOverrideHandlingMode = appearanceModSetting?.ModRecordOverrideHandlingMode ??
+                                                     _settings.DefaultRecordOverrideHandlingMode;
 
                     // Apply Group Filter (still needed)
                     if (ShouldSkipNpc(winningNpcOverride, SelectedNpcGroup))
@@ -758,6 +760,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 patchNpc =
                                     _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride); // copy in the winning override and patch its appearance
                                 CopyAppearanceData(appearanceNpcRecord, patchNpc, appearanceModSetting, appearanceModKey.Value, npcIdentifier, mergeInDependencyRecords);
+                                
+                                switch (recordOverrideHandlingMode)
+                                {
+                                    case RecordOverrideHandlingMode.Ignore:
+                                        break;
+                                    case RecordOverrideHandlingMode.Include:
+                                        var dependencyRecords = _auxilliary.DeepGetOverriddenDependencyRecords(patchNpc,
+                                            appearanceModSetting.CorrespondingModKeys); // To Do: Skip the Race formlink since that's handled separately
+                                        foreach (var record in dependencyRecords)
+                                        {
+                                            record.GetOrAddAsOverride(_environmentStateProvider.OutputMod); // To Do: Make this use property delta patching
+                                        }
+
+                                        break;
+                                }
                                 break;
                             case PatchingMode.Default:
                             default:
@@ -773,6 +790,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                         appearanceModKey.Value, true);
                                 }
 
+                                switch (recordOverrideHandlingMode)
+                                {
+                                    case RecordOverrideHandlingMode.Ignore:
+                                        break;
+                                    case RecordOverrideHandlingMode.Include:
+                                        var dependencyRecords = _auxilliary.DeepGetOverriddenDependencyRecords(patchNpc,
+                                            appearanceModSetting.CorrespondingModKeys); // To Do: Skip the Race formlink since that's handled separately
+                                        foreach (var record in dependencyRecords)
+                                        {
+                                            record.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
+                                        }
+
+                                        break;
+                                }
                                 break;
                         }
                     }

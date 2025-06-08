@@ -1,11 +1,16 @@
 ﻿using System.IO;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Assets;
+using Mutagen.Bethesda.Plugins.Cache;
+using Mutagen.Bethesda.Plugins.Records;
+using Mutagen.Bethesda.Skyrim;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public class Auxilliary
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
+    private readonly IAssetLinkCache _assetLinkCache;
     
     public Dictionary<ModKey, string> ModKeyPositionCache = new Dictionary<ModKey, string>();
     public Dictionary<FormKey, string> FormIDCache = new Dictionary<FormKey, string>();
@@ -13,6 +18,7 @@ public class Auxilliary
     public Auxilliary(EnvironmentStateProvider environmentStateProvider)
     {
         _environmentStateProvider = environmentStateProvider;
+        _assetLinkCache = new AssetLinkCache(_environmentStateProvider.LinkCache);
     }
 
     public List<ModKey> GetModKeysInDirectory(string modFolderPath, List<string>? warnings, bool onlyEnabled)
@@ -160,6 +166,81 @@ public class Auxilliary
         }
         
         return path;
+    }
+
+    public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
+        DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys)
+    {
+        var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
+        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyContexts = new();
+        foreach (var link in containedFormLinks)
+        {
+            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts);
+        }
+        return dependencyContexts.Distinct().ToHashSet();;
+    }
+    
+    private void CollectOverriddenDependencyRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
+        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, HashSet<FormKey>? searchedFormKeys = null)
+    {
+        if (searchedFormKeys == null)
+        {
+            searchedFormKeys = new HashSet<FormKey>();
+        }
+        searchedFormKeys.Add(formLinkGetter.FormKey);
+        var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts(formLinkGetter).ToArray();
+        var relevantContexts = contexts.Where(x => relevantContextKeys.Contains(x.ModKey)).ToList();
+        var overrideContext = relevantContexts.FirstOrDefault();
+        if (overrideContext != null)
+        {
+            collectedRecords.Add(overrideContext);
+        }
+        
+        foreach (var context in relevantContexts)
+        {
+            var sublinks = context.Record.EnumerateFormLinks();
+            foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)))
+            {
+                CollectOverriddenDependencyRecords(subLink, relevantContextKeys, collectedRecords, searchedFormKeys);
+            }
+        }
+    }
+
+    public List<IAssetLinkGetter> ShallowGetAssetLinks(IMajorRecordGetter recordGetter)
+    {
+        return recordGetter.EnumerateAssetLinks(AssetLinkQuery.Listed, _assetLinkCache, null)
+            .ToList();
+    }
+    public List<IAssetLinkGetter> DeepGetAssetLinks(IMajorRecordGetter recordGetter, List<ModKey> relevantContextKeys)
+    {
+        var assetLinks = recordGetter.EnumerateAssetLinks(AssetLinkQuery.Listed, _assetLinkCache, null)
+            .ToList();
+        foreach (var formLink in recordGetter.EnumerateFormLinks())
+        {
+            CollectDeepAssetLinks(formLink, assetLinks, relevantContextKeys, _assetLinkCache);
+        }
+
+        return assetLinks;
+    }
+    
+    private void CollectDeepAssetLinks(IFormLinkGetter formLinkGetter, List<IAssetLinkGetter> assetLinkGetters, List<ModKey> relevantContextKeys, IAssetLinkCache assetLinkCache, HashSet<FormKey>? searchedFormKeys = null)
+    {
+        if (searchedFormKeys == null)
+        {
+            searchedFormKeys = new HashSet<FormKey>();
+        }
+        searchedFormKeys.Add(formLinkGetter.FormKey);
+        var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts(formLinkGetter);
+        var relevantContexts = contexts.Where(x => relevantContextKeys.Contains(x.ModKey)).ToList();
+        foreach (var context in relevantContexts)
+        {
+            assetLinkGetters.AddRange(context.Record.EnumerateAssetLinks(AssetLinkQuery.Listed, assetLinkCache, null));
+            var sublinks = context.Record.EnumerateFormLinks();
+            foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)))
+            {
+                CollectDeepAssetLinks(subLink, assetLinkGetters, relevantContextKeys, assetLinkCache, searchedFormKeys);
+            }
+        }
     }
 
     // Define Base Game Plugins
