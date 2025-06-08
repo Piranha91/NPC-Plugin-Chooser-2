@@ -267,15 +267,18 @@ public class RaceHandler
                 }
                 
                 // remap dependencies if needed
-                _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
-                    winningRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
-                
-                foreach (var ctx in containedRecordContexts)
+                if (appearanceModSetting.MergeInDependencyRecords)
                 {
-                    _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, ctx.Record,
-                        appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
+                    _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
+                        winningRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
+
+                    foreach (var ctx in containedRecordContexts)
+                    {
+                        _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
+                            ctx.Record,
+                            appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
+                    }
                 }
-                
                 // check for existence in associated loose or BSA files and copy over
 
                 if (!_runVM.IsValueCreated || _runVM.Value == null)
@@ -396,13 +399,17 @@ public class RaceHandler
             var appearanceRaceRecord = _environmentStateProvider.OutputMod.Races.GetOrAddAsOverride(appearanceModRaceContext.Record);
             
             // remap dependencies if needed
-            _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
-                appearanceRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
-
-            var assetLinks = appearanceRaceRecord.EnumerateAssetLinks(AssetLinkQuery.Listed, assetLinkCache, null).ToList();
-            foreach (var formLink in appearanceRaceRecord.EnumerateFormLinks())
+            if (appearanceModSetting.MergeInDependencyRecords)
             {
-                GetDeepAssetLinks(formLink, assetLinks, appearanceModSetting.CorrespondingModKeys, assetLinkCache);
+                _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
+                    appearanceRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
+
+                var assetLinks = appearanceRaceRecord.EnumerateAssetLinks(AssetLinkQuery.Listed, assetLinkCache, null)
+                    .ToList();
+                foreach (var formLink in appearanceRaceRecord.EnumerateFormLinks())
+                {
+                    GetDeepAssetLinks(formLink, assetLinks, appearanceModSetting.CorrespondingModKeys, assetLinkCache);
+                }
             }
         }
     }

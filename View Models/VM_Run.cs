@@ -726,6 +726,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         appearanceModSetting?.DisplayName ?? "N/A"; // Get name from cached setting
                     string npcIdentifier =
                         $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
+                    var mergeInDependencyRecords = appearanceModSetting?.MergeInDependencyRecords ?? false;
 
                     // Apply Group Filter (still needed)
                     if (ShouldSkipNpc(winningNpcOverride, SelectedNpcGroup))
@@ -743,8 +744,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         $"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'"); // Verbose only
 
                     Npc? patchNpc = null; // The NPC record to be placed in the patch
-                    INpcGetter? npcForAssetLookup = null; // Which NPC record to use for finding *extra* assets
-                    bool usedPluginRecord = false; // Track if we used the plugin override
 
                     // --- *** Apply Logic Based on Screening Result (Requirement 1) *** ---
                     if (appearanceNpcRecord != null) // Scenario: Plugin override exists
@@ -758,7 +757,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     $"      Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {appearanceModKey?.FileName ?? "N/A"}."); // Verbose only
                                 patchNpc =
                                     _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride); // copy in the winning override and patch its appearance
-                                CopyAppearanceData(appearanceNpcRecord, patchNpc, appearanceModSetting, appearanceModKey.Value, npcIdentifier);
+                                CopyAppearanceData(appearanceNpcRecord, patchNpc, appearanceModSetting, appearanceModKey.Value, npcIdentifier, mergeInDependencyRecords);
                                 break;
                             case PatchingMode.Default:
                             default:
@@ -766,8 +765,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     $"      Mode: Default. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"})."); // Verbose only
                                 patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(appearanceNpcRecord); // copy in the NPC as it appears in the source mod
                                 // deep copy in all dependencies
-                                _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, patchNpc, appearanceModSetting.CorrespondingModKeys,
-                                    appearanceModKey.Value, true);
+                                if (mergeInDependencyRecords)
+                                {
+                                    _duplicateInManager.DuplicateFromOnlyReferencedGetters(
+                                        _environmentStateProvider.OutputMod, patchNpc,
+                                        appearanceModSetting.CorrespondingModKeys,
+                                        appearanceModKey.Value, true);
+                                }
+
                                 break;
                         }
                     }
@@ -873,7 +878,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// Copies appearance-related fields from sourceNpc to targetNpc.
         /// Used only in EasyNPC-Like mode.
         /// </summary>
-        private void CopyAppearanceData(INpcGetter sourceNpc, Npc targetNpc, ModSetting appearanceModSetting, ModKey sourceNpcContextModKey, string npcIdentifier)
+        private void CopyAppearanceData(INpcGetter sourceNpc, Npc targetNpc, ModSetting appearanceModSetting, ModKey sourceNpcContextModKey, string npcIdentifier, bool mergeInDependencyRecords)
         {
             // Copy non-formlinks
             targetNpc.FaceMorph = sourceNpc.FaceMorph?.DeepCopy();
@@ -886,37 +891,43 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                           Enumerable.Empty<TintLayer>());
             
             // Merge in formlinks
-            try
+            if (mergeInDependencyRecords)
             {
-                _duplicateInManager.DuplicateInFormLink(targetNpc.WornArmor, sourceNpc.WornArmor, 
-                    _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys, sourceNpcContextModKey);
-                
-                _duplicateInManager.DuplicateInFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture, 
-                    _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys, sourceNpcContextModKey);
-                
-                _duplicateInManager.DuplicateInFormLink(targetNpc.HairColor, sourceNpc.HairColor, 
-                    _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys, sourceNpcContextModKey);
-                
-                targetNpc.HeadParts.Clear();
-                foreach (var hp in sourceNpc.HeadParts.Where(x => !x.IsNull))
+                try
                 {
-                    var targetHp = new FormLink<IHeadPartGetter>();
-                    _duplicateInManager.DuplicateInFormLink(targetHp, hp,
+                    _duplicateInManager.DuplicateInFormLink(targetNpc.WornArmor, sourceNpc.WornArmor,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
                         sourceNpcContextModKey);
-                    targetNpc.HeadParts.Add(targetHp);
+
+                    _duplicateInManager.DuplicateInFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture,
+                        _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
+                        sourceNpcContextModKey);
+
+                    _duplicateInManager.DuplicateInFormLink(targetNpc.HairColor, sourceNpc.HairColor,
+                        _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
+                        sourceNpcContextModKey);
+
+                    targetNpc.HeadParts.Clear();
+                    foreach (var hp in sourceNpc.HeadParts.Where(x => !x.IsNull))
+                    {
+                        var targetHp = new FormLink<IHeadPartGetter>();
+                        _duplicateInManager.DuplicateInFormLink(targetHp, hp,
+                            _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
+                            sourceNpcContextModKey);
+                        targetNpc.HeadParts.Add(targetHp);
+                    }
+
+
+                    AppendLog(
+                        $"    Completed dependency processing for {npcIdentifier}."); // Verbose only
                 }
-                
-                
-                AppendLog(
-                    $"    Completed dependency processing for {npcIdentifier}."); // Verbose only
-            }
-            catch (Exception ex)
-            {
-                AppendLog(
-                    $"  ERROR duplicating dependencies for {npcIdentifier}: {ExceptionLogger.GetExceptionStack(ex)}",
-                    true);
-                // Continue processing other plugins
+                catch (Exception ex)
+                {
+                    AppendLog(
+                        $"  ERROR duplicating dependencies for {npcIdentifier}: {ExceptionLogger.GetExceptionStack(ex)}",
+                        true);
+                    // Continue processing other plugins
+                }
             }
 
             AppendLog(
