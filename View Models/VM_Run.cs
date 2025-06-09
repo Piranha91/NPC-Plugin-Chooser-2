@@ -766,11 +766,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     case RecordOverrideHandlingMode.Ignore:
                                         break;
                                     case RecordOverrideHandlingMode.Include:
-                                        var dependencyRecords = _auxilliary.DeepGetOverriddenDependencyRecords(patchNpc,
+                                        var dependencyContexts = _auxilliary.DeepGetOverriddenDependencyRecords(patchNpc,
                                             appearanceModSetting.CorrespondingModKeys); // To Do: Skip the Race formlink since that's handled separately
-                                        foreach (var record in dependencyRecords)
+                                        foreach (var ctx in dependencyContexts)
                                         {
-                                            record.GetOrAddAsOverride(_environmentStateProvider.OutputMod); // To Do: Make this use property delta patching
+                                            ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
+                                            //_groupResolver.GetOrAddAsOverride(_environmentStateProvider.OutputMod, rec); // To Do: Make this use property delta patching
                                         }
 
                                         break;
@@ -797,9 +798,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     case RecordOverrideHandlingMode.Include:
                                         var dependencyRecords = _auxilliary.DeepGetOverriddenDependencyRecords(patchNpc,
                                             appearanceModSetting.CorrespondingModKeys); // To Do: Skip the Race formlink since that's handled separately
-                                        foreach (var record in dependencyRecords)
+                                        foreach (var ctx in dependencyRecords)
                                         {
-                                            record.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
+                                            ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
+                                            //_groupResolver.GetOrAddAsOverride(_environmentStateProvider.OutputMod, rec);
                                         }
 
                                         break;

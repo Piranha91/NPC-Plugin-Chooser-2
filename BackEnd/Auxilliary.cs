@@ -1,7 +1,9 @@
 ﻿using System.IO;
+using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Assets;
 using Mutagen.Bethesda.Plugins.Cache;
+using Mutagen.Bethesda.Plugins.Cache.Internals.Implementations;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 
@@ -11,6 +13,7 @@ public class Auxilliary
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly IAssetLinkCache _assetLinkCache;
+    private Dictionary<ModKey, ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>> _modLinkCaches = new();
     
     public Dictionary<ModKey, string> ModKeyPositionCache = new Dictionary<ModKey, string>();
     public Dictionary<FormKey, string> FormIDCache = new Dictionary<FormKey, string>();
@@ -172,36 +175,79 @@ public class Auxilliary
         DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys)
     {
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
+        foreach (var modKey in relevantContextKeys)
+        {
+            var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
+            if (modListing != null && modListing.Mod != null)
+            {
+                _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences()));
+            }
+        }
         HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyContexts = new();
         foreach (var link in containedFormLinks)
         {
-            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts);
+            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, 2, 0);
         }
         return dependencyContexts.Distinct().ToHashSet();;
     }
     
     private void CollectOverriddenDependencyRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
-        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, HashSet<FormKey>? searchedFormKeys = null)
+        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey>? searchedFormKeys = null)
     {
+        if (formLinkGetter.IsNull)
+        {
+            return;
+        }
+
+        currentDepth++;
+        if (currentDepth > maxNestedIntervalDepth) {return;}
+        
         if (searchedFormKeys == null)
         {
             searchedFormKeys = new HashSet<FormKey>();
         }
+        
         searchedFormKeys.Add(formLinkGetter.FormKey);
-        var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts(formLinkGetter).ToArray();
-        var relevantContexts = contexts.Where(x => relevantContextKeys.Contains(x.ModKey)).ToList();
-        var overrideContext = relevantContexts.FirstOrDefault();
-        if (overrideContext != null)
+
+        IMajorRecordGetter? modRecord = null;
+        
+        // try to get the record version in the given mod plugin if possible
+        foreach (var modKey in relevantContextKeys)
         {
-            collectedRecords.Add(overrideContext);
+            if (_modLinkCaches.ContainsKey(modKey) && _modLinkCaches[modKey].TryResolve(formLinkGetter, out modRecord) && modRecord != null)
+            {
+                var context = _modLinkCaches[modKey].ResolveContext(formLinkGetter);
+                collectedRecords.Add(context);
+                currentDepth = 0; // reset the interval search
+                break;
+            }
         }
         
-        foreach (var context in contexts)
+        // otherwise, traverse the parent record
+        if (modRecord is null)
         {
-            var sublinks = context.Record.EnumerateFormLinks();
-            foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)))
+            var parentmod = formLinkGetter.FormKey.ModKey;
+            if (!_modLinkCaches.ContainsKey(parentmod))
             {
-                CollectOverriddenDependencyRecords(subLink, relevantContextKeys, collectedRecords, searchedFormKeys);
+                var parentListing = _environmentStateProvider.LoadOrder.TryGetValue(parentmod);
+                if (parentListing != null && parentListing.Mod != null)
+                {
+                    _modLinkCaches[parentListing.ModKey] = new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(parentListing.Mod, new LinkCachePreferences());
+                }
+            }
+
+            if (_modLinkCaches.ContainsKey(parentmod))
+            {
+                _modLinkCaches[parentmod].TryResolve(formLinkGetter, out modRecord);
+            }
+        }
+        
+        if (modRecord != null)
+        {
+            var sublinks = modRecord.EnumerateFormLinks();
+            foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)).ToArray())
+            {
+                CollectOverriddenDependencyRecords(subLink, relevantContextKeys, collectedRecords, maxNestedIntervalDepth, currentDepth, searchedFormKeys);
             }
         }
     }

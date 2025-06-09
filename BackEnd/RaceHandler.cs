@@ -220,7 +220,7 @@ public class RaceHandler
             return;
         }
 
-        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyContexts = new();
+        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyRecords = new();
         List<IAssetLinkGetter> assetLinks = new();
 
         var recordOverrideHandlingMode = appearanceModSetting.ModRecordOverrideHandlingMode ??
@@ -269,13 +269,13 @@ public class RaceHandler
                 // Get required asset file paths BEFORE remapping (to faciliate search by plugin)
                 if (searchDependencyRecords)
                 {
-                    dependencyContexts = _aux.DeepGetOverriddenDependencyRecords(winningRaceGetter,
+                    dependencyRecords = _aux.DeepGetOverriddenDependencyRecords(winningRaceGetter,
                         appearanceModSetting.CorrespondingModKeys);
 
-                    foreach (var ctx in dependencyContexts)
+                    foreach (var ctx in dependencyRecords)
                     {
-                        assetLinks.AddRange(_aux.ShallowGetAssetLinks(ctx.Record));
-                        ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod); // TO DO: Abstract the property delta patching above to operate on all dependency records
+                        ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
+                        //_groupResolver.GetOrAddAsOverride(_environmentStateProvider.OutputMod, rec);  // TO DO: Abstract the property delta patching above to operate on all dependency records
                     }
                 }
                 
@@ -285,7 +285,7 @@ public class RaceHandler
                     _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
                         winningRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
 
-                    foreach (var ctx in dependencyContexts)
+                    foreach (var ctx in dependencyRecords)
                     {
                         _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
                             ctx.Record,
@@ -340,13 +340,14 @@ public class RaceHandler
             
             if (searchDependencyRecords)
             {
-                dependencyContexts = _aux.DeepGetOverriddenDependencyRecords(appearanceRaceRecord,
+                dependencyRecords = _aux.DeepGetOverriddenDependencyRecords(appearanceRaceRecord,
                     appearanceModSetting.CorrespondingModKeys);
 
-                foreach (var ctx in dependencyContexts)
+                foreach (var ctx in dependencyRecords)
                 {
                     assetLinks.AddRange(_aux.ShallowGetAssetLinks(ctx.Record));
-                    ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod); // add dependency records to the output mod as they appear in the source plugin(s)
+                    ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
+                    //_groupResolver.GetOrAddAsOverride(_environmentStateProvider.OutputMod, rec); // add dependency records to the output mod as they appear in the source plugin(s)
                 }
             }
             
