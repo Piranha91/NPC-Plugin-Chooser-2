@@ -1040,19 +1040,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     (vm.CorrespondingModKeys.Any() || vm.CorrespondingFolderPaths.Any())) // Check if any keys exist
                 {
                     // Create a new ModSetting model instance
-                    var model = new Models.ModSetting
-                    {
-                        DisplayName = vm.DisplayName,
-                        CorrespondingModKeys = vm.CorrespondingModKeys.ToList(),
-                        // Important: Create new lists/collections when saving to the model
-                        // to avoid potential issues with shared references if the VM is reused.
-                        CorrespondingFolderPaths = vm.CorrespondingFolderPaths.ToList(),
-                        MugShotFolderPath = vm.MugShotFolderPath, // Save the mugshot folder path
-                        NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(vm.NpcPluginDisambiguation),
-                        AvailablePluginsForNpcs = new Dictionary<FormKey, List<ModKey>>(vm.AvailablePluginsForNpcs),
-                        IsFaceGenOnlyEntry = vm.IsFaceGenOnlyEntry,
-                        FaceGenOnlyNpcFormKeys = new(vm.FaceGenOnlyNpcFormKeys)
-                    };
+                    var model = vm.SaveToModel();
                     _settings.ModSettings.Add(model);
                 }
             }

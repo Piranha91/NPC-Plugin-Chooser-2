@@ -357,6 +357,26 @@ namespace NPC_Plugin_Chooser_2.View_Models
             //    .Subscribe(_ => RefreshNpcLists());
         }
 
+        public ModSetting SaveToModel()
+        {
+            var model = new Models.ModSetting
+            {
+                DisplayName = DisplayName,
+                CorrespondingModKeys = CorrespondingModKeys.ToList(),
+                // Important: Create new lists/collections when saving to the model
+                // to avoid potential issues with shared references if the VM is reused.
+                CorrespondingFolderPaths = CorrespondingFolderPaths.ToList(),
+                MugShotFolderPath = MugShotFolderPath, // Save the mugshot folder path
+                NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(NpcPluginDisambiguation),
+                AvailablePluginsForNpcs = new Dictionary<FormKey, List<ModKey>>(AvailablePluginsForNpcs),
+                IsFaceGenOnlyEntry = IsFaceGenOnlyEntry,
+                MergeInDependencyRecords = MergeInDependencyRecords,
+                ModRaceHandlingMode = OverrideRaceHandlingMode,
+                ModRecordOverrideHandlingMode = OverrideRecordOverrideHandlingMode
+            };
+            return model;
+        }
+
         // --- Command Implementations ---
 
         private void AddFolderPath()
