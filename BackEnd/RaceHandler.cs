@@ -23,7 +23,7 @@ public class RaceHandler
     private readonly Lazy<VM_Run> _runVM;
     private readonly Settings _settings;
     private readonly DuplicateInManager _duplicateInManager;
-    private readonly BsaHandler _bsaHandler;
+    private readonly AssetHandler _assetHandler;
     private readonly Auxilliary _aux;
     private readonly string _serializationDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Serializations");
 
@@ -35,13 +35,13 @@ public class RaceHandler
     private Dictionary<FormKey, Dictionary<ModKey, List<string>>> _alteredPropertiesMap = new();
     private Dictionary<ModKey, Dictionary<FormKey, RaceEditInfo>> _racesToModify = new();
 
-    public RaceHandler(EnvironmentStateProvider environmentStateProvider, Lazy<VM_Run> runVM, Settings settings, DuplicateInManager duplicateInManager, BsaHandler bsaHandler, Auxilliary aux)
+    public RaceHandler(EnvironmentStateProvider environmentStateProvider, Lazy<VM_Run> runVM, Settings settings, DuplicateInManager duplicateInManager, AssetHandler assetHandler, Auxilliary aux)
     {
         _environmentStateProvider = environmentStateProvider;
         _runVM = runVM;
         _settings = settings;
         _duplicateInManager = duplicateInManager;
-        _bsaHandler = bsaHandler;
+        _assetHandler = assetHandler;
         _aux = aux;
     }
 
@@ -275,7 +275,8 @@ public class RaceHandler
                     foreach (var ctx in dependencyRecords)
                     {
                         ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
-                        //_groupResolver.GetOrAddAsOverride(_environmentStateProvider.OutputMod, rec);  // TO DO: Abstract the property delta patching above to operate on all dependency records
+                        var assets = _aux.ShallowGetAssetLinks(ctx.Record).Where(x => !assetLinks.Contains(x));
+                        assetLinks.AddRange(assets);
                     }
                 }
                 
@@ -345,9 +346,9 @@ public class RaceHandler
 
                 foreach (var ctx in dependencyRecords)
                 {
-                    assetLinks.AddRange(_aux.ShallowGetAssetLinks(ctx.Record));
+                    var assets = _aux.ShallowGetAssetLinks(ctx.Record).Where(x => !assetLinks.Contains(x));
+                    assetLinks.AddRange(assets);
                     ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
-                    //_groupResolver.GetOrAddAsOverride(_environmentStateProvider.OutputMod, rec); // add dependency records to the output mod as they appear in the source plugin(s)
                 }
             }
             
@@ -361,88 +362,15 @@ public class RaceHandler
             }
         }
 
-        CopyRaceAssetFiles(assetLinks, appearanceModSetting);
-    }
-
-    private void CopyRaceAssetFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting)
-    {
-        // check for existence in associated loose or BSA files and copy over
-
         if (!_runVM.IsValueCreated || _runVM.Value == null)
         {
             return;
         }
 
-        var outputBasePath = _runVM.Value.CurrentRunOutputAssetPath;
-
-        var assetRelPaths = assetLinks
-            .Select(x => x.GivenPath)
-            .Distinct()
-            .Select(x => Auxilliary.AddTopFolderByExtension(x))
-            .ToHashSet();
-
-        List<string> autoPredictedRelPaths = new();
-        VM_Run.AddCorrespondingNumericalNifPaths(assetRelPaths, autoPredictedRelPaths);
-
-        Dictionary<string, string> loosePaths = new();
-        Dictionary<string, IArchiveFile> bsaFiles = new();
-
-        foreach (var relPath in assetRelPaths.Distinct())
-        {
-            bool found = false;
-            foreach (var dirPath in appearanceModSetting.CorrespondingFolderPaths)
-            {
-                var candidatePath = Path.Combine(dirPath, relPath);
-                if (File.Exists(candidatePath))
-                {
-                    loosePaths.Add(relPath, candidatePath);
-                    found = true;
-                    break;
-                }
-
-                foreach (var plugin in appearanceModSetting.CorrespondingModKeys)
-                {
-                    var readers = _bsaHandler.OpenBsaArchiveReaders(dirPath, plugin);
-                    if (_bsaHandler.TryGetFileFromReaders(relPath, readers, out var file) && file != null)
-                    {
-                        bsaFiles.Add(relPath, file);
-                        found = true;
-                        break;
-                    }
-                }
-
-                if (found) break;
-            }
-
-            if (found) continue;
-        }
-
-
-        // copy the files
-        foreach (var entry in loosePaths)
-        {
-            var outputPath = Path.Combine(_settings.OutputDirectory, entry.Key);
-            var sourcePath = entry.Value;
-
-            try
-            {
-                Auxilliary.CreateDirectoryIfNeeded(outputPath, Auxilliary.PathType.File);
-                File.Copy(sourcePath, outputPath, true);
-            }
-            catch (Exception ex)
-            {
-                // pass
-            }
-        }
-
-        // Extract the archives
-        foreach (var entry in bsaFiles)
-        {
-            var outputPath = Path.Combine(outputBasePath, entry.Key);
-            Auxilliary.CreateDirectoryIfNeeded(outputPath, Auxilliary.PathType.File);
-            _bsaHandler.ExtractFileFromBsa(entry.Value, outputPath);
-        }
+        _assetHandler.CopyAssetLinkFiles(assetLinks, appearanceModSetting, _runVM.Value.CurrentRunOutputAssetPath);
     }
+
+    
 
     public bool GetClashingModifiedRaceProperties()
     {
