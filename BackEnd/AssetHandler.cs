@@ -42,7 +42,7 @@ public class AssetHandler
         LoadAuxiliaryFiles();
     }
 
-    public void CopyAssetLinkFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting,
+    public async Task CopyAssetLinkFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting,
         string outputBasePath)
     {
         var assetRelPaths = assetLinks

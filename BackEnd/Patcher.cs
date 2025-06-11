@@ -286,6 +286,8 @@ public class Patcher : OptionalUIModule
                     if (patchNpc != null && appearanceModSetting != null) // Ensure we have a patch record and mod settings
                     {
                         await _assetHandler.CopyNpcAssets(appearanceNpcRecord, appearanceModSetting, appearanceModKey.Value, _currentRunOutputAssetPath, _settings.ModsFolder);
+                        await _assetHandler.CopyAssetLinkFiles(assetLinks, appearanceModSetting,
+                            _currentRunOutputAssetPath);
                     }
                     else
                     {
@@ -305,7 +307,7 @@ public class Patcher : OptionalUIModule
                 } // End For Loop
             } // End else (selectionsToProcess.Any())
 
-            await Task.Run(() => _raceHandler.ApplyRaceChanges(_currentRunOutputAssetPath));
+            await _raceHandler.ApplyRaceChanges(_currentRunOutputAssetPath);
 
             UpdateProgress(processedCount + skippedCount, processedCount + skippedCount, "Finalizing...");
 

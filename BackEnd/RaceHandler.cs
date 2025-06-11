@@ -66,7 +66,7 @@ public class RaceHandler : OptionalUIModule
         _racesToSerializeForYaml.Clear();
     }
 
-    public void ApplyRaceChanges(string outputBaseDir)
+    public async Task ApplyRaceChanges(string outputBaseDir)
     {
         if (_racesToModify.Any())
         {
@@ -91,7 +91,7 @@ public class RaceHandler : OptionalUIModule
                     case RaceHandlingMode.DuplicateAndRemapRace:
                         throw new NotImplementedException("Duplicate Race Handling Mode");
                     case RaceHandlingMode.ForwardWinningOverrides:
-                        HandleForwardWinningOverridesRace(appearanceRaceContext, allRaceContexts, modSetting,
+                        await HandleForwardWinningOverridesRace(appearanceRaceContext, allRaceContexts, modSetting,
                             raceModKey, outputBaseDir);
                         break;
                 }
@@ -205,7 +205,7 @@ public class RaceHandler : OptionalUIModule
         }
     }
 
-    private void HandleForwardWinningOverridesRace(
+    private async Task HandleForwardWinningOverridesRace(
         IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter> appearanceModRaceContext,
         IEnumerable<IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter>> raceContexts,
         ModSetting appearanceModSetting,
@@ -361,7 +361,7 @@ public class RaceHandler : OptionalUIModule
             }
         }
 
-        _assetHandler.CopyAssetLinkFiles(assetLinks, appearanceModSetting, outputBaseDir);
+        await _assetHandler.CopyAssetLinkFiles(assetLinks, appearanceModSetting, outputBaseDir);
     }
 
     
