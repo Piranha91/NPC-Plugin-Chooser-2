@@ -628,9 +628,10 @@ public class AssetHandler
 
     // "The ArmorAddon should always point to the _1.nifs, so if they aren't I suggest you change it."
     // https://forums.nexusmods.com/topic/11698578-_1nif-not-detected/
+    // Also from personal testing, it works the other way as well - if the corresponding _0.nif file is missing, a mesh
+    // will (or at least can) turn invisible
     public static void AddCorrespondingNumericalNifPaths(HashSet<string> relativeNifPaths, List<string> addedRelPaths)
     {
-
         // Manually add corresponding numerical nif paths if they don't already exist
         var iterableRelativePaths = relativeNifPaths.ToList();
         for (int i = 0; i < iterableRelativePaths.Count; i++)
@@ -640,8 +641,20 @@ public class AssetHandler
             if (relPath.EndsWith("_0.nif"))
             {
                 replacedPath = relPath.Replace("_0.nif", "_1.nif");
-                relativeNifPaths.Add(replacedPath);
-                addedRelPaths.Add(replacedPath);
+                if (!relativeNifPaths.Contains(replacedPath))
+                {
+                    relativeNifPaths.Add(replacedPath);
+                    addedRelPaths.Add(replacedPath);
+                }
+            }
+            else if (relPath.EndsWith("_1.nif"))
+            {
+                replacedPath = relPath.Replace("_1.nif", "_0.nif");
+                if (!relativeNifPaths.Contains(replacedPath))
+                {
+                    relativeNifPaths.Add(replacedPath);
+                    addedRelPaths.Add(replacedPath);
+                }
             }
         }
     }
