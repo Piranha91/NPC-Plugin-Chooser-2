@@ -17,10 +17,9 @@ using AssetLinkQuery = Mutagen.Bethesda.Plugins.Assets.AssetLinkQuery;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
-public class RaceHandler
+public class RaceHandler : OptionalUIModule
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
-    private readonly Lazy<VM_Run> _runVM;
     private readonly Settings _settings;
     private readonly DuplicateInManager _duplicateInManager;
     private readonly AssetHandler _assetHandler;
@@ -38,7 +37,6 @@ public class RaceHandler
     public RaceHandler(EnvironmentStateProvider environmentStateProvider, Lazy<VM_Run> runVM, Settings settings, DuplicateInManager duplicateInManager, AssetHandler assetHandler, Auxilliary aux)
     {
         _environmentStateProvider = environmentStateProvider;
-        _runVM = runVM;
         _settings = settings;
         _duplicateInManager = duplicateInManager;
         _assetHandler = assetHandler;
@@ -68,12 +66,12 @@ public class RaceHandler
         _racesToSerializeForYaml.Clear();
     }
 
-    public void ApplyRaceChanges()
+    public void ApplyRaceChanges(string outputBaseDir)
     {
         if (_racesToModify.Any())
         {
             string modifyingRaceMods = string.Join(", ", _racesToModify.Keys.Select(x => x.FileName));
-            _runVM.Value.AppendLog(Environment.NewLine + $"Patching Race Overrides from {modifyingRaceMods}. This may take some time.",
+            AppendLog(Environment.NewLine + $"Patching Race Overrides from {modifyingRaceMods}. This may take some time.",
                 false, true);
         }
         foreach (var entry in _racesToModify)
@@ -94,7 +92,7 @@ public class RaceHandler
                         throw new NotImplementedException("Duplicate Race Handling Mode");
                     case RaceHandlingMode.ForwardWinningOverrides:
                         HandleForwardWinningOverridesRace(appearanceRaceContext, allRaceContexts, modSetting,
-                            raceModKey);
+                            raceModKey, outputBaseDir);
                         break;
                 }
             }
@@ -111,7 +109,7 @@ public class RaceHandler
         // Check if the selected mod provided a plugin. If not, the race could not have been modified.
         if (sourceNpcIfUsed == null)
         {
-            _runVM.Value.AppendLog(
+            AppendLog(
                 $"      NPC {patchNpc.EditorID} has no plugin from {appearanceModSetting.DisplayName}. Skipping race handling.");
             return;
         }
@@ -119,7 +117,7 @@ public class RaceHandler
         // Check if the selected plugin's race record exits
         if (sourceNpcIfUsed.Race.IsNull)
         {
-            _runVM.Value.AppendLog(
+            AppendLog(
                 $"      NPC {patchNpc.EditorID} has a null Race record from {appearanceModSetting.DisplayName}. Skipping race handling.");
             return;
         }
@@ -131,7 +129,7 @@ public class RaceHandler
         var raceContextFromAppearanceMod = raceContexts?.FirstOrDefault(x => x.ModKey.Equals(appearanceModKey));
         if (raceContextFromAppearanceMod == null)
         {
-            _runVM.Value.AppendLog(
+            AppendLog(
                 $"      {appearanceModSetting.DisplayName} does not edit the race of NPC {patchNpc.EditorID}. Skipping race handling.");
             return;
         }
@@ -146,9 +144,9 @@ public class RaceHandler
 
         if (isNewCustomRaceFromAppearanceMod)
         {
-            _runVM.Value.AppendLog(
+            AppendLog(
                 $"      NPC {patchNpc.EditorID} uses new custom race {raceGetterFromAppearanceMod.EditorID} ({raceGetterFromAppearanceMod.FormKey}) defined in its appearance mod {appearanceModKey.FileName}.");
-            _runVM.Value.AppendLog($"        Merging race and its dependencies from {appearanceModKey.FileName}.");
+            AppendLog($"        Merging race and its dependencies from {appearanceModKey.FileName}.");
 
             // Ensure patchNpc points to this race (it should if sourceNpcIfUsed was its origin and had this race)
             patchNpc.Race.SetTo(raceGetterFromAppearanceMod);
@@ -171,9 +169,9 @@ public class RaceHandler
 
         if (isOverriddenRace)
         {
-            _runVM.Value.AppendLog(
+            AppendLog(
                 $"      NPC {patchNpc.EditorID} uses overriden race {raceGetterFromAppearanceMod.EditorID} ({raceGetterFromAppearanceMod.FormKey}).");
-            _runVM.Value.AppendLog($"        Appearance mod {appearanceModKey.FileName} modifies this race.");
+            AppendLog($"        Appearance mod {appearanceModKey.FileName} modifies this race.");
             
             patchNpc.Race.SetTo(raceGetterFromAppearanceMod);
 
@@ -200,7 +198,7 @@ public class RaceHandler
                     break;*/
 
                 case RaceHandlingMode.IgnoreRace:
-                    _runVM.Value.AppendLog(
+                    AppendLog(
                         $"        Race Handling Mode: IgnoreRace. No changes made to race record {raceGetterFromAppearanceMod.EditorID} itself by this logic.");
                     break;
             }
@@ -211,12 +209,13 @@ public class RaceHandler
         IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter> appearanceModRaceContext,
         IEnumerable<IModContext<ISkyrimMod, ISkyrimModGetter, IRace, IRaceGetter>> raceContexts,
         ModSetting appearanceModSetting,
-        ModKey appearanceModKey)
+        ModKey appearanceModKey,
+        string outputBaseDir)
     {
         var originalRaceGetter = raceContexts.Last().Record;
         if (originalRaceGetter == null)
         {
-            _runVM.Value.AppendLog("Error: Could not determine original race context for race handling.");
+            AppendLog("Error: Could not determine original race context for race handling.");
             return;
         }
 
@@ -231,7 +230,7 @@ public class RaceHandler
 
         if (_settings.PatchingMode == PatchingMode.EasyNPC_Like)
         {
-            _runVM.Value.AppendLog(
+            AppendLog(
                 $"        Race Handling: ForwardWinningOverrides (EasyNPC-Like) for race {originalRaceGetter.EditorID}.");
             // In EasyNPC-Like mode, patchNpc is an override of winningNpcOverride.
             // So patchNpc.Race should already point to originalRaceContext.FormKey.
@@ -245,7 +244,7 @@ public class RaceHandler
                 var winningRaceGetter = raceContexts.First().Record;
                 if (winningRaceGetter == null)
                 {
-                    _runVM.Value.AppendLog("Error: Could not determine winning race context for race handling.");
+                    AppendLog("Error: Could not determine winning race context for race handling.");
                     return;
                 }
 
@@ -296,7 +295,7 @@ public class RaceHandler
             }
             else
             {
-                _runVM.Value.AppendLog(
+                AppendLog(
                     $"          Race properties are identical to original context. No race forwarding needed.");
             }
         }
@@ -304,7 +303,7 @@ public class RaceHandler
         {
 
             /* Skip YAML serialization for now; may come back to it
-            _runVM.Value.AppendLog(
+            AppendLog(
                 $"          Generating YAML record of race version from {appearanceModKey.FileName} for {patchNpc.EditorID}.");
 
             var existingSerialization = _racesToSerializeForYaml.FirstOrDefault(
@@ -313,7 +312,7 @@ public class RaceHandler
 
             if (existingSerialization != null)
             {
-                _runVM.Value.AppendLog(
+                AppendLog(
                     $"          Applying previously generated race {existingSerialization.RaceToSerialize.Record.EditorID}.");
                 _raceSerializationNpcAssignments.Add(patchNpc, existingSerialization);
                 return;
@@ -331,7 +330,7 @@ public class RaceHandler
 
             _racesToSerializeForYaml.Add(toSerialize);
             _raceSerializationNpcAssignments.Add(patchNpc, toSerialize);
-            _runVM.Value.AppendLog(
+            AppendLog(
                 $"          Scheduled YAML generation for race {appearanceModRaceContext.Record.EditorID}.");
             */
 
@@ -362,12 +361,7 @@ public class RaceHandler
             }
         }
 
-        if (!_runVM.IsValueCreated || _runVM.Value == null)
-        {
-            return;
-        }
-
-        _assetHandler.CopyAssetLinkFiles(assetLinks, appearanceModSetting, _runVM.Value.CurrentRunOutputAssetPath);
+        _assetHandler.CopyAssetLinkFiles(assetLinks, appearanceModSetting, outputBaseDir);
     }
 
     
@@ -429,16 +423,16 @@ public class RaceHandler
         var ouputPath = Path.Combine(_serializationDir, DateTime.Now.ToString("yyyy_MM_dd_HH-mm-ss"));
 
         //MutagenYamlConverter.Instance.Serialize(tempMod, ouputPath).Wait();
-        _runVM.Value.AppendLog("Serialized saved races to " + ouputPath);
+        AppendLog("Serialized saved races to " + ouputPath);
     }
 
     // --- Forward Race Edits From YAML ---
     private async Task ForwardRaceEditsFromYamlAsync()
     {
-        _runVM.Value.AppendLog("\n--- Initiating Forward Race Edits from YAML ---");
+        AppendLog("\n--- Initiating Forward Race Edits from YAML ---");
         if (!_environmentStateProvider.EnvironmentIsValid)
         {
-            _runVM.Value.AppendLog("Environment not valid. Cannot proceed.");
+            AppendLog("Environment not valid. Cannot proceed.");
             return;
         }
 
@@ -452,12 +446,12 @@ public class RaceHandler
 
         if (openFileDialog.ShowDialog() != true)
         {
-            _runVM.Value.AppendLog("No YAML file selected. Operation cancelled.");
+            AppendLog("No YAML file selected. Operation cancelled.");
             return;
         }
 
         string yamlFilePath = openFileDialog.FileName;
-        _runVM.Value.AppendLog($"Processing YAML file: {yamlFilePath}");
+        AppendLog($"Processing YAML file: {yamlFilePath}");
 
         try
         {
@@ -465,12 +459,12 @@ public class RaceHandler
         }
         catch (Exception ex)
         {
-            _runVM.Value.AppendLog(
+            AppendLog(
                 $"An unexpected error occurred while forwarding race edits: {ExceptionLogger.GetExceptionStack(ex)}");
         }
         finally
         {
-            _runVM.Value.AppendLog("--- Finished Forward Race Edits from YAML ---");
+            AppendLog("--- Finished Forward Race Edits from YAML ---");
         }
     }
 

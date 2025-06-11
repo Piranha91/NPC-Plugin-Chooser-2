@@ -6,7 +6,7 @@ using Noggog;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
-public class BsaHandler
+public class BsaHandler : OptionalUIModule
 {
     private Dictionary<FilePath, IArchiveReader> _openBsaArchiveReaders = new();
     
@@ -76,7 +76,7 @@ public class BsaHandler
         string? dirPath = Path.GetDirectoryName(destPath);
         if (string.IsNullOrEmpty(dirPath)) // Also check for empty string
         {
-            System.Diagnostics.Debug.WriteLine($"ERROR: Could not get directory path from destination '{destPath}'");
+            AppendLog($"ERROR: Could not get directory path from destination '{destPath}'", true);
             return false; // Invalid destination path
         }
 
@@ -98,24 +98,24 @@ public class BsaHandler
         }
         catch (IOException ioEx) // Catch specific IO errors
         {
-            System.Diagnostics.Debug.WriteLine($"IO ERROR extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ioEx)}");
+            AppendLog($"IO ERROR extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ioEx)}", true);
             // Common issues: File locked, disk full, path too long
             return false; // Failure
         }
         catch (UnauthorizedAccessException authEx) // Catch permission errors
         {
-            System.Diagnostics.Debug.WriteLine($"ACCESS ERROR extracting BSA file: {file.Path} to {destPath}. Check permissions. Error: {ExceptionLogger.GetExceptionStack(authEx)}");
+            AppendLog($"ACCESS ERROR extracting BSA file: {file.Path} to {destPath}. Check permissions. Error: {ExceptionLogger.GetExceptionStack(authEx)}", true);
             return false; // Failure
         }
         catch (Exception ex) // Catch any other unexpected errors
         {
-            System.Diagnostics.Debug.WriteLine($"GENERAL ERROR extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ex)}");
+            AppendLog($"GENERAL ERROR extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ex)}", true);
             return false; // Failure
         }
     }
 
     // Keep OpenBsaArchiveReaders (no change needed based on clarifications)
-    public HashSet<IArchiveReader> OpenBsaArchiveReaders(string sourceDirectory, ModKey pluginKey, Action<string, bool, bool>? log = null)
+    public HashSet<IArchiveReader> OpenBsaArchiveReaders(string sourceDirectory, ModKey pluginKey)
     {
         var readers = new HashSet<IArchiveReader>();
         // Use the SkyrimRelease from your EnvironmentStateProvider if needed
@@ -134,7 +134,7 @@ public class BsaHandler
                     }
                     else if (File.Exists(bsaFile))
                     {
-                        log?.Invoke($"Loading BSA archive for {bsaFile}", true, false);  // ❷  safe-invoke
+                        AppendLog($"Loading BSA archive for {bsaFile}");  // ❷  safe-invoke
                         var bsaReader = Archive.CreateReader(gameRelease, bsaFile);
                         readers.Add(bsaReader);
                         _openBsaArchiveReaders[bsaFile] = bsaReader;
@@ -142,13 +142,13 @@ public class BsaHandler
                     else
                     {
                         // Log if an expected BSA path doesn't exist? Optional.
-                        System.Diagnostics.Debug.WriteLine($"INFO: Applicable BSA path not found: {bsaFile}");
+                        AppendLog($"INFO: Applicable BSA path not found: {bsaFile}");
                     }
                 }
                 catch (Exception exInner)
                 {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"ERROR opening archive '{bsaFile}': {ExceptionLogger.GetExceptionStack(exInner)}");
+                    AppendLog(
+                        $"ERROR opening archive '{bsaFile}': {ExceptionLogger.GetExceptionStack(exInner)}", true);
                     // Decide whether to continue or throw
                 }
             }
@@ -156,8 +156,8 @@ public class BsaHandler
         catch (Exception exOuter)
         {
             // Error enumerating paths?
-            System.Diagnostics.Debug.WriteLine(
-                $"ERROR getting applicable archive paths for {pluginKey} in {sourceDirectory}: {ExceptionLogger.GetExceptionStack(exOuter)}");
+            AppendLog(
+                $"ERROR getting applicable archive paths for {pluginKey} in {sourceDirectory}: {ExceptionLogger.GetExceptionStack(exOuter)}", true);
             // Decide whether to throw
         }
 

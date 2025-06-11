@@ -31,6 +31,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Lazy<VM_Mods> _lazyVmMods;
         private readonly Patcher _patcher;
         private readonly Validator _validator;
+        private readonly RaceHandler _raceHandler;
+        private readonly BsaHandler _bsaHandler;
         private readonly CompositeDisposable _disposables = new();
 
         // --- Constants ---
@@ -69,7 +71,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             VM_Settings vmSettings,
             Lazy<VM_Mods> lazyVmMods,
             Patcher patcher,
-            Validator validator)
+            Validator validator,
+            RaceHandler raceHandler,
+            BsaHandler bsaHandler)
         {
             _environmentStateProvider = environmentStateProvider;
             _settings = settings;
@@ -77,9 +81,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _lazyVmMods = lazyVmMods;
             _patcher = patcher;
             _validator = validator;
+            _raceHandler = raceHandler;
+            _bsaHandler = bsaHandler;
             
             _patcher.Initialize(AppendLog, UpdateProgress, ResetProgress, ResetLog);
-            _validator.Initialize(AppendLog, UpdateProgress, ResetProgress);
+            _validator.Initialize(AppendLog, UpdateProgress, ResetProgress, ResetLog);
+            _raceHandler.Initialize(AppendLog, UpdateProgress, ResetProgress, ResetLog);
+            _bsaHandler.Initialize(AppendLog, UpdateProgress, ResetProgress, ResetLog);
 
             // Command can only execute if environment is valid and not already running
             var canExecute = this.WhenAnyValue(x => x.IsRunning, x => x._environmentStateProvider.EnvironmentIsValid,

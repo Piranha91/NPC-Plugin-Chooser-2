@@ -178,7 +178,7 @@ public class AssetHandler
         await Task.Run(() =>
             UnpackAssetsFromBSA(meshToCopyRelativePaths, textureToCopyRelativePaths,
                 extractedMeshFiles, extractedTextureFiles,
-                appearancePluginKey, assetSourceDirs, outputBasePath, _runVM.Value.AppendLog));
+                appearancePluginKey, assetSourceDirs, outputBasePath));
         _runVM.Value.AppendLog(
             $"      Extracted {extractedMeshFiles.Count} meshes and {extractedTextureFiles.Count} textures from BSAs."); // Verbose only
 
@@ -210,8 +210,7 @@ public class AssetHandler
             {
                 HashSet<string> newlyExtractedNifTextures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 UnpackAssetsFromBSA(new HashSet<string>(), texturesFromNifsRelativePaths, new HashSet<string>(),
-                    newlyExtractedNifTextures, appearancePluginKey, assetSourceDirs, outputBasePath,
-                    _runVM.Value.AppendLog);
+                    newlyExtractedNifTextures, appearancePluginKey, assetSourceDirs, outputBasePath);
                 _runVM.Value.AppendLog(
                     $"        Extracted {newlyExtractedNifTextures.Count} of these additional textures from BSAs."); // Verbose only
                 texturesFromNifsRelativePaths.ExceptWith(newlyExtractedNifTextures);
@@ -355,7 +354,7 @@ public class AssetHandler
         {
             if (_bsaHandler.DirectoryHasCorrespondingBsaFile(dir, baseNpcPlugin))
             {
-                var readers = _bsaHandler.OpenBsaArchiveReaders(dir, baseNpcPlugin, log);
+                var readers = _bsaHandler.OpenBsaArchiveReaders(dir, baseNpcPlugin);
 
                 if (_bsaHandler.TryGetFileFromReaders(dataRelativePath, readers, out IArchiveFile? archiveFile) &&
                     archiveFile != null &&
@@ -412,8 +411,7 @@ public class AssetHandler
     private void UnpackAssetsFromBSA(
         HashSet<string> MeshesToExtract, HashSet<string> TexturesToExtract,
         HashSet<string> extractedMeshes, HashSet<string> extractedTextures,
-        ModKey currentPluginKey, List<string> assetSourceDirs, string targetAssetPath,
-        Action<string, bool, bool>? log = null)
+        ModKey currentPluginKey, List<string> assetSourceDirs, string targetAssetPath)
     {
         if (!assetSourceDirs.Any()) return;
 
@@ -427,7 +425,7 @@ public class AssetHandler
         {
             string sourceDir = assetSourceDirs[i];
             var readers =
-                _bsaHandler.OpenBsaArchiveReaders(sourceDir, currentPluginKey, log);
+                _bsaHandler.OpenBsaArchiveReaders(sourceDir, currentPluginKey);
             if (!readers.Any()) continue;
 
             // Check remaining meshes

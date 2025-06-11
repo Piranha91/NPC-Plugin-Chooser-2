@@ -8,13 +8,8 @@ using NPC_Plugin_Chooser_2.View_Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
-public class Patcher
+public class Patcher : OptionalUIModule
 {
-    private Action<string, bool, bool>? _appendLog;
-    private Action<int, int, string>? _updateProgress;
-    private Action? _resetProgress;
-    private Action? _resetLog;
-    
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly Settings _settings;
     private readonly Validator _validator;
@@ -41,38 +36,6 @@ public class Patcher
         _raceHandler = raceHandler;
         _duplicateInManager = duplicateInManager;
         _aux = aux;
-    }
-
-    public void Initialize(Action<string, bool, bool>? appendLog, Action<int, int, string>? updateProgress, Action? resetProgresss, Action? resetLog)
-    {
-        _appendLog = appendLog;
-        _updateProgress = updateProgress;
-        _resetProgress = resetProgresss;
-        _resetLog = resetLog;
-    }
-    
-    private void AppendLog(string message, bool isError = false, bool forceLog = false)
-    {
-        if (_appendLog == null) return;
-        _appendLog(message, isError, forceLog);
-    }
-
-    private void UpdateProgress(int current, int total, string message)
-    {
-        if (_updateProgress == null) return;
-        _updateProgress(current, total, message);
-    }
-
-    private void ResetProgress()
-    {
-        if (_resetProgress == null) return;
-        _resetProgress();
-    }
-
-    private void ResetLog()
-    {
-        if (_resetLog == null) return;
-        _resetLog();
     }
 
     public Dictionary<string, ModSetting> BuildModSettingsMap()
@@ -298,6 +261,8 @@ public class Patcher
                                         foreach (var ctx in dependencyRecords)
                                         {
                                             ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
+                                            var assets = _aux.ShallowGetAssetLinks(ctx.Record).Where(x => !assetLinks.Contains(x));
+                                            assetLinks.AddRange(assets);
                                         }
 
                                         break;
@@ -340,7 +305,7 @@ public class Patcher
                 } // End For Loop
             } // End else (selectionsToProcess.Any())
 
-            await Task.Run(() => _raceHandler.ApplyRaceChanges());
+            await Task.Run(() => _raceHandler.ApplyRaceChanges(_currentRunOutputAssetPath));
 
             UpdateProgress(processedCount + skippedCount, processedCount + skippedCount, "Finalizing...");
 

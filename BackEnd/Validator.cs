@@ -9,7 +9,7 @@ using NPC_Plugin_Chooser_2.Views;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
-public class Validator
+public class Validator : OptionalUIModule
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly Settings _settings;
@@ -26,31 +26,6 @@ public class Validator
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _bsaHandler = bsaHandler;
-    }
-    
-    public void Initialize(Action<string, bool, bool>? appendLog, Action<int, int, string>? updateProgress, Action? resetProgresss)
-    {
-        _appendLog = appendLog;
-        _updateProgress = updateProgress;
-        _resetProgress = resetProgresss;
-    }
-    
-    private void AppendLog(string message, bool isError = false, bool forceLog = false)
-    {
-        if (_appendLog == null) return;
-        _appendLog(message, isError, forceLog);
-    }
-
-    private void UpdateProgress(int current, int total, string message)
-    {
-        if (_updateProgress == null) return;
-        _updateProgress(current, total, message);
-    }
-    
-    private void ResetProgress()
-    {
-        if (_resetProgress == null) return;
-        _resetProgress();
     }
 
     public Dictionary<FormKey, ScreeningResult> GetScreeningCache()
