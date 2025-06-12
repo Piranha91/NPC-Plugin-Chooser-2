@@ -7,7 +7,7 @@ public class OptionalUIModule
     private Action? _resetProgress;
     private Action? _resetLog;
     
-    public void Initialize(Action<string, bool, bool>? appendLog, Action<int, int, string>? updateProgress, Action? resetProgresss, Action? resetLog)
+    public void ConnectToUILogger(Action<string, bool, bool>? appendLog, Action<int, int, string>? updateProgress, Action? resetProgresss, Action? resetLog)
     {
         _appendLog = appendLog;
         _updateProgress = updateProgress;

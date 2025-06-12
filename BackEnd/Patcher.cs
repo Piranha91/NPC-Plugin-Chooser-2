@@ -18,6 +18,7 @@ public class Patcher : OptionalUIModule
     private readonly RaceHandler _raceHandler;
     private readonly DuplicateInManager _duplicateInManager;
     private readonly Auxilliary _aux;
+    private readonly RecordDeltaPatcher _recordDeltaPatcher;
 
     private Dictionary<string, ModSetting> _modSettingsMap;
     private string _currentRunOutputAssetPath = string.Empty;
@@ -26,7 +27,7 @@ public class Patcher : OptionalUIModule
 
     public const string ALL_NPCS_GROUP = VM_Run.ALL_NPCS_GROUP;
     
-    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator, AssetHandler assetHandler, BsaHandler bsaHandler, RaceHandler raceHandler, DuplicateInManager duplicateInManager, Auxilliary aux)
+    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator, AssetHandler assetHandler, BsaHandler bsaHandler, RaceHandler raceHandler, DuplicateInManager duplicateInManager, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -36,6 +37,7 @@ public class Patcher : OptionalUIModule
         _raceHandler = raceHandler;
         _duplicateInManager = duplicateInManager;
         _aux = aux;
+        _recordDeltaPatcher = recordDeltaPatcher;
     }
 
     public Dictionary<string, ModSetting> BuildModSettingsMap()
@@ -59,6 +61,7 @@ public class Patcher : OptionalUIModule
             _raceHandler.Reinitialize();
             _duplicateInManager.Reinitialize();
             _assetHandler.Initialize();
+            _recordDeltaPatcher.Reinitialize();
 
             // --- Pre-Run Checks ---
             if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)

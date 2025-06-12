@@ -2,18 +2,12 @@
 using System.Reflection;
 using NPC_Plugin_Chooser_2.View_Models;
 using Mutagen.Bethesda;
-using Mutagen.Bethesda.Archives;
-using Mutagen.Bethesda.Assets;
 using Mutagen.Bethesda.Skyrim;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Assets;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
-using Mutagen.Bethesda.Serialization;
 using NPC_Plugin_Chooser_2.Models;
-using Mutagen.Bethesda.Serialization.Yaml;
-using AssetLinkCache = Mutagen.Bethesda.Plugins.Assets.AssetLinkCache;
-using AssetLinkQuery = Mutagen.Bethesda.Plugins.Assets.AssetLinkQuery;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -24,6 +18,7 @@ public class RaceHandler : OptionalUIModule
     private readonly DuplicateInManager _duplicateInManager;
     private readonly AssetHandler _assetHandler;
     private readonly Auxilliary _aux;
+    private readonly RecordDeltaPatcher _recordDeltaPatcher;
     private readonly string _serializationDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Serializations");
 
     // --- Data for Race Handling ---
@@ -34,13 +29,14 @@ public class RaceHandler : OptionalUIModule
     private Dictionary<FormKey, Dictionary<ModKey, List<string>>> _alteredPropertiesMap = new();
     private Dictionary<ModKey, Dictionary<FormKey, RaceEditInfo>> _racesToModify = new();
 
-    public RaceHandler(EnvironmentStateProvider environmentStateProvider, Lazy<VM_Run> runVM, Settings settings, DuplicateInManager duplicateInManager, AssetHandler assetHandler, Auxilliary aux)
+    public RaceHandler(EnvironmentStateProvider environmentStateProvider, Settings settings, DuplicateInManager duplicateInManager, AssetHandler assetHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _duplicateInManager = duplicateInManager;
         _assetHandler = assetHandler;
         _aux = aux;
+        _recordDeltaPatcher = recordDeltaPatcher;
     }
 
     internal class RaceEditInfo
@@ -237,9 +233,10 @@ public class RaceHandler : OptionalUIModule
             // We need to override originalRaceContext in the patch and forward differing properties.
             // Note the additional possibility that the winning appearance override set the NPC race to a DIFFERENT vanilla race, so we stil lneed to set the race first.
 
-            var racePropertyDeltas =
-                RaceHelpers.GetDifferingPropertyNames(appearanceModRaceContext.Record, originalRaceGetter);
-            if (racePropertyDeltas.Any())
+            var racePropertyDiffs =
+                _recordDeltaPatcher.GetPropertyDiffs(appearanceModRaceContext.Record, originalRaceGetter);
+
+            if (racePropertyDiffs.Any())
             {
                 var winningRaceGetter = raceContexts.First().Record;
                 if (winningRaceGetter == null)
@@ -251,19 +248,7 @@ public class RaceHandler : OptionalUIModule
                 var winningRaceRecord = _environmentStateProvider.OutputMod.Races.GetOrAddAsOverride(winningRaceGetter);
                 assetLinks.AddRange(_aux.ShallowGetAssetLinks(winningRaceRecord));
                 
-                // set the deltas
-                RaceHelpers.CopyPropertiesToNewRace(appearanceModRaceContext.Record, winningRaceRecord, racePropertyDeltas);
-                if (!_alteredPropertiesMap.ContainsKey(winningRaceRecord.FormKey))
-                {
-                    _alteredPropertiesMap[winningRaceRecord.FormKey] = new Dictionary<ModKey, List<string>>();
-                }
-
-                if (!_alteredPropertiesMap[winningRaceRecord.FormKey].ContainsKey(appearanceModKey))
-                {
-                    _alteredPropertiesMap[winningRaceRecord.FormKey][appearanceModKey] = new List<string>();
-                }
-                
-                _alteredPropertiesMap[winningRaceRecord.FormKey][appearanceModKey].AddRange(racePropertyDeltas);
+                _recordDeltaPatcher.ApplyPropertyDiffs(winningRaceRecord, racePropertyDiffs);
                 
                 // Get required asset file paths BEFORE remapping (to faciliate search by plugin)
                 if (searchDependencyRecords)
@@ -483,72 +468,5 @@ public class RaceHandler : OptionalUIModule
         public FormLink<IRaceGetter> OriginalRace { get; set; }
         public Race ModifiedRace { get; set; } // The actual race data from the appearance mod
         public ModKey AppearanceSourceMod { get; set; }
-    }
-}
-
-public static class RaceHelpers
-{
-    /// <summary>
-    /// Compares two <see cref="IRaceGetter"/>s and returns the names of every public
-    /// property whose values are not equal.
-    /// </summary>
-    public static IReadOnlyList<string> GetDifferingPropertyNames(
-        IRaceGetter first,
-        IRaceGetter second)
-    {
-        if (first  is null) throw new ArgumentNullException(nameof(first));
-        if (second is null) throw new ArgumentNullException(nameof(second));
-
-        var differences = new List<string>();
-
-        // All public instance properties declared on the interface
-        foreach (PropertyInfo pi in typeof(IRaceGetter)
-                                     .GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        {
-            object? a = pi.GetValue(first);
-            object? b = pi.GetValue(second);
-
-            // NB: object.Equals handles null‐checks for us
-            if (!Equals(a, b))
-                differences.Add(pi.Name);
-        }
-
-        return differences;
-    }
-
-    /// <summary>
-    /// Copies the properties named in <paramref name="propertiesToCopy"/> from
-    /// <paramref name="source"/> onto <paramref name="destinationRace"/>.
-    /// </summary>
-    public static void CopyPropertiesToNewRace(
-        IRaceGetter sourceGetter,
-        Race destinationRace,
-        IEnumerable<string> propertiesToCopy)
-    {
-        if (sourceGetter is null) throw new ArgumentNullException(nameof(sourceGetter));
-        if (destinationRace is null) throw new ArgumentNullException(nameof(destinationRace));
-        if (propertiesToCopy is null) throw new ArgumentNullException(nameof(propertiesToCopy));
-        
-        SkyrimMod tempMod = new("tempMod.esp", SkyrimRelease.SkyrimSE);
-        var source = tempMod.Races.GetOrAddAsOverride(sourceGetter);
-        
-        // Cache reflection once for speed
-        var getterProps = typeof(IRaceGetter)
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .ToDictionary(p => p.Name);
-
-        var setterProps = typeof(IRace)
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.CanWrite)
-            .ToDictionary(p => p.Name);
-
-        foreach (string propName in propertiesToCopy)
-        {
-            if (!getterProps.TryGetValue(propName, out PropertyInfo? srcPi)) continue; // unknown
-            if (!setterProps.TryGetValue(propName, out PropertyInfo? dstPi)) continue; // not writable
-
-            object? value = srcPi.GetValue(source);
-            dstPi.SetValue(destinationRace, value);
-        }
     }
 }
