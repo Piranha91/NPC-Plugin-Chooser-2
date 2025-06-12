@@ -63,6 +63,10 @@
       <Resource Include="Resources\No Associated Data.png">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Resource>
+      <None Remove="Resources\Multiple Plugins for NPC.png" />
+      <Resource Include="Resources\Multiple Plugins for NPC.png">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Resource>
     </ItemGroup>
 
 </Project>
