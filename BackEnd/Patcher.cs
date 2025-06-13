@@ -19,7 +19,7 @@ public class Patcher : OptionalUIModule
     private readonly DuplicateInManager _duplicateInManager;
     private readonly Auxilliary _aux;
     private readonly RecordDeltaPatcher _recordDeltaPatcher;
-
+    
     private Dictionary<string, ModSetting> _modSettingsMap;
     private string _currentRunOutputAssetPath = string.Empty;
 
@@ -231,7 +231,23 @@ public class Patcher : OptionalUIModule
                                             appearanceModSetting.CorrespondingModKeys); // To Do: Skip the Race formlink since that's handled separately
                                         foreach (var ctx in dependencyContexts)
                                         {
-                                            ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
+                                            bool wasDeltaPatched = false;
+                                            if (_aux.GetRecordFromMod(ctx.Record.ToLink(), ctx.Record.FormKey.ModKey,
+                                                    out var baseRecord) && baseRecord != null)
+                                            {
+                                                var recordDifs = _recordDeltaPatcher.GetPropertyDiffs(ctx.Record, baseRecord);
+                                                var getterType = Auxilliary.GetRecordGetterType(ctx.Record);
+                                                if (recordDifs.Any() && _environmentStateProvider.LinkCache.TryResolve(ctx.Record.FormKey, getterType, out var winningGetter) && winningGetter != null)
+                                                {
+                                                    var winningRecord = Auxilliary.GetOrAddGenericRecordAsOverride(winningGetter, _environmentStateProvider.OutputMod);
+                                                    _recordDeltaPatcher.ApplyPropertyDiffs(winningRecord, recordDifs);
+                                                }
+                                            }
+                                            
+                                            if (!wasDeltaPatched)
+                                            {
+                                                ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod); // fallback in case parent record isn't in the load order (will cause a missing master, but that's the user's problem)
+                                            }
                                             
                                             var assets = _aux.ShallowGetAssetLinks(ctx.Record).Where(x => !assetLinks.Contains(x));
                                             assetLinks.AddRange(assets);

@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using Loqui;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Assets;
@@ -189,6 +190,47 @@ public class Auxilliary
             CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, 2, 0);
         }
         return dependencyContexts.Distinct().ToHashSet();;
+    }
+
+    public bool GetRecordFromMod(IFormLinkGetter formLink, ModKey modKey, out IMajorRecordGetter? record)
+    {
+        if (_modLinkCaches.ContainsKey(modKey) && _modLinkCaches[modKey].TryResolve(formLink, out var modRecord) && modRecord is not null)
+        {
+            record = modRecord;
+            return true;
+        }
+        else if (_environmentStateProvider.LoadOrder.Keys.Contains(modKey))
+        {
+            var listing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
+            if (listing != null && listing.Mod != null)
+            {
+                _modLinkCaches[listing.ModKey] = new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(listing.Mod, new LinkCachePreferences());
+                if (_modLinkCaches[listing.ModKey].TryResolve(formLink, out modRecord) && modRecord is not null)
+                {
+                    record = modRecord;
+                    return true;
+                }
+            }
+        }
+        record = null;
+        return false;
+    }
+    
+    public static MajorRecord GetOrAddGenericRecordAsOverride(IMajorRecordGetter recordGetter, ISkyrimMod outputMod)
+    {
+        dynamic group = GetPatchRecordGroup(recordGetter, outputMod);
+        return OverrideMixIns.GetOrAddAsOverride(group, recordGetter);
+    }
+
+    public static IGroup GetPatchRecordGroup(IMajorRecordGetter recordGetter, ISkyrimMod outputMod)
+    {
+        var getterType = GetRecordGetterType(recordGetter);
+        return outputMod.GetTopLevelGroup(getterType);
+    }
+
+    public static Type GetRecordGetterType(IMajorRecordGetter recordGetter)
+    {
+        return LoquiRegistration.GetRegister(recordGetter.GetType()).GetterType;
     }
     
     private void CollectOverriddenDependencyRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
