@@ -14,7 +14,6 @@ public class Auxilliary
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly IAssetLinkCache _assetLinkCache;
-    private Dictionary<ModKey, ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>> _modLinkCaches = new();
     
     public Dictionary<ModKey, string> ModKeyPositionCache = new Dictionary<ModKey, string>();
     public Dictionary<FormKey, string> FormIDCache = new Dictionary<FormKey, string>();
@@ -172,48 +171,10 @@ public class Auxilliary
         return path;
     }
 
-    public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
-        DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys)
+    public static MajorRecord DuplicateGenericRecordAsNew(IMajorRecordGetter recordGetter, ISkyrimMod outputMod)
     {
-        var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
-        foreach (var modKey in relevantContextKeys)
-        {
-            var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
-            if (modListing != null && modListing.Mod != null)
-            {
-                _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences()));
-            }
-        }
-        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyContexts = new();
-        foreach (var link in containedFormLinks)
-        {
-            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, 2, 0);
-        }
-        return dependencyContexts.Distinct().ToHashSet();;
-    }
-
-    public bool GetRecordFromMod(IFormLinkGetter formLink, ModKey modKey, out IMajorRecordGetter? record)
-    {
-        if (_modLinkCaches.ContainsKey(modKey) && _modLinkCaches[modKey].TryResolve(formLink, out var modRecord) && modRecord is not null)
-        {
-            record = modRecord;
-            return true;
-        }
-        else if (_environmentStateProvider.LoadOrder.Keys.Contains(modKey))
-        {
-            var listing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
-            if (listing != null && listing.Mod != null)
-            {
-                _modLinkCaches[listing.ModKey] = new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(listing.Mod, new LinkCachePreferences());
-                if (_modLinkCaches[listing.ModKey].TryResolve(formLink, out modRecord) && modRecord is not null)
-                {
-                    record = modRecord;
-                    return true;
-                }
-            }
-        }
-        record = null;
-        return false;
+        dynamic group = GetPatchRecordGroup(recordGetter, outputMod);
+        return IGroupMixIns.DuplicateInAsNewRecord(group, recordGetter);
     }
     
     public static MajorRecord GetOrAddGenericRecordAsOverride(IMajorRecordGetter recordGetter, ISkyrimMod outputMod)
@@ -231,67 +192,6 @@ public class Auxilliary
     public static Type GetRecordGetterType(IMajorRecordGetter recordGetter)
     {
         return LoquiRegistration.GetRegister(recordGetter.GetType()).GetterType;
-    }
-    
-    private void CollectOverriddenDependencyRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
-        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey>? searchedFormKeys = null)
-    {
-        if (formLinkGetter.IsNull)
-        {
-            return;
-        }
-
-        currentDepth++;
-        if (currentDepth > maxNestedIntervalDepth) {return;}
-        
-        if (searchedFormKeys == null)
-        {
-            searchedFormKeys = new HashSet<FormKey>();
-        }
-        
-        searchedFormKeys.Add(formLinkGetter.FormKey);
-
-        IMajorRecordGetter? modRecord = null;
-        
-        // try to get the record version in the given mod plugin if possible
-        foreach (var modKey in relevantContextKeys)
-        {
-            if (_modLinkCaches.ContainsKey(modKey) && _modLinkCaches[modKey].TryResolve(formLinkGetter, out modRecord) && modRecord != null)
-            {
-                var context = _modLinkCaches[modKey].ResolveContext(formLinkGetter);
-                collectedRecords.Add(context);
-                currentDepth = 0; // reset the interval search
-                break;
-            }
-        }
-        
-        // otherwise, traverse the parent record
-        if (modRecord is null)
-        {
-            var parentmod = formLinkGetter.FormKey.ModKey;
-            if (!_modLinkCaches.ContainsKey(parentmod))
-            {
-                var parentListing = _environmentStateProvider.LoadOrder.TryGetValue(parentmod);
-                if (parentListing != null && parentListing.Mod != null)
-                {
-                    _modLinkCaches[parentListing.ModKey] = new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(parentListing.Mod, new LinkCachePreferences());
-                }
-            }
-
-            if (_modLinkCaches.ContainsKey(parentmod))
-            {
-                _modLinkCaches[parentmod].TryResolve(formLinkGetter, out modRecord);
-            }
-        }
-        
-        if (modRecord != null)
-        {
-            var sublinks = modRecord.EnumerateFormLinks();
-            foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)).ToArray())
-            {
-                CollectOverriddenDependencyRecords(subLink, relevantContextKeys, collectedRecords, maxNestedIntervalDepth, currentDepth, searchedFormKeys);
-            }
-        }
     }
 
     public List<IAssetLinkGetter> ShallowGetAssetLinks(IMajorRecordGetter recordGetter)
@@ -333,19 +233,5 @@ public class Auxilliary
                 CollectDeepAssetLinks(subLink, assetLinkGetters, relevantContextKeys, assetLinkCache, searchedFormKeys);
             }
         }
-    }
-
-    // Define Base Game Plugins
-    private static readonly HashSet<ModKey> BaseGamePlugins = new()
-    {
-        ModKey.FromNameAndExtension("Skyrim.esm"),
-        ModKey.FromNameAndExtension("Update.esm"),
-        ModKey.FromNameAndExtension("Dawnguard.esm"),
-        ModKey.FromNameAndExtension("HearthFires.esm"),
-        ModKey.FromNameAndExtension("Dragonborn.esm")
-    };
-    public bool IsBaseGamePlugin(ModKey modKey)
-    {
-        return BaseGamePlugins.Contains(modKey);
     }
 }

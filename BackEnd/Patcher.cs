@@ -2,6 +2,7 @@
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Assets;
+using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
@@ -14,9 +15,8 @@ public class Patcher : OptionalUIModule
     private readonly Settings _settings;
     private readonly Validator _validator;
     private readonly AssetHandler _assetHandler;
-    private readonly BsaHandler _bsaHandler;
     private readonly RaceHandler _raceHandler;
-    private readonly DuplicateInManager _duplicateInManager;
+    private readonly RecordHandler _recordHandler;
     private readonly Auxilliary _aux;
     private readonly RecordDeltaPatcher _recordDeltaPatcher;
     
@@ -27,15 +27,14 @@ public class Patcher : OptionalUIModule
 
     public const string ALL_NPCS_GROUP = VM_Run.ALL_NPCS_GROUP;
     
-    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator, AssetHandler assetHandler, BsaHandler bsaHandler, RaceHandler raceHandler, DuplicateInManager duplicateInManager, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher)
+    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator, AssetHandler assetHandler, RaceHandler raceHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _validator = validator;
         _assetHandler = assetHandler;
-        _bsaHandler = bsaHandler;
         _raceHandler = raceHandler;
-        _duplicateInManager = duplicateInManager;
+        _recordHandler = recordHandler;
         _aux = aux;
         _recordDeltaPatcher = recordDeltaPatcher;
     }
@@ -59,7 +58,7 @@ public class Patcher : OptionalUIModule
             AppendLog("Starting patch generation..."); // Verbose only
             
             _raceHandler.Reinitialize();
-            _duplicateInManager.Reinitialize();
+            _recordHandler.Reinitialize();
             _assetHandler.Initialize();
             _recordDeltaPatcher.Reinitialize();
 
@@ -226,13 +225,14 @@ public class Patcher : OptionalUIModule
                                 {
                                     case RecordOverrideHandlingMode.Ignore:
                                         break;
+                                    
                                     case RecordOverrideHandlingMode.Include:
-                                        var dependencyContexts = _aux.DeepGetOverriddenDependencyRecords(patchNpc,
+                                        var dependencyContexts = _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
                                             appearanceModSetting.CorrespondingModKeys); // To Do: Skip the Race formlink since that's handled separately
                                         foreach (var ctx in dependencyContexts)
                                         {
                                             bool wasDeltaPatched = false;
-                                            if (_aux.GetRecordFromMod(ctx.Record.ToLink(), ctx.Record.FormKey.ModKey,
+                                            if (_recordHandler.GetRecordFromMod(ctx.Record.ToLink(), ctx.Record.FormKey.ModKey,
                                                     out var baseRecord) && baseRecord != null)
                                             {
                                                 var recordDifs = _recordDeltaPatcher.GetPropertyDiffs(ctx.Record, baseRecord);
@@ -252,7 +252,18 @@ public class Patcher : OptionalUIModule
                                             var assets = _aux.ShallowGetAssetLinks(ctx.Record).Where(x => !assetLinks.Contains(x));
                                             assetLinks.AddRange(assets);
                                         }
-
+                                        break;
+                                    
+                                    case RecordOverrideHandlingMode.IncludeAsNew:
+                                        var mergedInRecords =
+                                            _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord,
+                                                appearanceModSetting.CorrespondingModKeys);
+                                        foreach (var rec in mergedInRecords)
+                                        {
+                                            var assets = _aux.ShallowGetAssetLinks(rec).Where(x => !assetLinks.Contains(x));
+                                            assetLinks.AddRange(assets);
+                                        }
+                                        
                                         break;
                                 }
                                 break;
@@ -264,7 +275,7 @@ public class Patcher : OptionalUIModule
                                 // deep copy in all dependencies
                                 if (mergeInDependencyRecords)
                                 {
-                                    _duplicateInManager.DuplicateFromOnlyReferencedGetters(
+                                    _recordHandler.DuplicateFromOnlyReferencedGetters(
                                         _environmentStateProvider.OutputMod, patchNpc,
                                         appearanceModSetting.CorrespondingModKeys,
                                         appearanceModKey.Value, true);
@@ -274,16 +285,27 @@ public class Patcher : OptionalUIModule
                                 {
                                     case RecordOverrideHandlingMode.Ignore:
                                         break;
+                                    
                                     case RecordOverrideHandlingMode.Include:
-                                        var dependencyRecords = _aux.DeepGetOverriddenDependencyRecords(patchNpc,
-                                            appearanceModSetting.CorrespondingModKeys); // To Do: Skip the Race formlink since that's handled separately
+                                        var dependencyRecords = _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
+                                            appearanceModSetting.CorrespondingModKeys);
                                         foreach (var ctx in dependencyRecords)
                                         {
                                             ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
                                             var assets = _aux.ShallowGetAssetLinks(ctx.Record).Where(x => !assetLinks.Contains(x));
                                             assetLinks.AddRange(assets);
                                         }
-
+                                        break;
+                                    
+                                    case RecordOverrideHandlingMode.IncludeAsNew:
+                                        var mergedInRecords =
+                                            _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord,
+                                                appearanceModSetting.CorrespondingModKeys);
+                                        foreach (var rec in mergedInRecords)
+                                        {
+                                            var assets = _aux.ShallowGetAssetLinks(rec).Where(x => !assetLinks.Contains(x));
+                                            assetLinks.AddRange(assets);
+                                        }
                                         break;
                                 }
                                 break;
@@ -410,15 +432,15 @@ public class Patcher : OptionalUIModule
             {
                 try
                 {
-                    _duplicateInManager.DuplicateInFormLink(targetNpc.WornArmor, sourceNpc.WornArmor,
+                    _recordHandler.DuplicateInFormLink(targetNpc.WornArmor, sourceNpc.WornArmor,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
                         sourceNpcContextModKey);
 
-                    _duplicateInManager.DuplicateInFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture,
+                    _recordHandler.DuplicateInFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
                         sourceNpcContextModKey);
 
-                    _duplicateInManager.DuplicateInFormLink(targetNpc.HairColor, sourceNpc.HairColor,
+                    _recordHandler.DuplicateInFormLink(targetNpc.HairColor, sourceNpc.HairColor,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
                         sourceNpcContextModKey);
 
@@ -426,7 +448,7 @@ public class Patcher : OptionalUIModule
                     foreach (var hp in sourceNpc.HeadParts.Where(x => !x.IsNull))
                     {
                         var targetHp = new FormLink<IHeadPartGetter>();
-                        _duplicateInManager.DuplicateInFormLink(targetHp, hp,
+                        _recordHandler.DuplicateInFormLink(targetHp, hp,
                             _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
                             sourceNpcContextModKey);
                         targetNpc.HeadParts.Add(targetHp);

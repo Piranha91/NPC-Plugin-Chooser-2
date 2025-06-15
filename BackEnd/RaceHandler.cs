@@ -15,7 +15,7 @@ public class RaceHandler : OptionalUIModule
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly Settings _settings;
-    private readonly DuplicateInManager _duplicateInManager;
+    private readonly RecordHandler _recordHandler;
     private readonly AssetHandler _assetHandler;
     private readonly Auxilliary _aux;
     private readonly RecordDeltaPatcher _recordDeltaPatcher;
@@ -29,11 +29,11 @@ public class RaceHandler : OptionalUIModule
     private Dictionary<FormKey, Dictionary<ModKey, List<string>>> _alteredPropertiesMap = new();
     private Dictionary<ModKey, Dictionary<FormKey, RaceEditInfo>> _racesToModify = new();
 
-    public RaceHandler(EnvironmentStateProvider environmentStateProvider, Settings settings, DuplicateInManager duplicateInManager, AssetHandler assetHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher)
+    public RaceHandler(EnvironmentStateProvider environmentStateProvider, Settings settings, RecordHandler recordHandler, AssetHandler assetHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
-        _duplicateInManager = duplicateInManager;
+        _recordHandler = recordHandler;
         _assetHandler = assetHandler;
         _aux = aux;
         _recordDeltaPatcher = recordDeltaPatcher;
@@ -149,7 +149,7 @@ public class RaceHandler : OptionalUIModule
 
             // Add the race record (as it exists in the patch, which is an override of currentNpcRaceRecord)
             // to the map for dependency duplication.
-            _duplicateInManager.DuplicateInFormLink(patchNpc.Race, raceGetterFromAppearanceMod.ToLink(),
+            _recordHandler.DuplicateInFormLink(patchNpc.Race, raceGetterFromAppearanceMod.ToLink(),
                 _environmentStateProvider.OutputMod,
                 appearanceModSetting.CorrespondingModKeys, appearanceModKey);
             return; // Handled
@@ -253,7 +253,7 @@ public class RaceHandler : OptionalUIModule
                 // Get required asset file paths BEFORE remapping (to faciliate search by plugin)
                 if (searchDependencyRecords)
                 {
-                    dependencyRecords = _aux.DeepGetOverriddenDependencyRecords(winningRaceGetter,
+                    dependencyRecords = _recordHandler.DeepGetOverriddenDependencyRecords(winningRaceGetter,
                         appearanceModSetting.CorrespondingModKeys);
 
                     foreach (var ctx in dependencyRecords)
@@ -267,12 +267,12 @@ public class RaceHandler : OptionalUIModule
                 // remap dependencies if needed
                 if (appearanceModSetting.MergeInDependencyRecords)
                 {
-                    _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
+                    _recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
                         winningRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
 
                     foreach (var ctx in dependencyRecords)
                     {
-                        _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
+                        _recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
                             ctx.Record,
                             appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
                     }
@@ -325,7 +325,7 @@ public class RaceHandler : OptionalUIModule
             
             if (searchDependencyRecords)
             {
-                dependencyRecords = _aux.DeepGetOverriddenDependencyRecords(appearanceRaceRecord,
+                dependencyRecords = _recordHandler.DeepGetOverriddenDependencyRecords(appearanceRaceRecord,
                     appearanceModSetting.CorrespondingModKeys);
 
                 foreach (var ctx in dependencyRecords)
@@ -339,7 +339,7 @@ public class RaceHandler : OptionalUIModule
             // remap dependencies if needed
             if (appearanceModSetting.MergeInDependencyRecords)
             {
-                _duplicateInManager.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
+                _recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
                     appearanceRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
 
                 assetLinks = _aux.DeepGetAssetLinks(appearanceRaceRecord, appearanceModSetting.CorrespondingModKeys);
