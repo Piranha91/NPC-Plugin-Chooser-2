@@ -163,6 +163,8 @@ public class RecordHandler
             typesToInspect);
     }
     
+    
+    
     #endregion
 
     #region Collect Overrides of Existing Records
@@ -307,7 +309,6 @@ public class RecordHandler
         IMajorRecordGetter? traversedModRecord = null;
         IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>? modContext = null;
         
-        
         // try to get the record version in the given mod plugin if possible
         foreach (var modKey in relevantContextKeys)
         {
@@ -332,6 +333,7 @@ public class RecordHandler
                     duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + modKey.FileName;
                     traversedModRecord = duplicate;
                     _contextMappings[modKey].Add(formLinkGetter.FormKey, duplicate.FormKey);
+                    remappedSubLinks.Add(formLinkGetter.FormKey, duplicate.FormKey);
                     mergedInRecords.Add(duplicate);
                     parentRecordShouldBeMergedIn = true;
                     currentRecordHasBeenMergedIn = true;
@@ -392,7 +394,7 @@ public class RecordHandler
             if (parentRecordShouldBeMergedIn && !currentRecordHasBeenMergedIn && !remappedSubLinks.ContainsKey(formLinkGetter.FormKey))
             {
                 var duplicate = Auxilliary.DuplicateGenericRecordAsNew(traversedModRecord, outputMod);
-                duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_CurrentWinner";
+                duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + formLinkGetter.FormKey.ModKey;
                 remappedSubLinks.Add(formLinkGetter.FormKey, duplicate.FormKey);
                 mergedInRecords.Add(duplicate);
             }
