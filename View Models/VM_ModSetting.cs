@@ -762,8 +762,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
             
             // check BSA facegen
             List<string> searchDirs = new();
+
+            bool isBaseGameMod = false;
+            var implicitModKeys = Implicits.Get(_environmentStateProvider.SkyrimVersion.ToGameRelease()).Listings;
+            foreach (var mk in CorrespondingModKeys)
+            {
+                if (implicitModKeys.Contains(mk))
+                {
+                    isBaseGameMod = true;
+                    break;
+                }
+            }
             
-            if (_aux.IsBaseGamePlugin(formKey.ModKey))
+            if (isBaseGameMod)
             {
                 searchDirs.Add(_environmentStateProvider.DataFolderPath);
             }
