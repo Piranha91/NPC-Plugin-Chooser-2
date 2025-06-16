@@ -194,6 +194,11 @@ public class Auxilliary
         return LoquiRegistration.GetRegister(recordGetter.GetType()).GetterType;
     }
 
+    public static Type GetLoquiType(Type type)
+    {
+        return LoquiRegistration.GetRegister(type).GetterType;
+    }
+
     public List<IAssetLinkGetter> ShallowGetAssetLinks(IMajorRecordGetter recordGetter)
     {
         return recordGetter.EnumerateAssetLinks(AssetLinkQuery.Listed, _assetLinkCache, null)

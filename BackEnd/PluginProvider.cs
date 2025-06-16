@@ -1,0 +1,83 @@
+﻿using System.IO;
+using Mutagen.Bethesda;
+using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Records;
+using Mutagen.Bethesda.Skyrim;
+using NPC_Plugin_Chooser_2.Models;
+
+namespace NPC_Plugin_Chooser_2.BackEnd;
+
+public class PluginProvider
+{
+    private Dictionary<ModKey, ISkyrimModGetter> _pluginCache = new();
+
+    private readonly EnvironmentStateProvider _environmentStateProvider;
+    private readonly Settings _settings;
+
+    public PluginProvider(EnvironmentStateProvider environmentStateProvider, Settings settings)
+    {
+        _environmentStateProvider = environmentStateProvider;
+        _settings = settings;
+    }
+
+    public bool TryGetPlugin(ModKey modKey, string? fallBackModPath, out ISkyrimModGetter? plugin)
+    {
+        if (_pluginCache.TryGetValue(modKey, out plugin))
+        {
+            return true;
+        }
+
+        var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
+        if (modListing != null)
+        {
+            plugin = modListing.Mod;
+            if (plugin != null)
+            {
+                _pluginCache.Add(modKey, plugin);
+                return true;
+            }
+        }
+        
+        if (fallBackModPath != null)
+        {
+            var fullPath = Path.Combine(_settings.ModsFolder, fallBackModPath, modKey.ToString());
+            if (File.Exists(fullPath))
+            {
+                var imported = SkyrimMod.CreateFromBinary(fullPath, SkyrimRelease.SkyrimSE);
+                plugin = imported;
+                if (plugin != null)
+                {
+                    _pluginCache.Add(modKey, plugin);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    public bool TryGetRecord(FormKey formKey, ModKey modKey, Type? type, out IMajorRecordGetter? record)
+    {
+        record = null;
+        if (TryGetPlugin(modKey, null, out var plugin) && plugin != null)
+        {
+            var cache = plugin.ToImmutableLinkCache<ISkyrimMod, ISkyrimModGetter>();
+            if (type != null)
+            {
+                if (cache.TryResolve(formKey, type, out record))
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                if (cache.TryResolve(formKey, out record))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+}

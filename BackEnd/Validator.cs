@@ -14,6 +14,7 @@ public class Validator : OptionalUIModule
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly Settings _settings;
     private readonly BsaHandler _bsaHandler;
+    private readonly PluginProvider _pluginProvider;
     
     private Action<string, bool, bool>? _appendLog;
     private Action<int, int, string>? _updateProgress;
@@ -21,11 +22,12 @@ public class Validator : OptionalUIModule
 
     private Dictionary<FormKey, ScreeningResult> _screeningCache = new();
     
-    public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, BsaHandler bsaHandler)
+    public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, BsaHandler bsaHandler, PluginProvider pluginProvider)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _bsaHandler = bsaHandler;
+        _pluginProvider = pluginProvider;
     }
 
     public Dictionary<FormKey, ScreeningResult> GetScreeningCache()
@@ -110,9 +112,15 @@ public class Validator : OptionalUIModule
                 
                 appearanceModRecord = baseNpcRecord; // placeholder to initialize
                 appearanceModKey = npcFormKey.ModKey; // placeholder to initialize
-
-                var npcContextModKeys = contexts.Select(x => x.ModKey).ToList();
-                var availableModKeysForThisNpcInSelectedAppearanceMod = npcContextModKeys.Intersect(appearanceModSetting.CorrespondingModKeys).ToList();
+                
+                var availableModKeysForThisNpcInSelectedAppearanceMod = new List<ModKey>();
+                foreach (var mk in appearanceModSetting.CorrespondingModKeys)
+                {
+                    if (_pluginProvider.TryGetPlugin(mk, appearanceModSetting.DisplayName, out _))
+                    {
+                        availableModKeysForThisNpcInSelectedAppearanceMod.Add(mk);
+                    }
+                }
 
                 if (!availableModKeysForThisNpcInSelectedAppearanceMod.Any() && appearanceModSetting.CorrespondingModKeys.Any()) // If there are no appearanceModSetting.CorrespondingModKeys, the baseNpcRecord is used
                 {
@@ -127,11 +135,10 @@ public class Validator : OptionalUIModule
                 
                 if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out ModKey disambiguation))
                 {
-                    if (npcContextModKeys.Contains(disambiguation))
+                    if (availableModKeysForThisNpcInSelectedAppearanceMod.Contains(disambiguation) && _pluginProvider.TryGetRecord(npcFormKey, disambiguation, Auxilliary.GetLoquiType(typeof(INpcGetter)), out var record) && record != null)
                     {
-                        var disambiguatedContext = contexts.First(x => x.ModKey == disambiguation);
-                        appearanceModRecord = disambiguatedContext.Record;
-                        appearanceModKey = disambiguatedContext.ModKey;
+                        appearanceModRecord = record as INpcGetter;
+                        appearanceModKey = disambiguation;
                         correspondingRecordFound = true;
                         AppendLog(
                             $"    Screening: Found assigned plugin record override in {appearanceModRecord.FormKey.ModKey.FileName}. Using this as source."); // Verbose only
@@ -155,25 +162,32 @@ public class Validator : OptionalUIModule
                     }
                     else if (availableModKeysForThisNpcInSelectedAppearanceMod.Any())
                     {
-                        var firstCandidate = availableModKeysForThisNpcInSelectedAppearanceMod.First();
-                        var firstContext = contexts.
-                            First(x => x.ModKey.Equals(firstCandidate));
-                        appearanceModRecord = firstContext.Record;
-                        appearanceModKey = firstContext.ModKey;
-                        AppendLog(
-                            $"    Screening: Selected plugin record override in {appearanceModRecord.FormKey.ModKey.FileName}. Using this as source."); // Verbose only
-                        correspondingRecordFound = true;
+                        foreach (var candidate in availableModKeysForThisNpcInSelectedAppearanceMod)
+                        {
+                            if (availableModKeysForThisNpcInSelectedAppearanceMod.Contains(candidate) &&
+                                _pluginProvider.TryGetRecord(npcFormKey, candidate,
+                                    Auxilliary.GetLoquiType(typeof(INpcGetter)), out var record) && record != null)
+                            {
+                                appearanceModRecord = record as INpcGetter;
+                                appearanceModKey = candidate;
+                                AppendLog(
+                                    $"    Screening: Selected plugin record override in {appearanceModRecord.FormKey.ModKey.FileName}. Using this as source."); // Verbose only
+                                correspondingRecordFound = true;
+                                break;
+                            }
+                        }
                     }
-                    else
-                    {
-                        AppendLog(
-                            $"  SCREENING ERROR: Cannot find any plugins in Mod Setting '{selectedModDisplayName}' for NPC {npcIdentifier}. Invalid selection.",
-                            true);
-                        invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod Setting doesn't contain any plugin for this NPC)");
-                        // Add a placeholder invalid result to cache? Or just rely on the invalidSelections list? Let's rely on the list for now.
-                        await Task.Delay(1);
-                        continue;
-                    }
+                }
+                
+                if (!correspondingRecordFound)
+                {
+                    AppendLog(
+                        $"  SCREENING ERROR: Cannot find any plugins in Mod Setting '{selectedModDisplayName}' for NPC {npcIdentifier}. Invalid selection.",
+                        true);
+                    invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod Setting doesn't contain any plugin for this NPC)");
+                    // Add a placeholder invalid result to cache? Or just rely on the invalidSelections list? Let's rely on the list for now.
+                    await Task.Delay(1);
+                    continue;
                 }
 
                 // 4. Check for FaceGen Assets
