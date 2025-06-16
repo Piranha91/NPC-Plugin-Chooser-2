@@ -256,7 +256,7 @@ public class Patcher : OptionalUIModule
                                     
                                     case RecordOverrideHandlingMode.IncludeAsNew:
                                         var mergedInRecords =
-                                            _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord,
+                                            _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord, patchNpc,
                                                 appearanceModSetting.CorrespondingModKeys);
                                         foreach (var rec in mergedInRecords)
                                         {
@@ -299,7 +299,7 @@ public class Patcher : OptionalUIModule
                                     
                                     case RecordOverrideHandlingMode.IncludeAsNew:
                                         var mergedInRecords =
-                                            _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord,
+                                            _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord, patchNpc,
                                                 appearanceModSetting.CorrespondingModKeys);
                                         foreach (var rec in mergedInRecords)
                                         {
@@ -341,14 +341,14 @@ public class Patcher : OptionalUIModule
                     }
 
                     // Handle race deep-copy if needed
-                    _raceHandler.ProcessNpcRace(patchNpc, appearanceNpcRecord, winningNpcOverride, appearanceModKey.Value, appearanceModSetting);
+                    //_raceHandler.ProcessNpcRace(patchNpc, appearanceNpcRecord, winningNpcOverride, appearanceModKey.Value, appearanceModSetting);
 
                     processedCount++;
                     await Task.Delay(5);
                 } // End For Loop
             } // End else (selectionsToProcess.Any())
 
-            await _raceHandler.ApplyRaceChanges(_currentRunOutputAssetPath);
+            //await _raceHandler.ApplyRaceChanges(_currentRunOutputAssetPath);
 
             UpdateProgress(processedCount + skippedCount, processedCount + skippedCount, "Finalizing...");
 

@@ -4,6 +4,7 @@ using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Cache.Internals.Implementations;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
+using Noggog;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -257,7 +258,7 @@ public class RecordHandler
     #region Merge In Overrides of Existing Records
 
     public HashSet<IMajorRecord> // return is For Caller's Information only; duplication and remapping happens internally
-        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys)
+        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys)
     {
         HashSet<IMajorRecord> mergedInRecords = new();
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
@@ -281,7 +282,11 @@ public class RecordHandler
             TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedSublinks, mergedInRecords,2, 0);
         }
         
-        _environmentStateProvider.OutputMod.RemapLinks(remappedSublinks);
+        //_environmentStateProvider.OutputMod.RemapLinks(remappedSublinks);
+        foreach (var newRecord in mergedInRecords.And(rootRecord).ToArray())
+        {
+            newRecord.RemapLinks(remappedSublinks);
+        }
         
         return mergedInRecords;
     }
