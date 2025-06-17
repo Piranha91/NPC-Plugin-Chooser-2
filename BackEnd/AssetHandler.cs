@@ -14,6 +14,7 @@ public class AssetHandler
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly BsaHandler _bsaHandler;
+    private readonly PluginProvider _pluginProvider;
     private readonly Lazy<VM_Run> _runVM;
 
     private bool _copyExtraAssets = true;
@@ -29,11 +30,12 @@ public class AssetHandler
 
     private HashSet<string> _warningsToSuppress_Global = new();
 
-    public AssetHandler(EnvironmentStateProvider environmentStateProvider, BsaHandler bsaHandler,
+    public AssetHandler(EnvironmentStateProvider environmentStateProvider, BsaHandler bsaHandler, PluginProvider pluginProvider,
         Lazy<VM_Run> runVM)
     {
         _environmentStateProvider = environmentStateProvider;
         _bsaHandler = bsaHandler;
+        _pluginProvider = pluginProvider;
         _runVM = runVM;
     }
 
@@ -161,7 +163,7 @@ public class AssetHandler
         {
             _runVM.Value.AppendLog(
                 $"      Identifying extra assets referenced by plugin record {appearanceNpcRecord.FormKey}..."); // Verbose only
-            GetAssetsReferencedByPlugin(appearanceNpcRecord, meshToCopyRelativePaths, textureToCopyRelativePaths);
+            GetAssetsReferencedByPlugin(appearanceNpcRecord, appearanceModSetting.CorrespondingModKeys, meshToCopyRelativePaths, textureToCopyRelativePaths);
             AddCorrespondingNumericalNifPaths(meshToCopyRelativePaths, autoPredictedExtraAssetRelPaths);
         }
         else if (!_copyExtraAssets)
@@ -270,54 +272,68 @@ public class AssetHandler
 
 
     // --- Asset Identification Helpers (No changes needed here) ---
-    private void GetAssetsReferencedByPlugin(INpcGetter npc, HashSet<string> meshPaths,
+    private void GetAssetsReferencedByPlugin(INpcGetter npc, IEnumerable<ModKey> correspondingModKeys, HashSet<string> meshPaths,
         HashSet<string> texturePaths)
     {
         /* Implementation remains the same */
         if (npc.HeadParts != null)
             foreach (var hpLink in npc.HeadParts)
-                GetHeadPartAssetPaths(hpLink, texturePaths, meshPaths);
-        if (!npc.WornArmor.IsNull &&
-            npc.WornArmor.TryResolve(_environmentStateProvider.LinkCache, out var wornArmorGetter) &&
-            wornArmorGetter.Armature != null)
-            foreach (var aaLink in wornArmorGetter.Armature)
-                GetARMAAssetPaths(aaLink, texturePaths, meshPaths);
+                GetHeadPartAssetPaths(hpLink, correspondingModKeys, texturePaths, meshPaths);
+        if (!npc.WornArmor.IsNull && _pluginProvider.TryGetRecord(npc.WornArmor.FormKey, correspondingModKeys,
+                npc.WornArmor.Type, out var wornArmorGetterGeneric) && wornArmorGetterGeneric != null)
+        {
+            var wornArmorGetter = wornArmorGetterGeneric as IArmorGetter;
+            if (wornArmorGetter != null && wornArmorGetter.Armature != null)
+            {
+                foreach (var aaLink in wornArmorGetter.Armature)
+                    GetARMAAssetPaths(aaLink, correspondingModKeys, texturePaths, meshPaths);
+            }
+        }
     }
 
-    private void GetHeadPartAssetPaths(IFormLinkGetter<IHeadPartGetter> hpLink, HashSet<string> texturePaths,
+    private void GetHeadPartAssetPaths(IFormLinkGetter<IHeadPartGetter> hpLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> texturePaths,
         HashSet<string> meshPaths)
     {
         /* Implementation remains the same */
-        if (hpLink.IsNull || !hpLink.TryResolve(_environmentStateProvider.LinkCache, out var hpGetter)) return;
+        if (hpLink.IsNull || !_pluginProvider.TryGetRecord(hpLink.FormKey, correspondingModKeys, hpLink.Type, out var hpGetterGeneric)) return;
+        var hpGetter = hpGetterGeneric as IHeadPartGetter;
+        if (hpGetter is null) return;
+        
         if (hpGetter.Model?.File != null) meshPaths.Add(hpGetter.Model.File);
         if (hpGetter.Parts != null)
             foreach (var part in hpGetter.Parts)
                 if (part?.FileName != null)
                     meshPaths.Add(part.FileName);
-        if (!hpGetter.TextureSet.IsNull) GetTextureSetPaths(hpGetter.TextureSet, texturePaths);
+        if (!hpGetter.TextureSet.IsNull) GetTextureSetPaths(hpGetter.TextureSet, correspondingModKeys, texturePaths);
         if (hpGetter.ExtraParts != null)
             foreach (var extraPartLink in hpGetter.ExtraParts)
-                GetHeadPartAssetPaths(extraPartLink, texturePaths, meshPaths);
+                GetHeadPartAssetPaths(extraPartLink, correspondingModKeys, texturePaths, meshPaths);
     }
 
-    private void GetARMAAssetPaths(IFormLinkGetter<IArmorAddonGetter> aaLink, HashSet<string> texturePaths,
+    private void GetARMAAssetPaths(IFormLinkGetter<IArmorAddonGetter> aaLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> texturePaths,
         HashSet<string> meshPaths)
     {
         /* Implementation remains the same */
-        if (aaLink.IsNull || !aaLink.TryResolve(_environmentStateProvider.LinkCache, out var aaGetter)) return;
+        if (aaLink.IsNull || !_pluginProvider.TryGetRecord(aaLink.FormKey, correspondingModKeys, aaLink.Type, out var aaGetterGeneric)) return;
+        var aaGetter = aaGetterGeneric as IArmorAddonGetter;
+        if (aaGetter is null) return;
+        
         if (aaGetter.WorldModel?.Male?.File != null) meshPaths.Add(aaGetter.WorldModel.Male.File);
         if (aaGetter.WorldModel?.Female?.File != null) meshPaths.Add(aaGetter.WorldModel.Female.File);
         if (!aaGetter.SkinTexture?.Male.IsNull ?? false)
-            GetTextureSetPaths(aaGetter.SkinTexture.Male, texturePaths);
+            GetTextureSetPaths(aaGetter.SkinTexture.Male, correspondingModKeys, texturePaths);
         if (!aaGetter.SkinTexture?.Female.IsNull ?? false)
-            GetTextureSetPaths(aaGetter.SkinTexture.Female, texturePaths);
+            GetTextureSetPaths(aaGetter.SkinTexture.Female, correspondingModKeys, texturePaths);
     }
 
-    private void GetTextureSetPaths(IFormLinkGetter<ITextureSetGetter> txstLink, HashSet<string> texturePaths)
+    private void GetTextureSetPaths(IFormLinkGetter<ITextureSetGetter> txstLink, IEnumerable<ModKey> correspondingModKeys,  HashSet<string> texturePaths)
     {
         /* Implementation remains the same */
         if (txstLink.IsNull ||
-            !txstLink.TryResolve(_environmentStateProvider.LinkCache, out var txstGetter)) return;
+            !_pluginProvider.TryGetRecord(txstLink.FormKey, correspondingModKeys, txstLink.Type, out var txstGetterGeneric)) return;
+        var txstGetter = txstGetterGeneric as ITextureSetGetter;
+        if (txstGetter is null) return;
+        
         if (!string.IsNullOrEmpty(txstGetter.Diffuse?.GivenPath)) texturePaths.Add(txstGetter.Diffuse.GivenPath);
         if (!string.IsNullOrEmpty(txstGetter.NormalOrGloss?.GivenPath))
             texturePaths.Add(txstGetter.NormalOrGloss.GivenPath);

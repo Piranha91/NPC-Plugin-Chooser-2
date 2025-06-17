@@ -22,6 +22,10 @@ public class PluginProvider
 
     public bool TryGetPlugin(ModKey modKey, string? fallBackModPath, out ISkyrimModGetter? plugin)
     {
+        if (modKey.FileName.String.StartsWith("NPC"))
+        {
+            var debug = true;
+        }
         if (_pluginCache.TryGetValue(modKey, out plugin))
         {
             return true;
@@ -78,6 +82,31 @@ public class PluginProvider
             }
         }
 
+        return false;
+    }
+
+    public bool TryGetRecord(FormKey formKey, IEnumerable<ModKey> modKeys, Type? type, out IMajorRecordGetter? record, bool reverseOrder = true)
+    {
+        record = null;
+        if (modKeys == null)
+        {
+            return false;
+        }
+        
+        var toSearch = modKeys.Reverse().ToArray();
+        if (!reverseOrder)
+        {
+            toSearch = modKeys.ToArray();
+        }
+
+        foreach (var mk in toSearch)
+        {
+            if (TryGetRecord(formKey, mk, type, out record) && record != null)
+            {
+                return true;
+            }
+        }
+        
         return false;
     }
 }

@@ -19,10 +19,12 @@ public class RecordHandler
     private Dictionary<ModKey, ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>> _modLinkCaches = new();
 
     private readonly EnvironmentStateProvider _environmentStateProvider;
+    private readonly PluginProvider _pluginProvider;
 
-    public RecordHandler(EnvironmentStateProvider environmentStateProvider)
+    public RecordHandler(EnvironmentStateProvider environmentStateProvider, PluginProvider pluginProvider)
     {
         _environmentStateProvider = environmentStateProvider;
+        _pluginProvider = pluginProvider;
     }
 
     public void Reinitialize()
@@ -175,11 +177,7 @@ public class RecordHandler
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
         foreach (var modKey in relevantContextKeys)
         {
-            var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
-            if (modListing != null && modListing.Mod != null)
-            {
-                _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences()));
-            }
+            TryAddModToCaches(modKey);
         }
         HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyContexts = new();
         foreach (var link in containedFormLinks)
@@ -264,11 +262,7 @@ public class RecordHandler
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
         foreach (var modKey in relevantContextKeys)
         {
-            var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
-            if (modListing != null && modListing.Mod != null)
-            {
-                _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences()));
-            }
+            TryAddModToCaches(modKey);
 
             if (!_contextMappings.ContainsKey(modKey))
             {
@@ -410,27 +404,38 @@ public class RecordHandler
     #endregion
     
     #region Misc Functions
+
+    private bool TryAddModToCaches(ModKey modKey)
+    {
+        if (_modLinkCaches.ContainsKey(modKey))
+        {
+            return true;
+        }
+        
+        var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
+        if (modListing != null && modListing.Mod != null)
+        {
+            _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences()));
+            return true;
+        }
+        
+        if (_pluginProvider.TryGetPlugin(modKey, null, out var plugin) && plugin != null)
+        {
+            _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences()));
+            return true;
+        }
+
+        return false;
+    }
     
     public bool GetRecordFromMod(IFormLinkGetter formLink, ModKey modKey, out IMajorRecordGetter? record)
     {
-        if (_modLinkCaches.ContainsKey(modKey) && _modLinkCaches[modKey].TryResolve(formLink, out var modRecord) && modRecord is not null)
+        if (TryAddModToCaches(modKey) && _modLinkCaches[modKey].TryResolve(formLink, out var modRecord) && modRecord is not null)
         {
             record = modRecord;
             return true;
         }
-        else if (_environmentStateProvider.LoadOrder.Keys.Contains(modKey))
-        {
-            var listing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
-            if (listing != null && listing.Mod != null)
-            {
-                _modLinkCaches[listing.ModKey] = new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(listing.Mod, new LinkCachePreferences());
-                if (_modLinkCaches[listing.ModKey].TryResolve(formLink, out modRecord) && modRecord is not null)
-                {
-                    record = modRecord;
-                    return true;
-                }
-            }
-        }
+
         record = null;
         return false;
     }
