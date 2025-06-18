@@ -234,8 +234,7 @@ public class Patcher : OptionalUIModule
                                         foreach (var ctx in dependencyContexts)
                                         {
                                             bool wasDeltaPatched = false;
-                                            if (_recordHandler.GetRecordFromMod(ctx.Record.ToLink(), ctx.Record.FormKey.ModKey,
-                                                    out var baseRecord) && baseRecord != null)
+                                            if (_recordHandler.GetRecordFromMod(ctx.Record.ToLink(), ctx.Record.FormKey.ModKey, RecordHandler.RecordLookupFallBack.None, out var baseRecord) && baseRecord != null)
                                             {
                                                 var recordDifs = _recordDeltaPatcher.GetPropertyDiffs(ctx.Record, baseRecord);
                                                 var getterType = Auxilliary.GetRecordGetterType(ctx.Record);
@@ -274,14 +273,6 @@ public class Patcher : OptionalUIModule
                                 AppendLog(
                                     $"      Mode: Default. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"})."); // Verbose only
                                 patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(appearanceNpcRecord); // copy in the NPC as it appears in the source mod
-                                // deep copy in all dependencies
-                                if (mergeInDependencyRecords)
-                                {
-                                    _recordHandler.DuplicateFromOnlyReferencedGetters(
-                                        _environmentStateProvider.OutputMod, patchNpc,
-                                        appearanceModSetting.CorrespondingModKeys,
-                                        appearanceModKey.Value, true);
-                                }
 
                                 switch (recordOverrideHandlingMode)
                                 {
@@ -323,7 +314,16 @@ public class Patcher : OptionalUIModule
                         await Task.Delay(1);
                         continue;
                     }
-                    // --- *** End Scenario Logic *** ---
+                    // --- *** End Scenario Logic *** 
+                    
+                    // deep copy in all dependencies
+                    if (mergeInDependencyRecords)
+                    {
+                        _recordHandler.DuplicateFromOnlyReferencedGetters(
+                            _environmentStateProvider.OutputMod, patchNpc,
+                            appearanceModSetting.CorrespondingModKeys,
+                            appearanceModKey.Value, true);
+                    }
 
                     // --- Copy Assets ---
                     if (patchNpc != null && appearanceModSetting != null) // Ensure we have a patch record and mod settings

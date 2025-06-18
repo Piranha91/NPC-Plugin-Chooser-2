@@ -5,6 +5,7 @@ using Mutagen.Bethesda.Plugins.Cache.Internals.Implementations;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
+using NPC_Plugin_Chooser_2.Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -19,12 +20,14 @@ public class RecordHandler
     private Dictionary<ModKey, ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>> _modLinkCaches = new();
 
     private readonly EnvironmentStateProvider _environmentStateProvider;
-    private readonly PluginProvider _pluginProvider;
+    private PluginProvider _pluginProvider;
+    private readonly Settings _settings;
 
-    public RecordHandler(EnvironmentStateProvider environmentStateProvider, PluginProvider pluginProvider)
+    public RecordHandler(EnvironmentStateProvider environmentStateProvider, PluginProvider pluginProvider, Settings settings)
     {
         _environmentStateProvider = environmentStateProvider;
         _pluginProvider = pluginProvider;
+        _settings = settings;
     }
 
     public void Reinitialize()
@@ -102,9 +105,9 @@ public class RecordHandler
             _contextMappings.Add(rootContextModKey, mapping);
         }
         
-        modToDuplicateInto.DuplicateFromOnlyReferencedGetters(
+        modToDuplicateInto.DuplicateFromOnlyReferencedGetters<TMod, ISkyrimModGetter>(
             recordsToDuplicate,
-            _environmentStateProvider.LinkCache,
+            _pluginProvider,
             modKeysToDuplicateFrom,
             onlySubRecords,
             ref mapping,
@@ -419,7 +422,7 @@ public class RecordHandler
             return true;
         }
         
-        if (_pluginProvider.TryGetPlugin(modKey, null, out var plugin) && plugin != null)
+        if (_pluginProvider.TryGetPlugin(modKey, _settings.ModsFolder, out var plugin) && plugin != null)
         {
             _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences()));
             return true;
@@ -428,16 +431,47 @@ public class RecordHandler
         return false;
     }
     
-    public bool GetRecordFromMod(IFormLinkGetter formLink, ModKey modKey, out IMajorRecordGetter? record)
+    public bool GetRecordFromMod(IFormLinkGetter formLink, ModKey modKey, RecordLookupFallBack fallbackMode, out IMajorRecordGetter? record)
     {
         if (TryAddModToCaches(modKey) && _modLinkCaches[modKey].TryResolve(formLink, out var modRecord) && modRecord is not null)
         {
             record = modRecord;
             return true;
         }
+        
+        // fallbacks
+        switch (fallbackMode)
+        {
+            case RecordLookupFallBack.Origin:
+                if (TryAddModToCaches(formLink.FormKey.ModKey) && _modLinkCaches[formLink.FormKey.ModKey].TryResolve(formLink, out modRecord) && modRecord is not null)
+                {
+                    record = modRecord;
+                    return true;
+                }
+                break;
+            
+            case RecordLookupFallBack.Winner:
+                if (_environmentStateProvider.LinkCache.TryResolve(formLink, out modRecord) && modRecord is not null)
+                {
+                    record = modRecord;
+                    return true;
+                }
+                break;
+            
+            case RecordLookupFallBack.None:
+                default:
+                    break;
+        }
 
         record = null;
         return false;
+    }
+
+    public enum RecordLookupFallBack
+    {
+        None,
+        Origin,
+        Winner
     }
     #endregion
 }

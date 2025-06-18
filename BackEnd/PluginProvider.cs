@@ -4,6 +4,7 @@ using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.Models;
+using static NPC_Plugin_Chooser_2.BackEnd.RecordHandler;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -63,7 +64,7 @@ public class PluginProvider
     public bool TryGetRecord(FormKey formKey, ModKey modKey, Type? type, out IMajorRecordGetter? record)
     {
         record = null;
-        if (TryGetPlugin(modKey, null, out var plugin) && plugin != null)
+        if (TryGetPlugin(modKey, _settings.ModsFolder, out var plugin) && plugin != null)
         {
             var cache = plugin.ToImmutableLinkCache<ISkyrimMod, ISkyrimModGetter>();
             if (type != null)
@@ -85,7 +86,7 @@ public class PluginProvider
         return false;
     }
 
-    public bool TryGetRecord(FormKey formKey, IEnumerable<ModKey> modKeys, Type? type, out IMajorRecordGetter? record, bool reverseOrder = true)
+    public bool TryGetRecord(FormKey formKey, IEnumerable<ModKey> modKeys, Type? type, RecordLookupFallBack fallbackMode, out IMajorRecordGetter? record, bool reverseOrder = true)
     {
         record = null;
         if (modKeys == null)
@@ -105,6 +106,39 @@ public class PluginProvider
             {
                 return true;
             }
+        }
+        
+        // fallbacks
+        switch (fallbackMode)
+        {
+            case RecordLookupFallBack.Origin:
+                if (TryGetRecord(formKey, formKey.ModKey, type,  out record) && record != null)
+                {
+                    return true;
+                }
+                break;
+            
+            case RecordLookupFallBack.Winner:
+                if (type != null)
+                {
+                    if (_environmentStateProvider.LinkCache.TryResolve(formKey, type, out record) && record is not null)
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    if (_environmentStateProvider.LinkCache.TryResolve(formKey, out record) && record is not null)
+                    {
+                        return true;
+                    }
+                }
+
+                break;
+            
+            case RecordLookupFallBack.None:
+            default:
+                break;
         }
         
         return false;
