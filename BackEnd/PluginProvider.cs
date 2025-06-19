@@ -23,10 +23,6 @@ public class PluginProvider
 
     public bool TryGetPlugin(ModKey modKey, string? fallBackModPath, out ISkyrimModGetter? plugin)
     {
-        if (modKey.FileName.String.StartsWith("NPC"))
-        {
-            var debug = true;
-        }
         if (_pluginCache.TryGetValue(modKey, out plugin))
         {
             return true;

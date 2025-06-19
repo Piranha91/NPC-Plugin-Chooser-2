@@ -76,8 +76,13 @@ public static class PatcherExtensions
         // Duplicate in the records
         foreach (var identifiedLink in identifiedLinks)
         {
+            if (mapping.ContainsKey(identifiedLink.FormKey))
+            {
+                continue; // this form has already been remapped in a previous call of this function
+            }
+            
             if (!recordHandler.TryGetRecordFromMods(identifiedLink, modKeysToDuplicateFrom,
-                    RecordLookupFallBack.Winner, out var identifiedRec)
+                    RecordLookupFallBack.None, out var identifiedRec)
                 || identifiedRec == null)
             {
                 throw new KeyNotFoundException($"Could not locate record to make self contained: {identifiedLink}");

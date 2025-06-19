@@ -36,6 +36,22 @@ public class RecordHandler
     }
 
     #region Merge In New Records
+
+    private Dictionary<FormKey, FormKey> GetCurrentContextMapping(ModKey contextPlugin)
+    {
+        Dictionary<FormKey, FormKey> mapping = new();
+        if (_contextMappings.TryGetValue(contextPlugin, out var storedMapping))
+        {
+            mapping = storedMapping;
+        }
+        else
+        {
+            mapping = new Dictionary<FormKey, FormKey>();
+            _contextMappings.Add(contextPlugin, mapping);
+        }
+
+        return mapping;
+    }
     
     /// <summary>
     /// Tries to deep copy a FormLink into another FormLink, copying in records and remapping recursivley
@@ -61,16 +77,24 @@ public class RecordHandler
             return;
         }
 
-        var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts(formLinkToCopy);
-        var matchedContext = contexts.FirstOrDefault(ctx => modKeysToDuplicateFrom.Contains(ctx.ModKey));
-
-        if (matchedContext == null)
+        if (!modKeysToDuplicateFrom.Contains(formLinkToCopy.FormKey.ModKey))
         {
-            targetFormLink.SetTo(formLinkToCopy.FormKey);
+            return;
+        }
+
+        var mapping = GetCurrentContextMapping(rootContextModKey);
+        if (mapping.TryGetValue(targetFormLink.FormKey, out var remappedFormKey))
+        {
+            targetFormLink.SetTo(remappedFormKey);
+            return;
+        }
+
+        if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, RecordLookupFallBack.None, out var record) || record == null)
+        {
             return;
         }
         
-        DuplicateFromOnlyReferencedGetters(modToDuplicateInto, matchedContext.Record, modKeysToDuplicateFrom, 
+        DuplicateFromOnlyReferencedGetters(modToDuplicateInto, record, modKeysToDuplicateFrom, 
             rootContextModKey, false, typesToInspect);
 
         if (_contextMappings.ContainsKey(rootContextModKey) &&
@@ -94,16 +118,7 @@ public class RecordHandler
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
-        Dictionary<FormKey, FormKey> mapping = new();
-        if (_contextMappings.TryGetValue(rootContextModKey, out var storedMapping))
-        {
-            mapping = storedMapping;
-        }
-        else
-        {
-            mapping = new Dictionary<FormKey, FormKey>();
-            _contextMappings.Add(rootContextModKey, mapping);
-        }
+        Dictionary<FormKey, FormKey> mapping = GetCurrentContextMapping(rootContextModKey);
         
         modToDuplicateInto.DuplicateFromOnlyReferencedGetters<TMod, ISkyrimModGetter>(
             recordsToDuplicate,
