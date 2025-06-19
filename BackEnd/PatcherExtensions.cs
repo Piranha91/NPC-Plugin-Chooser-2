@@ -1,6 +1,8 @@
 ﻿using Mutagen.Bethesda;
+using Mutagen.Bethesda.Environments;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
+using Mutagen.Bethesda.Plugins.Order;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using static NPC_Plugin_Chooser_2.BackEnd.RecordHandler;
@@ -177,5 +179,25 @@ public static class PatcherExtensions
 
         // Remap links
         modToDuplicateInto.RemapLinks(mapping);
+    }
+    
+    public static IEnumerable<IModListingGetter<ISkyrimModGetter>> TrimPluginAndDependents(this IEnumerable<IModListingGetter<ISkyrimModGetter>> loadOrder, ModKey modKey)
+    {
+        List<ModKey> mastersToRemove = new() { modKey };
+        
+        List<IModListingGetter<ISkyrimModGetter>> trimmedLoadOrder = new();
+        foreach (var listing in loadOrder)
+        {
+            if (listing.ModKey.IsNull) continue;
+            if (mastersToRemove.Contains(listing.ModKey)) continue;
+            if (listing.Mod.ModHeader.MasterReferences.Select(x => x.Master).Intersect(mastersToRemove).Any())
+            {
+                mastersToRemove.Add(listing.ModKey);
+                continue;
+            }
+            trimmedLoadOrder.Add(listing);
+        }
+        
+        return trimmedLoadOrder;
     }
 }

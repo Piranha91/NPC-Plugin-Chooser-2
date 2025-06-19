@@ -78,8 +78,10 @@ public class EnvironmentStateProvider
             builder = builder.WithTargetDataFolder(DataFolderPath);
         }
 
+        var validatedName = Path.GetFileNameWithoutExtension(OutputPluginName);
+        
         OutputMod = null;
-        OutputMod = new SkyrimMod(ModKey.FromName(OutputPluginFileName, ModType.Plugin), SkyrimVersion);
+        OutputMod = new SkyrimMod(ModKey.FromName(validatedName, ModType.Plugin), SkyrimVersion);
 
         var built = false;
 
@@ -89,7 +91,8 @@ public class EnvironmentStateProvider
             string notificationStr = "";
             _environment = builder
                 .TransformModListings(x =>
-                    x.OnlyEnabledAndExisting())
+                    x.OnlyEnabledAndExisting()
+                        .TrimPluginAndDependents(OutputMod.ModKey))
                     .WithOutputMod(OutputMod)
                 .Build();
             
