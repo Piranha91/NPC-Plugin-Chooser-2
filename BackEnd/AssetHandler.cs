@@ -15,7 +15,7 @@ public class AssetHandler
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly BsaHandler _bsaHandler;
-    private readonly PluginProvider _pluginProvider;
+    private readonly RecordHandler _recordHandler;
     private readonly Lazy<VM_Run> _runVM;
 
     private bool _copyExtraAssets = true;
@@ -31,12 +31,12 @@ public class AssetHandler
 
     private HashSet<string> _warningsToSuppress_Global = new();
 
-    public AssetHandler(EnvironmentStateProvider environmentStateProvider, BsaHandler bsaHandler, PluginProvider pluginProvider,
+    public AssetHandler(EnvironmentStateProvider environmentStateProvider, BsaHandler bsaHandler, RecordHandler recordHandler,
         Lazy<VM_Run> runVM)
     {
         _environmentStateProvider = environmentStateProvider;
         _bsaHandler = bsaHandler;
-        _pluginProvider = pluginProvider;
+        _recordHandler = recordHandler;
         _runVM = runVM;
     }
 
@@ -280,8 +280,8 @@ public class AssetHandler
         if (npc.HeadParts != null)
             foreach (var hpLink in npc.HeadParts)
                 GetHeadPartAssetPaths(hpLink, correspondingModKeys, texturePaths, meshPaths);
-        if (!npc.WornArmor.IsNull && _pluginProvider.TryGetRecord(npc.WornArmor.FormKey, correspondingModKeys,
-                npc.WornArmor.Type, RecordLookupFallBack.Winner, out var wornArmorGetterGeneric) && wornArmorGetterGeneric != null)
+        if (!npc.WornArmor.IsNull && _recordHandler.TryGetRecordFromMods(npc.WornArmor, correspondingModKeys,
+                RecordLookupFallBack.Winner, out var wornArmorGetterGeneric) && wornArmorGetterGeneric != null)
         {
             var wornArmorGetter = wornArmorGetterGeneric as IArmorGetter;
             if (wornArmorGetter != null && wornArmorGetter.Armature != null)
@@ -296,7 +296,7 @@ public class AssetHandler
         HashSet<string> meshPaths)
     {
         /* Implementation remains the same */
-        if (hpLink.IsNull || !_pluginProvider.TryGetRecord(hpLink.FormKey, correspondingModKeys, hpLink.Type, RecordLookupFallBack.Winner, out var hpGetterGeneric)) return;
+        if (hpLink.IsNull || !_recordHandler.TryGetRecordFromMods(hpLink, correspondingModKeys, RecordLookupFallBack.Winner, out var hpGetterGeneric)) return;
         var hpGetter = hpGetterGeneric as IHeadPartGetter;
         if (hpGetter is null) return;
         
@@ -315,7 +315,7 @@ public class AssetHandler
         HashSet<string> meshPaths)
     {
         /* Implementation remains the same */
-        if (aaLink.IsNull || !_pluginProvider.TryGetRecord(aaLink.FormKey, correspondingModKeys, aaLink.Type, RecordLookupFallBack.Winner, out var aaGetterGeneric)) return;
+        if (aaLink.IsNull || !_recordHandler.TryGetRecordFromMods(aaLink, correspondingModKeys, RecordLookupFallBack.Winner, out var aaGetterGeneric)) return;
         var aaGetter = aaGetterGeneric as IArmorAddonGetter;
         if (aaGetter is null) return;
         
@@ -331,7 +331,7 @@ public class AssetHandler
     {
         /* Implementation remains the same */
         if (txstLink.IsNull ||
-            !_pluginProvider.TryGetRecord(txstLink.FormKey, correspondingModKeys, txstLink.Type, RecordLookupFallBack.Winner, out var txstGetterGeneric)) return;
+            !_recordHandler.TryGetRecordFromMods(txstLink, correspondingModKeys, RecordLookupFallBack.Winner, out var txstGetterGeneric)) return;
         var txstGetter = txstGetterGeneric as ITextureSetGetter;
         if (txstGetter is null) return;
         

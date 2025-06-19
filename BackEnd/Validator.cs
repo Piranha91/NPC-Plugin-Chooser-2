@@ -15,6 +15,7 @@ public class Validator : OptionalUIModule
     private readonly Settings _settings;
     private readonly BsaHandler _bsaHandler;
     private readonly PluginProvider _pluginProvider;
+    private readonly RecordHandler _recordHandler;
     
     private Action<string, bool, bool>? _appendLog;
     private Action<int, int, string>? _updateProgress;
@@ -22,12 +23,13 @@ public class Validator : OptionalUIModule
 
     private Dictionary<FormKey, ScreeningResult> _screeningCache = new();
     
-    public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, BsaHandler bsaHandler, PluginProvider pluginProvider)
+    public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, BsaHandler bsaHandler, PluginProvider pluginProvider, RecordHandler recordHandler)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _bsaHandler = bsaHandler;
         _pluginProvider = pluginProvider;
+        _recordHandler = recordHandler;
     }
 
     public Dictionary<FormKey, ScreeningResult> GetScreeningCache()
@@ -135,7 +137,7 @@ public class Validator : OptionalUIModule
                 
                 if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out ModKey disambiguation))
                 {
-                    if (availableModKeysForThisNpcInSelectedAppearanceMod.Contains(disambiguation) && _pluginProvider.TryGetRecord(npcFormKey, disambiguation, Auxilliary.GetLoquiType(typeof(INpcGetter)), out var record) && record != null)
+                    if (availableModKeysForThisNpcInSelectedAppearanceMod.Contains(disambiguation) && _recordHandler.TryGetRecordFromMod(npcFormKey.ToLink<INpcGetter>(), disambiguation, RecordHandler.RecordLookupFallBack.None, out var record) && record != null)
                     {
                         appearanceModRecord = record as INpcGetter;
                         appearanceModKey = disambiguation;
@@ -165,8 +167,7 @@ public class Validator : OptionalUIModule
                         foreach (var candidate in availableModKeysForThisNpcInSelectedAppearanceMod)
                         {
                             if (availableModKeysForThisNpcInSelectedAppearanceMod.Contains(candidate) &&
-                                _pluginProvider.TryGetRecord(npcFormKey, candidate,
-                                    Auxilliary.GetLoquiType(typeof(INpcGetter)), out var record) && record != null)
+                                _recordHandler.TryGetRecordFromMod(npcFormKey.ToLink<INpcGetter>(), candidate, RecordHandler.RecordLookupFallBack.None, out var record) && record != null)
                             {
                                 appearanceModRecord = record as INpcGetter;
                                 appearanceModKey = candidate;

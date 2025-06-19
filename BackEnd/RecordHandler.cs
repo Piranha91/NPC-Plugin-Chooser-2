@@ -107,7 +107,7 @@ public class RecordHandler
         
         modToDuplicateInto.DuplicateFromOnlyReferencedGetters<TMod, ISkyrimModGetter>(
             recordsToDuplicate,
-            _pluginProvider,
+            this,
             modKeysToDuplicateFrom,
             onlySubRecords,
             ref mapping,
@@ -431,7 +431,7 @@ public class RecordHandler
         return false;
     }
     
-    public bool GetRecordFromMod(IFormLinkGetter formLink, ModKey modKey, RecordLookupFallBack fallbackMode, out IMajorRecordGetter? record)
+    public bool TryGetRecordFromMod(IFormLinkGetter formLink, ModKey modKey, RecordLookupFallBack fallbackMode, out IMajorRecordGetter? record)
     {
         if (TryAddModToCaches(modKey) && _modLinkCaches[modKey].TryResolve(formLink, out var modRecord) && modRecord is not null)
         {
@@ -464,6 +464,54 @@ public class RecordHandler
         }
 
         record = null;
+        return false;
+    }
+
+    public bool TryGetRecordFromMods(IFormLinkGetter formLink, IEnumerable<ModKey> modKeys, RecordLookupFallBack fallbackMode,
+        out IMajorRecordGetter? record, bool reverseOrder = true)
+    {
+        record = null;
+        if (modKeys == null || formLink.IsNull)
+        {
+            return false;
+        }
+        
+        var toSearch = modKeys.Reverse().ToArray();
+        if (!reverseOrder)
+        {
+            toSearch = modKeys.ToArray();
+        }
+
+        foreach (var mk in toSearch)
+        {
+            if (TryGetRecordFromMod(formLink, mk, RecordLookupFallBack.None, out record) && record != null)
+            {
+                return true;
+            }
+        }
+        
+        // fallbacks
+        switch (fallbackMode)
+        {
+            case RecordLookupFallBack.Origin:
+                if (TryGetRecordFromMod(formLink, formLink.FormKey.ModKey, RecordLookupFallBack.None,  out record) && record != null)
+                {
+                    return true;
+                }
+                break;
+            
+            case RecordLookupFallBack.Winner:
+                if (_environmentStateProvider.LinkCache.TryResolve(formLink, out record) && record is not null)
+                {
+                    return true;
+                }
+                break;
+            
+            case RecordLookupFallBack.None:
+            default:
+                break;
+        }
+        
         return false;
     }
 

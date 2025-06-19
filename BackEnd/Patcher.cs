@@ -234,7 +234,7 @@ public class Patcher : OptionalUIModule
                                         foreach (var ctx in dependencyContexts)
                                         {
                                             bool wasDeltaPatched = false;
-                                            if (_recordHandler.GetRecordFromMod(ctx.Record.ToLink(), ctx.Record.FormKey.ModKey, RecordHandler.RecordLookupFallBack.None, out var baseRecord) && baseRecord != null)
+                                            if (_recordHandler.TryGetRecordFromMod(ctx.Record.ToLink(), ctx.Record.FormKey.ModKey, RecordHandler.RecordLookupFallBack.None, out var baseRecord) && baseRecord != null)
                                             {
                                                 var recordDifs = _recordDeltaPatcher.GetPropertyDiffs(ctx.Record, baseRecord);
                                                 var getterType = Auxilliary.GetRecordGetterType(ctx.Record);

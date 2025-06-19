@@ -189,9 +189,17 @@ public class Auxilliary
         return outputMod.GetTopLevelGroup(getterType);
     }
 
-    public static Type GetRecordGetterType(IMajorRecordGetter recordGetter)
+    public static Type? GetRecordGetterType(IMajorRecordGetter recordGetter)
     {
-        return LoquiRegistration.GetRegister(recordGetter.GetType()).GetterType;
+        try
+        {
+            return LoquiRegistration.GetRegister(recordGetter.GetType()).GetterType;
+        }
+        catch (Exception e)
+        {
+            return null;
+        }
+        
     }
 
     public static Type? GetLoquiType(Type type)
@@ -200,7 +208,7 @@ public class Auxilliary
         {
             return LoquiRegistration.GetRegister(type).GetterType;
         }
-        catch (Exception e)
+        catch
         {
             return null;
         }

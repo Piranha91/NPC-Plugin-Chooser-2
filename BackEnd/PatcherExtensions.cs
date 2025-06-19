@@ -12,7 +12,7 @@ public static class PatcherExtensions
     public static void DuplicateFromOnlyReferencedGetters<TMod, TModGetter>(
         this TMod modToDuplicateInto,
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
-        PluginProvider pluginProvider,
+        RecordHandler recordHandler,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         bool onlySubRecords,
         ref Dictionary<FormKey, FormKey> mapping,
@@ -41,7 +41,7 @@ public static class PatcherExtensions
                 identifiedLinks.Add(link);
             }
 
-            if (!(pluginProvider.TryGetRecord(link.FormKey, modKeysToDuplicateFrom, Auxilliary.GetLoquiType(link.Type), RecordLookupFallBack.Winner,
+            if (!(recordHandler.TryGetRecordFromMods(link, modKeysToDuplicateFrom, RecordLookupFallBack.Winner,
                     out var linkRec) && linkRec != null))
             {
                 return;
@@ -74,8 +74,8 @@ public static class PatcherExtensions
         // Duplicate in the records
         foreach (var identifiedLink in identifiedLinks)
         {
-            if (!pluginProvider.TryGetRecord(identifiedLink.FormKey, modKeysToDuplicateFrom,
-                    Auxilliary.GetLoquiType(identifiedLink.Type), RecordLookupFallBack.Winner, out var identifiedRec)
+            if (!recordHandler.TryGetRecordFromMods(identifiedLink, modKeysToDuplicateFrom,
+                    RecordLookupFallBack.Winner, out var identifiedRec)
                 || identifiedRec == null)
             {
                 throw new KeyNotFoundException($"Could not locate record to make self contained: {identifiedLink}");
