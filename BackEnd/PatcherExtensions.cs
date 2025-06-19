@@ -17,6 +17,7 @@ public static class PatcherExtensions
         RecordHandler recordHandler,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         bool onlySubRecords,
+        RecordLookupFallBack fallBackMode,
         ref Dictionary<FormKey, FormKey> mapping,
         params Type[] typesToInspect)
         where TModGetter : class, IModGetter
@@ -43,7 +44,7 @@ public static class PatcherExtensions
                 identifiedLinks.Add(link);
             }
 
-            if (!(recordHandler.TryGetRecordFromMods(link, modKeysToDuplicateFrom, RecordLookupFallBack.Winner,
+            if (!(recordHandler.TryGetRecordFromMods(link, modKeysToDuplicateFrom, fallBackMode,
                     out var linkRec) && linkRec != null))
             {
                 return;

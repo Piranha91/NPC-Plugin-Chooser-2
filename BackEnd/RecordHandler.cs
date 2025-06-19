@@ -68,17 +68,13 @@ public class RecordHandler
         TMod modToDuplicateInto,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey,
+        RecordLookupFallBack fallBackMode,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
         if (formLinkToCopy.IsNull)
         {
             targetFormLink.SetToNull();
-            return;
-        }
-
-        if (!modKeysToDuplicateFrom.Contains(formLinkToCopy.FormKey.ModKey))
-        {
             return;
         }
 
@@ -89,13 +85,13 @@ public class RecordHandler
             return;
         }
 
-        if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, RecordLookupFallBack.None, out var record) || record == null)
+        if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, fallBackMode, out var record) || record == null)
         {
             return;
         }
         
         DuplicateFromOnlyReferencedGetters(modToDuplicateInto, record, modKeysToDuplicateFrom, 
-            rootContextModKey, false, typesToInspect);
+            rootContextModKey, false, fallBackMode, typesToInspect);
 
         if (_contextMappings.ContainsKey(rootContextModKey) &&
             _contextMappings[rootContextModKey].ContainsKey(formLinkToCopy.FormKey))
@@ -115,6 +111,7 @@ public class RecordHandler
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey,
         bool onlySubRecords,
+        RecordLookupFallBack fallBackMode,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
@@ -125,6 +122,7 @@ public class RecordHandler
             this,
             modKeysToDuplicateFrom,
             onlySubRecords,
+            fallBackMode,
             ref mapping,
             typesToInspect);
     }
@@ -135,6 +133,7 @@ public class RecordHandler
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         ModKey modKeyToDuplicateFrom,
         bool onlySubRecords,
+        RecordLookupFallBack fallBackMode,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
@@ -144,6 +143,7 @@ public class RecordHandler
             new[] { modKeyToDuplicateFrom },
             modKeyToDuplicateFrom,
             onlySubRecords,
+            fallBackMode,
             typesToInspect);
     }
     
@@ -154,6 +154,7 @@ public class RecordHandler
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey,
         bool onlySubRecords,
+        RecordLookupFallBack fallBackMode,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
@@ -163,6 +164,7 @@ public class RecordHandler
             modKeysToDuplicateFrom,
             rootContextModKey,
             onlySubRecords,
+            fallBackMode,
             typesToInspect);
     }
     
@@ -172,6 +174,7 @@ public class RecordHandler
         IMajorRecordGetter recordToDuplicate,
         ModKey modKeyToDuplicateFrom,
         bool onlySubRecords,
+        RecordLookupFallBack fallBackMode,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
@@ -181,6 +184,7 @@ public class RecordHandler
             new[] { modKeyToDuplicateFrom },
             modKeyToDuplicateFrom,
             onlySubRecords,
+            fallBackMode,
             typesToInspect);
     }
     

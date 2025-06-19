@@ -151,7 +151,7 @@ public class RaceHandler : OptionalUIModule
             // to the map for dependency duplication.
             _recordHandler.DuplicateInFormLink(patchNpc.Race, raceGetterFromAppearanceMod.ToLink(),
                 _environmentStateProvider.OutputMod,
-                appearanceModSetting.CorrespondingModKeys, appearanceModKey);
+                appearanceModSetting.CorrespondingModKeys, appearanceModKey, RecordHandler.RecordLookupFallBack.Origin);
             return; // Handled
         }
 
@@ -268,13 +268,13 @@ public class RaceHandler : OptionalUIModule
                 if (appearanceModSetting.MergeInDependencyRecords)
                 {
                     _recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
-                        winningRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
+                        winningRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true, RecordHandler.RecordLookupFallBack.Winner);
 
                     foreach (var ctx in dependencyRecords)
                     {
                         _recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
                             ctx.Record,
-                            appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
+                            appearanceModSetting.CorrespondingModKeys, appearanceModKey, true, RecordHandler.RecordLookupFallBack.Winner);
                     }
                 }
             }
@@ -340,7 +340,7 @@ public class RaceHandler : OptionalUIModule
             if (appearanceModSetting.MergeInDependencyRecords)
             {
                 _recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod,
-                    appearanceRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true);
+                    appearanceRaceRecord, appearanceModSetting.CorrespondingModKeys, appearanceModKey, true, RecordHandler.RecordLookupFallBack.Origin);
 
                 assetLinks = _aux.DeepGetAssetLinks(appearanceRaceRecord, appearanceModSetting.CorrespondingModKeys);
             }

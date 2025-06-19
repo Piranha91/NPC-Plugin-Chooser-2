@@ -267,6 +267,16 @@ public class Patcher : OptionalUIModule
                                         
                                         break;
                                 }
+                                
+                                                    
+                                // deep copy in all dependencies
+                                if (mergeInDependencyRecords)
+                                {
+                                    _recordHandler.DuplicateFromOnlyReferencedGetters(
+                                        _environmentStateProvider.OutputMod, patchNpc,
+                                        appearanceModSetting.CorrespondingModKeys,
+                                        appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Winner);
+                                }
                                 break;
                             case PatchingMode.Default:
                             default:
@@ -301,6 +311,16 @@ public class Patcher : OptionalUIModule
                                         }
                                         break;
                                 }
+                                
+                                                    
+                                // deep copy in all dependencies
+                                if (mergeInDependencyRecords)
+                                {
+                                    _recordHandler.DuplicateFromOnlyReferencedGetters(
+                                        _environmentStateProvider.OutputMod, patchNpc,
+                                        appearanceModSetting.CorrespondingModKeys,
+                                        appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Origin);
+                                }
                                 break;
                         }
                     }
@@ -315,15 +335,6 @@ public class Patcher : OptionalUIModule
                         continue;
                     }
                     // --- *** End Scenario Logic *** 
-                    
-                    // deep copy in all dependencies
-                    if (mergeInDependencyRecords)
-                    {
-                        _recordHandler.DuplicateFromOnlyReferencedGetters(
-                            _environmentStateProvider.OutputMod, patchNpc,
-                            appearanceModSetting.CorrespondingModKeys,
-                            appearanceModKey.Value, true);
-                    }
 
                     // --- Copy Assets ---
                     if (patchNpc != null && appearanceModSetting != null) // Ensure we have a patch record and mod settings
@@ -436,15 +447,15 @@ public class Patcher : OptionalUIModule
                 {
                     _recordHandler.DuplicateInFormLink(targetNpc.WornArmor, sourceNpc.WornArmor,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
-                        sourceNpcContextModKey);
+                        sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
 
                     _recordHandler.DuplicateInFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
-                        sourceNpcContextModKey);
+                        sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
 
                     _recordHandler.DuplicateInFormLink(targetNpc.HairColor, sourceNpc.HairColor,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
-                        sourceNpcContextModKey);
+                        sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
 
                     targetNpc.HeadParts.Clear();
                     foreach (var hp in sourceNpc.HeadParts.Where(x => !x.IsNull))
@@ -452,7 +463,7 @@ public class Patcher : OptionalUIModule
                         var targetHp = new FormLink<IHeadPartGetter>();
                         _recordHandler.DuplicateInFormLink(targetHp, hp,
                             _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
-                            sourceNpcContextModKey);
+                            sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
                         targetNpc.HeadParts.Add(targetHp);
                     }
 
