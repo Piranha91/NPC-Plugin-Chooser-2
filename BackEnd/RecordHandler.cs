@@ -278,7 +278,7 @@ public class RecordHandler
     #region Merge In Overrides of Existing Records
 
     public HashSet<IMajorRecord> // return is For Caller's Information only; duplication and remapping happens internally
-        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys)
+        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey)
     {
         HashSet<IMajorRecord> mergedInRecords = new();
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
@@ -303,6 +303,9 @@ public class RecordHandler
         {
             newRecord.RemapLinks(remappedSublinks);
         }
+        
+        // Now go through all merged-in override records and also merge in any new records they may be pointing to
+        DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, relevantContextKeys, rootContextKey, true, RecordLookupFallBack.None);
         
         return mergedInRecords;
     }

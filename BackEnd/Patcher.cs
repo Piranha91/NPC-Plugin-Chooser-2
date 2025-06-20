@@ -222,7 +222,17 @@ public class Patcher : OptionalUIModule
                                 patchNpc =
                                     _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride); // copy in the winning override and patch its appearance
                                 CopyAppearanceData(appearanceNpcRecord, patchNpc, appearanceModSetting, appearanceModKey.Value, npcIdentifier, mergeInDependencyRecords);
+             
+                                // deep copy in all referenced records originating from the source plugins
+                                if (mergeInDependencyRecords)
+                                {
+                                    _recordHandler.DuplicateFromOnlyReferencedGetters(
+                                        _environmentStateProvider.OutputMod, patchNpc,
+                                        appearanceModSetting.CorrespondingModKeys,
+                                        appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Winner);
+                                }
                                 
+                                // handle overriden records originating outside of the source plugins
                                 switch (recordOverrideHandlingMode)
                                 {
                                     case RecordOverrideHandlingMode.Ignore:
@@ -258,7 +268,7 @@ public class Patcher : OptionalUIModule
                                     case RecordOverrideHandlingMode.IncludeAsNew:
                                         var mergedInRecords =
                                             _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord, patchNpc,
-                                                appearanceModSetting.CorrespondingModKeys);
+                                                appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value);
                                         foreach (var rec in mergedInRecords)
                                         {
                                             var assets = _aux.ShallowGetAssetLinks(rec).Where(x => !assetLinks.Contains(x));
@@ -267,23 +277,24 @@ public class Patcher : OptionalUIModule
                                         
                                         break;
                                 }
-                                
-                                                    
-                                // deep copy in all dependencies
-                                if (mergeInDependencyRecords)
-                                {
-                                    _recordHandler.DuplicateFromOnlyReferencedGetters(
-                                        _environmentStateProvider.OutputMod, patchNpc,
-                                        appearanceModSetting.CorrespondingModKeys,
-                                        appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Winner);
-                                }
                                 break;
+                            
                             case PatchingMode.Default:
                             default:
                                 AppendLog(
                                     $"      Mode: Default. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"})."); // Verbose only
                                 patchNpc = _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(appearanceNpcRecord); // copy in the NPC as it appears in the source mod
-
+                
+                                // deep copy in all referenced records originating from the source plugins
+                                if (mergeInDependencyRecords)
+                                {
+                                    _recordHandler.DuplicateFromOnlyReferencedGetters(
+                                        _environmentStateProvider.OutputMod, patchNpc,
+                                        appearanceModSetting.CorrespondingModKeys,
+                                        appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Origin);
+                                }
+                                
+                                // handle overriden records originating outside of the source plugins
                                 switch (recordOverrideHandlingMode)
                                 {
                                     case RecordOverrideHandlingMode.Ignore:
@@ -303,23 +314,13 @@ public class Patcher : OptionalUIModule
                                     case RecordOverrideHandlingMode.IncludeAsNew:
                                         var mergedInRecords =
                                             _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord, patchNpc,
-                                                appearanceModSetting.CorrespondingModKeys);
+                                                appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value);
                                         foreach (var rec in mergedInRecords)
                                         {
                                             var assets = _aux.ShallowGetAssetLinks(rec).Where(x => !assetLinks.Contains(x));
                                             assetLinks.AddRange(assets);
                                         }
                                         break;
-                                }
-                                
-                                                    
-                                // deep copy in all dependencies
-                                if (mergeInDependencyRecords)
-                                {
-                                    _recordHandler.DuplicateFromOnlyReferencedGetters(
-                                        _environmentStateProvider.OutputMod, patchNpc,
-                                        appearanceModSetting.CorrespondingModKeys,
-                                        appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Origin);
                                 }
                                 break;
                         }
