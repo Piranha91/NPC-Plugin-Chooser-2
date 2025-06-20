@@ -221,15 +221,19 @@ public class Patcher : OptionalUIModule
                                     $"      Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {appearanceModKey?.FileName ?? "N/A"}."); // Verbose only
                                 patchNpc =
                                     _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride); // copy in the winning override and patch its appearance
-                                CopyAppearanceData(appearanceNpcRecord, patchNpc, appearanceModSetting, appearanceModKey.Value, npcIdentifier, mergeInDependencyRecords);
-             
+                                
+                                var mergedInAppearanceRecords = CopyAppearanceData(appearanceNpcRecord, patchNpc, appearanceModSetting, appearanceModKey.Value, npcIdentifier, mergeInDependencyRecords);
+                                _aux.CollectShallowAssetLinks(mergedInAppearanceRecords, assetLinks);
+                                
                                 // deep copy in all referenced records originating from the source plugins
                                 if (mergeInDependencyRecords)
                                 {
-                                    _recordHandler.DuplicateFromOnlyReferencedGetters(
+                                     var mergedInRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(
                                         _environmentStateProvider.OutputMod, patchNpc,
                                         appearanceModSetting.CorrespondingModKeys,
                                         appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Winner);
+                                     
+                                     _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                 }
                                 
                                 // handle overriden records originating outside of the source plugins
@@ -259,22 +263,15 @@ public class Patcher : OptionalUIModule
                                             {
                                                 ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod); // fallback in case parent record isn't in the load order (will cause a missing master, but that's the user's problem)
                                             }
-                                            
-                                            var assets = _aux.ShallowGetAssetLinks(ctx.Record).Where(x => !assetLinks.Contains(x));
-                                            assetLinks.AddRange(assets);
                                         }
+                                        _aux.CollectShallowAssetLinks(dependencyContexts, assetLinks);
                                         break;
                                     
                                     case RecordOverrideHandlingMode.IncludeAsNew:
                                         var mergedInRecords =
                                             _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord, patchNpc,
                                                 appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value);
-                                        foreach (var rec in mergedInRecords)
-                                        {
-                                            var assets = _aux.ShallowGetAssetLinks(rec).Where(x => !assetLinks.Contains(x));
-                                            assetLinks.AddRange(assets);
-                                        }
-                                        
+                                        _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                         break;
                                 }
                                 break;
@@ -288,10 +285,12 @@ public class Patcher : OptionalUIModule
                                 // deep copy in all referenced records originating from the source plugins
                                 if (mergeInDependencyRecords)
                                 {
-                                    _recordHandler.DuplicateFromOnlyReferencedGetters(
+                                    var mergedInRecords =_recordHandler.DuplicateFromOnlyReferencedGetters(
                                         _environmentStateProvider.OutputMod, patchNpc,
                                         appearanceModSetting.CorrespondingModKeys,
                                         appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Origin);
+                                    
+                                    _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                 }
                                 
                                 // handle overriden records originating outside of the source plugins
@@ -301,25 +300,20 @@ public class Patcher : OptionalUIModule
                                         break;
                                     
                                     case RecordOverrideHandlingMode.Include:
-                                        var dependencyRecords = _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
+                                        var dependencyContexts = _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
                                             appearanceModSetting.CorrespondingModKeys);
-                                        foreach (var ctx in dependencyRecords)
+                                        foreach (var ctx in dependencyContexts)
                                         {
                                             ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
-                                            var assets = _aux.ShallowGetAssetLinks(ctx.Record).Where(x => !assetLinks.Contains(x));
-                                            assetLinks.AddRange(assets);
                                         }
+                                        _aux.CollectShallowAssetLinks(dependencyContexts, assetLinks);
                                         break;
                                     
                                     case RecordOverrideHandlingMode.IncludeAsNew:
                                         var mergedInRecords =
                                             _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord, patchNpc,
                                                 appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value);
-                                        foreach (var rec in mergedInRecords)
-                                        {
-                                            var assets = _aux.ShallowGetAssetLinks(rec).Where(x => !assetLinks.Contains(x));
-                                            assetLinks.AddRange(assets);
-                                        }
+                                        _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                         break;
                                 }
                                 break;
@@ -429,7 +423,7 @@ public class Patcher : OptionalUIModule
         /// Copies appearance-related fields from sourceNpc to targetNpc.
         /// Used only in EasyNPC-Like mode.
         /// </summary>
-        private void CopyAppearanceData(INpcGetter sourceNpc, Npc targetNpc, ModSetting appearanceModSetting, ModKey sourceNpcContextModKey, string npcIdentifier, bool mergeInDependencyRecords)
+        private List<MajorRecord> CopyAppearanceData(INpcGetter sourceNpc, Npc targetNpc, ModSetting appearanceModSetting, ModKey sourceNpcContextModKey, string npcIdentifier, bool mergeInDependencyRecords)
         {
             // Copy non-formlinks
             targetNpc.FaceMorph = sourceNpc.FaceMorph?.DeepCopy();
@@ -442,30 +436,35 @@ public class Patcher : OptionalUIModule
                                           Enumerable.Empty<TintLayer>());
             
             // Merge in formlinks
+            List<MajorRecord> mergedInRecords = new();
             if (mergeInDependencyRecords)
             {
                 try
                 {
-                    _recordHandler.DuplicateInFormLink(targetNpc.WornArmor, sourceNpc.WornArmor,
+                    var skinRecords = _recordHandler.DuplicateInFormLink(targetNpc.WornArmor, sourceNpc.WornArmor,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
                         sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
+                    mergedInRecords.AddRange(skinRecords);
 
-                    _recordHandler.DuplicateInFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture,
+                    var headRecords =_recordHandler.DuplicateInFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
                         sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
+                    mergedInRecords.AddRange(headRecords);
 
-                    _recordHandler.DuplicateInFormLink(targetNpc.HairColor, sourceNpc.HairColor,
+                    var hairColorRecords = _recordHandler.DuplicateInFormLink(targetNpc.HairColor, sourceNpc.HairColor,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
                         sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
+                    mergedInRecords.AddRange(hairColorRecords);
 
                     targetNpc.HeadParts.Clear();
                     foreach (var hp in sourceNpc.HeadParts.Where(x => !x.IsNull))
                     {
                         var targetHp = new FormLink<IHeadPartGetter>();
-                        _recordHandler.DuplicateInFormLink(targetHp, hp,
+                        var headPartRecords =_recordHandler.DuplicateInFormLink(targetHp, hp,
                             _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
                             sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
                         targetNpc.HeadParts.Add(targetHp);
+                        mergedInRecords.AddRange(headPartRecords);
                     }
 
 
@@ -491,6 +490,8 @@ public class Patcher : OptionalUIModule
                 targetNpc.Configuration.TemplateFlags 
                     &= ~NpcConfiguration.TemplateFlag.Traits;
             }
+            
+            return mergedInRecords;
         }
 
         private bool NPCisTemplated(INpcGetter? npc)

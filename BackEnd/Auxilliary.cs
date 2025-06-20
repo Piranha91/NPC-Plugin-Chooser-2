@@ -214,6 +214,23 @@ public class Auxilliary
         }
     }
 
+    public void CollectShallowAssetLinks(IEnumerable<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> recordContexts, List<IAssetLinkGetter> assetLinks)
+    {
+        foreach (var context in recordContexts)
+        {
+            var recordAssetLinks = ShallowGetAssetLinks(context.Record);
+            assetLinks.AddRange(recordAssetLinks.Where(x => !assetLinks.Contains(x)));
+        }
+    }
+    
+    public void CollectShallowAssetLinks(IEnumerable<IMajorRecordGetter> recordGetters, List<IAssetLinkGetter> assetLinks)
+    {
+        foreach (var recordGetter in recordGetters)
+        {
+            var recordAssetLinks = ShallowGetAssetLinks(recordGetter);
+            assetLinks.AddRange(recordAssetLinks.Where(x => !assetLinks.Contains(x)));
+        }
+    }
     public List<IAssetLinkGetter> ShallowGetAssetLinks(IMajorRecordGetter recordGetter)
     {
         return recordGetter.EnumerateAssetLinks(AssetLinkQuery.Listed, _assetLinkCache, null)

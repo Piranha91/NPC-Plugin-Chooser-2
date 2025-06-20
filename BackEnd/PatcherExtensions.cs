@@ -11,7 +11,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public static class PatcherExtensions
 {
-    public static void DuplicateFromOnlyReferencedGetters<TMod, TModGetter>(
+    public static List<MajorRecord> DuplicateFromOnlyReferencedGetters<TMod, TModGetter>(
         this TMod modToDuplicateInto,
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         RecordHandler recordHandler,
@@ -74,6 +74,7 @@ public static class PatcherExtensions
             }
         }
 
+        List<MajorRecord> mergedInRecords = new();
         // Duplicate in the records
         foreach (var identifiedLink in identifiedLinks)
         {
@@ -93,12 +94,14 @@ public static class PatcherExtensions
             var dup = Auxilliary.DuplicateGenericRecordAsNew(identifiedRec, modToDuplicateInto);
             dup.EditorID = newEdid;
             mapping[identifiedLink.FormKey] = dup.FormKey;
-            
+            mergedInRecords.Add(dup);
             modToDuplicateInto.Remove(identifiedLink.FormKey, identifiedLink.Type);
         }
 
         // Remap links
         modToDuplicateInto.RemapLinks(mapping);
+        
+        return mergedInRecords;
     }
     
     // Original form depending on global link cache

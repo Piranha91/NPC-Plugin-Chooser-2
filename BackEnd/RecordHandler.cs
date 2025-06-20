@@ -62,7 +62,7 @@ public class RecordHandler
     /// /// <param name="modKeysToDuplicateFrom">The mods whose records are eligible to be deep copied in.</param>
     /// /// <param name="rootContextModKey">The mod which is the source override of "formLinkToCopy".</param>
     /// <returns>No return; modification in-place.</returns>
-    public void DuplicateInFormLink<TMod>(
+    public List<MajorRecord> DuplicateInFormLink<TMod>(
         IFormLink<IMajorRecordGetter> targetFormLink,
         IFormLinkGetter<IMajorRecordGetter> formLinkToCopy,
         TMod modToDuplicateInto,
@@ -72,25 +72,26 @@ public class RecordHandler
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
+        List<MajorRecord> mergedInRecords = new();
         if (formLinkToCopy.IsNull)
         {
             targetFormLink.SetToNull();
-            return;
+            return mergedInRecords;
         }
 
         var mapping = GetCurrentContextMapping(rootContextModKey);
         if (mapping.TryGetValue(targetFormLink.FormKey, out var remappedFormKey))
         {
             targetFormLink.SetTo(remappedFormKey);
-            return;
+            return mergedInRecords;
         }
 
         if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, fallBackMode, out var record) || record == null)
         {
-            return;
+            return mergedInRecords;
         }
         
-        DuplicateFromOnlyReferencedGetters(modToDuplicateInto, record, modKeysToDuplicateFrom, 
+        mergedInRecords = DuplicateFromOnlyReferencedGetters(modToDuplicateInto, record, modKeysToDuplicateFrom, 
             rootContextModKey, false, fallBackMode, typesToInspect);
 
         if (_contextMappings.ContainsKey(rootContextModKey) &&
@@ -103,9 +104,11 @@ public class RecordHandler
         {
             targetFormLink.SetTo(formLinkToCopy.FormKey);
         }
+        
+        return mergedInRecords;
     }
 
-    public void DuplicateFromOnlyReferencedGetters<TMod>(
+    public List<MajorRecord> DuplicateFromOnlyReferencedGetters<TMod>(
         TMod modToDuplicateInto,
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
@@ -117,7 +120,7 @@ public class RecordHandler
     {
         Dictionary<FormKey, FormKey> mapping = GetCurrentContextMapping(rootContextModKey);
         
-        modToDuplicateInto.DuplicateFromOnlyReferencedGetters<TMod, ISkyrimModGetter>(
+        return modToDuplicateInto.DuplicateFromOnlyReferencedGetters<TMod, ISkyrimModGetter>(
             recordsToDuplicate,
             this,
             modKeysToDuplicateFrom,
@@ -128,7 +131,7 @@ public class RecordHandler
     }
 
     // convenience overload for a single ModKey
-    public void DuplicateFromOnlyReferencedGetters<TMod>(
+    public List<MajorRecord> DuplicateFromOnlyReferencedGetters<TMod>(
         TMod modToDuplicateInto,
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         ModKey modKeyToDuplicateFrom,
@@ -137,7 +140,7 @@ public class RecordHandler
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
-        DuplicateFromOnlyReferencedGetters(
+        return DuplicateFromOnlyReferencedGetters(
             modToDuplicateInto,
             recordsToDuplicate,
             new[] { modKeyToDuplicateFrom },
@@ -148,7 +151,7 @@ public class RecordHandler
     }
     
     // convenience overload for a single Record
-    public void DuplicateFromOnlyReferencedGetters<TMod>(
+    public List<MajorRecord> DuplicateFromOnlyReferencedGetters<TMod>(
         TMod modToDuplicateInto,
         IMajorRecordGetter recordToDuplicate,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
@@ -158,7 +161,7 @@ public class RecordHandler
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
-        DuplicateFromOnlyReferencedGetters(
+        return DuplicateFromOnlyReferencedGetters(
             modToDuplicateInto,
             new[] { recordToDuplicate },
             modKeysToDuplicateFrom,
@@ -169,7 +172,7 @@ public class RecordHandler
     }
     
     // convenience overload for a single Record and ModKey
-    public void DuplicateFromOnlyReferencedGetters<TMod>(
+    public List<MajorRecord> DuplicateFromOnlyReferencedGetters<TMod>(
         TMod modToDuplicateInto,
         IMajorRecordGetter recordToDuplicate,
         ModKey modKeyToDuplicateFrom,
@@ -178,7 +181,7 @@ public class RecordHandler
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
-        DuplicateFromOnlyReferencedGetters(
+        return DuplicateFromOnlyReferencedGetters(
             modToDuplicateInto,
             new[] { recordToDuplicate },
             new[] { modKeyToDuplicateFrom },
@@ -305,7 +308,9 @@ public class RecordHandler
         }
         
         // Now go through all merged-in override records and also merge in any new records they may be pointing to
-        DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, relevantContextKeys, rootContextKey, true, RecordLookupFallBack.None);
+        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, relevantContextKeys, rootContextKey, true, RecordLookupFallBack.None);
+        
+        mergedInRecords.UnionWith(newMergedSubRecords);
         
         return mergedInRecords;
     }
