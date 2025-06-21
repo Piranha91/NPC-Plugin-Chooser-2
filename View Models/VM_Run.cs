@@ -31,7 +31,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Lazy<VM_Mods> _lazyVmMods;
         private readonly Patcher _patcher;
         private readonly Validator _validator;
-        private readonly RaceHandler _raceHandler;
         private readonly BsaHandler _bsaHandler;
         private readonly RecordDeltaPatcher _recordDeltaPatcher;
         private readonly CompositeDisposable _disposables = new();
@@ -73,7 +72,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             Lazy<VM_Mods> lazyVmMods,
             Patcher patcher,
             Validator validator,
-            RaceHandler raceHandler,
             BsaHandler bsaHandler,
             RecordDeltaPatcher recordDeltaPatcher)
         {
@@ -83,13 +81,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _lazyVmMods = lazyVmMods;
             _patcher = patcher;
             _validator = validator;
-            _raceHandler = raceHandler;
             _bsaHandler = bsaHandler;
             _recordDeltaPatcher = recordDeltaPatcher;
             
             _patcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
             _validator.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
-            _raceHandler.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
             _bsaHandler.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
             _recordDeltaPatcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
 

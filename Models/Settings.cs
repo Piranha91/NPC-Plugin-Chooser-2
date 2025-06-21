@@ -23,7 +23,6 @@ public class Settings
     public PatchingMode PatchingMode { get; set; } = PatchingMode.Default; 
     
     // Default Overrideable Settings
-    public RaceHandlingMode DefaultRaceHandlingMode { get; set; } = RaceHandlingMode.ForwardWinningOverrides;
 
     public RecordOverrideHandlingMode DefaultRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
 

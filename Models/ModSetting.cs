@@ -14,6 +14,5 @@ public class ModSetting
     public Dictionary<FormKey, ModKey> NpcPluginDisambiguation { get; set; } = new(); // Maps NPC FormKey to the ModKey from which it should inherit data, specifically for NPCs appearing in multiple plugins within this ModSetting.
     [JsonIgnore] public Dictionary<FormKey, List<ModKey>> AvailablePluginsForNpcs { get; set; } = new(); // Maps all available CorrespondingModKeys that can be used as a source plugin for this ModSetting
     public bool MergeInDependencyRecords { get; set; } = true;
-    public RaceHandlingMode? ModRaceHandlingMode { get; set; } = RaceHandlingMode.ForwardWinningOverrides;
     public RecordOverrideHandlingMode? ModRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
 }

@@ -15,7 +15,6 @@ public class Patcher : OptionalUIModule
     private readonly Settings _settings;
     private readonly Validator _validator;
     private readonly AssetHandler _assetHandler;
-    private readonly RaceHandler _raceHandler;
     private readonly RecordHandler _recordHandler;
     private readonly Auxilliary _aux;
     private readonly RecordDeltaPatcher _recordDeltaPatcher;
@@ -28,13 +27,12 @@ public class Patcher : OptionalUIModule
 
     public const string ALL_NPCS_GROUP = VM_Run.ALL_NPCS_GROUP;
     
-    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator, AssetHandler assetHandler, RaceHandler raceHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher, PluginProvider pluginProvider)
+    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator, AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher, PluginProvider pluginProvider)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _validator = validator;
         _assetHandler = assetHandler;
-        _raceHandler = raceHandler;
         _recordHandler = recordHandler;
         _aux = aux;
         _recordDeltaPatcher = recordDeltaPatcher;
@@ -59,7 +57,6 @@ public class Patcher : OptionalUIModule
             UpdateProgress(0, 1, "Initializing...");
             AppendLog("Starting patch generation..."); // Verbose only
             
-            _raceHandler.Reinitialize();
             _recordHandler.Reinitialize();
             _assetHandler.Initialize();
             _recordDeltaPatcher.Reinitialize();
