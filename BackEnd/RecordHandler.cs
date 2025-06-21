@@ -457,8 +457,24 @@ public class RecordHandler
 
         return false;
     }
+
+    public bool TryGetRecordFromMod(FormKey formKey, Type type, ModKey modKey, RecordLookupFallBack fallbackMode,
+        out dynamic? record)
+    {
+        record = null;
+        if (_pluginProvider.TryGetPlugin(modKey, _settings.ModsFolder, out var plugin) && plugin != null)
+        {
+            var group = plugin.TryGetTopLevelGroup(type);
+            if (group != null && group.ContainsKey(formKey))
+            {
+                record = group[formKey];
+                return true;
+            }
+        }
+        return false;
+    }
     
-    public bool TryGetRecordFromMod(IFormLinkGetter formLink, ModKey modKey, RecordLookupFallBack fallbackMode, out IMajorRecordGetter? record)
+    public bool TryGetRecordGetterFromMod(IFormLinkGetter formLink, ModKey modKey, RecordLookupFallBack fallbackMode, out IMajorRecordGetter? record)
     {
         if (TryAddModToCaches(modKey) && _modLinkCaches[modKey].TryResolve(formLink, out var modRecord) && modRecord is not null)
         {
@@ -511,7 +527,7 @@ public class RecordHandler
 
         foreach (var mk in toSearch)
         {
-            if (TryGetRecordFromMod(formLink, mk, RecordLookupFallBack.None, out record) && record != null)
+            if (TryGetRecordGetterFromMod(formLink, mk, RecordLookupFallBack.None, out record) && record != null)
             {
                 return true;
             }
@@ -521,7 +537,7 @@ public class RecordHandler
         switch (fallbackMode)
         {
             case RecordLookupFallBack.Origin:
-                if (TryGetRecordFromMod(formLink, formLink.FormKey.ModKey, RecordLookupFallBack.None,  out record) && record != null)
+                if (TryGetRecordGetterFromMod(formLink, formLink.FormKey.ModKey, RecordLookupFallBack.None,  out record) && record != null)
                 {
                     return true;
                 }

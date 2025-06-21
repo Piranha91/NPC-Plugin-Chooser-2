@@ -104,14 +104,13 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         #endregion
 
         #region Public Interface
-        public IReadOnlyList<PropertyDiff> GetPropertyDiffs<TGetter>(TGetter source, TGetter target)
-            where TGetter : class, IMajorRecordGetter
+        public IReadOnlyList<PropertyDiff> GetPropertyDiffs(dynamic source, dynamic target)
         {
             if (source is null) throw new ArgumentNullException(nameof(source));
             if (target is null) throw new ArgumentNullException(nameof(target));
 
             var differences = new List<PropertyDiff>();
-            var getterProps = GetGetterProperties(typeof(TGetter));
+            var getterProps = GetGetterProperties(source.GetType());
 
             foreach (var pi in getterProps.Values)
             {
@@ -134,13 +133,12 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             return differences;
         }
 
-        public void ApplyPropertyDiffs<TRecord>(TRecord destination, IEnumerable<PropertyDiff> diffs)
-            where TRecord : MajorRecord, IMajorRecordGetter
+        public void ApplyPropertyDiffs(dynamic destination, IEnumerable<PropertyDiff> diffs)
         {
             if (destination is null) throw new ArgumentNullException(nameof(destination));
             if (diffs is null) throw new ArgumentNullException(nameof(diffs));
 
-            var setterProps = GetSetterProperties(typeof(TRecord));
+            IReadOnlyDictionary<string, PropertyInfo> setterProps = GetSetterProperties(destination.GetType());
 
             if (!_patchedValues.ContainsKey(destination.FormKey))
             {
@@ -154,7 +152,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
 
                 object? newValue = diff.GetValue();
 
-                if (recordPatchedValues.TryGetValue(diff.PropertyName, out var oldValue))
+                if (recordPatchedValues.TryGetValue(diff.PropertyName, out dynamic oldValue))
                 {
                     bool isConflict = false;
                     if (oldValue is IReadOnlyList<object> oldList && newValue is IReadOnlyList<object> newList)

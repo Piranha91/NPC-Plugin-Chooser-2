@@ -245,11 +245,19 @@ public class Patcher : OptionalUIModule
                                         foreach (var ctx in dependencyContexts)
                                         {
                                             bool wasDeltaPatched = false;
-                                            if (_recordHandler.TryGetRecordFromMod(ctx.Record.ToLink(), ctx.Record.FormKey.ModKey, RecordHandler.RecordLookupFallBack.None, out var baseRecord) && baseRecord != null)
+                                            if (_recordHandler.TryGetRecordFromMod(ctx.Record.FormKey, ctx.Record.Type, ctx.Record.FormKey.ModKey, RecordHandler.RecordLookupFallBack.None, out var baseRecord) && baseRecord != null)
                                             {
-                                                var recordDifs = _recordDeltaPatcher.GetPropertyDiffs(ctx.Record, baseRecord);
-                                                var getterType = Auxilliary.GetRecordGetterType(ctx.Record);
-                                                if (recordDifs.Any() && _environmentStateProvider.LinkCache.TryResolve(ctx.Record.FormKey, getterType, out var winningGetter) && winningGetter != null)
+                                                //var recordDifs = _recordDeltaPatcher.GetPropertyDiffs(ctx.Record, baseRecord);
+                                                if (!_recordHandler.TryGetRecordFromMod(ctx.Record.FormKey,
+                                                        ctx.Record.Type, ctx.ModKey,
+                                                        RecordHandler.RecordLookupFallBack.None, out var overrideRecord) &&
+                                                    baseRecord != null)
+                                                {
+                                                    continue;
+                                                }
+                                                List<RecordDeltaPatcher.PropertyDiff> recordDifs = _recordDeltaPatcher.GetPropertyDiffs(overrideRecord, baseRecord);
+                                                IMajorRecordGetter? winningGetter = null;
+                                                if (recordDifs is not null && recordDifs.Any() && _environmentStateProvider.LinkCache.TryResolve(ctx.Record.FormKey, ctx.Record.Type, out winningGetter) && winningGetter != null)
                                                 {
                                                     var winningRecord = Auxilliary.GetOrAddGenericRecordAsOverride(winningGetter, _environmentStateProvider.OutputMod);
                                                     _recordDeltaPatcher.ApplyPropertyDiffs(winningRecord, recordDifs);

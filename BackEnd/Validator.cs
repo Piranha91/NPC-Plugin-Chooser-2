@@ -137,7 +137,7 @@ public class Validator : OptionalUIModule
                 
                 if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out ModKey disambiguation))
                 {
-                    if (availableModKeysForThisNpcInSelectedAppearanceMod.Contains(disambiguation) && _recordHandler.TryGetRecordFromMod(npcFormKey.ToLink<INpcGetter>(), disambiguation, RecordHandler.RecordLookupFallBack.None, out var record) && record != null)
+                    if (availableModKeysForThisNpcInSelectedAppearanceMod.Contains(disambiguation) && _recordHandler.TryGetRecordGetterFromMod(npcFormKey.ToLink<INpcGetter>(), disambiguation, RecordHandler.RecordLookupFallBack.None, out var record) && record != null)
                     {
                         appearanceModRecord = record as INpcGetter;
                         appearanceModKey = disambiguation;
@@ -167,7 +167,7 @@ public class Validator : OptionalUIModule
                         foreach (var candidate in availableModKeysForThisNpcInSelectedAppearanceMod)
                         {
                             if (availableModKeysForThisNpcInSelectedAppearanceMod.Contains(candidate) &&
-                                _recordHandler.TryGetRecordFromMod(npcFormKey.ToLink<INpcGetter>(), candidate, RecordHandler.RecordLookupFallBack.None, out var record) && record != null)
+                                _recordHandler.TryGetRecordGetterFromMod(npcFormKey.ToLink<INpcGetter>(), candidate, RecordHandler.RecordLookupFallBack.None, out var record) && record != null)
                             {
                                 appearanceModRecord = record as INpcGetter;
                                 appearanceModKey = candidate;

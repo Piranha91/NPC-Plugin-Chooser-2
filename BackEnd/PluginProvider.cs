@@ -10,7 +10,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public class PluginProvider
 {
-    private Dictionary<ModKey, ISkyrimModGetter> _pluginCache = new();
+    private Dictionary<ModKey, ISkyrimMod> _pluginCache = new();
 
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly Settings _settings;
@@ -21,23 +21,28 @@ public class PluginProvider
         _settings = settings;
     }
 
-    public bool TryGetPlugin(ModKey modKey, string? fallBackModPath, out ISkyrimModGetter? plugin)
+    public bool TryGetPlugin(ModKey modKey, string? fallBackModPath, out ISkyrimMod? plugin)
     {
         if (_pluginCache.TryGetValue(modKey, out plugin))
         {
             return true;
         }
 
-        var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
-        if (modListing != null)
+        if (_environmentStateProvider.DataFolderPath.Exists)
         {
-            plugin = modListing.Mod;
-            if (plugin != null)
+            var fullPath = Path.Combine(_environmentStateProvider.DataFolderPath, modKey.ToString());
+            if (File.Exists(fullPath))
             {
-                _pluginCache.Add(modKey, plugin);
-                return true;
-            }
+                var imported = SkyrimMod.CreateFromBinary(fullPath, SkyrimRelease.SkyrimSE);
+                plugin = imported;
+                if (plugin != null)
+                {
+                    _pluginCache.Add(modKey, plugin);
+                    return true;
+                }
+            } 
         }
+        
         
         if (fallBackModPath != null)
         {
