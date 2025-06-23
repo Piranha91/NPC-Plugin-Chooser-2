@@ -1,5 +1,4 @@
-﻿<!-- Views/ModsView.xaml -->
-<reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.ModsView"
+﻿<reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.ModsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -107,190 +106,232 @@
                                    Visibility="{Binding IsLoadingNpcData, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     </WrapPanel>
                 </Border>
+                
+                <!-- ============================ VIRTUALIZATION FIX START ============================ -->
+                <!-- Replaced ScrollViewer + ItemsControl with a single ListBox.
+                     The ListBox has a correctly configured built-in ScrollViewer that enables virtualization.
+                     The ItemContainerStyle removes the default selection highlight, making it look like an ItemsControl. -->
+                <ListBox Grid.Row="1" ItemsSource="{Binding ModSettingsList}" x:Name="ModSettingsItemsControl"
+                         BorderThickness="0"
+                         Background="Transparent"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
 
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                     <ItemsControl ItemsSource="{Binding ModSettingsList}" x:Name="ModSettingsItemsControl">
-                         <ItemsControl.ItemsPanel>
-                             <ItemsPanelTemplate>
-                                 <VirtualizingStackPanel Orientation="Vertical"/>
-                             </ItemsPanelTemplate>
-                         </ItemsControl.ItemsPanel>
-                         <ItemsControl.ItemTemplate>
-                             <DataTemplate DataType="{x:Type vm:VM_ModSetting}">
-                                 <Border BorderThickness="1" Margin="0,5" Padding="10" CornerRadius="3">
-                                     <Border.Style>
-                                         <Style TargetType="Border">
-                                             <Setter Property="BorderBrush" Value="DarkGray"/>
-                                             <Setter Property="ToolTip" Value="Status: Incomplete (Requires Mugshot Path and/or Mod Data Path assignment)."/>
-                                             <Setter Property="Background" Value="White"/>
-                                             <Style.Triggers>
-                                                 <MultiDataTrigger>
-                                                     <MultiDataTrigger.Conditions>
-                                                         <Condition Binding="{Binding HasMugshotPathAssigned}" Value="True"/>
-                                                         <Condition Binding="{Binding HasModPathsAssigned}" Value="True"/>
-                                                     </MultiDataTrigger.Conditions>
-                                                     <Setter Property="BorderBrush" Value="Green"/>
-                                                     <Setter Property="ToolTip" Value="Status: OK (Has Mugshot path and Mod Data path(s))."/>
-                                                 </MultiDataTrigger>
-                                                 <MultiDataTrigger>
-                                                     <MultiDataTrigger.Conditions>
-                                                         <Condition Binding="{Binding HasMugshotPathAssigned}" Value="False"/>
-                                                         <Condition Binding="{Binding HasModPathsAssigned}" Value="True"/>
-                                                     </MultiDataTrigger.Conditions>
-                                                     <Setter Property="BorderBrush" Value="DimGray"/> 
-                                                     <Setter Property="ToolTip" Value="Status: Partial (Has Mod Data path(s), but no Mugshot path assigned)."/>
-                                                 </MultiDataTrigger>
-                                                 <MultiDataTrigger>
-                                                     <MultiDataTrigger.Conditions>
-                                                         <Condition Binding="{Binding HasMugshotPathAssigned}" Value="True"/>
-                                                         <Condition Binding="{Binding HasModPathsAssigned}" Value="False"/>
-                                                     </MultiDataTrigger.Conditions>
-                                                     <Setter Property="BorderBrush" Value="Red"/>
-                                                     <Setter Property="ToolTip" Value="Status: Partial (Has Mugshot path, but no Mod Data path(s) assigned)."/>
-                                                 </MultiDataTrigger>
-                                                  <DataTrigger Binding="{Binding IsMugshotOnlyEntry}" Value="True">
-                                                      <Setter Property="Background" Value="#FFF8F8F8"/>
-                                                       <Setter Property="ToolTip">
-                                                            <Setter.Value>
-                                                                 <MultiBinding Converter="{StaticResource ModStatusToolTipMultiConverter}"> 
-                                                                     <Binding Path="HasMugshotPathAssigned"/>
-                                                                     <Binding Path="HasModPathsAssigned"/>
-                                                                     <Binding Path="IsMugshotOnlyEntry"/>
-                                                                 </MultiBinding>
-                                                            </Setter.Value>
-                                                       </Setter>
-                                                  </DataTrigger>
-                                             </Style.Triggers>
-                                         </Style>
-                                     </Border.Style>
-                                     <Grid>
-                                         <Grid.RowDefinitions>
-                                             <RowDefinition Height="Auto"/> 
-                                             <RowDefinition Height="Auto"/> 
-                                             <RowDefinition Height="Auto"/> 
-                                             <RowDefinition Height="Auto"/> 
-                                             <RowDefinition Height="Auto"/> 
-                                             <RowDefinition Height="Auto"/> 
-                                             <RowDefinition Height="Auto"/> 
-                                         </Grid.RowDefinitions>
-                                         <Grid.ColumnDefinitions>
-                                             <ColumnDefinition Width="*"/>
-                                         </Grid.ColumnDefinitions>
+                    <!-- This style makes the ListBoxItems behave like the old ItemsControl items
+                         (no selection highlight, no border, etc.) -->
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Margin" Value="0"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Focusable" Value="False"/> <!-- Prevents dotted focus rectangle -->
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                Padding="{TemplateBinding Padding}"
+                                                SnapsToDevicePixels="true">
+                                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" 
+                                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" 
+                                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
 
-                                         <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,5">
-                                             <StackPanel Orientation="Horizontal">
-                                                  <Button Style="{StaticResource LinkButtonStyle}"
-                                                          Command="{Binding DataContext.ShowMugshotsCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"
-                                                          CommandParameter="{Binding}"
-                                                          ToolTipService.ShowOnDisabled="False">
-                                                 <Button.ToolTip>
-                                                     <MultiBinding Converter="{StaticResource ModSettingLinkButtonTooltipConverter}">
-                                                         <Binding Path="HasValidMugshots"/>
-                                                         <Binding Path="NpcFormKeysToDisplayName.Count"/>
-                                                     </MultiBinding>
-                                                 </Button.ToolTip>
-                                                 <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="14"/>
-                                                 </Button>
-                                                 <TextBlock Text="{Binding ModKeyDisplaySuffix}"
-                                                            FontWeight="Normal" 
-                                                            FontSize="12" Margin="5,0,0,0" VerticalAlignment="Center" Foreground="DarkSlateGray">
-                                                     <TextBlock.Style>
-                                                         <Style TargetType="TextBlock">
-                                                             <Setter Property="Visibility" Value="Visible"/>
-                                                             <Style.Triggers>
-                                                                 <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Static System:String.Empty}">
-                                                                     <Setter Property="Visibility" Value="Collapsed"/>
-                                                                 </DataTrigger>
-                                                                 <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Null}">
-                                                                     <Setter Property="Visibility" Value="Collapsed"/>
-                                                                 </DataTrigger>
-                                                             </Style.Triggers>
-                                                         </Style>
-                                                     </TextBlock.Style>
-                                                 </TextBlock>
-                                             </StackPanel>
-                                             <Grid Margin="10,5,0,0">
-                                                 <Grid.ColumnDefinitions>
-                                                     <ColumnDefinition Width="Auto"/>
-                                                     <ColumnDefinition Width="*"/>
-                                                     <ColumnDefinition Width="Auto"/>
-                                                 </Grid.ColumnDefinitions>
-                                                 <TextBlock Grid.Column="0" Text="Mugshot Folder:" VerticalAlignment="Center"/>
-                                                 <TextBlock Grid.Column="1" Text="{Binding MugShotFolderPath, TargetNullValue='(Not Set)'}" VerticalAlignment="Center" Margin="5,0" ToolTip="{Binding MugShotFolderPath}" TextTrimming="CharacterEllipsis"/>
-                                                 <Button Grid.Column="2" Content="Browse..." Command="{Binding BrowseMugshotFolderCommand}" Padding="5,1" VerticalAlignment="Center"/>
-                                             </Grid>
+                    <!-- The ItemsPanel is the same, but it will now virtualize correctly inside the ListBox -->
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel Orientation="Vertical"/>
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+
+                    <!-- The ItemTemplate is the same, but RelativeSource bindings are updated -->
+                    <ListBox.ItemTemplate>
+                         <DataTemplate DataType="{x:Type vm:VM_ModSetting}">
+                             <Border BorderThickness="1" Margin="0,5" Padding="10" CornerRadius="3">
+                                 <Border.Style>
+                                     <Style TargetType="Border">
+                                         <Setter Property="BorderBrush" Value="DarkGray"/>
+                                         <Setter Property="ToolTip" Value="Status: Incomplete (Requires Mugshot Path and/or Mod Data Path assignment)."/>
+                                         <Setter Property="Background" Value="White"/>
+                                         <Style.Triggers>
+                                             <MultiDataTrigger>
+                                                 <MultiDataTrigger.Conditions>
+                                                     <Condition Binding="{Binding HasMugshotPathAssigned}" Value="True"/>
+                                                     <Condition Binding="{Binding HasModPathsAssigned}" Value="True"/>
+                                                 </MultiDataTrigger.Conditions>
+                                                 <Setter Property="BorderBrush" Value="Green"/>
+                                                 <Setter Property="ToolTip" Value="Status: OK (Has Mugshot path and Mod Data path(s))."/>
+                                             </MultiDataTrigger>
+                                             <MultiDataTrigger>
+                                                 <MultiDataTrigger.Conditions>
+                                                     <Condition Binding="{Binding HasMugshotPathAssigned}" Value="False"/>
+                                                     <Condition Binding="{Binding HasModPathsAssigned}" Value="True"/>
+                                                 </MultiDataTrigger.Conditions>
+                                                 <Setter Property="BorderBrush" Value="DimGray"/> 
+                                                 <Setter Property="ToolTip" Value="Status: Partial (Has Mod Data path(s), but no Mugshot path assigned)."/>
+                                             </MultiDataTrigger>
+                                             <MultiDataTrigger>
+                                                 <MultiDataTrigger.Conditions>
+                                                     <Condition Binding="{Binding HasMugshotPathAssigned}" Value="True"/>
+                                                     <Condition Binding="{Binding HasModPathsAssigned}" Value="False"/>
+                                                 </MultiDataTrigger.Conditions>
+                                                 <Setter Property="BorderBrush" Value="Red"/>
+                                                 <Setter Property="ToolTip" Value="Status: Partial (Has Mugshot path, but no Mod Data path(s) assigned)."/>
+                                             </MultiDataTrigger>
+                                              <DataTrigger Binding="{Binding IsMugshotOnlyEntry}" Value="True">
+                                                  <Setter Property="Background" Value="#FFF8F8F8"/>
+                                                   <Setter Property="ToolTip">
+                                                        <Setter.Value>
+                                                             <MultiBinding Converter="{StaticResource ModStatusToolTipMultiConverter}"> 
+                                                                 <Binding Path="HasMugshotPathAssigned"/>
+                                                                 <Binding Path="HasModPathsAssigned"/>
+                                                                 <Binding Path="IsMugshotOnlyEntry"/>
+                                                             </MultiBinding>
+                                                        </Setter.Value>
+                                                   </Setter>
+                                              </DataTrigger>
+                                         </Style.Triggers>
+                                     </Style>
+                                 </Border.Style>
+                                 <Grid>
+                                     <Grid.RowDefinitions>
+                                         <RowDefinition Height="Auto"/> 
+                                         <RowDefinition Height="Auto"/> 
+                                         <RowDefinition Height="Auto"/> 
+                                         <RowDefinition Height="Auto"/> 
+                                         <RowDefinition Height="Auto"/> 
+                                         <RowDefinition Height="Auto"/> 
+                                         <RowDefinition Height="Auto"/> 
+                                     </Grid.RowDefinitions>
+                                     <Grid.ColumnDefinitions>
+                                         <ColumnDefinition Width="*"/>
+                                     </Grid.ColumnDefinitions>
+
+                                     <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,5">
+                                         <StackPanel Orientation="Horizontal">
+                                              <!-- *** FIX: AncestorType is now ListBox *** -->
+                                              <Button Style="{StaticResource LinkButtonStyle}"
+                                                      Command="{Binding DataContext.ShowMugshotsCommand, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}"
+                                                      CommandParameter="{Binding}"
+                                                      ToolTipService.ShowOnDisabled="False">
+                                             <Button.ToolTip>
+                                                 <MultiBinding Converter="{StaticResource ModSettingLinkButtonTooltipConverter}">
+                                                     <Binding Path="HasValidMugshots"/>
+                                                     <Binding Path="NpcFormKeysToDisplayName.Count"/>
+                                                 </MultiBinding>
+                                             </Button.ToolTip>
+                                             <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="14"/>
+                                             </Button>
+                                             <TextBlock Text="{Binding ModKeyDisplaySuffix}"
+                                                        FontWeight="Normal" 
+                                                        FontSize="12" Margin="5,0,0,0" VerticalAlignment="Center" Foreground="DarkSlateGray">
+                                                 <TextBlock.Style>
+                                                     <Style TargetType="TextBlock">
+                                                         <Setter Property="Visibility" Value="Visible"/>
+                                                         <Style.Triggers>
+                                                             <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Static System:String.Empty}">
+                                                                 <Setter Property="Visibility" Value="Collapsed"/>
+                                                             </DataTrigger>
+                                                             <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Null}">
+                                                                 <Setter Property="Visibility" Value="Collapsed"/>
+                                                             </DataTrigger>
+                                                         </Style.Triggers>
+                                                     </Style>
+                                                 </TextBlock.Style>
+                                             </TextBlock>
                                          </StackPanel>
-
-                                         <Grid Grid.Row="1" Grid.Column="0" Margin="0,5,0,5">
-                                              <Grid.ColumnDefinitions>
-                                                  <ColumnDefinition Width="Auto"/>
-                                                  <ColumnDefinition Width="*"/>
-                                                  <ColumnDefinition Width="Auto"/>
-                                              </Grid.ColumnDefinitions>
-                                              <TextBlock Grid.Column="0" Text="Corresponding Mod Folder Paths:" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                              <Button Grid.Column="2" Content="Add" Command="{Binding AddFolderPathCommand}" Padding="5,1" VerticalAlignment="Center"/>
+                                         <Grid Margin="10,5,0,0">
+                                             <Grid.ColumnDefinitions>
+                                                 <ColumnDefinition Width="Auto"/>
+                                                 <ColumnDefinition Width="*"/>
+                                                 <ColumnDefinition Width="Auto"/>
+                                             </Grid.ColumnDefinitions>
+                                             <TextBlock Grid.Column="0" Text="Mugshot Folder:" VerticalAlignment="Center"/>
+                                             <TextBlock Grid.Column="1" Text="{Binding MugShotFolderPath, TargetNullValue='(Not Set)'}" VerticalAlignment="Center" Margin="5,0" ToolTip="{Binding MugShotFolderPath}" TextTrimming="CharacterEllipsis"/>
+                                             <Button Grid.Column="2" Content="Browse..." Command="{Binding BrowseMugshotFolderCommand}" Padding="5,1" VerticalAlignment="Center"/>
                                          </Grid>
+                                     </StackPanel>
 
-                                          <ItemsControl Grid.Row="2" Grid.Column="0" ItemsSource="{Binding CorrespondingFolderPaths}" Margin="10,0,0,0">
-                                             <ItemsControl.ItemTemplate>
-                                                 <DataTemplate>
-                                                     <Grid Margin="0,2">
-                                                         <Grid.ColumnDefinitions>
-                                                             <ColumnDefinition Width="*"/>
-                                                             <ColumnDefinition Width="Auto"/>
-                                                             <ColumnDefinition Width="Auto"/>
-                                                         </Grid.ColumnDefinitions>
-                                                         <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" ToolTip="{Binding}" TextTrimming="CharacterEllipsis">
-                                                             <TextBlock.Foreground>
-                                                                 <Binding Path="." Converter="{StaticResource PathExistenceToBrushConverter}"/>
-                                                             </TextBlock.Foreground>
-                                                         </TextBlock>
-                                                         <Button Grid.Column="1" Content="Browse..." Command="{Binding DataContext.BrowseFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}" CommandParameter="{Binding}" Padding="5,1" Margin="5,0" VerticalAlignment="Center"/>
-                                                         <Button Grid.Column="2" Content="X" Foreground="Red" FontWeight="Bold" Command="{Binding DataContext.RemoveFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}" CommandParameter="{Binding}" Padding="5,1" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                                                     </Grid>
-                                                 </DataTemplate>
-                                             </ItemsControl.ItemTemplate>
-                                         </ItemsControl>
-                                         
-                                         <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
-                                             <TextBlock Text="Merge In Dependency Records" VerticalAlignment="Center"/>
-                                             <CheckBox
-                                                 IsChecked="{Binding MergeInDependencyRecords}"
-                                                 Margin="5 0 0 0"/>
-                                         </StackPanel>
-                                         
-                                         <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
-                                             <TextBlock Text="Non-Appearance Record Handling Mode" VerticalAlignment="Center"/>
-                                             <ComboBox
-                                                 ItemsSource="{Binding RecordOverrideHandlingModes}"
-                                                 DisplayMemberPath="Value"
-                                                 SelectedValuePath="Key"
-                                                 SelectedValue="{Binding OverrideRecordOverrideHandlingMode, Mode=TwoWay}"
-                                                 Margin="5 0 0 0"/>
-                                         </StackPanel>
-                                         
-                                         <Button Grid.Row="5" Grid.Column="0"
-                                                 Content="Unlink Mugshot Data"
-                                                 Command="{Binding UnlinkMugshotDataCommand}"
-                                                 HorizontalAlignment="Left"
-                                                 Margin="0,10,0,0" Padding="5,2"
-                                                 ToolTip="Separates the assigned mugshot folder into its own entry, if its name differs from the primary mod data folder."
-                                                 Visibility="{Binding CanUnlinkMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                         
-                                         <Button Grid.Row="6" Grid.Column="0"
-                                                 Content="Delete"
-                                                 Command="{Binding DeleteCommand}"
-                                                 HorizontalAlignment="Right"
-                                                 Margin="0,5,0,0" Padding="5,2"
-                                                 Foreground="Red" FontWeight="Bold"
-                                                 ToolTip="Permanently delete this empty entry. Only visible if no paths or mugshots are assigned."
-                                                 Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                     </Grid> 
-                                 </Border> 
-                             </DataTemplate>
-                         </ItemsControl.ItemTemplate>
-                     </ItemsControl>
-                </ScrollViewer>
+                                     <Grid Grid.Row="1" Grid.Column="0" Margin="0,5,0,5">
+                                          <Grid.ColumnDefinitions>
+                                              <ColumnDefinition Width="Auto"/>
+                                              <ColumnDefinition Width="*"/>
+                                              <ColumnDefinition Width="Auto"/>
+                                          </Grid.ColumnDefinitions>
+                                          <TextBlock Grid.Column="0" Text="Corresponding Mod Folder Paths:" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                          <Button Grid.Column="2" Content="Add" Command="{Binding AddFolderPathCommand}" Padding="5,1" VerticalAlignment="Center"/>
+                                     </Grid>
+
+                                      <ItemsControl Grid.Row="2" Grid.Column="0" ItemsSource="{Binding CorrespondingFolderPaths}" Margin="10,0,0,0">
+                                         <ItemsControl.ItemTemplate>
+                                             <DataTemplate>
+                                                 <Grid Margin="0,2">
+                                                     <Grid.ColumnDefinitions>
+                                                         <ColumnDefinition Width="*"/>
+                                                         <ColumnDefinition Width="Auto"/>
+                                                         <ColumnDefinition Width="Auto"/>
+                                                     </Grid.ColumnDefinitions>
+                                                     <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" ToolTip="{Binding}" TextTrimming="CharacterEllipsis">
+                                                         <TextBlock.Foreground>
+                                                             <Binding Path="." Converter="{StaticResource PathExistenceToBrushConverter}"/>
+                                                         </TextBlock.Foreground>
+                                                     </TextBlock>
+                                                     <!-- *** FIX: AncestorType is now ListBox *** -->
+                                                     <Button Grid.Column="1" Content="Browse..." Command="{Binding DataContext.BrowseFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}" CommandParameter="{Binding}" Padding="5,1" Margin="5,0" VerticalAlignment="Center"/>
+                                                     <Button Grid.Column="2" Content="X" Foreground="Red" FontWeight="Bold" Command="{Binding DataContext.RemoveFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}" CommandParameter="{Binding}" Padding="5,1" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                                 </Grid>
+                                             </DataTemplate>
+                                         </ItemsControl.ItemTemplate>
+                                     </ItemsControl>
+                                     
+                                     <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
+                                         <TextBlock Text="Merge In Dependency Records" VerticalAlignment="Center"/>
+                                         <CheckBox
+                                             IsChecked="{Binding MergeInDependencyRecords}"
+                                             Margin="5 0 0 0"/>
+                                     </StackPanel>
+                                     
+                                     <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
+                                         <TextBlock Text="Non-Appearance Record Handling Mode" VerticalAlignment="Center"/>
+                                         <ComboBox
+                                             ItemsSource="{Binding RecordOverrideHandlingModes}"
+                                             DisplayMemberPath="Value"
+                                             SelectedValuePath="Key"
+                                             SelectedValue="{Binding OverrideRecordOverrideHandlingMode, Mode=TwoWay}"
+                                             Margin="5 0 0 0"/>
+                                     </StackPanel>
+                                     
+                                     <Button Grid.Row="5" Grid.Column="0"
+                                             Content="Unlink Mugshot Data"
+                                             Command="{Binding UnlinkMugshotDataCommand}"
+                                             HorizontalAlignment="Left"
+                                             Margin="0,10,0,0" Padding="5,2"
+                                             ToolTip="Separates the assigned mugshot folder into its own entry, if its name differs from the primary mod data folder."
+                                             Visibility="{Binding CanUnlinkMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                     
+                                     <Button Grid.Row="6" Grid.Column="0"
+                                             Content="Delete"
+                                             Command="{Binding DeleteCommand}"
+                                             HorizontalAlignment="Right"
+                                             Margin="0,5,0,0" Padding="5,2"
+                                             Foreground="Red" FontWeight="Bold"
+                                             ToolTip="Permanently delete this empty entry. Only visible if no paths or mugshots are assigned."
+                                             Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                 </Grid> 
+                             </Border> 
+                         </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <!-- ============================ VIRTUALIZATION FIX END ============================ -->
             </Grid>
 
             <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="LightGray" x:Name="ColumnSplitter"/>
@@ -326,45 +367,45 @@
                          <ItemsControl.ItemTemplate>
                              <DataTemplate DataType="{x:Type vm:VM_ModsMenuMugshot}">
                                  <Border BorderThickness="1" BorderBrush="Gray" Margin="5" CornerRadius="2"
-                Width="{Binding ImageWidth}" Height="{Binding ImageHeight}"
-                PreviewMouseRightButtonDown="MugshotItem_PreviewMouseRightButtonDown"
-                ToolTip="{Binding NpcDisplayName}">
-            <!-- This Grid is the reference for the icon's percentage sizing -->
-            <Grid Background="WhiteSmoke">
-                <Image Source="{Binding ImagePath}" Stretch="Uniform" UseLayoutRounding="True" SnapsToDevicePixels="True">
-                    <Image.Style>
-                        <Style TargetType="Image">
-                            <Setter Property="Opacity" Value="1.0" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasMugshot}" Value="False">
-                                    <Setter Property="Opacity" Value="0.3"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Image.Style>
-                </Image>
-                <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Background="#AA000000" Padding="3,1">
-                    <TextBlock Text="{Binding NpcDisplayName}" Foreground="White" FontSize="10"
-                                TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
-                </Border>
+                                         Width="{Binding ImageWidth}" Height="{Binding ImageHeight}"
+                                         PreviewMouseRightButtonDown="MugshotItem_PreviewMouseRightButtonDown"
+                                         ToolTip="{Binding NpcDisplayName}">
+                                     <!-- This Grid is the reference for the icon's percentage sizing -->
+                                     <Grid Background="WhiteSmoke">
+                                        <Image Source="{Binding ImagePath}" Stretch="Uniform" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                                            <Image.Style>
+                                                <Style TargetType="Image">
+                                                    <Setter Property="Opacity" Value="1.0" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasMugshot}" Value="False">
+                                                            <Setter Property="Opacity" Value="0.3"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Image.Style>
+                                        </Image>
+                                        <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Background="#AA000000" Padding="3,1">
+                                            <TextBlock Text="{Binding NpcDisplayName}" Foreground="White" FontSize="10"
+                                                        TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
+                                        </Border>
 
-                <!-- ============================ NEW ICON CODE START ============================ -->
-                <!-- This Grid contains the icon, positioned in the bottom right corner. -->
-                <!-- Its visibility is tied to the IsAmbiguousSource property. -->
-                <Grid HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0 0 0 10"
-                      Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
-                      ToolTip="This NPC is defined in multiple source plugins. Right-click to select the correct source."
-                      Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
-                      Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
-                    
-                    <!-- Viewbox ensures the icon image scales cleanly within the container Grid -->
-                    <Viewbox Stretch="Uniform">
-                        <Image Source="/NPC Plugin Chooser 2;component/Resources/Multiple Plugins for NPC.png" />
-                    </Viewbox>
-                </Grid>
-                <!-- ============================= NEW ICON CODE END ============================= -->
-                
-            </Grid>
+                                        <!-- ============================ NEW ICON CODE START ============================ -->
+                                        <!-- This Grid contains the icon, positioned in the bottom right corner. -->
+                                        <!-- Its visibility is tied to the IsAmbiguousSource property. -->
+                                        <Grid HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0 0 0 10"
+                                              Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                              ToolTip="This NPC is defined in multiple source plugins. Right-click to select the correct source."
+                                              Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                              Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+                                            
+                                            <!-- Viewbox ensures the icon image scales cleanly within the container Grid -->
+                                            <Viewbox Stretch="Uniform">
+                                                <Image Source="/NPC Plugin Chooser 2;component/Resources/Multiple Plugins for NPC.png" />
+                                            </Viewbox>
+                                        </Grid>
+                                        <!-- ============================= NEW ICON CODE END ============================= -->
+                                        
+                                     </Grid>
                                      <Border.ContextMenu>
                                           <ContextMenu>
                                                <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/>
@@ -433,10 +474,10 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 
-                <StackPanel Grid.Column="0" DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center"
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
                             Visibility="{Binding ShowSourcePluginControls, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <TextBlock Text="Source Plugin for Ambiguous NPCs:" VerticalAlignment="Center" Margin="10,0,5,0"
                            ToolTip="Select a plugin to be the default source for NPCs found in multiple plugins within this mod setting."/>
