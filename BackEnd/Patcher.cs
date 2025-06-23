@@ -242,12 +242,12 @@ public class Patcher : OptionalUIModule
                                     case RecordOverrideHandlingMode.Include:
                                         var dependencyContexts = _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
                                             appearanceModSetting.CorrespondingModKeys); // To Do: Skip the Race formlink since that's handled separately
+                                        List<MajorRecord> deltaPatchedRecords = new();
                                         foreach (var ctx in dependencyContexts)
                                         {
                                             bool wasDeltaPatched = false;
                                             if (_recordHandler.TryGetRecordFromMod(ctx.Record.FormKey, ctx.Record.Type, ctx.Record.FormKey.ModKey, RecordHandler.RecordLookupFallBack.None, out var baseRecord) && baseRecord != null)
                                             {
-                                                //var recordDifs = _recordDeltaPatcher.GetPropertyDiffs(ctx.Record, baseRecord);
                                                 if (!_recordHandler.TryGetRecordFromMod(ctx.Record.FormKey,
                                                         ctx.Record.Type, ctx.ModKey,
                                                         RecordHandler.RecordLookupFallBack.None, out var overrideRecord) &&
@@ -261,6 +261,7 @@ public class Patcher : OptionalUIModule
                                                 {
                                                     var winningRecord = Auxilliary.GetOrAddGenericRecordAsOverride(winningGetter, _environmentStateProvider.OutputMod);
                                                     _recordDeltaPatcher.ApplyPropertyDiffs(winningRecord, recordDifs);
+                                                    deltaPatchedRecords.Add(winningRecord);
                                                 }
                                             }
                                             
@@ -268,6 +269,15 @@ public class Patcher : OptionalUIModule
                                             {
                                                 ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod); // fallback in case parent record isn't in the load order (will cause a missing master, but that's the user's problem)
                                             }
+                                        }
+                                        if (mergeInDependencyRecords)
+                                        {
+                                            var additionalMergedRecords =_recordHandler.DuplicateFromOnlyReferencedGetters(
+                                                _environmentStateProvider.OutputMod, deltaPatchedRecords,
+                                                appearanceModSetting.CorrespondingModKeys,
+                                                appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Winner);
+                                    
+                                            _aux.CollectShallowAssetLinks(additionalMergedRecords, assetLinks);
                                         }
                                         _aux.CollectShallowAssetLinks(dependencyContexts, assetLinks);
                                         break;
