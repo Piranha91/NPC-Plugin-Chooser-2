@@ -1,4 +1,4 @@
-﻿// View Models/VM_ModSetting.cs
+// View Models/VM_ModSetting.cs
 using System;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
@@ -103,6 +103,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // Calculated property for displaying the ModKey suffix in the UI
         private readonly ObservableAsPropertyHelper<string> _modKeyDisplaySuffix;
         public string ModKeyDisplaySuffix => _modKeyDisplaySuffix.Value;
+        
+        // Calculated property for displaying whether or not the contained plugins have an override
+        private HashSet<ModKey> _pluginsWithOverrideRecords = new();
+        public bool HasPluginWithOverrideRecords => _pluginsWithOverrideRecords.Any();
 
         // HasValidMugshots now indicates if *actual* mugshots are present.
         // If false, but MugShotFolderPath is assigned (or even if not),
@@ -235,8 +239,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  {
                      UpdateCorrespondingModKeys();
                  });
-             
-             
+     
              // When MugShotFolderPath changes OR CorrespondingModKeys.Count changes,
              // re-evaluate HasValidMugshots.
              Observable.Merge(
@@ -389,6 +392,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                         // *** Notify parent VM AFTER path is added ***
                         _parentVm?.CheckForAndPerformMerge(this, addedPath, PathType.ModFolder, hadMugshotBefore, hadModPathsBefore);
+
+                        FindPluginsWithOverrides(_parentVm.GetPluginProvider());
                     }
                 }
             }
@@ -420,6 +425,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                         // *** Notify parent VM AFTER path is changed ***
                         _parentVm?.CheckForAndPerformMerge(this, newPath, PathType.ModFolder, hadMugshotBefore, hadModPathsBefore);
+                        
+                        FindPluginsWithOverrides(_parentVm.GetPluginProvider());
                     }
                     else if (index >= 0 && newPath.Equals(existingPath, StringComparison.OrdinalIgnoreCase)) { /* No change needed */ }
                     else if (index >= 0) // Path didn't change but new path already exists elsewhere
@@ -441,6 +448,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 CorrespondingFolderPaths.Remove(pathToRemove);
             }
+            
+            FindPluginsWithOverrides(_parentVm.GetPluginProvider());
         }
 
         public void UpdateCorrespondingModKeys()
@@ -494,214 +503,250 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// and populates the NPC lists (NpcNames, NpcEditorIDs, NpcFormKeys, NpcFormKeysToDisplayName).
         /// Should typically be run asynchronously during initial load or after significant changes.
         /// </summary>
-        public void RefreshNpcLists()
+        public async Task RefreshNpcLists()
         {
-            NpcNames.Clear();
-            NpcEditorIDs.Clear();
-            NpcFormKeys.Clear();
-            NpcFormKeysToDisplayName.Clear();
-            AvailablePluginsForNpcs.Clear();
-            // AmbiguousNpcFormKeys is cleared and repopulated below
-
-            if (CorrespondingModKeys.Any() && HasModPathsAssigned && !IsFaceGenOnlyEntry)
+            await Task.Run(() =>
             {
-                var dirsWithBsa = CorrespondingFolderPaths
-                    .Where(dir => 
-                        Directory.Exists(dir) &&
-                        Directory.EnumerateFiles(dir, "*.bsa", SearchOption.TopDirectoryOnly).Any()
-                    )
-                    .ToList();
-                
-                foreach (var modKey in CorrespondingModKeys)
+                NpcNames.Clear();
+                NpcEditorIDs.Clear();
+                NpcFormKeys.Clear();
+                NpcFormKeysToDisplayName.Clear();
+                AvailablePluginsForNpcs.Clear();
+                // AmbiguousNpcFormKeys is cleared and repopulated below
+
+                if (CorrespondingModKeys.Any() && HasModPathsAssigned && !IsFaceGenOnlyEntry)
                 {
-                    string? foundPluginPath = null;
-                    foreach (var dirPath in CorrespondingFolderPaths)
-                    {
-                        string pluginFileName = modKey.FileName;
-                        string potentialPluginPath = Path.Combine(dirPath, pluginFileName);
-                        if (File.Exists(potentialPluginPath))
-                        {
-                            foundPluginPath = potentialPluginPath;
-                            break; 
-                        }
-                    }
+                    var dirsWithBsa = CorrespondingFolderPaths
+                        .Where(dir =>
+                            Directory.Exists(dir) &&
+                            Directory.EnumerateFiles(dir, "*.bsa", SearchOption.TopDirectoryOnly).Any()
+                        )
+                        .ToList();
 
-                    if (foundPluginPath != null) 
+                    foreach (var modKey in CorrespondingModKeys)
                     {
-                        try
+                        string? foundPluginPath = null;
+                        foreach (var dirPath in CorrespondingFolderPaths)
                         {
-                            List <IArchiveReader> bsaReaders = new();
-                            foreach (var d in dirsWithBsa)
+                            string pluginFileName = modKey.FileName;
+                            string potentialPluginPath = Path.Combine(dirPath, pluginFileName);
+                            if (File.Exists(potentialPluginPath))
                             {
-                                var readers = _bsaHandler.OpenBsaArchiveReaders(d, modKey);
-                                bsaReaders.AddRange(readers);
+                                foundPluginPath = potentialPluginPath;
+                                break;
                             }
-                            
-                            using var mod = SkyrimMod.CreateFromBinaryOverlay(foundPluginPath, _skyrimRelease);
-                            foreach (var npcGetter in mod.Npcs)
+                        }
+
+                        if (foundPluginPath != null)
+                        {
+                            try
                             {
-                                var racefk = npcGetter.Race;
-                                if (racefk.IsNull)
+                                List<IArchiveReader> bsaReaders = new();
+                                foreach (var d in dirsWithBsa)
                                 {
-                                    continue;
+                                    var readers = _bsaHandler.OpenBsaArchiveReaders(d, modKey);
+                                    bsaReaders.AddRange(readers);
                                 }
 
-                                if (!_environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(racefk,
-                                        out var raceGetter) || raceGetter.Keywords == null)
+                                using var mod = SkyrimMod.CreateFromBinaryOverlay(foundPluginPath, _skyrimRelease);
+                                foreach (var npcGetter in mod.Npcs)
                                 {
-                                    continue;
-                                }
-                                
-                                if (!raceGetter.Keywords.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Keyword
-                                        .ActorTypeNPC))
-                                {
-                                    continue;
-                                }
-                                
-                                FormKey currentNpcKey = npcGetter.FormKey;
-                                
-                                if (!FaceGenExists(currentNpcKey, CorrespondingFolderPaths, bsaReaders.ToHashSet()))
-                                {
-                                    continue;
-                                }
-
-                                if (!AvailablePluginsForNpcs.TryGetValue(currentNpcKey, out var sourceList))
-                                {
-                                    sourceList = new List<ModKey>();
-                                    AvailablePluginsForNpcs[currentNpcKey] = sourceList;
-                                }
-                                if (!sourceList.Contains(modKey)) 
-                                {
-                                     sourceList.Add(modKey);
-                                }
-
-                                if (npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
-                                {
-                                    string templateStr = npcGetter.Template?.FormKey.ToString() ?? "NULL TEMPLATE";
-                                    if (npcGetter.Template != null &&
-                                        _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(
-                                            npcGetter.Template.FormKey, out var templateGetter) && templateGetter != null)
+                                    var racefk = npcGetter.Race;
+                                    if (racefk.IsNull)
                                     {
-                                        if (templateGetter.Name != null && templateGetter.Name.String != null)
-                                        {
-                                            templateStr = templateGetter.Name.String;
-                                        }
-                                        else if (templateGetter.EditorID != null)
-                                        {
-                                            templateStr = templateGetter.EditorID;
-                                        }
-                                        else
-                                        {
-                                            templateStr = npcGetter.Template.FormKey.ToString();
-                                        }
+                                        continue;
                                     }
-                                    
-                                    NpcFormKeysToNotifications[currentNpcKey] = (IssueType: NpcIssueType.Template, IssueMessage: $"Despite having FaceGen files, this NPC from {mod.ModKey.FileName} has the Traits flag so it inherits appearance from {templateStr}. If the selected Appearance Mod for this NPC doesn't match that of its Template, visual glitches can occur in-game.");
-                                }
-                                
-                                if (!NpcFormKeys.Contains(currentNpcKey))
-                                {
-                                    NpcFormKeys.Add(currentNpcKey); 
-                                    var npc = npcGetter;
-                                    string displayName = string.Empty;
-                                    if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String)) { NpcNames.Add(npc.Name.String); displayName = npc.Name.String; }
-                                    if (!string.IsNullOrEmpty(npc.EditorID)) { NpcEditorIDs.Add(npc.EditorID); if (string.IsNullOrEmpty(displayName)) displayName = npc.EditorID; }
-                                    if (string.IsNullOrEmpty(displayName)) displayName = npc.FormKey.ToString();
-                                    NpcFormKeysToDisplayName.Add(currentNpcKey, displayName);
+
+                                    if (!_environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(racefk,
+                                            out var raceGetter) || raceGetter.Keywords == null)
+                                    {
+                                        continue;
+                                    }
+
+                                    if (!raceGetter.Keywords.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Keyword
+                                            .ActorTypeNPC))
+                                    {
+                                        continue;
+                                    }
+
+                                    FormKey currentNpcKey = npcGetter.FormKey;
+
+                                    if (!FaceGenExists(currentNpcKey, CorrespondingFolderPaths, bsaReaders.ToHashSet()))
+                                    {
+                                        continue;
+                                    }
+
+                                    if (!AvailablePluginsForNpcs.TryGetValue(currentNpcKey, out var sourceList))
+                                    {
+                                        sourceList = new List<ModKey>();
+                                        AvailablePluginsForNpcs[currentNpcKey] = sourceList;
+                                    }
+
+                                    if (!sourceList.Contains(modKey))
+                                    {
+                                        sourceList.Add(modKey);
+                                    }
+
+                                    if (npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag
+                                            .Traits))
+                                    {
+                                        string templateStr = npcGetter.Template?.FormKey.ToString() ?? "NULL TEMPLATE";
+                                        if (npcGetter.Template != null &&
+                                            _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(
+                                                npcGetter.Template.FormKey, out var templateGetter) &&
+                                            templateGetter != null)
+                                        {
+                                            if (templateGetter.Name != null && templateGetter.Name.String != null)
+                                            {
+                                                templateStr = templateGetter.Name.String;
+                                            }
+                                            else if (templateGetter.EditorID != null)
+                                            {
+                                                templateStr = templateGetter.EditorID;
+                                            }
+                                            else
+                                            {
+                                                templateStr = npcGetter.Template.FormKey.ToString();
+                                            }
+                                        }
+
+                                        NpcFormKeysToNotifications[currentNpcKey] = (IssueType: NpcIssueType.Template,
+                                            IssueMessage:
+                                            $"Despite having FaceGen files, this NPC from {mod.ModKey.FileName} has the Traits flag so it inherits appearance from {templateStr}. If the selected Appearance Mod for this NPC doesn't match that of its Template, visual glitches can occur in-game.");
+                                    }
+
+                                    if (!NpcFormKeys.Contains(currentNpcKey))
+                                    {
+                                        NpcFormKeys.Add(currentNpcKey);
+                                        var npc = npcGetter;
+                                        string displayName = string.Empty;
+                                        if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String))
+                                        {
+                                            NpcNames.Add(npc.Name.String);
+                                            displayName = npc.Name.String;
+                                        }
+
+                                        if (!string.IsNullOrEmpty(npc.EditorID))
+                                        {
+                                            NpcEditorIDs.Add(npc.EditorID);
+                                            if (string.IsNullOrEmpty(displayName)) displayName = npc.EditorID;
+                                        }
+
+                                        if (string.IsNullOrEmpty(displayName)) displayName = npc.FormKey.ToString();
+                                        NpcFormKeysToDisplayName.Add(currentNpcKey, displayName);
+                                    }
                                 }
                             }
+                            catch (Exception e)
+                            {
+                                Debug.WriteLine(
+                                    $"Error loading NPC data from {foundPluginPath} for ModSetting '{DisplayName}': {e.Message}");
+                            }
                         }
-                        catch (Exception e)
-                        {
-                            Debug.WriteLine($"Error loading NPC data from {foundPluginPath} for ModSetting '{DisplayName}': {e.Message}");
-                        }
-                    }
-                } 
-            } 
-            else if (IsFaceGenOnlyEntry)
-            {
-                foreach (var currentNpcKey in FaceGenOnlyNpcFormKeys)
-                {
-                    NpcFormKeys.Add(currentNpcKey);
-                    var sourcePlugin = currentNpcKey.ModKey;
-                    var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(currentNpcKey);
-                    var sourceContext = contexts.LastOrDefault();
-                    if (sourceContext is not null)
-                    {
-                        var npc = sourceContext.Record;
-                        string displayName = string.Empty;
-                        if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String)) { NpcNames.Add(npc.Name.String); displayName = npc.Name.String; }
-                        if (!string.IsNullOrEmpty(npc.EditorID)) { NpcEditorIDs.Add(npc.EditorID); if (string.IsNullOrEmpty(displayName)) displayName = npc.EditorID; }
-                        if (string.IsNullOrEmpty(displayName)) displayName = npc.FormKey.ToString();
-                        NpcFormKeysToDisplayName.Add(currentNpcKey, displayName);
-                    }
-                    else
-                    {
-                        NpcFormKeysToDisplayName.Add(currentNpcKey, currentNpcKey.ToString());
                     }
                 }
-            }
-
-            // --- Post-Processing: Populate NpcPluginDisambiguation, identify AmbiguousNpcFormKeys ---
-            AmbiguousNpcFormKeys.Clear(); // Clear before repopulating
-
-            foreach(var kvp in AvailablePluginsForNpcs)
-            {
-                FormKey npcKey = kvp.Key;
-                List<ModKey> sources = kvp.Value;
-
-                if (sources.Count == 1)
+                else if (IsFaceGenOnlyEntry)
                 {
-                    NpcPluginDisambiguation.Remove(npcKey); // Not ambiguous, no disambiguation needed
-                }
-                else if (sources.Count > 1)
-                {
-                    AmbiguousNpcFormKeys.Add(npcKey); // Mark as having multiple origins within this ModSetting
-
-                    ModKey resolvedSource;
-                    if (NpcPluginDisambiguation.TryGetValue(npcKey, out var preferredKey) && sources.Contains(preferredKey))
+                    foreach (var currentNpcKey in FaceGenOnlyNpcFormKeys)
                     {
-                        resolvedSource = preferredKey;
-                    }
-                    else
-                    {
-                        // No valid disambiguation or preferred key is no longer a source. Determine default.
-                        var loadOrder = _environmentStateProvider?.LoadOrder;
-                        if (loadOrder == null || loadOrder.ListedOrder == null)
+                        NpcFormKeys.Add(currentNpcKey);
+                        var sourcePlugin = currentNpcKey.ModKey;
+                        var contexts =
+                            _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(currentNpcKey);
+                        var sourceContext = contexts.LastOrDefault();
+                        if (sourceContext is not null)
                         {
-                            Debug.WriteLine($"CRITICAL ERROR for ModSetting '{DisplayName}': Load order not available from EnvironmentStateProvider. Cannot resolve default source for NPC {npcKey}. This NPC will be skipped.");
-                            continue; 
-                        }
-                        var loadOrderList = loadOrder.ListedOrder.Select(x => x.ModKey).ToList();
-                        
-                        ModKey defaultSource = sources
-                            .Where(s => !s.IsNull && loadOrderList.Contains(s)) 
-                            .OrderBy(s => loadOrderList.IndexOf(s))
-                            .FirstOrDefault();
+                            var npc = sourceContext.Record;
+                            string displayName = string.Empty;
+                            if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String))
+                            {
+                                NpcNames.Add(npc.Name.String);
+                                displayName = npc.Name.String;
+                            }
 
-                        if (!defaultSource.IsNull)
-                        {
-                            resolvedSource = defaultSource;
-                            NpcPluginDisambiguation[npcKey] = resolvedSource; // Persist the default choice
+                            if (!string.IsNullOrEmpty(npc.EditorID))
+                            {
+                                NpcEditorIDs.Add(npc.EditorID);
+                                if (string.IsNullOrEmpty(displayName)) displayName = npc.EditorID;
+                            }
+
+                            if (string.IsNullOrEmpty(displayName)) displayName = npc.FormKey.ToString();
+                            NpcFormKeysToDisplayName.Add(currentNpcKey, displayName);
                         }
                         else
                         {
-                            Debug.WriteLine($"ERROR for ModSetting '{DisplayName}': NPC {npcKey} found in multiple associated plugins: {string.Join(", ", sources.Select(k=>k.FileName))}, but no valid default source could be determined (e.g., none of the sources are in the active load order). This NPC will be skipped for this Mod Setting.");
-                            continue; 
+                            NpcFormKeysToDisplayName.Add(currentNpcKey, currentNpcKey.ToString());
                         }
                     }
                 }
-            }
 
-            // Cleanup NpcPluginDisambiguation: remove entries for NPCs no longer found or no longer ambiguous (i.e. now only in 1 plugin)
-            var keysInDisambiguation = NpcPluginDisambiguation.Keys.ToList(); // ToList() for safe removal while iterating
-            foreach (var npcKeyInDisambiguation in keysInDisambiguation)
-            {
-                if (!AvailablePluginsForNpcs.TryGetValue(npcKeyInDisambiguation, out var currentSources) || currentSources.Count <= 1)
+                // --- Post-Processing: Populate NpcPluginDisambiguation, identify AmbiguousNpcFormKeys ---
+                AmbiguousNpcFormKeys.Clear(); // Clear before repopulating
+
+                foreach (var kvp in AvailablePluginsForNpcs)
                 {
-                    NpcPluginDisambiguation.Remove(npcKeyInDisambiguation);
+                    FormKey npcKey = kvp.Key;
+                    List<ModKey> sources = kvp.Value;
+
+                    if (sources.Count == 1)
+                    {
+                        NpcPluginDisambiguation.Remove(npcKey); // Not ambiguous, no disambiguation needed
+                    }
+                    else if (sources.Count > 1)
+                    {
+                        AmbiguousNpcFormKeys.Add(npcKey); // Mark as having multiple origins within this ModSetting
+
+                        ModKey resolvedSource;
+                        if (NpcPluginDisambiguation.TryGetValue(npcKey, out var preferredKey) &&
+                            sources.Contains(preferredKey))
+                        {
+                            resolvedSource = preferredKey;
+                        }
+                        else
+                        {
+                            // No valid disambiguation or preferred key is no longer a source. Determine default.
+                            var loadOrder = _environmentStateProvider?.LoadOrder;
+                            if (loadOrder == null || loadOrder.ListedOrder == null)
+                            {
+                                Debug.WriteLine(
+                                    $"CRITICAL ERROR for ModSetting '{DisplayName}': Load order not available from EnvironmentStateProvider. Cannot resolve default source for NPC {npcKey}. This NPC will be skipped.");
+                                continue;
+                            }
+
+                            var loadOrderList = loadOrder.ListedOrder.Select(x => x.ModKey).ToList();
+
+                            ModKey defaultSource = sources
+                                .Where(s => !s.IsNull && loadOrderList.Contains(s))
+                                .OrderBy(s => loadOrderList.IndexOf(s))
+                                .FirstOrDefault();
+
+                            if (!defaultSource.IsNull)
+                            {
+                                resolvedSource = defaultSource;
+                                NpcPluginDisambiguation[npcKey] = resolvedSource; // Persist the default choice
+                            }
+                            else
+                            {
+                                Debug.WriteLine(
+                                    $"ERROR for ModSetting '{DisplayName}': NPC {npcKey} found in multiple associated plugins: {string.Join(", ", sources.Select(k => k.FileName))}, but no valid default source could be determined (e.g., none of the sources are in the active load order). This NPC will be skipped for this Mod Setting.");
+                                continue;
+                            }
+                        }
+                    }
                 }
-            }
+
+                // Cleanup NpcPluginDisambiguation: remove entries for NPCs no longer found or no longer ambiguous (i.e. now only in 1 plugin)
+                var keysInDisambiguation =
+                    NpcPluginDisambiguation.Keys.ToList(); // ToList() for safe removal while iterating
+                foreach (var npcKeyInDisambiguation in keysInDisambiguation)
+                {
+                    if (!AvailablePluginsForNpcs.TryGetValue(npcKeyInDisambiguation, out var currentSources) ||
+                        currentSources.Count <= 1)
+                    {
+                        NpcPluginDisambiguation.Remove(npcKeyInDisambiguation);
+                    }
+                }
+            });
         }
 
         /// <summary>
@@ -990,6 +1035,31 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // Note: The removal from the underlying Settings model list
             // will happen when VM_Mods.SaveModSettingsToModel is called.
+        }
+
+        public async Task FindPluginsWithOverrides(PluginProvider pluginProvider)
+        {
+            _pluginsWithOverrideRecords.Clear();
+            var modDirs = CorrespondingFolderPaths.Reverse().ToList();
+            foreach (var pluginName in CorrespondingModKeys)
+            {
+                foreach (var modDir in modDirs)
+                {
+                    if (pluginProvider.TryGetPlugin(pluginName, modDir, out var plugin) && plugin != null)
+                    {
+                        var records = plugin.EnumerateMajorRecords().ToArray();
+                        var overrides = records.Where(x => !CorrespondingModKeys.Contains(x.FormKey.ModKey) &&
+                                                           !plugin.Npcs.Contains(x))
+                            .ToArray();
+                        if (overrides.Any())
+                        {
+                            _pluginsWithOverrideRecords.Add(pluginName);
+                        }
+                        
+                        break;
+                    }
+                }
+            }
         }
     }
 }

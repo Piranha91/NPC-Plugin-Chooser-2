@@ -34,6 +34,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly NpcConsistencyProvider _consistencyProvider;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm; // *** NEW: To switch tabs ***
         private readonly Auxilliary _aux;
+        private readonly PluginProvider _pluginProvider;
 
         private readonly CompositeDisposable _disposables = new();
 
@@ -114,7 +115,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // *** Updated Constructor Signature ***
         public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider,
             VM_NpcSelectionBar npcSelectionBar, NpcConsistencyProvider consistencyProvider,
-            Lazy<VM_MainWindow> lazyMainWindowVm, Auxilliary aux,
+            Lazy<VM_MainWindow> lazyMainWindowVm, Auxilliary aux, PluginProvider pluginProvider,
             VM_ModSetting.FromModelFactory modSettingFromModelFactory,
             VM_ModSetting.FromMugshotPathFactory modSettingFromMugshotPathFactory,
             VM_ModSetting.FromDisplayNameFactory modSettingFromDisplayNameFactory)
@@ -125,6 +126,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _consistencyProvider = consistencyProvider;
             _lazyMainWindowVm = lazyMainWindowVm;
             _aux = aux;
+            _pluginProvider = pluginProvider;
             _modSettingFromModelFactory = modSettingFromModelFactory;
             _modSettingFromMugshotPathFactory = modSettingFromMugshotPathFactory;
             _modSettingFromDisplayNameFactory = modSettingFromDisplayNameFactory;
@@ -886,8 +888,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     try
                     {
-                        // If vm.RefreshNpcLists() itself becomes async: await vm.RefreshNpcLists();
-                        vm.RefreshNpcLists(); // Assuming still synchronous for now
+                        await vm.RefreshNpcLists();
                         if (index % 10 == 0 && _allModSettingsInternal.Count > 0)
                         {
                             splashReporter?.UpdateProgress(
@@ -896,6 +897,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 $"Analyzing mod '{vm.DisplayName}'..."
                             );
                         }
+
+                        await vm.FindPluginsWithOverrides(_pluginProvider);
                     }
                     catch (Exception ex)
                     {
@@ -1350,6 +1353,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 ShowMugshotsCommand.Execute(modSetting).Subscribe().DisposeWith(_disposables);
             }
+        }
+        
+        // For passing plugin provider to sub-view-models (seems faster than doing it via AutoFac)
+        public PluginProvider GetPluginProvider()
+        {
+            return _pluginProvider;
         }
         
         // Helper methods to use factories (optional, but can centralize calls)

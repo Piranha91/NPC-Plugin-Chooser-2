@@ -67,6 +67,10 @@
       <Resource Include="Resources\Multiple Plugins for NPC.png">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Resource>
+      <None Remove="Resources\Contains Overrides.png" />
+      <Resource Include="Resources\Contains Overrides.png">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Resource>
     </ItemGroup>
 
 </Project>
