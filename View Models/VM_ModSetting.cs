@@ -526,7 +526,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// and populates the NPC lists (NpcNames, NpcEditorIDs, NpcFormKeys, NpcFormKeysToDisplayName).
         /// Should typically be run asynchronously during initial load or after significant changes.
         /// </summary>
-        public void RefreshNpcLists()
+        public void RefreshNpcLists(HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles)
         {
             NpcNames.Clear();
             NpcEditorIDs.Clear();
@@ -573,10 +573,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         }
                     }
 
-
-
-
-
                     if (foundPluginPath != null)
                     {
                         try
@@ -619,8 +615,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 }
 
                                 FormKey currentNpcKey = npcGetter.FormKey;
+                                // This is the cache of BSA files relevant to the *current mod setting*
+                                allFaceGenBsaFiles.TryGetValue(this.DisplayName, out var currentBsaCache);
 
-                                if (!FaceGenExists(currentNpcKey, CorrespondingFolderPaths, bsaReaders.ToHashSet()))
+                                if (!FaceGenExists(currentNpcKey, allFaceGenLooseFiles, currentBsaCache ?? new HashSet<string>()))
                                 {
                                     continue;
                                 }
@@ -798,77 +796,26 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         /// <summary>
-        /// Checks if FaceGen for the given FormKey exists either in the current data environment or in the provided directory
+        /// Checks if FaceGen for the given FormKey exists using pre-cached sets of file paths.
         /// </summary>
-        public bool FaceGenExists(FormKey formKey, IEnumerable<string> modDataPaths, HashSet<IArchiveReader> bsaReaders)
+        public bool FaceGenExists(FormKey formKey, HashSet<string> looseFileCache, HashSet<string> bsaFileCache)
         {
             var faceGenRelPaths = Auxilliary.GetFaceGenSubPathStrings(formKey);
-            string faceGenMeshRelPath = Path.Combine("Meshes", faceGenRelPaths.MeshPath);
-            string faceGenTexRelPath = Path.Combine("Textures", faceGenRelPaths.TexturePath);
-            
-            // Check loose files
 
-            string faceGenMeshPathData =
-                Path.Combine(_environmentStateProvider.DataFolderPath, faceGenMeshRelPath);
+            // Normalize paths for consistent lookups. Use forward slashes and lowercase.
+            string faceGenMeshRelPath = Path.Combine("Meshes", faceGenRelPaths.MeshPath).Replace('\\', '/').ToLowerInvariant();
+            string faceGenTexRelPath = Path.Combine("Textures", faceGenRelPaths.TexturePath).Replace('\\', '/').ToLowerInvariant();
 
-            if (File.Exists(faceGenMeshPathData))
-            {
-                return true;
-            }
-            
-            string faceGenTexPathData =
-                Path.Combine(_environmentStateProvider.DataFolderPath, faceGenTexRelPath);
-            if (File.Exists(faceGenTexPathData))
+            // The check is now a near-instantaneous HashSet lookup.
+            if (looseFileCache.Contains(faceGenMeshRelPath) || looseFileCache.Contains(faceGenTexRelPath))
             {
                 return true;
             }
 
-            foreach (var path in modDataPaths)
-            {
-                faceGenMeshPathData =
-                    Path.Combine(path, "Meshes", faceGenRelPaths.MeshPath);
-
-                if (File.Exists(faceGenMeshPathData))
-                {
-                    return true;
-                }
-            
-                faceGenTexPathData =
-                    Path.Combine(path, "Textures", faceGenRelPaths.TexturePath);
-                if (File.Exists(faceGenTexPathData))
-                {
-                    return true;
-                }
-            }
-            
-            // check BSA facegen
-            List<string> searchDirs = new();
-
-            bool isBaseGameMod = false;
-            var implicitModKeys = Implicits.Get(_environmentStateProvider.SkyrimVersion.ToGameRelease()).Listings;
-            foreach (var mk in CorrespondingModKeys)
-            {
-                if (implicitModKeys.Contains(mk))
-                {
-                    isBaseGameMod = true;
-                    break;
-                }
-            }
-            
-            if (isBaseGameMod)
-            {
-                searchDirs.Add(_environmentStateProvider.DataFolderPath);
-            }
-            else
-            {
-                searchDirs.AddRange(modDataPaths);
-            }
-
-            if(_bsaHandler.TryGetFileFromReaders(faceGenMeshRelPath, bsaReaders, out _) ||
-               _bsaHandler.TryGetFileFromReaders(faceGenTexRelPath, bsaReaders, out _))
+            if (bsaFileCache.Contains(faceGenMeshRelPath) || bsaFileCache.Contains(faceGenTexRelPath))
             {
                 return true;
-            }   
+            }
 
             return false;
         }

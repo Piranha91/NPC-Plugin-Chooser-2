@@ -13,7 +13,8 @@ using System.Reactive.Subjects; // Added for Subject
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks; // Added for Task
-using System.Windows; // For MessageBox
+using System.Windows;
+using Mutagen.Bethesda.Archives; // For MessageBox
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
@@ -36,6 +37,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm; // *** NEW: To switch tabs ***
         private readonly Auxilliary _aux;
         private readonly PluginProvider _pluginProvider;
+        private readonly BsaHandler _bsaHandler;
 
         private readonly CompositeDisposable _disposables = new();
 
@@ -120,6 +122,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider,
             VM_NpcSelectionBar npcSelectionBar, NpcConsistencyProvider consistencyProvider,
             Lazy<VM_MainWindow> lazyMainWindowVm, Auxilliary aux, PluginProvider pluginProvider,
+            BsaHandler bsaHandler,
             VM_ModSetting.FromModelFactory modSettingFromModelFactory,
             VM_ModSetting.FromMugshotPathFactory modSettingFromMugshotPathFactory,
             VM_ModSetting.FromDisplayNameFactory modSettingFromDisplayNameFactory)
@@ -131,6 +134,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _lazyMainWindowVm = lazyMainWindowVm;
             _aux = aux;
             _pluginProvider = pluginProvider;
+            _bsaHandler = bsaHandler;
             _modSettingFromModelFactory = modSettingFromModelFactory;
             _modSettingFromMugshotPathFactory = modSettingFromMugshotPathFactory;
             _modSettingFromDisplayNameFactory = modSettingFromDisplayNameFactory;
@@ -394,7 +398,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Asynchronously refresh its NPC lists if it might have mod data (though unlink usually makes it mugshot-only)
             // For a new mugshot-only entry, RefreshNpcLists won't find much, but it's harmless.
 
-            Task.Run(() => newVm.RefreshNpcLists());
+            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFilesOnLoad(); //////////////////////////////////////////////////////////////////////////
+            Task.Run(() => newVm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles));
         }
 
         /// <summary>
@@ -993,29 +998,50 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _allModSettingsInternal.Clear();
             _allModSettingsInternal.AddRange(SortVMs(tempList));
 
-            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.5), "Refreshing NPC data for mods...");
-            var refreshTasks = _allModSettingsInternal.Select((vm, index) => Task.Run(
-                async () => // Make inner task async if vm.RefreshNpcLists becomes async
-                {
-                    try
-                    {
-                        vm.RefreshNpcLists();
-                        if (index % 10 == 0 && _allModSettingsInternal.Count > 0)
-                        {
-                            splashReporter?.UpdateProgress(
-                                baseProgress + (progressSpan * 0.5) +
-                                (progressSpan * 0.4 * ((double)index / _allModSettingsInternal.Count)),
-                                $"Analyzing mod '{vm.DisplayName}'..."
-                            );
-                        }
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Pre-cacheing Existing Files...");
+            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFilesOnLoad();
 
-                        await vm.FindPluginsWithOverrides(_pluginProvider);
-                    }
-                    catch (Exception ex)
+            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.5), "Refreshing NPC data for mods...");
+            // Limit to the number of logical processors to balance CPU work and I/O
+            var maxParallelism = Environment.ProcessorCount;
+            var semaphore = new SemaphoreSlim(maxParallelism);
+
+            var refreshTasks = _allModSettingsInternal.Select(async (vm, index) =>
+            {
+                await semaphore.WaitAsync(); // Wait for a free slot
+                try
+                {
+                    // Use Task.Run for the CPU/sync-IO-bound work
+                    await Task.Run(() => 
                     {
-                        Debug.WriteLine($"Error during RefreshNpcLists for {vm.DisplayName}: {ex.Message}");
-                    }
-                })).ToList();
+                        try
+                        {
+                            // Pass the pre-cached data to the synchronous method
+                            vm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles); 
+
+                            if (index % 10 == 0 && _allModSettingsInternal.Count > 0)
+                            {
+                                splashReporter?.UpdateProgress(
+                                    baseProgress + (progressSpan * 0.5) +
+                                    (progressSpan * 0.4 * ((double)index / _allModSettingsInternal.Count)),
+                                    $"Analyzing mod '{vm.DisplayName}'..."
+                                );
+                            }
+
+                            // This can also be moved inside RefreshNpcLists if it's part of the same unit of work
+                            vm.FindPluginsWithOverrides(_pluginProvider); 
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error during RefreshNpcLists for {vm.DisplayName}: {ex.Message}");
+                        }
+                    });
+                }
+                finally
+                {
+                    semaphore.Release(); // Release the slot
+                }
+            }).ToList();
 
             try
             {
@@ -1064,6 +1090,92 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 splashReporter?.UpdateProgress(baseProgress + progressSpan, "Mod settings populated.");
             }
+        }
+
+        private (HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles) CacheFilesOnLoad()
+        {
+            // Cache 1: All loose FaceGen files from all mod directories.
+            Debug.WriteLine("Caching loose FaceGen file paths...");
+            var allUniqueModPaths = _allModSettingsInternal
+                .SelectMany(vm => vm.CorrespondingFolderPaths)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var allFaceGenLooseFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var modPath in allUniqueModPaths)
+            {
+                if (!Directory.Exists(modPath)) continue;
+
+                // Search for .nif (meshes) and .dds (textures) in the expected FaceGen locations
+                var texturesPath = Path.Combine(modPath, "Textures");
+                var meshesPath = Path.Combine(modPath, "Meshes");
+
+                if (Directory.Exists(texturesPath))
+                {
+                    foreach (var file in Directory.EnumerateFiles(texturesPath, "*.dds", SearchOption.AllDirectories))
+                    {
+                        // Store the relative path, normalized
+                        allFaceGenLooseFiles.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
+                    }
+                }
+
+                if (Directory.Exists(meshesPath))
+                {
+                    foreach (var file in Directory.EnumerateFiles(meshesPath, "*.nif", SearchOption.AllDirectories))
+                    {
+                        allFaceGenLooseFiles.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
+                    }
+                }
+            }
+
+            Debug.WriteLine($"Cached {allFaceGenLooseFiles.Count} loose file paths.");
+
+
+// Cache 2: All FaceGen files within all relevant BSAs, grouped by the ModSetting VM.
+            Debug.WriteLine("Caching FaceGen file paths from BSAs...");
+            var allFaceGenBsaFiles = new Dictionary<string, HashSet<string>>();
+            foreach (var vm in _allModSettingsInternal)
+            {
+                var bsaFilePathsForVm = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var dirsWithBsa = vm.CorrespondingFolderPaths
+                    .Where(dir =>
+                        Directory.Exists(dir) &&
+                        Directory.EnumerateFiles(dir, "*.bsa", SearchOption.TopDirectoryOnly).Any())
+                    .ToList();
+
+                foreach (var modKey in vm.CorrespondingModKeys.ToArray())
+                {
+                    List<IArchiveReader> bsaReaders = new();
+                    foreach (var d in dirsWithBsa)
+                    {
+                        // Assumes OpenBsaArchiveReaders has its own internal caching to avoid re-opening files
+                        var readers = _bsaHandler.OpenBsaArchiveReaders(d, modKey);
+                        bsaReaders.AddRange(readers);
+                    }
+
+                    foreach (var reader in bsaReaders)
+                    {
+                        // Iterate all file records in the BSA ONCE and store them
+                        foreach (var fileRecord in reader.Files)
+                        {
+                            string path = fileRecord.Path.ToLowerInvariant().Replace('\\', '/');
+                            if (path.StartsWith("meshes/actors/character/facegendata/") ||
+                                path.StartsWith("textures/actors/character/facegendata/"))
+                            {
+                                bsaFilePathsForVm.Add(path);
+                            }
+                        }
+                    }
+                }
+
+                // Store the collected BSA file paths against a unique key for the vm (e.g., DisplayName)
+                allFaceGenBsaFiles[vm.DisplayName] = bsaFilePathsForVm;
+            }
+
+            Debug.WriteLine($"Cached BSA file paths for {allFaceGenBsaFiles.Count} mod settings.");
+
+// --- END OF NEW PRE-CACHING LOGIC ---
+            return (allFaceGenLooseFiles, allFaceGenBsaFiles);
         }
 
         // Filtering Logic (Left Panel)
@@ -1384,7 +1496,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 // Refresh NPC lists for the winner as its sources may have changed/**/
 
-                Task.Run(() => winner.RefreshNpcLists());
+                (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFilesOnLoad();///////////////////////////////////////////////////////////////////////
+                Task.Run(() => winner.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles));
 
                 // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)
                 string loserName = loser.DisplayName;
