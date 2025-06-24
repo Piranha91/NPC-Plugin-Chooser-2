@@ -1143,6 +1143,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         Directory.EnumerateFiles(dir, "*.bsa", SearchOption.TopDirectoryOnly).Any())
                     .ToList();
 
+                if (vm.DisplayName == VM_Mods.BaseGameModSettingName ||
+                    vm.DisplayName == VM_Mods.CreationClubModsettingName)
+                {
+                    dirsWithBsa.Add(_environmentStateProvider.DataFolderPath);
+                }
+
                 foreach (var modKey in vm.CorrespondingModKeys.ToArray())
                 {
                     List<IArchiveReader> bsaReaders = new();
