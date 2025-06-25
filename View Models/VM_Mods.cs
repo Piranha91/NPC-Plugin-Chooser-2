@@ -963,7 +963,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             foreach (var key in implicitModKeys)
             {
-                if (_allModSettingsInternal.Any(modSetting => modSetting.CorrespondingModKeys.Contains(key)) || // skip plugins handled by mods
+                if (tempList.Any(modSetting => modSetting.CorrespondingModKeys.Contains(key)) || // skip plugins handled by mods
                     !_environmentStateProvider.LoadOrder.ListedOrder.Any(listing => listing.ModKey.Equals(key))) // skip plugins not in current load order (e.g. out of date creation club .ccc file
                 {
                     continue;

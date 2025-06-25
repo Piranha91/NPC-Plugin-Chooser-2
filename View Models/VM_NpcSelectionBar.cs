@@ -1414,6 +1414,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             var sortedVMs = finalModVMs.Values.OrderBy(vm => vm.ModName).ToList();
+            // move auto-gen plugins first
+            var ccMugShot = sortedVMs.FirstOrDefault(vm => vm.ModName.Equals(VM_Mods.CreationClubModsettingName));
+            if (ccMugShot != null)
+            {
+                sortedVMs.Remove(ccMugShot);
+                sortedVMs.Insert(0, ccMugShot);
+            }
+            var baseMugShot = sortedVMs.FirstOrDefault(vm => vm.ModName.Equals(VM_Mods.BaseGameModSettingName));
+            if (baseMugShot != null)
+            {
+                sortedVMs.Remove(baseMugShot);
+                sortedVMs.Insert(0, baseMugShot);
+            }
+            // end move
+            
             foreach (var m in sortedVMs)
             {
                 bool isGloballyHidden = _hiddenModNames.Contains(m.ModName);
