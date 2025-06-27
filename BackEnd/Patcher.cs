@@ -50,7 +50,7 @@ public class Patcher : OptionalUIModule
         return _modSettingsMap;
     }
     
-    public async Task RunPatchingLogic(string SelectedNpcGroup)
+    public async Task RunPatchingLogic(string SelectedNpcGroup, CancellationToken ct)
         {
             ResetLog();
             ResetProgress();
@@ -170,6 +170,8 @@ public class Patcher : OptionalUIModule
                 int totalToProcess = selectionsToProcess.Count;
                 for (int i = 0; i < totalToProcess; i++)
                 {
+                    ct.ThrowIfCancellationRequested();
+                    
                     var kvp = selectionsToProcess[i];
                     var npcFormKey = kvp.Key;
                     var result = kvp.Value; // The ScreeningResult
@@ -195,7 +197,7 @@ public class Patcher : OptionalUIModule
                         AppendLog($"  Skipping {npcIdentifier} (Group Filter)..."); // Verbose only
                         skippedCount++;
                         UpdateProgress(i + 1, totalToProcess, $"Skipped {npcIdentifier} (Group Filter)");
-                        await Task.Delay(1);
+                        await Task.Delay(1, ct);
                         continue;
                     }
 
@@ -341,7 +343,7 @@ public class Patcher : OptionalUIModule
                             $"ERROR: UNEXPECTED: Selection for {npcIdentifier} was marked valid but has neither plugin record nor FaceGen. Skipping.",
                             true);
                         skippedCount++;
-                        await Task.Delay(1);
+                        await Task.Delay(1, ct);
                         continue;
                     }
                     // --- *** End Scenario Logic *** 
@@ -359,7 +361,7 @@ public class Patcher : OptionalUIModule
                             $"ERROR: Could not proceed with asset copying due to missing patch record or mod setting for {npcIdentifier}.",
                             true);
                         skippedCount++;
-                        await Task.Delay(1);
+                        await Task.Delay(1, ct);
                         continue;
                     }
 
@@ -367,7 +369,7 @@ public class Patcher : OptionalUIModule
                     //_raceHandler.ProcessNpcRace(patchNpc, appearanceNpcRecord, winningNpcOverride, appearanceModKey.Value, appearanceModSetting);
 
                     processedCount++;
-                    await Task.Delay(5);
+                    await Task.Delay(5, ct);
                 } // End For Loop
             } // End else (selectionsToProcess.Any())
 

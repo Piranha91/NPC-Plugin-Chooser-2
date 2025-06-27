@@ -38,7 +38,7 @@ public class Validator : OptionalUIModule
     }
     
     public async Task<bool>
-        ScreenSelectionsAsync(Dictionary<string, ModSetting> modSettingsMap)
+        ScreenSelectionsAsync(Dictionary<string, ModSetting> modSettingsMap, CancellationToken ct)
     {
         // Logging the message, if you have an appendLog delegate
         AppendLog("\nStarting pre-run screening of NPC selections...", false, false); // Verbose only
@@ -57,6 +57,7 @@ public class Validator : OptionalUIModule
 
             foreach (var kvp in selections)
             {
+                ct.ThrowIfCancellationRequested();
                 currentScreened++;
                 var npcFormKey = kvp.Key;
                 var selectedModDisplayName = kvp.Value;
@@ -70,7 +71,7 @@ public class Validator : OptionalUIModule
                     AppendLog(
                         $"  SCREENING WARNING: Could not resolve base/winning NPC {npcFormKey}. Skipping screening for this NPC."); // Verbose only (Warning)
                     // Don't add to cache or invalid list if the base NPC itself is unresolvable
-                    await Task.Delay(1); // Throttle slightly
+                    await Task.Delay(1, ct); // Throttle slightly
                     continue;
                 }
 
@@ -85,7 +86,7 @@ public class Validator : OptionalUIModule
                         true);
                     invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod Setting not found)");
                     // Add a placeholder invalid result to cache? Or just rely on the invalidSelections list? Let's rely on the list for now.
-                    await Task.Delay(1);
+                    await Task.Delay(1, ct);
                     continue;
                 }
 
@@ -108,7 +109,7 @@ public class Validator : OptionalUIModule
                         true);
                     invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Base record not found in current load order)");
                     // Add a placeholder invalid result to cache? Or just rely on the invalidSelections list? Let's rely on the list for now.
-                    await Task.Delay(1);
+                    await Task.Delay(1, ct);
                     continue;
                 }
                 
@@ -131,7 +132,7 @@ public class Validator : OptionalUIModule
                         true);
                     invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod Setting doesn't contain any plugin for this NPC)");
                     // Add a placeholder invalid result to cache? Or just rely on the invalidSelections list? Let's rely on the list for now.
-                    await Task.Delay(1);
+                    await Task.Delay(1, ct);
                     continue;
                 }
                 
@@ -187,7 +188,7 @@ public class Validator : OptionalUIModule
                         true);
                     invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod Setting doesn't contain any plugin for this NPC)");
                     // Add a placeholder invalid result to cache? Or just rely on the invalidSelections list? Let's rely on the list for now.
-                    await Task.Delay(1);
+                    await Task.Delay(1, ct);
                     continue;
                 }
 
@@ -237,13 +238,14 @@ public class Validator : OptionalUIModule
                     invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' ({reason})");
                 }
 
-                await Task.Delay(1); // Throttle loop slightly
+                await Task.Delay(1, ct); // Throttle loop slightly
             } // End foreach selection
 
             UpdateProgress(totalToScreen, totalToScreen, "Screening Complete.");
             AppendLog(
                 $"Screening finished. Found {invalidSelections.Count} invalid selections."); // Verbose only (summarizes errors previously logged)
             
+            ct.ThrowIfCancellationRequested(); // Check again before showing a dialog
             if (invalidSelections.Any())
             {
                 var message =
