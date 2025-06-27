@@ -94,6 +94,30 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                 }
             }
         }
+        
+        /// <summary>
+        /// Clears all selected appearance mods.
+        /// </summary>
+        public void ClearAllSelections()
+        {
+            // Make a copy of the keys to notify subscribers for each deselection
+            var keysToClear = new List<FormKey>(_selectedMods.Keys);
+
+            _selectedMods.Clear();
+            _settingsModel.SelectedAppearanceMods.Clear();
+
+            // Notify subscribers for each NPC that was deselected
+            foreach (var npcFormKey in keysToClear)
+            {
+                _npcSelectionChanged.OnNext(new NpcSelectionChangedEventArgs(npcFormKey, null));
+            }
+    
+            var vmSettings = _lazyVmSettings.Value;
+            if (vmSettings != null)
+            {
+                vmSettings.RequestThrottledSave();
+            }
+        }
 
         public string? GetSelectedMod(FormKey npcFormKey) // Return nullable string
         {

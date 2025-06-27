@@ -11,6 +11,8 @@ using System.Reactive.Concurrency; // Required for Unit
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks; // Added for Task
 using System.Windows;
@@ -145,6 +147,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> UnhideAllButSelectedCommand { get; }
         public ReactiveCommand<Unit, Unit> DeselectAllCommand { get; }
         // --- End NEW Compare/Hide/Deselect ---
+        
+        // --- NEW: Import/Export Commands ---
+        public ReactiveCommand<Unit, Unit> ExportChoicesCommand { get; }
+        public ReactiveCommand<Unit, Unit> ImportChoicesCommand { get; }
+        // --- End Import/Export Commands ---
 
         // Caches to speed up initialization
         public Dictionary<string, Dictionary<FormKey, INpcGetter>> NpcGetterCache = new();
@@ -512,6 +519,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .Subscribe(ex => ScrollableMessageBox.ShowError($"Error deselecting all: {ex.Message}"))
                 .DisposeWith(_disposables);
             // --- End NEW Setup ---
+            
+            // --- NEW: Import/Export Command Setup ---
+            ExportChoicesCommand = ReactiveCommand.CreateFromTask(ExportChoicesAsync);
+            ImportChoicesCommand = ReactiveCommand.CreateFromTask(ImportChoicesAsync);
+            
+            ExportChoicesCommand.ThrownExceptions
+                .Subscribe(ex => ScrollableMessageBox.ShowError($"Error exporting choices: {ex.Message}", "Export Error"))
+                .DisposeWith(_disposables);
+            ImportChoicesCommand.ThrownExceptions
+                .Subscribe(ex => ScrollableMessageBox.ShowError($"Error importing choices: {ex.Message}", "Import Error"))
+                .DisposeWith(_disposables);
+            // --- End Import/Export Setup ---
 
 
             if (CurrentNpcAppearanceMods != null && CurrentNpcAppearanceMods.Any())
@@ -681,7 +700,174 @@ namespace NPC_Plugin_Chooser_2.View_Models
             Debug.WriteLine("DeselectAll: All mugshot compare checkboxes cleared.");
         }
         // --- End NEW Command Execution Methods ---
+// --- NEW: Import/Export Methods ---
+        private async Task ExportChoicesAsync()
+        {
+            var dialog = new SaveFileDialog
+            {
+                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+                Title = "Export NPC Choices",
+                FileName = "MyNpcChoices.json",
+                DefaultExt = "json",
+                AddExtension = true
+            };
 
+            if (dialog.ShowDialog() != DialogResult.OK) return;
+
+            try
+            {
+                var selectionsToExport = _settings.SelectedAppearanceMods
+                    .ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
+                
+                JSONhandler<Dictionary<string, string>>.SaveJSONFile(selectionsToExport, dialog.FileName, out bool success, out var exceptionString);
+                if (!success)
+                {
+                    ScrollableMessageBox.ShowError(exceptionString, "Error while exporting NPC Choices");
+                }
+                else
+                {
+                    ScrollableMessageBox.Show($"Successfully exported {selectionsToExport.Count} choices to {Path.GetFileName(dialog.FileName)}.", "Export Complete"); 
+                }
+            }
+            catch (Exception ex)
+            {
+                ScrollableMessageBox.ShowError($"Failed to export choices: {ex.Message}", "Export Error");
+            }
+        }
+        
+        private async Task ImportChoicesAsync()
+        {
+            var dialog = new OpenFileDialog
+            {
+                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+                Title = "Import NPC Choices",
+                CheckFileExists = true,
+                CheckPathExists = true
+            };
+
+            if (dialog.ShowDialog() != DialogResult.OK) return;
+
+            try
+            {
+                var importedSelectionsStr = JSONhandler<Dictionary<string, string>>.LoadJSONFile(dialog.FileName, out bool readSuccess, out var exceptionStr);
+                if (!readSuccess)
+                {
+                    ScrollableMessageBox.ShowError(exceptionStr, "Failed to import choices");
+                    return;
+                }
+                if (importedSelectionsStr == null || !importedSelectionsStr.Any())
+                {
+                    ScrollableMessageBox.ShowWarning("The selected file is empty or contains no valid data.", "Import Warning");
+                    return;
+                }
+
+                // Convert string keys back to FormKey, skipping malformed ones
+                var importedSelections = new Dictionary<FormKey, string>();
+                var malformedKeys = new List<string>();
+                foreach (var kvp in importedSelectionsStr)
+                {
+                    try {
+                        importedSelections.Add(FormKey.Factory(kvp.Key), kvp.Value);
+                    } catch {
+                        malformedKeys.Add(kvp.Key);
+                    }
+                }
+
+                // --- Validation ---
+                var report = new StringBuilder();
+                var validSelections = new Dictionary<FormKey, string>();
+                var availableModNames = new HashSet<string>(_lazyModsVm.Value.AllModSettings.Select(m => m.DisplayName), StringComparer.OrdinalIgnoreCase);
+
+                var missingNpcs = new List<string>();
+                var missingMods = new List<string>();
+
+                foreach (var kvp in importedSelections)
+                {
+                    var formKey = kvp.Key;
+                    var modName = kvp.Value;
+                    bool npcExists = _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(formKey, out var npcGetter);
+                    bool modExists = availableModNames.Contains(modName);
+
+                    if (npcExists && modExists)
+                    {
+                        validSelections.Add(formKey, modName);
+                    }
+                    else
+                    {
+                        if (!npcExists)
+                        {
+                            missingNpcs.Add($"- NPC with FormKey {formKey} (assigned to '{modName}') was not found in the current load order.");
+                        }
+                        if (!modExists)
+                        {
+                             // Try to find the NPC's name for a better message
+                            string npcIdentifier = npcGetter?.Name?.String ?? npcGetter?.EditorID ?? $"NPC with FormKey {formKey}";
+                            missingMods.Add($"- {npcIdentifier} was assigned to mod '{modName}', which is not installed or recognized.");
+                        }
+                    }
+                }
+        
+                // --- Reporting and Confirmation ---
+                if (missingNpcs.Any() || missingMods.Any() || malformedKeys.Any())
+                {
+                    if (missingNpcs.Any())
+                    {
+                        report.AppendLine("NPCs Not Found in Load Order:");
+                        missingNpcs.ForEach(line => report.AppendLine(line));
+                        report.AppendLine();
+                    }
+                    if (missingMods.Any())
+                    {
+                        report.AppendLine("Assigned Mods Not Found:");
+                        missingMods.ForEach(line => report.AppendLine(line));
+                        report.AppendLine();
+                    }
+                    if (malformedKeys.Any())
+                    {
+                        report.AppendLine("Malformed FormKeys Skipped:");
+                        malformedKeys.ForEach(key => report.AppendLine($"- {key}"));
+                        report.AppendLine();
+                    }
+
+                    var preamble = $"The import file contains entries that will be skipped.\n\n" +
+                                   $"Do you want to proceed with importing the {validSelections.Count} valid choices? This will overwrite all your current selections.";
+                    
+                    report.Insert(0, preamble + "\n\n--- Details ---\n");
+                    
+                    if (!ScrollableMessageBox.Confirm(report.ToString(), "Import Confirmation", MessageBoxImage.Warning))
+                    {
+                        ScrollableMessageBox.Show("Import cancelled by user.", "Import Cancelled");
+                        return;
+                    }
+                }
+                else
+                {
+                     if (!ScrollableMessageBox.Confirm($"This will overwrite your current {_settings.SelectedAppearanceMods.Count} selection(s) with {validSelections.Count} choice(s) from the file. Proceed?", "Confirm Import"))
+                     {
+                         ScrollableMessageBox.Show("Import cancelled by user.", "Import Cancelled");
+                         return;
+                     }
+                }
+
+                // --- Perform Import ---
+                _consistencyProvider.ClearAllSelections();
+                
+                foreach (var kvp in validSelections)
+                {
+                    _consistencyProvider.SetSelectedMod(kvp.Key, kvp.Value);
+                }
+
+                ScrollableMessageBox.Show($"Import complete. {validSelections.Count} choices have been applied.", "Import Successful");
+            }
+            catch (JsonException jsonEx)
+            {
+                ScrollableMessageBox.ShowError($"The file is not a valid JSON file. Error: {jsonEx.Message}", "Import Error");
+            }
+            catch (Exception ex)
+            {
+                ScrollableMessageBox.ShowError($"An unexpected error occurred during import: {ex.Message}", "Import Error");
+            }
+        }
 
         public bool CanJumpToMod(string appearanceModName)
         {
