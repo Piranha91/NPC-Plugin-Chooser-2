@@ -149,8 +149,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- End NEW Compare/Hide/Deselect ---
         
         // --- NEW: Import/Export Commands ---
+        public ReactiveCommand<Unit, Unit> ImportChoicesFromLoadOrderCommand { get; }
         public ReactiveCommand<Unit, Unit> ExportChoicesCommand { get; }
         public ReactiveCommand<Unit, Unit> ImportChoicesCommand { get; }
+        public ReactiveCommand<Unit, Unit> ClearChoicesCommand { get; }
         // --- End Import/Export Commands ---
 
         // Caches to speed up initialization
@@ -521,14 +523,22 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // --- End NEW Setup ---
             
             // --- NEW: Import/Export Command Setup ---
+            ImportChoicesFromLoadOrderCommand = ReactiveCommand.CreateFromTask(ImportChoicesFromLoadOrderAsync);
             ExportChoicesCommand = ReactiveCommand.CreateFromTask(ExportChoicesAsync);
             ImportChoicesCommand = ReactiveCommand.CreateFromTask(ImportChoicesAsync);
+            ClearChoicesCommand = ReactiveCommand.Create(ClearChoices);
             
+            ImportChoicesFromLoadOrderCommand.ThrownExceptions
+                .Subscribe(ex => ScrollableMessageBox.ShowError($"Error importing choices from load order: {ex.Message}", "Import Error"))
+                .DisposeWith(_disposables);
             ExportChoicesCommand.ThrownExceptions
                 .Subscribe(ex => ScrollableMessageBox.ShowError($"Error exporting choices: {ex.Message}", "Export Error"))
                 .DisposeWith(_disposables);
             ImportChoicesCommand.ThrownExceptions
                 .Subscribe(ex => ScrollableMessageBox.ShowError($"Error importing choices: {ex.Message}", "Import Error"))
+                .DisposeWith(_disposables);
+            ClearChoicesCommand.ThrownExceptions
+                .Subscribe(ex => ScrollableMessageBox.ShowError($"Error clearing choices: {ex.Message}", "Clear Error"))
                 .DisposeWith(_disposables);
             // --- End Import/Export Setup ---
 
@@ -732,6 +742,161 @@ namespace NPC_Plugin_Chooser_2.View_Models
             catch (Exception ex)
             {
                 ScrollableMessageBox.ShowError($"Failed to export choices: {ex.Message}", "Export Error");
+            }
+        }
+        
+        private void ClearChoices()
+        {
+            int currentCount = _settings.SelectedAppearanceMods.Count;
+            if (currentCount == 0)
+            {
+                ScrollableMessageBox.Show("There are no choices to clear.", "No Choices");
+                return;
+            }
+
+            if (!ScrollableMessageBox.Confirm(
+                    $"Are you sure you want to clear all {currentCount} of your current NPC choices? This action cannot be undone.",
+                    "Confirm Clear Choices", MessageBoxImage.Warning))
+            {
+                return; // User cancelled
+            }
+            _consistencyProvider.ClearAllSelections();
+        }
+
+        private async Task ImportChoicesFromLoadOrderAsync()
+        {
+            if (!ScrollableMessageBox.Confirm(
+                    $"Are you sure you want to overwrite your current NPC choices? This action cannot be undone.",
+                    "Confirm Import Choices", MessageBoxImage.Warning))
+            {
+                return; // User cancelled
+            }
+            
+            List<string> missingNpcs = new();
+            List<string> unMatchedNpcs = new();
+            
+            foreach (var npc in AllNpcs)
+            {
+                if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npc.NpcFormKey, out var npcGetter))
+                {
+                    missingNpcs.Add(npc.DisplayName);
+                    continue;
+                }
+                
+                var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npc.NpcFormKey);
+
+                bool foundWinningMod = false;
+                foreach (var context in contexts)
+                {
+                    // get all appearance mods with the current modkey
+                    var correspondingMods = _lazyModsVm.Value.AllModSettings.Where(x => x.CorrespondingModKeys.Contains(context.ModKey)).ToList();
+                    if (correspondingMods.Count() == 1)
+                    {
+                        var winningMod = correspondingMods.First();
+                        _consistencyProvider.SetSelectedMod(npc.NpcFormKey, winningMod.DisplayName);
+                        foundWinningMod = true;
+                        break;
+                    }
+                    if (correspondingMods.Count() > 1)
+                    {
+                        var (meshSubPath, texSubPath) = Auxilliary.GetFaceGenSubPathStrings(npc.NpcFormKey);
+
+                        var meshToMatchPath = Path.Combine(_environmentStateProvider.DataFolderPath, "meshes",
+                            meshSubPath);
+                        var texToMatchPath = Path.Combine(_environmentStateProvider.DataFolderPath, "textures",
+                            texSubPath);
+
+                        bool mustMatchMesh = false;
+                        int meshRefSize = 0;
+                        string meshRefHash = String.Empty;
+                        
+                        bool mustMatchTex = false;
+                        int texRefSize = 0;
+                        string texRefHash = String.Empty;
+                            
+                        if (File.Exists(meshToMatchPath))
+                        {
+                            mustMatchMesh = true;
+                            (meshRefSize, meshRefHash) = Auxilliary.GetCheapFileEqualityIdentifiers(meshToMatchPath);
+                        }
+                        
+                        if (File.Exists(texToMatchPath))
+                        {
+                            mustMatchMesh = true;
+                            (texRefSize, texRefHash) = Auxilliary.GetCheapFileEqualityIdentifiers(texToMatchPath);
+                        }
+
+                        foreach (var candidateMod in correspondingMods)
+                        {
+                            foreach (var modFolder in candidateMod.CorrespondingFolderPaths)
+                            {
+                                bool matchedMesh = !mustMatchMesh;
+                                bool matchedTex = !mustMatchMesh;
+
+                                // Will need to fix this section to account for BSAs
+                                if (mustMatchMesh)
+                                {
+                                    var candidateMeshPath = Path.Combine(modFolder, "meshes",
+                                        meshSubPath);
+                                    if (File.Exists(candidateMeshPath) &&
+                                        Auxilliary.FastFilesAreIdentical(candidateMeshPath, meshRefSize, meshRefHash))
+                                    {
+                                        matchedMesh = true;
+                                    }
+                                }
+                                
+                                if (mustMatchTex)
+                                {
+                                    var candidateTexPath = Path.Combine(modFolder, "textures",
+                                        texSubPath);
+                                    if (File.Exists(candidateTexPath) &&
+                                        Auxilliary.FastFilesAreIdentical(candidateTexPath, texRefSize, texRefHash))
+                                    {
+                                        matchedTex = true;
+                                    }
+                                }
+
+                                if (matchedMesh && matchedTex)
+                                {
+                                    _consistencyProvider.SetSelectedMod(npc.NpcFormKey, candidateMod.DisplayName);
+                                    foundWinningMod = true;
+                                    break;
+                                }
+                            } // end mod folder loop
+
+                            if (foundWinningMod)
+                            {
+                                break;
+                            }
+                        } // end mod loop
+                        if (foundWinningMod)
+                        {
+                            break;
+                        }
+                    }
+                    if (foundWinningMod)
+                    {
+                        break;
+                    }
+                } // end context loop
+                if (!foundWinningMod)
+                {
+                    unMatchedNpcs.Add(npc.DisplayName);
+                }
+            } // end NPC loop
+
+            if (missingNpcs.Any())
+            {
+                string missingMessage =
+                    "The following NPCs could not be found in your load order. Their appearance selection was not modified:" + Environment.NewLine + Environment.NewLine + string.Join(Environment.NewLine, missingNpcs);
+                ScrollableMessageBox.ShowWarning(missingMessage, "Missing NPCs");
+            }
+            
+            if (unMatchedNpcs.Any())
+            {
+                string missingMessage =
+                    "A winning mod could not be identified for the following NPCs:" + Environment.NewLine + Environment.NewLine + string.Join(Environment.NewLine, unMatchedNpcs);
+                ScrollableMessageBox.ShowWarning(missingMessage, "Unassigned NPCs");
             }
         }
         

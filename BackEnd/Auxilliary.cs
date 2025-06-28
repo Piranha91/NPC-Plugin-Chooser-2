@@ -7,6 +7,11 @@ using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Cache.Internals.Implementations;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
+using System.Security.Cryptography;
+
+#if NET8_0_OR_GREATER
+using System.IO.Hashing;
+#endif
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -270,5 +275,67 @@ public class Auxilliary
                 CollectDeepAssetLinks(subLink, assetLinkGetters, relevantContextKeys, assetLinkCache, searchedFormKeys);
             }
         }
+    }
+    
+    private const int BufferSize = 4 * 1024 * 1024;   // 4 MB blocks
+
+    /* -----------------------------------------------------------------------
+     * 1.  Pre-compute identifiers for a file
+     * -------------------------------------------------------------------- */
+    public static (int Length, string CheapHash) GetCheapFileEqualityIdentifiers(string filePath)
+    {
+        if (filePath is null) throw new ArgumentNullException(nameof(filePath));
+
+        var info = new FileInfo(filePath);
+        if (!info.Exists) throw new FileNotFoundException("File not found.", filePath);
+
+        int length = unchecked((int)info.Length);             // cast keeps original API
+        string cheapHash = ComputeXxHash128Hex(info);
+
+        return (length, cheapHash);
+    }
+
+    /* -----------------------------------------------------------------------
+     * 2.  Compare another file against the pre-computed identifiers
+     * -------------------------------------------------------------------- */
+    public static bool FastFilesAreIdentical(string candidateFilePath,
+                                            int    targetFileLength,
+                                            string targetFileCheapHash)
+    {
+        if (candidateFilePath is null)      throw new ArgumentNullException(nameof(candidateFilePath));
+        if (targetFileCheapHash is null)    throw new ArgumentNullException(nameof(targetFileCheapHash));
+
+        var info = new FileInfo(candidateFilePath);
+        if (!info.Exists) return false;
+
+        // Early-out: different size ⇒ definitely different file
+        if (unchecked((int)info.Length) != targetFileLength)
+            return false;
+
+        // Sizes match – compute the same cheap hash and compare
+        string candidateHash = ComputeXxHash128Hex(info);
+
+        return candidateHash.Equals(targetFileCheapHash, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /* -----------------------------------------------------------------------
+     * 3.  Private helper to compute XXH128 as an uppercase hex string
+     * -------------------------------------------------------------------- */
+    private static string ComputeXxHash128Hex(FileInfo info)
+    {
+        Span<byte> digest = stackalloc byte[16];   // 128 bits = 16 bytes
+        var hasher = new XxHash128();
+
+        using var stream = info.OpenRead();
+        byte[] buffer = new byte[BufferSize];
+
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            hasher.Append(buffer.AsSpan(0, read));
+        }
+
+        hasher.GetHashAndReset(digest);
+        return Convert.ToHexString(digest);        // e.g. "A1B2C3D4E5F6..."
     }
 }
