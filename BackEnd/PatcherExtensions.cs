@@ -19,6 +19,7 @@ public static class PatcherExtensions
         bool onlySubRecords,
         RecordLookupFallBack fallBackMode,
         ref Dictionary<FormKey, FormKey> mapping,
+        ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TModGetter : class, IModGetter
         where TMod : class, TModGetter, IMod, ISkyrimMod
@@ -33,10 +34,14 @@ public static class PatcherExtensions
         HashSet<FormKey> passedLinks = new();
         var implicits = Implicits.Get(modToDuplicateInto.GameRelease);
 
-        void AddAllLinks(IFormLinkGetter link)
+        void AddAllLinks(IFormLinkGetter link, ref HashSet<FormKey> seenFormKeys)
         {
             if (link.FormKey.IsNull) return;
-            if (!passedLinks.Add(link.FormKey)) return;
+            if (seenFormKeys.Contains(link.FormKey))
+            {
+                return;
+            }
+            seenFormKeys.Add(link.FormKey);
             if (implicits.RecordFormKeys.Contains(link.FormKey)) return;
 
             if (modKeysToDuplicateFrom.Contains(link.FormKey.ModKey))
@@ -54,7 +59,7 @@ public static class PatcherExtensions
             foreach (var containedLink in containedLinks)
             {
                 if (!modKeysToDuplicateFrom.Contains(containedLink.FormKey.ModKey)) continue;
-                AddAllLinks(containedLink);
+                AddAllLinks(containedLink, ref passedLinks);
             }
         }
         
@@ -65,12 +70,12 @@ public static class PatcherExtensions
                 var containedLinks = rec.EnumerateFormLinks();
                 foreach (var containedLink in containedLinks)
                 {
-                    AddAllLinks(containedLink);
+                    AddAllLinks(containedLink, ref passedLinks);
                 }
             }
             else
             {
-                AddAllLinks(rec.ToLink());
+                AddAllLinks(rec.ToLink(), ref passedLinks);
             }
         }
 
@@ -91,11 +96,18 @@ public static class PatcherExtensions
             }
 
             var newEdid = (identifiedRec.EditorID ?? "NoEditorID");
-            var dup = Auxilliary.DuplicateGenericRecordAsNew(identifiedRec, modToDuplicateInto);
-            dup.EditorID = newEdid;
-            mapping[identifiedLink.FormKey] = dup.FormKey;
-            mergedInRecords.Add(dup);
-            modToDuplicateInto.Remove(identifiedLink.FormKey, identifiedLink.Type);
+            if (Auxilliary.TryDuplicateGenericRecordAsNew(identifiedRec, modToDuplicateInto, out dynamic? dup, out string exceptionString) &&
+                dup != null)
+            {
+                dup.EditorID = newEdid;
+                mapping[identifiedLink.FormKey] = dup.FormKey;
+                mergedInRecords.Add(dup);
+                modToDuplicateInto.Remove(identifiedLink.FormKey, identifiedLink.Type);
+            }
+            else
+            {
+                exceptionStrings.Add(identifiedLink.FormKey.ToString() + ": " + exceptionString);
+            }
         }
 
         // Remap links

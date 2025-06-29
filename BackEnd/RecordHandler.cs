@@ -69,6 +69,7 @@ public class RecordHandler
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey,
         RecordLookupFallBack fallBackMode,
+        ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
@@ -92,7 +93,7 @@ public class RecordHandler
         }
         
         mergedInRecords = DuplicateFromOnlyReferencedGetters(modToDuplicateInto, record, modKeysToDuplicateFrom, 
-            rootContextModKey, false, fallBackMode, typesToInspect);
+            rootContextModKey, false, fallBackMode, ref exceptionStrings, typesToInspect);
 
         if (_contextMappings.ContainsKey(rootContextModKey) &&
             _contextMappings[rootContextModKey].ContainsKey(formLinkToCopy.FormKey))
@@ -115,6 +116,7 @@ public class RecordHandler
         ModKey rootContextModKey,
         bool onlySubRecords,
         RecordLookupFallBack fallBackMode,
+        ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
@@ -127,6 +129,7 @@ public class RecordHandler
             onlySubRecords,
             fallBackMode,
             ref mapping,
+            ref exceptionStrings,
             typesToInspect);
     }
 
@@ -137,6 +140,7 @@ public class RecordHandler
         ModKey modKeyToDuplicateFrom,
         bool onlySubRecords,
         RecordLookupFallBack fallBackMode,
+        ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
@@ -147,6 +151,7 @@ public class RecordHandler
             modKeyToDuplicateFrom,
             onlySubRecords,
             fallBackMode,
+            ref exceptionStrings,
             typesToInspect);
     }
     
@@ -158,6 +163,7 @@ public class RecordHandler
         ModKey rootContextModKey,
         bool onlySubRecords,
         RecordLookupFallBack fallBackMode,
+        ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
@@ -168,6 +174,7 @@ public class RecordHandler
             rootContextModKey,
             onlySubRecords,
             fallBackMode,
+            ref exceptionStrings,
             typesToInspect);
     }
     
@@ -178,6 +185,7 @@ public class RecordHandler
         ModKey modKeyToDuplicateFrom,
         bool onlySubRecords,
         RecordLookupFallBack fallBackMode,
+        ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
@@ -188,11 +196,9 @@ public class RecordHandler
             modKeyToDuplicateFrom,
             onlySubRecords,
             fallBackMode,
+            ref exceptionStrings,
             typesToInspect);
     }
-    
-    
-    
     #endregion
 
     #region Collect Overrides of Existing Records
@@ -281,7 +287,7 @@ public class RecordHandler
     #region Merge In Overrides of Existing Records
 
     public HashSet<IMajorRecord> // return is For Caller's Information only; duplication and remapping happens internally
-        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey)
+        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ref List<string> exceptionStrings)
     {
         HashSet<IMajorRecord> mergedInRecords = new();
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
@@ -298,7 +304,7 @@ public class RecordHandler
         Dictionary<FormKey, FormKey> remappedSublinks = new();
         foreach (var link in containedFormLinks)
         {
-            TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedSublinks, mergedInRecords,2, 0);
+            TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedSublinks, mergedInRecords,2, 0, ref exceptionStrings);
         }
         
         //_environmentStateProvider.OutputMod.RemapLinks(remappedSublinks);
@@ -308,15 +314,17 @@ public class RecordHandler
         }
         
         // Now go through all merged-in override records and also merge in any new records they may be pointing to
-        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, relevantContextKeys, rootContextKey, true, RecordLookupFallBack.None);
+        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, relevantContextKeys, rootContextKey, true, RecordLookupFallBack.None, ref exceptionStrings);
         
         mergedInRecords.UnionWith(newMergedSubRecords);
         
         return mergedInRecords;
     }
-    
-    private bool TraverseAndDuplicateInOverrideRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys, ISkyrimMod outputMod,
-        Dictionary<FormKey, FormKey> remappedSubLinks, HashSet<IMajorRecord> mergedInRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey>? searchedFormKeys = null)
+
+    private bool TraverseAndDuplicateInOverrideRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
+        ISkyrimMod outputMod,
+        Dictionary<FormKey, FormKey> remappedSubLinks, HashSet<IMajorRecord> mergedInRecords,
+        int maxNestedIntervalDepth, int currentDepth, ref List<string> exceptionStrings, HashSet<FormKey>? searchedFormKeys = null)
     {
         if (formLinkGetter.IsNull)
         {
@@ -413,19 +421,27 @@ public class RecordHandler
                     continue;
                 }
                 
-                bool subRecordsAreOverrides = TraverseAndDuplicateInOverrideRecords(subLink, relevantContextKeys, outputMod, remappedSubLinks, mergedInRecords, maxNestedIntervalDepth, currentDepth, searchedFormKeys);
+                bool subRecordsAreOverrides = TraverseAndDuplicateInOverrideRecords(subLink, relevantContextKeys, outputMod, remappedSubLinks, mergedInRecords, maxNestedIntervalDepth, currentDepth, ref exceptionStrings, searchedFormKeys);
                 if (subRecordsAreOverrides)
                 {
                     parentRecordShouldBeMergedIn = true; // merge in this record (even if it's not itself contained in the source mod) because this record's subrecords have been merged in.
                 }
             }
             
-            if (parentRecordShouldBeMergedIn && !currentRecordHasBeenMergedIn && !remappedSubLinks.ContainsKey(formLinkGetter.FormKey))
+            if (parentRecordShouldBeMergedIn && 
+                !currentRecordHasBeenMergedIn && 
+                !remappedSubLinks.ContainsKey(formLinkGetter.FormKey))
             {
-                var duplicate = Auxilliary.DuplicateGenericRecordAsNew(traversedModRecord, outputMod);
-                duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + formLinkGetter.FormKey.ModKey;
-                remappedSubLinks.Add(formLinkGetter.FormKey, duplicate.FormKey);
-                mergedInRecords.Add(duplicate);
+                if (Auxilliary.TryDuplicateGenericRecordAsNew(traversedModRecord, outputMod, out var duplicate, out string exceptionString))
+                {
+                    duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + formLinkGetter.FormKey.ModKey;
+                    remappedSubLinks.Add(formLinkGetter.FormKey, duplicate.FormKey);
+                    mergedInRecords.Add(duplicate);
+                }
+                else
+                {
+                    exceptionStrings.Add(Auxilliary.GetLogString(traversedModRecord) + ": " + exceptionString);
+                }
             }
         }
 

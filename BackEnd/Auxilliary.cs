@@ -29,6 +29,27 @@ public class Auxilliary
         _assetLinkCache = new AssetLinkCache(_environmentStateProvider.LinkCache);
     }
 
+    public static string GetLogString(IMajorRecordGetter majorRecordGetter)
+    {
+        if (majorRecordGetter.EditorID != null)
+        {
+            return majorRecordGetter.EditorID;
+        }
+        else
+        {
+            return majorRecordGetter.FormKey.ToString();
+        }
+    }
+
+    public static string GetNpcLogString(INpcGetter npcGetter)
+    {
+        if (npcGetter.Name != null && npcGetter.Name.String != null)
+        {
+            return npcGetter.Name.String;
+        }
+        return GetLogString(npcGetter);
+    }
+
     public List<ModKey> GetModKeysInDirectory(string modFolderPath, List<string>? warnings, bool onlyEnabled)
     {
         List<ModKey> foundEnabledKeysInFolder = new();
@@ -176,22 +197,44 @@ public class Auxilliary
         return path;
     }
 
-    public static MajorRecord DuplicateGenericRecordAsNew(IMajorRecordGetter recordGetter, ISkyrimMod outputMod)
+    public static bool TryDuplicateGenericRecordAsNew(IMajorRecordGetter recordGetter, ISkyrimMod outputMod, out dynamic? duplicateRecord, out string exceptionString)
     {
-        dynamic group = GetPatchRecordGroup(recordGetter, outputMod);
-        return IGroupMixIns.DuplicateInAsNewRecord(group, recordGetter);
+        if(TryGetPatchRecordGroup(recordGetter, outputMod, out var group, out exceptionString) && group != null)
+        {
+            duplicateRecord = IGroupMixIns.DuplicateInAsNewRecord(group, recordGetter);
+            return true;
+        }
+
+        duplicateRecord = null;
+        return false;
     }
     
-    public static MajorRecord GetOrAddGenericRecordAsOverride(IMajorRecordGetter recordGetter, ISkyrimMod outputMod)
+    public static bool TryGetOrAddGenericRecordAsOverride(IMajorRecordGetter recordGetter, ISkyrimMod outputMod, out MajorRecord? duplicateRecord, out string exceptionString)
     {
-        dynamic group = GetPatchRecordGroup(recordGetter, outputMod);
-        return OverrideMixIns.GetOrAddAsOverride(group, recordGetter);
+        if(TryGetPatchRecordGroup(recordGetter, outputMod, out var group, out exceptionString) && group != null)
+        {
+            duplicateRecord = OverrideMixIns.GetOrAddAsOverride(group, recordGetter);
+            return true;
+        }
+        duplicateRecord = null;
+        return false;
     }
 
-    public static IGroup GetPatchRecordGroup(IMajorRecordGetter recordGetter, ISkyrimMod outputMod)
+    public static bool TryGetPatchRecordGroup(IMajorRecordGetter recordGetter, ISkyrimMod outputMod, out dynamic? group, out string exceptionString)
     {
+        exceptionString = string.Empty;
         var getterType = GetRecordGetterType(recordGetter);
-        return outputMod.GetTopLevelGroup(getterType);
+        try
+        {
+            group = outputMod.GetTopLevelGroup(getterType);
+            return true;
+        }
+        catch (Exception e)
+        {
+            group = null;
+            exceptionString = e.Message;
+            return false;
+        } 
     }
 
     public static Type? GetRecordGetterType(IMajorRecordGetter recordGetter)

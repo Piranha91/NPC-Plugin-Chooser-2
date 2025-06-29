@@ -227,10 +227,16 @@ public class Patcher : OptionalUIModule
                                 // deep copy in all referenced records originating from the source plugins
                                 if (mergeInDependencyRecords)
                                 {
+                                    List<string> mergeInExceptions = new();
                                      var mergedInRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(
                                         _environmentStateProvider.OutputMod, patchNpc,
                                         appearanceModSetting.CorrespondingModKeys,
-                                        appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Winner);
+                                        appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Winner, ref mergeInExceptions);
+
+                                     if (mergeInExceptions.Any())
+                                     {
+                                         AppendLog("Exceptions occurred during dependency merge-in of " + Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine + string.Join(Environment.NewLine, mergeInExceptions));
+                                     }
                                      
                                      _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                 }
@@ -261,9 +267,17 @@ public class Patcher : OptionalUIModule
                                                 IMajorRecordGetter? winningGetter = null;
                                                 if (recordDifs is not null && recordDifs.Any() && _environmentStateProvider.LinkCache.TryResolve(ctx.Record.FormKey, ctx.Record.Type, out winningGetter) && winningGetter != null)
                                                 {
-                                                    var winningRecord = Auxilliary.GetOrAddGenericRecordAsOverride(winningGetter, _environmentStateProvider.OutputMod);
-                                                    _recordDeltaPatcher.ApplyPropertyDiffs(winningRecord, recordDifs);
-                                                    deltaPatchedRecords.Add(winningRecord);
+                                                    if (Auxilliary.TryGetOrAddGenericRecordAsOverride(winningGetter,
+                                                            _environmentStateProvider.OutputMod,
+                                                            out var winningRecord, out string exceptionString) && winningRecord != null)
+                                                    {
+                                                        _recordDeltaPatcher.ApplyPropertyDiffs(winningRecord, recordDifs);
+                                                        deltaPatchedRecords.Add(winningRecord);
+                                                    }
+                                                    else
+                                                    {
+                                                        AppendLog(Auxilliary.GetNpcLogString(patchNpc) +  ": Could not merge in winning override for " + Auxilliary.GetLogString(winningGetter) + ": " + exceptionString, true, true);
+                                                    }
                                                 }
                                             }
                                             
@@ -274,20 +288,31 @@ public class Patcher : OptionalUIModule
                                         }
                                         if (mergeInDependencyRecords)
                                         {
+                                            List<string> mergeInExceptions = new();
                                             var additionalMergedRecords =_recordHandler.DuplicateFromOnlyReferencedGetters(
                                                 _environmentStateProvider.OutputMod, deltaPatchedRecords,
                                                 appearanceModSetting.CorrespondingModKeys,
-                                                appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Winner);
+                                                appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Winner, ref mergeInExceptions);
                                     
+                                            if (mergeInExceptions.Any())
+                                            {
+                                                AppendLog("Exceptions occurred during dependency merge-in of " + Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine + string.Join(Environment.NewLine, mergeInExceptions));
+                                            }
+                                            
                                             _aux.CollectShallowAssetLinks(additionalMergedRecords, assetLinks);
                                         }
                                         _aux.CollectShallowAssetLinks(dependencyContexts, assetLinks);
                                         break;
                                     
                                     case RecordOverrideHandlingMode.IncludeAsNew:
+                                        List<string> overrideExceptionStrings = new();
                                         var mergedInRecords =
                                             _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord, patchNpc,
-                                                appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value);
+                                                appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, ref overrideExceptionStrings);
+                                        if (overrideExceptionStrings.Any())
+                                        {
+                                            AppendLog(string.Join(Environment.NewLine, overrideExceptionStrings), true, true);
+                                        }
                                         _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                         break;
                                 }
@@ -302,11 +327,16 @@ public class Patcher : OptionalUIModule
                                 // deep copy in all referenced records originating from the source plugins
                                 if (mergeInDependencyRecords)
                                 {
+                                    List<string> mergeInExceptions = new();
                                     var mergedInRecords =_recordHandler.DuplicateFromOnlyReferencedGetters(
                                         _environmentStateProvider.OutputMod, patchNpc,
                                         appearanceModSetting.CorrespondingModKeys,
-                                        appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Origin);
+                                        appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Origin, ref mergeInExceptions);
                                     
+                                    if (mergeInExceptions.Any())
+                                    {
+                                        AppendLog("Exceptions occurred during dependency merge-in of " + Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine + string.Join(Environment.NewLine, mergeInExceptions));
+                                    }
                                     _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                 }
                                 
@@ -327,9 +357,16 @@ public class Patcher : OptionalUIModule
                                         break;
                                     
                                     case RecordOverrideHandlingMode.IncludeAsNew:
+                                        List<string> overrideExceptionStrings = new();
                                         var mergedInRecords =
                                             _recordHandler.DuplicateInOverrideRecords(appearanceNpcRecord, patchNpc,
-                                                appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value);
+                                                appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, ref overrideExceptionStrings);
+
+                                        if (overrideExceptionStrings.Any())
+                                        {
+                                            AppendLog(string.Join(Environment.NewLine, overrideExceptionStrings), true, true);
+                                        }
+                                        
                                         _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                         break;
                                 }
@@ -458,32 +495,56 @@ public class Patcher : OptionalUIModule
             {
                 try
                 {
+                    List<string> skinExceptions = new();
                     var skinRecords = _recordHandler.DuplicateInFormLink(targetNpc.WornArmor, sourceNpc.WornArmor,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
-                        sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
-                    mergedInRecords.AddRange(skinRecords);
+                        sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin, ref skinExceptions);
 
+                    if (skinExceptions.Any())
+                    {
+                        AppendLog("Exceptions during skin assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
+                    }
+                    
+                    mergedInRecords.AddRange(skinRecords);
+                    
+                    List<string> headExceptions = new();
                     var headRecords =_recordHandler.DuplicateInFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
-                        sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
+                        sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin, ref headExceptions);
+                    
+                    if (headExceptions.Any())
+                    {
+                        AppendLog("Exceptions during head texture assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
+                    }
                     mergedInRecords.AddRange(headRecords);
-
+                    
+                    List<string> colorExceptions = new();
                     var hairColorRecords = _recordHandler.DuplicateInFormLink(targetNpc.HairColor, sourceNpc.HairColor,
                         _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
-                        sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
+                        sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin, ref colorExceptions);
+                    
+                    if (colorExceptions.Any())
+                    {
+                        AppendLog("Exceptions during hair color assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
+                    }
                     mergedInRecords.AddRange(hairColorRecords);
 
                     targetNpc.HeadParts.Clear();
+                    List<string> headPartExceptions = new();
                     foreach (var hp in sourceNpc.HeadParts.Where(x => !x.IsNull))
                     {
                         var targetHp = new FormLink<IHeadPartGetter>();
                         var headPartRecords =_recordHandler.DuplicateInFormLink(targetHp, hp,
                             _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
-                            sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin);
+                            sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin, ref headPartExceptions);
                         targetNpc.HeadParts.Add(targetHp);
                         mergedInRecords.AddRange(headPartRecords);
                     }
 
+                    if (headPartExceptions.Any())
+                    {
+                        AppendLog("Exceptions during head part assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
+                    }
 
                     AppendLog(
                         $"    Completed dependency processing for {npcIdentifier}."); // Verbose only
