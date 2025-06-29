@@ -19,6 +19,7 @@ public class Patcher : OptionalUIModule
     private readonly Auxilliary _aux;
     private readonly RecordDeltaPatcher _recordDeltaPatcher;
     private readonly PluginProvider _pluginProvider;
+    private readonly BsaHandler _bsaHandler;
     
     private Dictionary<string, ModSetting> _modSettingsMap;
     private string _currentRunOutputAssetPath = string.Empty;
@@ -27,7 +28,7 @@ public class Patcher : OptionalUIModule
 
     public const string ALL_NPCS_GROUP = VM_Run.ALL_NPCS_GROUP;
     
-    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator, AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher, PluginProvider pluginProvider)
+    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator, AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher, PluginProvider pluginProvider, BsaHandler bsaHandler)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -37,6 +38,18 @@ public class Patcher : OptionalUIModule
         _aux = aux;
         _recordDeltaPatcher = recordDeltaPatcher;
         _pluginProvider = pluginProvider;
+        _bsaHandler = bsaHandler;
+    }
+
+    public async Task PreInitializationLogic()
+    {
+        AppendLog("Pre-Indexing loose file paths", false, true);
+        _assetHandler.PopulateExistingFilePaths(_settings.ModSettings);
+        AppendLog("Fininshed Pre-Indexing loose file paths", false, true);
+
+        AppendLog("Pre-Indexing BSA file paths", false, true);
+        _bsaHandler.PopulateBsaContentPaths(_settings.ModSettings, _environmentStateProvider.SkyrimVersion.ToGameRelease());
+        AppendLog("Finished Pre-Indexing BSA file paths", false, true);
     }
 
     public Dictionary<string, ModSetting> BuildModSettingsMap()

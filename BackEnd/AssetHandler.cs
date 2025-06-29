@@ -23,6 +23,8 @@ public class AssetHandler
     private bool _getMissingExtraAssetsFromAvailableWinners = true;
     private bool _suppressAllMissingFileWarnings = false;
     private bool _suppressKnownMissingFileWarnings = true;
+    
+    private Dictionary<string, Dictionary<string, string[]>> _modContentPaths = new();
 
     private HashSet<string> _pathsToIgnore = new();
 
@@ -43,6 +45,68 @@ public class AssetHandler
     public void Initialize()
     {
         LoadAuxiliaryFiles();
+    }
+
+    public void PopulateExistingFilePaths(IEnumerable<ModSetting> mods)
+    {
+        _modContentPaths.Clear();
+        foreach (var mod in mods)
+        {
+            System.Collections.Generic.Dictionary<string, string[]> subDict = new(StringComparer.OrdinalIgnoreCase);
+            _modContentPaths.Add(mod.DisplayName, subDict);
+
+            foreach (var dataFolder in mod.CorrespondingFolderPaths)
+            {
+                string[] allFilePaths = Directory.GetFiles(
+                    dataFolder,               // root directory
+                    "*",                   // match every file
+                    SearchOption.AllDirectories);  // recurse into sub-folders
+                
+                subDict.Add(dataFolder, allFilePaths);
+            }
+        }
+    }
+
+    public bool FileExists(string path, string modName, string dataFolder)
+    {
+        if (_modContentPaths.ContainsKey(modName) &&
+            _modContentPaths[modName].ContainsKey(dataFolder) &&
+            _modContentPaths[modName][dataFolder].Contains(path, StringComparer.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        return false;
+    }
+    
+    public bool FileExists(string path, string modName)
+    {
+        if (_modContentPaths.ContainsKey(modName))
+        {
+            foreach (var entry in _modContentPaths[modName])
+            {
+                if (entry.Value.Contains(path, StringComparer.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public bool FileExists(string path)
+    {
+        foreach (var modEntry in _modContentPaths)
+        {
+            foreach (var folderEntry in modEntry.Value)
+            {
+                if (folderEntry.Value.Contains(path, StringComparer.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     public async Task CopyAssetLinkFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting,

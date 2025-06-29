@@ -16,6 +16,7 @@ public class Validator : OptionalUIModule
     private readonly BsaHandler _bsaHandler;
     private readonly PluginProvider _pluginProvider;
     private readonly RecordHandler _recordHandler;
+    private readonly AssetHandler _assetHandler;
     
     private Action<string, bool, bool>? _appendLog;
     private Action<int, int, string>? _updateProgress;
@@ -23,13 +24,14 @@ public class Validator : OptionalUIModule
 
     private Dictionary<FormKey, ScreeningResult> _screeningCache = new();
     
-    public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, BsaHandler bsaHandler, PluginProvider pluginProvider, RecordHandler recordHandler)
+    public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, BsaHandler bsaHandler, PluginProvider pluginProvider, RecordHandler recordHandler, AssetHandler assetHandler)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _bsaHandler = bsaHandler;
         _pluginProvider = pluginProvider;
         _recordHandler = recordHandler;
+        _assetHandler = assetHandler;
     }
 
     public Dictionary<FormKey, ScreeningResult> GetScreeningCache()
@@ -201,7 +203,7 @@ public class Validator : OptionalUIModule
                     // Pass the original NPC FormKey for path generation
                     // Use the *specific* key found above, or the original NPC's key if no override was found
                     ModKey keyForFaceGenCheck = npcFormKey.ModKey;
-                    hasFaceGen = FaceGenExists(npcFormKey, keyForFaceGenCheck, assetSourceDirs);
+                    hasFaceGen = FaceGenExists(npcFormKey, keyForFaceGenCheck, appearanceModSetting);
                     AppendLog(
                         $"    Screening: FaceGen assets found in source directories: {hasFaceGen}."); // Verbose only
                 }
@@ -288,27 +290,43 @@ public class Validator : OptionalUIModule
     /// Checks if FaceGen files exist loose or in BSAs within the provided source directories.
     /// **Revised for Clarification 2.**
     /// </summary>
-    private bool FaceGenExists(FormKey npcFormKey, ModKey appearancePluginKey, List<string> assetSourceDirs)
+    private bool FaceGenExists(FormKey npcFormKey, ModKey appearancePluginKey, ModSetting modSetting)
     {
         var (faceMeshPath, faceTexPath) = Auxilliary.GetFaceGenSubPathStrings(npcFormKey);
         bool nifFound = false;
         bool ddsFound = false;
 
         // Check Loose Files (Iterate all source dirs)
-        foreach (var sourceDir in assetSourceDirs)
+        foreach (var sourceDir in modSetting.CorrespondingFolderPaths)
         {
-            if (!nifFound && File.Exists(Path.Combine(sourceDir, "meshes", faceMeshPath))) nifFound = true;
-            if (!ddsFound && File.Exists(Path.Combine(sourceDir, "textures", faceTexPath))) ddsFound = true;
+            if (!nifFound && _assetHandler.FileExists(Path.Combine(sourceDir, "meshes", faceMeshPath), modSetting.DisplayName, sourceDir)) nifFound = true;
+            if (!ddsFound && _assetHandler.FileExists(Path.Combine(sourceDir, "textures", faceTexPath), modSetting.DisplayName, sourceDir)) ddsFound = true;
             if (nifFound && ddsFound) break;
         }
 
-        // Check BSAs (if not found loose and BSA handling is enabled)
+        // Check BSAs 
+        if (!nifFound || !ddsFound)
+        {
+            string bsaMeshPath = Path.Combine("meshes", faceMeshPath);
+            string bsaTexPath = Path.Combine("textures", faceTexPath);
+
+            if (!nifFound && _bsaHandler.FileExists(bsaMeshPath, appearancePluginKey, out _))
+            {
+                nifFound = true;
+            }
+
+            if (!ddsFound && _bsaHandler.FileExists(bsaTexPath, appearancePluginKey, out _))
+            {
+                ddsFound = true;
+            }
+        }
+        /*
         if (!nifFound || !ddsFound)
         {
             // Iterate source directories *backwards*
-            for (int i = assetSourceDirs.Count - 1; i >= 0; i--)
+            for (int i = modSetting.CorrespondingFolderPaths.Count - 1; i >= 0; i--)
             {
-                var sourceDir = assetSourceDirs[i];
+                var sourceDir = modSetting.CorrespondingFolderPaths[i];
                 HashSet<IArchiveReader> readers = _bsaHandler.OpenBsaArchiveReaders(sourceDir, appearancePluginKey);
                 if (readers.Any())
                 {
@@ -323,7 +341,7 @@ public class Validator : OptionalUIModule
                     if (nifFound && ddsFound) break; // Found both
                 }
             }
-        }
+        }*/
 
         return nifFound || ddsFound;
     }
