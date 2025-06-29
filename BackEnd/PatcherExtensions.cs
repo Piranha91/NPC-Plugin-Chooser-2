@@ -26,40 +26,45 @@ public static class PatcherExtensions
     {
         if (modKeysToDuplicateFrom.Contains(modToDuplicateInto.ModKey))
         {
-            throw new ArgumentException("Cannot pass the target mod's Key as the one to extract and self contain");
+            exceptionStrings.Add("Cannot pass the target mod's Key: " + modToDuplicateInto.ModKey.ToString() + " as the one to extract and self contain");
+            return new();
         }
+        
+        // make sure not to import from the base game
+        var implicits = Implicits.Get(modToDuplicateInto.GameRelease);
+        var implicitModKeys = implicits.Listings.ToArray();
+        var filteredSourceModKeys = modKeysToDuplicateFrom.Where(x => !implicitModKeys.Contains(x)).ToHashSet();
 
         // Compile list of things to duplicate
         HashSet<IFormLinkGetter> identifiedLinks = new();
         HashSet<FormKey> passedLinks = new();
-        var implicits = Implicits.Get(modToDuplicateInto.GameRelease);
 
-        void AddAllLinks(IFormLinkGetter link, ref HashSet<FormKey> seenFormKeys)
+        void AddAllLinksIterative(IFormLinkGetter root, HashSet<FormKey> seenFormKeys)
         {
-            if (link.FormKey.IsNull) return;
-            if (seenFormKeys.Contains(link.FormKey))
-            {
-                return;
-            }
-            seenFormKeys.Add(link.FormKey);
-            if (implicits.RecordFormKeys.Contains(link.FormKey)) return;
+            var pending = new Stack<IFormLinkGetter>();
+            pending.Push(root);
 
-            if (modKeysToDuplicateFrom.Contains(link.FormKey.ModKey))
+            while (pending.Count > 0)
             {
-                identifiedLinks.Add(link);
-            }
+                var link = pending.Pop();
+                if (link.FormKey.IsNull || !seenFormKeys.Add(link.FormKey)) continue;
+                if (implicits.RecordFormKeys.Contains(link.FormKey)) continue;
 
-            if (!(recordHandler.TryGetRecordFromMods(link, modKeysToDuplicateFrom, fallBackMode,
-                    out var linkRec) && linkRec != null))
-            {
-                return;
-            }
+                // Mark for duplication if it lives in a donor plugin
+                if (filteredSourceModKeys.Contains(link.FormKey.ModKey))
+                    identifiedLinks.Add(link);
 
-            var containedLinks = linkRec.EnumerateFormLinks();
-            foreach (var containedLink in containedLinks)
-            {
-                if (!modKeysToDuplicateFrom.Contains(containedLink.FormKey.ModKey)) continue;
-                AddAllLinks(containedLink, ref passedLinks);
+                // Try to resolve the record so we can walk its children
+                if (!recordHandler.TryGetRecordFromMods(link,
+                        filteredSourceModKeys, fallBackMode, out var linkRec) ||
+                    linkRec is null) continue;
+
+                foreach (var child in linkRec.EnumerateFormLinks())
+                {
+                    // Only walk links we might actually need
+                    if (filteredSourceModKeys.Contains(child.FormKey.ModKey))
+                        pending.Push(child);
+                }
             }
         }
         
@@ -67,15 +72,12 @@ public static class PatcherExtensions
         {
             if (onlySubRecords)
             {
-                var containedLinks = rec.EnumerateFormLinks();
-                foreach (var containedLink in containedLinks)
-                {
-                    AddAllLinks(containedLink, ref passedLinks);
-                }
+                foreach (var contained in rec.EnumerateFormLinks())
+                    AddAllLinksIterative(contained, passedLinks);
             }
             else
             {
-                AddAllLinks(rec.ToLink(), ref passedLinks);
+                AddAllLinksIterative(rec.ToLink(), passedLinks);
             }
         }
 
@@ -88,11 +90,12 @@ public static class PatcherExtensions
                 continue; // this form has already been remapped in a previous call of this function
             }
             
-            if (!recordHandler.TryGetRecordFromMods(identifiedLink, modKeysToDuplicateFrom,
+            if (!recordHandler.TryGetRecordFromMods(identifiedLink, filteredSourceModKeys,
                     RecordLookupFallBack.None, out var identifiedRec)
                 || identifiedRec == null)
             {
-                throw new KeyNotFoundException($"Could not locate record to make self contained: {identifiedLink}");
+                exceptionStrings.Add($"Could not locate record to make self contained: {identifiedLink}");
+                continue;
             }
 
             var newEdid = (identifiedRec.EditorID ?? "NoEditorID");
