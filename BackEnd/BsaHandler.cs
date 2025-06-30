@@ -18,21 +18,21 @@ public class BsaHandler : OptionalUIModule
         _bsaContents.Clear();
         foreach (var mod in mods)
         {
-            AppendLog("Searching in " + mod.DisplayName);
+            //AppendLog("Searching in " + mod.DisplayName);
             foreach (var key in mod.CorrespondingModKeys)
             {
-                AppendLog("--ModKey: " + key.ToString());
+                //AppendLog("--ModKey: " + key.ToString());
                 if (_bsaContents.ContainsKey(key)) { continue; }
                 Dictionary<string, string[]> subDict = new(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var directory in mod.CorrespondingFolderPaths)
                 {
-                    AppendLog("----Directory: " + directory);
+                    //AppendLog("----Directory: " + directory);
                     try
                     {
                         foreach (var bsaPath in Archive.GetApplicableArchivePaths(gameRelease, directory, key))
                         {
-                            AppendLog("------Archive: " + bsaPath);
+                            //AppendLog("------Archive: " + bsaPath);
                             var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
                             var containedFiles = bsaReader.Files.Select(x => x.Path).ToArray();
                             subDict.Add(bsaPath, containedFiles);
@@ -40,15 +40,24 @@ public class BsaHandler : OptionalUIModule
                     }
                     catch (InvalidOperationException) // catch for GetApplicableArchivePaths being wonky
                     {
-                        string[] bsaPaths = Directory.GetFiles(
-                            directory,               // root directory
-                            "*.bsa",                   // match every file
-                            SearchOption.TopDirectoryOnly);  // recurse into sub-folders
-                        
-                        foreach (var bsaPath in bsaPaths)
+                        // e.g.  key.FileName.NameWithoutExtension == "MyPlugin"
+                        string prefix = key.FileName.NameWithoutExtension;
+
+                        // Option A: let the filesystem do the filtering via a wildcard pattern
+                        //           (works on Windows and is case-insensitive there)
+                        string searchPattern = $"{prefix}*.bsa";
+
+                        // Option B (uncomment if you prefer an explicit LINQ filter):
+                        // var bsaPaths = Directory.EnumerateFiles(directory, "*.bsa", SearchOption.TopDirectoryOnly)
+                        //                      .Where(p => Path.GetFileName(p)
+                        //                                    .StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+
+                        foreach (var bsaPath in Directory.EnumerateFiles(directory,
+                                     searchPattern,
+                                     SearchOption.TopDirectoryOnly))
                         {
-                            AppendLog("------Archive: " + bsaPath);
-                            var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
+                            //AppendLog("------Archive: " + bsaPath);
+                            var bsaReader     = Archive.CreateReader(gameRelease, bsaPath);
                             var containedFiles = bsaReader.Files.Select(x => x.Path).ToArray();
                             subDict.Add(bsaPath, containedFiles);
                         }
