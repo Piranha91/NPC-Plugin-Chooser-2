@@ -2,6 +2,7 @@
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Archives;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Skyrim;
 using Noggog;
 using NPC_Plugin_Chooser_2.Models;
 
@@ -12,6 +13,15 @@ public class BsaHandler : OptionalUIModule
     private Dictionary<ModKey, Dictionary<string, string[]>> _bsaContents = new();
     
     private Dictionary<FilePath, IArchiveReader> _openBsaArchiveReaders = new();
+
+    private Dictionary<string /*bsa filepath*/, List<(string relativePath, string destinationPath, string requestingModName)>> _extractionQueue = new();
+    
+    private readonly EnvironmentStateProvider _environmentStateProvider;
+
+    public BsaHandler(EnvironmentStateProvider environmentStateProvider)
+    {
+        _environmentStateProvider = environmentStateProvider;
+    }
 
     public void PopulateBsaContentPaths(IEnumerable<ModSetting> mods, GameRelease gameRelease)
     {
@@ -103,6 +113,118 @@ public class BsaHandler : OptionalUIModule
             }
         }
         return false;
+    }
+    
+    
+    public bool FileExists(string path, IEnumerable<ModKey> modKeys, out ModKey? modKey, out string? bsaPath, bool convertSlashes = true)
+    {
+        bsaPath = null;
+        modKey = null;
+        if (convertSlashes)
+        {
+            path = path.Replace('/', '\\');
+        }
+
+        foreach (var candidateModKey in modKeys)
+        {
+            if (_bsaContents.ContainsKey(candidateModKey))
+            {
+                foreach (var entry in _bsaContents[candidateModKey])
+                {
+                    if (entry.Value.Contains(path, StringComparer.OrdinalIgnoreCase))
+                    {
+                        bsaPath = entry.Key;
+                        modKey = candidateModKey;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+    
+    public Dictionary<string, bool> ScheduleExtractAssetFiles(
+        HashSet<string> assetRelativePathList,
+        ModSetting modSetting,
+        string assetType /*"Meshes" or "Textures"*/,
+        IEnumerable<string> autoPredictedExtraPaths, string outputBaseDirPath)
+    {
+        Dictionary<string, bool> result = new();
+
+        string outputBase = Path.Combine(outputBaseDirPath, assetType);
+        
+        foreach (string relativePath in assetRelativePathList.And(autoPredictedExtraPaths))
+        {
+            result[relativePath] = false;
+            
+            if (FileExists(relativePath, modSetting.CorrespondingModKeys, out var correspondingModKey, out var bsaPath)
+                && correspondingModKey != null && bsaPath != null)
+            {
+                string outputPath = Path.Combine(outputBase, relativePath);
+                QueueFileForExtraction(bsaPath, relativePath, outputPath, modSetting.DisplayName);
+            }
+        }
+
+        return result;
+    }
+
+    public void QueueFileForExtraction(string bsaPath, string relativePath, string destinationPath, string requestingModName)
+    {
+        List<(string, string, string)> files;
+        if (_extractionQueue.ContainsKey(bsaPath))
+        {
+            files = _extractionQueue[bsaPath];
+        }
+        else
+        {
+            files = new List<(string relativePath, string destinationPath, string requestingModName)>();
+            _extractionQueue.Add(bsaPath, files);
+        }
+        
+        files.Add((relativePath, destinationPath, requestingModName));
+    }
+
+    public Dictionary<string, HashSet<string>> ExtractQueuedFiles(Dictionary<string, HashSet<string>>? extractedNifPaths = null)
+    {
+        if (extractedNifPaths == null)
+        {
+            extractedNifPaths = new(); // needed for followup texture search
+        }
+
+        foreach (var entry in _extractionQueue)
+        {
+            var bsaFilePath = entry.Key;
+            var bsaReader = Archive.CreateReader(_environmentStateProvider.SkyrimVersion.ToGameRelease(), bsaFilePath);
+            foreach (var pathInfo in entry.Value)
+            {
+                if (!TryGetFileFromSingleReader(pathInfo.relativePath, bsaReader, out var archiveFile) || archiveFile == null)
+                {
+                    AppendLog($"Could not extract {pathInfo.relativePath} from {bsaFilePath}.", true, true);
+                    continue;
+                }
+
+                if (!ExtractFileFromBsa(archiveFile, pathInfo.destinationPath))
+                {
+                    AppendLog($"Could not extract {pathInfo.relativePath} from {bsaFilePath}.", true, true);
+                }
+
+                if (pathInfo.Item1.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!extractedNifPaths.TryGetValue(pathInfo.requestingModName, out var modEntry))
+                    {
+                        modEntry = new HashSet<string>();
+                        extractedNifPaths.Add(pathInfo.requestingModName, modEntry);
+                    }
+                    
+                    modEntry.Add(pathInfo.destinationPath);
+                }
+            }
+        }
+        
+        _extractionQueue.Clear();
+        
+        return extractedNifPaths;
     }
     
     /// <summary>

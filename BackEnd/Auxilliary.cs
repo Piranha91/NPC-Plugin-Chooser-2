@@ -196,6 +196,67 @@ public class Auxilliary
         
         return path;
     }
+    
+    /// <summary>
+    /// Attempts to regularise <paramref name="inputPath"/> so that the result is:
+    ///     textures\arbitrary\file.dds     – or –
+    ///     meshes\arbitrary\file.nif
+    /// The method accepts                             
+    ///   • absolute paths that contain “…\data\<type>\…”
+    ///   • relative paths that already start with <type>\
+    ///   • bare “arbitrary\file.ext”, inferring <type> from the extension.
+    /// </summary>
+    public static bool TryRegularizePath(string? inputPath, out string regularizedPath)
+    {
+        regularizedPath = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(inputPath))
+            return false;
+
+        // Normalise path separators.
+        var path = inputPath.Replace('/', '\\').Trim();
+
+        // Determine the expected type folder from the extension.
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        var expectedType = ext switch
+        {
+            ".dds" => "textures",
+            ".nif" => "meshes",
+            _      => null
+        };
+        if (expectedType is null) return false;   // unsupported extension
+
+        // Split into components.
+        var segments = path
+            .Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries)
+            .ToList();
+
+        // Try to find “…\data\<type>\…”
+        var dataIdx = segments
+            .FindIndex(s => s.Equals("data", StringComparison.OrdinalIgnoreCase));
+
+        if (dataIdx >= 0 && dataIdx + 1 < segments.Count)
+        {
+            // Absolute path including “…\data\<type>\…”
+            var typeSegment = segments[dataIdx + 1];
+            if (!typeSegment.Equals(expectedType, StringComparison.OrdinalIgnoreCase))
+                return false;                     // data\[type] conflicts with extension
+
+            regularizedPath = string.Join("\\", segments.Skip(dataIdx + 1));
+            return true;
+        }
+
+        // Relative path already starts with a type folder?
+        if (segments[0].Equals(expectedType, StringComparison.OrdinalIgnoreCase))
+        {
+            regularizedPath = string.Join("\\", segments);
+            return true;
+        }
+
+        // Bare “arbitrary\file.ext” – prepend inferred type.
+        regularizedPath = $"{expectedType}\\{string.Join("\\", segments)}";
+        return true;
+    }
 
     public static bool TryDuplicateGenericRecordAsNew(IMajorRecordGetter recordGetter, ISkyrimMod outputMod, out dynamic? duplicateRecord, out string exceptionString)
     {

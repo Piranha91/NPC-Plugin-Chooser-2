@@ -287,7 +287,7 @@ public class RecordHandler
     #region Merge In Overrides of Existing Records
 
     public HashSet<IMajorRecord> // return is For Caller's Information only; duplication and remapping happens internally
-        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ref List<string> exceptionStrings)
+        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, ref List<string> exceptionStrings)
     {
         HashSet<IMajorRecord> mergedInRecords = new();
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
@@ -314,7 +314,11 @@ public class RecordHandler
         }
         
         // Now go through all merged-in override records and also merge in any new records they may be pointing to
-        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, relevantContextKeys, rootContextKey, true, RecordLookupFallBack.None, ref exceptionStrings);
+        var importSourceModKeys = relevantContextKeys
+            .Distinct()
+            .Where(k => k != npcSourceModKey) // don't copy from the mod that defines the NPC, since that is a base mod
+            .ToHashSet();
+        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, importSourceModKeys, rootContextKey, true, RecordLookupFallBack.None, ref exceptionStrings);
         
         mergedInRecords.UnionWith(newMergedSubRecords);
         

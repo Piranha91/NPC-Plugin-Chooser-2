@@ -38,7 +38,7 @@ public class NifHandler
                     }
                 }
             }
-            return RemoveTopFolderFromPath(uniqueTextures, "textures");
+            return uniqueTextures;
         }
     }
 
