@@ -24,19 +24,37 @@ public class BsaHandler : OptionalUIModule
                 AppendLog("--ModKey: " + key.ToString());
                 if (_bsaContents.ContainsKey(key)) { continue; }
                 Dictionary<string, string[]> subDict = new(StringComparer.OrdinalIgnoreCase);
-                _bsaContents.Add(key, subDict);
 
                 foreach (var directory in mod.CorrespondingFolderPaths)
                 {
                     AppendLog("----Directory: " + directory);
-                    foreach (var bsaPath in Archive.GetApplicableArchivePaths(gameRelease, directory, key))
+                    try
                     {
-                        AppendLog("------Archive: " + bsaPath);
-                        var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
-                        var containedFiles = bsaReader.Files.Select(x => x.Path).ToArray();
-                        subDict.Add(bsaPath, containedFiles);
+                        foreach (var bsaPath in Archive.GetApplicableArchivePaths(gameRelease, directory, key))
+                        {
+                            AppendLog("------Archive: " + bsaPath);
+                            var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
+                            var containedFiles = bsaReader.Files.Select(x => x.Path).ToArray();
+                            subDict.Add(bsaPath, containedFiles);
+                        }
+                    }
+                    catch (InvalidOperationException) // catch for GetApplicableArchivePaths being wonky
+                    {
+                        string[] bsaPaths = Directory.GetFiles(
+                            directory,               // root directory
+                            "*.bsa",                   // match every file
+                            SearchOption.TopDirectoryOnly);  // recurse into sub-folders
+                        
+                        foreach (var bsaPath in bsaPaths)
+                        {
+                            AppendLog("------Archive: " + bsaPath);
+                            var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
+                            var containedFiles = bsaReader.Files.Select(x => x.Path).ToArray();
+                            subDict.Add(bsaPath, containedFiles);
+                        }
                     }
                 }
+                _bsaContents.Add(key, subDict);
             }
         }
     }
