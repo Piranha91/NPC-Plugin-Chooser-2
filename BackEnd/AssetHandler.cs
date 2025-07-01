@@ -25,7 +25,7 @@ public class AssetHandler : OptionalUIModule
     private bool _suppressAllMissingFileWarnings = false;
     private bool _suppressKnownMissingFileWarnings = true;
     
-    private Dictionary<string, Dictionary<string, string[]>> _modContentPaths = new();
+    private Dictionary<string, Dictionary<string, HashSet<string>>> _modContentPaths = new();
     public const string GameDataKey = "GameData";
     private HashSet<(string sourcePath, string destinationPath, string requestingModName)> _fileCopyQueue = new();
     
@@ -55,7 +55,7 @@ public class AssetHandler : OptionalUIModule
         _modContentPaths.Clear();
         foreach (var mod in mods)
         {
-            System.Collections.Generic.Dictionary<string, string[]> subDict = new(StringComparer.OrdinalIgnoreCase);
+            System.Collections.Generic.Dictionary<string, HashSet<string>> subDict = new(StringComparer.OrdinalIgnoreCase);
             _modContentPaths.Add(mod.DisplayName, subDict);
 
             foreach (var dataFolder in mod.CorrespondingFolderPaths)
@@ -65,29 +65,32 @@ public class AssetHandler : OptionalUIModule
                     "*",                   // match every file
                     SearchOption.AllDirectories);  // recurse into sub-folders
                 
-                subDict.Add(dataFolder, allFilePaths);
+                var fileSet = new HashSet<string>(allFilePaths, StringComparer.OrdinalIgnoreCase);
+                subDict.Add(dataFolder, fileSet);
             }
         }
         
         // manual scan of game data folder
         if (!_modContentPaths.ContainsKey(GameDataKey))
         {
-            System.Collections.Generic.Dictionary<string, string[]> gameDatasubDict =
-                new(StringComparer.OrdinalIgnoreCase);
+            var gameDatasubDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             string[] allFilePathsDataFolder = Directory.GetFiles(
-                _environmentStateProvider.DataFolderPath, // root directory
-                "*", // match every file
-                SearchOption.AllDirectories); // recurse into sub-
-            gameDatasubDict.Add(_environmentStateProvider.DataFolderPath, allFilePathsDataFolder);
+                _environmentStateProvider.DataFolderPath,
+                "*",
+                SearchOption.AllDirectories);
+            
+            var gameFileSet = new HashSet<string>(allFilePathsDataFolder, StringComparer.OrdinalIgnoreCase);
+            gameDatasubDict.Add(_environmentStateProvider.DataFolderPath, gameFileSet);
             _modContentPaths.Add(GameDataKey, gameDatasubDict);
         }
     }
-
+    
     public bool FileExists(string path, string modName, string dataFolder)
     {
-        if (_modContentPaths.ContainsKey(modName) &&
-            _modContentPaths[modName].ContainsKey(dataFolder) &&
-            _modContentPaths[modName][dataFolder].Contains(path, StringComparer.OrdinalIgnoreCase))
+        // This check is now O(1) instead of O(N)
+        if (_modContentPaths.TryGetValue(modName, out var modFolders) &&
+            modFolders.TryGetValue(dataFolder, out var files) &&
+            files.Contains(path))
         {
             return true;
         }
@@ -96,11 +99,12 @@ public class AssetHandler : OptionalUIModule
     
     public bool FileExists(string path, string modName)
     {
-        if (_modContentPaths.ContainsKey(modName))
+        if (_modContentPaths.TryGetValue(modName, out var modFolders))
         {
-            foreach (var entry in _modContentPaths[modName])
+            foreach (var entry in modFolders)
             {
-                if (entry.Value.Contains(path, StringComparer.OrdinalIgnoreCase))
+                // This check is now O(1) instead of O(N)
+                if (entry.Value.Contains(path))
                 {
                     return true;
                 }
@@ -108,14 +112,15 @@ public class AssetHandler : OptionalUIModule
         }
         return false;
     }
-
+    
     public bool FileExists(string path)
     {
-        foreach (var modEntry in _modContentPaths)
+        foreach (var modEntry in _modContentPaths.Values)
         {
-            foreach (var folderEntry in modEntry.Value)
+            foreach (var folderEntry in modEntry.Values)
             {
-                if (folderEntry.Value.Contains(path, StringComparer.OrdinalIgnoreCase))
+                // This check is now O(1) instead of O(N)
+                if (folderEntry.Contains(path))
                 {
                     return true;
                 }
