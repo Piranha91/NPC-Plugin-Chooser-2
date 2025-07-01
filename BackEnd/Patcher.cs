@@ -41,15 +41,15 @@ public class Patcher : OptionalUIModule
         _bsaHandler = bsaHandler;
     }
 
-    public async Task PreInitializationLogic()
+    public async Task PreInitializationLogicAsync() 
     {
-        AppendLog("Pre-Indexing loose file paths", false, true);
-        _assetHandler.PopulateExistingFilePaths(_settings.ModSettings);
-        AppendLog("Fininshed Pre-Indexing loose file paths", false, true);
+        AppendLog("Pre-Indexing loose file paths...", false, true);
+        await _assetHandler.PopulateExistingFilePathsAsync(_settings.ModSettings); 
+        AppendLog("Finished Pre-Indexing loose file paths.", false, true);
 
-        AppendLog("Pre-Indexing BSA file paths", false, true);
-        _bsaHandler.PopulateBsaContentPaths(_settings.ModSettings, _environmentStateProvider.SkyrimVersion.ToGameRelease());
-        AppendLog("Finished Pre-Indexing BSA file paths", false, true);
+        AppendLog("Pre-Indexing BSA file paths...", false, true);
+        await _bsaHandler.PopulateBsaContentPathsAsync(_settings.ModSettings, _environmentStateProvider.SkyrimVersion.ToGameRelease());
+        AppendLog("Finished Pre-Indexing BSA file paths.", false, true);
     }
 
     public Dictionary<string, ModSetting> BuildModSettingsMap()
@@ -203,19 +203,35 @@ public class Patcher : OptionalUIModule
                     var recordOverrideHandlingMode = appearanceModSetting?.ModRecordOverrideHandlingMode ??
                                                      _settings.DefaultRecordOverrideHandlingMode;
                     List<IAssetLinkGetter> assetLinks = new();
+                    
+                    // ======================= THROTTLING LOGIC =======================
+                    // Determine IF we should update the UI in this iteration.
+                    // Update every 50 items, on the first item (i=0), or on the very last item.
+                    bool shouldUpdateUI = (i % 50 == 0) || (i == totalToProcess - 1);
+                    // ================================================================
+                    
 
                     // Apply Group Filter (still needed)
                     if (ShouldSkipNpc(winningNpcOverride, SelectedNpcGroup))
                     {
                         AppendLog($"  Skipping {npcIdentifier} (Group Filter)..."); // Verbose only
                         skippedCount++;
-                        UpdateProgress(i + 1, totalToProcess, $"Skipped {npcIdentifier} (Group Filter)");
+                        // ======================= APPLY THROTTLING =======================
+                        if (shouldUpdateUI)
+                        {
+                            UpdateProgress(i + 1, totalToProcess, $"({i + 1}/{totalToProcess}) Skipped: {npcIdentifier}");
+                        }
+                        // ================================================================
                         await Task.Delay(1, ct);
                         continue;
                     }
 
-                    UpdateProgress(i + 1, totalToProcess,
-                        $"Processing {winningNpcOverride.EditorID ?? npcFormKey.ToString()}");
+                    // ======================= APPLY THROTTLING =======================
+                    if (shouldUpdateUI)
+                    {
+                        UpdateProgress(i + 1, totalToProcess, $"({i + 1}/{totalToProcess}) Processing: {winningNpcOverride.EditorID ?? npcIdentifier}");
+                    }
+                    // ================================================================
                     AppendLog(
                         $"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'"); // Verbose only
 

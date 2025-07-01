@@ -50,40 +50,49 @@ public class AssetHandler : OptionalUIModule
         LoadAuxiliaryFiles();
     }
 
-    public void PopulateExistingFilePaths(IEnumerable<ModSetting> mods)
+    public async Task PopulateExistingFilePathsAsync(IEnumerable<ModSetting> mods)
     {
         _modContentPaths.Clear();
-        foreach (var mod in mods)
-        {
-            System.Collections.Generic.Dictionary<string, HashSet<string>> subDict = new(StringComparer.OrdinalIgnoreCase);
-            _modContentPaths.Add(mod.DisplayName, subDict);
 
-            foreach (var dataFolder in mod.CorrespondingFolderPaths)
-            {
-                string[] allFilePaths = Directory.GetFiles(
-                    dataFolder,               // root directory
-                    "*",                   // match every file
-                    SearchOption.AllDirectories);  // recurse into sub-folders
-                
-                var fileSet = new HashSet<string>(allFilePaths, StringComparer.OrdinalIgnoreCase);
-                subDict.Add(dataFolder, fileSet);
-            }
-        }
-        
-        // manual scan of game data folder
-        if (!_modContentPaths.ContainsKey(GameDataKey))
+        // Task.Run pushes the synchronous, blocking file I/O work to a background thread,
+        // allowing this method to immediately yield via 'await'. This unblocks the caller
+        // and lets the UI update with any log messages that were sent before this call.
+        await Task.Run(() =>
         {
-            var gameDatasubDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-            string[] allFilePathsDataFolder = Directory.GetFiles(
-                _environmentStateProvider.DataFolderPath,
-                "*",
-                SearchOption.AllDirectories);
-            
-            var gameFileSet = new HashSet<string>(allFilePathsDataFolder, StringComparer.OrdinalIgnoreCase);
-            gameDatasubDict.Add(_environmentStateProvider.DataFolderPath, gameFileSet);
-            _modContentPaths.Add(GameDataKey, gameDatasubDict);
-        }
+            foreach (var mod in mods)
+            {
+                var subDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                _modContentPaths.Add(mod.DisplayName, subDict);
+
+                foreach (var dataFolder in mod.CorrespondingFolderPaths)
+                {
+                    // This is the blocking call that we are moving to a background thread.
+                    string[] allFilePaths = Directory.GetFiles(
+                        dataFolder,
+                        "*",
+                        SearchOption.AllDirectories);
+
+                    var fileSet = new HashSet<string>(allFilePaths, StringComparer.OrdinalIgnoreCase);
+                    subDict.Add(dataFolder, fileSet);
+                }
+            }
+
+            // manual scan of game data folder
+            if (!_modContentPaths.ContainsKey(GameDataKey))
+            {
+                var gameDatasubDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                string[] allFilePathsDataFolder = Directory.GetFiles(
+                    _environmentStateProvider.DataFolderPath,
+                    "*",
+                    SearchOption.AllDirectories);
+
+                var gameFileSet = new HashSet<string>(allFilePathsDataFolder, StringComparer.OrdinalIgnoreCase);
+                gameDatasubDict.Add(_environmentStateProvider.DataFolderPath, gameFileSet);
+                _modContentPaths.Add(GameDataKey, gameDatasubDict);
+            }
+        });
     }
+
     
     public bool FileExists(string path, string modName, string dataFolder)
     {

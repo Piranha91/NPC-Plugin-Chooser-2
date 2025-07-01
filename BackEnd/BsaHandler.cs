@@ -23,47 +23,57 @@ public class BsaHandler : OptionalUIModule
         _environmentStateProvider = environmentStateProvider;
     }
 
-    // In BsaHandler.cs -> PopulateBsaContentPaths()
-    public void PopulateBsaContentPaths(IEnumerable<ModSetting> mods, GameRelease gameRelease)
+    public async Task PopulateBsaContentPathsAsync(IEnumerable<ModSetting> mods, GameRelease gameRelease)
     {
         _bsaContents.Clear();
-        foreach (var mod in mods)
+
+        // Use Task.Run to offload the blocking I/O of reading BSA headers.
+        await Task.Run(() =>
         {
-            foreach (var key in mod.CorrespondingModKeys)
+            foreach (var mod in mods)
             {
-                if (_bsaContents.ContainsKey(key)) { continue; }
-                // Use HashSet here
-                var subDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var directory in mod.CorrespondingFolderPaths)
+                foreach (var key in mod.CorrespondingModKeys)
                 {
-                    try
+                    if (_bsaContents.ContainsKey(key))
                     {
-                        foreach (var bsaPath in Archive.GetApplicableArchivePaths(gameRelease, directory, key))
-                        {
-                            var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
-                            // Create the HashSet with the correct comparer
-                            var containedFiles = new HashSet<string>(bsaReader.Files.Select(x => x.Path), StringComparer.OrdinalIgnoreCase);
-                            subDict.Add(bsaPath, containedFiles);
-                        }
+                        continue;
                     }
-                    catch (InvalidOperationException) 
-                    {
-                        string prefix = key.FileName.NameWithoutExtension;
-                        string searchPattern = $"{prefix}*.bsa";
 
-                        foreach (var bsaPath in Directory.EnumerateFiles(directory, searchPattern, SearchOption.TopDirectoryOnly))
+                    var subDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var directory in mod.CorrespondingFolderPaths)
+                    {
+                        try
                         {
-                            var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
-                            // Create the HashSet with the correct comparer
-                            var containedFiles = new HashSet<string>(bsaReader.Files.Select(x => x.Path), StringComparer.OrdinalIgnoreCase);
-                            subDict.Add(bsaPath, containedFiles);
+                            // These are the blocking calls.
+                            foreach (var bsaPath in Archive.GetApplicableArchivePaths(gameRelease, directory, key))
+                            {
+                                var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
+                                var containedFiles = new HashSet<string>(bsaReader.Files.Select(x => x.Path),
+                                    StringComparer.OrdinalIgnoreCase);
+                                subDict.Add(bsaPath, containedFiles);
+                            }
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            string prefix = key.FileName.NameWithoutExtension;
+                            string searchPattern = $"{prefix}*.bsa";
+
+                            foreach (var bsaPath in Directory.EnumerateFiles(directory, searchPattern,
+                                         SearchOption.TopDirectoryOnly))
+                            {
+                                var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
+                                var containedFiles = new HashSet<string>(bsaReader.Files.Select(x => x.Path),
+                                    StringComparer.OrdinalIgnoreCase);
+                                subDict.Add(bsaPath, containedFiles);
+                            }
                         }
                     }
+
+                    _bsaContents.Add(key, subDict);
                 }
-                _bsaContents.Add(key, subDict);
             }
-        }
+        });
     }
 
     public bool FileExists(string path, ModKey modKey, string bsaPath, bool convertSlashes = true)

@@ -54,18 +54,24 @@ public class Validator : OptionalUIModule
                 return false;
             }
 
-            int totalToScreen = selections.Count;
-            int currentScreened = 0;
+            // Convert dictionary to a list to allow access by index
+            var selectionsList = selections.ToList(); 
+            int totalToScreen = selectionsList.Count;
 
-            foreach (var kvp in selections)
+            // Use a for loop to get a reliable index 'i'
+            for (int i = 0; i < totalToScreen; i++) 
             {
                 ct.ThrowIfCancellationRequested();
-                currentScreened++;
+
+                var kvp = selectionsList[i]; // Get the current item
                 var npcFormKey = kvp.Key;
                 var selectedModDisplayName = kvp.Value;
-                string npcIdentifier = npcFormKey.ToString(); // Default identifier
+                string npcIdentifier = npcFormKey.ToString();
 
-                UpdateProgress(currentScreened, totalToScreen, $"Screening {npcIdentifier}");
+                // ======================= THROTTLING LOGIC =======================
+                // Determine IF we should update the UI in this iteration.
+                bool shouldUpdateUI = (i % 50 == 0) || (i == totalToScreen - 1);
+                // ================================================================
 
                 // 1. Resolve winning override (needed for context and potentially EasyNPC mode base)
                 if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var winningNpcOverride))
@@ -79,6 +85,15 @@ public class Validator : OptionalUIModule
 
                 npcIdentifier =
                     $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})"; // Better identifier
+                
+                // ======================= APPLY THROTTLING =======================
+                if (shouldUpdateUI)
+                {
+                    // Use the new, more informative hybrid message
+                    UpdateProgress(i + 1, totalToScreen, $"({i + 1}/{totalToScreen}) Screening: {npcIdentifier}");
+                }
+                // ================================================================
+
 
                 // 2. Find the ModSetting for the selection
                 if (!modSettingsMap.TryGetValue(selectedModDisplayName, out var appearanceModSetting))
