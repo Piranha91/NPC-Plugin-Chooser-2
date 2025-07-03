@@ -405,7 +405,7 @@ public class AssetHandler : OptionalUIModule
             foreach (var hpLink in npc.HeadParts)
                 GetHeadPartAssetPaths(hpLink, correspondingModKeys, texturePaths, meshPaths);
         if (!npc.WornArmor.IsNull && _recordHandler.TryGetRecordFromMods(npc.WornArmor, correspondingModKeys,
-                RecordLookupFallBack.Winner, out var wornArmorGetterGeneric) && wornArmorGetterGeneric != null)
+                RecordLookupFallBack.Winner, out var wornArmorGetterGeneric, out _) && wornArmorGetterGeneric != null)
         {
             var wornArmorGetter = wornArmorGetterGeneric as IArmorGetter;
             if (wornArmorGetter != null && wornArmorGetter.Armature != null)
@@ -420,7 +420,7 @@ public class AssetHandler : OptionalUIModule
         HashSet<string> meshPaths)
     {
         /* Implementation remains the same */
-        if (hpLink.IsNull || !_recordHandler.TryGetRecordFromMods(hpLink, correspondingModKeys, RecordLookupFallBack.Winner, out var hpGetterGeneric)) return;
+        if (hpLink.IsNull || !_recordHandler.TryGetRecordFromMods(hpLink, correspondingModKeys, RecordLookupFallBack.Winner, out var hpGetterGeneric, out _)) return;
         var hpGetter = hpGetterGeneric as IHeadPartGetter;
         if (hpGetter is null) return;
         
@@ -439,7 +439,7 @@ public class AssetHandler : OptionalUIModule
         HashSet<string> meshPaths)
     {
         /* Implementation remains the same */
-        if (aaLink.IsNull || !_recordHandler.TryGetRecordFromMods(aaLink, correspondingModKeys, RecordLookupFallBack.Winner, out var aaGetterGeneric)) return;
+        if (aaLink.IsNull || !_recordHandler.TryGetRecordFromMods(aaLink, correspondingModKeys, RecordLookupFallBack.Winner, out var aaGetterGeneric, out _)) return;
         var aaGetter = aaGetterGeneric as IArmorAddonGetter;
         if (aaGetter is null) return;
         
@@ -455,7 +455,7 @@ public class AssetHandler : OptionalUIModule
     {
         /* Implementation remains the same */
         if (txstLink.IsNull ||
-            !_recordHandler.TryGetRecordFromMods(txstLink, correspondingModKeys, RecordLookupFallBack.Winner, out var txstGetterGeneric)) return;
+            !_recordHandler.TryGetRecordFromMods(txstLink, correspondingModKeys, RecordLookupFallBack.Winner, out var txstGetterGeneric, out _)) return;
         var txstGetter = txstGetterGeneric as ITextureSetGetter;
         if (txstGetter is null) return;
         

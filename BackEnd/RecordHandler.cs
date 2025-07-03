@@ -25,7 +25,7 @@ public class RecordHandler
     
     // ============================ THE IMPROVEMENT ============================
     // Cache for deep record traversal results. Persists for the entire patch run.
-    private Dictionary<FormKey, HashSet<IFormLinkGetter>> _traversalCache = new();
+    private Dictionary<(FormKey, ModKey), HashSet<IFormLinkGetter>> _traversalCache = new();
     // =======================================================================
 
     public RecordHandler(EnvironmentStateProvider environmentStateProvider, PluginProvider pluginProvider, Settings settings)
@@ -93,7 +93,7 @@ public class RecordHandler
             return mergedInRecords;
         }
 
-        if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, fallBackMode, out var record) || record == null)
+        if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, fallBackMode, out var record, out _) || record == null)
         {
             return mergedInRecords;
         }
@@ -135,7 +135,7 @@ public class RecordHandler
             modKeysToDuplicateFrom,
             onlySubRecords,
             fallBackMode,
-            ref mapping,
+            mapping,
             ref exceptionStrings,
             _traversalCache,
             typesToInspect);
@@ -542,50 +542,49 @@ public class RecordHandler
     }
 
     public bool TryGetRecordFromMods(IFormLinkGetter formLink, IEnumerable<ModKey> modKeys, RecordLookupFallBack fallbackMode,
-        out IMajorRecordGetter? record, bool reverseOrder = true)
+        out IMajorRecordGetter? record, out ModKey? provider, bool reverseOrder = true)
     {
         record = null;
+        provider = null; // Initialize the new out parameter
+
         if (modKeys == null || formLink.IsNull)
         {
             return false;
         }
-        
-        var toSearch = modKeys.Reverse().ToArray();
-        if (!reverseOrder)
-        {
-            toSearch = modKeys.ToArray();
-        }
+    
+        var toSearch = reverseOrder ? modKeys.Reverse().ToArray() : modKeys.ToArray();
 
         foreach (var mk in toSearch)
         {
             if (TryGetRecordGetterFromMod(formLink, mk, RecordLookupFallBack.None, out record) && record != null)
             {
+                provider = mk; // We found it in this mod!
                 return true;
             }
         }
-        
+    
         // fallbacks
         switch (fallbackMode)
         {
             case RecordLookupFallBack.Origin:
                 if (TryGetRecordGetterFromMod(formLink, formLink.FormKey.ModKey, RecordLookupFallBack.None,  out record) && record != null)
                 {
+                    provider = formLink.FormKey.ModKey;
                     return true;
                 }
                 break;
-            
+        
             case RecordLookupFallBack.Winner:
                 if (_environmentStateProvider.LinkCache.TryResolve(formLink, out record) && record is not null)
                 {
+                    // To get the true winner's ModKey, we need to resolve the context.
+                    var context = _environmentStateProvider.LinkCache.ResolveContext(formLink);
+                    provider = context.ModKey;
                     return true;
                 }
                 break;
-            
-            case RecordLookupFallBack.None:
-            default:
-                break;
         }
-        
+    
         return false;
     }
 
