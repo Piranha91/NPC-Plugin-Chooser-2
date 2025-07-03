@@ -272,6 +272,7 @@ public class Auxilliary
     
     public static bool TryGetOrAddGenericRecordAsOverride(IMajorRecordGetter recordGetter, ISkyrimMod outputMod, out MajorRecord? duplicateRecord, out string exceptionString)
     {
+        using var _ = ContextualPerformanceTracer.Trace("Auxilliary.TryGetOrAddGenericRecordAsOverride");
         if(TryGetPatchRecordGroup(recordGetter, outputMod, out var group, out exceptionString) && group != null)
         {
             duplicateRecord = OverrideMixIns.GetOrAddAsOverride(group, recordGetter);
@@ -334,6 +335,7 @@ public class Auxilliary
     
     public void CollectShallowAssetLinks(IEnumerable<IMajorRecordGetter> recordGetters, List<IAssetLinkGetter> assetLinks)
     {
+        using var _ = ContextualPerformanceTracer.Trace("Aux.CollectShallowAssetLinks");
         foreach (var recordGetter in recordGetters)
         {
             var recordAssetLinks = ShallowGetAssetLinks(recordGetter);

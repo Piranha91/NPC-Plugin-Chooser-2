@@ -63,6 +63,54 @@ public class Patcher : OptionalUIModule
         return _modSettingsMap;
     }
     
+    public async Task PreloadAppearanceModPluginsAsync(Dictionary<string, ModSetting> modSettingsMap)
+    {
+        AppendLog("Pre-loading all required appearance mod plugins...", false, true);
+
+        // 1. Get all unique ModSetting objects that are actually being used.
+        var usedModSettingNames = _settings.SelectedAppearanceMods.Values.Distinct().ToHashSet();
+    
+        // 2. From those settings, get all unique ModKeys that need to be loaded.
+        var requiredKeys = usedModSettingNames
+            .Select(name => modSettingsMap.TryGetValue(name, out var setting) ? setting : null)
+            .Where(setting => setting != null)
+            .SelectMany(setting => setting!.CorrespondingModKeys)
+            .Distinct()
+            .ToList();
+
+        if (!requiredKeys.Any())
+        {
+            AppendLog("No appearance mod plugins to pre-load.", false, true);
+            return;
+        }
+
+        int loadedCount = 0;
+        int failedCount = 0;
+
+        // 3. Offload the blocking I/O to a background thread.
+        await Task.Run(() =>
+        {
+            foreach (var key in requiredKeys)
+            {
+                // The act of calling TryGetPlugin will load and cache the plugin if it's not already.
+                // We pass the settings' ModsFolder as a fallback path.
+                if (_pluginProvider.TryGetPlugin(key, _settings.ModsFolder, out _))
+                {
+                    loadedCount++;
+                }
+                else
+                {
+                    failedCount++;
+                    // This logging will now happen on the background thread, which is fine.
+                    // The UI will update when it gets a chance.
+                    System.Diagnostics.Debug.WriteLine($"[Pre-loader] Failed to load plugin: {key.FileName}");
+                }
+            }
+        });
+
+        AppendLog($"Finished pre-loading. {loadedCount} plugins cached. {failedCount} could not be found.", false, true);
+    }
+    
     public async Task RunPatchingLogic(string SelectedNpcGroup, CancellationToken ct)
         {
             ResetLog();
@@ -165,6 +213,12 @@ public class Patcher : OptionalUIModule
                     return;
                 }
             }
+            
+            // ====================== TRACER SETUP ======================
+            // Configure the tracer to stop after sampling 50 "Mod-Added" NPCs.
+            ContextualPerformanceTracer.ResetAndStartSampling("Mod-Added", 250);
+            bool profilingReportGenerated = false;
+            // ==========================================================
 
             // --- Main Processing Loop (Using Screening Cache) ---
             AppendLog("\nProcessing Valid NPC Appearance Selections..."); // Verbose only
@@ -204,12 +258,17 @@ public class Patcher : OptionalUIModule
                                                      _settings.DefaultRecordOverrideHandlingMode;
                     List<IAssetLinkGetter> assetLinks = new();
                     
+                    // Set the context for this iteration. This will also count the sample if it's "Mod-Added".
+                    using var _context = ContextualPerformanceTracer.BeginContext(winningNpcOverride.FormKey.ModKey);
+
+                    // This will automatically do nothing after the sample limit is reached.
+                    using var _ = ContextualPerformanceTracer.Trace("Patcher.MainLoopIteration");
+                    
                     // ======================= THROTTLING LOGIC =======================
                     // Determine IF we should update the UI in this iteration.
                     // Update every 50 items, on the first item (i=0), or on the very last item.
-                    bool shouldUpdateUI = (i % 50 == 0) || (i == totalToProcess - 1);
+                    bool shouldUpdateUI = (i % 10 == 0) || (i == totalToProcess - 1);
                     // ================================================================
-                    
 
                     // Apply Group Filter (still needed)
                     if (ShouldSkipNpc(winningNpcOverride, SelectedNpcGroup))
@@ -438,6 +497,16 @@ public class Patcher : OptionalUIModule
 
                     // Handle race deep-copy if needed
                     //_raceHandler.ProcessNpcRace(patchNpc, appearanceNpcRecord, winningNpcOverride, appearanceModKey.Value, appearanceModSetting);
+                    
+                    // ====================== CHECK AND PRINT REPORT ======================
+                    // Check if the report should be generated and hasn't been already.
+                    if (!profilingReportGenerated && ContextualPerformanceTracer.SampleLimitReached)
+                    {
+                        AppendLog("\n>>>>> Profiling sample limit reached. Generating performance report... <<<<<\n", true, true);
+                        AppendLog(ContextualPerformanceTracer.GetReport(), true, true);
+                        profilingReportGenerated = true; // Set flag to ensure it only prints once.
+                    }
+                    // ===================================================================
 
                     processedCount++;
                     await Task.Delay(5, ct);
@@ -519,6 +588,7 @@ public class Patcher : OptionalUIModule
         /// </summary>
         private List<MajorRecord> CopyAppearanceData(INpcGetter sourceNpc, Npc targetNpc, ModSetting appearanceModSetting, ModKey sourceNpcContextModKey, string npcIdentifier, bool mergeInDependencyRecords)
         {
+            using var _ = ContextualPerformanceTracer.Trace("Patcher.CopyAppearanceData");
             // Copy non-formlinks
             targetNpc.FaceMorph = sourceNpc.FaceMorph?.DeepCopy();
             targetNpc.FaceParts = sourceNpc.FaceParts?.DeepCopy();

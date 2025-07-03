@@ -230,6 +230,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         /// <returns>A list of <see cref="PropertyDiff"/> objects representing the differences.</returns>
         public IReadOnlyList<PropertyDiff> GetPropertyDiffs(dynamic source, dynamic target)
         {
+            using var _ = ContextualPerformanceTracer.Trace("RecordDeltaPatcher.GetPropertyDiffs");
             if (source is null) throw new ArgumentNullException(nameof(source)); 
             if (target is null) throw new ArgumentNullException(nameof(target));
             var differences = new List<PropertyDiff>(); 
@@ -282,6 +283,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         /// <param name="destination">The destination record (must be a <see cref="MajorRecord"/>).</param>
         /// <param name="diffs">The collection of <see cref="PropertyDiff"/> to apply.</param>
         public void ApplyPropertyDiffs(dynamic destination, IEnumerable<PropertyDiff> diffs) {
+            using var _ = ContextualPerformanceTracer.Trace("RecordDeltaPatcher.ApplyPropertyDiffs");
             if (destination is null) throw new ArgumentNullException(nameof(destination)); 
             if (diffs is null) throw new ArgumentNullException(nameof(diffs));
             if (destination is not MajorRecord concreteDestination) { AppendLog($"Error: Destination for ApplyPropertyDiffs must be a MajorRecord. Got {destination.GetType().FullName}", true); return; }

@@ -189,6 +189,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 var modSettingsMap = _patcher.BuildModSettingsMap();
                 await _patcher.PreInitializationLogicAsync(); 
+                await _patcher.PreloadAppearanceModPluginsAsync(modSettingsMap);
 
                 bool canRun = await _validator.ScreenSelectionsAsync(modSettingsMap, token);
 

@@ -70,7 +70,7 @@ public class Validator : OptionalUIModule
 
                 // ======================= THROTTLING LOGIC =======================
                 // Determine IF we should update the UI in this iteration.
-                bool shouldUpdateUI = (i % 50 == 0) || (i == totalToScreen - 1);
+                bool shouldUpdateUI = (i % 10 == 0) || (i == totalToScreen - 1);
                 // ================================================================
 
                 // 1. Resolve winning override (needed for context and potentially EasyNPC mode base)

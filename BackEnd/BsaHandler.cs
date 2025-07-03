@@ -148,6 +148,7 @@ public class BsaHandler : OptionalUIModule
         string assetType /*"Meshes" or "Textures"*/,
         IEnumerable<string> autoPredictedExtraPaths, string outputBaseDirPath)
     {
+        using var _ = ContextualPerformanceTracer.Trace("BsaHandler.ScheduleExtractAssetFiles");
         Dictionary<string, bool> result = new();
 
         string outputBase = Path.Combine(outputBaseDirPath, assetType);

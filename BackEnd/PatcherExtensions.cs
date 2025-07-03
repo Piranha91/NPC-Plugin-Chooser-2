@@ -20,16 +20,18 @@ public static class PatcherExtensions
         RecordLookupFallBack fallBackMode,
         ref Dictionary<FormKey, FormKey> mapping,
         ref List<string> exceptionStrings,
+        Dictionary<FormKey, HashSet<IFormLinkGetter>> traversalCache,
         params Type[] typesToInspect)
         where TModGetter : class, IModGetter
         where TMod : class, TModGetter, IMod, ISkyrimMod
     {
         if (modKeysToDuplicateFrom.Contains(modToDuplicateInto.ModKey))
         {
-            exceptionStrings.Add("Cannot pass the target mod's Key: " + modToDuplicateInto.ModKey.ToString() + " as the one to extract and self contain");
+            exceptionStrings.Add("Cannot pass the target mod's Key: " + modToDuplicateInto.ModKey.ToString() +
+                                 " as the one to extract and self contain");
             return new();
         }
-        
+
         // make sure not to import from the base game
         var implicits = Implicits.Get(modToDuplicateInto.GameRelease);
         var implicitModKeys = implicits.Listings.ToArray();
@@ -41,7 +43,16 @@ public static class PatcherExtensions
 
         void AddAllLinksIterative(IFormLinkGetter root, HashSet<FormKey> seenFormKeys)
         {
+            // If we have already fully traversed this FormKey, use the cached results
+            // and add them to our main set of identified links.
+            if (traversalCache.TryGetValue(root.FormKey, out var cachedLinks))
+            {
+                identifiedLinks.UnionWith(cachedLinks);
+                return;
+            }
+
             var pending = new Stack<IFormLinkGetter>();
+            var linksFoundInThisTraversal = new HashSet<IFormLinkGetter>();
             pending.Push(root);
 
             while (pending.Count > 0)
@@ -52,7 +63,11 @@ public static class PatcherExtensions
 
                 // Mark for duplication if it lives in a donor plugin
                 if (filteredSourceModKeys.Contains(link.FormKey.ModKey))
+                {
+                    linksFoundInThisTraversal.Add(link);
                     identifiedLinks.Add(link);
+                }
+
 
                 // Try to resolve the record so we can walk its children
                 if (!recordHandler.TryGetRecordFromMods(link,
@@ -61,23 +76,42 @@ public static class PatcherExtensions
 
                 foreach (var child in linkRec.EnumerateFormLinks())
                 {
-                    // Only walk links we might actually need
-                    if (filteredSourceModKeys.Contains(child.FormKey.ModKey))
+                    // If we've already fully traversed this child link in a previous run,
+                    // we can add its results and skip pushing it to the stack.
+                    if (traversalCache.TryGetValue(child.FormKey, out var cachedChildLinks))
+                    {
+                        linksFoundInThisTraversal.UnionWith(cachedChildLinks);
+                        identifiedLinks.UnionWith(cachedChildLinks);
+                    }
+                    else if (filteredSourceModKeys.Contains(child.FormKey.ModKey))
+                    {
                         pending.Push(child);
+                    }
                 }
             }
+
+            // Cache the results of this traversal before returning.
+            traversalCache[root.FormKey] = linksFoundInThisTraversal;
         }
-        
+
+        // The 'seen' set to prevent cycles must be created for each distinct traversal tree.
         foreach (var rec in recordsToDuplicate)
         {
             if (onlySubRecords)
             {
-                foreach (var contained in rec.EnumerateFormLinks())
-                    AddAllLinksIterative(contained, passedLinks);
+                // For each top-level record, process its children.
+                // Each child starts a new, independent traversal tree.
+                foreach (var containedLink in rec.EnumerateFormLinks())
+                {
+                    // Create a new 'seen' set for each new traversal starting point.
+                    AddAllLinksIterative(containedLink, new HashSet<FormKey>());
+                }
             }
             else
             {
-                AddAllLinksIterative(rec.ToLink(), passedLinks);
+                // The record itself is the start of the traversal tree.
+                // Create a new 'seen' set for it.
+                AddAllLinksIterative(rec.ToLink(), new HashSet<FormKey>());
             }
         }
 
@@ -89,7 +123,7 @@ public static class PatcherExtensions
             {
                 continue; // this form has already been remapped in a previous call of this function
             }
-            
+
             if (!recordHandler.TryGetRecordFromMods(identifiedLink, filteredSourceModKeys,
                     RecordLookupFallBack.None, out var identifiedRec)
                 || identifiedRec == null)
@@ -99,13 +133,13 @@ public static class PatcherExtensions
             }
 
             var newEdid = (identifiedRec.EditorID ?? "NoEditorID");
-            if (Auxilliary.TryDuplicateGenericRecordAsNew(identifiedRec, modToDuplicateInto, out dynamic? dup, out string exceptionString) &&
+            if (Auxilliary.TryDuplicateGenericRecordAsNew(identifiedRec, modToDuplicateInto, out dynamic? dup,
+                    out string exceptionString) &&
                 dup != null)
             {
                 dup.EditorID = newEdid;
                 mapping[identifiedLink.FormKey] = dup.FormKey;
                 mergedInRecords.Add(dup);
-                modToDuplicateInto.Remove(identifiedLink.FormKey, identifiedLink.Type);
             }
             else
             {
@@ -115,10 +149,10 @@ public static class PatcherExtensions
 
         // Remap links
         modToDuplicateInto.RemapLinks(mapping);
-        
+
         return mergedInRecords;
     }
-    
+
     // Original form depending on global link cache
     // Kept for reference
     public static void DuplicateFromOnlyReferencedGetters<TMod, TModGetter>(

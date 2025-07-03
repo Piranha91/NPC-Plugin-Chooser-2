@@ -22,6 +22,11 @@ public class RecordHandler
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private PluginProvider _pluginProvider;
     private readonly Settings _settings;
+    
+    // ============================ THE IMPROVEMENT ============================
+    // Cache for deep record traversal results. Persists for the entire patch run.
+    private Dictionary<FormKey, HashSet<IFormLinkGetter>> _traversalCache = new();
+    // =======================================================================
 
     public RecordHandler(EnvironmentStateProvider environmentStateProvider, PluginProvider pluginProvider, Settings settings)
     {
@@ -33,6 +38,7 @@ public class RecordHandler
     public void Reinitialize()
     {
         _contextMappings.Clear();
+        _traversalCache.Clear();
     }
 
     #region Merge In New Records
@@ -120,6 +126,7 @@ public class RecordHandler
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
+        using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateFromOnlyReferencedGetters");
         Dictionary<FormKey, FormKey> mapping = GetCurrentContextMapping(rootContextModKey);
         
         return modToDuplicateInto.DuplicateFromOnlyReferencedGetters<TMod, ISkyrimModGetter>(
@@ -130,6 +137,7 @@ public class RecordHandler
             fallBackMode,
             ref mapping,
             ref exceptionStrings,
+            _traversalCache,
             typesToInspect);
     }
 
@@ -205,6 +213,7 @@ public class RecordHandler
     public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
         DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys)
     {
+        using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DeepGetOverriddenDependencyRecords");
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
         foreach (var modKey in relevantContextKeys)
         {
@@ -289,6 +298,7 @@ public class RecordHandler
     public HashSet<IMajorRecord> // return is For Caller's Information only; duplication and remapping happens internally
         DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, ref List<string> exceptionStrings)
     {
+        using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateInOverrideRecords");
         HashSet<IMajorRecord> mergedInRecords = new();
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
         foreach (var modKey in relevantContextKeys)
@@ -481,6 +491,7 @@ public class RecordHandler
     public bool TryGetRecordFromMod(FormKey formKey, Type type, ModKey modKey, RecordLookupFallBack fallbackMode,
         out dynamic? record)
     {
+        using var _ = ContextualPerformanceTracer.Trace("RecordHandler.TryGetRecordFromMod");
         record = null;
         if (_pluginProvider.TryGetPlugin(modKey, _settings.ModsFolder, out var plugin) && plugin != null)
         {

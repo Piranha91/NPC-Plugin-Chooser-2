@@ -145,6 +145,7 @@ public class AssetHandler : OptionalUIModule
     public async Task ScheduleCopyAssetLinkFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting,
         string outputBasePath)
     {
+        using var _ = ContextualPerformanceTracer.Trace("AssetHandler.ScheduleCopyAssetLinkFiles");
         var assetRelPaths =
             assetLinks
                 .Select(x => x.GivenPath)
@@ -213,6 +214,7 @@ public class AssetHandler : OptionalUIModule
         ModSetting appearanceModSetting,
         string outputBasePath)
     {
+        using var _ = ContextualPerformanceTracer.Trace("AssertHandler.ScheduleCopyNpcAssets");
         _runVM.Value.AppendLog(
             $"    Copying assets for {appearanceNpcRecord.EditorID ?? appearanceNpcRecord.FormKey.ToString()} from sources related to '{appearanceModSetting.DisplayName}'..."); // Verbose only
 
