@@ -69,8 +69,7 @@ public class Patcher : OptionalUIModule
         ResetProgress();
         UpdateProgress(0, 1, "Initializing...");
         AppendLog("Starting patch generation...");
-
-        _recordHandler.Reinitialize();
+        
         _assetHandler.Initialize();
         _recordDeltaPatcher.Reinitialize();
 
@@ -189,14 +188,14 @@ public class Patcher : OptionalUIModule
                     modKeysForBatch.AddRange(currentModSetting.CorrespondingModKeys);
                     _pluginProvider.LoadPlugins(modKeysForBatch);
                     _recordHandler.PrimeLinkCachesFor(modKeysForBatch);
+                    _recordHandler.ResetMapping();
                     _bsaHandler.OpenBsaReadersFor(currentModSetting);
                 }
                 else
                 {
                      AppendLog($"Note: Batch '{npcGroup.Key}' has no associated mod setting. Processing with standard resources.", false, true);
                 }
-
-                _recordHandler.Reinitialize();
+                
                 _recordDeltaPatcher.Reinitialize();
 
                 var npcsInGroup = npcGroup.ToList();
@@ -255,7 +254,7 @@ public class Patcher : OptionalUIModule
                                 if (mergeInDependencyRecords)
                                 {
                                     List<string> mergeInExceptions = new();
-                                    var mergedInRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, patchNpc, appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Winner, ref mergeInExceptions);
+                                    var mergedInRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, patchNpc, appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true,  ref mergeInExceptions);
                                     if (mergeInExceptions.Any())
                                     {
                                         AppendLog("Exceptions occurred during dependency merge-in of " + Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine + string.Join(Environment.NewLine, mergeInExceptions));
@@ -302,7 +301,7 @@ public class Patcher : OptionalUIModule
                                         {
                                             List<string> mergeInExceptions = new();
                                             var importSourceModKeys = appearanceModSetting.CorrespondingModKeys.Distinct().Where(k => k != patchNpc.FormKey.ModKey).ToHashSet();
-                                            var additionalMergedRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, deltaPatchedRecords, importSourceModKeys, appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Winner, ref mergeInExceptions);
+                                            var additionalMergedRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, deltaPatchedRecords, importSourceModKeys, appearanceModKey.Value, true,  ref mergeInExceptions);
                                             if (mergeInExceptions.Any())
                                             {
                                                 AppendLog("Exceptions occurred during dependency merge-in of " + Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine + string.Join(Environment.NewLine, mergeInExceptions));
@@ -328,7 +327,7 @@ public class Patcher : OptionalUIModule
                                 if (mergeInDependencyRecords)
                                 {
                                     List<string> mergeInExceptions = new();
-                                    var mergedInRecords =_recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, patchNpc, appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true, RecordHandler.RecordLookupFallBack.Origin, ref mergeInExceptions);
+                                    var mergedInRecords =_recordHandler.DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, patchNpc, appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true, ref mergeInExceptions);
                                     if (mergeInExceptions.Any())
                                     {
                                         AppendLog("Exceptions occurred during dependency merge-in of " + Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine + string.Join(Environment.NewLine, mergeInExceptions));
@@ -482,7 +481,7 @@ public class Patcher : OptionalUIModule
                 try
                 {
                     List<string> skinExceptions = new();
-                    var skinRecords = _recordHandler.DuplicateInFormLink(targetNpc.WornArmor, sourceNpc.WornArmor, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin, ref skinExceptions);
+                    var skinRecords = _recordHandler.DuplicateInFormLink(targetNpc.WornArmor, sourceNpc.WornArmor, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref skinExceptions);
                     if (skinExceptions.Any())
                     {
                         AppendLog("Exceptions during skin assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
@@ -490,7 +489,7 @@ public class Patcher : OptionalUIModule
                     mergedInRecords.AddRange(skinRecords);
                     
                     List<string> headExceptions = new();
-                    var headRecords =_recordHandler.DuplicateInFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin, ref headExceptions);
+                    var headRecords =_recordHandler.DuplicateInFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref headExceptions);
                     if (headExceptions.Any())
                     {
                         AppendLog("Exceptions during head texture assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
@@ -498,7 +497,7 @@ public class Patcher : OptionalUIModule
                     mergedInRecords.AddRange(headRecords);
                     
                     List<string> colorExceptions = new();
-                    var hairColorRecords = _recordHandler.DuplicateInFormLink(targetNpc.HairColor, sourceNpc.HairColor, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin, ref colorExceptions);
+                    var hairColorRecords = _recordHandler.DuplicateInFormLink(targetNpc.HairColor, sourceNpc.HairColor, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref colorExceptions);
                     if (colorExceptions.Any())
                     {
                         AppendLog("Exceptions during hair color assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
@@ -510,7 +509,7 @@ public class Patcher : OptionalUIModule
                     foreach (var hp in sourceNpc.HeadParts.Where(x => !x.IsNull))
                     {
                         var targetHp = new FormLink<IHeadPartGetter>();
-                        var headPartRecords =_recordHandler.DuplicateInFormLink(targetHp, hp, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, RecordHandler.RecordLookupFallBack.Origin, ref headPartExceptions);
+                        var headPartRecords =_recordHandler.DuplicateInFormLink(targetHp, hp, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref headPartExceptions);
                         targetNpc.HeadParts.Add(targetHp);
                         mergedInRecords.AddRange(headPartRecords);
                     }

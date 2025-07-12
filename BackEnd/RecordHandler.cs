@@ -11,10 +11,11 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public class RecordHandler
 {
-    // ModKey: plugin whose record is merged-in
-    // Key: FormKey from source plugin
+    // Outer Key: Appearance Mod Name
+    // Inner Key: FormKey from source plugin
     // Value: FormKey of merged-in record in output plugin
-    private Dictionary<ModKey, Dictionary<FormKey, FormKey>> _contextMappings = new();
+    private Dictionary<FormKey, FormKey> _currentDuplicateInMappings = new();
+    private HashSet<IFormLinkGetter> _currenTraversedFormLinks = new();
     
     // For converting plugins into linkcaches and avoiding having to resolve all contexts to get mod-specific records
     private Dictionary<ModKey, ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>> _modLinkCaches = new();
@@ -22,11 +23,6 @@ public class RecordHandler
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private PluginProvider _pluginProvider;
     private readonly Settings _settings;
-    
-    // ============================ THE IMPROVEMENT ============================
-    // Cache for deep record traversal results. Persists for the entire patch run.
-    private Dictionary<FormKey, HashSet<IFormLinkGetter>> _traversalCache = new();
-    // =======================================================================
 
     public RecordHandler(EnvironmentStateProvider environmentStateProvider, PluginProvider pluginProvider, Settings settings)
     {
@@ -35,11 +31,10 @@ public class RecordHandler
         _settings = settings;
     }
 
-    public void Reinitialize()
+    public void ResetMapping()
     {
-        _contextMappings.Clear();
-        _traversalCache.Clear();
-        // Link caches are managed separately by Prime/Clear methods
+        _currentDuplicateInMappings.Clear();
+        _currenTraversedFormLinks.Clear();
     }
 
     public void PrimeLinkCachesFor(IEnumerable<ModKey> modKeys)
@@ -89,22 +84,6 @@ public class RecordHandler
     }
 
     #region Merge In New Records
-
-    private Dictionary<FormKey, FormKey> GetCurrentContextMapping(ModKey contextPlugin)
-    {
-        Dictionary<FormKey, FormKey> mapping = new();
-        if (_contextMappings.TryGetValue(contextPlugin, out var storedMapping))
-        {
-            mapping = storedMapping;
-        }
-        else
-        {
-            mapping = new Dictionary<FormKey, FormKey>();
-            _contextMappings.Add(contextPlugin, mapping);
-        }
-
-        return mapping;
-    }
     
     /// <summary>
     /// Tries to deep copy a FormLink into another FormLink, copying in records and remapping recursivley
@@ -121,7 +100,6 @@ public class RecordHandler
         TMod modToDuplicateInto,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey,
-        RecordLookupFallBack fallBackMode,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
@@ -132,26 +110,24 @@ public class RecordHandler
             targetFormLink.SetToNull();
             return mergedInRecords;
         }
-
-        var mapping = GetCurrentContextMapping(rootContextModKey);
-        if (mapping.TryGetValue(targetFormLink.FormKey, out var remappedFormKey))
+        
+        if (_currentDuplicateInMappings.TryGetValue(targetFormLink.FormKey, out var remappedFormKey))
         {
             targetFormLink.SetTo(remappedFormKey);
             return mergedInRecords;
         }
 
-        if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, fallBackMode, out var record) || record == null)
+        if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, RecordLookupFallBack.None, out var record) || record == null)
         {
             return mergedInRecords;
         }
         
         mergedInRecords = DuplicateFromOnlyReferencedGetters(modToDuplicateInto, record, modKeysToDuplicateFrom, 
-            rootContextModKey, false, fallBackMode, ref exceptionStrings, typesToInspect);
+            rootContextModKey, false, ref exceptionStrings, typesToInspect);
 
-        if (_contextMappings.ContainsKey(rootContextModKey) &&
-            _contextMappings[rootContextModKey].ContainsKey(formLinkToCopy.FormKey))
+        if (_currentDuplicateInMappings.ContainsKey(formLinkToCopy.FormKey))
         {
-            var deepCopiedFormKey = _contextMappings[rootContextModKey][formLinkToCopy.FormKey];
+            var deepCopiedFormKey = _currentDuplicateInMappings[formLinkToCopy.FormKey];
             targetFormLink.SetTo(deepCopiedFormKey);
         }
         else
@@ -168,23 +144,22 @@ public class RecordHandler
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey,
         bool onlySubRecords,
-        RecordLookupFallBack fallBackMode,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateFromOnlyReferencedGetters");
-        Dictionary<FormKey, FormKey> mapping = GetCurrentContextMapping(rootContextModKey);
         
         return modToDuplicateInto.DuplicateFromOnlyReferencedGetters<TMod, ISkyrimModGetter>(
             recordsToDuplicate,
             this,
             modKeysToDuplicateFrom,
             onlySubRecords,
-            fallBackMode,
-            ref mapping,
+            RecordLookupFallBack.None, // Don't fall back to winning override or origin - if the chain of new records breaks, don't search through overrides
+            // Override searching is the job of RecordHandler.DeepGetOverriddenDependencyRecords()
+            ref _currentDuplicateInMappings,
+            ref _currenTraversedFormLinks,
             ref exceptionStrings,
-            _traversalCache,
             typesToInspect);
     }
 
@@ -194,7 +169,6 @@ public class RecordHandler
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         ModKey modKeyToDuplicateFrom,
         bool onlySubRecords,
-        RecordLookupFallBack fallBackMode,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
@@ -205,7 +179,6 @@ public class RecordHandler
             new[] { modKeyToDuplicateFrom },
             modKeyToDuplicateFrom,
             onlySubRecords,
-            fallBackMode,
             ref exceptionStrings,
             typesToInspect);
     }
@@ -217,7 +190,6 @@ public class RecordHandler
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey,
         bool onlySubRecords,
-        RecordLookupFallBack fallBackMode,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
@@ -228,7 +200,6 @@ public class RecordHandler
             modKeysToDuplicateFrom,
             rootContextModKey,
             onlySubRecords,
-            fallBackMode,
             ref exceptionStrings,
             typesToInspect);
     }
@@ -239,7 +210,6 @@ public class RecordHandler
         IMajorRecordGetter recordToDuplicate,
         ModKey modKeyToDuplicateFrom,
         bool onlySubRecords,
-        RecordLookupFallBack fallBackMode,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
@@ -250,7 +220,6 @@ public class RecordHandler
             new[] { modKeyToDuplicateFrom },
             modKeyToDuplicateFrom,
             onlySubRecords,
-            fallBackMode,
             ref exceptionStrings,
             typesToInspect);
     }
@@ -351,23 +320,17 @@ public class RecordHandler
         foreach (var modKey in relevantContextKeys)
         {
             TryAddModToCaches(modKey);
-
-            if (!_contextMappings.ContainsKey(modKey))
-            {
-                _contextMappings.Add(modKey, new());
-            }
         }
 
-        Dictionary<FormKey, FormKey> remappedSublinks = new();
+        Dictionary<FormKey, FormKey> remappedOverrideMap = new();
         foreach (var link in containedFormLinks)
         {
-            TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedSublinks, mergedInRecords,2, 0, ref exceptionStrings);
+            TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedOverrideMap, mergedInRecords,2, 0, ref exceptionStrings);
         }
         
-        //_environmentStateProvider.OutputMod.RemapLinks(remappedSublinks);
         foreach (var newRecord in mergedInRecords.And(rootRecord).ToArray())
         {
-            newRecord.RemapLinks(remappedSublinks);
+            newRecord.RemapLinks(remappedOverrideMap);
         }
         
         // Now go through all merged-in override records and also merge in any new records they may be pointing to
@@ -375,7 +338,7 @@ public class RecordHandler
             .Distinct()
             .Where(k => k != npcSourceModKey) // don't copy from the mod that defines the NPC, since that is a base mod
             .ToHashSet();
-        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, importSourceModKeys, rootContextKey, true, RecordLookupFallBack.None, ref exceptionStrings);
+        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, importSourceModKeys, rootContextKey, true, ref exceptionStrings);
         
         mergedInRecords.UnionWith(newMergedSubRecords);
         
@@ -418,19 +381,19 @@ public class RecordHandler
                 currentDepth = 0; // reset the interval search
                 if (!relevantContextKeys.Contains(formLinkGetter.FormKey.ModKey)) // this is an override rather than a new record
                 {
-                    if (_contextMappings[modKey].ContainsKey(formLinkGetter.FormKey))
+                    if (_currentDuplicateInMappings.ContainsKey(formLinkGetter.FormKey))
                     {
                         // This record has already been merged in from a previous function call on a previously processed NPC
                         // add it to remappedSubLinks so that the caller knows to remap it in the current NPC
                         // no need to add it to mergedInRecords because its AssetLinks have already been processed during the previous iteration
-                        remappedSubLinks.TryAdd(formLinkGetter.FormKey, _contextMappings[modKey][formLinkGetter.FormKey]);
+                        remappedSubLinks.TryAdd(formLinkGetter.FormKey, _currentDuplicateInMappings[formLinkGetter.FormKey]);
                         return true;
                     }
                     
                     var duplicate = modContext.DuplicateIntoAsNewRecord(outputMod);
                     duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + modKey.FileName;
                     traversedModRecord = duplicate;
-                    _contextMappings[modKey].Add(formLinkGetter.FormKey, duplicate.FormKey);
+                    _currentDuplicateInMappings.Add(formLinkGetter.FormKey, duplicate.FormKey);
                     remappedSubLinks.Add(formLinkGetter.FormKey, duplicate.FormKey);
                     mergedInRecords.Add(duplicate);
                     parentRecordShouldBeMergedIn = true;
@@ -466,15 +429,12 @@ public class RecordHandler
             {
                 // don't repeat records that have already been processed
                 bool hasCachedSubLink = false;
-                foreach (var mk in relevantContextKeys)
+                if (_currentDuplicateInMappings.ContainsKey(subLink.FormKey))
                 {
-                    if (_contextMappings[mk].ContainsKey(subLink.FormKey))
-                    {
-                        hasCachedSubLink = true;
-                        remappedSubLinks.TryAdd(subLink.FormKey, _contextMappings[mk][subLink.FormKey]);
-                        parentRecordShouldBeMergedIn = true;
-                        break;
-                    }
+                    hasCachedSubLink = true;
+                    remappedSubLinks.TryAdd(subLink.FormKey, _currentDuplicateInMappings[subLink.FormKey]);
+                    parentRecordShouldBeMergedIn = true;
+                    break;
                 }
 
                 if (hasCachedSubLink)

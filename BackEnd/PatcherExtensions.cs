@@ -12,146 +12,112 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 public static class PatcherExtensions
 {
     public static List<MajorRecord> DuplicateFromOnlyReferencedGetters<TMod, TModGetter>(
-        this TMod modToDuplicateInto,
-        IEnumerable<IMajorRecordGetter> recordsToDuplicate,
-        RecordHandler recordHandler,
-        IEnumerable<ModKey> modKeysToDuplicateFrom,
-        bool onlySubRecords,
-        RecordLookupFallBack fallBackMode,
-        ref Dictionary<FormKey, FormKey> mapping,
-        ref List<string> exceptionStrings,
-        Dictionary<FormKey, HashSet<IFormLinkGetter>> traversalCache,
-        params Type[] typesToInspect)
-        where TModGetter : class, IModGetter
-        where TMod : class, TModGetter, IMod, ISkyrimMod
-    {
-        if (modKeysToDuplicateFrom.Contains(modToDuplicateInto.ModKey))
+            this TMod modToDuplicateInto,
+            IEnumerable<IMajorRecordGetter> recordsToDuplicate,
+            RecordHandler recordHandler,
+            IEnumerable<ModKey> modKeysToDuplicateFrom,
+            bool onlySubRecords,
+            RecordLookupFallBack fallBackMode,
+            ref Dictionary<FormKey, FormKey> mapping,
+            ref HashSet<IFormLinkGetter> traversedFormLinks,
+            ref List<string> exceptionStrings,
+            params Type[] typesToInspect)
+            where TModGetter : class, IModGetter
+            where TMod : class, TModGetter, IMod, ISkyrimMod
         {
-            exceptionStrings.Add("Cannot pass the target mod's Key: " + modToDuplicateInto.ModKey.ToString() +
-                                 " as the one to extract and self contain");
-            return new();
-        }
-
-        // make sure not to import from the base game
-        var implicits = Implicits.Get(modToDuplicateInto.GameRelease);
-        var implicitModKeys = implicits.Listings.ToArray();
-        var filteredSourceModKeys = modKeysToDuplicateFrom.Where(x => !implicitModKeys.Contains(x)).ToHashSet();
-
-        // Compile list of things to duplicate
-        HashSet<IFormLinkGetter> identifiedLinks = new();
-        HashSet<FormKey> passedLinks = new();
-
-        void AddAllLinksIterative(IFormLinkGetter root, HashSet<FormKey> seenFormKeys)
-        {
-            // If we have already fully traversed this FormKey, use the cached results
-            // and add them to our main set of identified links.
-            if (traversalCache.TryGetValue(root.FormKey, out var cachedLinks))
+            if (modKeysToDuplicateFrom.Contains(modToDuplicateInto.ModKey))
             {
-                identifiedLinks.UnionWith(cachedLinks);
-                return;
+                throw new ArgumentException("Cannot pass the target mod's Key as the one to extract and self contain");
             }
-
-            var pending = new Stack<IFormLinkGetter>();
-            var linksFoundInThisTraversal = new HashSet<IFormLinkGetter>();
-            pending.Push(root);
-
-            while (pending.Count > 0)
+    
+            // Compile list of things to duplicate
+            HashSet<IFormLinkGetter> identifiedLinks = new();
+            HashSet<FormKey> passedLinks = new();
+            var implicits = Implicits.Get(modToDuplicateInto.GameRelease);
+    
+            void AddAllLinks(IFormLinkGetter link, ref HashSet<IFormLinkGetter> traversedFormLinks)
             {
-                var link = pending.Pop();
-                if (link.FormKey.IsNull || !seenFormKeys.Add(link.FormKey)) continue;
-                if (implicits.RecordFormKeys.Contains(link.FormKey)) continue;
-
-                // Mark for duplication if it lives in a donor plugin
-                if (filteredSourceModKeys.Contains(link.FormKey.ModKey))
+                if (link.FormKey.IsNull) return;
+                if (traversedFormLinks.Contains(link))
                 {
-                    linksFoundInThisTraversal.Add(link);
+                    return;
+                }
+                traversedFormLinks.Add(link);
+                if (implicits.RecordFormKeys.Contains(link.FormKey)) return;
+    
+                if (modKeysToDuplicateFrom.Contains(link.FormKey.ModKey))
+                {
                     identifiedLinks.Add(link);
                 }
-
-
-                // Try to resolve the record so we can walk its children
-                if (!recordHandler.TryGetRecordFromMods(link,
-                        filteredSourceModKeys, fallBackMode, out var linkRec) ||
-                    linkRec is null) continue;
-
-                foreach (var child in linkRec.EnumerateFormLinks())
+    
+                // Don't fall back to winning override or origin - if the chain of new records breaks, don't search through overrides
+                // Override searching is the job of RecordHandler.DeepGetOverriddenDependencyRecords()
+                if (!(recordHandler.TryGetRecordFromMods(link, modKeysToDuplicateFrom, fallBackMode,
+                        out var linkRec) && linkRec != null))
                 {
-                    // If we've already fully traversed this child link in a previous run,
-                    // we can add its results and skip pushing it to the stack.
-                    if (traversalCache.TryGetValue(child.FormKey, out var cachedChildLinks))
-                    {
-                        linksFoundInThisTraversal.UnionWith(cachedChildLinks);
-                        identifiedLinks.UnionWith(cachedChildLinks);
-                    }
-                    else if (filteredSourceModKeys.Contains(child.FormKey.ModKey))
-                    {
-                        pending.Push(child);
-                    }
+                    return;
+                }
+    
+                var containedLinks = linkRec.EnumerateFormLinks();
+                foreach (var containedLink in containedLinks)
+                {
+                    if (!modKeysToDuplicateFrom.Contains(containedLink.FormKey.ModKey)) continue;
+                    AddAllLinks(containedLink, ref traversedFormLinks);
                 }
             }
-
-            // Cache the results of this traversal before returning.
-            traversalCache[root.FormKey] = linksFoundInThisTraversal;
-        }
-
-        // The 'seen' set to prevent cycles must be created for each distinct traversal tree.
-        foreach (var rec in recordsToDuplicate)
-        {
-            if (onlySubRecords)
+            
+            foreach (var rec in recordsToDuplicate)
             {
-                // For each top-level record, process its children.
-                // Each child starts a new, independent traversal tree.
-                foreach (var containedLink in rec.EnumerateFormLinks())
+                if (onlySubRecords)
                 {
-                    // Create a new 'seen' set for each new traversal starting point.
-                    AddAllLinksIterative(containedLink, new HashSet<FormKey>());
+                    var containedLinks = rec.EnumerateFormLinks();
+                    foreach (var containedLink in containedLinks)
+                    {
+                        AddAllLinks(containedLink, ref traversedFormLinks);
+                    }
+                }
+                else
+                {
+                    AddAllLinks(rec.ToLink(), ref traversedFormLinks);
                 }
             }
-            else
+    
+            List<MajorRecord> mergedInRecords = new();
+            // Duplicate in the records
+            foreach (var identifiedLink in identifiedLinks)
             {
-                // The record itself is the start of the traversal tree.
-                // Create a new 'seen' set for it.
-                AddAllLinksIterative(rec.ToLink(), new HashSet<FormKey>());
+                if (mapping.ContainsKey(identifiedLink.FormKey))
+                {
+                    continue; // this form has already been remapped in a previous call of this function
+                }
+                
+                if (!recordHandler.TryGetRecordFromMods(identifiedLink, modKeysToDuplicateFrom,
+                        RecordLookupFallBack.None, out var identifiedRec)
+                    || identifiedRec == null)
+                {
+                    throw new KeyNotFoundException($"Could not locate record to make self contained: {identifiedLink}");
+                }
+    
+                var newEdid = (identifiedRec.EditorID ?? "NoEditorID");
+                if (Auxilliary.TryDuplicateGenericRecordAsNew(identifiedRec, modToDuplicateInto, out dynamic? dup, out string exceptionString) &&
+                    dup != null)
+                {
+                    dup.EditorID = newEdid;
+                    mapping[identifiedLink.FormKey] = dup.FormKey;
+                    mergedInRecords.Add(dup);
+                    modToDuplicateInto.Remove(identifiedLink.FormKey, identifiedLink.Type);
+                }
+                else
+                {
+                    exceptionStrings.Add(identifiedLink.FormKey.ToString() + ": " + exceptionString);
+                }
             }
+    
+            // Remap links
+            modToDuplicateInto.RemapLinks(mapping);
+            
+            return mergedInRecords;
         }
-
-        List<MajorRecord> mergedInRecords = new();
-        // Duplicate in the records
-        foreach (var identifiedLink in identifiedLinks)
-        {
-            if (mapping.ContainsKey(identifiedLink.FormKey))
-            {
-                continue; // this form has already been remapped in a previous call of this function
-            }
-
-            if (!recordHandler.TryGetRecordFromMods(identifiedLink, filteredSourceModKeys,
-                    RecordLookupFallBack.None, out var identifiedRec)
-                || identifiedRec == null)
-            {
-                exceptionStrings.Add($"Could not locate record to make self contained: {identifiedLink}");
-                continue;
-            }
-
-            var newEdid = (identifiedRec.EditorID ?? "NoEditorID");
-            if (Auxilliary.TryDuplicateGenericRecordAsNew(identifiedRec, modToDuplicateInto, out dynamic? dup,
-                    out string exceptionString) &&
-                dup != null)
-            {
-                dup.EditorID = newEdid;
-                mapping[identifiedLink.FormKey] = dup.FormKey;
-                mergedInRecords.Add(dup);
-            }
-            else
-            {
-                exceptionStrings.Add(identifiedLink.FormKey.ToString() + ": " + exceptionString);
-            }
-        }
-
-        // Remap links
-        modToDuplicateInto.RemapLinks(mapping);
-
-        return mergedInRecords;
-    }
 
     // Original form depending on global link cache
     // Kept for reference
