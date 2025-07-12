@@ -49,6 +49,18 @@ public class AssetHandler : OptionalUIModule
     {
         LoadAuxiliaryFiles();
     }
+    
+    /// <summary>
+    /// Checks if a given folder path for a specific mod display name has been successfully cached.
+    /// This relies on the cache built by PopulateExistingFilePathsAsync, avoiding redundant disk I/O.
+    /// </summary>
+    /// <param name="modDisplayName">The display name of the mod setting.</param>
+    /// <param name="folderPath">The specific folder path to check.</param>
+    /// <returns>True if the folder path exists as a key in the cache for the given mod.</returns>
+    public bool IsModFolderPathCached(string modDisplayName, string folderPath)
+    {
+        return _modContentPaths.TryGetValue(modDisplayName, out var modFolders) && modFolders.ContainsKey(folderPath);
+    }
 
     public async Task PopulateExistingFilePathsAsync(IEnumerable<ModSetting> mods)
     {

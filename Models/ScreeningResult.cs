@@ -5,12 +5,25 @@ using Mutagen.Bethesda.Skyrim;
 
 namespace NPC_Plugin_Chooser_2.Models // Or appropriate namespace
 {
-    public record ScreeningResult(
-        bool SelectionIsValid,        // Overall flag: Is there at least *some* valid data?
-        bool HasFaceGenAssets,        // Do FaceGen assets exist in the specified paths?
-        INpcGetter? AppearanceModRecord, // The resolved NPC record from the appearance plugin
-        ModKey? AppearanceModKey,        // The ModKey of the context from which AppearanceModRecord is found (for logging)
-        INpcGetter? WinningNpcOverride, // The winning override from the load order (always needed for context/EasyNPC mode)
-        ModSetting? AppearanceModSetting // The looked-up ModSetting
-    );
+    // Located in a file like /Models/ScreeningResult.cs
+    public class ScreeningResult
+    {
+        // --- Keep These ---
+        public bool SelectionIsValid { get; }
+        public INpcGetter WinningNpcOverride { get; }
+        public ModSetting AppearanceModSetting { get; }
+
+        // --- Remove These ---
+        // public bool HasFaceGen { get; }
+        // public INpcGetter? AppearanceModRecord { get; }
+        // public ModKey? AppearanceModKey { get; }
+
+        // Update the constructor to match
+        public ScreeningResult(bool isValid, INpcGetter winningNpcOverride, ModSetting appearanceModSetting)
+        {
+            this.SelectionIsValid = isValid;
+            this.WinningNpcOverride = winningNpcOverride;
+            this.AppearanceModSetting = appearanceModSetting;
+        }
+    }
 }

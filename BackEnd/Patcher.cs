@@ -166,6 +166,7 @@ public class Patcher : OptionalUIModule
         else
         {
             var groupedSelections = selectionsToProcess
+                // Note: The GroupBy key now uses the AppearanceModSetting from the simplified ScreeningResult
                 .GroupBy(kv => kv.Value.AppearanceModSetting?.DisplayName ?? "[FaceGen/No ModSetting]")
                 .OrderBy(g => g.Key);
 
@@ -205,15 +206,13 @@ public class Patcher : OptionalUIModule
                     var kvp = npcsInGroup[i];
                     var npcFormKey = kvp.Key;
                     var result = kvp.Value;
+                    
+                    // Unpack the simplified screening result
                     var winningNpcOverride = result.WinningNpcOverride;
                     var appearanceModSetting = result.AppearanceModSetting;
-                    var appearanceNpcRecord = result.AppearanceModRecord;
-                    var appearanceModKey = result.AppearanceModKey;
+                    
                     string selectedModDisplayName = appearanceModSetting?.DisplayName ?? "N/A";
                     string npcIdentifier = $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
-                    var mergeInDependencyRecords = appearanceModSetting?.MergeInDependencyRecords ?? false;
-                    var recordOverrideHandlingMode = appearanceModSetting?.ModRecordOverrideHandlingMode ?? _settings.DefaultRecordOverrideHandlingMode;
-                    List<IAssetLinkGetter> assetLinks = new();
 
                     using var _context = ContextualPerformanceTracer.BeginContext(winningNpcOverride.FormKey.ModKey);
                     using var _ = ContextualPerformanceTracer.Trace("Patcher.MainLoopIteration");
@@ -237,8 +236,55 @@ public class Patcher : OptionalUIModule
                         UpdateProgress(overallProgressCounter, totalToProcess, $"({overallProgressCounter}/{totalToProcess}) Processing: {winningNpcOverride.EditorID ?? npcIdentifier}");
                     }
                     AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'");
+                    
+                    // ========================= NEW LOGIC MOVED FROM VALIDATOR =========================
+                    // The Patcher now resolves the specific appearance record just-in-time.
+                    
+                    INpcGetter? appearanceNpcRecord = null;
+                    ModKey? appearanceModKey = null;
+                    bool correspondingRecordFound = false;
+
+                    // 1. Handle user-specified disambiguation first
+                    if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var disambiguationKey) &&
+                        _recordHandler.TryGetRecordGetterFromMod(npcFormKey.ToLink<INpcGetter>(), disambiguationKey, RecordHandler.RecordLookupFallBack.None, out var disambiguatedRecord) && disambiguatedRecord != null)
+                    {
+                        appearanceNpcRecord = disambiguatedRecord as INpcGetter;
+                        appearanceModKey = disambiguationKey;
+                        correspondingRecordFound = true;
+                        AppendLog($"    Source: Found specific plugin record override in {disambiguationKey.FileName} (disambiguated).");
+                    }
+                    else
+                    {
+                        // 2. If no valid disambiguation, search all plugins associated with the mod setting
+                        if (appearanceModSetting.CorrespondingModKeys.Any())
+                        {
+                            foreach (var candidateKey in appearanceModSetting.CorrespondingModKeys)
+                            {
+                                if (_recordHandler.TryGetRecordGetterFromMod(npcFormKey.ToLink<INpcGetter>(), candidateKey, RecordHandler.RecordLookupFallBack.None, out var record) && record != null)
+                                {
+                                    appearanceNpcRecord = record as INpcGetter;
+                                    appearanceModKey = candidateKey;
+                                    correspondingRecordFound = true;
+                                    AppendLog($"    Source: Found plugin record override in {candidateKey.FileName}.");
+                                    break; // Use the first one found
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Fallback for mods without a plugin record for this NPC (e.g., asset-only replacers)
+                    if (!correspondingRecordFound)
+                    {
+                        AppendLog($"    Source: No specific plugin record override found in '{selectedModDisplayName}'. Using winning override from load order as the base for assets.");
+                        appearanceNpcRecord = winningNpcOverride; // Use the final override from the load order
+                        appearanceModKey = winningNpcOverride.FormKey.ModKey;
+                    }
+                    // ============================ END OF NEW LOGIC ============================
 
                     Npc? patchNpc = null;
+                    var mergeInDependencyRecords = appearanceModSetting?.MergeInDependencyRecords ?? false;
+                    var recordOverrideHandlingMode = appearanceModSetting?.ModRecordOverrideHandlingMode ?? _settings.DefaultRecordOverrideHandlingMode;
+                    List<IAssetLinkGetter> assetLinks = new();
 
                     if (appearanceNpcRecord != null)
                     {
