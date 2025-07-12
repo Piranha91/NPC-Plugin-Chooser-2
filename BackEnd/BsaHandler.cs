@@ -75,6 +75,27 @@ public class BsaHandler : OptionalUIModule
             }
         });
     }
+    
+    public void OpenBsaReadersFor(ModSetting modSetting)
+    {
+        foreach (var modKey in modSetting.CorrespondingModKeys)
+        {
+            foreach (var directory in modSetting.CorrespondingFolderPaths)
+            {
+                // This helper will open and cache the readers
+                OpenBsaArchiveReaders(directory, modKey);
+            }
+        }
+    }
+    
+    public void UnloadAllBsaReaders()
+    {
+        foreach (var reader in _openBsaArchiveReaders.Values)
+        {
+            (reader as IDisposable)?.Dispose();
+        }
+        _openBsaArchiveReaders.Clear();
+    }
 
     public bool FileExists(string path, ModKey modKey, string bsaPath, bool convertSlashes = true)
     {

@@ -21,6 +21,25 @@ public class PluginProvider
         _settings = settings;
     }
 
+    public void LoadPlugins(IEnumerable<ModKey> keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!_pluginCache.ContainsKey(key))
+            {
+                TryGetPlugin(key, _settings.ModsFolder, out _);
+            }
+        }
+    }
+
+    public void UnloadPlugins(IEnumerable<ModKey> keys)
+    {
+        foreach (var key in keys)
+        {
+            _pluginCache.Remove(key);
+        }
+    }
+
     public bool TryGetPlugin(ModKey modKey, string? fallBackModPath, out ISkyrimMod? plugin)
     {
         if (_pluginCache.TryGetValue(modKey, out plugin))
@@ -28,37 +47,37 @@ public class PluginProvider
             return true;
         }
 
+        string? foundPath = null;
         if (_environmentStateProvider.DataFolderPath.Exists)
         {
-            var fullPath = Path.Combine(_environmentStateProvider.DataFolderPath, modKey.ToString());
-            if (File.Exists(fullPath))
+            var candidatePath = Path.Combine(_environmentStateProvider.DataFolderPath, modKey.ToString());
+            if (File.Exists(candidatePath))
             {
-                var imported = SkyrimMod.CreateFromBinary(fullPath, SkyrimRelease.SkyrimSE);
-                plugin = imported;
-                if (plugin != null)
-                {
-                    _pluginCache.Add(modKey, plugin);
-                    return true;
-                }
-            } 
+                foundPath = candidatePath;
+            }
         }
         
-        
-        if (fallBackModPath != null)
+        if (foundPath == null && fallBackModPath != null)
         {
-            var fullPath = Path.Combine(_settings.ModsFolder, fallBackModPath, modKey.ToString());
-            if (File.Exists(fullPath))
+            var candidatePath = Path.Combine(_settings.ModsFolder, fallBackModPath, modKey.ToString());
+            if (File.Exists(candidatePath))
             {
-                var imported = SkyrimMod.CreateFromBinary(fullPath, SkyrimRelease.SkyrimSE);
-                plugin = imported;
-                if (plugin != null)
-                {
-                    _pluginCache.Add(modKey, plugin);
-                    return true;
-                }
+                 foundPath = candidatePath;
             }
         }
 
+        if (foundPath != null)
+        {
+            var imported = SkyrimMod.CreateFromBinary(foundPath, SkyrimRelease.SkyrimSE);
+            plugin = imported;
+            if (plugin != null)
+            {
+                _pluginCache.Add(modKey, plugin);
+                return true;
+            }
+        }
+
+        plugin = null;
         return false;
     }
 }

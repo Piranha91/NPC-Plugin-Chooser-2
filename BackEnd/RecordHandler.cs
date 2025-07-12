@@ -39,6 +39,53 @@ public class RecordHandler
     {
         _contextMappings.Clear();
         _traversalCache.Clear();
+        // Link caches are managed separately by Prime/Clear methods
+    }
+
+    public void PrimeLinkCachesFor(IEnumerable<ModKey> modKeys)
+    {
+        foreach (var modKey in modKeys)
+        {
+            if (_modLinkCaches.ContainsKey(modKey)) continue;
+
+            if (_pluginProvider.TryGetPlugin(modKey, _settings.ModsFolder, out var plugin) && plugin != null)
+            {
+                _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences()));
+            }
+        }
+    }
+
+    public void ClearLinkCachesFor(IEnumerable<ModKey> modKeys)
+    {
+        foreach (var modKey in modKeys)
+        {
+            _modLinkCaches.Remove(modKey);
+        }
+    }
+
+    private bool TryAddModToCaches(ModKey modKey)
+    {
+        if (_modLinkCaches.ContainsKey(modKey))
+        {
+            return true;
+        }
+        
+        // Fallback to load order for base game records etc.
+        var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
+        if (modListing != null && modListing.Mod != null)
+        {
+            _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences()));
+            return true;
+        }
+        
+        // This will now only be hit if a plugin was needed that wasn't part of the pre-loaded batch
+        if (_pluginProvider.TryGetPlugin(modKey, _settings.ModsFolder, out var plugin) && plugin != null)
+        {
+            _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences()));
+            return true;
+        }
+
+        return false;
     }
 
     #region Merge In New Records
@@ -464,29 +511,6 @@ public class RecordHandler
     #endregion
     
     #region Misc Functions
-
-    private bool TryAddModToCaches(ModKey modKey)
-    {
-        if (_modLinkCaches.ContainsKey(modKey))
-        {
-            return true;
-        }
-        
-        var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
-        if (modListing != null && modListing.Mod != null)
-        {
-            _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences()));
-            return true;
-        }
-        
-        if (_pluginProvider.TryGetPlugin(modKey, _settings.ModsFolder, out var plugin) && plugin != null)
-        {
-            _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences()));
-            return true;
-        }
-
-        return false;
-    }
 
     public bool TryGetRecordFromMod(FormKey formKey, Type type, ModKey modKey, RecordLookupFallBack fallbackMode,
         out dynamic? record)
