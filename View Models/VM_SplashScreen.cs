@@ -65,7 +65,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 DataContext = vm
             };
 
-            // 3) Show it immediately
+            // 3) Set the window to be topmost initially
+            window.Topmost = true;
+
+            // 4) After the window is first activated, turn off Topmost so other windows can cover it.
+            //    We use an event handler that unhooks itself after it runs once.
+            window.Activated += (sender, args) =>
+            {
+                if (sender is SplashScreenWindow activatedWindow)
+                {
+                    activatedWindow.Topmost = false;
+                }
+            };
+    
+            // 5) Show it immediately
             window.Show();
 
             return vm;
