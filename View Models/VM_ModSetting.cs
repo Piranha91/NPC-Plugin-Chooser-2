@@ -1026,21 +1026,28 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var modDirs = CorrespondingFolderPaths.Reverse().ToList();
             foreach (var pluginName in CorrespondingModKeys)
             {
+                bool hasOverrides = false;
                 foreach (var modDir in modDirs)
                 {
                     if (pluginProvider.TryGetPlugin(pluginName, modDir, out var plugin) && plugin != null)
                     {
                         var records = plugin.EnumerateMajorRecords().ToArray();
-                        var overrides = records.Where(x => !CorrespondingModKeys.Contains(x.FormKey.ModKey) &&
-                                                           !plugin.Npcs.Contains(x))
-                            .ToArray();
-                        if (overrides.Any())
+                        foreach (var record in records)
                         {
-                            _pluginsWithOverrideRecords.Add(pluginName);
+                            if (!CorrespondingModKeys.Contains(record.FormKey.ModKey) &&
+                                !plugin.Npcs.Contains(record)) // the NPC records are overrides by definition
+                            {
+                                hasOverrides = true;
+                                break;
+                            }
                         }
-                        
                         break;
                     }
+                }
+
+                if (hasOverrides)
+                {
+                    _pluginsWithOverrideRecords.Add(pluginName);
                 }
             }
         }
