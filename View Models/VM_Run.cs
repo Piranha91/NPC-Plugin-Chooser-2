@@ -48,6 +48,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public double ProgressValue { get; private set; } = 0;
         [Reactive] public string ProgressText { get; private set; } = string.Empty;
         [Reactive] public bool IsVerboseModeEnabled { get; set; } = false; // Default to non-verbose
+        
+        // --- New Properties for Timestamps ---
+        [Reactive] private DateTime? ValidationStartTime { get; set; }
+        [Reactive] private DateTime? PatchingStartTime { get; set; }
+        [Reactive] private string CurrentProgressMessage { get; set; } = string.Empty;
+        [Reactive] private TimeSpan? FinalValidationTime { get; set; }
 
 
         // --- Group Filtering ---
@@ -119,6 +125,60 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // This will now only catch rare errors within TogglePatcherExecution itself.
                 AppendLog($"FATAL UI ERROR: {ExceptionLogger.GetExceptionStack(ex)}", true);
             });
+            
+            // --- Timestamp and Progress Text Composition Logic ---
+            var runningTimer = this.WhenAnyValue(x => x.IsRunning)
+                .Select(running => running 
+                    ? Observable.Interval(TimeSpan.FromSeconds(1), RxApp.MainThreadScheduler).Select(_ => Unit.Default) 
+                    : Observable.Empty<Unit>())
+                .Switch();
+
+            // React to changes in any property that affects the progress text
+            var progressChanged = this.WhenAnyValue(x => x.CurrentProgressMessage, x => x.ValidationStartTime, x => x.PatchingStartTime, x => x.FinalValidationTime)
+                .Select(_ => Unit.Default);
+
+            Observable.Merge(runningTimer, progressChanged)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(_ =>
+                {
+                    if (!IsRunning && string.IsNullOrEmpty(CurrentProgressMessage))
+                    {
+                        ProgressText = string.Empty;
+                        return;
+                    }
+                    
+                    if (!IsRunning)
+                    {
+                        ProgressText = CurrentProgressMessage;
+                        return;
+                    }
+
+                    var sb = new StringBuilder();
+
+                    if (FinalValidationTime.HasValue) // If validation time is frozen, display it
+                    {
+                        sb.Append($"Validation: {FinalValidationTime.Value:hh\\:mm\\:ss}");
+                    }
+                    else if (ValidationStartTime.HasValue) // Otherwise, calculate running time
+                    {
+                        var validationTime = (DateTime.Now - ValidationStartTime.Value);
+                        sb.Append($"Validation: {validationTime:hh\\:mm\\:ss}");
+                    }
+
+                    if (PatchingStartTime.HasValue) // Patching timer logic is separate and simple
+                    {
+                        if (sb.Length > 0) sb.Append(" | ");
+                        var patchingTime = (DateTime.Now - PatchingStartTime.Value);
+                        sb.Append($"Execution: {patchingTime:hh\\:mm\\:ss}");
+                    }
+
+                    if (sb.Length > 0) sb.Append(" | ");
+                    sb.Append(CurrentProgressMessage);
+                    
+                    ProgressText = sb.ToString();
+                })
+                .DisposeWith(_disposables);
+            // --- End of New Logic ---
 
             // Update Available Groups when NpcGroupAssignments changes in settings
             UpdateAvailableGroups();
@@ -166,6 +226,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 // MANUALLY set IsRunning to true. This will update the UI.
                 IsRunning = true;
+                ValidationStartTime = null;
+                PatchingStartTime = null;
 
                 // --- *** Save Mod Settings Before Proceeding *** ---
                 try
@@ -189,12 +251,36 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 var modSettingsMap = _patcher.BuildModSettingsMap();
                 await _patcher.PreInitializationLogicAsync(); 
+                
+                ValidationStartTime = DateTime.Now;
 
-                bool canRun = await _validator.ScreenSelectionsAsync(modSettingsMap, token);
+                var validationReport = await _validator.ScreenSelectionsAsync(modSettingsMap, token);
+                FinalValidationTime = DateTime.Now - ValidationStartTime.Value;
 
-                if (canRun)
+                bool continuePatching = true;
+                if (validationReport.InvalidSelections.Any())
                 {
+                    CurrentProgressMessage = "Waiting for user input...";
+
+                    var message = new StringBuilder($"Found {validationReport.InvalidSelections.Count} invalid NPC selection(s) that will be skipped:\n\n");
+                    message.AppendLine(string.Join("\n", validationReport.InvalidSelections));
+                    message.AppendLine("\nThese selections point to missing NPCs or mod folders. Continue with the valid selections?");
+
+                    Application.Current?.Dispatcher.Invoke(() =>
+                    {
+                        continuePatching = ScrollableMessageBox.Confirm(message.ToString(), "Invalid Selections Found");
+                    });
+                }
+
+                if (continuePatching)
+                {
+                    PatchingStartTime = DateTime.Now;
                     await _patcher.RunPatchingLogic(SelectedNpcGroup, token);
+                }
+                else
+                {
+                    AppendLog("Patching cancelled by user due to invalid selections.");
+                    ResetProgress();
                 }
             }
             catch (OperationCanceledException)
@@ -258,7 +344,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private void ResetProgress()
         {
             ProgressValue = 0;
-            ProgressText = string.Empty;
+            CurrentProgressMessage = string.Empty;
+            ValidationStartTime = null;
+            PatchingStartTime = null;
         }
 
         private void UpdateProgress(int current, int total, string message)
@@ -268,12 +356,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 if (total > 0)
                 {
                     ProgressValue = (double)current / total * 100.0;
-                    ProgressText = $"[{current}/{total}] {message}";
+                    CurrentProgressMessage = $"[{current}/{total}] {message}";
                 }
                 else
                 {
                     ProgressValue = 0;
-                    ProgressText = message;
+                    CurrentProgressMessage = message;
                 }
             });
         }

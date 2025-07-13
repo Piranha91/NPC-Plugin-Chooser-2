@@ -66,7 +66,7 @@ public class Patcher : OptionalUIModule
     public async Task RunPatchingLogic(string SelectedNpcGroup, CancellationToken ct)
     {
         ResetLog();
-        ResetProgress();
+        //ResetProgress(); Do not call ResetProgress here as it interferes with timer display
         UpdateProgress(0, 1, "Initializing...");
         AppendLog("Starting patch generation...");
 
@@ -243,7 +243,7 @@ public class Patcher : OptionalUIModule
                             if (shouldUpdateUI)
                             {
                                 UpdateProgress(overallProgressCounter, totalToProcess,
-                                    $"({overallProgressCounter}/{totalToProcess}) Skipped: {npcIdentifier}");
+                                    $"Skipped: {npcIdentifier}");
                             }
 
                             await Task.Delay(1, ct);
@@ -253,7 +253,7 @@ public class Patcher : OptionalUIModule
                         if (shouldUpdateUI)
                         {
                             UpdateProgress(overallProgressCounter, totalToProcess,
-                                $"({overallProgressCounter}/{totalToProcess}) Processing: {winningNpcOverride.EditorID ?? npcIdentifier}");
+                                $"Processing: {winningNpcOverride.EditorID ?? npcIdentifier}");
                         }
 
                         AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'");
@@ -630,7 +630,6 @@ public class Patcher : OptionalUIModule
             // This ensures all cached BSA readers are disposed of, preventing resource leaks.
             _bsaHandler.UnloadAllBsaReaders();
             UpdateProgress(selectionsToProcess.Count, selectionsToProcess.Count, "Finished.");
-            AppendLog("\nPatch generation process completed.", false, true);
         }
 
         AppendLog("\nPatch generation process completed.", false, true);

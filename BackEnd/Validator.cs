@@ -16,6 +16,8 @@ public class Validator : OptionalUIModule
     
     private Dictionary<FormKey, ScreeningResult> _screeningCache = new();
     
+    public record ValidationReport(List<string> InvalidSelections);
+    
     // Constructor updated to include AssetHandler for optimized directory checks.
     public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, AssetHandler assetHandler)
     {
@@ -29,7 +31,7 @@ public class Validator : OptionalUIModule
         return _screeningCache;
     }
     
-    public async Task<bool> ScreenSelectionsAsync(Dictionary<string, ModSetting> modSettingsMap, CancellationToken ct)
+    public async Task<ValidationReport> ScreenSelectionsAsync(Dictionary<string, ModSetting> modSettingsMap, CancellationToken ct)
     {
         AppendLog("\nStarting pre-run screening of NPC selections...", false, false);
         _screeningCache = new Dictionary<FormKey, ScreeningResult>();
@@ -39,7 +41,8 @@ public class Validator : OptionalUIModule
         if (selections == null || !selections.Any())
         {
             AppendLog("No selections to screen.");
-            return false;
+            // Return an empty report if there's nothing to do.
+            return new ValidationReport(new List<string>());
         }
 
         var selectionsList = selections.ToList();
@@ -54,7 +57,6 @@ public class Validator : OptionalUIModule
             var selectedModDisplayName = kvp.Value;
             string npcIdentifier = npcFormKey.ToString();
             
-            // The UI will now update every 100 NPCs instead of every 10.
             bool shouldUpdateUI = (i % 100 == 0) || (i == totalToScreen - 1);
 
             if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var winningNpcOverride))
@@ -62,6 +64,10 @@ public class Validator : OptionalUIModule
                 var errorMsg = $"Could not resolve winning NPC override for {npcFormKey}. The NPC may not exist in your current load order. This selection will be skipped.";
                 AppendLog($"  SCREENING WARNING: {errorMsg}");
                 invalidSelections.Add($"{npcFormKey} -> '{selectedModDisplayName}' (Base NPC not found in load order)");
+                if (shouldUpdateUI)
+                {
+                    UpdateProgress(i + 1, totalToScreen, $"Screening: {npcIdentifier}");
+                }
                 await Task.Delay(1, ct);
                 continue;
             }
@@ -70,7 +76,7 @@ public class Validator : OptionalUIModule
             
             if (shouldUpdateUI)
             {
-                UpdateProgress(i + 1, totalToScreen, $"({i + 1}/{totalToScreen}) Screening: {npcIdentifier}");
+                UpdateProgress(i + 1, totalToScreen, $"Screening: {npcIdentifier}");
             }
             
             if (!modSettingsMap.TryGetValue(selectedModDisplayName, out var appearanceModSetting))
@@ -81,7 +87,6 @@ public class Validator : OptionalUIModule
                 continue;
             }
 
-            // This check now uses the pre-cached information from AssetHandler to avoid hitting the disk repeatedly.
             if (appearanceModSetting.CorrespondingFolderPaths.Any() && 
                 !appearanceModSetting.CorrespondingFolderPaths.Any(path => _assetHandler.IsModFolderPathCached(appearanceModSetting.DisplayName, path)))
             {
@@ -103,29 +108,9 @@ public class Validator : OptionalUIModule
         AppendLog($"Screening finished. Found {invalidSelections.Count} invalid selections.");
         
         ct.ThrowIfCancellationRequested();
-        if (invalidSelections.Any())
-        {
-            var message = new StringBuilder($"Found {invalidSelections.Count} invalid NPC selection(s) that will be skipped:\n\n");
-            
-            // The message now includes all invalid selections, not just the first 15.
-            message.AppendLine(string.Join("\n", invalidSelections));
-            
-            message.AppendLine("\nThese selections point to missing NPCs or mod folders. Continue with the valid selections?");
 
-            bool continuePatching = false;
-            Application.Current?.Dispatcher.Invoke(() =>
-            {
-                continuePatching = ScrollableMessageBox.Confirm(message.ToString(), "Invalid Selections Found");
-            });
-
-            if (!continuePatching)
-            {
-                AppendLog("Patching cancelled by user due to invalid selections.");
-                ResetProgress();
-                return false;
-            }
-        }
-        
-        return true;
+        // The logic for showing the popup is removed from this class.
+        // We now simply return the list of invalid selections.
+        return new ValidationReport(invalidSelections);
     }
 }
