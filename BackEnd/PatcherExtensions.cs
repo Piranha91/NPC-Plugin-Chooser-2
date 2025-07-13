@@ -63,7 +63,10 @@ public static class PatcherExtensions
                 continue;
             }
 
-            if (implicits.RecordFormKeys.Contains(link.FormKey)) continue;
+            if (implicits.Listings.Contains(link.FormKey.ModKey))
+            {
+                continue;
+            }
 
             if (modKeysToDuplicateFrom.Contains(link.FormKey.ModKey) &&
                 recordHandler.TryGetRecordFromMods(link, modKeysToDuplicateFrom, fallBackMode, out var linkRec) && 
