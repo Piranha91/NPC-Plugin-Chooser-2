@@ -827,8 +827,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 try
                 {
+                    const string tokenFileName = "NPC_Token.json"; // Define the token file name
+                    
                     foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
                     {
+                        // --- NEW: Check for and skip previous patcher output directories ---
+                        string tokenFilePath = Path.Combine(modFolderPath, tokenFileName);
+                        if (File.Exists(tokenFilePath))
+                        {
+                            Debug.WriteLine($"Skipping directory '{Path.GetFileName(modFolderPath)}' as it contains a token file and appears to be a previous patcher output.");
+                            continue; // Skip this directory and move to the next one
+                        }
+                        // --- END of NEW LOGIC --
                         string modFolderName = Path.GetFileName(modFolderPath);
                         var foundEnabledKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings, false);
 

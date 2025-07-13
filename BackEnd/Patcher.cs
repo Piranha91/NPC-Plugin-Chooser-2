@@ -70,6 +70,8 @@ public class Patcher : OptionalUIModule
         UpdateProgress(0, 1, "Initializing...");
         AppendLog("Starting patch generation...");
 
+        // This dictionary will hold the data for the NPC_Token.json file.
+        var processedNpcsTokenData = new Dictionary<FormKey, (string ModName, ModKey AppearancePlugin)>();
 
 
         if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
@@ -544,6 +546,12 @@ public class Patcher : OptionalUIModule
                             AppendLog(ContextualPerformanceTracer.GetReport(), true, true);
                             profilingReportGenerated = true;
                         }
+                        
+                        // Add data for the token file after the NPC is successfully processed.
+                        if (appearanceModKey.HasValue)
+                        {
+                            processedNpcsTokenData[npcFormKey] = (selectedModDisplayName, appearanceModKey.Value);
+                        }
 
                         processedCount++;
                         await Task.Delay(5, ct);
@@ -585,12 +593,26 @@ public class Patcher : OptionalUIModule
                     {
                         _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath);
                         AppendLog($"Output mod saved successfully.", false, true);
+
+                        // --- NEW: Write NPC Token File ---
+                        AppendLog("Writing NPC token file...", false, true);
+                        var tokenFilePath = Path.Combine(_currentRunOutputAssetPath, "NPC_Token.json");
+                        var tokenData = new NpcToken
+                        {
+                            CreationDate = DateTime.Now.ToString("o"), // ISO 8601 round-trip format
+                            ProcessedNpcs = processedNpcsTokenData
+                        };
+
+                        JSONhandler<NpcToken>.SaveJSONFile(tokenData, tokenFilePath, out bool tokenSaved,
+                            out var exceptionStr);
+                        if (!tokenSaved)
+                        {
+                            AppendLog($"NPC_Token.json not saved:" + Environment.NewLine + exceptionStr, true, true);
+                        }
                     }
                     catch (Exception ex)
                     {
-                        AppendLog(
-                            $"FATAL SAVE ERROR: Could not write output plugin: {ExceptionLogger.GetExceptionStack(ex)}",
-                            true);
+                        AppendLog($"FATAL SAVE ERROR: Could not write output plugin or token file: {ExceptionLogger.GetExceptionStack(ex)}", true);
                         ResetProgress();
                         return;
                     }
@@ -736,4 +758,13 @@ public class Patcher : OptionalUIModule
 
         return true;
     }
+}
+
+/// <summary>
+/// A data class to structure the contents of the NPC_Token.json file.
+/// </summary>
+public class NpcToken
+{
+    public string CreationDate { get; set; } = string.Empty;
+    public Dictionary<FormKey, (string ModName, ModKey AppearancePlugin)> ProcessedNpcs { get; set; } = new();
 }
