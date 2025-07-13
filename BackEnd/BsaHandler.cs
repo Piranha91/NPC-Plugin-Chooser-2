@@ -13,8 +13,6 @@ public class BsaHandler : OptionalUIModule
     private Dictionary<ModKey, Dictionary<string, HashSet<string>>> _bsaContents = new();
     
     private Dictionary<FilePath, IArchiveReader> _openBsaArchiveReaders = new();
-
-    private Dictionary<string /*bsa filepath*/, List<(string relativePath, string destinationPath, string requestingModName)>> _extractionQueue = new();
     
     private readonly EnvironmentStateProvider _environmentStateProvider;
 
@@ -23,59 +21,52 @@ public class BsaHandler : OptionalUIModule
         _environmentStateProvider = environmentStateProvider;
     }
 
-    public async Task PopulateBsaContentPathsAsync(IEnumerable<ModSetting> mods, GameRelease gameRelease)
+    public void UnloadAllBsaReaders()
     {
-        _bsaContents.Clear();
-
-        // Use Task.Run to offload the blocking I/O of reading BSA headers.
-        await Task.Run(() =>
+        foreach (var reader in _openBsaArchiveReaders.Values)
         {
-            foreach (var mod in mods)
+            (reader as IDisposable)?.Dispose();
+        }
+        _openBsaArchiveReaders.Clear();
+        AppendLog("Unloaded all cached BSA readers.");
+    }
+    
+    /// <summary>
+    /// Extracts a single file from a specified BSA archive using a cached reader.
+    /// This method now correctly returns a Task<bool> for the asynchronous operation.
+    /// </summary>
+    public Task<bool> ExtractFileAsync(string bsaPath, string relativePath, string destinationPath)
+    {
+        // This method now directly returns the Task<bool> produced by Task.Run.
+        return Task.Run(() =>
+        {
+            if (!_openBsaArchiveReaders.TryGetValue(new FilePath(bsaPath), out var bsaReader))
             {
-                foreach (var key in mod.CorrespondingModKeys)
+                AppendLog($"BSA-CACHE-MISS: The reader for {bsaPath} was not pre-cached. This indicates a logic error.", true, true);
+                return false;
+            }
+
+            try
+            {
+                if (TryGetFileFromSingleReader(relativePath, bsaReader, out var archiveFile) && archiveFile != null)
                 {
-                    if (_bsaContents.ContainsKey(key))
-                    {
-                        continue;
-                    }
-
-                    var subDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-
-                    foreach (var directory in mod.CorrespondingFolderPaths)
-                    {
-                        try
-                        {
-                            // These are the blocking calls.
-                            foreach (var bsaPath in Archive.GetApplicableArchivePaths(gameRelease, directory, key))
-                            {
-                                var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
-                                var containedFiles = new HashSet<string>(bsaReader.Files.Select(x => x.Path),
-                                    StringComparer.OrdinalIgnoreCase);
-                                subDict.Add(bsaPath, containedFiles);
-                            }
-                        }
-                        catch (InvalidOperationException)
-                        {
-                            string prefix = key.FileName.NameWithoutExtension;
-                            string searchPattern = $"{prefix}*.bsa";
-
-                            foreach (var bsaPath in Directory.EnumerateFiles(directory, searchPattern,
-                                         SearchOption.TopDirectoryOnly))
-                            {
-                                var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
-                                var containedFiles = new HashSet<string>(bsaReader.Files.Select(x => x.Path),
-                                    StringComparer.OrdinalIgnoreCase);
-                                subDict.Add(bsaPath, containedFiles);
-                            }
-                        }
-                    }
-
-                    _bsaContents.Add(key, subDict);
+                    return ExtractFileFromBsa(archiveFile, destinationPath);
                 }
+                else
+                {
+                    AppendLog($"Could not find {relativePath} within {bsaPath} for extraction.", true, true);
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Failed to read from cached BSA reader for {bsaPath}: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
+                return false;
             }
         });
     }
-    
+
+    // ... (The rest of the BsaHandler class is unchanged) ...
     public void OpenBsaReadersFor(ModSetting modSetting)
     {
         foreach (var modKey in modSetting.CorrespondingModKeys)
@@ -88,15 +79,6 @@ public class BsaHandler : OptionalUIModule
         }
     }
     
-    public void UnloadAllBsaReaders()
-    {
-        foreach (var reader in _openBsaArchiveReaders.Values)
-        {
-            (reader as IDisposable)?.Dispose();
-        }
-        _openBsaArchiveReaders.Clear();
-    }
-
     public bool FileExists(string path, ModKey modKey, string bsaPath, bool convertSlashes = true)
     {
         if (convertSlashes)
@@ -162,99 +144,7 @@ public class BsaHandler : OptionalUIModule
 
         return false;
     }
-    
-    public Dictionary<string, bool> ScheduleExtractAssetFiles(
-        HashSet<string> assetRelativePathList,
-        ModSetting modSetting,
-        string assetType /*"Meshes" or "Textures"*/,
-        IEnumerable<string> autoPredictedExtraPaths, string outputBaseDirPath)
-    {
-        using var _ = ContextualPerformanceTracer.Trace("BsaHandler.ScheduleExtractAssetFiles");
-        Dictionary<string, bool> result = new();
 
-        string outputBase = Path.Combine(outputBaseDirPath, assetType);
-        
-        foreach (string relativePath in assetRelativePathList.And(autoPredictedExtraPaths))
-        {
-            result[relativePath] = false;
-            
-            if (FileExists(relativePath, modSetting.CorrespondingModKeys, out var correspondingModKey, out var bsaPath)
-                && correspondingModKey != null && bsaPath != null)
-            {
-                string outputPath = Path.Combine(outputBase, relativePath);
-                QueueFileForExtraction(bsaPath, relativePath, outputPath, modSetting.DisplayName);
-            }
-        }
-
-        return result;
-    }
-
-    public void QueueFileForExtraction(string bsaPath, string relativePath, string destinationPath, string requestingModName)
-    {
-        List<(string, string, string)> files;
-        if (_extractionQueue.ContainsKey(bsaPath))
-        {
-            files = _extractionQueue[bsaPath];
-        }
-        else
-        {
-            files = new List<(string relativePath, string destinationPath, string requestingModName)>();
-            _extractionQueue.Add(bsaPath, files);
-        }
-        
-        files.Add((relativePath, destinationPath, requestingModName));
-    }
-
-    public Dictionary<string, HashSet<string>> ExtractQueuedFiles(Dictionary<string, HashSet<string>>? extractedNifPaths = null)
-    {
-        if (extractedNifPaths == null)
-        {
-            extractedNifPaths = new(); // needed for followup texture search
-        }
-
-        foreach (var entry in _extractionQueue)
-        {
-            var bsaFilePath = entry.Key;
-            var bsaReader = Archive.CreateReader(_environmentStateProvider.SkyrimVersion.ToGameRelease(), bsaFilePath);
-            foreach (var pathInfo in entry.Value)
-            {
-                if (!TryGetFileFromSingleReader(pathInfo.relativePath, bsaReader, out var archiveFile) || archiveFile == null)
-                {
-                    AppendLog($"Could not extract {pathInfo.relativePath} from {bsaFilePath}.", true, true);
-                    continue;
-                }
-
-                if (!ExtractFileFromBsa(archiveFile, pathInfo.destinationPath))
-                {
-                    AppendLog($"Could not extract {pathInfo.relativePath} from {bsaFilePath}.", true, true);
-                }
-
-                if (pathInfo.Item1.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!extractedNifPaths.TryGetValue(pathInfo.requestingModName, out var modEntry))
-                    {
-                        modEntry = new HashSet<string>();
-                        extractedNifPaths.Add(pathInfo.requestingModName, modEntry);
-                    }
-                    
-                    modEntry.Add(pathInfo.destinationPath);
-                }
-            }
-        }
-        
-        _extractionQueue.Clear();
-        
-        return extractedNifPaths;
-    }
-    
-    /// <summary>
-    /// Tries to find a file within any BSA reader in the provided set.
-    /// Use this when checking readers associated with a specific source directory.
-    /// </summary>
-    /// <param name="subpath">The relative path within the BSA (e.g., "meshes\\actor.nif").</param>
-    /// <param name="bsaReaders">The set of readers (usually for one directory) to check.</param>
-    /// <param name="file">The found archive file, or null.</param>
-    /// <returns>True if found in any reader in the set, false otherwise.</returns>
     public bool TryGetFileFromReaders(string subpath, HashSet<IArchiveReader> bsaReaders, out IArchiveFile? file)
     {
         file = null;
@@ -277,8 +167,7 @@ public class BsaHandler : OptionalUIModule
 
         return false; // Not found in any reader in this set
     }
-
-// Ensure your existing V1 TryGetFileFromSingleReader handles case-insensitivity correctly:
+    
     public bool TryGetFileFromSingleReader(string subpath, IArchiveReader bsaReader, out IArchiveFile? file)
     {
         file = null;
@@ -350,8 +239,7 @@ public class BsaHandler : OptionalUIModule
             return false; // Failure
         }
     }
-
-    // Keep OpenBsaArchiveReaders (no change needed based on clarifications)
+    
     public HashSet<IArchiveReader> OpenBsaArchiveReaders(string sourceDirectory, ModKey pluginKey)
     {
         var readers = new HashSet<IArchiveReader>();
@@ -405,5 +293,58 @@ public class BsaHandler : OptionalUIModule
     {
         var gameRelease = GameRelease.SkyrimSE;
         return Archive.GetApplicableArchivePaths(gameRelease, sourceDirectory, pluginKey).Any();
+    }
+    
+    public async Task PopulateBsaContentPathsAsync(IEnumerable<ModSetting> mods, GameRelease gameRelease)
+    {
+        _bsaContents.Clear();
+
+        // Use Task.Run to offload the blocking I/O of reading BSA headers.
+        await Task.Run(() =>
+        {
+            foreach (var mod in mods)
+            {
+                foreach (var key in mod.CorrespondingModKeys)
+                {
+                    if (_bsaContents.ContainsKey(key))
+                    {
+                        continue;
+                    }
+
+                    var subDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var directory in mod.CorrespondingFolderPaths)
+                    {
+                        try
+                        {
+                            // These are the blocking calls.
+                            foreach (var bsaPath in Archive.GetApplicableArchivePaths(gameRelease, directory, key))
+                            {
+                                var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
+                                var containedFiles = new HashSet<string>(bsaReader.Files.Select(x => x.Path),
+                                    StringComparer.OrdinalIgnoreCase);
+                                subDict.Add(bsaPath, containedFiles);
+                            }
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            string prefix = key.FileName.NameWithoutExtension;
+                            string searchPattern = $"{prefix}*.bsa";
+
+                            foreach (var bsaPath in Directory.EnumerateFiles(directory, searchPattern,
+                                         SearchOption.TopDirectoryOnly))
+                            {
+                                var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
+                                var containedFiles = new HashSet<string>(bsaReader.Files.Select(x => x.Path),
+                                    StringComparer.OrdinalIgnoreCase);
+                                subDict.Add(bsaPath, containedFiles);
+                            }
+                        }
+                    }
+
+                    _bsaContents.Add(key, subDict);
+                }
+            }
+        });
     }
 }

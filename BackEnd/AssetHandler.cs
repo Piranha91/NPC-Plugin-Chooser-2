@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System.Collections.Concurrent;
+using System.IO;
 using System.Security.Policy;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Archives;
@@ -27,7 +28,6 @@ public class AssetHandler : OptionalUIModule
     
     private Dictionary<string, Dictionary<string, HashSet<string>>> _modContentPaths = new();
     public const string GameDataKey = "GameData";
-    private HashSet<(string sourcePath, string destinationPath, string requestingModName)> _fileCopyQueue = new();
     
     private HashSet<string> _pathsToIgnore = new();
 
@@ -35,6 +35,10 @@ public class AssetHandler : OptionalUIModule
         _warningsToSuppress = new(); // Key: Plugin Name (lowercase), Value: Set of paths
 
     private HashSet<string> _warningsToSuppress_Global = new();
+    
+    // This dictionary tracks all requested asset operations to ensure each asset is processed only once.
+    // The key is the asset's relative path, and the value is the task that handles its processing.
+    private readonly ConcurrentDictionary<string, Task> _processedAssetTasks = new(StringComparer.OrdinalIgnoreCase);
 
     public AssetHandler(EnvironmentStateProvider environmentStateProvider, BsaHandler bsaHandler, RecordHandler recordHandler,
         Lazy<VM_Run> runVM)
@@ -153,75 +157,137 @@ public class AssetHandler : OptionalUIModule
     
     static string? RegularizeOrNull(string path) =>
         Auxilliary.TryRegularizePath(path, out var rel) ? rel : null;
+    
+    /// <summary>
+    /// Returns a task that will complete when all scheduled asset operations have finished.
+    /// </summary>
+    public Task WhenAllTasks() => Task.WhenAll(_processedAssetTasks.Values);
 
-    public async Task ScheduleCopyAssetLinkFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting,
-        string outputBasePath)
+    /// <summary>
+    /// The main entry point for requesting an asset. It finds the asset's source (loose or BSA)
+    /// and schedules a task to copy/extract it, including post-processing for NIF files.
+    /// This operation is idempotent; subsequent requests for the same asset will return the existing task.
+    /// </summary>
+    /// <param name="relativePath">The asset's relative path (e.g., "textures\\actor.dds").</param>
+    /// <param name="modSetting">The mod setting providing context for where to find the asset.</param>
+    /// <param name="outputBasePath">The root output directory for the patch.</param>
+    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath)
     {
-        using var _ = ContextualPerformanceTracer.Trace("AssetHandler.ScheduleCopyAssetLinkFiles");
-        var assetRelPaths =
-            assetLinks
-                .Select(x => x.GivenPath)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Select(RegularizeOrNull)
-                .Where(rel => rel is not null)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        HashSet<string> autoPredictedRelPaths = new();
-        AddCorrespondingNumericalNifPaths(assetRelPaths, autoPredictedRelPaths);
-
-        Dictionary<string, string> loosePaths = new(); // rel path : full path
-        Dictionary<string, string> bsaFiles = new(); // rel path : bsa file path
-
-        foreach (var relPath in assetRelPaths.Distinct())
+        return _processedAssetTasks.GetOrAdd(relativePath, (relPath) => Task.Run(async () =>
         {
-            bool found = false;
-            foreach (var dirPath in appearanceModSetting.CorrespondingFolderPaths)
+            var (sourceType, sourcePath, bsaPath) = FindAssetSource(relPath, modSetting);
+
+            string destPath = Path.Combine(outputBasePath, relPath);
+
+            switch (sourceType)
             {
-                var candidatePath = Path.Combine(dirPath, relPath);
-                if (FileExists(candidatePath, appearanceModSetting.DisplayName, dirPath))
-                {
-                    loosePaths.Add(relPath, candidatePath);
-                    found = true;
-                    break;
-                }
-
-                foreach (var plugin in appearanceModSetting.CorrespondingModKeys)
-                {
-                    var readers = _bsaHandler.OpenBsaArchiveReaders(dirPath, plugin);
-                    if (_bsaHandler.FileExists(relPath, plugin, out string? bsaPath) && bsaPath != null)
+                case AssetSourceType.LooseFile:
+                    if (await PerformLooseCopyAsync(sourcePath, destPath))
                     {
-                        bsaFiles.Add(relPath, bsaPath);
-                        found = true;
-                        break;
+                        await PostProcessNifTextures(destPath, modSetting, outputBasePath);
                     }
-                }
+                    break;
 
-                if (found) break;
+                case AssetSourceType.BsaFile:
+                    if (await _bsaHandler.ExtractFileAsync(bsaPath, relPath, destPath))
+                    {
+                        await PostProcessNifTextures(destPath, modSetting, outputBasePath);
+                    }
+                    break;
+                
+                default:
+                    // Optionally log missing assets here. Note that SchduleCopyNpcAssets already does this.
+                    break;
             }
-
-            if (found) continue;
-        }
-        
-        foreach (var entry in loosePaths)
+        }));
+    }
+    
+    /// <summary>
+    /// Performs the physical copy of a loose file.
+    /// </summary>
+    private async Task<bool> PerformLooseCopyAsync(string sourcePath, string destPath)
+    {
+        try
         {
-            var outputPath = Path.Combine(outputBasePath, entry.Key);
-            QueueFileForCopy(entry.Value, outputPath, appearanceModSetting.DisplayName);
+            await Task.Run(() =>
+            {
+                FileInfo fileInfo = Auxilliary.CreateDirectoryIfNeeded(destPath, Auxilliary.PathType.File);
+                File.Copy(sourcePath, destPath, true);
+            });
+            return true;
         }
-  
-        foreach (var entry in bsaFiles)
+        catch (Exception ex)
         {
-            var outputPath = Path.Combine(outputBasePath, entry.Key);
-            _bsaHandler.QueueFileForExtraction(entry.Value, entry.Key, outputPath, appearanceModSetting.DisplayName);
+            AppendLog($"Failed to copy file from {sourcePath} to {destPath}: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
+            return false;
         }
     }
 
     /// <summary>
-    /// Main asset copying orchestrator. Calls helpers for identification and copying.
-    /// Handles scenarios where only FaceGen assets should be copied.
+    /// After a file is copied/extracted, this checks if it is a NIF file. If so, it parses it
+    /// for texture paths and recursively requests those assets.
     /// </summary>
-    /// <param name="appearanceNpcRecord">The NPC record being added/modified in the output patch.</param>
-    /// <param name="appearanceModSetting">The ModSetting chosen for the selected NPC.</param>
-    public async Task SchduleCopyNpcAssets(
+    private async Task PostProcessNifTextures(string filePath, ModSetting modSetting, string outputBasePath)
+    {
+        if (!filePath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)) return;
+
+        try
+        {
+            var texturesInNif = NifHandler.GetExtraTexturesFromNif(filePath);
+            var regularizedPaths = NifHandler.RemoveTopFolderFromPath(texturesInNif, "textures");
+
+            if (!regularizedPaths.Any()) return;
+
+            AppendLog($"      NIF Analysis: Found {regularizedPaths.Count} additional textures in {Path.GetFileName(filePath)}.", false, true);
+
+            var textureTasks = new List<Task>();
+            foreach (var texRelPath in regularizedPaths)
+            {
+                // Recursively request the textures found inside the NIF.
+                textureTasks.Add(RequestAssetCopyAsync(texRelPath, modSetting, outputBasePath));
+            }
+            await Task.WhenAll(textureTasks);
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"NIF TEXTURE ERROR: Failed to parse '{filePath}' for additional textures: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
+        }
+    }
+
+    /// <summary>
+    /// Finds the source of a given asset, checking loose files first, then BSAs.
+    /// </summary>
+    private (AssetSourceType, string SourcePath, string BsaPath) FindAssetSource(string relativePath, ModSetting modSetting)
+    {
+        // 1. Check loose files in the mod's folders
+        foreach (var dirPath in modSetting.CorrespondingFolderPaths)
+        {
+            var candidatePath = Path.Combine(dirPath, relativePath);
+            if (FileExists(candidatePath, modSetting.DisplayName, dirPath))
+            {
+                return (AssetSourceType.LooseFile, candidatePath, string.Empty);
+            }
+        }
+        
+        // 2. Check BSAs associated with the mod
+        foreach (var modKey in modSetting.CorrespondingModKeys)
+        {
+            if (_bsaHandler.FileExists(relativePath, modKey, out var bsaPath) && bsaPath != null)
+            {
+                return (AssetSourceType.BsaFile, relativePath, bsaPath);
+            }
+        }
+
+        return (AssetSourceType.NotFound, string.Empty, string.Empty);
+    }
+    
+    private enum AssetSourceType { NotFound, LooseFile, BsaFile }
+
+    /// <summary>
+    /// Orchestrates copying assets for a specific NPC by identifying all required assets
+    /// and scheduling them for asynchronous processing.
+    /// </summary>
+    public async Task ScheduleCopyNpcAssets(
         INpcGetter appearanceNpcRecord,
         ModSetting appearanceModSetting,
         string outputBasePath)
@@ -238,175 +304,59 @@ public class AssetHandler : OptionalUIModule
             return;
         }
 
-        _runVM.Value.AppendLog($"      Asset source directories: {string.Join(", ", assetSourceDirs)}"); // Verbose only
-
         // --- Identify Required Assets ---
         HashSet<string> meshToCopyRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         HashSet<string> textureToCopyRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        HashSet<string> handledRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var baseModKey = appearanceNpcRecord.FormKey.ModKey;
 
-        // 1. FaceGen Assets (Always check if requested, templating handled by caller passing null npcForExtraAssetLookup)
-        // Construct FaceGen paths using the provided key
+        // 1. FaceGen Assets
         var (faceMeshRelativePath, faceTexRelativePath) =
-            Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey); // Use the keyForFaceGenPath here!
+            Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey); 
         meshToCopyRelativePaths.Add(faceMeshRelativePath);
         textureToCopyRelativePaths.Add(faceTexRelativePath);
-        _runVM.Value.AppendLog(
-            $"      Identified FaceGen paths (using key {baseModKey.FileName}): {faceMeshRelativePath}, {faceTexRelativePath}"); // Verbose only
-
+        
         // 2. Non-FaceGen Assets (Only if CopyExtraAssets is true)
-        HashSet<string> autoPredictedExtraNifRelPaths = new();
         if (_copyExtraAssets)
         {
-            _runVM.Value.AppendLog(
-                $"      Identifying extra assets referenced by plugin record {appearanceNpcRecord.FormKey}..."); // Verbose only
             GetAssetPathsReferencedByPlugin(appearanceNpcRecord, appearanceModSetting.CorrespondingModKeys, meshToCopyRelativePaths, textureToCopyRelativePaths);
-            AddCorrespondingNumericalNifPaths(meshToCopyRelativePaths, autoPredictedExtraNifRelPaths);
+            AddCorrespondingNumericalNifPaths(meshToCopyRelativePaths, new HashSet<string>());
         }
-        else if (!_copyExtraAssets)
+
+        // 3. Schedule all identified assets for processing
+        var allAssetPaths = meshToCopyRelativePaths.Concat(textureToCopyRelativePaths).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        AppendLog($"      Identified {allAssetPaths.Count} unique assets to process for {appearanceNpcRecord.EditorID ?? appearanceNpcRecord.FormKey.ToString()}.");
+
+        foreach (var relPath in allAssetPaths)
         {
-            _runVM.Value.AppendLog(
-                $"      Skipping extra asset identification (CopyExtraAssets disabled)."); // Verbose only
-        }
-        
-        // find assets in loose files
-        var loosTexResultStatus = ScheduleCopyAssetFiles(assetSourceDirs, meshToCopyRelativePaths, appearanceModSetting.DisplayName, "Meshes",
-            baseModKey.FileName.String, Array.Empty<string>(), outputBasePath);
-
-        var looseMeshResultStatus = ScheduleCopyAssetFiles(assetSourceDirs, textureToCopyRelativePaths, appearanceModSetting.DisplayName, "Textures",
-            baseModKey.FileName.String, autoPredictedExtraNifRelPaths, outputBasePath);
-
-        handledRelativePaths.UnionWith(loosTexResultStatus.Where(x => x.Value == true).Select(x => x.Key));
-        handledRelativePaths.UnionWith(looseMeshResultStatus.Where(x => x.Value == true).Select(x => x.Key));
-        
-        // find assets in BSAs
-        meshToCopyRelativePaths = meshToCopyRelativePaths.Except(handledRelativePaths).ToHashSet();
-        textureToCopyRelativePaths = textureToCopyRelativePaths.Except(handledRelativePaths).ToHashSet();
-        autoPredictedExtraNifRelPaths = autoPredictedExtraNifRelPaths.Except(handledRelativePaths).ToHashSet();
-        
-        var bsaTexResultStatus = _bsaHandler.ScheduleExtractAssetFiles(textureToCopyRelativePaths, appearanceModSetting, "Textures", Array.Empty<string>(), outputBasePath);
-        var bsaMeshResultStatus = _bsaHandler.ScheduleExtractAssetFiles(meshToCopyRelativePaths, appearanceModSetting, "Meshes", autoPredictedExtraNifRelPaths, outputBasePath);
-
-        handledRelativePaths.UnionWith(bsaTexResultStatus.Where(x => x.Value == true).Select(x => x.Key));
-        handledRelativePaths.UnionWith(bsaMeshResultStatus.Where(x => x.Value == true).Select(x => x.Key));
-        
-        meshToCopyRelativePaths = meshToCopyRelativePaths.Except(handledRelativePaths).ToHashSet();
-        textureToCopyRelativePaths = textureToCopyRelativePaths.Except(handledRelativePaths).ToHashSet();
-
-        if (meshToCopyRelativePaths.Any() || textureToCopyRelativePaths.Any())
-        {
-            AppendLog("Could not find the following asset paths to copy (this may or may not cause issues depending on how the Appearance Mod is set up");
-            var files = String.Join(Environment.NewLine, meshToCopyRelativePaths.And(textureToCopyRelativePaths));
-            AppendLog(files);
+            // This method is fire-and-forget; the task is added to the concurrent dictionary 
+            // and runs in the background. It will not re-process assets it has already seen.
+            RequestAssetCopyAsync(relPath, appearanceModSetting, outputBasePath);
         }
     }
 
-    public async Task CopyQueuedFiles(string outputRootFolder,  List<ModSetting> allModSettings, bool includeBsa = true, bool performNifTextureDetection = true)
+    /// <summary>
+    /// Schedules asynchronous processing for assets identified via direct asset links.
+    /// </summary>
+    public async Task ScheduleCopyAssetLinkFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting, string outputBasePath)
     {
-        Dictionary<string, HashSet<string>> extractedNifPaths = new(); // needed for followup texture search
-        foreach (var pathInfo in _fileCopyQueue)
+        using var _ = ContextualPerformanceTracer.Trace("AssetHandler.ScheduleCopyAssetLinkFiles");
+        var assetRelPaths =
+            assetLinks
+                .Select(x => x.GivenPath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(RegularizeOrNull)
+                .Where(rel => rel is not null)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var relPath in assetRelPaths)
         {
-            try
+            if (relPath != null)
             {
-                FileInfo fileInfo = Auxilliary.CreateDirectoryIfNeeded(pathInfo.destinationPath, Auxilliary.PathType.File);
-                File.Copy(pathInfo.sourcePath, pathInfo.destinationPath, true);
-                if (pathInfo.sourcePath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!extractedNifPaths.TryGetValue(pathInfo.requestingModName, out var modEntry))
-                    {
-                        modEntry = new HashSet<string>();
-                        extractedNifPaths.Add(pathInfo.requestingModName, modEntry);
-                    }
-                    
-                    modEntry.Add(pathInfo.destinationPath);
-                }
+                RequestAssetCopyAsync(relPath, appearanceModSetting, outputBasePath);
             }
-            catch (Exception ex)
-            {
-                AppendLog("Failed to copy file: " + pathInfo.sourcePath + " to " + pathInfo.destinationPath, true, true);
-                AppendLog(ExceptionLogger.GetExceptionStack(ex));
-            }
-        }
-        
-        _fileCopyQueue.Clear();
-
-        if (includeBsa)
-        {
-            extractedNifPaths = _bsaHandler.ExtractQueuedFiles(extractedNifPaths);
-        }
-
-        if (performNifTextureDetection)
-        {
-            foreach (var entry in extractedNifPaths)
-            {
-                var texturePathsFromNifs = new HashSet<string?>();
-                var modName = entry.Key;
-                var nifPathsForMod = entry.Value;
-                var correspondingModEntry = allModSettings.FirstOrDefault(x => x.DisplayName == modName);
-                if (correspondingModEntry == null)
-                {
-                    continue;
-                }
-
-                foreach (var nifPath in nifPathsForMod)
-                {
-                    var extraTexturePaths = NifHandler.GetExtraTexturesFromNif(nifPath)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .Select(RegularizeOrNull)
-                        .Where(rel => rel is not null)
-                        .ToHashSet(StringComparer.OrdinalIgnoreCase);;
-                    
-                    texturePathsFromNifs.UnionWith(extraTexturePaths);
-                }
-
-                HashSet<string?> foundTexturePaths = new();
-
-                // search loose files first
-                foreach (var relativeTexPath in texturePathsFromNifs)
-                {
-                    if (relativeTexPath == null) continue;
-                    foreach (var candidateDir in correspondingModEntry.CorrespondingFolderPaths)
-                    {
-                        var candidateSourcePath = Path.Combine(candidateDir, relativeTexPath);
-                        if (FileExists(relativeTexPath, modName))
-                        {
-                            var destinationPath = Path.Combine(outputRootFolder, relativeTexPath);
-                            foundTexturePaths.Add(relativeTexPath);
-                            QueueFileForCopy(candidateSourcePath, destinationPath, modName);
-                        }
-                    }
-                }
-                texturePathsFromNifs.RemoveWhere(x => foundTexturePaths.Contains(x));
-                
-                // for any remaining search in BSA
-                foundTexturePaths.Clear();
-                foreach (var relativeTexPath in texturePathsFromNifs)
-                {
-                    if (relativeTexPath == null) continue;
-                    if (_bsaHandler.FileExists(relativeTexPath, correspondingModEntry.CorrespondingModKeys,
-                            out var foundModKey, out var foundBsaPath)
-                        && foundBsaPath != null && foundModKey != null)
-                    {
-                        var destinationPath = Path.Combine(outputRootFolder, relativeTexPath);
-                        foundTexturePaths.Add(relativeTexPath);
-                        _bsaHandler.QueueFileForExtraction(foundBsaPath, relativeTexPath, destinationPath, modName);
-                    }
-                }
-                texturePathsFromNifs.RemoveWhere(x => foundTexturePaths.Contains(x));
-
-                if (texturePathsFromNifs.Any())
-                {
-                    AppendLog($"The following texture files were specified within the .nif files within {modName} but could not be found. This may or may not cause issues depending on how the mod is structured.");
-                    AppendLog(string.Join(Environment.NewLine, texturePathsFromNifs));
-                }
-            }
-            
-            // now that extra textures have been collected, repeat the copy and extraction tasks
-            await CopyQueuedFiles(outputRootFolder, allModSettings, includeBsa, false);
         }
     }
-
 
     // --- Asset Identification Helpers (No changes needed here) ---
     private void GetAssetPathsReferencedByPlugin(INpcGetter npc, IEnumerable<ModKey> correspondingModKeys, HashSet<string> meshPaths,
@@ -488,88 +438,7 @@ public class AssetHandler : OptionalUIModule
     }
 
     // --- Asset Copying/Extraction Helpers ---
-
-
-    /// <summary>
-    /// Schedules copy operation for loose asset files, checking all source directories.
-    /// </summary>
-    private Dictionary<string, bool> ScheduleCopyAssetFiles(List<string> sourceDataDirPaths,
-        HashSet<string> assetRelativePathList,
-        string modName,
-        string assetType /*"Meshes" or "Textures"*/, string sourcePluginName,
-        IEnumerable<string> autoPredictedExtraPaths, string outputBaseDirPath)
-    {
-        Dictionary<string, bool> result = new();
-
-        string outputBase = Path.Combine(outputBaseDirPath, assetType);
-
-        var warningsToSuppressSet = _warningsToSuppress_Global;
-        string pluginKeyLower = sourcePluginName.ToLowerInvariant();
-        if (_warningsToSuppress.TryGetValue(pluginKeyLower, out var specificWarnings))
-        {
-            warningsToSuppressSet = specificWarnings;
-        }
-
-        warningsToSuppressSet.UnionWith(autoPredictedExtraPaths);
-
-        foreach (string relativePath in assetRelativePathList)
-        {
-            result[relativePath] = false;
-            if (IsIgnored(relativePath, _pathsToIgnore)) continue;
-
-            string? foundSourcePath = null;
-            // Check Source Directories
-            foreach (var sourcePathBase in sourceDataDirPaths)
-            {
-                string potentialPath = Path.Combine(sourcePathBase, assetType, relativePath);
-                if (FileExists(potentialPath, modName, sourcePathBase))
-                {
-                    foundSourcePath = potentialPath;
-                    break; // Found it
-                }
-            }
-
-            // Check Game Data Folder (if configured and not FaceGen)
-            bool isFaceGen = relativePath.Contains("facegendata", StringComparison.OrdinalIgnoreCase);
-            if (foundSourcePath == null && _getMissingExtraAssetsFromAvailableWinners && !isFaceGen)
-            {
-                string gameDataTrialPath = Path.Combine(_environmentStateProvider.DataFolderPath.ToString(), assetType,
-                    relativePath);
-                if (FileExists(gameDataTrialPath, GameDataKey, _environmentStateProvider.DataFolderPath))
-                {
-                    foundSourcePath = gameDataTrialPath;
-                    _runVM.Value.AppendLog(
-                        $"        Found missing asset '{relativePath}' in game data folder."); // Verbose only
-                }
-            }
-
-            if (foundSourcePath == null)
-            {
-                // Handle Missing File Warning/Error
-                bool suppressWarning = _suppressAllMissingFileWarnings ||
-                                       (_suppressKnownMissingFileWarnings &&
-                                        warningsToSuppressSet.Contains(relativePath)) ||
-                                       GetExtensionOfMissingFile(relativePath) == ".tri";
-                if (!suppressWarning)
-                {
-                    string errorMsg = $"Asset '{relativePath}' not found in any source directories";
-                    if (_getMissingExtraAssetsFromAvailableWinners && !isFaceGen) errorMsg += " or game data folder";
-                    errorMsg += $" (needed by {sourcePluginName}).";
-                    _runVM.Value.AppendLog($"      WARNING: {errorMsg}"); // Verbose only (Warning)
-                }
-            }
-            else
-            {
-                // Queue the file copy
-                string destPath = Path.Combine(outputBase, relativePath);
-                QueueFileForCopy(foundSourcePath, destPath, modName);
-                result[relativePath] = true;
-            }
-        }
-
-        return result;
-    }
-
+    
     /// <summary>
     /// Returns the direct sub-directories of <paramref name="rootDir"/> that contain
     /// <paramref name="relativeFilePath"/> (e.g.  "Textures\Foo.png").
@@ -825,11 +694,6 @@ public class AssetHandler : OptionalUIModule
         }
 
         return success;
-    }
-
-    public void QueueFileForCopy(string sourcePath, string destinationPath, string requestingModName)
-    {
-        _fileCopyQueue.Add((sourcePath, destinationPath, requestingModName));
     }
 }
 
