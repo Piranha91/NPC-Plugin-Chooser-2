@@ -680,7 +680,7 @@ public class Patcher : OptionalUIModule
                 try
                 {
                     List<string> skinExceptions = new();
-                    var skinRecords = _recordHandler.DuplicateInFormLink(targetNpc.WornArmor, sourceNpc.WornArmor, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref skinExceptions);
+                    var skinRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.WornArmor, sourceNpc.WornArmor, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref skinExceptions);
                     if (skinExceptions.Any())
                     {
                         AppendLog("Exceptions during skin assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
@@ -688,7 +688,7 @@ public class Patcher : OptionalUIModule
                     mergedInRecords.AddRange(skinRecords);
                     
                     List<string> headExceptions = new();
-                    var headRecords =_recordHandler.DuplicateInFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref headExceptions);
+                    var headRecords =_recordHandler.DuplicateInOrAddFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref headExceptions);
                     if (headExceptions.Any())
                     {
                         AppendLog("Exceptions during head texture assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
@@ -696,7 +696,7 @@ public class Patcher : OptionalUIModule
                     mergedInRecords.AddRange(headRecords);
                     
                     List<string> colorExceptions = new();
-                    var hairColorRecords = _recordHandler.DuplicateInFormLink(targetNpc.HairColor, sourceNpc.HairColor, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref colorExceptions);
+                    var hairColorRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.HairColor, sourceNpc.HairColor, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref colorExceptions);
                     if (colorExceptions.Any())
                     {
                         AppendLog("Exceptions during hair color assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
@@ -708,7 +708,7 @@ public class Patcher : OptionalUIModule
                     foreach (var hp in sourceNpc.HeadParts.Where(x => !x.IsNull))
                     {
                         var targetHp = new FormLink<IHeadPartGetter>();
-                        var headPartRecords =_recordHandler.DuplicateInFormLink(targetHp, hp, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref headPartExceptions);
+                        var headPartRecords =_recordHandler.DuplicateInOrAddFormLink(targetHp, hp, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,  ref headPartExceptions);
                         targetNpc.HeadParts.Add(targetHp);
                         mergedInRecords.AddRange(headPartRecords);
                     }

@@ -87,6 +87,7 @@ public class RecordHandler
     
     /// <summary>
     /// Tries to deep copy a FormLink into another FormLink, copying in records and remapping recursivley
+    /// If the FormLink target is not contained in modKeysToDuplicateFrom, simply adds the FormLink
     /// </summary>
     /// <param name="targetFormLink">The FormLink to be modified).</param>
     /// <param name="formLinkToCopy">The FormLink to copy.</param>
@@ -94,7 +95,7 @@ public class RecordHandler
     /// /// <param name="modKeysToDuplicateFrom">The mods whose records are eligible to be deep copied in.</param>
     /// /// <param name="rootContextModKey">The mod which is the source override of "formLinkToCopy".</param>
     /// <returns>No return; modification in-place.</returns>
-    public List<MajorRecord> DuplicateInFormLink<TMod>(
+    public List<MajorRecord> DuplicateInOrAddFormLink<TMod>(
         IFormLink<IMajorRecordGetter> targetFormLink,
         IFormLinkGetter<IMajorRecordGetter> formLinkToCopy,
         TMod modToDuplicateInto,
@@ -108,6 +109,12 @@ public class RecordHandler
         if (formLinkToCopy.IsNull)
         {
             targetFormLink.SetToNull();
+            return mergedInRecords;
+        }
+
+        if (!modKeysToDuplicateFrom.Contains(formLinkToCopy.FormKey.ModKey))
+        {
+            targetFormLink.SetTo(formLinkToCopy);
             return mergedInRecords;
         }
         
