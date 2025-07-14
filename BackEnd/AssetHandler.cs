@@ -234,7 +234,14 @@ public class AssetHandler : OptionalUIModule
         try
         {
             var texturesInNif = NifHandler.GetExtraTexturesFromNif(filePath);
-            var regularizedPaths = NifHandler.RemoveTopFolderFromPath(texturesInNif, "textures");
+            var regularizedPaths = new HashSet<string>();
+            foreach (var t in texturesInNif)
+            {
+                if (Auxilliary.TryRegularizePath(t, out var regularizedPath))
+                {
+                    regularizedPaths.Add(regularizedPath);
+                }
+            }
 
             if (!regularizedPaths.Any()) return;
 
@@ -329,9 +336,10 @@ public class AssetHandler : OptionalUIModule
 
         foreach (var relPath in allAssetPaths)
         {
+            if (Auxilliary.TryRegularizePath(relPath, out string regularizedPath))
             // This method is fire-and-forget; the task is added to the concurrent dictionary 
             // and runs in the background. It will not re-process assets it has already seen.
-            RequestAssetCopyAsync(relPath, appearanceModSetting, outputBasePath);
+            RequestAssetCopyAsync(regularizedPath, appearanceModSetting, outputBasePath);
         }
     }
 
