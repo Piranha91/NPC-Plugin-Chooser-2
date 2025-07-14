@@ -980,7 +980,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var implicitModKeys = Implicits.Get(_environmentStateProvider.SkyrimVersion.ToGameRelease()).Listings.ToList();
             
             List<ModKey> baseGameModKeys = new List<ModKey>();
-            List<ModKey> creationClubModKeys = new List<ModKey>();
+            
             List<string> baseGamePluginNames = new() 
             {
                 "Skyrim.esm",
@@ -989,27 +989,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 "HearthFires.esm",
                 "Dragonborn.esm"
             };
-
-            try // currently Implicits.Get doesn't seem to include creation club plugins
-            {
-                if (File.Exists(_environmentStateProvider.CreationClubListingsFilePath))
-                {
-                    var ccListings = File.ReadAllText(_environmentStateProvider.CreationClubListingsFilePath);
-                    var ccPlugins = ccListings.Split(Environment.NewLine);
-                    foreach (var pluginName in ccPlugins)
-                    {
-                        var plugin = ModKey.TryFromFileName(pluginName);
-                        if (plugin != null && !implicitModKeys.Contains(plugin.Value))
-                        {
-                            implicitModKeys.Add(plugin.Value);
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // pass
-            }
+            var creationClubModKeys = _aux.GetCreationClubPlugins(); // currently Implicits.Get doesn't seem to include creation club plugins
 
             foreach (var key in implicitModKeys)
             {

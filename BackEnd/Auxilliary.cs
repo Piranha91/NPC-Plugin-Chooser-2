@@ -93,6 +93,34 @@ public class Auxilliary
         }
         return String.Empty;
     }
+
+    public HashSet<ModKey> GetCreationClubPlugins()
+    {
+        HashSet<ModKey> creationClubModKeys = new ();
+
+        try // currently Implicits.Get doesn't seem to include creation club plugins
+        {
+            if (File.Exists(_environmentStateProvider.CreationClubListingsFilePath))
+            {
+                var ccListings = File.ReadAllText(_environmentStateProvider.CreationClubListingsFilePath);
+                var ccPlugins = ccListings.Split(Environment.NewLine);
+                foreach (var pluginName in ccPlugins)
+                {
+                    var plugin = ModKey.TryFromFileName(pluginName);
+                    if (plugin != null && !creationClubModKeys.Contains(plugin.Value))
+                    {
+                        creationClubModKeys.Add(plugin.Value);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            return new HashSet<ModKey>();
+        }
+        
+        return creationClubModKeys;
+    }
     
     /// <summary>
     /// Gets the relative file paths for FaceGen NIF and DDS files,

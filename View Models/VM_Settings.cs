@@ -27,6 +27,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
     public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     {
         private readonly EnvironmentStateProvider _environmentStateProvider;
+        private readonly Auxilliary _aux;
         private readonly Settings _model; // Renamed from settings to _model for clarity
         private readonly Lazy<VM_NpcSelectionBar> _lazyNpcSelectionBar;
         private readonly Lazy<VM_Mods> _lazyModListVM;
@@ -86,6 +87,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public VM_Settings(
             EnvironmentStateProvider environmentStateProvider, 
+            Auxilliary aux,
             Settings settingsModel, // Renamed from 'settings' to 'settingsModel'
             Lazy<VM_NpcSelectionBar> lazyNpcSelectionBar, 
             Lazy<VM_Mods> lazyModListVm, 
@@ -93,6 +95,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             VM_SplashScreen splashReporter) // Injected
         {
             _environmentStateProvider = environmentStateProvider;
+            _aux = aux;
             _lazyNpcSelectionBar = lazyNpcSelectionBar;
             _lazyModListVM = lazyModListVm;
             _model = settingsModel;
@@ -175,11 +178,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .Subscribe(availablePlugins =>
                 {
                     var currentUISelctions = ExclusionSelectorViewModel.SaveToModel(); // Save current UI state
-                    ExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentUISelctions); // Reload with new available, preserving selections
+                    ExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentUISelctions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList()); // Reload with new available, preserving selections
                     
                     // ADDED: Do the same for the new selector
                     var currentLoadOrderExclusionSelections = ImportFromLoadOrderExclusionSelectorViewModel.SaveToModel();
-                    ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentLoadOrderExclusionSelections);
+                    ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentLoadOrderExclusionSelections, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
                 }).DisposeWith(_disposables);
 
             _saveRequestSubject
@@ -193,8 +196,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // Initial load of exclusions (if EnvironmentIsValid might already be true from construction)
                 if (EnvironmentIsValid && AvailablePluginsForExclusion != null && AvailablePluginsForExclusion.Any())
                 {
-                     ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions);
-                     ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions);
+                     ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
+                     ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
                 }
                 
                 // Subscribe to NPC Selection changes for saving LastSelectedNpc
@@ -240,8 +243,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         defaultExclusions.Add(implicitMod);
                     }
                 }
+                
+                // 2. Add Creation Club plugins by name
+                var creationClubModKeys = _aux.GetCreationClubPlugins(); // currently Implicits.Get doesn't seem to include creation club plugins
+                foreach (var ccMod in creationClubModKeys)
+                {
+                    defaultExclusions.Add(ccMod);
+                }
 
-                // 2. Add the Unofficial Patch if it exists in the load order
+                // 3. Add the Unofficial Patch if it exists in the load order
                 var ussepKey = ModKey.FromFileName("unofficial skyrim special edition patch.esp");
                 if (loadOrderSet.Contains(ussepKey))
                 {
@@ -259,8 +269,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
     
             if (EnvironmentIsValid && AvailablePluginsForExclusion != null)
             {
-                ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions);
-                ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions);
+                ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
+                ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
             }
         }
 
@@ -279,8 +289,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.RaisePropertyChanged(nameof(AvailablePluginsForExclusion));
             if (EnvironmentIsValid && AvailablePluginsForExclusion != null)
             {
-                ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions);
-                ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions);
+                ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
+                ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
             }
         }
 
