@@ -777,9 +777,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
             
             foreach (var npc in AllNpcs)
             {
-                if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npc.NpcFormKey, out var npcGetter))
+                if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npc.NpcFormKey, out var npcGetter) || npcGetter == null)
                 {
-                    missingNpcs.Add(npc.DisplayName);
+                    var logStr = npc.DisplayName;
+                    if (npc.NpcEditorId.Any())
+                    {
+                        logStr += " (" + npc.NpcEditorId + ")";
+                    }
+                    logStr += " (" + npc.NpcFormKeyString + ")";
+                    missingNpcs.Add(logStr);
                     continue;
                 }
                 
@@ -885,7 +891,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 } // end context loop
                 if (!foundWinningMod)
                 {
-                    unMatchedNpcs.Add(npc.DisplayName);
+                    unMatchedNpcs.Add(Auxilliary.GetNpcLogString(npcGetter, true));
                 }
             } // end NPC loop
 

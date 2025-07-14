@@ -29,11 +29,18 @@ public class Auxilliary
         _assetLinkCache = new AssetLinkCache(_environmentStateProvider.LinkCache);
     }
 
-    public static string GetLogString(IMajorRecordGetter majorRecordGetter)
+    public static string GetLogString(IMajorRecordGetter majorRecordGetter, bool fullString = false)
     {
         if (majorRecordGetter.EditorID != null)
         {
-            return majorRecordGetter.EditorID;
+            if (fullString)
+            {
+                return majorRecordGetter.EditorID + " | " + majorRecordGetter.FormKey.ToString();
+            }
+            else
+            {
+                return majorRecordGetter.EditorID;
+            }
         }
         else
         {
@@ -41,13 +48,22 @@ public class Auxilliary
         }
     }
 
-    public static string GetNpcLogString(INpcGetter npcGetter)
+    public static string GetNpcLogString(INpcGetter npcGetter, bool fullString = false)
     {
+        string logString = "";
         if (npcGetter.Name != null && npcGetter.Name.String != null)
         {
-            return npcGetter.Name.String;
+            logString += npcGetter.Name.String;
+            if (fullString)
+            {
+                logString += " | " + GetLogString(npcGetter, true);
+            }
         }
-        return GetLogString(npcGetter);
+        else
+        {
+            logString += GetLogString(npcGetter, fullString);
+        }
+        return logString;
     }
 
     public List<ModKey> GetModKeysInDirectory(string modFolderPath, List<string>? warnings, bool onlyEnabled)
