@@ -788,6 +788,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 bool foundWinningMod = false;
                 foreach (var context in contexts)
                 {
+                    if (_settings.ImportFromLoadOrderExclusions.Contains(context.ModKey))
+                    {
+                        continue;
+                    }
                     // get all appearance mods with the current modkey
                     var correspondingMods = _lazyModsVm.Value.AllModSettings.Where(x => x.CorrespondingModKeys.Contains(context.ModKey)).ToList();
                     if (correspondingMods.Count() == 1)

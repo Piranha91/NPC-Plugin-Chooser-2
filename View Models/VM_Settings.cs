@@ -66,6 +66,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- Properties for modifying EasyNPC Import/Export ---
         [Reactive] public bool AddMissingNpcsOnUpdate { get; set; } = true; // Default to true
         
+        // --- Properties for Auto-Selection of NPC Appearances
+        [Reactive] public VM_ModSelector ImportFromLoadOrderExclusionSelectorViewModel { get; private set; }
+        
         // For throttled saving
         private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
         private readonly CompositeDisposable _disposables = new CompositeDisposable(); // To manage subscriptions
@@ -111,6 +114,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             AddMissingNpcsOnUpdate = _model.AddMissingNpcsOnUpdate;
             
             ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
+            ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
 
             // Commands (as before)
             SelectGameFolderCommand = ReactiveCommand.CreateFromTask(SelectGameFolderAsync);
@@ -172,6 +176,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     var currentUISelctions = ExclusionSelectorViewModel.SaveToModel(); // Save current UI state
                     ExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentUISelctions); // Reload with new available, preserving selections
+                    
+                    // ADDED: Do the same for the new selector
+                    var currentLoadOrderExclusionSelections = ImportFromLoadOrderExclusionSelectorViewModel.SaveToModel();
+                    ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentLoadOrderExclusionSelections);
                 }).DisposeWith(_disposables);
 
             _saveRequestSubject
@@ -186,6 +194,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 if (EnvironmentIsValid && AvailablePluginsForExclusion != null && AvailablePluginsForExclusion.Any())
                 {
                      ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions);
+                     ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions);
                 }
                 
                 // Subscribe to NPC Selection changes for saving LastSelectedNpc
@@ -215,6 +224,34 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             _splashReporter?.UpdateProgress(80, "Initializing NPC selection bar...");
             await _lazyNpcSelectionBar.Value.InitializeAsync(_splashReporter, 80, 10); // Base 80%, span 10% (e.g. 80-90)
+            
+            // START: Added Logic for Default Exclusions
+            if (!_model.HasBeenLaunched && _environmentStateProvider.LoadOrder != null)
+            {
+                var defaultExclusions = new HashSet<ModKey>();
+                var loadOrderSet = new HashSet<ModKey>(_environmentStateProvider.LoadOrder.Keys);
+
+                // 1. Add official master files (DLC, etc.) from the current game release if they are in the load order
+                var implicitMods = Implicits.Get(_model.SkyrimRelease.ToGameRelease());
+                foreach (var implicitMod in implicitMods.Listings)
+                {
+                    if (loadOrderSet.Contains(implicitMod))
+                    {
+                        defaultExclusions.Add(implicitMod);
+                    }
+                }
+
+                // 2. Add the Unofficial Patch if it exists in the load order
+                var ussepKey = ModKey.FromFileName("unofficial skyrim special edition patch.esp");
+                if (loadOrderSet.Contains(ussepKey))
+                {
+                    defaultExclusions.Add(ussepKey);
+                }
+
+                _model.ImportFromLoadOrderExclusions = defaultExclusions;
+                _model.HasBeenLaunched = true; // Mark defaults as set
+            }
+            // END: Added Logic
     
             this.RaisePropertyChanged(nameof(EnvironmentIsValid));
             this.RaisePropertyChanged(nameof(EnvironmentErrorText));
@@ -223,6 +260,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (EnvironmentIsValid && AvailablePluginsForExclusion != null)
             {
                 ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions);
+                ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions);
             }
         }
 
@@ -242,6 +280,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (EnvironmentIsValid && AvailablePluginsForExclusion != null)
             {
                 ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions);
+                ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions);
             }
         }
 
@@ -269,7 +308,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // AppendTimestampToOutputDirectory default is false (bool default)
             // PatchingMode default is Default (enum default)
             loadedSettings.EasyNpcDefaultPluginExclusions ??= new() { ModKey.FromFileName("Synthesis.esp") };
-
+            loadedSettings.ImportFromLoadOrderExclusions ??= new();
 
             return loadedSettings;
         }
@@ -282,6 +321,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private void SaveSettings()
         {
             _model.EasyNpcDefaultPluginExclusions = new HashSet<ModKey>(ExclusionSelectorViewModel.SaveToModel());
+            _model.ImportFromLoadOrderExclusions = new HashSet<ModKey>(ImportFromLoadOrderExclusionSelectorViewModel.SaveToModel());
             _lazyModListVM.Value.SaveModSettingsToModel();
 
             string settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");

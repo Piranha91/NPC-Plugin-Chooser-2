@@ -206,6 +206,16 @@
                     <TextBlock Text="Plugins selected here will be ignored when assigning conflict-winning overrides to EasyNPC's Default Plugin selections" FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
                 </StackPanel>
             </GroupBox>
+            <GroupBox Header="Load Order Import Settings" Margin="0,0,0,10" Padding="5">
+                <StackPanel>
+                    <TextBlock Text="Import Choices from Load Order Exclusions:" Margin="0,0,0,2"/>
+                    <local:ModSelectorView DataContext="{Binding ImportFromLoadOrderExclusionSelectorViewModel}"
+                                           Height="180"
+                                           Margin="0,0,0,10"
+                                           ToolTip="Select plugins to exclude when using the 'Import Choices from Load Order' feature."/>
+                    <TextBlock Text="When importing choices from your load order, winning override plugins selected here will be ignored, and the next available override will be chosen instead." FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
+                </StackPanel>
+            </GroupBox>
         </StackPanel>
     </ScrollViewer>
 </reactiveui:ReactiveUserControl>

@@ -8,6 +8,7 @@ namespace NPC_Plugin_Chooser_2.Models;
 public class Settings
 {
     public string ProgramVersion { get; set; } = string.Empty;
+    public bool HasBeenLaunched { get; set; } = false;
     // Mod Environment
     public string ModsFolder { get; set; } = string.Empty;
     public string MugshotsFolder { get; set; } = string.Empty;
@@ -34,6 +35,7 @@ public class Settings
     public HashSet<string> HiddenModNames { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> HiddenModsPerNpc { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> NpcGroupAssignments { get; set; } = new();
+    public HashSet<ModKey> ImportFromLoadOrderExclusions { get; set; } = new();
 
     // EasyNPC Interchangeability / Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); 
