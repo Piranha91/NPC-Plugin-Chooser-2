@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Security.Policy;
 using Mutagen.Bethesda;
@@ -245,7 +246,7 @@ public class AssetHandler : OptionalUIModule
 
             if (!regularizedPaths.Any()) return;
 
-            AppendLog($"      NIF Analysis: Found {regularizedPaths.Count} additional textures in {Path.GetFileName(filePath)}.", false, true);
+            Debug.WriteLine($"      NIF Analysis: Found {regularizedPaths.Count} additional textures in {Path.GetFileName(filePath)}.");
 
             var textureTasks = new List<Task>();
             foreach (var texRelPath in regularizedPaths)
