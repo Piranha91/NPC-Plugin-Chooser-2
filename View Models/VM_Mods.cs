@@ -450,17 +450,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _npcSelectionBar?.RefreshAppearanceSources();
         }
 
+        // View Models/VM_Mods.cs
+
         private async Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
         {
             if (selectedModSetting == null)
             {
                 SelectedModForMugshots = null;
+                CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
                 CurrentModNpcMugshots.Clear();
                 return;
             }
 
             IsLoadingMugshots = true;
             SelectedModForMugshots = selectedModSetting;
+            CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
             CurrentModNpcMugshots.Clear();
 
             if (!ModsViewIsZoomLocked)
@@ -468,12 +472,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 ModsViewHasUserManuallyZoomed = false;
             }
 
-            var mugshotVMs = new List<VM_ModsMenuMugshot>();
+            // Create a temporary list to hold data for VM creation. This is thread-safe.
+            var mugshotCreationData = new List<(string ImagePath, FormKey NpcFormKey, string NpcDisplayName, bool IsAmbiguous, List<ModKey> AvailablePlugins, ModKey? CurrentSource)>();
 
             try
             {
-                // Attempt to load real mugshots if the path is valid and HasValidMugshots is true
-                // HasValidMugshots (from OriginalCheckMugshotValidityLogic) indicates if the folder itself contains any validly structured images.
+                // Gather data on a background thread without creating view models
                 if (selectedModSetting.HasValidMugshots &&
                     !string.IsNullOrWhiteSpace(selectedModSetting.MugShotFolderPath) &&
                     Directory.Exists(selectedModSetting.MugShotFolderPath))
@@ -538,9 +542,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                             currentSource = availableModKeys.FirstOrDefault();
                                         }
                                     }
-
-                                    mugshotVMs.Add(new VM_ModsMenuMugshot(imagePath, npcFormKey, npcDisplayName, this,
-                                        isAmbiguous, availableModKeys, currentSource, selectedModSetting));
+                                    // Add the data to the temporary list instead of creating the VM here
+                                    mugshotCreationData.Add((imagePath, npcFormKey, npcDisplayName, isAmbiguous, availableModKeys, currentSource));
                                 }
                                 catch (Exception ex)
                                 {
@@ -552,12 +555,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     });
                 }
 
-                // If NO real mugshots were loaded AND placeholder exists, load placeholders for NPCs known to this ModSetting.
-                // This covers:
-                // 1. MugShotFolderPath was not set.
-                // 2. MugShotFolderPath was set, but HasValidMugshots was false (folder empty or no structured images).
-                // 3. MugShotFolderPath was set, HasValidMugshots was true, but the loop above found no images actually corresponding to displayable entities.
-                if (!mugshotVMs.Any() && PlaceholderExists)
+                if (!mugshotCreationData.Any() && PlaceholderExists)
                 {
                     if (selectedModSetting.NpcFormKeysToDisplayName.Any())
                     {
@@ -588,9 +586,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                         currentSource = availableModKeys.FirstOrDefault();
                                     }
                                 }
-
-                                mugshotVMs.Add(new VM_ModsMenuMugshot(FullPlaceholderPath, npcFormKey, npcDisplayName,
-                                    this, isAmbiguous, availableModKeys, currentSource, selectedModSetting));
+                                // Add placeholder data to the temporary list
+                                mugshotCreationData.Add((FullPlaceholderPath, npcFormKey, npcDisplayName, isAmbiguous, availableModKeys, currentSource));
                             }
                         });
                     }
@@ -601,8 +598,24 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                 }
 
+                // Now, back on the UI thread, create the VMs from the collected data.
+                var mugshotVMs = mugshotCreationData
+                    .Select(data => new VM_ModsMenuMugshot(
+                        data.ImagePath,
+                        data.NpcFormKey,
+                        data.NpcDisplayName,
+                        this,
+                        data.IsAmbiguous,
+                        data.AvailablePlugins,
+                        data.CurrentSource,
+                        selectedModSetting,
+                        _consistencyProvider))
+                    .OrderBy(vm => vm.NpcDisplayName)
+                    .ToList();
+
+                CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
                 CurrentModNpcMugshots.Clear();
-                foreach (var vm in mugshotVMs.OrderBy(vm => vm.NpcDisplayName))
+                foreach (var vm in mugshotVMs)
                     CurrentModNpcMugshots.Add(vm);
             }
             catch (Exception ex)
@@ -610,6 +623,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 ScrollableMessageBox.ShowWarning(
                     $"Failed to load mugshot data for {selectedModSetting.DisplayName}:\n{ex.Message}",
                     "Mugshot Load Error");
+                CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
                 CurrentModNpcMugshots.Clear();
             }
             finally
@@ -624,7 +638,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public void Dispose() // If VM_Mods needs to be disposable
         {
             _disposables.Dispose();
-            // Any other cleanup
+            CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
+            CurrentModNpcMugshots.Clear();
             _requestScrollToModSubject.Dispose(); // Dispose the subject
         }
 

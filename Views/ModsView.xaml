@@ -379,7 +379,7 @@
                          </ItemsControl.ItemsPanel>
                          <ItemsControl.ItemTemplate>
                              <DataTemplate DataType="{x:Type vm:VM_ModsMenuMugshot}">
-                                 <Border BorderThickness="1" BorderBrush="Gray" Margin="5" CornerRadius="2"
+                                 <Border BorderThickness="2" BorderBrush="{Binding BorderColor}" Margin="5" CornerRadius="2"
                                          Width="{Binding ImageWidth}" Height="{Binding ImageHeight}"
                                          PreviewMouseRightButtonDown="MugshotItem_PreviewMouseRightButtonDown"
                                          ToolTip="{Binding NpcDisplayName}">

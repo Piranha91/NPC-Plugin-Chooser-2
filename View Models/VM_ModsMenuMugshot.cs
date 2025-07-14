@@ -12,14 +12,19 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel; 
 using System.Linq; 
 using System.Diagnostics;
-using System.Reactive.Linq; // For Debug.WriteLine
+using System.Reactive.Disposables;
+using System.Reactive.Linq;
+using System.Windows.Media;
+using NPC_Plugin_Chooser_2.BackEnd; // For Debug.WriteLine
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
-    public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage
+    public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     {
         private readonly VM_Mods _parentVMMaster; 
         private readonly VM_ModSetting _parentVMModSetting; 
+        private readonly NpcConsistencyProvider _consistencyProvider;
+        private readonly CompositeDisposable _disposables = new();
 
         public string ImagePath { get; set; } 
         public FormKey NpcFormKey { get; }
@@ -32,6 +37,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool HasMugshot { get; private set; } 
         public bool IsVisible { get; set; }  
 
+        [Reactive] public bool IsSelected { get; set; }
+        [Reactive] public SolidColorBrush BorderColor { get; set; }
+        private readonly SolidColorBrush _selectedBrush = new(Colors.LimeGreen);
+        private readonly SolidColorBrush _deselectedBrush = new(Colors.Gray);
+        
         public int OriginalPixelWidth { get; set; }
         public int OriginalPixelHeight { get; set; }
         public double OriginalDipWidth { get; set; }
@@ -58,15 +68,37 @@ namespace NPC_Plugin_Chooser_2.View_Models
             bool isAmbiguousSource,                 
             List<ModKey> availableSourcePlugins,   
             ModKey? currentSourcePlugin,            
-            VM_ModSetting parentVMModSetting)       
+            VM_ModSetting parentVMModSetting,
+            NpcConsistencyProvider consistencyProvider)       
         {
             _parentVMMaster = parentVMMaster;
             _parentVMModSetting = parentVMModSetting; 
+            _consistencyProvider = consistencyProvider;
             ImagePath = imagePath; // Store the given path (could be real or placeholder)
             NpcFormKey = npcFormKey;
             NpcDisplayName = npcDisplayName;
             IsVisible = true; 
 
+            // START MODIFIED SECTION
+            // Set initial selection state based on the consistency provider
+            IsSelected = _consistencyProvider.IsModSelected(NpcFormKey, _parentVMModSetting.DisplayName);
+
+            // Set initial border color and subscribe to future changes in selection
+            BorderColor = IsSelected ? _selectedBrush : _deselectedBrush;
+            this.WhenAnyValue(x => x.IsSelected)
+                .Skip(1) // Skip the initial value
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(selected => BorderColor = selected ? _selectedBrush : _deselectedBrush)
+                .DisposeWith(_disposables);
+
+            // Subscribe to global selection changes to keep this mugshot's border up to date
+            _consistencyProvider.NpcSelectionChanged
+                .Where(args => args.NpcFormKey == this.NpcFormKey)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(args => IsSelected = (args.SelectedMod == _parentVMModSetting.DisplayName))
+                .DisposeWith(_disposables);
+            // END MODIFIED SECTION
+            
             IsAmbiguousSource = isAmbiguousSource;
             CurrentSourcePlugin = currentSourcePlugin;
 
@@ -195,6 +227,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
             // No need to call anything on _parentVMMaster (VM_Mods) to refresh the whole panel.
+        }
+        
+        public void Dispose()
+        {
+            _disposables.Dispose();
         }
     }
 }
