@@ -40,6 +40,11 @@ public class AssetHandler : OptionalUIModule
     // This dictionary tracks all requested asset operations to ensure each asset is processed only once.
     // The key is the asset's relative path, and the value is the task that handles its processing.
     private readonly ConcurrentDictionary<string, Task> _processedAssetTasks = new(StringComparer.OrdinalIgnoreCase);
+    
+    // ADD THIS FIELD:
+    // This semaphore limits how many NIFs we process at the same time.
+    // Initializing with Environment.ProcessorCount is a safe default.
+    private readonly SemaphoreSlim _nifProcessingSemaphore = new(Environment.ProcessorCount);
 
     public AssetHandler(EnvironmentStateProvider environmentStateProvider, BsaHandler bsaHandler, RecordHandler recordHandler,
         Lazy<VM_Run> runVM)
@@ -176,29 +181,39 @@ public class AssetHandler : OptionalUIModule
     {
         return _processedAssetTasks.GetOrAdd(relativePath, (relPath) => Task.Run(async () =>
         {
-            var (sourceType, sourcePath, bsaPath) = FindAssetSource(relPath, modSetting);
-
-            string destPath = Path.Combine(outputBasePath, relPath);
-
-            switch (sourceType)
+            await _nifProcessingSemaphore.WaitAsync();
+            try
             {
-                case AssetSourceType.LooseFile:
-                    if (await PerformLooseCopyAsync(sourcePath, destPath))
-                    {
-                        await PostProcessNifTextures(destPath, modSetting, outputBasePath);
-                    }
-                    break;
+                var (sourceType, sourcePath, bsaPath) = FindAssetSource(relPath, modSetting);
+                string destPath = Path.Combine(outputBasePath, relPath);
 
-                case AssetSourceType.BsaFile:
-                    if (await _bsaHandler.ExtractFileAsync(bsaPath, relPath, destPath))
-                    {
-                        await PostProcessNifTextures(destPath, modSetting, outputBasePath);
-                    }
-                    break;
+                switch (sourceType)
+                {
+                    case AssetSourceType.LooseFile:
+                        // Create two tasks: one for copying, one for analyzing the source file.
+                        Task copyTask = PerformLooseCopyAsync(sourcePath, destPath);
+                        Task analysisTask = PostProcessNifTextures(sourcePath, modSetting, outputBasePath);
+                    
+                        // Await both tasks to run them in parallel.
+                        await Task.WhenAll(copyTask, analysisTask);
+                        break;
+
+                    case AssetSourceType.BsaFile:
+                        // For BSAs, we must extract first, then analyze the extracted file.
+                        // The original sequential logic is still best here.
+                        if (await _bsaHandler.ExtractFileAsync(bsaPath, relPath, destPath))
+                        {
+                            await PostProcessNifTextures(destPath, modSetting, outputBasePath);
+                        }
+                        break;
                 
-                default:
-                    // Optionally log missing assets here. Note that SchduleCopyNpcAssets already does this.
-                    break;
+                    default:
+                        break;
+                }
+            }
+            finally
+            {
+                _nifProcessingSemaphore.Release();
             }
         }));
     }
@@ -228,13 +243,15 @@ public class AssetHandler : OptionalUIModule
     /// After a file is copied/extracted, this checks if it is a NIF file. If so, it parses it
     /// for texture paths and recursively requests those assets.
     /// </summary>
-    private async Task PostProcessNifTextures(string filePath, ModSetting modSetting, string outputBasePath)
+    private async Task PostProcessNifTextures(string nifPathToAnalyze, ModSetting modSetting, string outputBasePath)
     {
-        if (!filePath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)) return;
+        // The check now correctly uses the passed-in path.
+        if (!nifPathToAnalyze.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)) return;
 
         try
         {
-            var texturesInNif = NifHandler.GetExtraTexturesFromNif(filePath);
+            // The analysis now happens on the source NIF file.
+            var texturesInNif = NifHandler.GetExtraTexturesFromNif(nifPathToAnalyze);
             var regularizedPaths = new HashSet<string>();
             foreach (var t in texturesInNif)
             {
@@ -246,19 +263,19 @@ public class AssetHandler : OptionalUIModule
 
             if (!regularizedPaths.Any()) return;
 
-            Debug.WriteLine($"      NIF Analysis: Found {regularizedPaths.Count} additional textures in {Path.GetFileName(filePath)}.");
+            // This debug message remains useful.
+            Debug.WriteLine($"      NIF Analysis: Found {regularizedPaths.Count} additional textures in {Path.GetFileName(nifPathToAnalyze)}.");
 
             var textureTasks = new List<Task>();
             foreach (var texRelPath in regularizedPaths)
             {
-                // Recursively request the textures found inside the NIF.
                 textureTasks.Add(RequestAssetCopyAsync(texRelPath, modSetting, outputBasePath));
             }
             await Task.WhenAll(textureTasks);
         }
         catch (Exception ex)
         {
-            AppendLog($"NIF TEXTURE ERROR: Failed to parse '{filePath}' for additional textures: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
+            AppendLog($"NIF TEXTURE ERROR: Failed to parse '{nifPathToAnalyze}' for additional textures: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
         }
     }
 
