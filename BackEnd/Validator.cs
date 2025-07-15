@@ -13,11 +13,11 @@ public class Validator : OptionalUIModule
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly Settings _settings;
     private readonly AssetHandler _assetHandler;
-    
+
     private Dictionary<FormKey, ScreeningResult> _screeningCache = new();
-    
+
     public record ValidationReport(List<string> InvalidSelections);
-    
+
     // Constructor updated to include AssetHandler for optimized directory checks.
     public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, AssetHandler assetHandler)
     {
@@ -30,9 +30,13 @@ public class Validator : OptionalUIModule
     {
         return _screeningCache;
     }
-    
-    public async Task<ValidationReport> ScreenSelectionsAsync(Dictionary<string, ModSetting> modSettingsMap, CancellationToken ct)
+
+    public async Task<ValidationReport> ScreenSelectionsAsync(Dictionary<string, ModSetting> modSettingsMap,
+        CancellationToken ct)
     {
+#if DEBUG
+        ContextualPerformanceTracer.Reset();
+#endif
         AppendLog("\nStarting pre-run screening of NPC selections...", false, false);
         _screeningCache = new Dictionary<FormKey, ScreeningResult>();
         var invalidSelections = new List<string>();
@@ -47,6 +51,8 @@ public class Validator : OptionalUIModule
 
         var selectionsList = selections.ToList();
         int totalToScreen = selectionsList.Count;
+        INpcGetter? winningNpcOverride = null;
+        ModSetting? appearanceModSetting = null;
 
         for (int i = 0; i < totalToScreen; i++)
         {
@@ -56,45 +62,73 @@ public class Validator : OptionalUIModule
             var npcFormKey = kvp.Key;
             var selectedModDisplayName = kvp.Value;
             string npcIdentifier = npcFormKey.ToString();
-            
+
             bool shouldUpdateUI = (i % 100 == 0) || (i == totalToScreen - 1);
 
-            if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var winningNpcOverride))
+#if DEBUG
+            using (ContextualPerformanceTracer.Trace("Validator.ResolveNpcOverride"))
             {
-                var errorMsg = $"Could not resolve winning NPC override for {npcFormKey}. The NPC may not exist in your current load order. This selection will be skipped.";
-                AppendLog($"  SCREENING WARNING: {errorMsg}");
-                invalidSelections.Add($"{npcFormKey} -> '{selectedModDisplayName}' (Base NPC not found in load order)");
-                if (shouldUpdateUI)
+#endif
+                if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out winningNpcOverride))
                 {
-                    UpdateProgress(i + 1, totalToScreen, $"Screening: {npcIdentifier}");
-                }
-                await Task.Delay(1, ct);
-                continue;
-            }
+                    var errorMsg =
+                        $"Could not resolve winning NPC override for {npcFormKey}. The NPC may not exist in your current load order. This selection will be skipped.";
+                    AppendLog($"  SCREENING WARNING: {errorMsg}");
+                    invalidSelections.Add(
+                        $"{npcFormKey} -> '{selectedModDisplayName}' (Base NPC not found in load order)");
+                    if (shouldUpdateUI)
+                    {
+                        UpdateProgress(i + 1, totalToScreen, $"Screening: {npcIdentifier}");
+                    }
 
-            npcIdentifier = $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
-            
+                    await Task.Delay(1, ct);
+                    continue;
+                }
+#if DEBUG
+            }
+#endif
+            npcIdentifier =
+                $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
+
             if (shouldUpdateUI)
             {
                 UpdateProgress(i + 1, totalToScreen, $"Screening: {npcIdentifier}");
             }
-            
-            if (!modSettingsMap.TryGetValue(selectedModDisplayName, out var appearanceModSetting))
-            {
-                AppendLog($"  SCREENING ERROR: Cannot find Mod Setting '{selectedModDisplayName}' for NPC {npcIdentifier}. This selection is invalid.", true);
-                invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod Setting not found)");
-                await Task.Delay(1, ct);
-                continue;
-            }
 
-            if (appearanceModSetting.CorrespondingFolderPaths.Any() && 
-                !appearanceModSetting.CorrespondingFolderPaths.Any(path => _assetHandler.IsModFolderPathCached(appearanceModSetting.DisplayName, path)))
+#if DEBUG
+            using (ContextualPerformanceTracer.Trace("Validator.GetModSetting"))
             {
-                AppendLog($"  SCREENING ERROR: For NPC {npcIdentifier}, none of the specified folders for mod '{selectedModDisplayName}' exist on disk. This selection is invalid.", true);
-                invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod folder not found)");
-                continue;
+#endif
+                if (!modSettingsMap.TryGetValue(selectedModDisplayName, out appearanceModSetting))
+                {
+                    AppendLog(
+                        $"  SCREENING ERROR: Cannot find Mod Setting '{selectedModDisplayName}' for NPC {npcIdentifier}. This selection is invalid.",
+                        true);
+                    invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod Setting not found)");
+                    await Task.Delay(1, ct);
+                    continue;
+                }
+#if DEBUG
             }
+#endif
+#if DEBUG
+            using (ContextualPerformanceTracer.Trace("Validator.CheckFolderPaths"))
+            {
+#endif
 
+                if (appearanceModSetting.CorrespondingFolderPaths.Any() &&
+                    !appearanceModSetting.CorrespondingFolderPaths.Any(path =>
+                        _assetHandler.IsModFolderPathCached(appearanceModSetting.DisplayName, path)))
+                {
+                    AppendLog(
+                        $"  SCREENING ERROR: For NPC {npcIdentifier}, none of the specified folders for mod '{selectedModDisplayName}' exist on disk. This selection is invalid.",
+                        true);
+                    invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod folder not found)");
+                    continue;
+                }
+#if DEBUG
+            }
+#endif
             _screeningCache[npcFormKey] = new ScreeningResult(
                 true,
                 winningNpcOverride,
@@ -106,8 +140,13 @@ public class Validator : OptionalUIModule
 
         UpdateProgress(totalToScreen, totalToScreen, "Screening Complete.");
         AppendLog($"Screening finished. Found {invalidSelections.Count} invalid selections.");
-        
+
         ct.ThrowIfCancellationRequested();
+        
+#if DEBUG
+        var perfReport = ContextualPerformanceTracer.GenerateValidationReport();
+        AppendLog(perfReport, true, true);
+#endif
 
         // The logic for showing the popup is removed from this class.
         // We now simply return the list of invalid selections.

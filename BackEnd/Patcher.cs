@@ -165,9 +165,6 @@ public class Patcher : OptionalUIModule
                 }
             }
 
-            ContextualPerformanceTracer.ResetAndStartSampling("Mod-Added", 250);
-            bool profilingReportGenerated = false;
-
             AppendLog("\nProcessing Valid NPC Appearance Selections...");
 
             if (!selectionsToProcess.Any())
@@ -189,25 +186,30 @@ public class Patcher : OptionalUIModule
                 foreach (var npcGroup in groupedSelections)
                 {
                     ct.ThrowIfCancellationRequested();
+                    
+                    ContextualPerformanceTracer.Reset();
 
                     // BATCH RESOURCE LOADING
                     AppendLog($"\n--- Loading resources for batch: {npcGroup.Key} ---", false, true);
                     ModSetting? currentModSetting = null;
                     List<ModKey> modKeysForBatch = new();
 
-                    if (_modSettingsMap.TryGetValue(npcGroup.Key, out currentModSetting) && currentModSetting != null)
+                    using (ContextualPerformanceTracer.Trace("Patcher.BatchResourceLoading"))
                     {
-                        modKeysForBatch.AddRange(currentModSetting.CorrespondingModKeys);
-                        _pluginProvider.LoadPlugins(modKeysForBatch);
-                        _recordHandler.PrimeLinkCachesFor(modKeysForBatch);
-                        _recordHandler.ResetMapping();
-                        _bsaHandler.OpenBsaReadersFor(currentModSetting);
-                    }
-                    else
-                    {
-                        AppendLog(
-                            $"Note: Batch '{npcGroup.Key}' has no associated mod setting. Processing with standard resources.",
-                            false, true);
+                        if (_modSettingsMap.TryGetValue(npcGroup.Key, out currentModSetting) && currentModSetting != null)
+                        {
+                            modKeysForBatch.AddRange(currentModSetting.CorrespondingModKeys);
+                            _pluginProvider.LoadPlugins(modKeysForBatch);
+                            _recordHandler.PrimeLinkCachesFor(modKeysForBatch);
+                            _recordHandler.ResetMapping();
+                            _bsaHandler.OpenBsaReadersFor(currentModSetting);
+                        }
+                        else
+                        {
+                            AppendLog(
+                                $"Note: Batch '{npcGroup.Key}' has no associated mod setting. Processing with standard resources.",
+                                false, true);
+                        }
                     }
 
                     _recordDeltaPatcher.Reinitialize();
@@ -537,15 +539,6 @@ public class Patcher : OptionalUIModule
                             await Task.Delay(1, ct);
                             continue;
                         }
-
-                        if (!profilingReportGenerated && ContextualPerformanceTracer.SampleLimitReached)
-                        {
-                            AppendLog(
-                                "\n>>>>> Profiling sample limit reached. Generating performance report... <<<<<\n",
-                                true, true);
-                            AppendLog(ContextualPerformanceTracer.GetReport(), true, true);
-                            profilingReportGenerated = true;
-                        }
                         
                         // Add data for the token file after the NPC is successfully processed.
                         if (appearanceModKey.HasValue)
@@ -557,6 +550,10 @@ public class Patcher : OptionalUIModule
                         await Task.Delay(5, ct);
                     }
 
+                    //Generate and log the performance report for the completed group.
+                    var perfReport = ContextualPerformanceTracer.GenerateReportForGroup(npcGroup.Key);
+                    AppendLog(perfReport, true, true);
+                    
                     // BATCH RESOURCE UNLOADING
                     if (modKeysForBatch.Any())
                     {
