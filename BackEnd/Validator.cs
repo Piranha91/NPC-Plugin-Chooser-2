@@ -34,9 +34,7 @@ public class Validator : OptionalUIModule
     public async Task<ValidationReport> ScreenSelectionsAsync(Dictionary<string, ModSetting> modSettingsMap,
         CancellationToken ct)
     {
-#if DEBUG
         ContextualPerformanceTracer.Reset();
-#endif
         AppendLog("\nStarting pre-run screening of NPC selections...", false, false);
         _screeningCache = new Dictionary<FormKey, ScreeningResult>();
         var invalidSelections = new List<string>();
@@ -64,11 +62,9 @@ public class Validator : OptionalUIModule
             string npcIdentifier = npcFormKey.ToString();
 
             bool shouldUpdateUI = (i % 100 == 0) || (i == totalToScreen - 1);
-
-#if DEBUG
+            
             using (ContextualPerformanceTracer.Trace("Validator.ResolveNpcOverride"))
             {
-#endif
                 if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out winningNpcOverride))
                 {
                     var errorMsg =
@@ -84,9 +80,7 @@ public class Validator : OptionalUIModule
                     await Task.Delay(1, ct);
                     continue;
                 }
-#if DEBUG
             }
-#endif
             npcIdentifier =
                 $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
 
@@ -94,11 +88,9 @@ public class Validator : OptionalUIModule
             {
                 UpdateProgress(i + 1, totalToScreen, $"Screening: {npcIdentifier}");
             }
-
-#if DEBUG
+            
             using (ContextualPerformanceTracer.Trace("Validator.GetModSetting"))
             {
-#endif
                 if (!modSettingsMap.TryGetValue(selectedModDisplayName, out appearanceModSetting))
                 {
                     AppendLog(
@@ -108,13 +100,10 @@ public class Validator : OptionalUIModule
                     await Task.Delay(1, ct);
                     continue;
                 }
-#if DEBUG
             }
-#endif
-#if DEBUG
+
             using (ContextualPerformanceTracer.Trace("Validator.CheckFolderPaths"))
             {
-#endif
 
                 if (appearanceModSetting.CorrespondingFolderPaths.Any() &&
                     !appearanceModSetting.CorrespondingFolderPaths.Any(path =>
@@ -126,16 +115,22 @@ public class Validator : OptionalUIModule
                     invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod folder not found)");
                     continue;
                 }
-#if DEBUG
             }
-#endif
             _screeningCache[npcFormKey] = new ScreeningResult(
                 true,
                 winningNpcOverride,
                 appearanceModSetting
             );
 
-            await Task.Delay(1, ct);
+            /*
+             * Task.Delay(1) does not pause for exactly one millisecond. It pauses for at least one millisecond, but the actual duration is limited by the OS timer resolution.
+             * On Windows, the default timer resolution is typically ~15.6 milliseconds. This means any delay request shorter than that gets rounded up to the next "tick" of the system clock.
+             * Therefore, add a reasonable polling interval for the delay. It doesn't need to be responsive down to 15 ms.
+             */
+            if (i % 100 == 0)
+            {
+                await Task.Delay(1, ct);
+            }
         }
 
         UpdateProgress(totalToScreen, totalToScreen, "Screening Complete.");
@@ -143,10 +138,8 @@ public class Validator : OptionalUIModule
 
         ct.ThrowIfCancellationRequested();
         
-#if DEBUG
         var perfReport = ContextualPerformanceTracer.GenerateValidationReport();
         AppendLog(perfReport, true, true);
-#endif
 
         // The logic for showing the popup is removed from this class.
         // We now simply return the list of invalid selections.

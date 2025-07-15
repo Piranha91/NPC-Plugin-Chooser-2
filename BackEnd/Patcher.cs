@@ -246,9 +246,8 @@ public class Patcher : OptionalUIModule
                             {
                                 UpdateProgress(overallProgressCounter, totalToProcess,
                                     $"Skipped: {npcIdentifier}");
+                                await Task.Yield(); // Also yield here to keep UI responsive on skipped blocks
                             }
-
-                            await Task.Delay(1, ct);
                             continue;
                         }
 
@@ -256,6 +255,8 @@ public class Patcher : OptionalUIModule
                         {
                             UpdateProgress(overallProgressCounter, totalToProcess,
                                 $"Processing: {winningNpcOverride.EditorID ?? npcIdentifier}");
+                            // ADD a lightweight yield here.
+                            await Task.Yield();
                         }
 
                         AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'");
@@ -547,7 +548,6 @@ public class Patcher : OptionalUIModule
                         }
 
                         processedCount++;
-                        await Task.Delay(5, ct);
                     }
 
                     //Generate and log the performance report for the completed group.
