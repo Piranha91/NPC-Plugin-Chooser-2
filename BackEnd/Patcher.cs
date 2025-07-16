@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Assets;
@@ -66,13 +66,10 @@ public class Patcher : OptionalUIModule
     public async Task RunPatchingLogic(string SelectedNpcGroup, CancellationToken ct)
     {
         ResetLog();
-        //ResetProgress(); Do not call ResetProgress here as it interferes with timer display
         UpdateProgress(0, 1, "Initializing...");
         AppendLog("Starting patch generation...");
 
-        // This dictionary will hold the data for the NPC_Token.json file.
         var processedNpcsTokenData = new Dictionary<FormKey, (string ModName, ModKey AppearancePlugin)>();
-
 
         if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
         {
@@ -92,7 +89,7 @@ public class Patcher : OptionalUIModule
         {
             BuildModSettingsMap();
         }
-        
+
         var screeningCache = _validator.GetScreeningCache();
         var selectionsToProcess = screeningCache.Where(kv => kv.Value.SelectionIsValid).ToList();
 
@@ -174,7 +171,6 @@ public class Patcher : OptionalUIModule
             else
             {
                 var groupedSelections = selectionsToProcess
-                    // Note: The GroupBy key now uses the AppearanceModSetting from the simplified ScreeningResult
                     .GroupBy(kv => kv.Value.AppearanceModSetting?.DisplayName ?? "[FaceGen/No ModSetting]")
                     .OrderBy(g => g.Key);
 
@@ -186,17 +182,19 @@ public class Patcher : OptionalUIModule
                 foreach (var npcGroup in groupedSelections)
                 {
                     ct.ThrowIfCancellationRequested();
-                    
+
                     ContextualPerformanceTracer.Reset();
 
-                    // BATCH RESOURCE LOADING
                     AppendLog($"\n--- Loading resources for batch: {npcGroup.Key} ---", false, true);
-                    ModSetting? currentModSetting = null;
-                    List<ModKey> modKeysForBatch = new();
 
-                    using (ContextualPerformanceTracer.Trace("Patcher.BatchResourceLoading"))
+                    List<ModKey> modKeysForBatch = new();
+                    
+                    await Task.Run(() =>
                     {
-                        if (_modSettingsMap.TryGetValue(npcGroup.Key, out currentModSetting) && currentModSetting != null)
+                        ModSetting? currentModSetting = null;
+
+                        if (_modSettingsMap.TryGetValue(npcGroup.Key, out currentModSetting) &&
+                            currentModSetting != null)
                         {
                             modKeysForBatch.AddRange(currentModSetting.CorrespondingModKeys);
                             _pluginProvider.LoadPlugins(modKeysForBatch);
@@ -210,7 +208,7 @@ public class Patcher : OptionalUIModule
                                 $"Note: Batch '{npcGroup.Key}' has no associated mod setting. Processing with standard resources.",
                                 false, true);
                         }
-                    }
+                    });
 
                     _recordDeltaPatcher.Reinitialize();
 
@@ -221,18 +219,12 @@ public class Patcher : OptionalUIModule
                         var kvp = npcsInGroup[i];
                         var npcFormKey = kvp.Key;
                         var result = kvp.Value;
-
-                        // Unpack the simplified screening result
                         var winningNpcOverride = result.WinningNpcOverride;
                         var appearanceModSetting = result.AppearanceModSetting;
 
                         string selectedModDisplayName = appearanceModSetting?.DisplayName ?? "N/A";
                         string npcIdentifier =
                             $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
-
-                        using var _context =
-                            ContextualPerformanceTracer.BeginContext(winningNpcOverride.FormKey.ModKey);
-                        using var _ = ContextualPerformanceTracer.Trace("Patcher.MainLoopIteration");
 
                         bool shouldUpdateUI = (overallProgressCounter % 10 == 0) ||
                                               (overallProgressCounter == totalToProcess) ||
@@ -246,8 +238,9 @@ public class Patcher : OptionalUIModule
                             {
                                 UpdateProgress(overallProgressCounter, totalToProcess,
                                     $"Skipped: {npcIdentifier}");
-                                await Task.Yield(); // Also yield here to keep UI responsive on skipped blocks
+                                await Task.Yield();
                             }
+
                             continue;
                         }
 
@@ -255,306 +248,306 @@ public class Patcher : OptionalUIModule
                         {
                             UpdateProgress(overallProgressCounter, totalToProcess,
                                 $"Processing: {winningNpcOverride.EditorID ?? npcIdentifier}");
-                            // ADD a lightweight yield here.
                             await Task.Yield();
                         }
 
-                        AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'");
-
-                        // ========================= NEW LOGIC MOVED FROM VALIDATOR =========================
-                        // The Patcher now resolves the specific appearance record just-in-time.
-
-                        INpcGetter? appearanceNpcRecord = null;
-                        ModKey? appearanceModKey = null;
-                        bool correspondingRecordFound = false;
-
-                        // 1. Handle user-specified disambiguation first
-                        if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey,
-                                out var disambiguationKey) &&
-                            _recordHandler.TryGetRecordGetterFromMod(npcFormKey.ToLink<INpcGetter>(), disambiguationKey,
-                                RecordHandler.RecordLookupFallBack.None, out var disambiguatedRecord) &&
-                            disambiguatedRecord != null)
+                        await Task.Run(async () =>
                         {
-                            appearanceNpcRecord = disambiguatedRecord as INpcGetter;
-                            appearanceModKey = disambiguationKey;
-                            correspondingRecordFound = true;
-                            AppendLog(
-                                $"    Source: Found specific plugin record override in {disambiguationKey.FileName} (disambiguated).");
-                        }
-                        else
-                        {
-                            // 2. If no valid disambiguation, search all plugins associated with the mod setting
-                            if (appearanceModSetting.CorrespondingModKeys.Any())
+                            using var _context =
+                                ContextualPerformanceTracer.BeginContext(winningNpcOverride.FormKey.ModKey);
+                            using var _ = ContextualPerformanceTracer.Trace("Patcher.MainLoopIteration");
+
+                            AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'");
+
+                            INpcGetter? appearanceNpcRecord = null;
+                            ModKey? appearanceModKey = null;
+                            bool correspondingRecordFound = false;
+
+                            if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey,
+                                    out var disambiguationKey) &&
+                                _recordHandler.TryGetRecordGetterFromMod(npcFormKey.ToLink<INpcGetter>(),
+                                    disambiguationKey,
+                                    RecordHandler.RecordLookupFallBack.None, out var disambiguatedRecord) &&
+                                disambiguatedRecord != null)
                             {
-                                foreach (var candidateKey in appearanceModSetting.CorrespondingModKeys)
+                                appearanceNpcRecord = disambiguatedRecord as INpcGetter;
+                                appearanceModKey = disambiguationKey;
+                                correspondingRecordFound = true;
+                                AppendLog(
+                                    $"    Source: Found specific plugin record override in {disambiguationKey.FileName} (disambiguated).");
+                            }
+                            else
+                            {
+                                if (appearanceModSetting.CorrespondingModKeys.Any())
                                 {
-                                    if (_recordHandler.TryGetRecordGetterFromMod(npcFormKey.ToLink<INpcGetter>(),
-                                            candidateKey, RecordHandler.RecordLookupFallBack.None, out var record) &&
-                                        record != null)
+                                    foreach (var candidateKey in appearanceModSetting.CorrespondingModKeys)
                                     {
-                                        appearanceNpcRecord = record as INpcGetter;
-                                        appearanceModKey = candidateKey;
-                                        correspondingRecordFound = true;
-                                        AppendLog(
-                                            $"    Source: Found plugin record override in {candidateKey.FileName}.");
-                                        break; // Use the first one found
+                                        if (_recordHandler.TryGetRecordGetterFromMod(npcFormKey.ToLink<INpcGetter>(),
+                                                candidateKey, RecordHandler.RecordLookupFallBack.None,
+                                                out var record) &&
+                                            record != null)
+                                        {
+                                            appearanceNpcRecord = record as INpcGetter;
+                                            appearanceModKey = candidateKey;
+                                            correspondingRecordFound = true;
+                                            AppendLog(
+                                                $"    Source: Found plugin record override in {candidateKey.FileName}.");
+                                            break;
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        // 3. Fallback for mods without a plugin record for this NPC (e.g., asset-only replacers)
-                        if (!correspondingRecordFound)
-                        {
-                            AppendLog(
-                                $"    Source: No specific plugin record override found in '{selectedModDisplayName}'. Using winning override from load order as the base for assets.");
-                            appearanceNpcRecord = winningNpcOverride; // Use the final override from the load order
-                            appearanceModKey = winningNpcOverride.FormKey.ModKey;
-                        }
-                        // ============================ END OF NEW LOGIC ============================
-
-                        Npc? patchNpc = null;
-                        var mergeInDependencyRecords = appearanceModSetting?.MergeInDependencyRecords ?? false;
-                        var recordOverrideHandlingMode = appearanceModSetting?.ModRecordOverrideHandlingMode ??
-                                                         _settings.DefaultRecordOverrideHandlingMode;
-                        List<IAssetLinkGetter> assetLinks = new();
-
-                        if (appearanceNpcRecord != null)
-                        {
-                            AppendLog("    Source: Plugin Record Override");
-
-                            switch (_settings.PatchingMode)
+                            if (!correspondingRecordFound)
                             {
-                                case PatchingMode.EasyNPC_Like:
-                                    AppendLog(
-                                        $"      Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {appearanceModKey?.FileName ?? "N/A"}.");
-                                    patchNpc =
-                                        _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(winningNpcOverride);
-                                    var mergedInAppearanceRecords = CopyAppearanceData(appearanceNpcRecord, patchNpc,
-                                        appearanceModSetting, appearanceModKey.Value, npcIdentifier,
-                                        mergeInDependencyRecords);
-                                    _aux.CollectShallowAssetLinks(mergedInAppearanceRecords, assetLinks);
-                                    if (mergeInDependencyRecords)
-                                    {
-                                        List<string> mergeInExceptions = new();
-                                        var mergedInRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(
-                                            _environmentStateProvider.OutputMod, patchNpc,
-                                            appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true,
-                                            ref mergeInExceptions);
-                                        if (mergeInExceptions.Any())
+                                AppendLog(
+                                    $"    Source: No specific plugin record override found in '{selectedModDisplayName}'. Using winning override from load order as the base for assets.");
+                                appearanceNpcRecord = winningNpcOverride;
+                                appearanceModKey = winningNpcOverride.FormKey.ModKey;
+                            }
+
+                            Npc? patchNpc = null;
+                            var mergeInDependencyRecords = appearanceModSetting?.MergeInDependencyRecords ?? false;
+                            var recordOverrideHandlingMode = appearanceModSetting?.ModRecordOverrideHandlingMode ??
+                                                             _settings.DefaultRecordOverrideHandlingMode;
+                            List<IAssetLinkGetter> assetLinks = new();
+
+                            if (appearanceNpcRecord != null)
+                            {
+                                AppendLog("    Source: Plugin Record Override");
+
+                                switch (_settings.PatchingMode)
+                                {
+                                    case PatchingMode.EasyNPC_Like:
+                                        AppendLog(
+                                            $"      Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {appearanceModKey?.FileName ?? "N/A"}.");
+                                        patchNpc =
+                                            _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(
+                                                winningNpcOverride);
+                                        var mergedInAppearanceRecords = CopyAppearanceData(appearanceNpcRecord,
+                                            patchNpc,
+                                            appearanceModSetting, appearanceModKey.Value, npcIdentifier,
+                                            mergeInDependencyRecords);
+                                        _aux.CollectShallowAssetLinks(mergedInAppearanceRecords, assetLinks);
+                                        if (mergeInDependencyRecords)
                                         {
-                                            AppendLog("Exceptions occurred during dependency merge-in of " +
-                                                      Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine +
-                                                      string.Join(Environment.NewLine, mergeInExceptions));
+                                            List<string> mergeInExceptions = new();
+                                            var mergedInRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(
+                                                _environmentStateProvider.OutputMod, patchNpc,
+                                                appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true,
+                                                ref mergeInExceptions);
+                                            if (mergeInExceptions.Any())
+                                            {
+                                                AppendLog("Exceptions occurred during dependency merge-in of " +
+                                                          Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine +
+                                                          string.Join(Environment.NewLine, mergeInExceptions));
+                                            }
+
+                                            _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                         }
 
-                                        _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
-                                    }
-
-                                    switch (recordOverrideHandlingMode)
-                                    {
-                                        case RecordOverrideHandlingMode.Ignore:
-                                            break;
-                                        case RecordOverrideHandlingMode.Include:
-                                            var dependencyContexts =
-                                                _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
-                                                    appearanceModSetting.CorrespondingModKeys);
-                                            List<MajorRecord> deltaPatchedRecords = new();
-                                            foreach (var ctx in dependencyContexts)
-                                            {
-                                                bool wasDeltaPatched = false;
-                                                if (_recordHandler.TryGetRecordFromMod(ctx.Record.FormKey,
-                                                        ctx.Record.Type,
-                                                        ctx.Record.FormKey.ModKey,
-                                                        RecordHandler.RecordLookupFallBack.None,
-                                                        out var baseRecord) && baseRecord != null)
+                                        switch (recordOverrideHandlingMode)
+                                        {
+                                            case RecordOverrideHandlingMode.Ignore:
+                                                break;
+                                            case RecordOverrideHandlingMode.Include:
+                                                var dependencyContexts =
+                                                    _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
+                                                        appearanceModSetting.CorrespondingModKeys);
+                                                List<MajorRecord> deltaPatchedRecords = new();
+                                                foreach (var ctx in dependencyContexts)
                                                 {
-                                                    if (!_recordHandler.TryGetRecordFromMod(ctx.Record.FormKey,
-                                                            ctx.Record.Type, ctx.ModKey,
+                                                    bool wasDeltaPatched = false;
+                                                    if (_recordHandler.TryGetRecordFromMod(ctx.Record.FormKey,
+                                                            ctx.Record.Type,
+                                                            ctx.Record.FormKey.ModKey,
                                                             RecordHandler.RecordLookupFallBack.None,
-                                                            out var overrideRecord) && baseRecord != null)
+                                                            out var baseRecord) && baseRecord != null)
                                                     {
-                                                        continue;
+                                                        if (!_recordHandler.TryGetRecordFromMod(ctx.Record.FormKey,
+                                                                ctx.Record.Type, ctx.ModKey,
+                                                                RecordHandler.RecordLookupFallBack.None,
+                                                                out var overrideRecord) && baseRecord != null)
+                                                        {
+                                                            continue;
+                                                        }
+
+                                                        List<RecordDeltaPatcher.PropertyDiff> recordDifs =
+                                                            _recordDeltaPatcher.GetPropertyDiffs(overrideRecord,
+                                                                baseRecord);
+                                                        IMajorRecordGetter? winningGetter = null;
+                                                        if (recordDifs is not null && recordDifs.Any() &&
+                                                            _environmentStateProvider.LinkCache.TryResolve(
+                                                                ctx.Record.FormKey,
+                                                                ctx.Record.Type, out winningGetter) &&
+                                                            winningGetter != null)
+                                                        {
+                                                            if (Auxilliary.TryGetOrAddGenericRecordAsOverride(
+                                                                    winningGetter,
+                                                                    _environmentStateProvider.OutputMod,
+                                                                    out var winningRecord,
+                                                                    out string exceptionString) &&
+                                                                winningRecord != null)
+                                                            {
+                                                                _recordDeltaPatcher.ApplyPropertyDiffs(winningRecord,
+                                                                    recordDifs);
+                                                                deltaPatchedRecords.Add(winningRecord);
+                                                            }
+                                                            else
+                                                            {
+                                                                AppendLog(
+                                                                    Auxilliary.GetNpcLogString(patchNpc) +
+                                                                    ": Could not merge in winning override for " +
+                                                                    Auxilliary.GetLogString(winningGetter) + ": " +
+                                                                    exceptionString, true, true);
+                                                            }
+                                                        }
                                                     }
 
-                                                    List<RecordDeltaPatcher.PropertyDiff> recordDifs =
-                                                        _recordDeltaPatcher.GetPropertyDiffs(overrideRecord,
-                                                            baseRecord);
-                                                    IMajorRecordGetter? winningGetter = null;
-                                                    if (recordDifs is not null && recordDifs.Any() &&
-                                                        _environmentStateProvider.LinkCache.TryResolve(
-                                                            ctx.Record.FormKey,
-                                                            ctx.Record.Type, out winningGetter) &&
-                                                        winningGetter != null)
+                                                    if (!wasDeltaPatched)
                                                     {
-                                                        if (Auxilliary.TryGetOrAddGenericRecordAsOverride(winningGetter,
-                                                                _environmentStateProvider.OutputMod,
-                                                                out var winningRecord,
-                                                                out string exceptionString) && winningRecord != null)
-                                                        {
-                                                            _recordDeltaPatcher.ApplyPropertyDiffs(winningRecord,
-                                                                recordDifs);
-                                                            deltaPatchedRecords.Add(winningRecord);
-                                                        }
-                                                        else
-                                                        {
-                                                            AppendLog(
-                                                                Auxilliary.GetNpcLogString(patchNpc) +
-                                                                ": Could not merge in winning override for " +
-                                                                Auxilliary.GetLogString(winningGetter) + ": " +
-                                                                exceptionString, true, true);
-                                                        }
+                                                        ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
                                                     }
                                                 }
 
-                                                if (!wasDeltaPatched)
+                                                if (mergeInDependencyRecords)
+                                                {
+                                                    List<string> mergeInExceptions = new();
+                                                    var importSourceModKeys = appearanceModSetting.CorrespondingModKeys
+                                                        .Distinct().Where(k => k != patchNpc.FormKey.ModKey)
+                                                        .ToHashSet();
+                                                    var additionalMergedRecords =
+                                                        _recordHandler.DuplicateFromOnlyReferencedGetters(
+                                                            _environmentStateProvider.OutputMod, deltaPatchedRecords,
+                                                            importSourceModKeys, appearanceModKey.Value, true,
+                                                            ref mergeInExceptions);
+                                                    if (mergeInExceptions.Any())
+                                                    {
+                                                        AppendLog("Exceptions occurred during dependency merge-in of " +
+                                                                  Auxilliary.GetNpcLogString(patchNpc) +
+                                                                  Environment.NewLine +
+                                                                  string.Join(Environment.NewLine, mergeInExceptions));
+                                                    }
+
+                                                    _aux.CollectShallowAssetLinks(additionalMergedRecords, assetLinks);
+                                                }
+
+                                                _aux.CollectShallowAssetLinks(dependencyContexts, assetLinks);
+                                                break;
+                                            case RecordOverrideHandlingMode.IncludeAsNew:
+                                                List<string> overrideExceptionStrings = new();
+                                                var mergedInRecords = _recordHandler.DuplicateInOverrideRecords(
+                                                    appearanceNpcRecord, patchNpc,
+                                                    appearanceModSetting.CorrespondingModKeys,
+                                                    appearanceModKey.Value, patchNpc.FormKey.ModKey,
+                                                    ref overrideExceptionStrings);
+                                                if (overrideExceptionStrings.Any())
+                                                {
+                                                    AppendLog(
+                                                        string.Join(Environment.NewLine, overrideExceptionStrings),
+                                                        true,
+                                                        true);
+                                                }
+
+                                                _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
+                                                break;
+                                        }
+
+                                        break;
+                                    default:
+                                        AppendLog(
+                                            $"      Mode: Default. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"}).");
+                                        patchNpc =
+                                            _environmentStateProvider.OutputMod.Npcs
+                                                .GetOrAddAsOverride(appearanceNpcRecord);
+                                        if (mergeInDependencyRecords)
+                                        {
+                                            List<string> mergeInExceptions = new();
+                                            var mergedInRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(
+                                                _environmentStateProvider.OutputMod, patchNpc,
+                                                appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true,
+                                                ref mergeInExceptions);
+                                            if (mergeInExceptions.Any())
+                                            {
+                                                AppendLog("Exceptions occurred during dependency merge-in of " +
+                                                          Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine +
+                                                          string.Join(Environment.NewLine, mergeInExceptions));
+                                            }
+
+                                            _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
+                                        }
+
+                                        switch (recordOverrideHandlingMode)
+                                        {
+                                            case RecordOverrideHandlingMode.Ignore:
+                                                break;
+                                            case RecordOverrideHandlingMode.Include:
+                                                var dependencyContexts =
+                                                    _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
+                                                        appearanceModSetting.CorrespondingModKeys);
+                                                foreach (var ctx in dependencyContexts)
                                                 {
                                                     ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
                                                 }
-                                            }
 
-                                            if (mergeInDependencyRecords)
-                                            {
-                                                List<string> mergeInExceptions = new();
-                                                var importSourceModKeys = appearanceModSetting.CorrespondingModKeys
-                                                    .Distinct().Where(k => k != patchNpc.FormKey.ModKey).ToHashSet();
-                                                var additionalMergedRecords =
-                                                    _recordHandler.DuplicateFromOnlyReferencedGetters(
-                                                        _environmentStateProvider.OutputMod, deltaPatchedRecords,
-                                                        importSourceModKeys, appearanceModKey.Value, true,
-                                                        ref mergeInExceptions);
-                                                if (mergeInExceptions.Any())
+                                                _aux.CollectShallowAssetLinks(dependencyContexts, assetLinks);
+                                                break;
+                                            case RecordOverrideHandlingMode.IncludeAsNew:
+                                                List<string> overrideExceptionStrings = new();
+                                                var mergedInRecords = _recordHandler.DuplicateInOverrideRecords(
+                                                    appearanceNpcRecord, patchNpc,
+                                                    appearanceModSetting.CorrespondingModKeys,
+                                                    appearanceModKey.Value, patchNpc.FormKey.ModKey,
+                                                    ref overrideExceptionStrings);
+                                                if (overrideExceptionStrings.Any())
                                                 {
-                                                    AppendLog("Exceptions occurred during dependency merge-in of " +
-                                                              Auxilliary.GetNpcLogString(patchNpc) +
-                                                              Environment.NewLine +
-                                                              string.Join(Environment.NewLine, mergeInExceptions));
+                                                    AppendLog(
+                                                        string.Join(Environment.NewLine, overrideExceptionStrings),
+                                                        true,
+                                                        true);
                                                 }
 
-                                                _aux.CollectShallowAssetLinks(additionalMergedRecords, assetLinks);
-                                            }
-
-                                            _aux.CollectShallowAssetLinks(dependencyContexts, assetLinks);
-                                            break;
-                                        case RecordOverrideHandlingMode.IncludeAsNew:
-                                            List<string> overrideExceptionStrings = new();
-                                            var mergedInRecords = _recordHandler.DuplicateInOverrideRecords(
-                                                appearanceNpcRecord, patchNpc,
-                                                appearanceModSetting.CorrespondingModKeys,
-                                                appearanceModKey.Value, patchNpc.FormKey.ModKey,
-                                                ref overrideExceptionStrings);
-                                            if (overrideExceptionStrings.Any())
-                                            {
-                                                AppendLog(string.Join(Environment.NewLine, overrideExceptionStrings),
-                                                    true,
-                                                    true);
-                                            }
-
-                                            _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
-                                            break;
-                                    }
-
-                                    break;
-                                default:
-                                    AppendLog(
-                                        $"      Mode: Default. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"}).");
-                                    patchNpc =
-                                        _environmentStateProvider.OutputMod.Npcs
-                                            .GetOrAddAsOverride(appearanceNpcRecord);
-                                    if (mergeInDependencyRecords)
-                                    {
-                                        List<string> mergeInExceptions = new();
-                                        var mergedInRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(
-                                            _environmentStateProvider.OutputMod, patchNpc,
-                                            appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true,
-                                            ref mergeInExceptions);
-                                        if (mergeInExceptions.Any())
-                                        {
-                                            AppendLog("Exceptions occurred during dependency merge-in of " +
-                                                      Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine +
-                                                      string.Join(Environment.NewLine, mergeInExceptions));
+                                                _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
+                                                break;
                                         }
 
-                                        _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
-                                    }
-
-                                    switch (recordOverrideHandlingMode)
-                                    {
-                                        case RecordOverrideHandlingMode.Ignore:
-                                            break;
-                                        case RecordOverrideHandlingMode.Include:
-                                            var dependencyContexts =
-                                                _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
-                                                    appearanceModSetting.CorrespondingModKeys);
-                                            foreach (var ctx in dependencyContexts)
-                                            {
-                                                ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
-                                            }
-
-                                            _aux.CollectShallowAssetLinks(dependencyContexts, assetLinks);
-                                            break;
-                                        case RecordOverrideHandlingMode.IncludeAsNew:
-                                            List<string> overrideExceptionStrings = new();
-                                            var mergedInRecords = _recordHandler.DuplicateInOverrideRecords(
-                                                appearanceNpcRecord, patchNpc,
-                                                appearanceModSetting.CorrespondingModKeys,
-                                                appearanceModKey.Value, patchNpc.FormKey.ModKey,
-                                                ref overrideExceptionStrings);
-                                            if (overrideExceptionStrings.Any())
-                                            {
-                                                AppendLog(string.Join(Environment.NewLine, overrideExceptionStrings),
-                                                    true,
-                                                    true);
-                                            }
-
-                                            _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
-                                            break;
-                                    }
-
-                                    break;
+                                        break;
+                                }
                             }
-                        }
-                        else
-                        {
-                            AppendLog(
-                                $"ERROR: UNEXPECTED: Selection for {npcIdentifier} was marked valid but has no plugin record. Skipping.",
-                                true);
-                            skippedCount++;
-                            await Task.Delay(1, ct);
-                            continue;
-                        }
+                            else
+                            {
+                                AppendLog(
+                                    $"ERROR: UNEXPECTED: Selection for {npcIdentifier} was marked valid but has no plugin record. Skipping.",
+                                    true);
+                            }
 
-                        if (patchNpc != null && appearanceModSetting != null)
-                        {
-                            await _assetHandler.ScheduleCopyNpcAssets(appearanceNpcRecord, appearanceModSetting,
-                                _currentRunOutputAssetPath);
-                            await _assetHandler.ScheduleCopyAssetLinkFiles(assetLinks, appearanceModSetting,
-                                _currentRunOutputAssetPath);
-                        }
-                        else
-                        {
-                            AppendLog(
-                                $"ERROR: Could not proceed with asset copying due to missing patch record or mod setting for {npcIdentifier}.",
-                                true);
-                            skippedCount++;
-                            await Task.Delay(1, ct);
-                            continue;
-                        }
-                        
-                        // Add data for the token file after the NPC is successfully processed.
-                        if (appearanceModKey.HasValue)
-                        {
-                            processedNpcsTokenData[npcFormKey] = (selectedModDisplayName, appearanceModKey.Value);
-                        }
+                            if (patchNpc != null && appearanceModSetting != null)
+                            {
+                                await _assetHandler.ScheduleCopyNpcAssets(appearanceNpcRecord, appearanceModSetting,
+                                    _currentRunOutputAssetPath);
+                                await _assetHandler.ScheduleCopyAssetLinkFiles(assetLinks, appearanceModSetting,
+                                    _currentRunOutputAssetPath);
+                            }
+                            else
+                            {
+                                AppendLog(
+                                    $"ERROR: Could not proceed with asset copying due to missing patch record or mod setting for {npcIdentifier}.",
+                                    true);
+                            }
+
+                            if (appearanceModKey.HasValue)
+                            {
+                                processedNpcsTokenData[npcFormKey] = (selectedModDisplayName, appearanceModKey.Value);
+                            }
+
+                        });
 
                         processedCount++;
                     }
 
-                    //Generate and log the performance report for the completed group.
                     var perfReport = ContextualPerformanceTracer.GenerateReportForGroup(npcGroup.Key);
                     AppendLog(perfReport, true, true);
-                    
-                    // BATCH RESOURCE UNLOADING
+
                     if (modKeysForBatch.Any())
                     {
                         AppendLog($"--- Unloading resources for batch: {npcGroup.Key} ---", false, true);
@@ -571,8 +564,9 @@ public class Patcher : OptionalUIModule
                     if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.", false, true);
 
                     AppendLog("Waiting for all background asset copying and extraction to finish...", false, true);
-                    
-                    await _assetHandler.MonitorAndWaitForAllTasks(logMessage => AppendLog("  " + logMessage, false, true));
+
+                    await _assetHandler.MonitorAndWaitForAllTasks(logMessage =>
+                        AppendLog("  " + logMessage, false, true));
 
                     AppendLog("All file operations finished.", false, true);
 
@@ -584,12 +578,11 @@ public class Patcher : OptionalUIModule
                         _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath);
                         AppendLog($"Output mod saved successfully.", false, true);
 
-                        // --- NEW: Write NPC Token File ---
                         AppendLog("Writing NPC token file...", false, true);
                         var tokenFilePath = Path.Combine(_currentRunOutputAssetPath, "NPC_Token.json");
                         var tokenData = new NpcToken
                         {
-                            CreationDate = DateTime.Now.ToString("o"), // ISO 8601 round-trip format
+                            CreationDate = DateTime.Now.ToString("o"),
                             ProcessedNpcs = processedNpcsTokenData
                         };
 
@@ -602,7 +595,9 @@ public class Patcher : OptionalUIModule
                     }
                     catch (Exception ex)
                     {
-                        AppendLog($"FATAL SAVE ERROR: Could not write output plugin or token file: {ExceptionLogger.GetExceptionStack(ex)}", true);
+                        AppendLog(
+                            $"FATAL SAVE ERROR: Could not write output plugin or token file: {ExceptionLogger.GetExceptionStack(ex)}",
+                            true);
                         ResetProgress();
                         return;
                     }
@@ -617,7 +612,6 @@ public class Patcher : OptionalUIModule
         }
         finally
         {
-            // This ensures all cached BSA readers are disposed of, preventing resource leaks.
             _bsaHandler.UnloadAllBsaReaders();
             UpdateProgress(selectionsToProcess.Count, selectionsToProcess.Count, "Finished.");
         }
