@@ -399,7 +399,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Asynchronously refresh its NPC lists if it might have mod data (though unlink usually makes it mugshot-only)
             // For a new mugshot-only entry, RefreshNpcLists won't find much, but it's harmless.
 
-            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFilesOnLoad(); //////////////////////////////////////////////////////////////////////////
+            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFaceGenPathsOnLoad(); //////////////////////////////////////////////////////////////////////////
             Task.Run(() => newVm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles));
         }
 
@@ -1043,7 +1043,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _allModSettingsInternal.AddRange(SortVMs(tempList));
 
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Pre-cacheing Existing Files...");
-            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFilesOnLoad();
+            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFaceGenPathsOnLoad();
 
             splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.5), "Refreshing NPC data for mods...");
             // Limit to the number of logical processors to balance CPU work and I/O
@@ -1136,7 +1136,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        private (HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles) CacheFilesOnLoad()
+        private (HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles) CacheFaceGenPathsOnLoad()
         {
             // Cache 1: All loose FaceGen files from all mod directories.
             Debug.WriteLine("Caching loose FaceGen file paths...");
@@ -1175,44 +1175,53 @@ namespace NPC_Plugin_Chooser_2.View_Models
             Debug.WriteLine($"Cached {allFaceGenLooseFiles.Count} loose file paths.");
 
 
-// Cache 2: All FaceGen files within all relevant BSAs, grouped by the ModSetting VM.
+            // Cache 2: All FaceGen files within all relevant BSAs, grouped by the ModSetting VM.
             Debug.WriteLine("Caching FaceGen file paths from BSAs...");
-            var allFaceGenBsaFiles = new Dictionary<string, HashSet<string>>();
+            var allFaceGenBsaFiles = new Dictionary<string, HashSet<string>>(); // key is ModSetting Display Name
+            var internalBsaDirCache = new Dictionary<string, HashSet<string>>(); // key is BSA path. For interal use here
+            
             foreach (var vm in _allModSettingsInternal)
             {
                 var bsaFilePathsForVm = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var dirsWithBsa = vm.CorrespondingFolderPaths
-                    .Where(dir =>
-                        Directory.Exists(dir) &&
-                        Directory.EnumerateFiles(dir, "*.bsa", SearchOption.TopDirectoryOnly).Any())
-                    .ToList();
 
+                var pathsToSearch = new HashSet<string>(vm.CorrespondingFolderPaths);
                 if (vm.DisplayName == VM_Mods.BaseGameModSettingName ||
                     vm.DisplayName == VM_Mods.CreationClubModsettingName)
                 {
-                    dirsWithBsa.Add(_environmentStateProvider.DataFolderPath);
+                    pathsToSearch.Add(_environmentStateProvider.DataFolderPath);
                 }
+                
+                var bsaDict = BsaHandler.GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, pathsToSearch, _settings.SkyrimRelease.ToGameRelease());
 
-                foreach (var modKey in vm.CorrespondingModKeys.ToArray())
+                foreach (var modKey in vm.CorrespondingModKeys)
                 {
-                    List<IArchiveReader> bsaReaders = new();
-                    foreach (var d in dirsWithBsa)
+                    var bsaPathsForPlugin = bsaDict[modKey];
+                    var bsaReadersForPlugin = _bsaHandler.OpenBsaArchiveReaders(bsaPathsForPlugin, _settings.SkyrimRelease.ToGameRelease(), false);
+                    
+                    foreach (var entry in bsaReadersForPlugin)
                     {
-                        // Assumes OpenBsaArchiveReaders has its own internal caching to avoid re-opening files
-                        var readers = _bsaHandler.OpenBsaArchiveReaders(d, modKey);
-                        bsaReaders.AddRange(readers);
-                    }
-
-                    foreach (var reader in bsaReaders)
-                    {
-                        // Iterate all file records in the BSA ONCE and store them
-                        foreach (var fileRecord in reader.Files)
+                        if (internalBsaDirCache.TryGetValue(entry.Key, out var faceGenFilesInArchive))
                         {
-                            string path = fileRecord.Path.ToLowerInvariant().Replace('\\', '/');
-                            if (path.StartsWith("meshes/actors/character/facegendata/") ||
-                                path.StartsWith("textures/actors/character/facegendata/"))
+                            bsaFilePathsForVm.UnionWith(faceGenFilesInArchive);
+                        }
+                        else
+                        {
+                            // Iterate all file records in the BSA ONCE and store them
+                            var reader = entry.Value;
+                            if (reader.Files.Any())
                             {
-                                bsaFilePathsForVm.Add(path);
+                                HashSet<string> faceGenFilesInThisArchive = new();
+                                foreach (var fileRecord in reader.Files)
+                                {
+                                    string path = fileRecord.Path.ToLowerInvariant().Replace('\\', '/');
+                                    if (path.StartsWith("meshes/actors/character/facegendata/") ||
+                                        path.StartsWith("textures/actors/character/facegendata/"))
+                                    {
+                                        bsaFilePathsForVm.Add(path);
+                                        faceGenFilesInThisArchive.Add(path);
+                                    }
+                                }
+                                internalBsaDirCache.Add(entry.Key, faceGenFilesInThisArchive);
                             }
                         }
                     }
@@ -1224,7 +1233,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             Debug.WriteLine($"Cached BSA file paths for {allFaceGenBsaFiles.Count} mod settings.");
 
-// --- END OF NEW PRE-CACHING LOGIC ---
+// -        -- END OF NEW PRE-CACHING LOGIC ---
             return (allFaceGenLooseFiles, allFaceGenBsaFiles);
         }
 
@@ -1546,7 +1555,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 // Refresh NPC lists for the winner as its sources may have changed/**/
 
-                (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFilesOnLoad();///////////////////////////////////////////////////////////////////////
+                (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFaceGenPathsOnLoad();///////////////////////////////////////////////////////////////////////
                 Task.Run(() => winner.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles));
 
                 // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)

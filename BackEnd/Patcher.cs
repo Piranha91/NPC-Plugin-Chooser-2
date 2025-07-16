@@ -200,7 +200,7 @@ public class Patcher : OptionalUIModule
                             _pluginProvider.LoadPlugins(modKeysForBatch);
                             _recordHandler.PrimeLinkCachesFor(modKeysForBatch);
                             _recordHandler.ResetMapping();
-                            _bsaHandler.OpenBsaReadersFor(currentModSetting);
+                            _bsaHandler.OpenBsaReadersFor(currentModSetting, _settings.SkyrimRelease.ToGameRelease());
                         }
                         else
                         {

@@ -5,6 +5,7 @@ using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
 using NPC_Plugin_Chooser_2.Models;
+using NPC_Plugin_Chooser_2.View_Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -12,7 +13,7 @@ public class BsaHandler : OptionalUIModule
 {
     private Dictionary<ModKey, Dictionary<string, HashSet<string>>> _bsaContents = new();
     
-    private Dictionary<FilePath, IArchiveReader> _openBsaArchiveReaders = new();
+    private Dictionary<string, IArchiveReader> _openBsaArchiveReaders = new();
     
     private readonly EnvironmentStateProvider _environmentStateProvider;
 
@@ -29,6 +30,76 @@ public class BsaHandler : OptionalUIModule
         }
         _openBsaArchiveReaders.Clear();
         AppendLog("Unloaded all cached BSA readers.");
+    }
+    
+    public static HashSet<string> GetBsaPathsForPluginInDir(ModKey modKey, string directory, GameRelease gameRelease)
+    {
+        try
+        {
+            // Important: This should be the only call to Archive.GetApplicableArchivePaths in the entire application
+            return Archive.GetApplicableArchivePaths(gameRelease, directory, modKey)
+                .Select(x => x.Path)
+                .ToHashSet();
+        }
+        catch (InvalidOperationException) // Archive.GetApplicableArchivePaths is prone to throwing this on some plugins. Cause unclear.
+        {
+            string currentPluginBase = Path.GetFileNameWithoutExtension(modKey.FileName.ToString());
+
+            // 1. Find all ".esp" files to establish a list of all known plugin base names.
+            // 2. Order them by length descending to ensure the most specific name is matched first.
+            //    (e.g., "MyPlugin - Addon" is checked before "MyPlugin").
+            var allPluginBases = Directory.EnumerateFiles(directory, "*.esp", SearchOption.TopDirectoryOnly)
+                .Select(path => Path.GetFileNameWithoutExtension(path))
+                .OrderByDescending(name => name.Length)
+                .ToList();
+
+            // Find all BSA files and filter them based on the corrected logic.
+            return Directory.EnumerateFiles(directory, "*.bsa", SearchOption.TopDirectoryOnly)
+                .Where(bsaPath => {
+                    string bsaBaseName = Path.GetFileNameWithoutExtension(bsaPath);
+
+                    // Find the longest possible plugin base that this BSA could belong to.
+                    string? ownerPluginBase = allPluginBases.FirstOrDefault(pluginBase => bsaBaseName.StartsWith(pluginBase));
+
+                    // If no owner is found, or the owner isn't the plugin we're looking for, skip it.
+                    if (ownerPluginBase != currentPluginBase)
+                    {
+                        return false;
+                    }
+
+                    // 3. We have a match, but we must validate it's a "proper" match.
+                    // It's either an exact match (e.g., "MyPlugin.bsa" for "MyPlugin.esp")...
+                    bool isExactMatch = bsaBaseName.Length == ownerPluginBase.Length;
+                    // ...or a sub-archive, which must be separated by a space.
+                    // (e.g., "MyPlugin - Textures.bsa" for "MyPlugin.esp").
+                    bool isSubArchiveMatch = bsaBaseName.Length > ownerPluginBase.Length && bsaBaseName[ownerPluginBase.Length] == ' ';
+
+                    return isExactMatch || isSubArchiveMatch;
+                })
+                .ToHashSet();
+        }
+    }
+
+    public static HashSet<string> GetBsaPathsForPluginInDirs(ModKey modKey, IEnumerable<string> directories,
+        GameRelease gameRelease)
+    {
+        HashSet<string> bsaPaths = new();
+        foreach (var directoryPath in directories)
+        {
+            bsaPaths.UnionWith(GetBsaPathsForPluginInDir(modKey, directoryPath, gameRelease));
+        }
+        return bsaPaths;
+    }
+
+    public static Dictionary<ModKey, HashSet<string>> GetBsaPathsForPluginsInDirs(IEnumerable<ModKey> modKeys,
+        IEnumerable<string> directories, GameRelease gameRelease)
+    {
+        Dictionary<ModKey, HashSet<string>> bsaPaths = new();
+        foreach (var modKey in modKeys.Distinct())
+        {
+            bsaPaths.Add(modKey, GetBsaPathsForPluginInDirs(modKey, directories, gameRelease));
+        }
+        return bsaPaths;
     }
     
     /// <summary>
@@ -65,17 +136,13 @@ public class BsaHandler : OptionalUIModule
             }
         });
     }
-
-    // ... (The rest of the BsaHandler class is unchanged) ...
-    public void OpenBsaReadersFor(ModSetting modSetting)
+    
+    public void OpenBsaReadersFor(ModSetting modSetting, GameRelease gameRelease)
     {
-        foreach (var modKey in modSetting.CorrespondingModKeys)
+        var bsaDict = GetBsaPathsForPluginsInDirs(modSetting.CorrespondingModKeys, modSetting.CorrespondingFolderPaths, gameRelease);
+        foreach (var bsaPaths in bsaDict.Values)
         {
-            foreach (var directory in modSetting.CorrespondingFolderPaths)
-            {
-                // This helper will open and cache the readers
-                OpenBsaArchiveReaders(directory, modKey);
-            }
+            OpenBsaArchiveReaders(bsaPaths, gameRelease, true);
         }
     }
     
@@ -239,63 +306,47 @@ public class BsaHandler : OptionalUIModule
             return false; // Failure
         }
     }
-    
-    public HashSet<IArchiveReader> OpenBsaArchiveReaders(string sourceDirectory, ModKey pluginKey)
-    {
-        var readers = new HashSet<IArchiveReader>();
-        // Use the SkyrimRelease from your EnvironmentStateProvider if needed
-        var gameRelease = GameRelease.SkyrimSE; // Or get dynamically
 
-        try
+    // Override for reading specific BSA files which are already assumed to exist
+    public Dictionary<string, IArchiveReader> OpenBsaArchiveReaders(IEnumerable<string> bsaPaths, GameRelease gameRelease,
+        bool cacheReaders = false)
+    {
+        var readers = new Dictionary<string, IArchiveReader>();
+        foreach (var bsaPath in bsaPaths.Distinct())
         {
-            // GetApplicableArchivePaths handles finding BSAs like Skyrim - Textures.bsa etc.
-            foreach (var bsaFile in Archive.GetApplicableArchivePaths(gameRelease, sourceDirectory, pluginKey))
+            if (_openBsaArchiveReaders.TryGetValue(bsaPath, out var reader) && reader is not null)
             {
-                try
+                readers.Add(bsaPath, reader);
+            }
+            else if (File.Exists(bsaPath))
+            {
+                AppendLog($"Loading BSA archive for {bsaPath}");  // ❷  safe-invoke
+                var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
+                if (bsaReader != null)
                 {
-                    if (_openBsaArchiveReaders.TryGetValue(bsaFile, out var reader))
+                    readers.Add(bsaPath, bsaReader);
+                    if (cacheReaders)
                     {
-                        readers.Add(reader);
-                    }
-                    else if (File.Exists(bsaFile))
-                    {
-                        AppendLog($"Loading BSA archive for {bsaFile}");  // ❷  safe-invoke
-                        var bsaReader = Archive.CreateReader(gameRelease, bsaFile);
-                        readers.Add(bsaReader);
-                        _openBsaArchiveReaders[bsaFile] = bsaReader;
-                    }
-                    else
-                    {
-                        // Log if an expected BSA path doesn't exist? Optional.
-                        AppendLog($"INFO: Applicable BSA path not found: {bsaFile}");
+                        _openBsaArchiveReaders[bsaPath] = bsaReader;
                     }
                 }
-                catch (Exception exInner)
+                else
                 {
                     AppendLog(
-                        $"ERROR opening archive '{bsaFile}': {ExceptionLogger.GetExceptionStack(exInner)}", true);
-                    // Decide whether to continue or throw
+                        $"ERROR opening archive '{bsaPath}': Reader is null", true);
                 }
             }
+            else
+            {
+                AppendLog(
+                    $"ERROR opening archive '{bsaPath}': Expected file does not exist", true);
+            }
         }
-        catch (Exception exOuter)
-        {
-            // Error enumerating paths?
-            AppendLog(
-                $"ERROR getting applicable archive paths for {pluginKey} in {sourceDirectory}: {ExceptionLogger.GetExceptionStack(exOuter)}", true);
-            // Decide whether to throw
-        }
-
+        
         return readers;
     }
-
-    public bool DirectoryHasCorrespondingBsaFile(string sourceDirectory, ModKey pluginKey)
-    {
-        var gameRelease = GameRelease.SkyrimSE;
-        return Archive.GetApplicableArchivePaths(gameRelease, sourceDirectory, pluginKey).Any();
-    }
     
-    public async Task PopulateBsaContentPathsAsync(IEnumerable<ModSetting> mods, GameRelease gameRelease)
+    public async Task PopulateBsaContentPathsAsync(IEnumerable<ModSetting> mods, GameRelease gameRelease, bool cacheReaders = false)
     {
         _bsaContents.Clear();
 
@@ -304,45 +355,32 @@ public class BsaHandler : OptionalUIModule
         {
             foreach (var mod in mods)
             {
-                foreach (var key in mod.CorrespondingModKeys)
+                var pathsToSearch = new HashSet<string>(mod.CorrespondingFolderPaths);
+                if (mod.DisplayName == VM_Mods.BaseGameModSettingName ||
+                    mod.DisplayName == VM_Mods.CreationClubModsettingName)
                 {
-                    if (_bsaContents.ContainsKey(key))
+                    pathsToSearch.Add(_environmentStateProvider.DataFolderPath);
+                }
+                
+                var bsaDict = GetBsaPathsForPluginsInDirs(mod.CorrespondingModKeys, pathsToSearch, gameRelease);
+                foreach (var modkey in mod.CorrespondingModKeys)
+                {
+                    if (_bsaContents.ContainsKey(modkey))
                     {
                         continue;
                     }
-
-                    var subDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-
-                    foreach (var directory in mod.CorrespondingFolderPaths)
+                    var bsaPaths = bsaDict[modkey];
+                    var filesInArchives = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                    var readers = OpenBsaArchiveReaders(bsaPaths, gameRelease, cacheReaders);
+                    foreach (var entry in readers)
                     {
-                        try
-                        {
-                            // These are the blocking calls.
-                            foreach (var bsaPath in Archive.GetApplicableArchivePaths(gameRelease, directory, key))
-                            {
-                                var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
-                                var containedFiles = new HashSet<string>(bsaReader.Files.Select(x => x.Path),
-                                    StringComparer.OrdinalIgnoreCase);
-                                subDict.Add(bsaPath, containedFiles);
-                            }
-                        }
-                        catch (InvalidOperationException)
-                        {
-                            string prefix = key.FileName.NameWithoutExtension;
-                            string searchPattern = $"{prefix}*.bsa";
-
-                            foreach (var bsaPath in Directory.EnumerateFiles(directory, searchPattern,
-                                         SearchOption.TopDirectoryOnly))
-                            {
-                                var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
-                                var containedFiles = new HashSet<string>(bsaReader.Files.Select(x => x.Path),
-                                    StringComparer.OrdinalIgnoreCase);
-                                subDict.Add(bsaPath, containedFiles);
-                            }
-                        }
+                        var (bsaPath, reader) = entry;
+                        var containedFiles = new HashSet<string>(reader.Files.Select(x => x.Path),
+                            StringComparer.OrdinalIgnoreCase);
+                        filesInArchives.Add(bsaPath, containedFiles);
                     }
 
-                    _bsaContents.Add(key, subDict);
+                    _bsaContents.Add(modkey, filesInArchives);
                 }
             }
         });
