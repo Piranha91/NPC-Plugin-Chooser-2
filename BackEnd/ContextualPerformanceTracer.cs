@@ -79,7 +79,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         /// </summary>
         /// <param name="groupName">The name of the NPC group that was just processed.</param>
         /// <returns>A formatted string containing the performance report.</returns>
-        public static string GenerateReportForGroup(string groupName)
+        public static string GenerateReportForGroup(string groupName, bool showFunctionStats)
         {
             var sb = new StringBuilder();
             sb.AppendLine($"\n================= PERFORMANCE REPORT for Group: [{groupName}] =================");
@@ -117,31 +117,38 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                 sb.AppendLine("No 'Patcher.MainLoopIteration' calls were traced for this group.");
             }
 
-            // Create a detailed breakdown table for all traced functions
-            var allFunctions = _stats
-                .SelectMany(contextKvp => contextKvp.Value.Select(funcKvp => new { FunctionName = funcKvp.Key, Data = funcKvp.Value }))
-                .GroupBy(x => x.FunctionName)
-                .Select(g => new
-                {
-                    FunctionName = g.Key,
-                    TotalCalls = g.Sum(x => x.Data.CallCount),
-                    TotalMilliseconds = g.Sum(x => x.Data.TotalMilliseconds),
-                    MaxMilliseconds = g.Max(x => x.Data.MaxMilliseconds)
-                })
-                .OrderByDescending(x => x.TotalMilliseconds)
-                .ToList();
-
-            sb.AppendLine("\n--- Sub-function Details ---");
-            sb.AppendLine("Function                               |      Calls |     Total (ms) |     Avg (ms) |     Max (ms)");
-            sb.AppendLine("---------------------------------------+------------+----------------+--------------+--------------");
-
-            foreach (var func in allFunctions)
+            if (showFunctionStats)
             {
-                if (func.TotalCalls <= 0) continue;
-                double avg = func.TotalMilliseconds / func.TotalCalls;
-                string name = func.FunctionName.PadRight(38);
-                if (name.Length > 38) name = name.Substring(0, 38);
-                sb.AppendLine($"{name} | {func.TotalCalls,10} | {func.TotalMilliseconds,14:N2} | {avg,12:N4} | {func.MaxMilliseconds,12:N2}");
+                // Create a detailed breakdown table for all traced functions
+                var allFunctions = _stats
+                    .SelectMany(contextKvp =>
+                        contextKvp.Value.Select(funcKvp => new { FunctionName = funcKvp.Key, Data = funcKvp.Value }))
+                    .GroupBy(x => x.FunctionName)
+                    .Select(g => new
+                    {
+                        FunctionName = g.Key,
+                        TotalCalls = g.Sum(x => x.Data.CallCount),
+                        TotalMilliseconds = g.Sum(x => x.Data.TotalMilliseconds),
+                        MaxMilliseconds = g.Max(x => x.Data.MaxMilliseconds)
+                    })
+                    .OrderByDescending(x => x.TotalMilliseconds)
+                    .ToList();
+
+                sb.AppendLine("\n--- Sub-function Details ---");
+                sb.AppendLine(
+                    "Function                               |      Calls |     Total (ms) |     Avg (ms) |     Max (ms)");
+                sb.AppendLine(
+                    "---------------------------------------+------------+----------------+--------------+--------------");
+
+                foreach (var func in allFunctions)
+                {
+                    if (func.TotalCalls <= 0) continue;
+                    double avg = func.TotalMilliseconds / func.TotalCalls;
+                    string name = func.FunctionName.PadRight(38);
+                    if (name.Length > 38) name = name.Substring(0, 38);
+                    sb.AppendLine(
+                        $"{name} | {func.TotalCalls,10} | {func.TotalMilliseconds,14:N2} | {avg,12:N4} | {func.MaxMilliseconds,12:N2}");
+                }
             }
 
             sb.AppendLine("=====================================================================================");

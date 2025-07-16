@@ -275,7 +275,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 if (continuePatching)
                 {
                     PatchingStartTime = DateTime.Now;
-                    await _patcher.RunPatchingLogic(SelectedNpcGroup, token);
+                    await _patcher.RunPatchingLogic(SelectedNpcGroup, false, token);
+                    
+                    if (PatchingStartTime.HasValue && FinalValidationTime.HasValue)
+                    {
+                        var patchingDuration = DateTime.Now - PatchingStartTime.Value;
+                        var totalDuration = FinalValidationTime.Value + patchingDuration;
+                        AppendLog($"\nPatch generation process completed in {totalDuration:hh\\:mm\\:ss}.", forceLog: true);
+                    }
                 }
                 else
                 {

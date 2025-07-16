@@ -138,8 +138,9 @@ public class Validator : OptionalUIModule
 
         ct.ThrowIfCancellationRequested();
         
-        var perfReport = ContextualPerformanceTracer.GenerateValidationReport();
-        AppendLog(perfReport, true, true);
+        // Keep the performance report calls commented out here in case this ever needs to be revisited
+        //var perfReport = ContextualPerformanceTracer.GenerateValidationReport();
+        //AppendLog(perfReport, true, true);
 
         // The logic for showing the popup is removed from this class.
         // We now simply return the list of invalid selections.

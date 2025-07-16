@@ -63,7 +63,7 @@ public class Patcher : OptionalUIModule
         return _modSettingsMap;
     }
 
-    public async Task RunPatchingLogic(string SelectedNpcGroup, CancellationToken ct)
+    public async Task RunPatchingLogic(string SelectedNpcGroup, bool showFinalMessage, CancellationToken ct)
     {
         ResetLog();
         UpdateProgress(0, 1, "Initializing...");
@@ -545,8 +545,8 @@ public class Patcher : OptionalUIModule
                         processedCount++;
                     }
 
-                    var perfReport = ContextualPerformanceTracer.GenerateReportForGroup(npcGroup.Key);
-                    AppendLog(perfReport, true, true);
+                    var perfReport = ContextualPerformanceTracer.GenerateReportForGroup(npcGroup.Key, false);
+                    AppendLog(perfReport, false, true);
 
                     if (modKeysForBatch.Any())
                     {
@@ -616,7 +616,11 @@ public class Patcher : OptionalUIModule
             UpdateProgress(selectionsToProcess.Count, selectionsToProcess.Count, "Finished.");
         }
 
-        AppendLog("\nPatch generation process completed.", false, true);
+        if (showFinalMessage)
+        {
+            AppendLog("\nPatch generation process completed.", false, true);
+        }
+
         UpdateProgress(selectionsToProcess.Count, selectionsToProcess.Count, "Finished.");
     }
 
