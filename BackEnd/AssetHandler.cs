@@ -271,7 +271,7 @@ public class AssetHandler : OptionalUIModule
             {
                 textureTasks.Add(RequestAssetCopyAsync(texRelPath, modSetting, outputBasePath));
             }
-            await Task.WhenAll(textureTasks);
+            // await Task.WhenAll(textureTasks); DO not await here - causes deadlock due to upstream semaphore
         }
         catch (Exception ex)
         {
@@ -382,6 +382,56 @@ public class AssetHandler : OptionalUIModule
                 RequestAssetCopyAsync(relPath, appearanceModSetting, outputBasePath);
             }
         }
+    }
+    
+    /// <summary>
+    /// Waits for all scheduled asset operations to finish while providing periodic status updates.
+    /// </summary>
+    /// <param name="progressReporter">An action that will be called with a formatted status string.</param>
+    public async Task MonitorAndWaitForAllTasks(Action<string> progressReporter)
+    {
+        int lastReportedCompleted = 0;
+        int lastReportedTotal = _processedAssetTasks.Count;
+
+        progressReporter($"Asset Transfer: Beginning final asset copy. {lastReportedTotal} initial files queued.");
+
+        while (true)
+        {
+            // Create a task that completes only when all *currently known* tasks are finished.
+            var allCurrentTasks = _processedAssetTasks.Values.ToList();
+            var completionTask = Task.WhenAll(allCurrentTasks);
+
+            // Create a delay task that acts as our 10-second timer.
+            var timerTask = Task.Delay(TimeSpan.FromSeconds(10));
+
+            // Wait for whichever finishes first: the 10-second timer, or all known tasks completing.
+            await Task.WhenAny(completionTask, timerTask);
+
+            // Get a snapshot of the current counts.
+            int totalTasks = _processedAssetTasks.Count;
+            int completedTasks = _processedAssetTasks.Values.Count(t => t.IsCompleted);
+
+            // Check if all tasks that existed at the start of this loop are done, AND no new tasks have been added.
+            // This is the condition for being truly finished.
+            if (completionTask.IsCompleted && totalTasks == allCurrentTasks.Count)
+            {
+                break; // Exit the monitoring loop.
+            }
+
+            // If we are here, it's because the 10-second timer elapsed, or tasks finished but new ones were added.
+            // Time to generate a progress report.
+            int remaining = totalTasks - completedTasks;
+            int processedSinceLast = completedTasks - lastReportedCompleted;
+            int discoveredSinceLast = totalTasks - lastReportedTotal;
+
+            progressReporter($"Asset Transfer: {remaining} remaining files ({completedTasks}/{totalTasks} total, {processedSinceLast} processed, {discoveredSinceLast} discovered since last report)");
+
+            // Update our counters for the next report.
+            lastReportedCompleted = completedTasks;
+            lastReportedTotal = totalTasks;
+        }
+
+        progressReporter($"Asset Transfer: Complete. {_processedAssetTasks.Count} total assets processed.");
     }
 
     // --- Asset Identification Helpers (No changes needed here) ---

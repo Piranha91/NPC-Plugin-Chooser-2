@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Assets;
@@ -571,15 +571,8 @@ public class Patcher : OptionalUIModule
                     if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.", false, true);
 
                     AppendLog("Waiting for all background asset copying and extraction to finish...", false, true);
-            
-                    // ========================= CRITICAL CHANGE =========================
-                    // Remove the old call to CopyQueuedFiles.
-                    // await _assetHandler.CopyQueuedFiles(...); // <-- REMOVED
-            
-                    // Add a new call to await all tasks initiated by the AssetHandler.
-                    // This ensures all file I/O is complete before we try to save the plugin.
-                    await _assetHandler.WhenAllTasks();
-                    // ===================================================================
+                    
+                    await _assetHandler.MonitorAndWaitForAllTasks(logMessage => AppendLog("  " + logMessage, false, true));
 
                     AppendLog("All file operations finished.", false, true);
 
