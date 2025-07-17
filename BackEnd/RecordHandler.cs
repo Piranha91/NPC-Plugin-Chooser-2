@@ -1,4 +1,5 @@
-﻿using Mutagen.Bethesda;
+﻿using Microsoft.Build.Tasks;
+using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Cache.Internals.Implementations;
@@ -37,13 +38,13 @@ public class RecordHandler
         _currenTraversedFormLinks.Clear();
     }
 
-    public void PrimeLinkCachesFor(IEnumerable<ModKey> modKeys)
+    public void PrimeLinkCachesFor(IEnumerable<ModKey> modKeys, HashSet<string> fallBackModFolderNames)
     {
         foreach (var modKey in modKeys)
         {
             if (_modLinkCaches.ContainsKey(modKey)) continue;
 
-            if (_pluginProvider.TryGetPlugin(modKey, _settings.ModsFolder, out var plugin) && plugin != null)
+            if (_pluginProvider.TryGetPlugin(modKey, fallBackModFolderNames, out var plugin) && plugin != null)
             {
                 _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences()));
             }
@@ -58,7 +59,7 @@ public class RecordHandler
         }
     }
 
-    private bool TryAddModToCaches(ModKey modKey)
+    private bool TryAddPluginToCaches(ModKey modKey, HashSet<string> fallBackModFolderNames)
     {
         if (_modLinkCaches.ContainsKey(modKey))
         {
@@ -74,7 +75,7 @@ public class RecordHandler
         }
         
         // This will now only be hit if a plugin was needed that wasn't part of the pre-loaded batch
-        if (_pluginProvider.TryGetPlugin(modKey, _settings.ModsFolder, out var plugin) && plugin != null)
+        if (_pluginProvider.TryGetPlugin(modKey, fallBackModFolderNames, out var plugin) && plugin != null)
         {
             _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences()));
             return true;
@@ -100,7 +101,8 @@ public class RecordHandler
         IFormLinkGetter<IMajorRecordGetter> formLinkToCopy,
         TMod modToDuplicateInto,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
-        ModKey rootContextModKey,
+        ModKey rootContextModKey, 
+        HashSet<string> fallBackModFolderNames,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
@@ -124,13 +126,13 @@ public class RecordHandler
             return mergedInRecords;
         }
 
-        if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, RecordLookupFallBack.None, out var record) || record == null)
+        if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, fallBackModFolderNames, RecordLookupFallBack.None, out var record) || record == null)
         {
             return mergedInRecords;
         }
         
         mergedInRecords = DuplicateFromOnlyReferencedGetters(modToDuplicateInto, record, modKeysToDuplicateFrom, 
-            rootContextModKey, false, ref exceptionStrings, typesToInspect);
+            rootContextModKey, false, fallBackModFolderNames, ref exceptionStrings, typesToInspect);
 
         if (_currentDuplicateInMappings.ContainsKey(formLinkToCopy.FormKey))
         {
@@ -150,7 +152,8 @@ public class RecordHandler
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey,
-        bool onlySubRecords,
+        bool onlySubRecords, 
+        HashSet<string> fallBackModFolderNames,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
@@ -162,6 +165,7 @@ public class RecordHandler
             this,
             modKeysToDuplicateFrom,
             onlySubRecords,
+            fallBackModFolderNames,
             RecordLookupFallBack.None, // Don't fall back to winning override or origin - if the chain of new records breaks, don't search through overrides
             // Override searching is the job of RecordHandler.DeepGetOverriddenDependencyRecords()
             ref _currentDuplicateInMappings,
@@ -175,7 +179,8 @@ public class RecordHandler
         TMod modToDuplicateInto,
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         ModKey modKeyToDuplicateFrom,
-        bool onlySubRecords,
+        bool onlySubRecords, 
+        HashSet<string> fallBackModFolderNames,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
@@ -186,6 +191,7 @@ public class RecordHandler
             new[] { modKeyToDuplicateFrom },
             modKeyToDuplicateFrom,
             onlySubRecords,
+            fallBackModFolderNames,
             ref exceptionStrings,
             typesToInspect);
     }
@@ -197,6 +203,7 @@ public class RecordHandler
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey,
         bool onlySubRecords,
+        HashSet<string> fallBackModFolderNames,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
@@ -207,6 +214,7 @@ public class RecordHandler
             modKeysToDuplicateFrom,
             rootContextModKey,
             onlySubRecords,
+            fallBackModFolderNames,
             ref exceptionStrings,
             typesToInspect);
     }
@@ -217,6 +225,7 @@ public class RecordHandler
         IMajorRecordGetter recordToDuplicate,
         ModKey modKeyToDuplicateFrom,
         bool onlySubRecords,
+        HashSet<string> fallBackModFolderNames,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
         where TMod : class, IMod, ISkyrimMod, IModGetter
@@ -227,6 +236,7 @@ public class RecordHandler
             new[] { modKeyToDuplicateFrom },
             modKeyToDuplicateFrom,
             onlySubRecords,
+            fallBackModFolderNames,
             ref exceptionStrings,
             typesToInspect);
     }
@@ -234,13 +244,13 @@ public class RecordHandler
 
     #region Collect Overrides of Existing Records
     public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
-        DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys)
+        DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys, HashSet<string> fallBackModFolderNames)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DeepGetOverriddenDependencyRecords");
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
         foreach (var modKey in relevantContextKeys)
         {
-            TryAddModToCaches(modKey);
+            TryAddPluginToCaches(modKey, fallBackModFolderNames);
         }
         HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyContexts = new();
         foreach (var link in containedFormLinks)
@@ -319,14 +329,14 @@ public class RecordHandler
     #region Merge In Overrides of Existing Records
 
     public HashSet<IMajorRecord> // return is For Caller's Information only; duplication and remapping happens internally
-        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, ref List<string> exceptionStrings)
+        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateInOverrideRecords");
         HashSet<IMajorRecord> mergedInRecords = new();
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
         foreach (var modKey in relevantContextKeys)
         {
-            TryAddModToCaches(modKey);
+            TryAddPluginToCaches(modKey, fallBackModFolderNames);
         }
 
         Dictionary<FormKey, FormKey> remappedOverrideMap = new();
@@ -345,7 +355,7 @@ public class RecordHandler
             .Distinct()
             .Where(k => k != npcSourceModKey) // don't copy from the mod that defines the NPC, since that is a base mod
             .ToHashSet();
-        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, importSourceModKeys, rootContextKey, true, ref exceptionStrings);
+        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, importSourceModKeys, rootContextKey, true, fallBackModFolderNames, ref exceptionStrings);
         
         mergedInRecords.UnionWith(newMergedSubRecords);
         
@@ -479,12 +489,12 @@ public class RecordHandler
     
     #region Misc Functions
 
-    public bool TryGetRecordFromMod(FormKey formKey, Type type, ModKey modKey, RecordLookupFallBack fallbackMode,
+    public bool TryGetRecordFromMod(FormKey formKey, Type type, ModKey modKey, HashSet<string> fallBackModFolderNames,  RecordLookupFallBack fallbackMode,
         out dynamic? record)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.TryGetRecordFromMod");
         record = null;
-        if (_pluginProvider.TryGetPlugin(modKey, _settings.ModsFolder, out var plugin) && plugin != null)
+        if (_pluginProvider.TryGetPlugin(modKey, fallBackModFolderNames, out var plugin) && plugin != null)
         {
             var group = plugin.TryGetTopLevelGroup(type);
             if (group != null && group.ContainsKey(formKey))
@@ -496,9 +506,9 @@ public class RecordHandler
         return false;
     }
     
-    public bool TryGetRecordGetterFromMod(IFormLinkGetter formLink, ModKey modKey, RecordLookupFallBack fallbackMode, out IMajorRecordGetter? record)
+    public bool TryGetRecordGetterFromMod(IFormLinkGetter formLink, ModKey modKey, HashSet<string> fallBackModFolderNames, RecordLookupFallBack fallbackMode, out IMajorRecordGetter? record)
     {
-        if (TryAddModToCaches(modKey) && _modLinkCaches[modKey].TryResolve(formLink, out var modRecord) && modRecord is not null)
+        if (TryAddPluginToCaches(modKey, fallBackModFolderNames) && _modLinkCaches[modKey].TryResolve(formLink, out var modRecord) && modRecord is not null)
         {
             record = modRecord;
             return true;
@@ -508,7 +518,7 @@ public class RecordHandler
         switch (fallbackMode)
         {
             case RecordLookupFallBack.Origin:
-                if (TryAddModToCaches(formLink.FormKey.ModKey) && _modLinkCaches[formLink.FormKey.ModKey].TryResolve(formLink, out modRecord) && modRecord is not null)
+                if (TryAddPluginToCaches(formLink.FormKey.ModKey, fallBackModFolderNames) && _modLinkCaches[formLink.FormKey.ModKey].TryResolve(formLink, out modRecord) && modRecord is not null)
                 {
                     record = modRecord;
                     return true;
@@ -532,7 +542,7 @@ public class RecordHandler
         return false;
     }
 
-    public bool TryGetRecordFromMods(IFormLinkGetter formLink, IEnumerable<ModKey> modKeys, RecordLookupFallBack fallbackMode,
+    public bool TryGetRecordFromMods(IFormLinkGetter formLink, IEnumerable<ModKey> modKeys, HashSet<string> fallBackModFolderNames, RecordLookupFallBack fallbackMode,
         out IMajorRecordGetter? record, bool reverseOrder = true)
     {
         record = null;
@@ -549,7 +559,7 @@ public class RecordHandler
 
         foreach (var mk in toSearch)
         {
-            if (TryGetRecordGetterFromMod(formLink, mk, RecordLookupFallBack.None, out record) && record != null)
+            if (TryGetRecordGetterFromMod(formLink, mk, fallBackModFolderNames, RecordLookupFallBack.None, out record) && record != null)
             {
                 return true;
             }
@@ -559,7 +569,7 @@ public class RecordHandler
         switch (fallbackMode)
         {
             case RecordLookupFallBack.Origin:
-                if (TryGetRecordGetterFromMod(formLink, formLink.FormKey.ModKey, RecordLookupFallBack.None,  out record) && record != null)
+                if (TryGetRecordGetterFromMod(formLink, formLink.FormKey.ModKey, fallBackModFolderNames, RecordLookupFallBack.None,  out record) && record != null)
                 {
                     return true;
                 }

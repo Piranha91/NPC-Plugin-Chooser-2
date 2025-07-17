@@ -19,6 +19,7 @@ using NPC_Plugin_Chooser_2.BackEnd; // For Debug.WriteLine
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
+    [DebuggerDisplay("{NpcDisplayName}")]
     public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     {
         private readonly VM_Mods _parentVMMaster; 

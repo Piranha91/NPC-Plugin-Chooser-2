@@ -37,6 +37,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         Template
     }
 
+    [DebuggerDisplay("{DisplayName}")]
     public class VM_ModSetting : ReactiveObject
     {
         // --- Factory Delegates ---
@@ -576,8 +577,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     {
                         try
                         {
-                            if (!_pluginProvider.TryGetPlugin(modKey, Path.GetDirectoryName(foundPluginPath),
-                                    out var mod))
+                            HashSet<string> modFolderPath = new();
+                            var pluginFolder = Path.GetDirectoryName(foundPluginPath);
+                            if (pluginFolder != null) modFolderPath.Add(pluginFolder);
+                            
+                            if (!_pluginProvider.TryGetPlugin(modKey, modFolderPath, out var mod))
                             {
                                 continue;
                             }
@@ -1029,7 +1033,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 bool hasOverrides = false;
                 foreach (var modDir in modDirs)
                 {
-                    if (pluginProvider.TryGetPlugin(pluginName, modDir, out var plugin) && plugin != null)
+                    if (pluginProvider.TryGetPlugin(pluginName, new HashSet<string>() {modDir}, out var plugin) && plugin != null)
                     {
                         var records = plugin.EnumerateMajorRecords().ToArray();
                         foreach (var record in records)

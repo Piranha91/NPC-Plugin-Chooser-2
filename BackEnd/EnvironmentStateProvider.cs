@@ -24,6 +24,8 @@ public class EnvironmentStateProvider
     public DirectoryPath InternalDataPath { get; set; }
     public DirectoryPath DataFolderPath { get; set; }
     public ISkyrimMod OutputMod { get; set; }
+    public HashSet<ModKey> BaseGamePlugins => Implicits.Get(SkyrimVersion.ToGameRelease()).BaseMasters.ToHashSet();
+    public HashSet<ModKey> CreationClubPlugins  { get; set; }
     
     public string OutputPluginName { get; set; }
     public string OutputPluginFileName => OutputPluginName + ".esp";
@@ -110,6 +112,9 @@ public class EnvironmentStateProvider
             CreationClubListingsFilePath = _environment.CreationClubListingsFilePath ?? string.Empty;
             LoadOrderFilePath = _environment.LoadOrderFilePath;
             DataFolderPath = _environment.DataFolderPath; // If a custom data folder path was provided it will not change. If no custom data folder path was provided, this will set it to the default path.
+
+            CreationClubPlugins = GetCreationClubPlugins();
+            
             _splashReporter?.UpdateProgress(baseProgress + progressSpan, "Game environment initialized successfully.");
         }
         catch (Exception ex)
@@ -117,5 +122,33 @@ public class EnvironmentStateProvider
             EnvironmentBuilderError = ExceptionLogger.GetExceptionStack(ex);
             _splashReporter?.UpdateProgress(baseProgress + progressSpan, "Error initializing game environment.");
         }
+    }
+    
+    public HashSet<ModKey> GetCreationClubPlugins()
+    {
+        HashSet<ModKey> creationClubModKeys = new ();
+
+        try // currently Implicits.Get doesn't seem to include creation club plugins
+        {
+            if (File.Exists(CreationClubListingsFilePath))
+            {
+                var ccListings = File.ReadAllText(CreationClubListingsFilePath);
+                var ccPlugins = ccListings.Split(Environment.NewLine);
+                foreach (var pluginName in ccPlugins)
+                {
+                    var plugin = ModKey.TryFromFileName(pluginName);
+                    if (plugin != null && !creationClubModKeys.Contains(plugin.Value))
+                    {
+                        creationClubModKeys.Add(plugin.Value);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            return new HashSet<ModKey>();
+        }
+        
+        return creationClubModKeys;
     }
 }

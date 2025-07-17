@@ -4,71 +4,107 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
+
+/// <summary>
+/// A container for the results of the asynchronous FaceGen scan.
+/// </summary>
+public class FaceGenScanResult
+{
+    /// <summary>
+    /// Dictionary where keys are plugin names (e.g., "Skyrim.esm") and values are the set of facegen file names.
+    /// </summary>
+    public Dictionary<string, HashSet<string>> FaceGenFiles { get; }
+
+    /// <summary>
+    /// True if at least one mesh file (*.nif) was found.
+    /// </summary>
+    public bool MeshesExist { get; }
+
+    /// <summary>
+    /// True if at least one texture file (*.dds) was found.
+    /// </summary>
+    public bool TexturesExist { get; }
+    
+    /// <summary>
+    /// True if either meshes or textures were found.
+    /// </summary>
+    public bool AnyFilesFound => MeshesExist || TexturesExist;
+
+    public FaceGenScanResult(Dictionary<string, HashSet<string>> faceGenFiles, bool meshesExist, bool texturesExist)
+    {
+        FaceGenFiles = faceGenFiles;
+        MeshesExist = meshesExist;
+        TexturesExist = texturesExist;
+    }
+}
 
 public static class FaceGenScanner
 {
     /// <summary>
-    /// Scans a MO2-style mod folder for face-gen meshes (.nif) and textures (.dds).
+    /// Asynchronously scans a MO2-style mod folder for face-gen meshes (.nif) and textures (.dds).
+    /// This method offloads the synchronous file I/O to a background thread.
     /// </summary>
     /// <param name="modFolderPath">Root path of the mod being inspected.</param>
-    /// <param name="faceGenFiles">
-    ///     OUT: Dictionary whose keys are the immediate sub-folder names under
-    ///     facegeom/facetint (e.g. "Skyrim.esm") and whose values are HashSets
-    ///     containing the base file names (no extension) found there.
-    /// </param>
-    /// <param name="meshesExist">OUT: true if at least one *.nif exists.</param>
-    /// <param name="texturesExist">OUT: true if at least one *.dds exists.</param>
     /// <returns>
-    ///     True when <paramref name="meshesExist"/> || <paramref name="texturesExist"/>.
+    /// A Task that represents the asynchronous operation. The task result contains the
+    /// discovered files and flags indicating what was found.
     /// </returns>
-    public static bool CollectFaceGenFiles(
-        string modFolderPath,
-        out Dictionary<string, HashSet<string>> faceGenFiles,
-        out bool meshesExist,
-        out bool texturesExist)
+    public static Task<FaceGenScanResult> CollectFaceGenFilesAsync(string modFolderPath)
     {
-        // Build results in a *local* variable first
-        var filesDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-        meshesExist   = false;
-        texturesExist = false;
-
-        // Re-usable helper
-        void Process(string root, string pattern, ref bool flag)
+        // Task.Run is used to offload the synchronous I/O operations to a thread pool thread.
+        // This prevents blocking the calling thread, which is crucial for responsive UIs.
+        return Task.Run(() =>
         {
-            if (!Directory.Exists(root)) return;
+            var filesDict = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            bool meshesExist = false;
+            bool texturesExist = false;
 
-            foreach (string pluginDir in Directory.EnumerateDirectories(root))
+            // This local function processes a given directory for files matching a pattern.
+            // It's defined within the lambda to capture the filesDict.
+            void ProcessDirectory(string root, string pattern, ref bool flag)
             {
-                var matches = Directory.EnumerateFiles(pluginDir, pattern, SearchOption.TopDirectoryOnly);
-                if (!matches.Any()) continue;
+                // Since this runs on a background thread, synchronous Directory.Exists is acceptable.
+                if (!Directory.Exists(root)) return;
 
-                flag = true;                                         // mark that we found something
-
-                string pluginName = Path.GetFileName(pluginDir);
-                if (!filesDict.TryGetValue(pluginName, out var set))
+                // Enumerate subdirectories for each plugin.
+                foreach (string pluginDir in Directory.EnumerateDirectories(root))
                 {
-                    set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    filesDict[pluginName] = set;
+                    // Find all files matching the pattern in the current plugin directory.
+                    var matches = Directory.EnumerateFiles(pluginDir, pattern, SearchOption.TopDirectoryOnly);
+                    if (!matches.Any()) continue;
+
+                    // If we found any files, set the corresponding flag to true.
+                    flag = true;
+
+                    // Extract the plugin name from the directory path.
+                    string pluginName = Path.GetFileName(pluginDir);
+                    
+                    // Get or create the HashSet for the current plugin.
+                    if (!filesDict.TryGetValue(pluginName, out var set))
+                    {
+                        set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        filesDict[pluginName] = set;
+                    }
+
+                    // Add the base file name (without extension) to the set.
+                    foreach (string f in matches)
+                    {
+                        set.Add(Path.GetFileNameWithoutExtension(f));
+                    }
                 }
-
-                foreach (string f in matches)
-                    set.Add(Path.GetFileNameWithoutExtension(f));
             }
-        }
 
-        // Canonical roots
-        string meshRoot = Path.Combine(modFolderPath, "meshes", "actors", "character",
-                                       "facegendata", "facegeom");
-        string texRoot  = Path.Combine(modFolderPath, "textures", "actors", "character",
-                                       "facegendata", "facetint");
+            // Define the canonical paths for facegen meshes and textures.
+            string meshRoot = Path.Combine(modFolderPath, "meshes", "actors", "character", "facegendata", "facegeom");
+            string texRoot = Path.Combine(modFolderPath, "textures", "actors", "character", "facegendata", "facetint");
 
-        // Scan both trees
-        Process(meshRoot, "*.nif",  ref meshesExist);
-        Process(texRoot,  "*.dds",  ref texturesExist);
+            // Scan both directory trees for the respective file types.
+            ProcessDirectory(meshRoot, "*.nif", ref meshesExist);
+            ProcessDirectory(texRoot, "*.dds", ref texturesExist);
 
-        // Expose the dictionary through the out parameter *after* scanning
-        faceGenFiles = filesDict;
-
-        return meshesExist || texturesExist;
+            // Return the results wrapped in a result object.
+            return new FaceGenScanResult(filesDict, meshesExist, texturesExist);
+        });
     }
 }

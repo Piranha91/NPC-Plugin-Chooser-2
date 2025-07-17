@@ -23,6 +23,7 @@ using Mutagen.Bethesda.Skyrim;
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
+    [DebuggerDisplay("{ModName}")]
     public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage, IDragSource, IDropTarget
     {
 // --- Existing fields ---

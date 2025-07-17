@@ -16,7 +16,8 @@ public static class PatcherExtensions
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         RecordHandler recordHandler,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
-        bool onlySubRecords,
+        bool onlySubRecords, 
+        HashSet<string> fallBackModFolderNames,
         RecordLookupFallBack fallBackMode,
         ref Dictionary<FormKey, FormKey> mapping,
         ref HashSet<IFormLinkGetter> traversedFormLinks,
@@ -69,7 +70,7 @@ public static class PatcherExtensions
             }
 
             if (modKeysToDuplicateFrom.Contains(link.FormKey.ModKey) &&
-                recordHandler.TryGetRecordFromMods(link, modKeysToDuplicateFrom, fallBackMode, out var linkRec) && 
+                recordHandler.TryGetRecordFromMods(link, modKeysToDuplicateFrom, fallBackModFolderNames, fallBackMode, out var linkRec) && 
                 linkRec != null)
             {
                 identifiedLinks.Add(link);
@@ -93,7 +94,7 @@ public static class PatcherExtensions
                 continue; // this form has already been remapped in a previous call of this function
             }
 
-            if (!recordHandler.TryGetRecordFromMods(identifiedLink, modKeysToDuplicateFrom,
+            if (!recordHandler.TryGetRecordFromMods(identifiedLink, modKeysToDuplicateFrom, fallBackModFolderNames,
                     RecordLookupFallBack.None, out var identifiedRec)
                 || identifiedRec == null)
             {

@@ -1,6 +1,7 @@
 ﻿// [VM_NpcsMenuSelection.cs] - Updated
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using DynamicData;
 using Microsoft.Build.Tasks.Deployment.ManifestUtilities;
@@ -15,6 +16,7 @@ using Splat; // For Locator if needed
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
+    [DebuggerDisplay("{DisplayName}")]
     public class VM_NpcsMenuSelection : ReactiveObject
     {
         private readonly EnvironmentStateProvider _environmentStateProvider;

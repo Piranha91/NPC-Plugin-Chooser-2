@@ -1,8 +1,10 @@
-﻿using Mutagen.Bethesda.Plugins;
+﻿using System.Diagnostics;
+using Mutagen.Bethesda.Plugins;
 using Newtonsoft.Json;
 
 namespace NPC_Plugin_Chooser_2.Models;
 
+[DebuggerDisplay("{DisplayName}")]
 public class ModSetting
 {
     public string DisplayName { get; set; } = string.Empty;

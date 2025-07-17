@@ -343,7 +343,7 @@ public class AssetHandler : OptionalUIModule
         // 2. Non-FaceGen Assets (Only if CopyExtraAssets is true)
         if (_copyExtraAssets)
         {
-            GetAssetPathsReferencedByPlugin(appearanceNpcRecord, appearanceModSetting.CorrespondingModKeys, meshToCopyRelativePaths, textureToCopyRelativePaths);
+            GetAssetPathsReferencedByPlugin(appearanceNpcRecord, appearanceModSetting.CorrespondingModKeys, appearanceModSetting.CorrespondingFolderPaths.ToHashSet(), meshToCopyRelativePaths, textureToCopyRelativePaths);
             AddCorrespondingNumericalNifPaths(meshToCopyRelativePaths, new HashSet<string>());
         }
 
@@ -435,30 +435,30 @@ public class AssetHandler : OptionalUIModule
     }
 
     // --- Asset Identification Helpers (No changes needed here) ---
-    private void GetAssetPathsReferencedByPlugin(INpcGetter npc, IEnumerable<ModKey> correspondingModKeys, HashSet<string> meshPaths,
+    private void GetAssetPathsReferencedByPlugin(INpcGetter npc, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> meshPaths,
         HashSet<string> texturePaths)
     {
         /* Implementation remains the same */
         if (npc.HeadParts != null)
             foreach (var hpLink in npc.HeadParts)
-                GetHeadPartAssetPaths(hpLink, correspondingModKeys, texturePaths, meshPaths);
-        if (!npc.WornArmor.IsNull && _recordHandler.TryGetRecordFromMods(npc.WornArmor, correspondingModKeys,
+                GetHeadPartAssetPaths(hpLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths);
+        if (!npc.WornArmor.IsNull && _recordHandler.TryGetRecordFromMods(npc.WornArmor, correspondingModKeys, fallBackModFolderNames,
                 RecordLookupFallBack.Winner, out var wornArmorGetterGeneric) && wornArmorGetterGeneric != null)
         {
             var wornArmorGetter = wornArmorGetterGeneric as IArmorGetter;
             if (wornArmorGetter != null && wornArmorGetter.Armature != null)
             {
                 foreach (var aaLink in wornArmorGetter.Armature)
-                    GetARMAAssetPaths(aaLink, correspondingModKeys, texturePaths, meshPaths);
+                    GetARMAAssetPaths(aaLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths);
             }
         }
     }
 
-    private void GetHeadPartAssetPaths(IFormLinkGetter<IHeadPartGetter> hpLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> texturePaths,
+    private void GetHeadPartAssetPaths(IFormLinkGetter<IHeadPartGetter> hpLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> texturePaths,
         HashSet<string> meshPaths)
     {
         /* Implementation remains the same */
-        if (hpLink.IsNull || !_recordHandler.TryGetRecordFromMods(hpLink, correspondingModKeys, RecordLookupFallBack.Winner, out var hpGetterGeneric)) return;
+        if (hpLink.IsNull || !_recordHandler.TryGetRecordFromMods(hpLink, correspondingModKeys, fallBackModFolderNames, RecordLookupFallBack.Winner, out var hpGetterGeneric)) return;
         var hpGetter = hpGetterGeneric as IHeadPartGetter;
         if (hpGetter is null) return;
         
@@ -467,33 +467,33 @@ public class AssetHandler : OptionalUIModule
             foreach (var part in hpGetter.Parts)
                 if (part?.FileName != null)
                     meshPaths.Add(part.FileName);
-        if (!hpGetter.TextureSet.IsNull) GetTextureSetPaths(hpGetter.TextureSet, correspondingModKeys, texturePaths);
+        if (!hpGetter.TextureSet.IsNull) GetTextureSetPaths(hpGetter.TextureSet, correspondingModKeys, fallBackModFolderNames, texturePaths);
         if (hpGetter.ExtraParts != null)
             foreach (var extraPartLink in hpGetter.ExtraParts)
-                GetHeadPartAssetPaths(extraPartLink, correspondingModKeys, texturePaths, meshPaths);
+                GetHeadPartAssetPaths(extraPartLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths);
     }
 
-    private void GetARMAAssetPaths(IFormLinkGetter<IArmorAddonGetter> aaLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> texturePaths,
+    private void GetARMAAssetPaths(IFormLinkGetter<IArmorAddonGetter> aaLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> texturePaths,
         HashSet<string> meshPaths)
     {
         /* Implementation remains the same */
-        if (aaLink.IsNull || !_recordHandler.TryGetRecordFromMods(aaLink, correspondingModKeys, RecordLookupFallBack.Winner, out var aaGetterGeneric)) return;
+        if (aaLink.IsNull || !_recordHandler.TryGetRecordFromMods(aaLink, correspondingModKeys, fallBackModFolderNames, RecordLookupFallBack.Winner, out var aaGetterGeneric)) return;
         var aaGetter = aaGetterGeneric as IArmorAddonGetter;
         if (aaGetter is null) return;
         
         if (aaGetter.WorldModel?.Male?.File != null) meshPaths.Add(aaGetter.WorldModel.Male.File);
         if (aaGetter.WorldModel?.Female?.File != null) meshPaths.Add(aaGetter.WorldModel.Female.File);
         if (!aaGetter.SkinTexture?.Male.IsNull ?? false)
-            GetTextureSetPaths(aaGetter.SkinTexture.Male, correspondingModKeys, texturePaths);
+            GetTextureSetPaths(aaGetter.SkinTexture.Male, correspondingModKeys, fallBackModFolderNames, texturePaths);
         if (!aaGetter.SkinTexture?.Female.IsNull ?? false)
-            GetTextureSetPaths(aaGetter.SkinTexture.Female, correspondingModKeys, texturePaths);
+            GetTextureSetPaths(aaGetter.SkinTexture.Female, correspondingModKeys, fallBackModFolderNames, texturePaths);
     }
 
-    private void GetTextureSetPaths(IFormLinkGetter<ITextureSetGetter> txstLink, IEnumerable<ModKey> correspondingModKeys,  HashSet<string> texturePaths)
+    private void GetTextureSetPaths(IFormLinkGetter<ITextureSetGetter> txstLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames,  HashSet<string> texturePaths)
     {
         /* Implementation remains the same */
         if (txstLink.IsNull ||
-            !_recordHandler.TryGetRecordFromMods(txstLink, correspondingModKeys, RecordLookupFallBack.Winner, out var txstGetterGeneric)) return;
+            !_recordHandler.TryGetRecordFromMods(txstLink, correspondingModKeys, fallBackModFolderNames, RecordLookupFallBack.Winner, out var txstGetterGeneric)) return;
         var txstGetter = txstGetterGeneric as ITextureSetGetter;
         if (txstGetter is null) return;
         

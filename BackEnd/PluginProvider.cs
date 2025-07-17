@@ -21,13 +21,13 @@ public class PluginProvider
         _settings = settings;
     }
 
-    public void LoadPlugins(IEnumerable<ModKey> keys)
+    public void LoadPlugins(IEnumerable<ModKey> keys, HashSet<string> modFolderNames)
     {
         foreach (var key in keys)
         {
             if (!_pluginCache.ContainsKey(key))
             {
-                TryGetPlugin(key, _settings.ModsFolder, out _);
+                TryGetPlugin(key, modFolderNames, out _);
             }
         }
     }
@@ -40,7 +40,7 @@ public class PluginProvider
         }
     }
 
-    public bool TryGetPlugin(ModKey modKey, string? fallBackModPath, out ISkyrimMod? plugin)
+    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimMod? plugin)
     {
         if (_pluginCache.TryGetValue(modKey, out plugin))
         {
@@ -48,21 +48,26 @@ public class PluginProvider
         }
 
         string? foundPath = null;
-        if (_environmentStateProvider.DataFolderPath.Exists)
+ 
+        if (fallBackModFolderPaths != null)
+        {
+            foreach (var modFolderPath in fallBackModFolderPaths)
+            {
+                var candidatePath = Path.Combine(modFolderPath, modKey.ToString());
+                if (File.Exists(candidatePath))
+                {
+                    foundPath = candidatePath;
+                    break;
+                }
+            }
+        }
+        
+        if (foundPath == null && _environmentStateProvider.DataFolderPath.Exists)
         {
             var candidatePath = Path.Combine(_environmentStateProvider.DataFolderPath, modKey.ToString());
             if (File.Exists(candidatePath))
             {
                 foundPath = candidatePath;
-            }
-        }
-        
-        if (foundPath == null && fallBackModPath != null)
-        {
-            var candidatePath = Path.Combine(_settings.ModsFolder, fallBackModPath, modKey.ToString());
-            if (File.Exists(candidatePath))
-            {
-                 foundPath = candidatePath;
             }
         }
 

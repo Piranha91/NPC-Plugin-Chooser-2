@@ -235,21 +235,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 var loadOrderSet = new HashSet<ModKey>(_environmentStateProvider.LoadOrder.Keys);
 
                 // 1. Add official master files (DLC, etc.) from the current game release if they are in the load order
-                var implicitMods = Implicits.Get(_model.SkyrimRelease.ToGameRelease());
-                foreach (var implicitMod in implicitMods.Listings)
-                {
-                    if (loadOrderSet.Contains(implicitMod))
-                    {
-                        defaultExclusions.Add(implicitMod);
-                    }
-                }
+                defaultExclusions.UnionWith(_environmentStateProvider.BaseGamePlugins);
                 
                 // 2. Add Creation Club plugins by name
-                var creationClubModKeys = _aux.GetCreationClubPlugins(); // currently Implicits.Get doesn't seem to include creation club plugins
-                foreach (var ccMod in creationClubModKeys)
-                {
-                    defaultExclusions.Add(ccMod);
-                }
+                defaultExclusions.UnionWith(_environmentStateProvider.CreationClubPlugins);
 
                 // 3. Add the Unofficial Patch if it exists in the load order
                 var ussepKey = ModKey.FromFileName("unofficial skyrim special edition patch.esp");

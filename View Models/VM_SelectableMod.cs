@@ -1,9 +1,11 @@
-﻿using Mutagen.Bethesda.Plugins;
+﻿using System.Diagnostics;
+using Mutagen.Bethesda.Plugins;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
+    [DebuggerDisplay("{DisplayText}")]
     public class VM_SelectableMod : ReactiveObject
     {
         public ModKey ModKey { get; }

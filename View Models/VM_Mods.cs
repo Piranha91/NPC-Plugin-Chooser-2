@@ -113,7 +113,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         // Concurrency management
         private bool _isPopulatingModSettings = false;
-        
+
         // Factory fields
         private readonly VM_ModSetting.FromModelFactory _modSettingFromModelFactory;
         private readonly VM_ModSetting.FromMugshotPathFactory _modSettingFromMugshotPathFactory;
@@ -399,7 +399,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Asynchronously refresh its NPC lists if it might have mod data (though unlink usually makes it mugshot-only)
             // For a new mugshot-only entry, RefreshNpcLists won't find much, but it's harmless.
 
-            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFaceGenPathsOnLoad(); //////////////////////////////////////////////////////////////////////////
+            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) =
+                CacheFaceGenPathsOnLoad(); //////////////////////////////////////////////////////////////////////////
             Task.Run(() => newVm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles));
         }
 
@@ -426,7 +427,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 sorted.Remove(baseGameSetting);
                 sorted.Insert(0, baseGameSetting);
             }
-            
+
             return sorted;
         }
 
@@ -473,7 +474,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             // Create a temporary list to hold data for VM creation. This is thread-safe.
-            var mugshotCreationData = new List<(string ImagePath, FormKey NpcFormKey, string NpcDisplayName, bool IsAmbiguous, List<ModKey> AvailablePlugins, ModKey? CurrentSource)>();
+            var mugshotCreationData =
+                new List<(string ImagePath, FormKey NpcFormKey, string NpcDisplayName, bool IsAmbiguous, List<ModKey>
+                    AvailablePlugins, ModKey? CurrentSource)>();
 
             try
             {
@@ -542,8 +545,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                             currentSource = availableModKeys.FirstOrDefault();
                                         }
                                     }
+
                                     // Add the data to the temporary list instead of creating the VM here
-                                    mugshotCreationData.Add((imagePath, npcFormKey, npcDisplayName, isAmbiguous, availableModKeys, currentSource));
+                                    mugshotCreationData.Add((imagePath, npcFormKey, npcDisplayName, isAmbiguous,
+                                        availableModKeys, currentSource));
                                 }
                                 catch (Exception ex)
                                 {
@@ -586,8 +591,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                         currentSource = availableModKeys.FirstOrDefault();
                                     }
                                 }
+
                                 // Add placeholder data to the temporary list
-                                mugshotCreationData.Add((FullPlaceholderPath, npcFormKey, npcDisplayName, isAmbiguous, availableModKeys, currentSource));
+                                mugshotCreationData.Add((FullPlaceholderPath, npcFormKey, npcDisplayName, isAmbiguous,
+                                    availableModKeys, currentSource));
                             }
                         });
                     }
@@ -770,8 +777,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        // In VM_Mods.cs
-
         public async Task PopulateModSettingsAsync(VM_SplashScreen? splashReporter, double baseProgress = 0,
             double progressSpan = 10)
         {
@@ -847,6 +852,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                     foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
                     {
+                        string modFolderName = Path.GetFileName(modFolderPath);
+                        splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), $"Scanning {modFolderName}");
                         // --- NEW: Check for and skip previous patcher output directories ---
                         string tokenFilePath = Path.Combine(modFolderPath, tokenFileName);
                         if (File.Exists(tokenFilePath))
@@ -857,17 +864,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         }
 
                         // --- END of NEW LOGIC --
-                        
+
                         // --- Skip already tested mods
                         if (_settings.CachedNonAppearanceMods.Contains(modFolderPath))
                         {
                             continue;
                         }
                         // --- End of skip
-                        
-                        
-                        string modFolderName = Path.GetFileName(modFolderPath);
-                        var foundEnabledModKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings, false);
+
+                        var modKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings, false);
 
                         var existingVmFromSettings = tempList.FirstOrDefault(vm =>
                             vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
@@ -879,80 +884,92 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             if (!existingVmFromSettings.CorrespondingFolderPaths.Contains(modFolderPath,
                                     StringComparer.OrdinalIgnoreCase))
                                 existingVmFromSettings.CorrespondingFolderPaths.Add(modFolderPath);
-                            foreach (var key in foundEnabledModKeysInFolder)
+                            foreach (var key in modKeysInFolder)
                                 if (!existingVmFromSettings.CorrespondingModKeys.Contains(key))
                                     existingVmFromSettings.CorrespondingModKeys.Add(key);
                         }
                         else if (mugshotOnlyVmToUpgrade != null)
                         {
                             mugshotOnlyVmToUpgrade.CorrespondingFolderPaths.Add(modFolderPath);
-                            foreach (var key in foundEnabledModKeysInFolder)
+                            foreach (var key in modKeysInFolder)
                                 if (!mugshotOnlyVmToUpgrade.CorrespondingModKeys.Contains(key))
                                     mugshotOnlyVmToUpgrade.CorrespondingModKeys.Add(key);
                             tempList.Add(mugshotOnlyVmToUpgrade);
                             vmsFromMugshotsOnly.Remove(mugshotOnlyVmToUpgrade);
                             loadedDisplayNames.Add(mugshotOnlyVmToUpgrade.DisplayName);
                         }
-                        else if (FaceGenScanner.CollectFaceGenFiles(modFolderPath, out var faceGenFiles, out _, out _))
+                        else
                         {
-                            var newVm = _modSettingFromDisplayNameFactory(modFolderName, this);
-                            newVm.CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath };
-
-                            if (foundEnabledModKeysInFolder.Any() &&
-                                ContainsAppearancePlugins(foundEnabledModKeysInFolder, modFolderPath))
+                            var scanResult = await FaceGenScanner.CollectFaceGenFilesAsync(modFolderPath);
+                            if (scanResult.AnyFilesFound)
                             {
-                                newVm.CorrespondingModKeys =
-                                    new ObservableCollection<ModKey>(foundEnabledModKeysInFolder);
-                                string potentialMugshotPath =
-                                    Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
-                                if (Directory.Exists(potentialMugshotPath) &&
-                                    !claimedMugshotPaths.Contains(potentialMugshotPath))
+                                var faceGenFiles = scanResult.FaceGenFiles;
+                                var newVm = _modSettingFromDisplayNameFactory(modFolderName, this);
+                                newVm.CorrespondingFolderPaths = new ObservableCollection<string> { modFolderPath };
+
+                                // load resources
+                                _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
+                                //
+
+                                if (modKeysInFolder.Any() &&
+                                    await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath }))
                                 {
-                                    newVm.MugShotFolderPath = potentialMugshotPath;
-                                    claimedMugshotPaths.Add(potentialMugshotPath);
-                                }
+                                    newVm.CorrespondingModKeys =
+                                        new ObservableCollection<ModKey>(modKeysInFolder);
+                                    string potentialMugshotPath =
+                                        Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
+                                    if (Directory.Exists(potentialMugshotPath) &&
+                                        !claimedMugshotPaths.Contains(potentialMugshotPath))
+                                    {
+                                        newVm.MugShotFolderPath = potentialMugshotPath;
+                                        claimedMugshotPaths.Add(potentialMugshotPath);
+                                    }
 
-                                tempList.Add(newVm);
-                                loadedDisplayNames.Add(newVm.DisplayName);
-                            }
-                            else if (foundEnabledModKeysInFolder.Any())
-                            {
-                                _settings.CachedNonAppearanceMods.Add(modFolderPath);
+                                    tempList.Add(newVm);
+                                    loadedDisplayNames.Add(newVm.DisplayName);
+                                }
+                                else if (modKeysInFolder.Any())
+                                {
+                                    _settings.CachedNonAppearanceMods.Add(modFolderPath);
+                                }
+                                else
+                                {
+                                    newVm.IsFaceGenOnlyEntry = true;
+
+                                    foreach (var pluginName in faceGenFiles.Keys)
+                                    {
+                                        var modKey = ModKey.FromFileName(pluginName);
+                                        newVm.CorrespondingModKeys.Add(modKey);
+
+                                        var NpcIds = faceGenFiles[pluginName];
+                                        foreach (var id in NpcIds)
+                                        {
+                                            if (id.Length != 8)
+                                            {
+                                                continue;
+                                            } // not a FormID
+
+                                            var subId = id.Substring(2, 6);
+                                            var formKeyStr = subId + ":" + pluginName;
+                                            if (FormKey.TryFactory(formKeyStr, out var formKey))
+                                            {
+                                                newVm.FaceGenOnlyNpcFormKeys.Add(formKey);
+                                            }
+                                        }
+                                    }
+                                    tempList.Add(newVm);
+                                    loadedDisplayNames.Add(newVm.DisplayName);
+                                }
                             }
                             else
                             {
-                                newVm.IsFaceGenOnlyEntry = true;
-
-                                foreach (var pluginName in faceGenFiles.Keys)
-                                {
-                                    var modKey = ModKey.FromFileName(pluginName);
-                                    newVm.CorrespondingModKeys.Add(modKey);
-
-                                    var NpcIds = faceGenFiles[pluginName];
-                                    foreach (var id in NpcIds)
-                                    {
-                                        if (id.Length != 8)
-                                        {
-                                            continue;
-                                        } // not a FormID
-
-                                        var subId = id.Substring(2, 6);
-                                        var formKeyStr = subId + ":" + pluginName;
-                                        if (FormKey.TryFactory(formKeyStr, out var formKey))
-                                        {
-                                            newVm.FaceGenOnlyNpcFormKeys.Add(formKey);
-                                        }
-                                    }
-                                }
+                                _settings.CachedNonAppearanceMods.Add(modFolderPath);
                             }
+                        }
 
-                            tempList.Add(newVm);
-                            loadedDisplayNames.Add(newVm.DisplayName);
-                        }
-                        else
-                        {
-                            _settings.CachedNonAppearanceMods.Add(modFolderPath);
-                        }
+                        // Unload Resources
+                        _pluginProvider.UnloadPlugins(modKeysInFolder);
+                        //
                     }
                 }
                 catch (Exception ex)
@@ -964,7 +981,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             foreach (var mugshotVm in vmsFromMugshotsOnly)
                 if (!tempList.Any(existing =>
                         existing.DisplayName.Equals(mugshotVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
+                {
                     tempList.Add(mugshotVm);
+                }
 
             foreach (var vm in tempList)
             {
@@ -974,45 +993,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
             // --- End of existing logic ---
-          
+
             // Add base game plugins if not handled by mods (e.g. cleaned versions of the plugins)
-            
-            var implicitModKeys = Implicits.Get(_environmentStateProvider.SkyrimVersion.ToGameRelease()).Listings.ToList();
-            
-            List<ModKey> baseGameModKeys = new List<ModKey>();
-            
-            List<string> baseGamePluginNames = new() 
-            {
-                "Skyrim.esm",
-                "Update.esm",
-                "Dawnguard.esm",
-                "HearthFires.esm",
-                "Dragonborn.esm"
-            };
-            var creationClubModKeys = _aux.GetCreationClubPlugins(); // currently Implicits.Get doesn't seem to include creation club plugins
 
-            foreach (var key in implicitModKeys)
-            {
-                if (tempList.Any(modSetting => modSetting.CorrespondingModKeys.Contains(key)) || // skip plugins handled by mods
-                    !_environmentStateProvider.LoadOrder.ListedOrder.Any(listing => listing.ModKey.Equals(key))) // skip plugins not in current load order (e.g. out of date creation club .ccc file
-                {
-                    continue;
-                }
+            var baseGameModKeys = _environmentStateProvider.BaseGamePlugins;
+            var creationClubModKeys = _environmentStateProvider.CreationClubPlugins;
 
-                if (baseGamePluginNames.Contains(key.FileName.String, StringComparer.OrdinalIgnoreCase))
-                {
-                    baseGameModKeys.Add(key);
-                }
-                else
-                {
-                    creationClubModKeys.Add(key); 
-                }
-            }
-            
+            baseGameModKeys.RemoveWhere(mk => tempList.Any(vm => vm.CorrespondingModKeys.Contains(mk)));
+            creationClubModKeys.RemoveWhere(mk => tempList.Any(vm => vm.CorrespondingModKeys.Contains(mk)));
+
             if (creationClubModKeys.Any())
             {
                 // Check if a mod setting with the Creation Club name already exists.
-                var existingCcMod = tempList.FirstOrDefault(vm => vm.DisplayName.Equals(CreationClubModsettingName, StringComparison.OrdinalIgnoreCase));
+                var existingCcMod = tempList.FirstOrDefault(vm =>
+                    vm.DisplayName.Equals(CreationClubModsettingName, StringComparison.OrdinalIgnoreCase));
 
                 if (existingCcMod == null)
                 {
@@ -1023,11 +1017,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     tempList.Add(ccMod);
                 }
             }
-            
+
             if (baseGameModKeys.Any())
             {
                 // Check if a mod setting with the Base Game name already exists.
-                var existingBaseMod = tempList.FirstOrDefault(vm => vm.DisplayName.Equals(BaseGameModSettingName, StringComparison.OrdinalIgnoreCase));
+                var existingBaseMod = tempList.FirstOrDefault(vm =>
+                    vm.DisplayName.Equals(BaseGameModSettingName, StringComparison.OrdinalIgnoreCase));
 
                 if (existingBaseMod == null)
                 {
@@ -1038,7 +1033,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     tempList.Add(baseMod);
                 }
             }
-            
+
             _allModSettingsInternal.Clear();
             _allModSettingsInternal.AddRange(SortVMs(tempList));
 
@@ -1056,12 +1051,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 try
                 {
                     // Use Task.Run for the CPU/sync-IO-bound work
-                    await Task.Run(() => 
+                    await Task.Run(() =>
                     {
                         try
                         {
                             // Pass the pre-cached data to the synchronous method
-                            vm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles); 
+                            vm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles);
 
                             if (index % 10 == 0 && _allModSettingsInternal.Count > 0)
                             {
@@ -1073,7 +1068,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             }
 
                             // This can also be moved inside RefreshNpcLists if it's part of the same unit of work
-                            vm.FindPluginsWithOverrides(_pluginProvider); 
+                            vm.FindPluginsWithOverrides(_pluginProvider);
                         }
                         catch (Exception ex)
                         {
@@ -1136,7 +1131,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        private (HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles) CacheFaceGenPathsOnLoad()
+        private (HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles)
+            CacheFaceGenPathsOnLoad()
         {
             // Cache 1: All loose FaceGen files from all mod directories.
             Debug.WriteLine("Caching loose FaceGen file paths...");
@@ -1178,8 +1174,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Cache 2: All FaceGen files within all relevant BSAs, grouped by the ModSetting VM.
             Debug.WriteLine("Caching FaceGen file paths from BSAs...");
             var allFaceGenBsaFiles = new Dictionary<string, HashSet<string>>(); // key is ModSetting Display Name
-            var internalBsaDirCache = new Dictionary<string, HashSet<string>>(); // key is BSA path. For interal use here
-            
+            var internalBsaDirCache =
+                new Dictionary<string, HashSet<string>>(); // key is BSA path. For interal use here
+
             foreach (var vm in _allModSettingsInternal)
             {
                 var bsaFilePathsForVm = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1190,14 +1187,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     pathsToSearch.Add(_environmentStateProvider.DataFolderPath);
                 }
-                
-                var bsaDict = BsaHandler.GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, pathsToSearch, _settings.SkyrimRelease.ToGameRelease());
+
+                var bsaDict = BsaHandler.GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, pathsToSearch,
+                    _settings.SkyrimRelease.ToGameRelease());
 
                 foreach (var modKey in vm.CorrespondingModKeys)
                 {
                     var bsaPathsForPlugin = bsaDict[modKey];
-                    var bsaReadersForPlugin = _bsaHandler.OpenBsaArchiveReaders(bsaPathsForPlugin, _settings.SkyrimRelease.ToGameRelease(), false);
-                    
+                    var bsaReadersForPlugin = _bsaHandler.OpenBsaArchiveReaders(bsaPathsForPlugin,
+                        _settings.SkyrimRelease.ToGameRelease(), false);
+
                     foreach (var entry in bsaReadersForPlugin)
                     {
                         if (internalBsaDirCache.TryGetValue(entry.Key, out var faceGenFilesInArchive))
@@ -1221,6 +1220,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                         faceGenFilesInThisArchive.Add(path);
                                     }
                                 }
+
                                 internalBsaDirCache.Add(entry.Key, faceGenFilesInThisArchive);
                             }
                         }
@@ -1555,7 +1555,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 // Refresh NPC lists for the winner as its sources may have changed/**/
 
-                (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFaceGenPathsOnLoad();///////////////////////////////////////////////////////////////////////
+                (var allFaceGenLooseFiles, var allFaceGenBsaFiles) =
+                    CacheFaceGenPathsOnLoad(); ///////////////////////////////////////////////////////////////////////
                 Task.Run(() => winner.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles));
 
                 // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)
@@ -1637,13 +1638,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 ShowMugshotsCommand.Execute(modSetting).Subscribe().DisposeWith(_disposables);
             }
         }
-        
+
         // For passing plugin provider to sub-view-models (seems faster than doing it via AutoFac)
         public PluginProvider GetPluginProvider()
         {
             return _pluginProvider;
         }
-        
+
         // Helper methods to use factories (optional, but can centralize calls)
         public VM_ModSetting CreateModSettingFromModel(Models.ModSetting model)
         {
@@ -1660,89 +1661,128 @@ namespace NPC_Plugin_Chooser_2.View_Models
             return _modSettingFromDisplayNameFactory(displayName, this);
         }
 
-        private bool ContainsAppearancePlugins(IEnumerable<ModKey> modKeysInMod, string modFolderPath)
+        /// <summary>
+        /// Asynchronously checks if any of the given mods in a folder modify NPC appearance.
+        /// </summary>
+        private async Task<bool> ContainsAppearancePluginsAsync(IEnumerable<ModKey> modKeysInMod,
+            HashSet<string> modFolderPaths)
         {
             foreach (var modKey in modKeysInMod)
             {
-                if (_pluginProvider.TryGetPlugin(modKey, modFolderPath, out var plugin) &&
-                    plugin != null && PluginModifiesAppearance(plugin, modKeysInMod))
+                // TryGetPlugin is likely a fast, synchronous operation.
+                if (_pluginProvider.TryGetPlugin(modKey, modFolderPaths, out var plugin) && plugin != null)
                 {
-                    return true;
-                }
-            }
-            return false;
-        }
-        private bool PluginModifiesAppearance(ISkyrimModGetter mod, IEnumerable<ModKey> allKeysInCurrentMod)
-        {
-            var candidateMasters = mod.ModHeader.MasterReferences.Select(x => x.Master)
-                .Where(x => !allKeysInCurrentMod.Contains(x)) 
-                .ToHashSet();
-            
-            // Objective:
-            // Compare the plugin against its most recent masters, EXCLUDING those masters within the same mod
-            // Masters within the same mod are a "package deal"
-            // If the appearance differs from the most recent master, it's an appearance mod
-
-            var enabledMasters = _environmentStateProvider.LoadOrder.PriorityOrder.Where(
-                x => candidateMasters.Contains(x.ModKey))
-                .ToList();
-            
-            var tempLinkCache = mod.ToImmutableLinkCache();
-            foreach (var npc in mod.Npcs)
-            {
-                if (npc.FormKey.ModKey.Equals(mod.ModKey))
-                {
-                    continue; // not an overriden NPC
-                }
-
-                if (!tempLinkCache.TryResolve<INpcGetter>(npc.FormKey, out var npcGetter))
-                {
-                    continue;
-                }
-
-                foreach (var listing in enabledMasters)
-                {
-                    var baseNpcGetter = listing.Mod?.Npcs.FirstOrDefault(x => x.FormKey.Equals(npc.FormKey));
-                    if (baseNpcGetter != null)
+                    // Await the result of the CPU-bound appearance check.
+                    if (await PluginModifiesAppearanceAsync(plugin, modKeysInMod))
                     {
-                        if ((npcGetter.FaceMorph != null && baseNpcGetter.FaceMorph == null) ||
-                            (npcGetter.FaceMorph != null && !npcGetter.FaceMorph.Equals(baseNpcGetter.FaceMorph)) ||
-                            (npcGetter.FaceParts != null && baseNpcGetter.FaceParts == null) ||
-                            (npcGetter.FaceParts != null && !npcGetter.FaceParts.Equals(baseNpcGetter.FaceParts)) ||
-                            !npcGetter.Height.Equals(baseNpcGetter.Height) ||
-                            !npcGetter.Weight.Equals(baseNpcGetter.Weight) ||
-                            !npcGetter.TextureLighting.Equals(baseNpcGetter.TextureLighting) ||
-                            !npcGetter.HeadTexture.Equals(baseNpcGetter.HeadTexture) ||
-                            !npcGetter.WornArmor.Equals(baseNpcGetter.WornArmor) ||
-                            !npcGetter.HeadParts.Count.Equals(baseNpcGetter.HeadParts.Count) ||
-                            !npcGetter.TintLayers.Count.Equals(baseNpcGetter.TintLayers.Count)
-                           )
-                        {
-                            return true;
-                        }
-
-                        foreach (var headPart in npcGetter.HeadParts)
-                        {
-                            if (!baseNpcGetter.HeadParts.Contains(headPart))
-                            {
-                                return true;
-                            }
-                        }
-
-                        foreach (var tintLayer in npcGetter.TintLayers)
-                        {
-                            if (!baseNpcGetter.TintLayers.Contains(tintLayer))
-                            {
-                                return true;
-                            }
-                        }
-                        
-                        break; // analyzed highest priority mod contaiing this NPC; no need to look further
+                        return true;
                     }
                 }
             }
-            
+
             return false;
         }
+
+        /// <summary>
+        /// Offloads the CPU-intensive work of checking for NPC appearance modifications to a background thread.
+        /// </summary>
+        private Task<bool> PluginModifiesAppearanceAsync(ISkyrimModGetter mod, IEnumerable<ModKey> allKeysInCurrentMod)
+        {
+            // Use Task.Run to execute the synchronous, CPU-bound logic on a thread pool thread.
+            return Task.Run(() =>
+            {
+                var candidateMasters = mod.ModHeader.MasterReferences.Select(x => x.Master)
+                    .Where(x => !allKeysInCurrentMod.Contains(x))
+                    .ToHashSet();
+
+                var enabledMasters = _environmentStateProvider.LoadOrder.PriorityOrder
+                    .Where(x => candidateMasters.Contains(x.ModKey))
+                    .ToList();
+
+                var tempLinkCache = mod.ToImmutableLinkCache();
+                foreach (var npc in mod.Npcs)
+                {
+                    if (npc.FormKey.ModKey.Equals(mod.ModKey))
+                    {
+                        continue; // not an overridden NPC
+                    }
+
+                    if (!tempLinkCache.TryResolve<INpcGetter>(npc.FormKey, out var npcGetter))
+                    {
+                        continue;
+                    }
+
+                    foreach (var listing in enabledMasters)
+                    {
+                        var baseNpcGetter = listing.Mod?.Npcs.FirstOrDefault(x => x.FormKey.Equals(npc.FormKey));
+                        if (baseNpcGetter != null)
+                        {
+                            // A series of comparisons to check for appearance changes.
+                            if ((npcGetter.FaceMorph != null && baseNpcGetter.FaceMorph == null) ||
+                                (npcGetter.FaceMorph != null && !npcGetter.FaceMorph.Equals(baseNpcGetter.FaceMorph)) ||
+                                (npcGetter.FaceParts != null && baseNpcGetter.FaceParts == null) ||
+                                (npcGetter.FaceParts != null && !npcGetter.FaceParts.Equals(baseNpcGetter.FaceParts)) ||
+                                !npcGetter.Height.Equals(baseNpcGetter.Height) ||
+                                !npcGetter.Weight.Equals(baseNpcGetter.Weight) ||
+                                !npcGetter.TextureLighting.Equals(baseNpcGetter.TextureLighting) ||
+                                !npcGetter.HeadTexture.Equals(baseNpcGetter.HeadTexture) ||
+                                !npcGetter.WornArmor.Equals(baseNpcGetter.WornArmor) ||
+                                !npcGetter.HeadParts.Count.Equals(baseNpcGetter.HeadParts.Count) ||
+                                !npcGetter.TintLayers.Count.Equals(baseNpcGetter.TintLayers.Count)
+                               )
+                            {
+                                return true;
+                            }
+
+                            foreach (var headPart in npcGetter.HeadParts)
+                            {
+                                if (!baseNpcGetter.HeadParts.Contains(headPart))
+                                {
+                                    return true;
+                                }
+                            }
+
+                            foreach (var tintLayer in npcGetter.TintLayers)
+                            {
+                                if (!baseNpcGetter.TintLayers.Contains(tintLayer))
+                                {
+                                    return true;
+                                }
+                            }
+
+                            break; // Analyzed highest priority mod containing this NPC; no need to look further
+                        }
+                    }
+                }
+
+                return false;
+            });
+        }
+
+        /*
+        private bool IsUnsuitableForMergeIn(ISkyrimModGetter mod)
+        {
+            var records = mod.EnumerateMajorRecords().ToHashSet();
+            int nonAppearanceRecordCount = 0;
+
+            var npcs = mod.Npcs.Select(x => x.FormKey).ToHashSet();
+            foreach (var npc in mod.Npcs)
+            {
+                var headTexture = npc.HeadTexture.
+            }
+
+            foreach (var rec in records)
+            {
+                if (!mod.Npcs.Contains(rec) &&
+                    !mod.Armors.Contains(rec) &&
+                    !mod.ArmorAddons.Contains(rec) &&
+                    )
+                {
+                    nonAppearanceRecordCount++;
+                }
+            }
+        }*/
+
+
     }
 }
