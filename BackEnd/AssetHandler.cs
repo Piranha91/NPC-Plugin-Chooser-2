@@ -179,14 +179,17 @@ public class AssetHandler : OptionalUIModule
     /// <param name="outputBasePath">The root output directory for the patch.</param>
     private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath)
     {
-        return _processedAssetTasks.GetOrAdd(relativePath, (relPath) => Task.Run(async () =>
+        // FIX: Create a composite key to uniquely identify an asset *within the context of its source mod*.
+        // This prevents a failed lookup from one mod from blocking a successful lookup from another mod for the same relative path.
+        string cacheKey = $"{relativePath}|{modSetting.DisplayName}";
+
+        return _processedAssetTasks.GetOrAdd(cacheKey, _ => Task.Run(async () =>
         {
             await _nifProcessingSemaphore.WaitAsync();
             try
             {
-                var (sourceType, sourcePath, bsaPath) = FindAssetSource(relPath, modSetting);
-                string destPath = Path.Combine(outputBasePath, relPath);
-
+                var (sourceType, sourcePath, bsaPath) = FindAssetSource(relativePath, modSetting);
+                string destPath = Path.Combine(outputBasePath, relativePath);
                 switch (sourceType)
                 {
                     case AssetSourceType.LooseFile:
@@ -201,13 +204,15 @@ public class AssetHandler : OptionalUIModule
                     case AssetSourceType.BsaFile:
                         // For BSAs, we must extract first, then analyze the extracted file.
                         // The original sequential logic is still best here.
-                        if (await _bsaHandler.ExtractFileAsync(bsaPath, relPath, destPath))
+                        if (await _bsaHandler.ExtractFileAsync(bsaPath, relativePath, destPath))
                         {
                             await PostProcessNifTextures(destPath, modSetting, outputBasePath);
                         }
                         break;
                 
                     default:
+                        // If the asset is not found within this modSetting, the task simply completes,
+                        // doing nothing. Another call with a different modSetting will have its own task.
                         break;
                 }
             }
