@@ -445,6 +445,10 @@
                                                        </Style>
                                                    </MenuItem.ItemContainerStyle>
                                                </MenuItem>
+                                               <MenuItem Header="Select Same Source Plugin Where Possible"
+                                                         Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                         Command="{Binding SelectSameSourcePluginWherePossibleCommand}"
+                                                         ToolTip="For all other ambiguous NPCs in this mod, sets their source to this source plugin if it contains the NPC."/>
                                           </ContextMenu>
                                      </Border.ContextMenu>
                                  </Border>

@@ -130,6 +130,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<string, Unit> RemoveFolderPathCommand { get; }
         public ReactiveCommand<Unit, Unit> BrowseMugshotFolderCommand { get; }
         public ReactiveCommand<Unit, Unit> UnlinkMugshotDataCommand { get; }
+        
         // Command for deleting the mod setting ***
         public ReactiveCommand<Unit, Unit> DeleteCommand { get; }
 
@@ -874,14 +875,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// Updates NpcPluginDisambiguation and NpcSourcePluginMap directly.
         /// </summary>
         /// <returns>A list of FormKeys for NPCs whose source was actually changed.</returns>
-        public List<FormKey> SetSourcePluginForAllApplicableNpcs(ModKey newGlobalSourcePlugin)
+        public List<FormKey> SetSourcePluginForAllApplicableNpcs(ModKey newGlobalSourcePlugin, bool showMessages = true)
         {
             var changedNpcKeys = new List<FormKey>();
 
             if (!CorrespondingModKeys.Contains(newGlobalSourcePlugin))
             {
                 Debug.WriteLine($"Error: Plugin {newGlobalSourcePlugin.FileName} is not part of this ModSetting '{DisplayName}'. Cannot set as global source.");
-                ScrollableMessageBox.ShowError($"Plugin {newGlobalSourcePlugin.FileName} is not associated with the mod entry '{DisplayName}'.", "Invalid Global Source Plugin");
+                if (showMessages)
+                {
+                    ScrollableMessageBox.ShowError($"Plugin {newGlobalSourcePlugin.FileName} is not associated with the mod entry '{DisplayName}'.", "Invalid Global Source Plugin");
+                }
                 return changedNpcKeys;
             }
 
@@ -899,7 +903,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (pluginFilePath == null)
             {
                 Debug.WriteLine($"Error: Could not find plugin file {newGlobalSourcePlugin.FileName} for ModSetting '{DisplayName}'.");
-                ScrollableMessageBox.ShowError($"Could not locate the file for plugin {newGlobalSourcePlugin.FileName} within the specified mod folders for '{DisplayName}'.", "Plugin File Not Found");
+                if (showMessages)
+                {
+                    ScrollableMessageBox.ShowError($"Could not locate the file for plugin {newGlobalSourcePlugin.FileName} within the specified mod folders for '{DisplayName}'.", "Plugin File Not Found");
+                }
                 return changedNpcKeys;
             }
 
@@ -915,7 +922,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             catch (Exception e)
             {
                 Debug.WriteLine($"Error reading NPCs from {newGlobalSourcePlugin.FileName} for ModSetting '{DisplayName}': {e.Message}");
-                ScrollableMessageBox.ShowError($"Error reading NPC data from plugin {newGlobalSourcePlugin.FileName}:\n{e.Message}", "Plugin Read Error");
+                if (showMessages)
+                {
+                    ScrollableMessageBox.ShowError($"Error reading NPC data from plugin {newGlobalSourcePlugin.FileName}:\n{e.Message}", "Plugin Read Error");
+                }
                 return changedNpcKeys;
             }
             
@@ -941,17 +951,35 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
             }
 
-            if (changedNpcKeys.Any())
+            if (showMessages)
             {
-                // DO NOT CALL RefreshNpcLists() HERE.
-                // DO NOT CALL _parentVm.NotifyMultipleNpcSourcesChanged(this);
-                ScrollableMessageBox.Show($"Set {newGlobalSourcePlugin.FileName} as the source for {changedNpcKeys.Count} applicable NPC(s) in '{DisplayName}'.", "Global Source Updated");
-            }
-            else
-            {
-                 ScrollableMessageBox.Show($"No NPC source plugin assignments were changed for '{DisplayName}'. This may be because all relevant NPCs already used {newGlobalSourcePlugin.FileName} as their source, or no ambiguous NPCs are present in that plugin.", "No Changes Made");
+                if (changedNpcKeys.Any())
+                {
+                    ScrollableMessageBox.Show($"Set {newGlobalSourcePlugin.FileName} as the source for {changedNpcKeys.Count} applicable NPC(s) in '{DisplayName}'.", "Global Source Updated");
+                }
+                else
+                {
+                    ScrollableMessageBox.Show($"No NPC source plugin assignments were changed for '{DisplayName}'. This may be because all relevant NPCs already used {newGlobalSourcePlugin.FileName} as their source, or no ambiguous NPCs are present in that plugin.", "No Changes Made");
+                }
             }
             return changedNpcKeys;
+        }
+
+        /// <summary>
+        /// Sets the source plugin for all applicable ambiguous NPCs and notifies the parent
+        /// VM to refresh the UI. This is called by the context menu command.
+        /// </summary>
+        public void SetAndNotifySourcePluginForAll(ModKey newGlobalSourcePlugin)
+        {
+            // Call the existing logic to update the data model, but suppress the pop-up messages.
+            var changedKeys = SetSourcePluginForAllApplicableNpcs(newGlobalSourcePlugin, showMessages: false);
+
+            if (changedKeys.Any())
+            {
+                // Use the existing reference to the parent VM to signal that the mugshot
+                // panel needs to be reloaded to reflect the data changes.
+                _parentVm.NotifyMultipleNpcSourcesChanged(this);
+            }
         }
         
         private void UnlinkMugshotData()

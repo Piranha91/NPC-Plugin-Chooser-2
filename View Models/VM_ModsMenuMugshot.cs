@@ -56,6 +56,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
         public ReactiveCommand<Unit, Unit> JumpToNpcCommand { get; }
         public ReactiveCommand<ModKey, Unit> SetNpcSourcePluginCommand { get; }
+        public ReactiveCommand<Unit, Unit> SelectSameSourcePluginWherePossibleCommand { get; }
 
         // Static path for placeholder, consistent with VM_Mods
         private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
@@ -156,6 +157,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
             
             var canSetNpcSource = this.WhenAnyValue(x => x.IsAmbiguousSource).Select(isAmbiguous => isAmbiguous); 
             SetNpcSourcePluginCommand = ReactiveCommand.Create<ModKey>(SetNpcSourcePluginInternal, canSetNpcSource);
+            
+            SelectSameSourcePluginWherePossibleCommand = ReactiveCommand.Create(() =>
+                {
+                    if (this.CurrentSourcePlugin.HasValue)
+                    {
+                        _parentVMModSetting.SetAndNotifySourcePluginForAll(this.CurrentSourcePlugin.Value);
+                    }
+                },
+                this.WhenAnyValue(x => x.IsAmbiguousSource, x => x.CurrentSourcePlugin,
+                    (ambiguous, source) => ambiguous && source.HasValue));
 
             ToggleFullScreenCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error showing image: {ex.Message}"));
             JumpToNpcCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error jumping to NPC: {ex.Message}"));
