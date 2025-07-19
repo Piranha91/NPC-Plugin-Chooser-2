@@ -13,17 +13,20 @@ public class Validator : OptionalUIModule
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly Settings _settings;
     private readonly AssetHandler _assetHandler;
+    private readonly PluginProvider _pluginProvider;
 
     private Dictionary<FormKey, ScreeningResult> _screeningCache = new();
+    private Dictionary<ModKey, HashSet<ModKey>> _masterPluginCache = new();
 
     public record ValidationReport(List<string> InvalidSelections);
 
     // Constructor updated to include AssetHandler for optimized directory checks.
-    public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, AssetHandler assetHandler)
+    public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, AssetHandler assetHandler, PluginProvider pluginProvider)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _assetHandler = assetHandler;
+        _pluginProvider = pluginProvider;
     }
 
     public Dictionary<FormKey, ScreeningResult> GetScreeningCache()
@@ -51,6 +54,9 @@ public class Validator : OptionalUIModule
         int totalToScreen = selectionsList.Count;
         INpcGetter? winningNpcOverride = null;
         ModSetting? appearanceModSetting = null;
+        
+        // Get the load order once to avoid repeated lookups in the loop
+        var loadOrderList = _environmentStateProvider.LoadOrder?.ListedOrder.Select(x => x.ModKey).ToList() ?? new List<ModKey>();
 
         for (int i = 0; i < totalToScreen; i++)
         {
@@ -116,6 +122,55 @@ public class Validator : OptionalUIModule
                     continue;
                 }
             }
+
+            using (ContextualPerformanceTracer.Trace("Validator.CheckMasters"))
+            {
+                ModKey? sourcePlugin = null;
+                // Determine the specific plugin providing the NPC's appearance
+                if (appearanceModSetting.IsFaceGenOnlyEntry)
+                {
+                    sourcePlugin = npcFormKey.ModKey;
+                }
+                else if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var disambiguatedPlugin))
+                {
+                    sourcePlugin = disambiguatedPlugin;
+                }
+                else if (appearanceModSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var availablePlugins) && availablePlugins.Any())
+                {
+                    sourcePlugin = availablePlugins.FirstOrDefault();
+                }
+
+                if (sourcePlugin.HasValue && !sourcePlugin.Value.IsNull)
+                {
+                    HashSet<ModKey> masters;
+                    // Try to get the master list from the cache first.
+                    if (!_masterPluginCache.TryGetValue(sourcePlugin.Value, out masters))
+                    {
+                        // If not cached, call the provider and store the result in the cache.
+                        masters = _pluginProvider.GetMasterPlugins(sourcePlugin.Value, appearanceModSetting.CorrespondingFolderPaths);
+                        _masterPluginCache[sourcePlugin.Value] = masters;
+                    }
+
+                    bool mastersAreValid = true;
+                    foreach (var master in masters)
+                    {
+                        // A master is valid if it's in the load order OR part of the same ModSetting group.
+                        if (!loadOrderList.Contains(master) && !appearanceModSetting.CorrespondingModKeys.Contains(master))
+                        {
+                            var errorMsg = $"For NPC {npcIdentifier}, the selected plugin '{sourcePlugin.Value.FileName}' is missing a required master: '{master.FileName}'. This selection is invalid.";
+                            AppendLog($"  SCREENING ERROR: {errorMsg}", true);
+                            invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Missing required master: {master.FileName})");
+                            mastersAreValid = false;
+                            break; // A single missing master invalidates the selection.
+                        }
+                    }
+                    if (!mastersAreValid)
+                    {
+                        continue; // Move to the next NPC.
+                    }
+                }
+            }
+
             _screeningCache[npcFormKey] = new ScreeningResult(
                 true,
                 winningNpcOverride,
@@ -132,6 +187,8 @@ public class Validator : OptionalUIModule
                 await Task.Delay(1, ct);
             }
         }
+        
+        _masterPluginCache.Clear();;
 
         UpdateProgress(totalToScreen, totalToScreen, "Screening Complete.");
         AppendLog($"Screening finished. Found {invalidSelections.Count} invalid selections.");
