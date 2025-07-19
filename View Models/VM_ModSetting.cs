@@ -754,21 +754,78 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         }
 
                         var loadOrderList = loadOrder.ListedOrder.Select(x => x.ModKey).ToList();
+                        ModKey? winner = null;
 
-                        ModKey defaultSource = sources
-                            .Where(s => !s.IsNull && loadOrderList.Contains(s))
-                            .OrderBy(s => loadOrderList.IndexOf(s))
-                            .FirstOrDefault();
-
-                        if (!defaultSource.IsNull)
+                        // 1) Check if all sources are in the load order. If so, use load order winner.
+                        if (sources.All(s => !s.IsNull && loadOrderList.Contains(s)))
                         {
-                            resolvedSource = defaultSource;
+                            winner = sources
+                                .OrderBy(s => loadOrderList.IndexOf(s))
+                                .FirstOrDefault();
+                        }
+
+                        // 2) If not, find a winner based on deepest valid master dependency.
+                        var candidates = new List<(ModKey plugin, int masterCount)>();
+                        if (winner == null || winner.Value.IsNull)
+                        {
+                            foreach (var source in sources)
+                            {
+                                if (source.IsNull) continue;
+
+                                var masters = _pluginProvider.GetMasterPlugins(source, CorrespondingFolderPaths);
+                                bool allMastersValid = masters.All(m => 
+                                    loadOrderList.Contains(m) || CorrespondingModKeys.Contains(m));
+
+                                if (allMastersValid)
+                                {
+                                    candidates.Add((source, masters.Count));
+                                }
+                            }
+
+                            if (candidates.Any())
+                            {
+                                var maxDepth = candidates.Max(c => c.masterCount);
+                                var topCandidates = candidates.Where(c => c.masterCount == maxDepth).ToList();
+                                if (topCandidates.Count == 1)
+                                {
+                                   winner = topCandidates.First().plugin;
+                                }
+                            }
+                        }
+                        
+                        // 3) Refined Fallback Logic
+                        if (winner == null || winner.Value.IsNull)
+                        {
+                            // 3a) If there were valid candidates (all masters available) but they tied for depth,
+                            // pick alphabetically from that list of valid candidates only.
+                            if (candidates.Any())
+                            {
+                                winner = candidates
+                                    .Select(c => c.plugin)
+                                    .OrderBy(s => s.FileName.String, StringComparer.OrdinalIgnoreCase)
+                                    .FirstOrDefault();
+                            }
+                            // 3b) If there were NO valid candidates at all (all had missing masters),
+                            // then and only then pick alphabetically from all original sources.
+                            else
+                            {
+                                winner = sources
+                                    .Where(s => !s.IsNull)
+                                    .OrderBy(s => s.FileName.String, StringComparer.OrdinalIgnoreCase)
+                                    .FirstOrDefault();
+                            }
+                        }
+
+                        // Assign the winning source
+                        if (winner != null && !winner.Value.IsNull)
+                        {
+                            resolvedSource = winner.Value;
                             NpcPluginDisambiguation[npcKey] = resolvedSource; // Persist the default choice
                         }
                         else
                         {
                             Debug.WriteLine(
-                                $"ERROR for ModSetting '{DisplayName}': NPC {npcKey} found in multiple associated plugins: {string.Join(", ", sources.Select(k => k.FileName))}, but no valid default source could be determined (e.g., none of the sources are in the active load order). This NPC will be skipped for this Mod Setting.");
+                                $"ERROR for ModSetting '{DisplayName}': NPC {npcKey} found in multiple associated plugins: {string.Join(", ", sources.Select(k => k.FileName))}, but no valid default source could be determined. This NPC will be skipped for this Mod Setting.");
                             continue;
                         }
                     }

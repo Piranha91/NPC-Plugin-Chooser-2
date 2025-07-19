@@ -85,4 +85,16 @@ public class PluginProvider
         plugin = null;
         return false;
     }
+
+    public HashSet<ModKey> GetMasterPlugins(ModKey modKey, IEnumerable<string>? fallBackModFolderPaths)
+    {
+        HashSet<ModKey> masterPlugins = new();
+
+        if (TryGetPlugin(modKey, fallBackModFolderPaths?.ToHashSet(), out var plugin) && plugin != null)
+        {
+            masterPlugins.UnionWith(plugin.ModHeader.MasterReferences.Select(x => x.Master).ToHashSet());
+        }
+        
+        return masterPlugins;
+    }
 }
