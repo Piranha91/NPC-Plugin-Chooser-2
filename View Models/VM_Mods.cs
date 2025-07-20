@@ -14,6 +14,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks; // Added for Task
 using System.Windows;
+using System.Windows.Media;
+using Microsoft.Build.Experimental.BuildCheck;
 using Mutagen.Bethesda.Archives; // For MessageBox
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
@@ -854,7 +856,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     {
                         string modFolderName = Path.GetFileName(modFolderPath);
                         splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), $"Scanning {modFolderName}");
-                        // --- NEW: Check for and skip previous patcher output directories ---
+
                         string tokenFilePath = Path.Combine(modFolderPath, tokenFileName);
                         if (File.Exists(tokenFilePath))
                         {
@@ -863,14 +865,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             continue; // Skip this directory and move to the next one
                         }
 
-                        // --- END of NEW LOGIC --
-
-                        // --- Skip already tested mods
                         if (_settings.CachedNonAppearanceMods.Contains(modFolderPath))
                         {
                             continue;
                         }
-                        // --- End of skip
 
                         var modKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings, false);
 
@@ -897,10 +895,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             tempList.Add(mugshotOnlyVmToUpgrade);
                             vmsFromMugshotsOnly.Remove(mugshotOnlyVmToUpgrade);
                             loadedDisplayNames.Add(mugshotOnlyVmToUpgrade.DisplayName);
+                            CheckMergeInSuitability(mugshotOnlyVmToUpgrade);
                         }
                         else
                         {
-                            var scanResult = await FaceGenScanner.CollectFaceGenFilesAsync(modFolderPath);
+                            var scanResult = await FaceGenScanner.CollectFaceGenFilesAsync(modFolderPath, _bsaHandler, modKeysInFolder, _environmentStateProvider.SkyrimVersion.ToGameRelease());
                             if (scanResult.AnyFilesFound)
                             {
                                 var faceGenFiles = scanResult.FaceGenFiles;
@@ -927,6 +926,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                                     tempList.Add(newVm);
                                     loadedDisplayNames.Add(newVm.DisplayName);
+                                    CheckMergeInSuitability(newVm);
                                 }
                                 else if (modKeysInFolder.Any())
                                 {
@@ -1673,7 +1673,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 if (_pluginProvider.TryGetPlugin(modKey, modFolderPaths, out var plugin) && plugin != null)
                 {
                     // Await the result of the CPU-bound appearance check.
-                    if (await PluginModifiesAppearanceAsync(plugin, modKeysInMod))
+                    if (await PluginProvidesNewNpcs(plugin) || await PluginModifiesAppearanceAsync(plugin, modKeysInMod))
                     {
                         return true;
                     }
@@ -1681,6 +1681,23 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             return false;
+        }
+
+        private Task<bool> PluginProvidesNewNpcs(ISkyrimModGetter mod)
+        {
+            // Use Task.Run to execute the synchronous, CPU-bound logic on a thread pool thread.
+            return Task.Run(() =>
+            {
+                foreach (var npc in mod.Npcs)
+                {
+                    if (npc.FormKey.ModKey.Equals(mod.ModKey))
+                    {
+                        return true; // not an overridden NPC
+                    }
+                }
+
+                return false;
+            });
         }
 
         /// <summary>
@@ -1758,31 +1775,63 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 return false;
             });
         }
-
-        /*
-        private bool IsUnsuitableForMergeIn(ISkyrimModGetter mod)
+        
+        /// <summary>
+        /// Checks the number of potential appearance records vs. total records
+        /// If most of the records are not related to NPC appearance, flag that this mod probably shouldn't be merged in
+        /// </summary>
+        private void CheckMergeInSuitability(VM_ModSetting modSettingVM)
         {
-            var records = mod.EnumerateMajorRecords().ToHashSet();
+            int totalRecordCount = 0;
             int nonAppearanceRecordCount = 0;
 
-            var npcs = mod.Npcs.Select(x => x.FormKey).ToHashSet();
-            foreach (var npc in mod.Npcs)
+            foreach (var modKey in modSettingVM.CorrespondingModKeys)
             {
-                var headTexture = npc.HeadTexture.
-            }
-
-            foreach (var rec in records)
-            {
-                if (!mod.Npcs.Contains(rec) &&
-                    !mod.Armors.Contains(rec) &&
-                    !mod.ArmorAddons.Contains(rec) &&
-                    )
+                if (!_pluginProvider.TryGetPlugin(modKey, modSettingVM.CorrespondingFolderPaths.ToHashSet(),
+                        out var plugin) || plugin == null)
                 {
-                    nonAppearanceRecordCount++;
+                    continue;
+                }
+                var records = plugin.EnumerateMajorRecords().ToHashSet();
+                totalRecordCount += records.Count;
+                var npcs = plugin.Npcs.Select(x => x.FormKey).ToHashSet();
+                var armors = plugin.Armors.Select(x => x.FormKey).ToHashSet();
+                var armatures = plugin.ArmorAddons.Select(x => x.FormKey).ToHashSet();
+                var textures = plugin.TextureSets.Select(x => x.FormKey).ToHashSet();
+                var headParts = plugin.HeadParts.Select(x => x.FormKey).ToHashSet();
+                var colors = plugin.Colors.Select(x => x.FormKey).ToHashSet();
+
+                foreach (var rec in records)
+                {
+                    var fk = rec.FormKey;
+                    if (
+                        !npcs.Contains(fk) &&
+                        !armors.Contains(fk) &&
+                        !armatures.Contains(fk) &&
+                        !textures.Contains(fk) &&
+                        !headParts.Contains(fk) &&
+                        !colors.Contains(fk)
+                    )
+                    {
+                        nonAppearanceRecordCount++;
+                    }
                 }
             }
-        }*/
 
-
+            if (nonAppearanceRecordCount > totalRecordCount / 2)
+            {
+                modSettingVM.MergeInDependencyRecords = false;
+                modSettingVM.MergeInLabelColor = new(Colors.Purple);
+                modSettingVM.MergeInToolTip =
+                    $"N.P.C. has determined that the plugin(s) in {modSettingVM.DisplayName} have more non-appearance records than appearance records, " +
+                    Environment.NewLine +
+                    "suggesting that it's not just an appearance replacer mod. Merge-in has been disabled by default. You can re-enable it, but be warned that " +
+                    Environment.NewLine +
+                    "merging in large plugins with a lot of non-appearance records can freeze the patcher and is completely unnecessary if the plugin is staying in your load order" +
+                    Environment.NewLine +
+                    "and you're just making sure its NPC appearances are winning conflicts." + Environment.NewLine +
+                    Environment.NewLine + ModSetting.DefaultMergeInTooltip;
+            }
+        }
     }
 }

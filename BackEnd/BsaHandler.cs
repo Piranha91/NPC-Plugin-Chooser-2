@@ -385,4 +385,25 @@ public class BsaHandler : OptionalUIModule
             }
         });
     }
+    
+    public Dictionary<ModKey, HashSet<string>> GetAllFilePathsForMod(IEnumerable<ModKey> modKeys, IEnumerable<string> modDirs, GameRelease gameRelease)
+    {
+        Dictionary<ModKey, HashSet<string>> result = new();
+        var bsaFilePaths = GetBsaPathsForPluginsInDirs(modKeys.Distinct(), modDirs, gameRelease);
+        foreach (var bsaFilePath in bsaFilePaths)
+        {
+            var modKey = bsaFilePath.Key;
+            var readers = OpenBsaArchiveReaders(bsaFilePath.Value, gameRelease, false);
+            HashSet<string> currentContents = new();
+            foreach (var entry in readers)
+            {
+                var (bsaPath, reader) = entry;
+                var containedFiles = new HashSet<string>(reader.Files.Select(x => x.Path),
+                    StringComparer.OrdinalIgnoreCase);
+                currentContents.UnionWith(containedFiles);
+            }
+            result.Add(modKey, currentContents);
+        }
+        return result;
+    }
 }

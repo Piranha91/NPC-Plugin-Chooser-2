@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Windows.Media;
 using Mutagen.Bethesda.Plugins;
 using Newtonsoft.Json;
 
@@ -17,5 +18,14 @@ public class ModSetting
     public Dictionary<FormKey, ModKey> NpcPluginDisambiguation { get; set; } = new(); // Maps NPC FormKey to the ModKey from which it should inherit data, specifically for NPCs appearing in multiple plugins within this ModSetting.
     [JsonIgnore] public Dictionary<FormKey, List<ModKey>> AvailablePluginsForNpcs { get; set; } = new(); // Maps all available CorrespondingModKeys that can be used as a source plugin for this ModSetting
     public bool MergeInDependencyRecords { get; set; } = true;
+    [JsonIgnore] 
+    public static string DefaultMergeInTooltip =
+        "If checked, all records needed by the mod will be merged into the output." +
+        Environment.NewLine + "The output plugin will no longer depend on them as masters." +
+        Environment.NewLine + "Only masters found within this mod's Mod Folders will be merged in." +
+        Environment.NewLine + "Do not merge in records from plugins that are going to be kept in your load order.";
+    
+    public string MergeInToolTip { get; set; } = DefaultMergeInTooltip;
+    public SolidColorBrush MergeInLabelColor { get; set; } = new (Colors.Black);
     public RecordOverrideHandlingMode? ModRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
 }
