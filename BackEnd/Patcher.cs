@@ -100,31 +100,36 @@ public class Patcher : OptionalUIModule
 
             string baseOutputDirectory;
             bool isSpecifiedDirectory = false;
-            var testSplit = _settings.OutputDirectory.Split(Path.DirectorySeparatorChar);
-            if (testSplit.Length > 1 && Directory.Exists(_settings.OutputDirectory))
+            // Check if the provided path is a fully qualified path (e.g., "C:\My Output").
+            // Path.IsPathRooted correctly distinguishes "NPC Output" from "C:\NPC Output".
+            if (Path.IsPathRooted(_settings.OutputDirectory))
             {
+                // If it's a full path, use it directly, whether it exists or not.
                 baseOutputDirectory = _settings.OutputDirectory;
                 isSpecifiedDirectory = true;
             }
-            else if (testSplit.Length == 1)
-            {
-                baseOutputDirectory = Path.Combine(_settings.ModsFolder, _settings.OutputDirectory);
-            }
             else
             {
-                AppendLog("ERROR: Could not locate directory " + _settings.OutputDirectory, true);
-                ResetProgress();
-                return;
+                // If it's a simple name (relative path), treat it as a subdirectory of the mods folder.
+                baseOutputDirectory = Path.Combine(_settings.ModsFolder, _settings.OutputDirectory);
+                // isSpecifiedDirectory remains false, which is correct for this case.
             }
 
-            _currentRunOutputAssetPath = baseOutputDirectory;
-            if (_settings.AppendTimestampToOutputDirectory && !isSpecifiedDirectory)
+            // The baseOutputDirectory is already determined (e.g., "modsDir\NPC Output" or "C:\Mods\NPC Output")
+            _currentRunOutputAssetPath = baseOutputDirectory; 
+
+            // Now, append a timestamp if the setting is enabled, regardless of whether the path was specified or not.
+            if (_settings.AppendTimestampToOutputDirectory)
             {
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                _currentRunOutputAssetPath = Path.Combine(baseOutputDirectory, timestamp);
+                // Use the user-requested timestamp format.
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+
+                // Append the timestamp directly to the path string with a space.
+                // This changes "C:\Mods\NPC Output" to "C:\Mods\NPC Output 2025-05-29_13-42-12".
+                _currentRunOutputAssetPath = $"{baseOutputDirectory} {timestamp}";
             }
 
-            AppendLog($"Using output asset directory: {_currentRunOutputAssetPath}");
+            AppendLog($"Using output asset directory: {_currentRunOutputAssetPath}", false, true);
             try
             {
                 Directory.CreateDirectory(_currentRunOutputAssetPath);
