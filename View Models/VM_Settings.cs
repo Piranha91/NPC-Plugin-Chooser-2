@@ -48,6 +48,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string OutputDirectory { get; set; }
         [Reactive] public bool AppendTimestampToOutputDirectory { get; set; }
         [Reactive] public string OutputPluginName { get; set; } // New property for the actual plugin filename
+        [Reactive] public bool UseSkyPatcherMode { get; set; }
         [Reactive] public PatchingMode SelectedPatchingMode { get; set; }
         public IEnumerable<PatchingMode> PatchingModes { get; } = Enum.GetValues(typeof(PatchingMode)).Cast<PatchingMode>();
         [Reactive] public RecordOverrideHandlingMode SelectedRecordOverrideHandlingMode { get; set; }
@@ -111,6 +112,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             SkyrimGamePath = _model.SkyrimGamePath;
             OutputModName = _model.OutputPluginName; // Model's OutputPluginName is the source of truth
             OutputDirectory = _model.OutputDirectory;
+            UseSkyPatcherMode = _model.UseSkyPatcherMode;
             AppendTimestampToOutputDirectory = _model.AppendTimestampToOutputDirectory;
             SelectedPatchingMode = _model.PatchingMode;
             SelectedRecordOverrideHandlingMode = _model.DefaultRecordOverrideHandlingMode;
@@ -139,6 +141,24 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.SelectedPatchingMode).Skip(1).Subscribe(pm => _model.PatchingMode = pm).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b).DisposeWith(_disposables);
 
+            this.WhenAnyValue(x => x.UseSkyPatcherMode)
+                .Skip(1) // Skip initial value set on load
+                .Subscribe(useSkyPatcher =>
+                {
+                    if (useSkyPatcher) // If the checkbox was just checked
+                    {
+                        const string message = "SkyPatcher is a powerful tool for overwriting conflicts. Be aware that it might conflict with other runtime editing tools such as RSV and SynthEBD. Are you sure you want to use SkyPatcher Mode?";
+                        if (!ScrollableMessageBox.Confirm(message, "Confirm SkyPatcher Mode"))
+                        {
+                            // If user clicks "No", revert the checkbox state
+                            UseSkyPatcherMode = false;
+                        }
+                    }
+                    // Persist the final state (whether confirmed true or set to false) to the model
+                    _model.UseSkyPatcherMode = UseSkyPatcherMode;
+                })
+                .DisposeWith(_disposables);
+            
             // Properties that trigger full environment update via InitializeAsync (or a lighter UpdateEnvironmentAndNotify)
             this.WhenAnyValue(x => x.SkyrimGamePath).Skip(1)
                 .Do(s => { _model.SkyrimGamePath = s; _environmentStateProvider.DataFolderPath = s; })

@@ -22,6 +22,7 @@ public class Patcher : OptionalUIModule
     private readonly RecordDeltaPatcher _recordDeltaPatcher;
     private readonly PluginProvider _pluginProvider;
     private readonly BsaHandler _bsaHandler;
+    private readonly SkyPatcherInterface _skyPatcherInterface;
     
     private Dictionary<string, ModSetting> _modSettingsMap;
     private string _currentRunOutputAssetPath = string.Empty;
@@ -30,7 +31,7 @@ public class Patcher : OptionalUIModule
 
     public const string ALL_NPCS_GROUP = VM_Run.ALL_NPCS_GROUP;
     
-    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator, AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher, PluginProvider pluginProvider, BsaHandler bsaHandler)
+    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator, AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher, PluginProvider pluginProvider, BsaHandler bsaHandler, SkyPatcherInterface skyPatcherInterface)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -41,6 +42,7 @@ public class Patcher : OptionalUIModule
         _recordDeltaPatcher = recordDeltaPatcher;
         _pluginProvider = pluginProvider;
         _bsaHandler = bsaHandler;
+        _skyPatcherInterface = skyPatcherInterface;
     }
 
     public async Task PreInitializationLogicAsync() 
@@ -145,6 +147,8 @@ public class Patcher : OptionalUIModule
                 ResetProgress();
                 return;
             }
+            
+            _skyPatcherInterface.Reinitialize(_currentRunOutputAssetPath); // reinitialize whether in SkyPatcher mode or not to avoid stale output 
 
             _environmentStateProvider.OutputMod =
                 new SkyrimMod(ModKey.FromName(_environmentStateProvider.OutputPluginName, ModType.Plugin),
@@ -608,6 +612,12 @@ public class Patcher : OptionalUIModule
                                     _currentRunOutputAssetPath, npcIdentifier);
                                 await _assetHandler.ScheduleCopyAssetLinkFiles(assetLinks, appearanceModSetting,
                                     _currentRunOutputAssetPath);
+                                
+                                                            
+                                if (_settings.UseSkyPatcherMode)
+                                {
+                                    _skyPatcherInterface.ApplyViaSkyPatcher(patchNpc);
+                                }
                             }
                             else
                             {
@@ -620,7 +630,6 @@ public class Patcher : OptionalUIModule
                             {
                                 processedNpcsTokenData[npcFormKey] = (selectedModDisplayName, appearanceModKey.Value);
                             }
-
                         });
 
                         processedCount++;
@@ -653,13 +662,13 @@ public class Patcher : OptionalUIModule
 
                     string outputPluginPath = Path.Combine(_currentRunOutputAssetPath,
                         _environmentStateProvider.OutputPluginFileName);
-                    AppendLog($"Attempting to save output mod to: {outputPluginPath}", true);
+                    AppendLog($"Attempting to save output mod to: {outputPluginPath}", false);
                     try
                     {
                         _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath);
                         AppendLog($"Output mod saved successfully.", false, true);
 
-                        AppendLog("Writing NPC token file...", false, true);
+                        AppendLog("Writing NPC token file...", false, false);
                         var tokenFilePath = Path.Combine(_currentRunOutputAssetPath, "NPC_Token.json");
                         var tokenData = new NpcToken
                         {
@@ -681,6 +690,11 @@ public class Patcher : OptionalUIModule
                             true);
                         ResetProgress();
                         return;
+                    }
+
+                    if (_settings.UseSkyPatcherMode)
+                    {
+                        _skyPatcherInterface.WriteIni(_currentRunOutputAssetPath);
                     }
                 }
                 else

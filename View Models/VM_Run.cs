@@ -34,6 +34,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Validator _validator;
         private readonly AssetHandler _assetHandler;
         private readonly BsaHandler _bsaHandler;
+        private readonly SkyPatcherInterface _skyPatcherInterface;
         private readonly RecordDeltaPatcher _recordDeltaPatcher;
         private CancellationTokenSource? _patchingCts;
         private readonly CompositeDisposable _disposables = new();
@@ -85,6 +86,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             Validator validator,
             AssetHandler assetHandler,
             BsaHandler bsaHandler,
+            SkyPatcherInterface skyPatcherInterface,
             RecordDeltaPatcher recordDeltaPatcher)
         {
             _environmentStateProvider = environmentStateProvider;
@@ -95,6 +97,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _validator = validator;
             _assetHandler = assetHandler;
             _bsaHandler = bsaHandler;
+            _skyPatcherInterface = skyPatcherInterface;
             _recordDeltaPatcher = recordDeltaPatcher;
             
             _patcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
@@ -102,6 +105,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _assetHandler.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
             _bsaHandler.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
             _recordDeltaPatcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
+            _skyPatcherInterface.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
             
             this.WhenAnyValue(x => x.IsRunning)
                 .Select(isRunning => isRunning ? "Cancel Patching" : "Run Patch Generation")

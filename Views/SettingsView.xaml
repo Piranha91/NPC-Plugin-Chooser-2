@@ -163,6 +163,10 @@
                                   ToolTip="Determines how overriden records of other plugins are handled."/>
                         <Button Grid.Column="1" Content="?" Command="{Binding ShowOverrideHandlingModeHelpCommand}" Padding="6,2"/>
                     </Grid>
+                    <CheckBox Grid.Column="0" Content="SkyPatcher Mode"
+                              IsChecked="{Binding UseSkyPatcherMode, Mode=TwoWay}"
+                              Margin="0,5,0,0"
+                              ToolTip="Generates a SkyPatcher .ini file for runtime patching instead of a traditional ESP. This is an advanced feature that may conflict with other runtime patchers."/>
                 </StackPanel>
             </GroupBox>
 

@@ -23,6 +23,7 @@ public class Settings
     public bool AppendTimestampToOutputDirectory { get; set; } = false; 
     public string OutputPluginName { get; set; } = "NPC"; 
     public PatchingMode PatchingMode { get; set; } = PatchingMode.Default; 
+    public bool UseSkyPatcherMode { get; set; } = false;
     
     // Default Overrideable Settings
 
