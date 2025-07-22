@@ -161,6 +161,12 @@ public class AssetHandler : OptionalUIModule
         return false;
     }
     
+    public bool AssetExists(string relativePath, ModSetting modSetting)
+    {
+        var (sourceType, _, _) = FindAssetSource(relativePath, modSetting);
+        return sourceType != AssetSourceType.NotFound;
+    }
+    
     static string? RegularizeOrNull(string path) =>
         Auxilliary.TryRegularizePath(path, out var rel) ? rel : null;
     
@@ -320,7 +326,8 @@ public class AssetHandler : OptionalUIModule
     public async Task ScheduleCopyNpcAssets(
         INpcGetter appearanceNpcRecord,
         ModSetting appearanceModSetting,
-        string outputBasePath)
+        string outputBasePath,
+        string npcIdentifier)
     {
         using var _ = ContextualPerformanceTracer.Trace("AssertHandler.ScheduleCopyNpcAssets");
         _runVM.Value.AppendLog(
@@ -342,6 +349,21 @@ public class AssetHandler : OptionalUIModule
         // 1. FaceGen Assets
         var (faceMeshRelativePath, faceTexRelativePath) =
             Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey); 
+        
+        // START: ADDED WARNING LOGIC FOR MISMATCHED FACEGEN FILES
+        var (meshSourceType, _, _) = FindAssetSource(faceMeshRelativePath, appearanceModSetting);
+        var (texSourceType, _, _) = FindAssetSource(faceTexRelativePath, appearanceModSetting);
+
+        if (meshSourceType != AssetSourceType.NotFound && texSourceType == AssetSourceType.NotFound)
+        {
+            _runVM.Value.AppendLog($"      WARNING: For {npcIdentifier}, a FaceGen mesh (.nif) was found in '{appearanceModSetting.DisplayName}' but a texture (.dds) was not. The game may use a default texture.", false, true);
+        }
+        else if (meshSourceType == AssetSourceType.NotFound && texSourceType != AssetSourceType.NotFound)
+        {
+            _runVM.Value.AppendLog($"      WARNING: For {npcIdentifier}, a FaceGen texture (.dds) was found in '{appearanceModSetting.DisplayName}' but a mesh (.nif) was not. This may result in the 'brown face' bug.", false, true);
+        }
+        // END: ADDED WARNING LOGIC
+        
         meshToCopyRelativePaths.Add(faceMeshRelativePath);
         textureToCopyRelativePaths.Add(faceTexRelativePath);
         

@@ -115,8 +115,9 @@ public class Auxilliary
     /// ensuring the FormID component is an 8-character, zero-padded hex string.
     /// </summary>
     /// <param name="npcFormKey">The FormKey of the NPC.</param>
+    /// <param name="regularized">Toggle to regularize file path relative to data folder.</param>
     /// <returns>A tuple containing the relative mesh path and texture path (lowercase).</returns>
-    public static (string MeshPath, string TexturePath) GetFaceGenSubPathStrings(FormKey npcFormKey)
+    public static (string MeshPath, string TexturePath) GetFaceGenSubPathStrings(FormKey npcFormKey, bool regularized = false)
     {
         // Get the plugin filename string
         string pluginFileName = npcFormKey.ModKey.FileName.String; // Use .String property
@@ -127,6 +128,19 @@ public class Auxilliary
         // Construct the paths
         string meshPath = $"actors\\character\\facegendata\\facegeom\\{pluginFileName}\\{formIDHex}.nif";
         string texPath = $"actors\\character\\facegendata\\facetint\\{pluginFileName}\\{formIDHex}.dds";
+
+        if (regularized)
+        {
+            if (TryRegularizePath(meshPath, out var regularizedMeshPath))
+            {
+                meshPath = regularizedMeshPath;
+            }
+
+            if (TryRegularizePath(texPath, out var regularizedTexPath))
+            {
+                texPath = regularizedTexPath;
+            }
+        }
 
         // Return lowercase paths for case-insensitive comparisons later
         return (meshPath.ToLowerInvariant(), texPath.ToLowerInvariant());

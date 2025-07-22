@@ -13,6 +13,7 @@ using System.IO;
 using Mutagen.Bethesda;
 using System.Collections.ObjectModel;
 using System.Reactive.Disposables;
+using System.Reactive.Subjects;
 using System.Reflection;
 using System.Windows;
 using Mutagen.Bethesda.Archives;
@@ -36,6 +37,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly RecordDeltaPatcher _recordDeltaPatcher;
         private CancellationTokenSource? _patchingCts;
         private readonly CompositeDisposable _disposables = new();
+        private readonly Subject<string> _logMessageSubject = new Subject<string>();
 
         // --- Constants ---
         public const string ALL_NPCS_GROUP = "<All NPCs>";
@@ -179,6 +181,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 })
                 .DisposeWith(_disposables);
             // --- End of New Logic ---
+            
+            _logMessageSubject
+                .Buffer(TimeSpan.FromMilliseconds(250), RxApp.TaskpoolScheduler) // Collect messages for 250ms
+                .Where(buffer => buffer.Any()) // Only continue if there are messages in the buffer
+                .ObserveOn(RxApp.MainThreadScheduler) // Switch to the UI thread to update the LogOutput property
+                .Subscribe(messages =>
+                {
+                    foreach (var msg in messages)
+                    {
+                        _logBuilder.AppendLine(msg);
+                    }
+                    LogOutput = _logBuilder.ToString(); // Update the UI property only ONCE per batch
+                })
+                .DisposeWith(_disposables);
 
             // Update Available Groups when NpcGroupAssignments changes in settings
             UpdateAvailableGroups();
@@ -422,12 +438,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             if (!IsVerboseModeEnabled && !isError && !forceLog) return;
 
-            RxApp.MainThreadScheduler.Schedule(message, (sched, msg) =>
-            {
-                _logBuilder.AppendLine(msg);
-                LogOutput = _logBuilder.ToString();
-                return Disposable.Empty;
-            });
+            // Instead of scheduling directly on the UI thread,
+            // push the message to the subject, which will handle batching and updating.
+            _logMessageSubject.OnNext(message);
         }
 
         public void ResetLog()

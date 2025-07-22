@@ -1,7 +1,9 @@
-﻿using System.IO;
+﻿using System.Diagnostics;
+using System.IO;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Assets;
+using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.Models;
@@ -306,23 +308,88 @@ public class Patcher : OptionalUIModule
                                 }
                             }
 
+                            bool isFaceGenOnly = false;
                             if (!correspondingRecordFound)
                             {
-                                AppendLog(
-                                    $"    Source: No specific plugin record override found in '{selectedModDisplayName}'. Using winning override from load order as the base for assets.");
-                                appearanceNpcRecord = winningNpcOverride;
-                                appearanceModKey = winningNpcOverride.FormKey.ModKey;
+                                // Try to find the original source record (e.g., from Skyrim.esm)
+                                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey,
+                                        out var baseNpcGetter, ResolveTarget.Origin))
+                                {
+                                    AppendLog(
+                                        $"    Source: No specific plugin record override found in '{selectedModDisplayName}'. Using the source plugin as the base for assets.");
+                                    appearanceNpcRecord = baseNpcGetter;
+                                    appearanceModKey = baseNpcGetter.FormKey.ModKey;
+                                    isFaceGenOnly = true;
+                                }
+                                else
+                                {
+                                    AppendLog(
+                                        $"      ERROR: Could not resolve the original source record for {npcIdentifier}. This NPC may be from a missing master file. SKIPPING.",
+                                        isError: true,
+                                        forceLog: true);
+                                    
+                                    return;
+                                }
                             }
 
                             Npc? patchNpc = null;
                             var mergeInDependencyRecords = appearanceModSetting?.MergeInDependencyRecords ?? false;
                             var recordOverrideHandlingMode = appearanceModSetting?.ModRecordOverrideHandlingMode ??
                                                              _settings.DefaultRecordOverrideHandlingMode;
+
+                            if (isFaceGenOnly)
+                            {
+                                mergeInDependencyRecords = false;
+                                recordOverrideHandlingMode = RecordOverrideHandlingMode.Ignore;
+                            }
+                            
                             List<IAssetLinkGetter> assetLinks = new();
 
                             if (appearanceNpcRecord != null)
                             {
-                                AppendLog("    Source: Plugin Record Override");
+                                
+                                var (faceMeshRelativePath, _) = Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, regularized: true);
+                                if (!_assetHandler.AssetExists(faceMeshRelativePath, appearanceModSetting))
+                                {
+                                    // If the mesh is missing, perform the more expensive check to see if the plugin *actually* changed head data.
+                                    // Resolve the original base record for this NPC (e.g., from Skyrim.esm).
+                                    if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(appearanceNpcRecord.FormKey,
+                                            out var baseNpcGetter, ResolveTarget.Origin))
+                                    {
+                                        // Compare the head-related properties of the appearance record to the base record.
+                                        // Use static Equals() for top-level properties to safely handle any potential nulls.
+                                        bool faceMorphsDiffer = !Equals(baseNpcGetter.FaceMorph, appearanceNpcRecord.FaceMorph);
+                                        bool facePartsDiffer = !Equals(baseNpcGetter.FaceParts, appearanceNpcRecord.FaceParts);
+                                        
+                                        // fast head part equality check
+                                        var appearanceHeadParts = appearanceNpcRecord.HeadParts.Select(x => x.FormKey).ToHashSet();
+                                        var baseHeadParts = baseNpcGetter.HeadParts.Select(x => x.FormKey).ToHashSet();
+                                        bool headPartsDiffer = false;
+                                        foreach (var hp in appearanceHeadParts)
+                                        {
+                                            if (!baseHeadParts.Contains(hp))
+                                            {
+                                                headPartsDiffer = true;
+                                                break;
+                                            }
+                                        }
+
+                                        // If any of the head data properties differ, log the critical warning.
+                                        if (faceMorphsDiffer || facePartsDiffer || headPartsDiffer)
+                                        {
+                                            AppendLog($"      CRITICAL WARNING: Mod '{appearanceModSetting.DisplayName}' modifies head data for {npcIdentifier} but does not provide the corresponding FaceGen mesh ({faceMeshRelativePath}). THIS WILL LIKELY CAUSE THE 'BLACK FACE' BUG.", true, true);
+                                        }
+                                    }
+                                }
+                                
+                                if (isFaceGenOnly)
+                                {
+                                    AppendLog("    Source: Original Plugin (FaceGen-only Mod)");
+                                }
+                                else
+                                {
+                                    AppendLog("    Source: Plugin Record Override");
+                                }
 
                                 switch (_settings.PatchingMode)
                                 {
@@ -538,7 +605,7 @@ public class Patcher : OptionalUIModule
                             if (patchNpc != null && appearanceModSetting != null)
                             {
                                 await _assetHandler.ScheduleCopyNpcAssets(appearanceNpcRecord, appearanceModSetting,
-                                    _currentRunOutputAssetPath);
+                                    _currentRunOutputAssetPath, npcIdentifier);
                                 await _assetHandler.ScheduleCopyAssetLinkFiles(assetLinks, appearanceModSetting,
                                     _currentRunOutputAssetPath);
                             }
