@@ -72,6 +72,8 @@
       <Resource Include="Resources\Contains Overrides.png">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Resource>
+      <None Remove="Resources\Replace Selected Mod.png" />
+      <Resource Include="Resources\Replace Selected Mod.png" />
     </ItemGroup>
 
 </Project>

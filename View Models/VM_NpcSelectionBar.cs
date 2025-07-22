@@ -2201,6 +2201,37 @@ namespace NPC_Plugin_Chooser_2.View_Models
             Debug.WriteLine($"Updated AvailableNpcGroups. Count: {AvailableNpcGroups.Count}");
         }
         // --- End NPC Group Methods ---
+        
+        public void MassUpdateNpcSelections(string fromModName, string toModName)
+        {
+            if (string.Equals(fromModName, toModName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            // Find all NPCs whose current selection is fromModName
+            var npcsToUpdate = AllNpcs
+                .Where(npc => string.Equals(_consistencyProvider.GetSelectedMod(npc.NpcFormKey), fromModName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (!npcsToUpdate.Any())
+            {
+                ScrollableMessageBox.Show($"No NPCs are currently assigned to '{fromModName}'. No changes were made.", "Information");
+                return;
+            }
+
+            // Confirmation dialog
+            var confirmationMessage = $"This will change the selected appearance for {npcsToUpdate.Count} NPC(s) from '{fromModName}' to '{toModName}'.\n\nAre you sure you want to proceed?";
+            string imagePath = @"Resources\Replace Selected Mod.png";
+            if (ScrollableMessageBox.Confirm(confirmationMessage, "Out with the old, in with the new?", displayImagePath: imagePath))
+            {
+                foreach (var npc in npcsToUpdate)
+                {
+                    // Set the new mod. The consistency provider will handle the update and notification.
+                    _consistencyProvider.SetSelectedMod(npc.NpcFormKey, toModName);
+                }
+            }
+        }
 
         // --- Disposal ---
         public void Dispose()

@@ -431,7 +431,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         // --- IDropTarget Implementation ---
-
+        
         void IDropTarget.DragOver(IDropInfo dropInfo)
         {
             var sourceItem = dropInfo.Data as VM_NpcsMenuMugshot;
@@ -439,15 +439,22 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             if (sourceItem == null || sourceItem == this) return;
 
-            // Use HasMugshot to determine if it's a "real" mugshot VM or a placeholder VM
-            // A placeholder VM will have HasMugshot = false, even if ImagePath points to the placeholder image.
             bool sourceIsRealMugshotVm = sourceItem.HasMugshot;
             bool targetIsRealMugshotVm = this.HasMugshot;
 
+            // NEW: Allow dropping a real mugshot onto another real mugshot.
+            if (sourceIsRealMugshotVm && targetIsRealMugshotVm)
+            {
+                dropInfo.DropTargetAdorner = DropTargetAdorners.Highlight;
+                dropInfo.Effects = DragDropEffects.Move; // Using Move effect to signify an action
+                return;
+            }
+
+            // Original case: Allow dropping between a real mugshot and a placeholder.
             if (!((sourceIsRealMugshotVm && !targetIsRealMugshotVm) ||
                   (!sourceIsRealMugshotVm && targetIsRealMugshotVm)))
             {
-                return; // Not a valid pair (e.g., two real mugshots, or two placeholders)
+                return; // Not a valid pair (e.g., two placeholders)
             }
 
             var mugshotVmApp = sourceIsRealMugshotVm ? sourceItem : this;
@@ -477,6 +484,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
             bool sourceIsRealMugshotVm = sourceItem.HasMugshot;
             bool targetIsRealMugshotVm = this.HasMugshot;
 
+            // NEW: Handle drop between two real mugshots
+            if (sourceIsRealMugshotVm && targetIsRealMugshotVm)
+            {
+                var fromMod = this.ModName;     // Mod B (the target of the drop)
+                var toMod = sourceItem.ModName; // Mod A (the item being dragged)
+                _vmNpcSelectionBar.MassUpdateNpcSelections(fromMod, toMod);
+                return; // Exit after handling this case
+            }
+
+            // Original case: Handle drop between a real mugshot and a placeholder
             if (!((sourceIsRealMugshotVm && !targetIsRealMugshotVm) ||
                   (!sourceIsRealMugshotVm && targetIsRealMugshotVm))) return;
 
