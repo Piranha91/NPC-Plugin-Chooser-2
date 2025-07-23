@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using System.Text;
+using System.Windows.Forms;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
@@ -10,6 +11,7 @@ public class SkyPatcherInterface : OptionalUIModule
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private List<string> outputLines = new();
+    private Dictionary<FormKey, FormKey> _remappedNpcs = new(); // key: SkyPatcher NPC, Value: original NPC
 
     public SkyPatcherInterface(EnvironmentStateProvider environmentStateProvider)
     {
@@ -19,29 +21,38 @@ public class SkyPatcherInterface : OptionalUIModule
     public void Reinitialize(string outputRootDir)
     {
         outputLines = new List<string>();
+        _remappedNpcs.Clear();
         if (!ClearIni(_environmentStateProvider.OutputMod.ModKey, outputRootDir, out string exceptionStr))
         {
             AppendLog(exceptionStr);
         }
     }
 
-    public void ApplyViaSkyPatcher(INpcGetter npc)
+    public Npc CreateSkyPatcherNpc(INpcGetter npcGetter)
     {
         var npcCopy = _environmentStateProvider.OutputMod.Npcs.AddNew();
-        npcCopy.DeepCopyIn(npc, out _);
-        
-        var edid = npc.EditorID ?? "NoEditorID";
+        npcCopy.DeepCopyIn(npcGetter, out _);
+        var edid = npcGetter.EditorID ?? "NoEditorID";
         npcCopy.EditorID = edid + "_Template";
         
-        ApplyFace(npc.FormKey, npcCopy.FormKey);
-        if (!npc.WornArmor.IsNull)
+        _remappedNpcs.Add(npcGetter.FormKey, npcCopy.FormKey);
+        return npcCopy;
+    }
+
+    public bool TryGetSurrogateFormKey(FormKey originalNpcFormKey, out FormKey surrogateNpcFormKey)
+    {
+        return _remappedNpcs.TryGetValue(originalNpcFormKey, out surrogateNpcFormKey);
+    }
+
+    public void ApplyViaSkyPatcher(INpcGetter originalNpc, INpcGetter surrogateNpc)
+    {
+
+        ApplyFace(originalNpc.FormKey, surrogateNpc.FormKey);
+        if (!surrogateNpc.WornArmor.IsNull)
         {
-            ApplySkin(npc.FormKey, npcCopy.WornArmor.FormKey);
+            ApplySkin(originalNpc.FormKey, surrogateNpc.WornArmor.FormKey);
         }
-        ApplyHeight(npc.FormKey, npcCopy.Height);
-        
-        // remove the original NPC from the output plugin to avoid conflicts
-        _environmentStateProvider.OutputMod.Npcs.Remove(npc);
+        ApplyHeight(originalNpc.FormKey, surrogateNpc.Height);
     }
 
     public void ApplyFace(FormKey applyTo, FormKey faceTemplate) // This doesn't work if the face texture isn't baked into the facegen nif. Not useful for SynthEBD.

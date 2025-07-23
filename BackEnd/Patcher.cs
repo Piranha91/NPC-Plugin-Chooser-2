@@ -400,9 +400,18 @@ public class Patcher : OptionalUIModule
                                     case PatchingMode.EasyNPC_Like:
                                         AppendLog(
                                             $"      Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {appearanceModKey?.FileName ?? "N/A"}.");
-                                        patchNpc =
-                                            _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(
-                                                winningNpcOverride);
+
+                                        if (_settings.UseSkyPatcherMode)
+                                        {
+                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(winningNpcOverride);
+                                        }
+                                        else
+                                        {
+                                            patchNpc =
+                                                _environmentStateProvider.OutputMod.Npcs.GetOrAddAsOverride(
+                                                    winningNpcOverride);
+                                        }
+
                                         var mergedInAppearanceRecords = CopyAppearanceData(appearanceNpcRecord,
                                             patchNpc,
                                             appearanceModSetting, appearanceModKey.Value, 
@@ -540,9 +549,17 @@ public class Patcher : OptionalUIModule
                                     default:
                                         AppendLog(
                                             $"      Mode: Default. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"}).");
-                                        patchNpc =
-                                            _environmentStateProvider.OutputMod.Npcs
-                                                .GetOrAddAsOverride(appearanceNpcRecord);
+                                        if (_settings.UseSkyPatcherMode)
+                                        {
+                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(appearanceNpcRecord);
+                                        }
+                                        else
+                                        {
+                                            patchNpc =
+                                                _environmentStateProvider.OutputMod.Npcs
+                                                    .GetOrAddAsOverride(appearanceNpcRecord); 
+                                        }
+
                                         if (mergeInDependencyRecords)
                                         {
                                             List<string> mergeInExceptions = new();
@@ -608,7 +625,7 @@ public class Patcher : OptionalUIModule
 
                             if (patchNpc != null && appearanceModSetting != null)
                             {
-                                await _assetHandler.ScheduleCopyNpcAssets(appearanceNpcRecord, appearanceModSetting,
+                                await _assetHandler.ScheduleCopyNpcAssets(appearanceNpcRecord, appearanceModSetting, // appearanceNpcRecord here rather than patchNpc is intentional
                                     _currentRunOutputAssetPath, npcIdentifier);
                                 await _assetHandler.ScheduleCopyAssetLinkFiles(assetLinks, appearanceModSetting,
                                     _currentRunOutputAssetPath);
@@ -616,7 +633,7 @@ public class Patcher : OptionalUIModule
                                                             
                                 if (_settings.UseSkyPatcherMode)
                                 {
-                                    _skyPatcherInterface.ApplyViaSkyPatcher(patchNpc);
+                                    _skyPatcherInterface.ApplyViaSkyPatcher(appearanceNpcRecord, patchNpc);
                                 }
                             }
                             else

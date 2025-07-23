@@ -20,6 +20,7 @@ public class AssetHandler : OptionalUIModule
     private readonly BsaHandler _bsaHandler;
     private readonly RecordHandler _recordHandler;
     private readonly Lazy<VM_Run> _runVM;
+    private readonly SkyPatcherInterface _skyPatcherInterface;
 
     private bool _copyExtraAssets = true;
     private bool _copyExtraTexturesInNifs = true;
@@ -47,11 +48,12 @@ public class AssetHandler : OptionalUIModule
     private readonly SemaphoreSlim _nifProcessingSemaphore = new(Environment.ProcessorCount);
 
     public AssetHandler(EnvironmentStateProvider environmentStateProvider, BsaHandler bsaHandler, RecordHandler recordHandler,
-        Lazy<VM_Run> runVM)
+        SkyPatcherInterface skyPatcherInterface, Lazy<VM_Run> runVM)
     {
         _environmentStateProvider = environmentStateProvider;
         _bsaHandler = bsaHandler;
         _recordHandler = recordHandler;
+        _skyPatcherInterface = skyPatcherInterface;
         _runVM = runVM;
     }
 
@@ -183,7 +185,7 @@ public class AssetHandler : OptionalUIModule
     /// <param name="relativePath">The asset's relative path (e.g., "textures\\actor.dds").</param>
     /// <param name="modSetting">The mod setting providing context for where to find the asset.</param>
     /// <param name="outputBasePath">The root output directory for the patch.</param>
-    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath)
+    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath, string? overrideDestinationRelativePath = null)
     {
         // FIX: Create a composite key to uniquely identify an asset *within the context of its source mod*.
         // This prevents a failed lookup from one mod from blocking a successful lookup from another mod for the same relative path.
@@ -196,6 +198,10 @@ public class AssetHandler : OptionalUIModule
             {
                 var (sourceType, sourcePath, bsaPath) = FindAssetSource(relativePath, modSetting);
                 string destPath = Path.Combine(outputBasePath, relativePath);
+                if (overrideDestinationRelativePath != null)
+                {
+                    destPath = Path.Combine(outputBasePath, overrideDestinationRelativePath);
+                }
                 switch (sourceType)
                 {
                     case AssetSourceType.LooseFile:
@@ -348,7 +354,10 @@ public class AssetHandler : OptionalUIModule
 
         // 1. FaceGen Assets
         var (faceMeshRelativePath, faceTexRelativePath) =
-            Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey); 
+            Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, true);
+
+        bool useSkyPatcher =
+            _skyPatcherInterface.TryGetSurrogateFormKey(appearanceNpcRecord.FormKey, out var surrogateNpcFormKey);
         
         // START: ADDED WARNING LOGIC FOR MISMATCHED FACEGEN FILES
         var (meshSourceType, _, _) = FindAssetSource(faceMeshRelativePath, appearanceModSetting);
@@ -363,9 +372,19 @@ public class AssetHandler : OptionalUIModule
             _runVM.Value.AppendLog($"      WARNING: For {npcIdentifier}, a FaceGen texture (.dds) was found in '{appearanceModSetting.DisplayName}' but a mesh (.nif) was not. This may result in the 'brown face' bug.", false, true);
         }
         // END: ADDED WARNING LOGIC
-        
-        meshToCopyRelativePaths.Add(faceMeshRelativePath);
-        textureToCopyRelativePaths.Add(faceTexRelativePath);
+
+        if (useSkyPatcher)
+        {
+            (var surrogateFaceGenNifPath, var surrogateFaceGenDdsPath) = // These store the paths for the original NPC FormKey - e.g. the one being copied from
+                Auxilliary.GetFaceGenSubPathStrings(surrogateNpcFormKey, true);
+            RequestAssetCopyAsync(faceMeshRelativePath, appearanceModSetting, outputBasePath, overrideDestinationRelativePath: surrogateFaceGenNifPath);
+            RequestAssetCopyAsync(faceTexRelativePath, appearanceModSetting, outputBasePath, overrideDestinationRelativePath: surrogateFaceGenDdsPath);
+        }
+        else
+        {
+            meshToCopyRelativePaths.Add(faceMeshRelativePath);
+            textureToCopyRelativePaths.Add(faceTexRelativePath); 
+        }
         
         // 2. Non-FaceGen Assets (Only if CopyExtraAssets is true)
         if (_copyExtraAssets)
