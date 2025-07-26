@@ -23,6 +23,8 @@
         <local:EnumDescriptionConverter x:Key="EnumDescConverter"/>
         <local:PercentageSizingConverter x:Key="PercentageSizingConverter"/>
         <local:LineOffsetConverter x:Key="LineOffsetConverter"/>
+        <local:ModKeyToStringConverter x:Key="ModKeyToStringConverter"/>
+        <local:AreModKeysEqualMultiConverter x:Key="AreModKeysEqualMultiConverter"/>
 
 
         <ObjectDataProvider x:Key="NpcSearchTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
@@ -289,6 +291,17 @@
                                              <Image Source="/NPC Plugin Chooser 2;component/Resources/No Associated Data.png" />
                                          </Viewbox>
                                      </Grid>
+                                     
+                                     <Grid HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0 0 0 10"
+                                           Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                           ToolTip="This NPC is defined in multiple source plugins. Right-click to select the correct source."
+                                           Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                           Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+
+                                         <Viewbox Stretch="Uniform">
+                                             <Image Source="/NPC Plugin Chooser 2;component/Resources/Multiple Plugins for NPC.png" />
+                                         </Viewbox>
+                                     </Grid>
 
                                      <CheckBox x:Name="CompareCheckBox" 
                                                IsChecked="{Binding IsCheckedForCompare, Mode=TwoWay}"
@@ -351,6 +364,34 @@
                                          <MenuItem Header="Unhide All From This Mod" Command="{Binding UnhideAllFromThisModCommand}" />
                                          <Separator />
                                          <MenuItem Header="Jump to Mod" Command="{Binding JumpToModCommand}" Visibility="{Binding CanJumpToMod, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         <Separator/>
+                                    
+                                        <MenuItem Header="Select Source Plugin"
+                                                    Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                    ItemsSource="{Binding AvailableSourcePlugins}">
+                                            <MenuItem.ItemContainerStyle>
+                                                <Style TargetType="MenuItem">
+                                                    <Setter Property="Header" Value="{Binding Converter={StaticResource ModKeyToStringConverter}}"/>
+                                                    <Setter Property="Command" Value="{Binding DataContext.SetNpcSourcePluginCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                                    <Setter Property="CommandParameter" Value="{Binding}"/>
+                                                    <Setter Property="IsCheckable" Value="True"/>
+                                                    <Setter Property="IsChecked">
+                                                        <Setter.Value>
+                                                            <MultiBinding Converter="{StaticResource AreModKeysEqualMultiConverter}">
+                                                                <Binding Path="."/>
+                                                                <Binding Path="DataContext.CurrentSourcePlugin" RelativeSource="{RelativeSource AncestorType=ContextMenu}"/>
+                                                            </MultiBinding>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </MenuItem.ItemContainerStyle>
+                                        </MenuItem>
+                                        <MenuItem Header="Select Same Source Plugin Where Possible"
+                                                    Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                    Command="{Binding SelectSameSourcePluginWherePossibleCommand}"
+                                                    ToolTip="For all other ambiguous NPCs in this mod, sets their source to this source plugin if it contains the NPC."/>
+                                        <Separator/>
+                                         
                                          <MenuItem Header="Show Full Image" Command="{Binding ToggleFullScreenCommand}"/>
                                      </ContextMenu>
                                  </Border.ContextMenu>

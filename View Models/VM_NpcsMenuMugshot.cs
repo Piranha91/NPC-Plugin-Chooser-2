@@ -1,5 +1,6 @@
 ﻿// [VM_NpcsMenuMugshot.cs] - Full Code After Modifications
 using System;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 // System.Drawing is removed as ImagePacker now handles raw pixel dimensions internally if needed
@@ -58,6 +59,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string ToolTipString { get; set; } = string.Empty;
         [Reactive] public bool HasIssueNotification { get; set; } = false;
         [Reactive] public string IssueNotificationText { get; set; } = string.Empty;
+        public bool IsAmbiguousSource { get; }
+        public ObservableCollection<ModKey> AvailableSourcePlugins { get; } = new();
+        [Reactive] public ModKey? CurrentSourcePlugin { get; set; }
 
         // --- NEW IHasMugshotImage properties ---
         public int OriginalPixelWidth { get; set; }
@@ -79,6 +83,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> HideAllFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> UnhideAllFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> JumpToModCommand { get; }
+        public ReactiveCommand<ModKey, Unit> SetNpcSourcePluginCommand { get; }
+        public ReactiveCommand<Unit, Unit> SelectSameSourcePluginWherePossibleCommand { get; }
 
         // --- Placeholder Image Configuration --- 
         private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
@@ -117,6 +123,31 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 NoDataNotificationText =
                     $"You have Mugshots installed for {AssociatedModSetting?.DisplayName ?? "this mod"} but the mod itself is not installed. {Environment.NewLine}You can still select this as a placeholder, but {npcDisplayName} won't be included in the output until the actual mod is installed.";
             }
+            
+            // --- NEW Ambiguous Source Initialization ---
+            IsAmbiguousSource = AssociatedModSetting?.AmbiguousNpcFormKeys.Contains(_npcFormKey) ?? false;
+            CurrentSourcePlugin = AssociatedModSetting?.NpcPluginDisambiguation.GetValueOrDefault(_npcFormKey);
+
+            if (IsAmbiguousSource && AssociatedModSetting != null && AssociatedModSetting.AvailablePluginsForNpcs.TryGetValue(_npcFormKey, out var available))
+            {
+                AvailableSourcePlugins = new ObservableCollection<ModKey>(available.OrderBy(k => k.FileName.String));
+            }
+
+            var canSetNpcSource = this.WhenAnyValue(x => x.IsAmbiguousSource).Select(isAmbiguous => isAmbiguous);
+            SetNpcSourcePluginCommand = ReactiveCommand.Create<ModKey>(SetNpcSourcePluginInternal, canSetNpcSource);
+
+            SelectSameSourcePluginWherePossibleCommand = ReactiveCommand.Create(() =>
+                {
+                    if (this.AssociatedModSetting != null && this.CurrentSourcePlugin.HasValue)
+                    {
+                        this.AssociatedModSetting.SetAndNotifySourcePluginForAll(this.CurrentSourcePlugin.Value);
+                    }
+                },
+                this.WhenAnyValue(x => x.IsAmbiguousSource, x => x.CurrentSourcePlugin,
+                    (ambiguous, source) => ambiguous && source.HasValue));
+
+            SetNpcSourcePluginCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting NPC source plugin: {ex.Message}")).DisposeWith(Disposables);
+            SelectSameSourcePluginWherePossibleCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting NPC source plugin: {ex.Message}")).DisposeWith(Disposables);
 
             // --- Image Path and HasMugshot Logic ---
             bool realMugshotExists = !string.IsNullOrWhiteSpace(imagePath) && File.Exists(imagePath);
@@ -340,6 +371,39 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             }
                         }
                     }
+                }
+            }
+        }
+        
+        private void SetNpcSourcePluginInternal(ModKey selectedPluginKey)
+        {
+            if (AssociatedModSetting == null || !IsAmbiguousSource)
+            {
+                Debug.WriteLine($"SetNpcSourcePluginInternal called for non-ambiguous NPC {_npcFormKey}. This should not happen.");
+                return;
+            }
+            if (selectedPluginKey.IsNull)
+            {
+                Debug.WriteLine($"SetNpcSourcePluginInternal called with a null/invalid ModKey for NPC {_npcFormKey}.");
+                return;
+            }
+
+            // Call back to the parent VM_ModSetting to handle the logic
+            bool successfullyUpdated = AssociatedModSetting.SetSingleNpcSourcePlugin(_npcFormKey, selectedPluginKey);
+
+            if (successfullyUpdated)
+            {
+                // The parent VM_ModSetting has updated its NpcPluginDisambiguation map.
+                // Now, this specific VM_NpcsMenuMugshot instance should update its own CurrentSourcePlugin
+                // to reflect the new choice for the context menu checkmark.
+                if (AssociatedModSetting.NpcPluginDisambiguation.TryGetValue(this._npcFormKey, out var newResolvedSource))
+                {
+                    this.CurrentSourcePlugin = newResolvedSource;
+                }
+                else
+                {
+                    this.CurrentSourcePlugin = selectedPluginKey;
+                    Debug.WriteLine($"Warning: Could not re-resolve source for NPC {_npcFormKey} from NpcPluginDisambiguation map after setting. Displayed checkmark might be based on direct selection.");
                 }
             }
         }

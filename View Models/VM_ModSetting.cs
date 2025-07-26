@@ -1046,6 +1046,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // Use the existing reference to the parent VM to signal that the mugshot
                 // panel needs to be reloaded to reflect the data changes.
                 _parentVm.NotifyMultipleNpcSourcesChanged(this);
+
+                // Also notify the NpcSelectionBar to refresh its view, in case this
+                // command was initiated from the NpcsView.
+                _parentVm.RequestNpcSelectionBarRefresh();
             }
         }
         
