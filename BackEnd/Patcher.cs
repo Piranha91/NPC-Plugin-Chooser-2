@@ -73,7 +73,7 @@ public class Patcher : OptionalUIModule
         UpdateProgress(0, 1, "Initializing...");
         AppendLog("Starting patch generation...");
 
-        var processedNpcsTokenData = new Dictionary<FormKey, (string ModName, ModKey AppearancePlugin)>();
+        var processedNpcsTokenData = new Dictionary<FormKey, NpcAppearanceData>();
 
         if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
         {
@@ -645,7 +645,11 @@ public class Patcher : OptionalUIModule
 
                             if (appearanceModKey.HasValue)
                             {
-                                processedNpcsTokenData[npcFormKey] = (selectedModDisplayName, appearanceModKey.Value);
+                                processedNpcsTokenData[npcFormKey] = new NpcAppearanceData 
+                                { 
+                                    ModName = selectedModDisplayName, 
+                                    AppearancePlugin = appearanceModKey.Value 
+                                };
                             }
                         });
 
@@ -857,13 +861,4 @@ public class Patcher : OptionalUIModule
 
         return true;
     }
-}
-
-/// <summary>
-/// A data class to structure the contents of the NPC_Token.json file.
-/// </summary>
-public class NpcToken
-{
-    public string CreationDate { get; set; } = string.Empty;
-    public Dictionary<FormKey, (string ModName, ModKey AppearancePlugin)> ProcessedNpcs { get; set; } = new();
 }
