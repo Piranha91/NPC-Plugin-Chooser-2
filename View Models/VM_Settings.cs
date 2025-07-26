@@ -71,6 +71,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- Properties for Auto-Selection of NPC Appearances
         [Reactive] public VM_ModSelector ImportFromLoadOrderExclusionSelectorViewModel { get; private set; }
         
+        [Reactive] public ObservableCollection<string> CachedNonAppearanceMods { get; private set; }
+        
         // For throttled saving
         private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
         private readonly CompositeDisposable _disposables = new CompositeDisposable(); // To manage subscriptions
@@ -85,6 +87,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> ImportEasyNpcCommand { get; } // New
         public ReactiveCommand<Unit, Unit> ExportEasyNpcCommand { get; } // New
         public ReactiveCommand<bool, Unit> UpdateEasyNpcProfileCommand { get; } // Takes bool parameter
+        public ReactiveCommand<string, Unit> RemoveCachedModCommand { get; }
 
         public VM_Settings(
             EnvironmentStateProvider environmentStateProvider, 
@@ -120,6 +123,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             
             ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
             ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
+            
+            // Initialize the collection from the model, ordered by folder name for consistent display.
+            CachedNonAppearanceMods = new ObservableCollection<string>(_model.CachedNonAppearanceMods.OrderBy(p => Path.GetFileName(p) ?? p, StringComparer.OrdinalIgnoreCase));
+
 
             // Commands (as before)
             SelectGameFolderCommand = ReactiveCommand.CreateFromTask(SelectGameFolderAsync);
@@ -131,6 +138,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ImportEasyNpcCommand = ReactiveCommand.Create(ImportEasyNpc);
             ExportEasyNpcCommand = ReactiveCommand.Create(ExportEasyNpc);
             UpdateEasyNpcProfileCommand = ReactiveCommand.CreateFromTask<bool>(UpdateEasyNpcProfile);
+            RemoveCachedModCommand = ReactiveCommand.Create<string>(path =>
+            {
+                if (string.IsNullOrWhiteSpace(path)) return;
+                _model.CachedNonAppearanceMods.Remove(path); // Remove from the underlying settings model
+                CachedNonAppearanceMods.Remove(path);      // Remove from the UI collection
+            });
 
             // Property subscriptions (as before, ensure .Skip(1) where appropriate if values are set above)
             // These update the model or _environmentStateProvider's direct properties

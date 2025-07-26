@@ -16,6 +16,7 @@
              d:DataContext="{d:DesignInstance Type=vm:VM_Settings}"
              d:DesignHeight="800" d:DesignWidth="800"> <!-- Increased height for more controls -->
     <UserControl.Resources>
+        <local:FullPathToFolderNameConverter x:Key="FullPathToFolderNameConverter"/>
         <ObjectDataProvider x:Key="SkyrimReleaseEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="bsky:SkyrimRelease"/>
@@ -218,6 +219,57 @@
                                            Margin="0,0,0,10"
                                            ToolTip="Select plugins to exclude when using the 'Import Choices from Load Order' feature."/>
                     <TextBlock Text="When importing choices from your load order, winning override plugins selected here will be ignored, and the next available override will be chosen instead." FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
+                </StackPanel>
+            </GroupBox>
+            <GroupBox Header="Mod Import Settings" Margin="0,5,0,10" Padding="5">
+                <StackPanel>
+                    <TextBlock Text="Non-Appearance Mods:" Margin="0,0,0,2"/>
+
+                    <ListBox ItemsSource="{Binding CachedNonAppearanceMods}" Height="150" HorizontalContentAlignment="Stretch" BorderThickness="1">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" 
+                                               Text="{Binding Converter={StaticResource FullPathToFolderNameConverter}}" 
+                                               ToolTip="{Binding}"
+                                               VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" 
+                                            Content="X" 
+                                            Command="{Binding DataContext.RemoveCachedModCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                            CommandParameter="{Binding}"
+                                            Foreground="Red" 
+                                            FontWeight="Bold"
+                                            Cursor="Hand"
+                                            Margin="10,0,0,0"
+                                            VerticalAlignment="Center">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="BorderThickness" Value="0"/>
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock Text="These mods have been auto-determined to not provide NPC replacers. If the algorithm made a mistake, remove the mod from this list and re-launch this program to re-analyze it."
+                               FontSize="10" 
+                               Foreground="Gray" 
+                               TextWrapping="Wrap"
+                               Margin="0,2,0,0" />
                 </StackPanel>
             </GroupBox>
         </StackPanel>
