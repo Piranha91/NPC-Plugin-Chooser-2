@@ -33,7 +33,23 @@
                 <TextBlock Text="{Binding OperationText, Mode=OneWay}" Foreground="LightGray" HorizontalAlignment="Center" FontSize="12" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
             </StackPanel>
             
-            <TextBlock Grid.Row="3" Text="NPC Plugin Chooser 2" Foreground="#FF888888" HorizontalAlignment="Right" VerticalAlignment="Bottom" FontSize="10" Margin="0,0,10,5"/>
+            <TextBlock Grid.Row="3" Text="{Binding FooterMessage, Mode=OneWay}"
+                       Foreground="#FF888888" HorizontalAlignment="Left" VerticalAlignment="Bottom" 
+                       FontSize="10" Margin="10,0,0,5">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding FooterMessage}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding FooterMessage}" Value="">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
         </Grid>
     </Border>
 </Window>

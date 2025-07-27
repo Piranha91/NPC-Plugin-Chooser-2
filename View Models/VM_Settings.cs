@@ -403,8 +403,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
              try
              {
                  _lazyMainWindowVm.Value.IsLoadingFolders = true;
-                 // Use isModal to disable the main window without blocking the UI thread
-                 splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, isModal: false);
+                 var footerMsg = "First time analyzing mods folder. Subsequent runs will be faster.";
+                 splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, footerMessage: footerMsg);
                  
                  // Task.Run allows the UI thread to remain responsive for progress updates
                  await Task.Run(async () => {
@@ -451,7 +451,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             try
             {
                 _lazyMainWindowVm.Value.IsLoadingFolders = true;
-                // Use isModal to disable the main window without blocking the UI thread
                 splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, isModal: false);
 
                 // Task.Run allows the UI thread to remain responsive for progress updates

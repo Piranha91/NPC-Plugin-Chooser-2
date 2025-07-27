@@ -15,6 +15,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string ProgramVersion { get; private set; }
         [Reactive] public double ProgressValue { get; private set; }
         [Reactive] public string OperationText { get; private set; }
+        [Reactive] public string? FooterMessage { get; private set; }
         public string ImagePath => "pack://application:,,,/Resources/SplashScreenImage.png";
 
         private Dispatcher _dispatcher;
@@ -52,9 +53,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// Creates a fresh splash‐screen VM + window, shows it, and returns the VM.
         /// Can be shown as a modal window that disables the main window.
         /// </summary>
-        public static VM_SplashScreen InitializeAndShow(string programVersion, bool isModal = false, bool keepTopMost = false)
+        public static VM_SplashScreen InitializeAndShow(string programVersion, string? footerMessage = null, bool isModal = false, bool keepTopMost = false)
         {
-            var vm = new VM_SplashScreen(programVersion);
+            var vm = new VM_SplashScreen(programVersion)
+            {
+                FooterMessage = footerMessage,
+            };
             var window = new SplashScreenWindow { DataContext = vm };
             
             vm._window = window; 
