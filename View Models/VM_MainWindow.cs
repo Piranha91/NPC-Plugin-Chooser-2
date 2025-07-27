@@ -30,6 +30,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool IsSettingsTabSelected { get; set; }
         [Reactive] public bool IsRunTabSelected { get; set; }
         [Reactive] public bool AreOtherTabsEnabled { get; private set; }
+        [Reactive] public bool IsLoadingFolders { get; set; } = false;
 
         public VM_MainWindow(
             VM_NpcSelectionBar npcsViewModel,
@@ -50,27 +51,30 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // Reactive handling for conditions changing *after* initial setup
             Observable.CombineLatest(
-                _environmentStateProvider.WhenAnyValue(x => x.EnvironmentIsValid),
-                _settingsViewModel.WhenAnyValue(x => x.ModsFolder), // Observe VM_Settings.ModsFolder
-                (envIsValid, _) => // We observe ModsFolder on VM to trigger, but check the model instance for truth
-                    envIsValid &&
-                    !string.IsNullOrWhiteSpace(_settings.ModsFolder) &&
-                    Directory.Exists(_settings.ModsFolder)
-            )
-            .Skip(1) // InitializeApplicationState handles the very first setup.
-            .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(conditionsMet =>
-            {
-                AreOtherTabsEnabled = conditionsMet;
-                if (!conditionsMet && CurrentViewModel != _settingsViewModel)
+                    _environmentStateProvider.WhenAnyValue(x => x.EnvironmentIsValid),
+                    _settingsViewModel.WhenAnyValue(x => x.ModsFolder),
+                    this.WhenAnyValue(x => x.IsLoadingFolders), // <-- Observe the new property
+                    (envIsValid, _, isLoading) => // <-- Capture the new 'isLoading' value
+                        envIsValid &&
+                        !string.IsNullOrWhiteSpace(_settings.ModsFolder) &&
+                        Directory.Exists(_settings.ModsFolder) &&
+                        !isLoading // <-- Add this condition
+                )
+                .Skip(1)
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(conditionsMet =>
                 {
-                    CurrentViewModel = _settingsViewModel;
-                    IsSettingsTabSelected = true;
-                    IsNpcsTabSelected = false;
-                    IsModsTabSelected = false;
-                    IsRunTabSelected = false;
-                }
-            });
+                    // This logic remains the same, but now respects the loading flag
+                    AreOtherTabsEnabled = conditionsMet;
+                    if (!conditionsMet && CurrentViewModel != _settingsViewModel)
+                    {
+                        CurrentViewModel = _settingsViewModel;
+                        IsSettingsTabSelected = true;
+                        IsNpcsTabSelected = false;
+                        IsModsTabSelected = false;
+                        IsRunTabSelected = false;
+                    }
+                });
 
             // Change CurrentViewModel based on which tab is selected
             this.WhenAnyValue(x => x.IsNpcsTabSelected)

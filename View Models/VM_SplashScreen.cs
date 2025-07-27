@@ -6,6 +6,7 @@ using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using System.Windows.Threading;
 using NPC_Plugin_Chooser_2.Views; // Required for Dispatcher
+using System.Windows; // Required for Application
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -14,14 +15,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string ProgramVersion { get; private set; }
         [Reactive] public double ProgressValue { get; private set; }
         [Reactive] public string OperationText { get; private set; }
-        public string ImagePath => "pack://application:,,,/Resources/SplashScreenImage.png"; // Assumes image is in Resources folder, Build Action: Resource
+        public string ImagePath => "pack://application:,,,/Resources/SplashScreenImage.png";
 
         private Dispatcher _dispatcher;
+        private Window? _window; // Reference to the window
         
-        /// <summary>Interaction the View wires up to actually show the window.</summary>
         public Interaction<Unit, Unit> RequestOpen  { get; } = new();
-
-        /// <summary>Interaction the View wires up to actually hide the window.</summary>
         public Interaction<Unit, Unit> RequestClose { get; } = new();
 
         public VM_SplashScreen(string programVersion)
@@ -29,20 +28,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ProgramVersion = programVersion;
             OperationText = "Initializing...";
             ProgressValue = 0;
-            // Capture the dispatcher of the thread that creates this VM (should be UI thread)
             _dispatcher = Dispatcher.CurrentDispatcher;
         }
 
         public void UpdateProgress(double percent, string message)
         {
-            if (_dispatcher.CheckAccess())           // already on UI thread
+            if (_dispatcher.CheckAccess())
             {
                 ProgressValue  = percent;
                 OperationText  = message;
             }
             else
             {
-                _dispatcher.Invoke(() =>             // ← blocks calling thread
+                _dispatcher.Invoke(() =>
                 {
                     ProgressValue = percent;
                     OperationText = message;
@@ -51,64 +49,79 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
         
         /// <summary>
-        /// Creates a fresh splash‐screen VM + window, shows it, and returns the VM
-        /// so you can call UpdateProgress(...) and CloseSplashScreenAsync() on it.
+        /// Creates a fresh splash‐screen VM + window, shows it, and returns the VM.
+        /// Can be shown as a modal window that disables the main window.
         /// </summary>
-        public static VM_SplashScreen InitializeAndShow(string programVersion)
+        public static VM_SplashScreen InitializeAndShow(string programVersion, bool isModal = false, bool keepTopMost = false)
         {
-            // 1) Create a brand‐new VM
             var vm = new VM_SplashScreen(programVersion);
+            var window = new SplashScreenWindow { DataContext = vm };
+            
+            vm._window = window; 
 
-            // 2) Wire up a new window
-            var window = new SplashScreenWindow
+            // Set owner and handle modal behavior
+            Window? owner = Application.Current?.MainWindow;
+            if (owner != null && owner.IsVisible)
             {
-                DataContext = vm
-            };
-
-            // 3) Set the window to be topmost initially
-            window.Topmost = true;
-
-            // 4) After the window is first activated, turn off Topmost so other windows can cover it.
-            //    We use an event handler that unhooks itself after it runs once.
-            window.Activated += (sender, args) =>
-            {
-                if (sender is SplashScreenWindow activatedWindow)
+                window.Owner = owner;
+                if (isModal)
                 {
-                    activatedWindow.Topmost = false;
+                    // Disable owner to block input, but don't block the UI thread
+                    owner.IsEnabled = false;
                 }
-            };
+            }
+
+            if (!isModal)
+            {
+                window.Topmost = true;
+                window.Activated += (sender, args) =>
+                {
+                    if (sender is SplashScreenWindow activatedWindow && !keepTopMost)
+                    {
+                        activatedWindow.Topmost = false;
+                    }
+                };
+            }
     
-            // 5) Show it immediately
+            // Always use Show() so the UI thread is not blocked
             window.Show();
 
             return vm;
         }
         
-        /// <summary>
-        /// Requests the splash screen window to show (via the RequestOpen interaction),
-        /// then yields so WPF has a chance to process the Show() before any further work.
-        /// </summary>
         public async Task OpenSplashScreenAsync()
         {
-            // Ask the View to show
-            await RequestOpen.Handle(Unit.Default)
-                .ToTask();
-
-            // Let the UI thread catch up and actually render
+            await RequestOpen.Handle(Unit.Default).ToTask();
             await Task.Yield();
         }
 
         /// <summary>
-        /// Requests the splash screen window to hide (via the RequestClose interaction),
-        /// then yields so WPF has a chance to process the Hide() before any further work.
+        /// Closes the splash screen window and re-enables the owner if it was disabled.
         /// </summary>
         public async Task CloseSplashScreenAsync()
         {
-            // Ask the View to hide
-            await RequestClose.Handle(Unit.Default)
-                .ToTask();
+            Action closeAction = () =>
+            {
+                if (_window != null)
+                {
+                    // Re-enable the owner if it exists and was disabled
+                    if (_window.Owner != null && !_window.Owner.IsEnabled)
+                    {
+                        _window.Owner.IsEnabled = true;
+                    }
+                    _window.Close();
+                }
+            };
 
-            // Let the UI thread catch up
+            if (_dispatcher.CheckAccess())
+            {
+                closeAction();
+            }
+            else
+            {
+                await _dispatcher.InvokeAsync(closeAction);
+            }
+
             await Task.Yield();
         }
     }

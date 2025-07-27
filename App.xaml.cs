@@ -41,7 +41,7 @@ namespace NPC_Plugin_Chooser_2
             base.OnStartup(e);
 
             // 1. Create and show splash screen
-            _splashVM = VM_SplashScreen.InitializeAndShow(App.ProgramVersion);
+            _splashVM = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, keepTopMost: false);
 
             _splashVM.UpdateProgress(0, "Initializing application...");
 

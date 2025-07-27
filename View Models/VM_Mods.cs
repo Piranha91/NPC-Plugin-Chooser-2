@@ -828,7 +828,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 try
                 {
-                    foreach (var dirPath in Directory.EnumerateDirectories(_settings.MugshotsFolder))
+                    foreach (var dirPath in Directory.EnumerateDirectories(_settings.MugshotsFolder).ToList())
                     {
                         if (!claimedMugshotPaths.Contains(dirPath))
                         {
@@ -840,7 +840,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
                 catch (Exception ex)
                 {
-                    warnings.Add($"Error scanning Mugshots folder '{_settings.MugshotsFolder}': {ex.Message}");
+                    warnings.Add($"Error scanning Mugshots folder '{_settings.MugshotsFolder}': {Environment.NewLine}{ExceptionLogger.GetExceptionStack(ex)}");
                 }
             }
 
@@ -895,7 +895,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             tempList.Add(mugshotOnlyVmToUpgrade);
                             vmsFromMugshotsOnly.Remove(mugshotOnlyVmToUpgrade);
                             loadedDisplayNames.Add(mugshotOnlyVmToUpgrade.DisplayName);
-                            CheckMergeInSuitability(mugshotOnlyVmToUpgrade);
                         }
                         else
                         {
@@ -926,7 +925,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                                     tempList.Add(newVm);
                                     loadedDisplayNames.Add(newVm.DisplayName);
-                                    CheckMergeInSuitability(newVm);
                                 }
                                 else if (modKeysInFolder.Any())
                                 {
@@ -974,8 +972,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 }
                 catch (Exception ex)
                 {
-                    warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}': {ex.Message}");
+                    warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}': {Environment.NewLine}{ExceptionLogger.GetExceptionStack(ex)}");
                 }
+            }
+            
+            // Now that all mod folders have been scanned and aggregated,
+            // run the suitability check on each fully-formed mod setting.
+            foreach (var vm in tempList)
+            {
+                CheckMergeInSuitability(vm);
             }
 
             foreach (var mugshotVm in vmsFromMugshotsOnly)
@@ -1095,6 +1100,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     foreach (var vm in _allModSettingsInternal)
                     {
+                        // Now, create the appropriate brush on the UI thread
+                        if (vm.HasAlteredMergeLogic)
+                        {
+                            vm.MergeInDependencyRecords = false;
+                            vm.MergeInLabelColor = new(System.Windows.Media.Colors.Purple);
+                        }
+                        else
+                        {
+                            // Assign the default brush here, on the UI thread
+                            vm.MergeInLabelColor = new(System.Windows.Media.Colors.Black);
+                        }
+                        
                         RecalculateMugshotValidity(vm);
                     }
 
@@ -1240,6 +1257,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // Filtering Logic (Left Panel)
         public void ApplyFilters()
         {
+            // If data is actively being loaded, the underlying collection is unstable.
+            // Clear the public list and exit. The loading process will call this method again when complete.
+            if (IsLoadingNpcData)
+            {
+                ModSettingsList.Clear();
+                return;
+            }
+            
             IEnumerable<VM_ModSetting> filtered = _allModSettingsInternal;
 
             if (!string.IsNullOrWhiteSpace(NameFilterText))
@@ -1820,8 +1845,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             if (nonAppearanceRecordCount > totalRecordCount / 2)
             {
-                modSettingVM.MergeInDependencyRecords = false;
-                modSettingVM.MergeInLabelColor = new(Colors.Purple);
+                // Set the flag for later processing on the UI thread
+                modSettingVM.HasAlteredMergeLogic = true; 
                 modSettingVM.MergeInToolTip =
                     $"N.P.C. has determined that the plugin(s) in {modSettingVM.DisplayName} have more non-appearance records than appearance records, " +
                     Environment.NewLine +

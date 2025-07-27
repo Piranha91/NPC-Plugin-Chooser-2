@@ -56,7 +56,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
        
 
         [Reactive] public string MergeInToolTip { get; set; } = ModSetting.DefaultMergeInTooltip;
-        [Reactive] public SolidColorBrush MergeInLabelColor { get; set; } = new (Colors.Black);
+        [Reactive] public SolidColorBrush? MergeInLabelColor { get; set; } = null; // null initialization is intentional
+        public bool HasAlteredMergeLogic { get; set; } = false;
 
         [Reactive] public RecordOverrideHandlingMode? OverrideRecordOverrideHandlingMode { get; set; }
         public IEnumerable<KeyValuePair<RecordOverrideHandlingMode?,string>> RecordOverrideHandlingModes { get; }

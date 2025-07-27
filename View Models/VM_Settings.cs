@@ -33,6 +33,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Lazy<VM_Mods> _lazyModListVM;
         private readonly NpcConsistencyProvider _consistencyProvider; 
         private readonly VM_SplashScreen? _splashReporter;
+        private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
         
         public ViewModelActivator Activator { get; } = new ViewModelActivator(); 
 
@@ -92,11 +93,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public VM_Settings(
             EnvironmentStateProvider environmentStateProvider, 
             Auxilliary aux,
-            Settings settingsModel, // Renamed from 'settings' to 'settingsModel'
+            Settings settingsModel, 
             Lazy<VM_NpcSelectionBar> lazyNpcSelectionBar, 
             Lazy<VM_Mods> lazyModListVm, 
             NpcConsistencyProvider consistencyProvider,
-            VM_SplashScreen splashReporter) // Injected
+            VM_SplashScreen splashReporter,
+            Lazy<VM_MainWindow> lazyMainWindowVm) 
         {
             _environmentStateProvider = environmentStateProvider;
             _aux = aux;
@@ -104,7 +106,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _lazyModListVM = lazyModListVm;
             _model = settingsModel;
             _consistencyProvider = consistencyProvider;
-            _splashReporter = splashReporter; // Store injected splash reporter
+            _splashReporter = splashReporter;
+            _lazyMainWindowVm = lazyMainWindowVm;
 
             Application.Current.Exit += (_, __) => { SaveSettings(); };
 
@@ -383,7 +386,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        private async Task SelectModsFolderAsync()
+       private async Task SelectModsFolderAsync()
         {
              var dialog = new CommonOpenFileDialog
              {
@@ -392,24 +395,42 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  InitialDirectory = GetSafeInitialDirectory(ModsFolder)
              };
 
-             if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
+             if (dialog.ShowDialog() != CommonFileDialogResult.Ok) return;
+
+             ModsFolder = dialog.FileName;
+             
+             VM_SplashScreen? splashScreen = null;
+             try
              {
-                 ModsFolder = dialog.FileName; // Property change might trigger save via WhenAnyValue if set up
-                 // We need to manually trigger the refresh here for these specific changes
-                 // as ModsFolder itself doesn't re-initialize the entire environment.
+                 _lazyMainWindowVm.Value.IsLoadingFolders = true;
+                 // Use isModal to disable the main window without blocking the UI thread
+                 splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, isModal: false);
                  
-                 var splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion); // need to create a new instance because the one at launch has permanently closed
-                 if (_lazyModListVM.IsValueCreated) // Check if VM is created
+                 // Task.Run allows the UI thread to remain responsive for progress updates
+                 await Task.Run(async () => {
+                     if (_lazyModListVM.IsValueCreated)
+                     {
+                        await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 0, 50);
+                     }
+                     if (_lazyNpcSelectionBar.IsValueCreated)
+                     {
+                         await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 50, 50);
+                     }
+                 });
+                 
+                 if (_lazyModListVM.IsValueCreated)
                  {
-                    await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 0, 100); // Pass null for splashReporter
-                    _lazyModListVM.Value.ApplyFilters(); // ApplyFilters is synchronous
+                     _lazyModListVM.Value.ApplyFilters();
                  }
-                 // Same for NPC list
-                 if (_lazyNpcSelectionBar.IsValueCreated)
+             }
+             finally
+             {
+                 _lazyMainWindowVm.Value.IsLoadingFolders = false;
+                 // Ensure the splash screen is closed and the main window is re-enabled
+                 if (splashScreen != null)
                  {
-                     await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 0, 100);
+                    await splashScreen.CloseSplashScreenAsync();
                  }
-                 await splashScreen.CloseSplashScreenAsync();
              }
         }
 
@@ -422,22 +443,42 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 InitialDirectory = GetSafeInitialDirectory(MugshotsFolder)
             };
 
-            if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
+            if (dialog.ShowDialog() != CommonFileDialogResult.Ok) return;
+            
+            MugshotsFolder = dialog.FileName;
+            
+            VM_SplashScreen? splashScreen = null;
+            try
             {
-                MugshotsFolder = dialog.FileName; // Property change might trigger save
+                _lazyMainWindowVm.Value.IsLoadingFolders = true;
+                // Use isModal to disable the main window without blocking the UI thread
+                splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, isModal: false);
+
+                // Task.Run allows the UI thread to remain responsive for progress updates
+                await Task.Run(async () => {
+                    if (_lazyNpcSelectionBar.IsValueCreated)
+                    {
+                        await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 0, 50);
+                    }
+                    if (_lazyModListVM.IsValueCreated)
+                    {
+                        await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 50, 50);
+                    }
+                });
                 
-                var splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion); // need to create a new instance because the one at launch has permanently closed
-                // Manually trigger refreshes
-                if (_lazyNpcSelectionBar.IsValueCreated)
-                {
-                    await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 0, 100); // Pass null for splashReporter
-                }
                 if (_lazyModListVM.IsValueCreated)
                 {
-                    await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 0, 100); // Pass null for splashReporter
                     _lazyModListVM.Value.ApplyFilters();
                 }
-                await splashScreen.CloseSplashScreenAsync();
+            }
+            finally
+            {
+                _lazyMainWindowVm.Value.IsLoadingFolders = false;
+                // Ensure the splash screen is closed and the main window is re-enabled
+                if (splashScreen != null)
+                {
+                    await splashScreen.CloseSplashScreenAsync();
+                }
             }
         }
 
