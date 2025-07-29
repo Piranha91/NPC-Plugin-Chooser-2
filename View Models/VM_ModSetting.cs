@@ -52,7 +52,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public ObservableCollection<ModKey> CorrespondingModKeys { get; set; } = new();
         [Reactive] public ObservableCollection<string> CorrespondingFolderPaths { get; set; } = new();
         [Reactive] public bool MergeInDependencyRecords { get; set; } = true;
-
+        [Reactive] public bool MergeInDependencyRecordsVisible { get; set; } = true;
        
 
         [Reactive] public string MergeInToolTip { get; set; } = ModSetting.DefaultMergeInTooltip;
@@ -174,6 +174,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // IsMugshotOnlyEntry is set to false via chaining
             IsFaceGenOnlyEntry = model.IsFaceGenOnlyEntry;
             FaceGenOnlyNpcFormKeys = new(FaceGenOnlyNpcFormKeys);
+
+            MergeInDependencyRecordsVisible = DisplayName != VM_Mods.BaseGameModSettingName &&
+                                              DisplayName != VM_Mods.CreationClubModsettingName;
         }
 
         /// <summary>

@@ -59,6 +59,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     UpdateDisplayName(sourceGetter);
                 }
             }
+            
             // Get initial selection from the consistency provider
             // SelectedAppearanceModName is now set within Initialize or Initialize(FormKey)
         }
@@ -103,7 +104,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        private void UpdateDisplayName(INpcGetter sourceGetter)
+        public void UpdateDisplayName(INpcGetter sourceGetter)
         {
             NpcGetter = sourceGetter;
             NpcName = sourceGetter.Name?.String ?? _defaultNpcName;

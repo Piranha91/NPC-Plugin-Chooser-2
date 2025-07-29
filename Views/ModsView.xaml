@@ -310,11 +310,13 @@
                                      <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
                                          <TextBlock Text="Merge In Dependency Records" VerticalAlignment="Center" 
                                                     ToolTip="{Binding MergeInToolTip}"
-                                                    Foreground="{Binding MergeInLabelColor}"/>
+                                                    Foreground="{Binding MergeInLabelColor}"
+                                                    Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          <CheckBox
                                              IsChecked="{Binding MergeInDependencyRecords}"
                                              Margin="5 0 0 0"
-                                             ToolTip="{Binding MergeInDependencyRecords}"/>
+                                             ToolTip="{Binding MergeInDependencyRecords}"
+                                             Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                      </StackPanel>
                                      
                                      <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">

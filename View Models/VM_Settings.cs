@@ -1,6 +1,4 @@
-﻿// VM_Settings.cs (Updated)
-
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Windows;
 using System.IO;
@@ -9,6 +7,7 @@ using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Text;
+using System.Threading.Tasks;
 using Microsoft.Win32;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using Mutagen.Bethesda.Plugins;
@@ -406,17 +405,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  var footerMsg = "First time analyzing mods folder. Subsequent runs will be faster.";
                  splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, footerMessage: footerMsg);
                  
-                 // Task.Run allows the UI thread to remain responsive for progress updates
-                 await Task.Run(async () => {
-                     if (_lazyModListVM.IsValueCreated)
-                     {
-                        await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 0, 50);
-                     }
-                     if (_lazyNpcSelectionBar.IsValueCreated)
-                     {
-                         await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 50, 50);
-                     }
-                 });
+                // *** FIX: Removed the incorrect Task.Run wrapper. ***
+                // The called methods are already async and handle their own threading internally.
+                if (_lazyModListVM.IsValueCreated)
+                {
+                    await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 0, 50);
+                }
+                if (_lazyNpcSelectionBar.IsValueCreated)
+                {
+                    await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 50, 50);
+                }
                  
                  if (_lazyModListVM.IsValueCreated)
                  {
@@ -453,17 +451,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 _lazyMainWindowVm.Value.IsLoadingFolders = true;
                 splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, isModal: false);
 
-                // Task.Run allows the UI thread to remain responsive for progress updates
-                await Task.Run(async () => {
-                    if (_lazyNpcSelectionBar.IsValueCreated)
-                    {
-                        await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 0, 50);
-                    }
-                    if (_lazyModListVM.IsValueCreated)
-                    {
-                        await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 50, 50);
-                    }
-                });
+                // *** FIX: Removed the incorrect Task.Run wrapper. ***
+                if (_lazyNpcSelectionBar.IsValueCreated)
+                {
+                    await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 0, 50);
+                }
+                if (_lazyModListVM.IsValueCreated)
+                {
+                    await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 50, 50);
+                }
                 
                 if (_lazyModListVM.IsValueCreated)
                 {
