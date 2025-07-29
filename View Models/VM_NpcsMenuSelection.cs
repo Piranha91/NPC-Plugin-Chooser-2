@@ -22,7 +22,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly EnvironmentStateProvider _environmentStateProvider;
         private readonly VM_NpcSelectionBar _parentMenu;
 
-        public INpcGetter? NpcGetter { get; set; } // Keep the original record (null if from mugshot only)
+        public NpcDisplayData? NpcData { get; set; } // Keep the original record (null if from mugshot only)
         public FormKey NpcFormKey { get; }
  
         private static string _defaultDisplayName = "Unnamed NPC";
@@ -46,7 +46,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _parentMenu = parentMenu;
             NpcFormKey = npcFormKey;
             NpcFormKeyString = npcFormKey.ToString();
-            NpcGetter = null; // No getter available
+            NpcData = null; // Initially null, will be populated by UpdateWithData
             
             var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcFormKey);
             var sourceContext = contexts.LastOrDefault();
@@ -59,54 +59,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     UpdateDisplayName(sourceGetter);
                 }
             }
-            
-            // Get initial selection from the consistency provider
-            // SelectedAppearanceModName is now set within Initialize or Initialize(FormKey)
         }
-
-        public void Update(VM_ModSetting modSetting)
+        
+        public void UpdateWithData(NpcDisplayData npcData)
         {
-            AppearanceMods.Add(modSetting);
-            if (!_pluginFound)
-            {
-                foreach (var subDir in modSetting.CorrespondingFolderPaths)
-                {
-                    foreach (var plugin in modSetting.CorrespondingModKeys)
-                    {
-                        var candidatePath = System.IO.Path.Combine(subDir, plugin.ToString());
-                        
-                        if (!_parentMenu.NpcGetterCache.ContainsKey(candidatePath) && System.IO.File.Exists(candidatePath))
-                        {
-                            try
-                            {
-                                var mod = SkyrimMod.CreateFromBinaryOverlay(candidatePath, SkyrimRelease.SkyrimSE);
-                                Dictionary<FormKey, INpcGetter> subCache = new();
-                                _parentMenu.NpcGetterCache.Add(candidatePath, subCache);
-
-                                foreach (var npc in mod.Npcs)
-                                {
-                                    subCache.Add(npc.FormKey, npc);
-                                }
-                            }
-                            catch
-                            {
-                                // pass
-                            }
-                        }
-                        
-                        if (_parentMenu.NpcGetterCache.ContainsKey(candidatePath) && _parentMenu.NpcGetterCache[candidatePath].TryGetValue(NpcFormKey, out var npcGetter))
-                        {
-                            _pluginFound = true;
-                            UpdateDisplayName(npcGetter);
-                        }
-                    }
-                }
-            }
+            NpcData = npcData;
+            NpcName = npcData.Name ?? _defaultNpcName;
+            NpcEditorId = npcData.EditorID ?? _defaultEditorID;
+            DisplayName = npcData.DisplayName;
         }
 
         public void UpdateDisplayName(INpcGetter sourceGetter)
         {
-            NpcGetter = sourceGetter;
+            //NpcGetter = sourceGetter;
             NpcName = sourceGetter.Name?.String ?? _defaultNpcName;
             NpcEditorId = sourceGetter.EditorID ?? _defaultEditorID;
 

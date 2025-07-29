@@ -152,9 +152,6 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> ClearChoicesCommand { get; }
     // --- End Import/Export Commands ---
 
-    // Caches to speed up initialization
-    public Dictionary<string, Dictionary<FormKey, INpcGetter>> NpcGetterCache = new();
-
     // --- Constructor ---
     public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider,
         Settings settings,
@@ -343,7 +340,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     try
                     {
                         return await _descriptionProvider.GetDescriptionAsync(npc.NpcFormKey, npc.DisplayName,
-                            npc.NpcGetter?.EditorID);
+                            npc.NpcData?.EditorID);
                     }
                     catch (Exception ex)
                     {
@@ -1270,199 +1267,150 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     // This used to safely transfer processed data from the background thread to the UI thread.
     private record NpcInitializationData
     {
-        public FormKey NpcFormKey { get; init; }
-        public INpcGetter? NpcGetter { get; init; }
+        public NpcDisplayData NpcData { get; init; }
         public List<VM_ModSetting> AppearanceMods { get; init; } = new();
     }
 
     public async Task InitializeAsync(VM_SplashScreen? splashReporter, double baseProgress = 0, double progressSpan = 10)
-{
-    splashReporter?.UpdateProgress(baseProgress, "Initializing NPC list...");
-
-    // 1. Clear all UI-bound collections on the UI thread first.
-    await Application.Current.Dispatcher.InvokeAsync(() =>
     {
-        SelectedNpc = null;
-        AllNpcs.Clear();
-        FilteredNpcs.Clear();
-        CurrentNpcDescription = null;
-    });
+        splashReporter?.UpdateProgress(baseProgress, "Initializing NPC list...");
 
-    if (!_environmentStateProvider.EnvironmentIsValid)
-    {
-        splashReporter?.UpdateProgress(baseProgress + progressSpan, "Environment not valid for NPC list.");
-        ScrollableMessageBox.ShowWarning(
-            $"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}",
-            "Environment Error");
-        _mugshotData.Clear();
-        return;
-    }
-
-    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1), "Scanning mugshot directory...");
-    // Mugshot scanning is file I/O, so it's good to keep it in the background.
-    _mugshotData = await Task.Run(() => ScanMugshotDirectory(splashReporter));
-
-    // This modifies a UI collection, so ensure it's on the UI thread.
-    await Application.Current.Dispatcher.InvokeAsync(UpdateAvailableNpcGroups);
-    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Updating NPC groups...");
-
-    splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Querying NPC records from detected mods...");
-
-    // 2. Perform ALL heavy data processing in the background.
-    // This task will return a list of simple data objects, not ViewModels.
-    var processedNpcData = await Task.Run(() =>
-    {
-        var npcDataMap = new Dictionary<FormKey, NpcInitializationData>();
-        var npcGetterCache = new Dictionary<string, Dictionary<FormKey, INpcGetter>>();
-
-        // Add a null-check to prevent a crash if the mod settings list hasn't been populated yet.
-        if (_lazyModsVm.Value?.AllModSettings == null)
+        // 1. Clear all UI-bound collections on the UI thread first.
+        await Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            Debug.WriteLine("Warning: InitializeAsync called before AllModSettings was populated. Returning empty NPC list.");
-            return new List<NpcInitializationData>(); // Return an empty list to prevent the NullReferenceException
+            SelectedNpc = null;
+            AllNpcs.Clear();
+            FilteredNpcs.Clear();
+            CurrentNpcDescription = null;
+        });
+
+        if (!_environmentStateProvider.EnvironmentIsValid)
+        {
+            splashReporter?.UpdateProgress(baseProgress + progressSpan, "Environment not valid for NPC list.");
+            ScrollableMessageBox.ShowWarning(
+                $"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}",
+                "Environment Error");
+            _mugshotData.Clear();
+            return;
         }
 
-        // Iterate through all mod settings to find NPCs and their appearance sources.
-        foreach (var modSetting in _lazyModsVm.Value.AllModSettings)
+        splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1), "Scanning mugshot directory...");
+        _mugshotData = await Task.Run(() => ScanMugshotDirectory(splashReporter));
+
+        await Application.Current.Dispatcher.InvokeAsync(UpdateAvailableNpcGroups);
+        splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Updating NPC groups...");
+
+        splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Querying NPC records from detected mods...");
+
+        // 2. Perform ALL heavy data processing in the background.
+        var processedNpcData = await Task.Run(() =>
         {
-            foreach (var formKeyToName in modSetting.NpcFormKeysToDisplayName)
-            {
-                var npcFormKey = formKeyToName.Key;
-
-                if (!npcDataMap.TryGetValue(npcFormKey, out var data))
-                {
-                    data = new NpcInitializationData { NpcFormKey = npcFormKey };
-                    npcDataMap[npcFormKey] = data;
-                }
-                data.AppearanceMods.Add(modSetting);
-
-                // Skip file I/O if we've already found the definitive record for this NPC.
-                if (data.NpcGetter != null) continue;
-
-                INpcGetter? foundGetter = null;
-                // This is the heavy part: check loose files for NPC records.
-                foreach (var subDir in modSetting.CorrespondingFolderPaths)
-                {
-                    foreach (var plugin in modSetting.CorrespondingModKeys)
-                    {
-                        var candidatePath = Path.Combine(subDir, plugin.ToString());
-                        if (!npcGetterCache.ContainsKey(candidatePath) && File.Exists(candidatePath))
-                        {
-                            try
-                            {
-                                var mod = SkyrimMod.CreateFromBinaryOverlay(candidatePath, SkyrimRelease.SkyrimSE);
-                                npcGetterCache.Add(candidatePath, mod.Npcs.ToDictionary(n => n.FormKey, n => (INpcGetter)n));
-                            }
-                            catch { /* ignore invalid or non-ESM/ESP files */ }
-                        }
-                        
-                        if (npcGetterCache.TryGetValue(candidatePath, out var cache) && cache.TryGetValue(npcFormKey, out var getter))
-                        {
-                            foundGetter = getter;
-                            break;
-                        }
-                    }
-                    if (foundGetter != null) break;
-                }
-                
-                // If a getter was found in loose files, update the data object.
-                if (foundGetter != null)
-                {
-                    npcDataMap[npcFormKey] = data with { NpcGetter = foundGetter };
-                }
-            }
-        }
-
-        // After checking all loose files, do a final lookup pass using the main LinkCache
-        // for any NPCs whose records we haven't found yet. This is much faster than file I/O.
-        foreach(var key in npcDataMap.Keys.ToList())
-        {
-            if (npcDataMap[key].NpcGetter == null && _environmentStateProvider.LinkCache != null)
-            {
-                // *** FIX: Check if LastOrDefault() returns null before accessing the .Record property. ***
-                var lastContext = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(key).LastOrDefault();
-                if (lastContext?.Record != null)
-                {
-                    npcDataMap[key] = npcDataMap[key] with { NpcGetter = lastContext.Record };
-                }
-            }
-        }
-
-        return npcDataMap.Values.ToList();
-    });
-
-    // 3. Now back on the UI thread, create the ViewModel objects.
-    foreach (var initData in processedNpcData)
-    {
-        // Use the correct 3-parameter constructor. This is safe because we are on the UI thread.
-        var selector = new VM_NpcsMenuSelection(initData.NpcFormKey, _environmentStateProvider, this);
-        
-        // Populate the new object directly on the UI thread.
-        // Replacing ambiguous AddRange with a simple loop.
-        foreach (var mod in initData.AppearanceMods)
-        {
-            selector.AppearanceMods.Add(mod);
-        }
-        
-        if (initData.NpcGetter != null)
-        {
-            selector.UpdateDisplayName(initData.NpcGetter);
-        }
-        
-        // Add the fully-formed, UI-thread-owned object to the collection.
-        AllNpcs.Add(selector);
-    }
-    
-    // 4. Handle NPCs that only exist in mugshot data (no associated mod setting).
-    var mugshotOnlyKeys = _mugshotData.Keys.Where(key => !AllNpcs.Any(n => n.NpcFormKey.Equals(key))).ToList();
-    foreach (var mugshotFormKey in mugshotOnlyKeys)
-    {
-        try
-        {
-            // Use the correct 3-parameter constructor.
-            var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider, this);
+            var npcDataMap = new Dictionary<FormKey, (NpcDisplayData? NpcData, List<VM_ModSetting> Mods)>();
             
-            // The constructor already handles the logic for finding the display name,
-            // so we just need to add it to the list.
-            AllNpcs.Add(npcSelector);
-        }
-        catch (Exception ex)
+            if (_lazyModsVm.Value?.AllModSettings == null)
+            {
+                Debug.WriteLine("Warning: InitializeAsync called before AllModSettings was populated. Returning empty NPC list.");
+                return new List<NpcInitializationData>();
+            }
+
+            // Aggregate all NPCs from all mod settings first
+            foreach (var modSetting in _lazyModsVm.Value.AllModSettings)
+            {
+                foreach (var formKeyToName in modSetting.NpcFormKeysToDisplayName)
+                {
+                    var npcFormKey = formKeyToName.Key;
+                    if (!npcDataMap.TryGetValue(npcFormKey, out var data))
+                    {
+                        data = (null, new List<VM_ModSetting>());
+                        npcDataMap[npcFormKey] = data;
+                    }
+                    data.Mods.Add(modSetting);
+                }
+            }
+            
+            // Now, resolve the NpcDisplayData for each unique NPC
+            var finalDataList = new List<NpcInitializationData>();
+            foreach (var kvp in npcDataMap)
+            {
+                var npcFormKey = kvp.Key;
+                var appearanceMods = kvp.Value.Mods;
+
+                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter))
+                {
+                    // Create lightweight object and discard the getter
+                    var displayData = NpcDisplayData.FromGetter(npcGetter);
+                    finalDataList.Add(new NpcInitializationData { NpcData = displayData, AppearanceMods = appearanceMods });
+                }
+            }
+
+            return finalDataList;
+        });
+
+        // 3. Now back on the UI thread, create the ViewModel objects.
+        foreach (var initData in processedNpcData)
         {
-            Debug.WriteLine($"Error creating VM for mugshot-only NPC {mugshotFormKey}: {ex.Message}");
+            var selector = new VM_NpcsMenuSelection(initData.NpcData.FormKey, _environmentStateProvider, this);
+            selector.UpdateWithData(initData.NpcData);
+            
+            foreach (var mod in initData.AppearanceMods)
+            {
+                selector.AppearanceMods.Add(mod);
+            }
+            
+            AllNpcs.Add(selector);
         }
-    }
-    
-    // 5. Perform final cleanup and filtering on the UI thread.
-    splashReporter?.UpdateProgress(90, "Cleaning NPC List...");
-    for (int i = AllNpcs.Count - 1; i >= 0; i--)
-    {
-        var currentNpc = AllNpcs[i];
-        if (!currentNpc.AppearanceMods.Any() && !_mugshotData.ContainsKey(currentNpc.NpcFormKey))
+        
+        // 4. Handle NPCs that only exist in mugshot data.
+        var allNpcKeys = new HashSet<FormKey>(AllNpcs.Select(n => n.NpcFormKey));
+        var mugshotOnlyKeys = _mugshotData.Keys.Where(key => !allNpcKeys.Contains(key)).ToList();
+        
+        foreach (var mugshotFormKey in mugshotOnlyKeys)
         {
-            AllNpcs.RemoveAt(i);
+            try
+            {
+                var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider, this);
+                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(mugshotFormKey, out var getter))
+                {
+                    npcSelector.UpdateWithData(NpcDisplayData.FromGetter(getter));
+                }
+                AllNpcs.Add(npcSelector);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error creating VM for mugshot-only NPC {mugshotFormKey}: {ex.Message}");
+            }
         }
-    }
-
-    // This call is now safe because all objects in AllNpcs were created on the UI thread.
-    await Application.Current.Dispatcher.InvokeAsync(() => ApplyFilter(initializing: true));
-
-    // 6. Restore previous selection or select the first item.
-    VM_NpcsMenuSelection? npcToSelectOnLoad = null;
-    if (!_settings.LastSelectedNpcFormKey.IsNull)
-    {
-        npcToSelectOnLoad = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey))
-                          ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey));
-    }
     
-    SelectedNpc = npcToSelectOnLoad ?? FilteredNpcs.FirstOrDefault();
+        // 5. Final cleanup and filtering on the UI thread.
+        splashReporter?.UpdateProgress(90, "Cleaning NPC List...");
+        for (int i = AllNpcs.Count - 1; i >= 0; i--)
+        {
+            var currentNpc = AllNpcs[i];
+            if (!currentNpc.AppearanceMods.Any() && !_mugshotData.ContainsKey(currentNpc.NpcFormKey))
+            {
+                AllNpcs.RemoveAt(i);
+            }
+        }
 
-    if (SelectedNpc != null)
-    {
-        _requestScrollToNpcSubject.OnNext(SelectedNpc);
+        await Application.Current.Dispatcher.InvokeAsync(() => ApplyFilter(initializing: true));
+
+        // 6. Restore previous selection or select the first item.
+        VM_NpcsMenuSelection? npcToSelectOnLoad = null;
+        if (!_settings.LastSelectedNpcFormKey.IsNull)
+        {
+            npcToSelectOnLoad = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey))
+                              ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey));
+        }
+        
+        SelectedNpc = npcToSelectOnLoad ?? FilteredNpcs.FirstOrDefault();
+
+        if (SelectedNpc != null)
+        {
+            _requestScrollToNpcSubject.OnNext(SelectedNpc);
+        }
+
+        splashReporter?.UpdateProgress(baseProgress + progressSpan, "NPC list initialized.");
     }
-
-    splashReporter?.UpdateProgress(baseProgress + progressSpan, "NPC list initialized.");
-}
 
 
     public void SignalScrollToNpc(VM_NpcsMenuSelection? npc)
@@ -1622,8 +1570,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             case NpcSearchType.Name:
                 return npc => npc.DisplayName?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false;
             case NpcSearchType.EditorID:
+                // Use the lightweight NpcData object
                 return npc =>
-                    npc.NpcGetter?.EditorID?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false;
+                    npc.NpcData?.EditorID?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false;
             case NpcSearchType.InAppearanceMod:
                 return npc =>
                     npc.AppearanceMods.Any(m =>
@@ -1638,8 +1587,6 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             default:
                 return null;
         }
-
-        ;
     }
 
     private ObservableCollection<VM_NpcsMenuMugshot> CreateMugShotViewModels(VM_NpcsMenuSelection selectionVm,
@@ -1721,7 +1668,6 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             }
 
             if ((specificPluginKey == null || specificPluginKey.Value.IsNull) && 
-                selectionVm.NpcGetter != null && 
                 modSettingVM.AvailablePluginsForNpcs.TryGetValue(selectionVm.NpcFormKey, out var candiatePlugins) && 
                 candiatePlugins.Any())
             {
