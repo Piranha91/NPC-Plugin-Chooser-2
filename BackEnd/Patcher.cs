@@ -409,9 +409,9 @@ public class Patcher : OptionalUIModule
 
                                 switch (_settings.PatchingMode)
                                 {
-                                    case PatchingMode.EasyNPC_Like:
+                                    case PatchingMode.CreateAndPatch:
                                         AppendLog(
-                                            $"      Mode: EasyNPC-Like. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {appearanceModKey?.FileName ?? "N/A"}.");
+                                            $"      Mode: Create and Patch. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {appearanceModKey?.FileName ?? "N/A"}.");
 
                                         if (_settings.UseSkyPatcherMode)
                                         {
@@ -563,7 +563,7 @@ public class Patcher : OptionalUIModule
                                         break;
                                     default:
                                         AppendLog(
-                                            $"      Mode: Default. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"}).");
+                                            $"      Mode: Create. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"}).");
                                         if (_settings.UseSkyPatcherMode)
                                         {
                                             patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(appearanceNpcRecord);

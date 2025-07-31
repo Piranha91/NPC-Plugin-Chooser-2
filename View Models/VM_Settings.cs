@@ -528,11 +528,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             string helpText = @"Patching Mode Help:
 
-Default:
+Create:
 NPC Plugins are imported directly from their selected Appearance Mods.
 When the output plugin is generated, place it as high as it will go in your load order, and then use Synthesis FaceFixer (or manually perform conflict resolution) to forward the faces to your final load order.
 
-EasyNPC-Like:
+Create And Patch:
 NPC plugins are imported from their conflict-winning override in your load order, and their appearance is modified to match their selected Appearance Mod.
 When the ouptut plugin is generated, put it at the end of your load order.";
 

@@ -2,7 +2,7 @@
 {
     public enum PatchingMode
     {
-        Default,
-        EasyNPC_Like // Using underscore for enum member clarity if needed
+        Create,
+        CreateAndPatch // Using underscore for enum member clarity if needed
     }
 }
