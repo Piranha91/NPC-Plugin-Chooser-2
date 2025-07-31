@@ -1059,14 +1059,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 await semaphore.WaitAsync(); // Wait for a free slot
                 try
                 {
-                    // Use Task.Run for the CPU/sync-IO-bound work
                     await Task.Run(() =>
                     {
+                        // Get the paths for this specific VM
+                        var modFolderPathsForVm = vm.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            
+                        // Explicitly load only the plugins needed for this task
+                        _pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPathsForVm);
                         try
                         {
-                            // Pass the pre-cached data to the synchronous method
+                            // Perform the analysis using the now-cached plugins
                             vm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles);
+                            vm.FindPluginsWithOverrides(_pluginProvider);
 
+                            // Update progress...
                             if (index % 10 == 0 && _allModSettingsInternal.Count > 0)
                             {
                                 splashReporter?.UpdateProgress(
@@ -1075,13 +1081,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     $"Analyzing mod '{vm.DisplayName}'..."
                                 );
                             }
-
-                            // This can also be moved inside RefreshNpcLists if it's part of the same unit of work
-                            vm.FindPluginsWithOverrides(_pluginProvider);
                         }
                         catch (Exception ex)
                         {
-                            Debug.WriteLine($"Error during RefreshNpcLists for {vm.DisplayName}: {ex.Message}");
+                            Debug.WriteLine($"Error during analysis for {vm.DisplayName}: {ex.Message}");
+                        }
+                        finally
+                        {
+                            // CRUCIAL: Unload the plugins after analysis is complete,
+                            // even if an error occurred.
+                            _pluginProvider.UnloadPlugins(vm.CorrespondingModKeys);
                         }
                     });
                 }
