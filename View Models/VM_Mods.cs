@@ -958,6 +958,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     tempList.Add(newVm);
                                     loadedDisplayNames.Add(newVm.DisplayName);
                                 }
+                                
+                                CheckMergeInSuitability(newVm);
                             }
                             else
                             {
@@ -974,13 +976,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}': {Environment.NewLine}{ExceptionLogger.GetExceptionStack(ex)}");
                 }
-            }
-            
-            // Now that all mod folders have been scanned and aggregated,
-            // run the suitability check on each fully-formed mod setting.
-            foreach (var vm in tempList)
-            {
-                CheckMergeInSuitability(vm);
             }
 
             foreach (var mugshotVm in vmsFromMugshotsOnly)
