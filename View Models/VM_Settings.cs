@@ -411,6 +411,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
              VM_SplashScreen? splashScreen = null;
              try
              {
+                 // clear existing ModSettings to avoid cross-contamination
+                 _model.ModSettings.Clear();
+                 _model.CachedNonAppearanceMods.Clear();
+                 //
+                 
                  _lazyMainWindowVm.Value.IsLoadingFolders = true;
                  var footerMsg = "First time analyzing mods folder. Subsequent runs will be faster.";
                  splashScreen = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, footerMessage: footerMsg);
