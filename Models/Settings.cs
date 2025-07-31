@@ -42,6 +42,10 @@ public class Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); 
     public HashSet<ModKey> EasyNpcDefaultPluginExclusions { get; set; } = new() { ModKey.FromFileName("Synthesis.esp")};
     public bool AddMissingNpcsOnUpdate { get; set; } = false;
+    
+    // Bat File Settings
+    public string BatFilePreCommands { get; set; } = string.Empty;
+    public string BatFilePostCommands { get; set; } = string.Empty;
 
     // Zoom Control Settings
     public double NpcsViewZoomLevel { get; set; } = 100.0; 

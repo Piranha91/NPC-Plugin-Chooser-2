@@ -8,6 +8,7 @@ using Mutagen.Bethesda.Plugins.Cache.Internals.Implementations;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using System.Security.Cryptography;
+using System.Text;
 
 #if NET8_0_OR_GREATER
 using System.IO.Hashing;
@@ -108,6 +109,35 @@ public class Auxilliary
             return formIDstr;
         }
         return String.Empty;
+    }
+    
+    /// <summary>
+    /// Removes or replaces characters that are invalid in file paths.
+    /// </summary>
+    /// <param name="path">The input string to sanitize.</param>
+    /// <returns>A path string that is safe for use as a file name.</returns>
+    public static string MakeStringPathSafe(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        char[] invalidChars = Path.GetInvalidFileNameChars();
+        var sb = new StringBuilder(path.Length);
+        foreach (char c in path)
+        {
+            // Array.IndexOf is a simple way to check for existence
+            if (Array.IndexOf(invalidChars, c) != -1)
+            {
+                sb.Append('_'); // Replace invalid char with an underscore
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
     }
 
     /// <summary>

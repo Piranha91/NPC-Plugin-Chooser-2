@@ -272,6 +272,30 @@
                                Margin="0,2,0,0" />
                 </StackPanel>
             </GroupBox>
+            <GroupBox Header="Mod Import Settings" Margin="0,5,0,10" Padding="5">
+            </GroupBox>
+
+            <GroupBox Header="Spawn Bat File Options" Margin="0,0,0,10" Padding="5">
+                <StackPanel>
+                    <TextBlock Text="Console Commands Before Spawning:" Margin="0,0,0,2"/>
+                    <TextBox 
+                        Text="{Binding BatFilePreCommands, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        AcceptsReturn="True"
+                        TextWrapping="Wrap"
+                        Height="80"
+                        VerticalScrollBarVisibility="Auto"
+                        ToolTip="Enter any console commands you want to execute BEFORE the player.placeatme commands in the generated file."/>
+
+                    <TextBlock Text="Console Commands After Spawning:" Margin="0,10,0,2"/>
+                    <TextBox 
+                        Text="{Binding BatFilePostCommands, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        AcceptsReturn="True"
+                        TextWrapping="Wrap"
+                        Height="80"
+                        VerticalScrollBarVisibility="Auto"
+                        ToolTip="Enter any console commands you want to execute AFTER the player.placeatme commands."/>
+                </StackPanel>
+            </GroupBox>
         </StackPanel>
     </ScrollViewer>
 </reactiveui:ReactiveUserControl>

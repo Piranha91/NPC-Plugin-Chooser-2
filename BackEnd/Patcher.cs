@@ -23,15 +23,17 @@ public class Patcher : OptionalUIModule
     private readonly PluginProvider _pluginProvider;
     private readonly BsaHandler _bsaHandler;
     private readonly SkyPatcherInterface _skyPatcherInterface;
-    
+
     private Dictionary<string, ModSetting> _modSettingsMap;
     private string _currentRunOutputAssetPath = string.Empty;
 
     private bool _clearOutputDirectoryOnRun = true;
 
     public const string ALL_NPCS_GROUP = VM_Run.ALL_NPCS_GROUP;
-    
-    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator, AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher, PluginProvider pluginProvider, BsaHandler bsaHandler, SkyPatcherInterface skyPatcherInterface)
+
+    public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator,
+        AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher,
+        PluginProvider pluginProvider, BsaHandler bsaHandler, SkyPatcherInterface skyPatcherInterface)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -45,14 +47,15 @@ public class Patcher : OptionalUIModule
         _skyPatcherInterface = skyPatcherInterface;
     }
 
-    public async Task PreInitializationLogicAsync() 
+    public async Task PreInitializationLogicAsync()
     {
         AppendLog("Pre-Indexing loose file paths...", false, true);
-        await _assetHandler.PopulateExistingFilePathsAsync(_settings.ModSettings); 
+        await _assetHandler.PopulateExistingFilePathsAsync(_settings.ModSettings);
         AppendLog("Finished Pre-Indexing loose file paths.", false, true);
 
         AppendLog("Pre-Indexing BSA file paths...", false, true);
-        await _bsaHandler.PopulateBsaContentPathsAsync(_settings.ModSettings, _environmentStateProvider.SkyrimVersion.ToGameRelease());
+        await _bsaHandler.PopulateBsaContentPathsAsync(_settings.ModSettings,
+            _environmentStateProvider.SkyrimVersion.ToGameRelease());
         AppendLog("Finished Pre-Indexing BSA file paths.", false, true);
     }
 
@@ -120,7 +123,7 @@ public class Patcher : OptionalUIModule
             }
 
             // The baseOutputDirectory is already determined (e.g., "modsDir\NPC Output" or "C:\Mods\NPC Output")
-            _currentRunOutputAssetPath = baseOutputDirectory; 
+            _currentRunOutputAssetPath = baseOutputDirectory;
 
             // Now, append a timestamp if the setting is enabled, regardless of whether the path was specified or not.
             if (_settings.AppendTimestampToOutputDirectory)
@@ -147,8 +150,9 @@ public class Patcher : OptionalUIModule
                 ResetProgress();
                 return;
             }
-            
-            _skyPatcherInterface.Reinitialize(_currentRunOutputAssetPath); // reinitialize whether in SkyPatcher mode or not to avoid stale output 
+
+            _skyPatcherInterface.Reinitialize(
+                _currentRunOutputAssetPath); // reinitialize whether in SkyPatcher mode or not to avoid stale output 
 
             _environmentStateProvider.OutputMod =
                 new SkyrimMod(ModKey.FromName(_environmentStateProvider.OutputPluginName, ModType.Plugin),
@@ -200,7 +204,7 @@ public class Patcher : OptionalUIModule
 
                     List<ModKey> modKeysForBatch = new();
                     HashSet<string> currentModFolderPaths = new();
-                    
+
                     await Task.Run(() =>
                     {
                         ModSetting? currentModSetting = null;
@@ -297,7 +301,8 @@ public class Patcher : OptionalUIModule
                                     foreach (var candidateKey in appearanceModSetting.CorrespondingModKeys)
                                     {
                                         if (_recordHandler.TryGetRecordGetterFromMod(npcFormKey.ToLink<INpcGetter>(),
-                                                candidateKey, currentModFolderPaths, RecordHandler.RecordLookupFallBack.None,
+                                                candidateKey, currentModFolderPaths,
+                                                RecordHandler.RecordLookupFallBack.None,
                                                 out var record) &&
                                             record != null)
                                         {
@@ -331,7 +336,7 @@ public class Patcher : OptionalUIModule
                                         $"      ERROR: Could not resolve the original source record for {npcIdentifier}. This NPC may be from a missing master file. SKIPPING.",
                                         isError: true,
                                         forceLog: true);
-                                    
+
                                     return;
                                 }
                             }
@@ -346,27 +351,32 @@ public class Patcher : OptionalUIModule
                                 mergeInDependencyRecords = false;
                                 recordOverrideHandlingMode = RecordOverrideHandlingMode.Ignore;
                             }
-                            
+
                             List<IAssetLinkGetter> assetLinks = new();
 
                             if (appearanceNpcRecord != null)
                             {
-                                
-                                var (faceMeshRelativePath, _) = Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, regularized: true);
+
+                                var (faceMeshRelativePath, _) =
+                                    Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, regularized: true);
                                 if (!_assetHandler.AssetExists(faceMeshRelativePath, appearanceModSetting))
                                 {
                                     // If the mesh is missing, perform the more expensive check to see if the plugin *actually* changed head data.
                                     // Resolve the original base record for this NPC (e.g., from Skyrim.esm).
-                                    if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(appearanceNpcRecord.FormKey,
+                                    if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(
+                                            appearanceNpcRecord.FormKey,
                                             out var baseNpcGetter, ResolveTarget.Origin))
                                     {
                                         // Compare the head-related properties of the appearance record to the base record.
                                         // Use static Equals() for top-level properties to safely handle any potential nulls.
-                                        bool faceMorphsDiffer = !Equals(baseNpcGetter.FaceMorph, appearanceNpcRecord.FaceMorph);
-                                        bool facePartsDiffer = !Equals(baseNpcGetter.FaceParts, appearanceNpcRecord.FaceParts);
-                                        
+                                        bool faceMorphsDiffer = !Equals(baseNpcGetter.FaceMorph,
+                                            appearanceNpcRecord.FaceMorph);
+                                        bool facePartsDiffer = !Equals(baseNpcGetter.FaceParts,
+                                            appearanceNpcRecord.FaceParts);
+
                                         // fast head part equality check
-                                        var appearanceHeadParts = appearanceNpcRecord.HeadParts.Select(x => x.FormKey).ToHashSet();
+                                        var appearanceHeadParts = appearanceNpcRecord.HeadParts.Select(x => x.FormKey)
+                                            .ToHashSet();
                                         var baseHeadParts = baseNpcGetter.HeadParts.Select(x => x.FormKey).ToHashSet();
                                         bool headPartsDiffer = false;
                                         foreach (var hp in appearanceHeadParts)
@@ -381,11 +391,13 @@ public class Patcher : OptionalUIModule
                                         // If any of the head data properties differ, log the critical warning.
                                         if (faceMorphsDiffer || facePartsDiffer || headPartsDiffer)
                                         {
-                                            AppendLog($"      CRITICAL WARNING: Mod '{appearanceModSetting.DisplayName}' modifies head data for {npcIdentifier} but does not provide the corresponding FaceGen mesh ({faceMeshRelativePath}). THIS WILL LIKELY CAUSE THE 'BLACK FACE' BUG.", true, true);
+                                            AppendLog(
+                                                $"      CRITICAL WARNING: Mod '{appearanceModSetting.DisplayName}' modifies head data for {npcIdentifier} but does not provide the corresponding FaceGen mesh ({faceMeshRelativePath}). THIS WILL LIKELY CAUSE THE 'BLACK FACE' BUG.",
+                                                true, true);
                                         }
                                     }
                                 }
-                                
+
                                 if (isFaceGenOnly)
                                 {
                                     AppendLog("    Source: Original Plugin (FaceGen-only Mod)");
@@ -414,7 +426,7 @@ public class Patcher : OptionalUIModule
 
                                         var mergedInAppearanceRecords = CopyAppearanceData(appearanceNpcRecord,
                                             patchNpc,
-                                            appearanceModSetting, appearanceModKey.Value, 
+                                            appearanceModSetting, appearanceModKey.Value,
                                             currentModFolderPaths, npcIdentifier,
                                             mergeInDependencyRecords);
                                         _aux.CollectShallowAssetLinks(mergedInAppearanceRecords, assetLinks);
@@ -423,7 +435,8 @@ public class Patcher : OptionalUIModule
                                             List<string> mergeInExceptions = new();
                                             var mergedInRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(
                                                 _environmentStateProvider.OutputMod, patchNpc,
-                                                appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true, currentModFolderPaths,
+                                                appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true,
+                                                currentModFolderPaths,
                                                 ref mergeInExceptions);
                                             if (mergeInExceptions.Any())
                                             {
@@ -442,7 +455,8 @@ public class Patcher : OptionalUIModule
                                             case RecordOverrideHandlingMode.Include:
                                                 var dependencyContexts =
                                                     _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
-                                                        appearanceModSetting.CorrespondingModKeys, currentModFolderPaths);
+                                                        appearanceModSetting.CorrespondingModKeys,
+                                                        currentModFolderPaths);
                                                 List<MajorRecord> deltaPatchedRecords = new();
                                                 foreach (var ctx in dependencyContexts)
                                                 {
@@ -510,7 +524,8 @@ public class Patcher : OptionalUIModule
                                                     var additionalMergedRecords =
                                                         _recordHandler.DuplicateFromOnlyReferencedGetters(
                                                             _environmentStateProvider.OutputMod, deltaPatchedRecords,
-                                                            importSourceModKeys, appearanceModKey.Value, true, currentModFolderPaths,
+                                                            importSourceModKeys, appearanceModKey.Value, true,
+                                                            currentModFolderPaths,
                                                             ref mergeInExceptions);
                                                     if (mergeInExceptions.Any())
                                                     {
@@ -557,7 +572,7 @@ public class Patcher : OptionalUIModule
                                         {
                                             patchNpc =
                                                 _environmentStateProvider.OutputMod.Npcs
-                                                    .GetOrAddAsOverride(appearanceNpcRecord); 
+                                                    .GetOrAddAsOverride(appearanceNpcRecord);
                                         }
 
                                         if (mergeInDependencyRecords)
@@ -585,7 +600,8 @@ public class Patcher : OptionalUIModule
                                             case RecordOverrideHandlingMode.Include:
                                                 var dependencyContexts =
                                                     _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
-                                                        appearanceModSetting.CorrespondingModKeys, currentModFolderPaths);
+                                                        appearanceModSetting.CorrespondingModKeys,
+                                                        currentModFolderPaths);
                                                 foreach (var ctx in dependencyContexts)
                                                 {
                                                     ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
@@ -625,12 +641,13 @@ public class Patcher : OptionalUIModule
 
                             if (patchNpc != null && appearanceModSetting != null)
                             {
-                                await _assetHandler.ScheduleCopyNpcAssets(appearanceNpcRecord, appearanceModSetting, // appearanceNpcRecord here rather than patchNpc is intentional
+                                await _assetHandler.ScheduleCopyNpcAssets(appearanceNpcRecord,
+                                    appearanceModSetting, // appearanceNpcRecord here rather than patchNpc is intentional
                                     _currentRunOutputAssetPath, npcIdentifier);
                                 await _assetHandler.ScheduleCopyAssetLinkFiles(assetLinks, appearanceModSetting,
                                     _currentRunOutputAssetPath);
-                                
-                                                            
+
+
                                 if (_settings.UseSkyPatcherMode)
                                 {
                                     _skyPatcherInterface.ApplyViaSkyPatcher(appearanceNpcRecord, patchNpc);
@@ -645,10 +662,10 @@ public class Patcher : OptionalUIModule
 
                             if (appearanceModKey.HasValue)
                             {
-                                processedNpcsTokenData[npcFormKey] = new NpcAppearanceData 
-                                { 
-                                    ModName = selectedModDisplayName, 
-                                    AppearancePlugin = appearanceModKey.Value 
+                                processedNpcsTokenData[npcFormKey] = new NpcAppearanceData
+                                {
+                                    ModName = selectedModDisplayName,
+                                    AppearancePlugin = appearanceModKey.Value
                                 };
                             }
                         });
@@ -741,112 +758,172 @@ public class Patcher : OptionalUIModule
     }
 
     private void ClearDirectory(string path)
-        {
-            DirectoryInfo di = new DirectoryInfo(path);
-            if (!di.Exists) return;
+    {
+        DirectoryInfo di = new DirectoryInfo(path);
+        if (!di.Exists) return;
 
-            foreach (FileInfo file in di.EnumerateFiles()) file.Delete();
-            foreach (DirectoryInfo dir in di.EnumerateDirectories())
-            {
-                string dirNameLower = dir.Name.ToLowerInvariant();
-                if (dirNameLower == "meshes" || dirNameLower == "textures" || dirNameLower == "facegendata" ||
-                    dirNameLower == "actors")
-                {
-                    dir.Delete(true);
-                }
-                else
-                {
-                    AppendLog($"  Skipping deletion of non-asset directory: {dir.Name}");
-                }
-            }
-        }
-
-        private List<MajorRecord> CopyAppearanceData(INpcGetter sourceNpc, Npc targetNpc, ModSetting appearanceModSetting, ModKey sourceNpcContextModKey, HashSet<string> currentModFolderPaths, string npcIdentifier, bool mergeInDependencyRecords)
+        foreach (FileInfo file in di.EnumerateFiles())
         {
-            using var _ = ContextualPerformanceTracer.Trace("Patcher.CopyAppearanceData");
-            targetNpc.FaceMorph = sourceNpc.FaceMorph?.DeepCopy();
-            targetNpc.FaceParts = sourceNpc.FaceParts?.DeepCopy();
-            targetNpc.Height = sourceNpc.Height;
-            targetNpc.Weight = sourceNpc.Weight;
-            targetNpc.TextureLighting = sourceNpc.TextureLighting;
-            targetNpc.TintLayers.Clear();
-            targetNpc.TintLayers.AddRange(sourceNpc.TintLayers?.Select(t => t.DeepCopy()) ??
-                                          Enumerable.Empty<TintLayer>());
-            
-            List<MajorRecord> mergedInRecords = new();
-            var importSourceModKeys = appearanceModSetting.CorrespondingModKeys
-                .Distinct()
-                .Where(k => k != sourceNpc.FormKey.ModKey)
-                .ToHashSet();
-            
-            if (mergeInDependencyRecords)
+            bool preserveFile = false;
+            // Check if the file is a .txt file first, which is a fast operation.
+            if (file.Extension.Equals(".txt", StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
-                    List<string> skinExceptions = new();
-                    var skinRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.WornArmor, sourceNpc.WornArmor, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, currentModFolderPaths, ref skinExceptions);
-                    if (skinExceptions.Any())
+                    // Efficiently check if any line in the file contains the command,
+                    // without loading the entire file into memory.
+                    if (File.ReadLines(file.FullName).Any(line =>
+                            line.Contains("player.placeatme", StringComparison.OrdinalIgnoreCase)))
                     {
-                        AppendLog("Exceptions during skin assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
+                        preserveFile = true;
                     }
-                    mergedInRecords.AddRange(skinRecords);
-                    
-                    List<string> headExceptions = new();
-                    var headRecords =_recordHandler.DuplicateInOrAddFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, currentModFolderPaths,  ref headExceptions);
-                    if (headExceptions.Any())
-                    {
-                        AppendLog("Exceptions during head texture assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
-                    }
-                    mergedInRecords.AddRange(headRecords);
-                    
-                    List<string> colorExceptions = new();
-                    var hairColorRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.HairColor, sourceNpc.HairColor, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, currentModFolderPaths,  ref colorExceptions);
-                    if (colorExceptions.Any())
-                    {
-                        AppendLog("Exceptions during hair color assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
-                    }
-                    mergedInRecords.AddRange(hairColorRecords);
-
-                    targetNpc.HeadParts.Clear();
-                    List<string> headPartExceptions = new();
-                    foreach (var hp in sourceNpc.HeadParts.Where(x => !x.IsNull))
-                    {
-                        var targetHp = new FormLink<IHeadPartGetter>();
-                        var headPartRecords =_recordHandler.DuplicateInOrAddFormLink(targetHp, hp, _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, currentModFolderPaths,  ref headPartExceptions);
-                        targetNpc.HeadParts.Add(targetHp);
-                        mergedInRecords.AddRange(headPartRecords);
-                    }
-                    if (headPartExceptions.Any())
-                    {
-                        AppendLog("Exceptions during head part assignment: " + Environment.NewLine + string.Join(Environment.NewLine, skinExceptions), true, true);
-                    }
-
-                    AppendLog($"    Completed dependency processing for {npcIdentifier}.");
                 }
                 catch (Exception ex)
                 {
-                    AppendLog($"  ERROR duplicating dependencies for {npcIdentifier}: {ExceptionLogger.GetExceptionStack(ex)}", true);
+                    // If the file can't be read (e.g., permissions), err on the side of caution and preserve it.
+                    AppendLog(
+                        $"  Could not read file '{file.Name}' to check for preservation: {ex.Message}. Skipping deletion.",
+                        isError: true);
+                    preserveFile = true;
                 }
             }
 
-            AppendLog($"      Copied appearance fields from {sourceNpc.FormKey.ModKey.FileName} to {targetNpc.FormKey} in patch.");
-
-            if (NPCisTemplated(targetNpc) && !NPCisTemplated(sourceNpc))
+            if (preserveFile)
             {
-                AppendLog($"      Removing template flag from {targetNpc.FormKey} in patch.");
-                targetNpc.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
+                AppendLog($"  Preserving spawn command file: {file.Name}");
+                continue; // Skip to the next file without deleting.
             }
-            
-            return mergedInRecords;
+            // --- End of new logic ---
+
+            file.Delete();
         }
 
-        private bool NPCisTemplated(INpcGetter? npc)
+        foreach (DirectoryInfo dir in di.EnumerateDirectories())
         {
-            if (npc == null) return false;
-            return !npc.Template.IsNull &&
-                   npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits);
+            string dirNameLower = dir.Name.ToLowerInvariant();
+            if (dirNameLower == "meshes" || dirNameLower == "textures" || dirNameLower == "facegendata" ||
+                dirNameLower == "actors")
+            {
+                dir.Delete(true);
+            }
+            else
+            {
+                AppendLog($"  Skipping deletion of non-asset directory: {dir.Name}");
+            }
         }
-    
+    }
+
+    private List<MajorRecord> CopyAppearanceData(INpcGetter sourceNpc, Npc targetNpc, ModSetting appearanceModSetting,
+        ModKey sourceNpcContextModKey, HashSet<string> currentModFolderPaths, string npcIdentifier,
+        bool mergeInDependencyRecords)
+    {
+        using var _ = ContextualPerformanceTracer.Trace("Patcher.CopyAppearanceData");
+        targetNpc.FaceMorph = sourceNpc.FaceMorph?.DeepCopy();
+        targetNpc.FaceParts = sourceNpc.FaceParts?.DeepCopy();
+        targetNpc.Height = sourceNpc.Height;
+        targetNpc.Weight = sourceNpc.Weight;
+        targetNpc.TextureLighting = sourceNpc.TextureLighting;
+        targetNpc.TintLayers.Clear();
+        targetNpc.TintLayers.AddRange(sourceNpc.TintLayers?.Select(t => t.DeepCopy()) ??
+                                      Enumerable.Empty<TintLayer>());
+
+        List<MajorRecord> mergedInRecords = new();
+        var importSourceModKeys = appearanceModSetting.CorrespondingModKeys
+            .Distinct()
+            .Where(k => k != sourceNpc.FormKey.ModKey)
+            .ToHashSet();
+
+        if (mergeInDependencyRecords)
+        {
+            try
+            {
+                List<string> skinExceptions = new();
+                var skinRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.WornArmor, sourceNpc.WornArmor,
+                    _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,
+                    currentModFolderPaths, ref skinExceptions);
+                if (skinExceptions.Any())
+                {
+                    AppendLog(
+                        "Exceptions during skin assignment: " + Environment.NewLine +
+                        string.Join(Environment.NewLine, skinExceptions), true, true);
+                }
+
+                mergedInRecords.AddRange(skinRecords);
+
+                List<string> headExceptions = new();
+                var headRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture,
+                    _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,
+                    currentModFolderPaths, ref headExceptions);
+                if (headExceptions.Any())
+                {
+                    AppendLog(
+                        "Exceptions during head texture assignment: " + Environment.NewLine +
+                        string.Join(Environment.NewLine, skinExceptions), true, true);
+                }
+
+                mergedInRecords.AddRange(headRecords);
+
+                List<string> colorExceptions = new();
+                var hairColorRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.HairColor, sourceNpc.HairColor,
+                    _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,
+                    currentModFolderPaths, ref colorExceptions);
+                if (colorExceptions.Any())
+                {
+                    AppendLog(
+                        "Exceptions during hair color assignment: " + Environment.NewLine +
+                        string.Join(Environment.NewLine, skinExceptions), true, true);
+                }
+
+                mergedInRecords.AddRange(hairColorRecords);
+
+                targetNpc.HeadParts.Clear();
+                List<string> headPartExceptions = new();
+                foreach (var hp in sourceNpc.HeadParts.Where(x => !x.IsNull))
+                {
+                    var targetHp = new FormLink<IHeadPartGetter>();
+                    var headPartRecords = _recordHandler.DuplicateInOrAddFormLink(targetHp, hp,
+                        _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,
+                        currentModFolderPaths, ref headPartExceptions);
+                    targetNpc.HeadParts.Add(targetHp);
+                    mergedInRecords.AddRange(headPartRecords);
+                }
+
+                if (headPartExceptions.Any())
+                {
+                    AppendLog(
+                        "Exceptions during head part assignment: " + Environment.NewLine +
+                        string.Join(Environment.NewLine, skinExceptions), true, true);
+                }
+
+                AppendLog($"    Completed dependency processing for {npcIdentifier}.");
+            }
+            catch (Exception ex)
+            {
+                AppendLog(
+                    $"  ERROR duplicating dependencies for {npcIdentifier}: {ExceptionLogger.GetExceptionStack(ex)}",
+                    true);
+            }
+        }
+
+        AppendLog(
+            $"      Copied appearance fields from {sourceNpc.FormKey.ModKey.FileName} to {targetNpc.FormKey} in patch.");
+
+        if (NPCisTemplated(targetNpc) && !NPCisTemplated(sourceNpc))
+        {
+            AppendLog($"      Removing template flag from {targetNpc.FormKey} in patch.");
+            targetNpc.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
+        }
+
+        return mergedInRecords;
+    }
+
+    private bool NPCisTemplated(INpcGetter? npc)
+    {
+        if (npc == null) return false;
+        return !npc.Template.IsNull &&
+               npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits);
+    }
+
     private bool ShouldSkipNpc(INpcGetter npc, string selectedGroup)
     {
         if (selectedGroup == ALL_NPCS_GROUP) return false;

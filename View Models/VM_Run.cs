@@ -15,7 +15,9 @@ using System.Collections.ObjectModel;
 using System.Reactive.Disposables;
 using System.Reactive.Subjects;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Windows;
+using Microsoft.Win32;
 using Mutagen.Bethesda.Archives;
 using Mutagen.Bethesda.Plugins.Records;
 using Noggog;
@@ -36,6 +38,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly BsaHandler _bsaHandler;
         private readonly SkyPatcherInterface _skyPatcherInterface;
         private readonly RecordDeltaPatcher _recordDeltaPatcher;
+        private readonly Auxilliary _aux;
         private CancellationTokenSource? _patchingCts;
         private readonly CompositeDisposable _disposables = new();
         private readonly Subject<string> _logMessageSubject = new Subject<string>();
@@ -76,6 +79,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
 
         public ReactiveCommand<Unit, Unit> RunCommand { get; }
+        public ReactiveCommand<Unit, Unit> GenerateSpawnBatCommand { get; }
 
         public VM_Run(
             EnvironmentStateProvider environmentStateProvider,
@@ -87,7 +91,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             AssetHandler assetHandler,
             BsaHandler bsaHandler,
             SkyPatcherInterface skyPatcherInterface,
-            RecordDeltaPatcher recordDeltaPatcher)
+            RecordDeltaPatcher recordDeltaPatcher,
+            Auxilliary aux)
         {
             _environmentStateProvider = environmentStateProvider;
             _settings = settings;
@@ -99,6 +104,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _bsaHandler = bsaHandler;
             _skyPatcherInterface = skyPatcherInterface;
             _recordDeltaPatcher = recordDeltaPatcher;
+            _aux = aux;
             
             _patcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
             _validator.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
@@ -185,6 +191,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 })
                 .DisposeWith(_disposables);
             // --- End of New Logic ---
+            
+            // Bat command logic
+            var canGenerateBat = this.WhenAnyValue(
+                x => x.IsRunning,
+                x => x.SelectedNpcGroup,
+                (running, group) => !running && !string.IsNullOrEmpty(group) && _environmentStateProvider.EnvironmentIsValid
+            );
+
+            GenerateSpawnBatCommand = ReactiveCommand.CreateFromTask(GenerateSpawnBatFileAsync, canGenerateBat);
+
+            GenerateSpawnBatCommand.ThrownExceptions.Subscribe(ex =>
+            {
+                AppendLog($"ERROR: Failed to generate spawn bat file: {ExceptionLogger.GetExceptionStack(ex)}", true);
+            });
             
             _logMessageSubject
                 .Buffer(TimeSpan.FromMilliseconds(250), RxApp.TaskpoolScheduler) // Collect messages for 250ms
@@ -330,6 +350,115 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 IsRunning = false;
                 _patchingCts?.Dispose();
                 _patchingCts = null;
+            }
+        }
+        
+        private async Task GenerateSpawnBatFileAsync()
+        {
+            string initialDirectory;
+            string outputDirSetting = _settings.OutputDirectory;
+
+            // If the OutputDirectory is a full, absolute path, use it directly.
+            if (!string.IsNullOrWhiteSpace(outputDirSetting) && Path.IsPathRooted(outputDirSetting))
+            {
+                initialDirectory = outputDirSetting;
+            }
+            // If the ModsFolder is valid, combine it with the relative OutputDirectory.
+            else if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
+            {
+                initialDirectory = Path.Combine(_settings.ModsFolder, outputDirSetting);
+            }
+            else
+            {
+                // As a fallback, use the game's Data folder.
+                initialDirectory = _environmentStateProvider.DataFolderPath;
+            }
+            // --- End of new logic ---
+            
+            string groupNameForFile = SelectedNpcGroup;
+            groupNameForFile = Regex.Replace(groupNameForFile, @"[^a-zA-Z0-9]", "");
+
+            var saveFileDialog = new SaveFileDialog
+            {
+                // Use the newly calculated directory path.
+                InitialDirectory = initialDirectory,
+                FileName = $"{groupNameForFile}.txt",
+                DefaultExt = ".txt",
+                Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*"
+            };
+
+            if (saveFileDialog.ShowDialog() != true)
+            {
+                AppendLog("Spawn bat file generation cancelled by user.");
+                return;
+            }
+
+            try
+            {
+                AppendLog($"Generating spawn bat file for group '{SelectedNpcGroup}'...");
+
+                List<FormKey> npcsToProcess;
+
+                if (SelectedNpcGroup == ALL_NPCS_GROUP)
+                {
+                    // If "All NPCs" is selected, get all NPCs that have any appearance mod selected.
+                    // This data comes from the dictionary updated by the NpcConsistencyProvider.
+                    npcsToProcess = _settings.SelectedAppearanceMods.Keys.ToList();
+                }
+                else
+                {
+                    // Otherwise, get NPCs from the specifically selected group.
+                    npcsToProcess = _settings.NpcGroupAssignments
+                        .Where(kvp => kvp.Value != null && kvp.Value.Contains(SelectedNpcGroup, StringComparer.OrdinalIgnoreCase))
+                        .Select(kvp => kvp.Key)
+                        .ToList();
+                }
+
+                if (!npcsToProcess.Any())
+                {
+                    // Provide a more specific warning message based on the user's selection.
+                    string warningMessage = SelectedNpcGroup == ALL_NPCS_GROUP
+                        ? "Warning: No appearance selections have been made. File will be empty."
+                        : $"Warning: No NPCs found in group '{SelectedNpcGroup}'. File will be empty.";
+                    
+                    AppendLog(warningMessage, isError: true);
+                    await File.WriteAllTextAsync(saveFileDialog.FileName, string.Empty);
+                    return;
+                }
+
+                var sb = new StringBuilder();
+                
+                if (!string.IsNullOrWhiteSpace(_settings.BatFilePreCommands))
+                {
+                    sb.AppendLine(_settings.BatFilePreCommands);
+                }
+                
+                int successCount = 0;
+                foreach (var npcFormKey in npcsToProcess)
+                {
+                    string formId = _aux.FormKeyToFormIDString(npcFormKey);
+                    if (!string.IsNullOrEmpty(formId))
+                    {
+                        sb.AppendLine($"player.placeatme {formId}");
+                        successCount++;
+                    }
+                    else
+                    {
+                        AppendLog($"Warning: Could not resolve FormID for {npcFormKey}. It will be skipped.", isError: true);
+                    }
+                }
+                
+                if (!string.IsNullOrWhiteSpace(_settings.BatFilePostCommands))
+                {
+                    sb.AppendLine(_settings.BatFilePostCommands);
+                }
+
+                await File.WriteAllTextAsync(saveFileDialog.FileName, sb.ToString());
+                AppendLog($"Successfully generated spawn bat file with {successCount} NPC(s) at: {saveFileDialog.FileName}", forceLog: true);
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"FATAL: An unexpected error occurred during bat file generation: {ExceptionLogger.GetExceptionStack(ex)}", true);
             }
         }
 

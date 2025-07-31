@@ -43,6 +43,13 @@
                       VerticalAlignment="Center"
                       ToolTip="Select an NPC group to process, or 'All NPCs' to process all selected NPCs."/>
             
+            <Button Content="Generate Spawn Bat"
+                    Command="{Binding GenerateSpawnBatCommand}"
+                    DockPanel.Dock="Left"
+                    Margin="5,0,0,0"
+                    VerticalAlignment="Center"
+                    ToolTip="Generates a .txt batch file to spawn all NPCs from the selected group."/>
+
             <CheckBox x:Name="VerboseModeCheckBox"
                       DockPanel.Dock="Left"
                       Content="Verbose Logging"

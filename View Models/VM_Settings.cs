@@ -60,6 +60,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // We will wrap the HashSet from the model. Consider a more robust solution if direct binding causes issues.
         [Reactive] public VM_ModSelector ExclusionSelectorViewModel { get; private set; }
         [ObservableAsProperty] public IEnumerable<ModKey> AvailablePluginsForExclusion { get; }
+        
+        // --- Bat File Properties
+        [Reactive] public string BatFilePreCommands { get; set; }
+        [Reactive] public string BatFilePostCommands { get; set; }
 
         // --- Read-only properties reflecting environment state ---
         [ObservableAsProperty] public bool EnvironmentIsValid { get; }
@@ -122,6 +126,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             SelectedPatchingMode = _model.PatchingMode;
             SelectedRecordOverrideHandlingMode = _model.DefaultRecordOverrideHandlingMode;
             AddMissingNpcsOnUpdate = _model.AddMissingNpcsOnUpdate;
+            BatFilePreCommands = _model.BatFilePreCommands;
+            BatFilePostCommands = _model.BatFilePostCommands;
             
             ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
             ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
@@ -155,6 +161,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.AppendTimestampToOutputDirectory).Skip(1).Subscribe(b => _model.AppendTimestampToOutputDirectory = b).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.SelectedPatchingMode).Skip(1).Subscribe(pm => _model.PatchingMode = pm).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.BatFilePreCommands).Skip(1).Subscribe(s => _model.BatFilePreCommands = s).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.BatFilePostCommands).Skip(1).Subscribe(s => _model.BatFilePostCommands = s).DisposeWith(_disposables);
 
             this.WhenAnyValue(x => x.UseSkyPatcherMode)
                 .Skip(1) // Skip initial value set on load
@@ -343,7 +351,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // PatchingMode default is Default (enum default)
             loadedSettings.EasyNpcDefaultPluginExclusions ??= new() { ModKey.FromFileName("Synthesis.esp") };
             loadedSettings.ImportFromLoadOrderExclusions ??= new();
-
+            loadedSettings.BatFilePreCommands ??= string.Empty;
+            loadedSettings.BatFilePostCommands ??= string.Empty;
+            
             return loadedSettings;
         }
         
