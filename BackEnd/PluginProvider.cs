@@ -73,12 +73,19 @@ public class PluginProvider
 
         if (foundPath != null)
         {
-            var imported = SkyrimMod.CreateFromBinary(foundPath, SkyrimRelease.SkyrimSE);
-            plugin = imported;
-            if (plugin != null)
+            try
             {
-                _pluginCache.Add(modKey, plugin);
-                return true;
+                var imported = SkyrimMod.CreateFromBinary(foundPath, SkyrimRelease.SkyrimSE);
+                plugin = imported;
+                if (plugin != null)
+                {
+                    _pluginCache.Add(modKey, plugin);
+                    return true;
+                }
+            }
+            catch (Exception e)
+            {
+                throw new Exception("Failed to load plugin from: " + foundPath, e);
             }
         }
 
