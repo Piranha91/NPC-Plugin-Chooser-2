@@ -406,4 +406,30 @@ public class BsaHandler : OptionalUIModule
         }
         return result;
     }
+    
+    public string GetStatusReport()
+    {
+        string output = "";
+        if (!_openBsaArchiveReaders.Any())
+        {
+            output = "No BSA archives currently loaded.";
+        }
+        else
+        {
+            output = "Loaded BSA Archives at: " + Environment.NewLine + string.Join(Environment.NewLine, _openBsaArchiveReaders.Select(x => "\t" + x.Key.ToString()));
+        }
+
+        output += Environment.NewLine;
+        
+        if (!_bsaContents.Any())
+        {
+            output += "No BSA contents currently cached";
+        }
+        else
+        {
+            output += "Cached BSA archive contents for plugins: " + Environment.NewLine + string.Join(Environment.NewLine, _bsaContents.Select(x => "\t" + x.Key.ToString()));
+        }
+        
+        return output;
+    }
 }

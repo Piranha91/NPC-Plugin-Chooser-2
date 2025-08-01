@@ -105,4 +105,16 @@ public class PluginProvider
         
         return masterPlugins;
     }
+
+    public string GetStatusReport()
+    {
+        if (_pluginCache.IsEmpty)
+        {
+            return "No plugins currently cached.";
+        }
+        else
+        {
+            return "Cached Plugins: " + Environment.NewLine + string.Join(Environment.NewLine, _pluginCache.Select(x => "\t" + x.Key.ToString()));
+        }
+    }
 }

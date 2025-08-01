@@ -38,6 +38,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly BsaHandler _bsaHandler;
         private readonly SkyPatcherInterface _skyPatcherInterface;
         private readonly RecordDeltaPatcher _recordDeltaPatcher;
+        private readonly PluginProvider _pluginProvider;
+        private readonly RecordHandler _recordHandler;
         private readonly Auxilliary _aux;
         private CancellationTokenSource? _patchingCts;
         private readonly CompositeDisposable _disposables = new();
@@ -80,6 +82,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public ReactiveCommand<Unit, Unit> RunCommand { get; }
         public ReactiveCommand<Unit, Unit> GenerateSpawnBatCommand { get; }
+        public ReactiveCommand<Unit, Unit> ShowStatusCommand { get; }
 
         public VM_Run(
             EnvironmentStateProvider environmentStateProvider,
@@ -92,7 +95,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             BsaHandler bsaHandler,
             SkyPatcherInterface skyPatcherInterface,
             RecordDeltaPatcher recordDeltaPatcher,
-            Auxilliary aux)
+            Auxilliary aux,
+            PluginProvider pluginProvider,
+            RecordHandler recordHandler)
         {
             _environmentStateProvider = environmentStateProvider;
             _settings = settings;
@@ -105,6 +110,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _skyPatcherInterface = skyPatcherInterface;
             _recordDeltaPatcher = recordDeltaPatcher;
             _aux = aux;
+            _pluginProvider = pluginProvider;
+            _recordHandler = recordHandler;
             
             _patcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
             _validator.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
@@ -204,6 +211,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
             GenerateSpawnBatCommand.ThrownExceptions.Subscribe(ex =>
             {
                 AppendLog($"ERROR: Failed to generate spawn bat file: {ExceptionLogger.GetExceptionStack(ex)}", true);
+            });
+            
+            ShowStatusCommand = ReactiveCommand.CreateFromTask(GenerateEnvironmentReportAsync);
+
+            ShowStatusCommand.ThrownExceptions.Subscribe(ex =>
+            {
+                AppendLog($"ERROR: Failed to get status report: {ExceptionLogger.GetExceptionStack(ex)}", true);
             });
             
             _logMessageSubject
@@ -520,6 +534,23 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     CurrentProgressMessage = message;
                 }
             });
+        }
+
+        private async Task GenerateEnvironmentReportAsync()
+        {
+            AppendLog("===Game Environment===", forceLog: true);
+            AppendLog("Game Type: " + _environmentStateProvider.SkyrimVersion, forceLog: true);
+            AppendLog("Game Directory: " + _environmentStateProvider.DataFolderPath, forceLog: true);
+            AppendLog("Creation Club Path: " + _environmentStateProvider.CreationClubListingsFilePath, forceLog: true);
+            AppendLog("Core Plugins:" + Environment.NewLine + string.Join(Environment.NewLine, _environmentStateProvider.BaseGamePlugins.Select(x => "\t" + x.ToString())), forceLog: true);
+            AppendLog("CC Plugins:" + Environment.NewLine + string.Join(Environment.NewLine, _environmentStateProvider.CreationClubPlugins.Select(x => "\t" + x.ToString())), forceLog: true);
+            AppendLog("Load Order:" + Environment.NewLine + string.Join(Environment.NewLine, _environmentStateProvider.LoadOrder.Select(x => "\t" + (x.Value.Enabled ? "*" : "-") + x.Key.ToString())), forceLog: true);
+            AppendLog(_environmentStateProvider.EnvironmentIsValid ? "Environment is Valid" : "Environment is Invalid", forceLog: true);
+            AppendLog(Environment.NewLine, forceLog: true);
+            AppendLog("===Program Variables===", forceLog: true);
+            AppendLog("Plugin Provider: " + _pluginProvider.GetStatusReport(), forceLog: true);
+            AppendLog("Record Handler: " + _recordHandler.GetStatusReport(), forceLog: true);
+            AppendLog("BSA Handler: " + _bsaHandler.GetStatusReport(), forceLog: true);
         }
 
         // Add Dispose method if not present

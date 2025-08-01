@@ -57,6 +57,13 @@
                       VerticalAlignment="Center"
                       Margin="15,0,0,0"/>
             
+            <Button Content="Environment Status"
+                    Command="{Binding ShowStatusCommand}"
+                    DockPanel.Dock="Left"
+                    Margin="15,0,0,0"
+                    VerticalAlignment="Center"
+                    ToolTip="Generates a report detailing the current app environment"/>
+            
             <TextBlock /> <!-- Fills remaining space as LastChildFill is true by default -->
         </DockPanel>
 

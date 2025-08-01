@@ -596,5 +596,17 @@ public class RecordHandler
         Origin,
         Winner
     }
+    
+    public string GetStatusReport()
+    {
+        if (!_modLinkCaches.Any())
+        {
+            return "No plugins link caches currently created.";
+        }
+        else
+        {
+            return "Link caches for plugins: " + Environment.NewLine + string.Join(Environment.NewLine, _modLinkCaches.Select(x => "\t" + x.Key.ToString()));
+        }
+    }
     #endregion
 }
