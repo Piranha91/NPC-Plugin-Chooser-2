@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System.Collections.Concurrent;
+using System.IO;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Records;
@@ -10,7 +11,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public class PluginProvider
 {
-    private Dictionary<ModKey, ISkyrimMod> _pluginCache = new();
+    private ConcurrentDictionary<ModKey, ISkyrimMod> _pluginCache = new();
 
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly Settings _settings;
@@ -36,7 +37,7 @@ public class PluginProvider
     {
         foreach (var key in keys)
         {
-            _pluginCache.Remove(key);
+            _pluginCache.TryRemove(key, out _);
         }
     }
 
@@ -79,7 +80,7 @@ public class PluginProvider
                 plugin = imported;
                 if (plugin != null)
                 {
-                    _pluginCache.Add(modKey, plugin);
+                    _pluginCache.TryAdd(modKey, plugin);
                     return true;
                 }
             }
