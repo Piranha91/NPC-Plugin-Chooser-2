@@ -28,6 +28,7 @@ namespace NPC_Plugin_Chooser_2
     {
         private SplashScreenWindow _splashScreenWindow;
         private VM_SplashScreen _splashVM;
+        private IContainer _container;
         public const string ProgramVersion = "2.0.0"; // Central version definition
 
         // App constructor should be minimal
@@ -39,6 +40,8 @@ namespace NPC_Plugin_Chooser_2
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+            
+            this.Exit += OnApplicationExit;
 
             // 1. Create and show splash screen
             _splashVM = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, keepTopMost: false);
@@ -46,7 +49,7 @@ namespace NPC_Plugin_Chooser_2
             _splashVM.UpdateProgress(0, "Initializing application...");
 
             // 2. Perform main application initialization asynchronously
-            var container = await InitializeCoreApplicationAsync(_splashVM);
+            _container = await InitializeCoreApplicationAsync(_splashVM);
 
             // 3. Setup and show MainWindow
             _splashVM.UpdateProgress(95, "Loading main window...");
@@ -186,6 +189,20 @@ namespace NPC_Plugin_Chooser_2
             
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
             return container;
+        }
+        
+        private void OnApplicationExit(object sender, ExitEventArgs e)
+        {
+            // ## ADD THESE TWO LINES ##
+            // Resolve the VM_Settings instance from the container
+            var settingsViewModel = _container.Resolve<VM_Settings>();
+            settingsViewModel.SaveSettings(); // Call the save method
+
+            // Your existing disposal logic
+            var pluginProvider = _container.Resolve<PluginProvider>();
+            pluginProvider.Dispose();
+
+            _container.Dispose();
         }
     }
 }

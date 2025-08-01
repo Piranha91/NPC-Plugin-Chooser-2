@@ -112,8 +112,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _splashReporter = splashReporter;
             _lazyMainWindowVm = lazyMainWindowVm;
 
-            Application.Current.Exit += (_, __) => { SaveSettings(); };
-
             // Initialize VM properties from the model (as before)
             ModsFolder = _model.ModsFolder;
             MugshotsFolder = _model.MugshotsFolder;
@@ -362,7 +360,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _saveRequestSubject.OnNext(Unit.Default);
         }
 
-        private void SaveSettings()
+        public void SaveSettings()
         {
             _model.EasyNpcDefaultPluginExclusions = new HashSet<ModKey>(ExclusionSelectorViewModel.SaveToModel());
             _model.ImportFromLoadOrderExclusions = new HashSet<ModKey>(ImportFromLoadOrderExclusionSelectorViewModel.SaveToModel());

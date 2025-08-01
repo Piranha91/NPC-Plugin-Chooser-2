@@ -9,9 +9,10 @@ using static NPC_Plugin_Chooser_2.BackEnd.RecordHandler;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
-public class PluginProvider
+public class PluginProvider: IDisposable
 {
-    private ConcurrentDictionary<ModKey, ISkyrimMod> _pluginCache = new();
+    private ConcurrentDictionary<ModKey, ISkyrimModDisposableGetter> _pluginCache = new();
+    private bool _disposed = false; // To prevent multiple dispose calls
 
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly Settings _settings;
@@ -37,11 +38,41 @@ public class PluginProvider
     {
         foreach (var key in keys)
         {
-            _pluginCache.TryRemove(key, out _);
+            if (_pluginCache.TryRemove(key, out var pluginToDispose))
+            {
+                pluginToDispose.Dispose(); // Dispose the object
+            }
         }
     }
 
-    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimMod? plugin)
+    // ## NEW IDisposable Implementation ##
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (disposing)
+        {
+            // Dispose managed state (the cached objects).
+            foreach (var kvp in _pluginCache)
+            {
+                kvp.Value.Dispose();
+            }
+            _pluginCache.Clear();
+        }
+
+        _disposed = true;
+    }
+
+    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModDisposableGetter? plugin)
     {
         if (_pluginCache.TryGetValue(modKey, out plugin))
         {
@@ -76,7 +107,10 @@ public class PluginProvider
         {
             try
             {
-                var imported = SkyrimMod.CreateFromBinary(foundPath, SkyrimRelease.SkyrimSE);
+                var imported = SkyrimMod.Create(_environmentStateProvider.SkyrimVersion)
+                    .FromPath(foundPath)
+                    .Construct();
+                
                 plugin = imported;
                 if (plugin != null)
                 {
