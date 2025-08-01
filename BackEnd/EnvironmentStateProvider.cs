@@ -26,6 +26,7 @@ public class EnvironmentStateProvider
     public ISkyrimMod OutputMod { get; set; }
     public HashSet<ModKey> BaseGamePlugins => Implicits.Get(SkyrimVersion.ToGameRelease()).BaseMasters.ToHashSet();
     public HashSet<ModKey> CreationClubPlugins  { get; set; }
+    public ModKey AbsoluteBasePlugin = ModKey.FromFileName("Skyrim.esm");
     
     public string OutputPluginName { get; set; }
     public string OutputPluginFileName => OutputPluginName + ".esp";

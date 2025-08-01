@@ -259,15 +259,26 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // New method for heavy initialization, called from App.xaml.cs
         public async Task InitializeAsync()
         {
-            _splashReporter?.UpdateProgress(62, "Updating game environment...");
-            _environmentStateProvider.UpdateEnvironment(62, 8);
+            ContextualPerformanceTracer.Reset(); // Reset at the start of the whole process
 
-            // **NEW ORDER: Populate mods first**
-            _splashReporter?.UpdateProgress(70, "Populating mod list...");
-            await _lazyModListVM.Value.PopulateModSettingsAsync(_splashReporter, 70, 10); // Base 70%, span 10% (e.g. 70-80)
+            using (ContextualPerformanceTracer.Trace("VM_Settings.UpdateEnvironment"))
+            {
+                _splashReporter?.UpdateProgress(62, "Updating game environment...");
+                _environmentStateProvider.UpdateEnvironment(62, 8);
+            }
 
-            _splashReporter?.UpdateProgress(80, "Initializing NPC selection bar...");
-            await _lazyNpcSelectionBar.Value.InitializeAsync(_splashReporter, 80, 10); // Base 80%, span 10% (e.g. 80-90)
+            using (ContextualPerformanceTracer.Trace("VM_Settings.PopulateModSettings"))
+            {
+                // **NEW ORDER: Populate mods first**
+                _splashReporter?.UpdateProgress(70, "Populating mod list...");
+                await _lazyModListVM.Value.PopulateModSettingsAsync(_splashReporter, 70, 10); // Base 70%, span 10% (e.g. 70-80)
+            }
+
+            using (ContextualPerformanceTracer.Trace("VM_Settings.InitializeNpcSelectionBar"))
+            {
+                _splashReporter?.UpdateProgress(80, "Initializing NPC selection bar...");
+                await _lazyNpcSelectionBar.Value.InitializeAsync(_splashReporter, 80, 10); // Base 80%, span 10% (e.g. 80-90)
+            }
             
             // START: Added Logic for Default Exclusions
             if (!_model.HasBeenLaunched && _environmentStateProvider.LoadOrder != null)
@@ -302,6 +313,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
                 ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
             }
+
+            // Add the report generation at the very end
+            ContextualPerformanceTracer.GenerateValidationReport();
         }
 
 // Internal version also needs to respect this order if it's ever called independently

@@ -1200,55 +1200,58 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
             int fileCount = potentialFiles.Count();
             int scannedFileCount = 0;
-            foreach (var filePath in potentialFiles)
+            using (ContextualPerformanceTracer.Trace("ScanMugshotDirectory.FileLoop"))
             {
-                scannedFileCount++;
-                if (scannedFileCount % 1000 == 0)
+                foreach (var filePath in potentialFiles)
                 {
-                    var percentComplete = scannedFileCount * 100 / fileCount;
-                    splashReporter?.UpdateProgress(percentComplete, $"Scanned {fileCount.ToString()} Mugshots.");
-                }
+                    scannedFileCount++;
+                    if (scannedFileCount % 1000 == 0)
+                    {
+                        var percentComplete = scannedFileCount * 100 / fileCount;
+                        splashReporter?.UpdateProgress(percentComplete, $"Scanned {fileCount.ToString()} Mugshots.");
+                    }
 
-                try
-                {
-                    var fileInfo = new FileInfo(filePath);
-                    string hexFileName = fileInfo.Name;
-                    DirectoryInfo? pluginDir = fileInfo.Directory;
-                    if (pluginDir == null || !PluginRegex.IsMatch(pluginDir.Name)) continue;
-                    string pluginName = pluginDir.Name;
-                    DirectoryInfo? modDir = pluginDir.Parent;
-                    if (modDir == null || string.IsNullOrWhiteSpace(modDir.Name)) continue;
-                    string modName = modDir.Name;
-                    if (modDir.Parent == null ||
-                        !modDir.Parent.FullName.Equals(expectedParentPath, StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    string hexPart = Path.GetFileNameWithoutExtension(hexFileName);
-                    if (hexPart.Length != 8) continue;
-                    string formKeyString = $"{hexPart.Substring(hexPart.Length - 6)}:{pluginName}";
                     try
                     {
-                        var formKey = FormKey.Factory(formKeyString);
-                        var mugshotInfo = (ModName: modName, ImagePath: filePath);
-                        if (results.TryGetValue(formKey, out var list))
+                        var fileInfo = new FileInfo(filePath);
+                        string hexFileName = fileInfo.Name;
+                        DirectoryInfo? pluginDir = fileInfo.Directory;
+                        if (pluginDir == null || !PluginRegex.IsMatch(pluginDir.Name)) continue;
+                        string pluginName = pluginDir.Name;
+                        DirectoryInfo? modDir = pluginDir.Parent;
+                        if (modDir == null || string.IsNullOrWhiteSpace(modDir.Name)) continue;
+                        string modName = modDir.Name;
+                        if (modDir.Parent == null ||
+                            !modDir.Parent.FullName.Equals(expectedParentPath, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        string hexPart = Path.GetFileNameWithoutExtension(hexFileName);
+                        if (hexPart.Length != 8) continue;
+                        string formKeyString = $"{hexPart.Substring(hexPart.Length - 6)}:{pluginName}";
+                        try
                         {
-                            if (!list.Any(i => i.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase)))
+                            var formKey = FormKey.Factory(formKeyString);
+                            var mugshotInfo = (ModName: modName, ImagePath: filePath);
+                            if (results.TryGetValue(formKey, out var list))
                             {
-                                list.Add(mugshotInfo);
+                                if (!list.Any(i => i.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    list.Add(mugshotInfo);
+                                }
+                            }
+                            else
+                            {
+                                results[formKey] = new List<(string ModName, string ImagePath)> { mugshotInfo };
                             }
                         }
-                        else
+                        catch
                         {
-                            results[formKey] = new List<(string ModName, string ImagePath)> { mugshotInfo };
+                            continue;
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        continue;
+                        Debug.WriteLine($"Error processing mugshot file '{filePath}': {ex.Message}");
                     }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error processing mugshot file '{filePath}': {ex.Message}");
                 }
             }
 
@@ -1295,7 +1298,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1), "Scanning mugshot directory...");
-        _mugshotData = await Task.Run(() => ScanMugshotDirectory(splashReporter));
+        using (ContextualPerformanceTracer.Trace("InitializeNpcs.ScanMugshots"))
+        {
+            _mugshotData = await Task.Run(() => ScanMugshotDirectory(splashReporter));
+        }
 
         await Application.Current.Dispatcher.InvokeAsync(UpdateAvailableNpcGroups);
         splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Updating NPC groups...");
@@ -1303,92 +1309,108 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Querying NPC records from detected mods...");
 
         // 2. Perform ALL heavy data processing in the background.
-        var processedNpcData = await Task.Run(() =>
+        var processedNpcData = new List<NpcInitializationData>();
+        using (ContextualPerformanceTracer.Trace("InitializeNpcs.ProcessNpcData"))
         {
-            var npcDataMap = new Dictionary<FormKey, (NpcDisplayData? NpcData, List<VM_ModSetting> Mods)>();
-            
-            if (_lazyModsVm.Value?.AllModSettings == null)
+            processedNpcData = await Task.Run(() =>
             {
-                Debug.WriteLine("Warning: InitializeAsync called before AllModSettings was populated. Returning empty NPC list.");
-                return new List<NpcInitializationData>();
-            }
+                var npcDataMap = new Dictionary<FormKey, (NpcDisplayData? NpcData, List<VM_ModSetting> Mods)>();
 
-            // Aggregate all NPCs from all mod settings first
-            foreach (var modSetting in _lazyModsVm.Value.AllModSettings)
-            {
-                foreach (var formKeyToName in modSetting.NpcFormKeysToDisplayName)
+                if (_lazyModsVm.Value?.AllModSettings == null)
                 {
-                    var npcFormKey = formKeyToName.Key;
-                    if (!npcDataMap.TryGetValue(npcFormKey, out var data))
+                    Debug.WriteLine(
+                        "Warning: InitializeAsync called before AllModSettings was populated. Returning empty NPC list.");
+                    return new List<NpcInitializationData>();
+                }
+
+                // Aggregate all NPCs from all mod settings first
+                foreach (var modSetting in _lazyModsVm.Value.AllModSettings)
+                {
+                    foreach (var formKeyToName in modSetting.NpcFormKeysToDisplayName)
                     {
-                        data = (null, new List<VM_ModSetting>());
-                        npcDataMap[npcFormKey] = data;
+                        var npcFormKey = formKeyToName.Key;
+                        if (!npcDataMap.TryGetValue(npcFormKey, out var data))
+                        {
+                            data = (null, new List<VM_ModSetting>());
+                            npcDataMap[npcFormKey] = data;
+                        }
+
+                        data.Mods.Add(modSetting);
                     }
-                    data.Mods.Add(modSetting);
                 }
-            }
-            
-            // Now, resolve the NpcDisplayData for each unique NPC
-            var finalDataList = new List<NpcInitializationData>();
-            foreach (var kvp in npcDataMap)
-            {
-                var npcFormKey = kvp.Key;
-                var appearanceMods = kvp.Value.Mods;
 
-                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter))
+                // Now, resolve the NpcDisplayData for each unique NPC
+                var finalDataList = new List<NpcInitializationData>();
+                foreach (var kvp in npcDataMap)
                 {
-                    // Create lightweight object and discard the getter
-                    var displayData = NpcDisplayData.FromGetter(npcGetter);
-                    finalDataList.Add(new NpcInitializationData { NpcData = displayData, AppearanceMods = appearanceMods });
-                }
-            }
+                    var npcFormKey = kvp.Key;
+                    var appearanceMods = kvp.Value.Mods;
 
-            return finalDataList;
-        });
+                    if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter))
+                    {
+                        // Create lightweight object and discard the getter
+                        var displayData = NpcDisplayData.FromGetter(npcGetter);
+                        finalDataList.Add(new NpcInitializationData
+                            { NpcData = displayData, AppearanceMods = appearanceMods });
+                    }
+                }
+
+                return finalDataList;
+            });
+        }
 
         // 3. Now back on the UI thread, create the ViewModel objects.
-        foreach (var initData in processedNpcData)
+        using (ContextualPerformanceTracer.Trace("InitializeNpcs.CreateViewModels"))
         {
-            var selector = new VM_NpcsMenuSelection(initData.NpcData.FormKey, _environmentStateProvider, this);
-            selector.UpdateWithData(initData.NpcData);
-            
-            foreach (var mod in initData.AppearanceMods)
+            foreach (var initData in processedNpcData)
             {
-                selector.AppearanceMods.Add(mod);
+                var selector = new VM_NpcsMenuSelection(initData.NpcData.FormKey, _environmentStateProvider, this);
+                selector.UpdateWithData(initData.NpcData);
+
+                foreach (var mod in initData.AppearanceMods)
+                {
+                    selector.AppearanceMods.Add(mod);
+                }
+
+                AllNpcs.Add(selector);
             }
-            
-            AllNpcs.Add(selector);
         }
-        
+
         // 4. Handle NPCs that only exist in mugshot data.
         var allNpcKeys = new HashSet<FormKey>(AllNpcs.Select(n => n.NpcFormKey));
         var mugshotOnlyKeys = _mugshotData.Keys.Where(key => !allNpcKeys.Contains(key)).ToList();
-        
-        foreach (var mugshotFormKey in mugshotOnlyKeys)
+        using (ContextualPerformanceTracer.Trace("InitializeNpcs.CreateMugshotOnlyViewModels"))
         {
-            try
+            foreach (var mugshotFormKey in mugshotOnlyKeys)
             {
-                var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider, this);
-                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(mugshotFormKey, out var getter))
+                try
                 {
-                    npcSelector.UpdateWithData(NpcDisplayData.FromGetter(getter));
+                    var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider, this);
+                    if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(mugshotFormKey, out var getter))
+                    {
+                        npcSelector.UpdateWithData(NpcDisplayData.FromGetter(getter));
+                    }
+
+                    AllNpcs.Add(npcSelector);
                 }
-                AllNpcs.Add(npcSelector);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error creating VM for mugshot-only NPC {mugshotFormKey}: {ex.Message}");
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error creating VM for mugshot-only NPC {mugshotFormKey}: {ex.Message}");
+                }
             }
         }
-    
+
         // 5. Final cleanup and filtering on the UI thread.
         splashReporter?.UpdateProgress(90, "Cleaning NPC List...");
-        for (int i = AllNpcs.Count - 1; i >= 0; i--)
+        using (ContextualPerformanceTracer.Trace("InitializeNpcs.FinalCleanup"))
         {
-            var currentNpc = AllNpcs[i];
-            if (!currentNpc.AppearanceMods.Any() && !_mugshotData.ContainsKey(currentNpc.NpcFormKey))
+            for (int i = AllNpcs.Count - 1; i >= 0; i--)
             {
-                AllNpcs.RemoveAt(i);
+                var currentNpc = AllNpcs[i];
+                if (!currentNpc.AppearanceMods.Any() && !_mugshotData.ContainsKey(currentNpc.NpcFormKey))
+                {
+                    AllNpcs.RemoveAt(i);
+                }
             }
         }
 
