@@ -42,7 +42,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Auxilliary _aux;
         private readonly PluginProvider _pluginProvider;
         private readonly BsaHandler _bsaHandler;
-        private readonly ConcurrentDictionary<(string modDir, ModKey modKey), bool> _overridesCache = new();
+        private readonly ConcurrentDictionary<(string pluginSourcePath, ModKey modKey), bool> _overridesCache = new();
 
         private readonly CompositeDisposable _disposables = new();
 
@@ -914,9 +914,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             }
                             else
                             {
-                                var scanResult = await FaceGenScanner.CollectFaceGenFilesAsync(modFolderPath,
-                                    _bsaHandler,
-                                    modKeysInFolder, _environmentStateProvider.SkyrimVersion.ToGameRelease());
+                                FaceGenScanResult scanResult;
+                                using (ContextualPerformanceTracer.Trace("PopulateMods.CollectFaceGenFilesAsync"))
+                                {
+                                    scanResult = await FaceGenScanner.CollectFaceGenFilesAsync(modFolderPath,
+                                        _bsaHandler,
+                                        modKeysInFolder, _environmentStateProvider.SkyrimVersion.ToGameRelease());
+                                }
+
                                 if (scanResult.AnyFilesFound)
                                 {
                                     var faceGenFiles = scanResult.FaceGenFiles;
@@ -924,11 +929,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     newVm.IsNewlyCreated = true;
 
                                     // load resources
-                                    _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
+                                    using (ContextualPerformanceTracer.Trace("PopulateMods.LoadPlugins"))
+                                    {
+                                        _pluginProvider.LoadPlugins(modKeysInFolder,
+                                            new HashSet<string> { modFolderPath });
+                                    }
                                     //
 
                                     if (modKeysInFolder.Any() &&
-                                        await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath }))
+                                        await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath })) // profiling is internal
                                     {
                                         string potentialMugshotPath =
                                             Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
@@ -976,7 +985,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                         loadedDisplayNames.Add(newVm.DisplayName);
                                     }
 
-                                    CheckMergeInSuitability(newVm);
+                                    using (ContextualPerformanceTracer.Trace("PopulateMods.CheckMergeInSuitability"))
+                                    {
+                                        CheckMergeInSuitability(newVm);
+                                    }
                                 }
                                 else
                                 {
@@ -1726,13 +1738,28 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             foreach (var modKey in modKeysInMod)
             {
+                if (_environmentStateProvider.BaseGamePlugins.Contains(modKey))
+                {
+                    return true;
+                }
                 // TryGetPlugin is likely a fast, synchronous operation.
                 if (_pluginProvider.TryGetPlugin(modKey, modFolderPaths, out var plugin) && plugin != null)
                 {
-                    // Await the result of the CPU-bound appearance check.
-                    if (await PluginProvidesNewNpcs(plugin) || await PluginModifiesAppearanceAsync(plugin, modKeysInMod))
+                    bool pluginProvidesNewNpcs = false;
+                    using (ContextualPerformanceTracer.Trace("PopulateMods.PluginProvidesNewNpcs"))
                     {
-                        return true;
+                        if (await PluginProvidesNewNpcs(plugin))
+                        {
+                            return true;
+                        }
+                    }
+
+                    using (ContextualPerformanceTracer.Trace("PopulateMods.PluginModifiesAppearanceAsync"))
+                    {
+                        if ( await PluginModifiesAppearanceAsync(plugin, modKeysInMod))
+                        {
+                            return true;
+                        }
                     }
                 }
             }
@@ -1802,7 +1829,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 !npcGetter.HeadTexture.Equals(baseNpcGetter.HeadTexture) ||
                                 !npcGetter.WornArmor.Equals(baseNpcGetter.WornArmor) ||
                                 !npcGetter.HeadParts.Count.Equals(baseNpcGetter.HeadParts.Count) ||
-                                !npcGetter.TintLayers.Count.Equals(baseNpcGetter.TintLayers.Count)
+                                !npcGetter.TintLayers.Count.Equals(baseNpcGetter.TintLayers.Count) ||
+                                !npcGetter.HairColor.Equals(baseNpcGetter.HairColor)
                                )
                             {
                                 return true;
@@ -1840,44 +1868,56 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private void CheckMergeInSuitability(VM_ModSetting modSettingVM)
         {
             int totalRecordCount = 0;
-            int nonAppearanceRecordCount = 0;
+            int appearanceRecordCount = 0;
+            bool isBaseGame = false;
+
+            // Define the set of appearance-related record types to skip in the main enumeration
+            var appearanceTypesToSkip = new HashSet<Type>()
+            {
+                typeof(INpcGetter),
+                typeof(IArmorGetter),
+                typeof(IArmorAddonGetter),
+                typeof(ITextureSetGetter),
+                typeof(IHeadPartGetter),
+                typeof(IHairGetter),
+                typeof(IColorRecordGetter),
+                typeof(IEyesGetter)
+            };
 
             foreach (var modKey in modSettingVM.CorrespondingModKeys)
             {
-                if (!_pluginProvider.TryGetPlugin(modKey, modSettingVM.CorrespondingFolderPaths.ToHashSet(),
-                        out var plugin) || plugin == null)
+                if (_environmentStateProvider.BaseGamePlugins.Contains(modKey) ||
+                    _environmentStateProvider.CreationClubPlugins.Contains(modKey))
+                {
+                    isBaseGame = true; 
+                    break;
+                }
+                
+                if (!_pluginProvider.TryGetPlugin(modKey, modSettingVM.CorrespondingFolderPaths.ToHashSet(), out var plugin) || plugin == null)
                 {
                     continue;
                 }
-                var records = plugin.EnumerateMajorRecords().ToHashSet();
-                totalRecordCount += records.Count;
-                var npcs = plugin.Npcs.Select(x => x.FormKey).ToHashSet();
-                var armors = plugin.Armors.Select(x => x.FormKey).ToHashSet();
-                var armatures = plugin.ArmorAddons.Select(x => x.FormKey).ToHashSet();
-                var textures = plugin.TextureSets.Select(x => x.FormKey).ToHashSet();
-                var headParts = plugin.HeadParts.Select(x => x.FormKey).ToHashSet();
-                var colors = plugin.Colors.Select(x => x.FormKey).ToHashSet();
 
-                foreach (var rec in records)
-                {
-                    var fk = rec.FormKey;
-                    if (
-                        !npcs.Contains(fk) &&
-                        !armors.Contains(fk) &&
-                        !armatures.Contains(fk) &&
-                        !textures.Contains(fk) &&
-                        !headParts.Contains(fk) &&
-                        !colors.Contains(fk)
-                    )
-                    {
-                        nonAppearanceRecordCount++;
-                    }
-                }
+                // Get counts of appearance records instantly (O(1) operation)
+                appearanceRecordCount += plugin.Npcs.Count;
+                appearanceRecordCount += plugin.Armors.Count;
+                appearanceRecordCount += plugin.ArmorAddons.Count;
+                appearanceRecordCount += plugin.TextureSets.Count;
+                appearanceRecordCount += plugin.HeadParts.Count;
+                appearanceRecordCount += plugin.Hairs.Count;
+                appearanceRecordCount += plugin.Colors.Count;
+                appearanceRecordCount += plugin.Eyes.Count;
+
+                // Lazily enumerate and count ONLY the non-appearance records
+                int nonAppearanceRecordCountForPlugin = Auxilliary.LazyEnumerateMajorRecords(plugin, appearanceTypesToSkip).Count();
+                
+                totalRecordCount += appearanceRecordCount + nonAppearanceRecordCountForPlugin;
             }
 
-            if (nonAppearanceRecordCount > totalRecordCount / 2)
+            int nonAppearanceRecordCount = totalRecordCount - appearanceRecordCount;
+
+            if (isBaseGame || nonAppearanceRecordCount > totalRecordCount / 2)
             {
-                // Set the flag for later processing on the UI thread
                 modSettingVM.HasAlteredMergeLogic = true; 
                 modSettingVM.MergeInToolTip =
                     $"N.P.C. has determined that the plugin(s) in {modSettingVM.DisplayName} have more non-appearance records than appearance records, " +
@@ -1891,7 +1931,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        public ConcurrentDictionary<(string modDir, ModKey modKey), bool> GetOverrideCache()
+        public ConcurrentDictionary<(string pluginSourcePath, ModKey modKey), bool> GetOverrideCache()
         {
             return _overridesCache;
         }

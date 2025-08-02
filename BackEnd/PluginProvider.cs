@@ -11,7 +11,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public class PluginProvider: IDisposable
 {
-    private ConcurrentDictionary<ModKey, ISkyrimModDisposableGetter> _pluginCache = new();
+    private ConcurrentDictionary<ModKey, (ISkyrimModDisposableGetter plugin, string sourcePath)> _pluginCache = new();
     private bool _disposed = false; // To prevent multiple dispose calls
 
     private readonly EnvironmentStateProvider _environmentStateProvider;
@@ -29,7 +29,7 @@ public class PluginProvider: IDisposable
         {
             if (!_pluginCache.ContainsKey(key))
             {
-                TryGetPlugin(key, modFolderNames, out _);
+                TryGetPlugin(key, modFolderNames, out _, out _);
             }
         }
     }
@@ -38,9 +38,9 @@ public class PluginProvider: IDisposable
     {
         foreach (var key in keys)
         {
-            if (_pluginCache.TryRemove(key, out var pluginToDispose))
+            if (_pluginCache.TryRemove(key, out var entryToDispose))
             {
-                pluginToDispose.Dispose(); // Dispose the object
+                entryToDispose.plugin.Dispose(); // Dispose the object
             }
         }
     }
@@ -64,7 +64,7 @@ public class PluginProvider: IDisposable
             // Dispose managed state (the cached objects).
             foreach (var kvp in _pluginCache)
             {
-                kvp.Value.Dispose();
+                kvp.Value.plugin.Dispose();
             }
             _pluginCache.Clear();
         }
@@ -72,10 +72,11 @@ public class PluginProvider: IDisposable
         _disposed = true;
     }
 
-    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModDisposableGetter? plugin)
+    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModDisposableGetter? plugin, out string? pluginSourcePath)
     {
-        if (_pluginCache.TryGetValue(modKey, out plugin))
+        if (_pluginCache.TryGetValue(modKey, out var value))
         {
+            (plugin, pluginSourcePath) = value;
             return true;
         }
 
@@ -112,9 +113,10 @@ public class PluginProvider: IDisposable
                     .Construct();
                 
                 plugin = imported;
+                pluginSourcePath = foundPath;
                 if (plugin != null)
                 {
-                    _pluginCache.TryAdd(modKey, plugin);
+                    _pluginCache.TryAdd(modKey, (plugin, foundPath));
                     return true;
                 }
             }
@@ -125,14 +127,20 @@ public class PluginProvider: IDisposable
         }
 
         plugin = null;
+        pluginSourcePath = null;
         return false;
+    }
+
+    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModDisposableGetter? plugin)
+    {
+        return TryGetPlugin(modKey, fallBackModFolderPaths, out plugin, out _);
     }
 
     public HashSet<ModKey> GetMasterPlugins(ModKey modKey, IEnumerable<string>? fallBackModFolderPaths)
     {
         HashSet<ModKey> masterPlugins = new();
 
-        if (TryGetPlugin(modKey, fallBackModFolderPaths?.ToHashSet(), out var plugin) && plugin != null)
+        if (TryGetPlugin(modKey, fallBackModFolderPaths?.ToHashSet(), out var plugin, out _) && plugin != null)
         {
             masterPlugins.UnionWith(plugin.ModHeader.MasterReferences.Select(x => x.Master).ToHashSet());
         }

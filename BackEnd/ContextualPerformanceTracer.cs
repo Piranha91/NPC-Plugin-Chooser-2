@@ -1,9 +1,10 @@
-﻿// ContextualPerformanceTracer.cs
+﻿// [ContextualPerformanceTracer.cs] - Full Code After Modifications
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading; // Required for Interlocked
 using Mutagen.Bethesda.Plugins;
 
@@ -13,8 +14,6 @@ namespace NPC_Plugin_Chooser_2.BackEnd
     {
         private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, ProfileData>> _stats = new();
         private static readonly AsyncLocal<string?> _currentContext = new();
-        
-        // Sampling-related fields have been removed.
         
         private static readonly HashSet<string> OfficialPlugins = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -29,17 +28,12 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             public readonly object LockObj = new();
         }
 
-        /// <summary>
-        /// Resets all performance statistics. Call this before processing a new batch or group.
-        /// </summary>
         public static void Reset()
         {
             _stats.Clear();
             _currentContext.Value = null;
             Debug.WriteLine($"--- ContextualPerformanceTracer Reset ---");
         }
-
-        // The old ResetAndStartSampling method is no longer needed.
 
         public static IDisposable BeginContext(ModKey sourceModKey)
         {
@@ -61,24 +55,16 @@ namespace NPC_Plugin_Chooser_2.BackEnd
 
             _currentContext.Value = context;
             
-            // Sampling logic has been removed.
-            
             return new ContextScope();
         }
 
-        public static IDisposable Trace(string functionName)
+        public static IDisposable Trace(string functionName, string? detail = null)
         {
-            // The tracer is now always active.
             string contextToUse = _currentContext.Value ?? "No Context";
-            return new Tracer(contextToUse, functionName);
+            string fullFunctionName = detail == null ? functionName : $"{functionName}[{detail}]";
+            return new Tracer(contextToUse, fullFunctionName);
         }
 
-        /// <summary>
-        /// Generates a detailed performance report for a completed group, writing it to the debug console
-        /// and returning it as a string for other logging purposes.
-        /// </summary>
-        /// <param name="groupName">The name of the NPC group that was just processed.</param>
-        /// <returns>A formatted string containing the performance report.</returns>
         public static string GenerateReportForGroup(string groupName, bool showFunctionStats)
         {
             var sb = new StringBuilder();
@@ -92,7 +78,6 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                 return sb.ToString();
             }
 
-            // Find total NPCs and time from the main loop tracer across all contexts
             long totalNpcsProcessed = 0;
             double totalNpcProcessingTime = 0;
 
@@ -119,7 +104,6 @@ namespace NPC_Plugin_Chooser_2.BackEnd
 
             if (showFunctionStats)
             {
-                // Create a detailed breakdown table for all traced functions
                 var allFunctions = _stats
                     .SelectMany(contextKvp =>
                         contextKvp.Value.Select(funcKvp => new { FunctionName = funcKvp.Key, Data = funcKvp.Value }))
@@ -153,16 +137,11 @@ namespace NPC_Plugin_Chooser_2.BackEnd
 
             sb.AppendLine("=====================================================================================");
             
-            // Mirror the final report to the Debug console
             Debug.WriteLine(sb.ToString());
             
             return sb.ToString();
         }
         
-        /// <summary>
-        /// Generates a performance report specifically for the validation/screening phase.
-        /// </summary>
-        /// <returns>A formatted string containing the performance report.</returns>
         public static string GenerateValidationReport()
         {
             var sb = new StringBuilder();
@@ -193,6 +172,107 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             
             sb.AppendLine("==========================================================");
             
+            Debug.WriteLine(sb.ToString());
+            return sb.ToString();
+        }
+        
+        /// <summary>
+        /// Generates a performance report with detailed breakdowns by context.
+        /// </summary>
+        public static string GenerateDetailedReport(string reportTitle)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"\n================= DETAILED PERFORMANCE REPORT: [{reportTitle}] =================");
+
+            if (_stats.IsEmpty)
+            {
+                sb.AppendLine("No performance data was recorded.");
+                sb.AppendLine("=====================================================================================");
+                Debug.WriteLine(sb.ToString());
+                return sb.ToString();
+            }
+
+            var allFunctions = _stats
+                .SelectMany(contextKvp =>
+                    contextKvp.Value.Select(funcKvp => new { FunctionNameWithDetail = funcKvp.Key, Data = funcKvp.Value }))
+                .ToList();
+
+            var funcDetailRegex = new Regex(@"^(?<func>.+?)(\[(?<detail>.+)\])?$");
+
+            var aggregatedByFunction = allFunctions
+                .Select(f =>
+                {
+                    var match = funcDetailRegex.Match(f.FunctionNameWithDetail);
+                    return new
+                    {
+                        BaseFunction = match.Groups["func"].Value,
+                        Detail = match.Groups["detail"].Success ? match.Groups["detail"].Value : "N/A",
+                        f.Data
+                    };
+                })
+                .GroupBy(f => f.BaseFunction)
+                .Select(g => new
+                {
+                    BaseFunction = g.Key,
+                    TotalMilliseconds = g.Sum(x => x.Data.TotalMilliseconds),
+                    TotalCalls = g.Sum(x => x.Data.CallCount),
+                    Details = g.GroupBy(detailGroup => detailGroup.Detail)
+                               .Select(detail => new
+                               {
+                                   DetailName = detail.Key,
+                                   TotalMilliseconds = detail.Sum(x => x.Data.TotalMilliseconds),
+                                   TotalCalls = detail.Sum(x => x.Data.CallCount),
+                                   MaxMilliseconds = detail.Max(x => x.Data.MaxMilliseconds)
+                               })
+                               .OrderByDescending(d => d.TotalMilliseconds)
+                               .ToList()
+                })
+                .OrderByDescending(f => f.TotalMilliseconds)
+                .ToList();
+
+
+            sb.AppendLine("\n--- Performance Summary by Function ---");
+            sb.AppendLine("Function                               |      Calls |     Total (ms) |     Avg (ms)");
+            sb.AppendLine("---------------------------------------+------------+----------------+--------------");
+
+            foreach (var func in aggregatedByFunction)
+            {
+                if (func.TotalCalls <= 0) continue;
+                double avg = func.TotalMilliseconds / func.TotalCalls;
+                string name = func.BaseFunction.PadRight(38);
+                if (name.Length > 38) name = name.Substring(0, 38);
+                sb.AppendLine($"{name} | {func.TotalCalls,10} | {func.TotalMilliseconds,14:N2} | {avg,12:N4}");
+            }
+
+            sb.AppendLine("\n--- Detailed Breakdown ---");
+            foreach (var func in aggregatedByFunction)
+            {
+                if (func.Details.Count == 1 && func.Details.First().DetailName == "N/A")
+                {
+                    continue; 
+                }
+
+                sb.AppendLine($"\n--- Function: {func.BaseFunction} (Total: {func.TotalMilliseconds:N2} ms) ---");
+                sb.AppendLine("Detail                                 |      Calls |     Total (ms) |     Avg (ms) |     Max (ms)");
+                sb.AppendLine("---------------------------------------+------------+----------------+--------------+--------------");
+                
+                int detailsToShow = 15;
+                foreach (var detail in func.Details.Take(detailsToShow))
+                {
+                     if (detail.TotalCalls <= 0) continue;
+                     double avg = detail.TotalMilliseconds / detail.TotalCalls;
+                     string name = detail.DetailName.PadRight(38);
+                     if (name.Length > 38) name = name.Substring(0, 38);
+                     sb.AppendLine($"{name} | {detail.TotalCalls,10} | {detail.TotalMilliseconds,14:N2} | {avg,12:N4} | {detail.MaxMilliseconds,12:N2}");
+                }
+                if(func.Details.Count > detailsToShow)
+                {
+                    sb.AppendLine($"... and {func.Details.Count - detailsToShow} more.");
+                }
+            }
+
+            sb.AppendLine("=====================================================================================");
+
             Debug.WriteLine(sb.ToString());
             return sb.ToString();
         }

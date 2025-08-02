@@ -15,10 +15,13 @@ using System.Linq;
 using System.Windows.Media;
 using DynamicData;
 using Mutagen.Bethesda.Archives;
+using Mutagen.Bethesda.Plugins.Cache;
+using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
-using NPC_Plugin_Chooser_2.Views; // Assuming Models namespace
+using NPC_Plugin_Chooser_2.Views;
+using LinkCacheConstructionMixIn = Mutagen.Bethesda.LinkCacheConstructionMixIn; // Assuming Models namespace
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -608,7 +611,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 var pluginFolder = Path.GetDirectoryName(foundPluginPath);
                                 if (pluginFolder != null) modFolderPath.Add(pluginFolder);
 
-                                if (!_pluginProvider.TryGetPlugin(modKey, modFolderPath, out var mod))
+                                if (!_pluginProvider.TryGetPlugin(modKey, modFolderPath, out var mod, out _))
                                 {
                                     continue;
                                 }
@@ -1144,56 +1147,77 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // will happen when VM_Mods.SaveModSettingsToModel is called.
         }
 
+        // [VM_ModSetting.cs] - Full Code After Modifications
+        // located in NPC_Plugin_Chooser_2.View_Models/VM_ModSetting.cs
+
         public async Task FindPluginsWithOverrides(PluginProvider pluginProvider)
         {
-            _pluginsWithOverrideRecords.Clear();
-            var overridesCache = _parentVm.GetOverrideCache();
-            
-            var modDirs = CorrespondingFolderPaths.Reverse().ToList();
-            foreach (var modKey in CorrespondingModKeys)
+            var appearanceTypesToSkip = new HashSet<Type>()
             {
-                if (modKey.Equals(_environmentStateProvider.AbsoluteBasePlugin))
-                {
-                    continue; // don't check the game root because it's expensive and can't have overrides by definition
-                }
-                bool hasOverrides = false;
-
-                foreach (var modDir in modDirs)
-                {
-                    // Optimization 2: Check the cache before doing any work.
-                    var cacheKey = (modDir, modKey);
-                    if (overridesCache.TryGetValue(cacheKey, out hasOverrides))
-                    {
-                        // Found in cache. Break from this directory loop and use the cached value.
-                        break;
-                    }
+                typeof(INpcGetter),
+            };
             
-                    // If not in cache, try to load the plugin from this directory.
-                    // This is a fast check.
-                    if (pluginProvider.TryGetPlugin(modKey, new HashSet<string>() { modDir }, out var plugin) && plugin != null)
-                    {
-                        // Plugin found, now do the expensive record enumeration.
-                        var records = plugin.EnumerateMajorRecords().ToArray();
-                        foreach (var record in records)
-                        {
-                            if (!CorrespondingModKeys.Contains(record.FormKey.ModKey) && !plugin.Npcs.Contains(record))
-                            {
-                                hasOverrides = true;
-                                break;
-                            }
-                        }
-                
-                        // Store the result in the cache for this specific directory and plugin combination.
-                        overridesCache.TryAdd(cacheKey, hasOverrides);
-                
-                        // Break from this directory loop because we've found and processed the plugin.
-                        break;
-                    }
-                }
+            using (ContextualPerformanceTracer.Trace("FindPluginsWithOverrides", this.DisplayName))
+            {
+                _pluginsWithOverrideRecords.Clear();
+                var overridesCache = _parentVm.GetOverrideCache();
 
-                if (hasOverrides)
+                foreach (var modKey in CorrespondingModKeys)
                 {
-                    _pluginsWithOverrideRecords.Add(modKey);
+                    using (ContextualPerformanceTracer.Trace("FPO.ModKeyLoop", modKey.FileName))
+                    {
+                        if (modKey.Equals(_environmentStateProvider.AbsoluteBasePlugin))
+                        {
+                            continue;
+                        }
+
+                        ISkyrimModDisposableGetter? plugin;
+                        string? pluginSourcePath;
+                        bool pluginFound;
+                        using (ContextualPerformanceTracer.Trace("FPO.TryGetPlugin", modKey.FileName))
+                        {
+                            pluginFound = pluginProvider.TryGetPlugin(modKey, new HashSet<string>(CorrespondingFolderPaths), out plugin, out pluginSourcePath) && plugin != null && pluginSourcePath != null;
+                        }
+
+                        if (!pluginFound)
+                        {
+                            continue;
+                        }
+
+                        var cacheKey = (pluginSourcePath: pluginSourcePath!, modKey);
+
+                        // Use GetOrAdd to atomically get the result or create it if it doesn't exist.
+                        bool hasOverrides = overridesCache.GetOrAdd(cacheKey, key =>
+                        {
+                            // This "value factory" code only runs if the key is not already in the cache.
+                            // The expensive work is now protected from race conditions.
+                            bool result = false;
+                            IMajorRecordGetter[] records;
+                            using (ContextualPerformanceTracer.Trace("FPO.EnumerateMajorRecords", key.modKey.FileName))
+                            {
+                                records = plugin.EnumerateMajorRecords().ToArray();
+                            }
+
+                            using (ContextualPerformanceTracer.Trace("FPO.RecordLoop", key.modKey.FileName))
+                            {
+                                // Iterates lazily. Stops pulling records from the plugin file as soon as the break is hit.
+                                foreach (var record in Auxilliary.LazyEnumerateMajorRecords(plugin, appearanceTypesToSkip))
+                                {
+                                    if (!CorrespondingModKeys.Contains(record.FormKey.ModKey))
+                                    {
+                                        result = true;
+                                        break; // This now prevents further enumeration and parsing
+                                    }
+                                }
+                            }
+                            return result;
+                        });
+
+                        if (hasOverrides)
+                        {
+                            _pluginsWithOverrideRecords.Add(modKey);
+                        }
+                    }
                 }
             }
         }

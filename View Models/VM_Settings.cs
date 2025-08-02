@@ -315,7 +315,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             // Add the report generation at the very end
-            ContextualPerformanceTracer.GenerateValidationReport();
+            ScrollableMessageBox.Show(ContextualPerformanceTracer.GenerateDetailedReport("Initial Validation and Load"));
         }
 
 // Internal version also needs to respect this order if it's ever called independently
