@@ -258,12 +258,27 @@
                                                  <TextBlock.Style>
                                                      <Style TargetType="TextBlock">
                                                          <Setter Property="Visibility" Value="Visible"/>
+                                                         <Setter Property="ToolTip">
+                                                             <Setter.Value>
+                                                                 <ToolTip>
+                                                                     <ItemsControl ItemsSource="{Binding CorrespondingModKeys}">
+                                                                         <ItemsControl.ItemTemplate>
+                                                                             <DataTemplate>
+                                                                                 <TextBlock Text="{Binding FileName.String}"/>
+                                                                             </DataTemplate>
+                                                                         </ItemsControl.ItemTemplate>
+                                                                     </ItemsControl>
+                                                                 </ToolTip>
+                                                             </Setter.Value>
+                                                         </Setter>
                                                          <Style.Triggers>
                                                              <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Static System:String.Empty}">
                                                                  <Setter Property="Visibility" Value="Collapsed"/>
+                                                                 <Setter Property="ToolTip" Value="{x:Null}"/>
                                                              </DataTrigger>
                                                              <DataTrigger Binding="{Binding ModKeyDisplaySuffix}" Value="{x:Null}">
                                                                  <Setter Property="Visibility" Value="Collapsed"/>
+                                                                 <Setter Property="ToolTip" Value="{x:Null}"/>
                                                              </DataTrigger>
                                                          </Style.Triggers>
                                                      </Style>

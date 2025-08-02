@@ -28,4 +28,7 @@ public class ModSetting
     public string MergeInToolTip { get; set; } = DefaultMergeInTooltip;
     public SolidColorBrush MergeInLabelColor { get; set; } = new (Colors.Black);
     public RecordOverrideHandlingMode? ModRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
+
+    public HashSet<ModKey> PluginsWithOverrideRecords { get; set; } = new();
+    public bool HasAlteredMergeLogic { get; set; } = false; 
 }
