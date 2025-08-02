@@ -781,10 +781,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        public async Task PopulateModSettingsAsync(VM_SplashScreen? splashReporter, double baseProgress = 0,
-            double progressSpan = 10)
+        public async Task PopulateModSettingsAsync(VM_SplashScreen? splashReporter)
         {
-            splashReporter?.UpdateProgress(baseProgress, "Populating mod settings...");
             _allModSettingsInternal.Clear();
             _overridesCache.Clear();
             var warnings = new List<string>();
@@ -796,8 +794,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
                 warnings.Add("Environment is not valid. Cannot accurately link plugins.");
 
-            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1),
-                "Processing configured mod settings...");
+            splashReporter?.UpdateStep("Processing configured mod settings...");
 
             // first load mods from settings that already exist
             using (ContextualPerformanceTracer.Trace("PopulateMods.FromSettings"))
@@ -829,7 +826,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             // then load mods from mugshots (whether they exist in the Mods directory or not).
-            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.2), "Scanning mugshot folders...");
+            splashReporter?.UpdateStep("Scanning for new mod folders...");
             var vmsFromMugshotsOnly = new List<VM_ModSetting>();
             using (ContextualPerformanceTracer.Trace("PopulateMods.ScanMugshots"))
             {
@@ -858,7 +855,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
 
             // Then load mods from mods folder (e.g. mods for which mugshots are not installed)
-            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Scanning mod folders...");
+            splashReporter?.UpdateProgress(20, "Scanning for new mod folders...");
             using (ContextualPerformanceTracer.Trace("PopulateMods.ScanModFolders"))
             {
                 if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
@@ -866,10 +863,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     try
                     {
                         const string tokenFileName = "NPC_Token.json"; // Define the token file name
-
+                        var modDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
+                        var totalModFolders = modDirectories.Count;
+                        var scannedModFolders = 0;
+                        
                         foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
                         {
+                            scannedModFolders++;
                             string modFolderName = Path.GetFileName(modFolderPath);
+                            var progress = (double)scannedModFolders / totalModFolders * 100.0;
+                            splashReporter?.UpdateProgress(progress, $"Scanning: {modFolderName}");
+
 
                             string tokenFilePath = Path.Combine(modFolderPath, tokenFileName);
                             if (File.Exists(tokenFilePath))
@@ -912,9 +916,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             }
                             else
                             {
-                                splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3),
-                                    $"Importing New Mod: {modFolderName}");
-                                
                                 FaceGenScanResult scanResult;
                                 using (ContextualPerformanceTracer.Trace("PopulateMods.CollectFaceGenFilesAsync"))
                                 {
@@ -1083,15 +1084,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _allModSettingsInternal.Clear();
             _allModSettingsInternal.AddRange(SortVMs(tempList));
 
-            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Pre-cacheing Existing Files...");
+            splashReporter?.UpdateStep("Pre-caching asset file paths...");
             (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFaceGenPathsOnLoad();
 
-            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.5), "Refreshing NPC data for mods...");
+            splashReporter?.UpdateStep("Analyzing mod data...");
             // Limit to the number of logical processors to balance CPU work and I/O
             var maxParallelism = Environment.ProcessorCount;
             var semaphore = new SemaphoreSlim(maxParallelism);
 
             var modSettingsToLogCount = _allModSettingsInternal.Where(x => x.IsNewlyCreated).Count();
+            var analyzedCount = 0;
             var refreshTasks = _allModSettingsInternal.Select(async (vm, index) =>
             {
                 await semaphore.WaitAsync(); // Wait for a free slot
@@ -1106,6 +1108,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         _pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPathsForVm);
                         try
                         {
+                            var currentAnalyzed = Interlocked.Increment(ref analyzedCount);
+                            var progress = (double)currentAnalyzed / modSettingsToLogCount * 100.0;
+                            splashReporter?.UpdateProgress(progress, $"Analyzing: {vm.DisplayName}");
+                            
                             // Perform the analysis using the now-cached plugins
                             using (ContextualPerformanceTracer.Trace("RefreshNpcLists"))
                             {
@@ -1115,15 +1121,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                             if (vm.IsNewlyCreated)
                             {
-                                // this message is likely to stay up longer because the function call is more extensive
-                                if (index % 1 == 0 && modSettingsToLogCount > 0)
-                                {
-                                    splashReporter?.UpdateProgress(
-                                        baseProgress + (progressSpan * 0.5) +
-                                        (progressSpan * 0.4 * ((double)index / modSettingsToLogCount)),
-                                        $"Analyzing Appearance Mod '{vm.DisplayName}'..."
-                                    );
-                                }
                                 using (ContextualPerformanceTracer.Trace("FindPluginsWithOverrides"))
                                 {
                                     await vm.FindPluginsWithOverrides(_pluginProvider);
@@ -1152,8 +1149,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 await Task.WhenAll(refreshTasks);
 
-                splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.9),
-                    "Finalizing mod settings on UI thread...");
+                splashReporter?.UpdateStep("Finalizing mod settings...");
 
                 // Phase 4: Run UI-dependent work on the UI thread
                 // Use Dispatcher.InvokeAsync for WPF
@@ -1205,7 +1201,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             finally
             {
-                splashReporter?.UpdateProgress(baseProgress + progressSpan, "Mod settings populated.");
+                splashReporter?.UpdateStep("Mod settings populated.");
             }
         }
 

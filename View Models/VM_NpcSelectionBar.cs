@@ -1205,10 +1205,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 foreach (var filePath in potentialFiles)
                 {
                     scannedFileCount++;
-                    if (scannedFileCount % 1000 == 0)
+                    if (scannedFileCount % 200 == 0)
                     {
-                        var percentComplete = scannedFileCount * 100 / fileCount;
-                        splashReporter?.UpdateProgress(percentComplete, $"Scanned {fileCount.ToString()} Mugshots.");
+                        // *** MODIFY progress calculation to be a self-contained 0-100% run ***
+                        var progress = (double)scannedFileCount / fileCount * 100.0;
+                        splashReporter?.UpdateProgress(progress, $"Scanning mugshot files: {scannedFileCount} / {fileCount}");
                     }
 
                     try
@@ -1274,10 +1275,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         public List<VM_ModSetting> AppearanceMods { get; init; } = new();
     }
 
-    public async Task InitializeAsync(VM_SplashScreen? splashReporter, double baseProgress = 0, double progressSpan = 10)
+    public async Task InitializeAsync(VM_SplashScreen? splashReporter)
     {
-        splashReporter?.UpdateProgress(baseProgress, "Initializing NPC list...");
-
         // 1. Clear all UI-bound collections on the UI thread first.
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
@@ -1289,7 +1288,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         if (!_environmentStateProvider.EnvironmentIsValid)
         {
-            splashReporter?.UpdateProgress(baseProgress + progressSpan, "Environment not valid for NPC list.");
+            splashReporter?.UpdateStep("Environment not valid for NPC list.");
             ScrollableMessageBox.ShowWarning(
                 $"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}",
                 "Environment Error");
@@ -1297,16 +1296,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             return;
         }
 
-        splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.1), "Scanning mugshot directory...");
+        splashReporter?.UpdateStep("Scanning mugshot directory...");
         using (ContextualPerformanceTracer.Trace("InitializeNpcs.ScanMugshots"))
         {
             _mugshotData = await Task.Run(() => ScanMugshotDirectory(splashReporter));
         }
 
         await Application.Current.Dispatcher.InvokeAsync(UpdateAvailableNpcGroups);
-        splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3), "Updating NPC groups...");
+        splashReporter?.UpdateStep("Updating NPC groups...");
 
-        splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.4), "Querying NPC records from detected mods...");
+        splashReporter?.UpdateStep("Querying NPC records from mods...");
 
         // 2. Perform ALL heavy data processing in the background.
         var processedNpcData = new List<NpcInitializationData>();
@@ -1360,10 +1359,22 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         // 3. Now back on the UI thread, create the ViewModel objects.
+        splashReporter?.UpdateStep("Creating NPC view models...");
         using (ContextualPerformanceTracer.Trace("InitializeNpcs.CreateViewModels"))
         {
+            int totalNpcsToProcess = processedNpcData.Count;
+            int processedNpcCount = 0;
             foreach (var initData in processedNpcData)
             {
+                processedNpcCount++;
+                if (totalNpcsToProcess > 0)
+                {
+                    var progress = (double)processedNpcCount / totalNpcsToProcess * 100.0;
+                    // Update progress with the name of the NPC being processed
+                    var npcName = initData.NpcData?.DisplayName ?? "Unknown";
+                    splashReporter?.UpdateProgress(progress, $"Processing: {npcName}");
+                }
+                
                 var selector = new VM_NpcsMenuSelection(initData.NpcData.FormKey, _environmentStateProvider, this);
                 selector.UpdateWithData(initData.NpcData);
 
@@ -1401,7 +1412,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         // 5. Final cleanup and filtering on the UI thread.
-        splashReporter?.UpdateProgress(90, "Cleaning NPC List...");
+        splashReporter?.UpdateStep("Finalizing NPC List...");
         using (ContextualPerformanceTracer.Trace("InitializeNpcs.FinalCleanup"))
         {
             for (int i = AllNpcs.Count - 1; i >= 0; i--)
@@ -1431,7 +1442,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             _requestScrollToNpcSubject.OnNext(SelectedNpc);
         }
 
-        splashReporter?.UpdateProgress(baseProgress + progressSpan, "NPC list initialized.");
+        splashReporter?.UpdateStep("NPC list initialized.");
     }
 
 

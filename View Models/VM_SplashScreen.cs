@@ -16,6 +16,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public double ProgressValue { get; private set; }
         [Reactive] public string OperationText { get; private set; }
         [Reactive] public string? FooterMessage { get; private set; }
+        [Reactive] public string? StepText { get; private set; }
         public string ImagePath => "pack://application:,,,/Resources/SplashScreenImage.png";
 
         private Dispatcher _dispatcher;
@@ -97,6 +98,25 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             await RequestOpen.Handle(Unit.Default).ToTask();
             await Task.Yield();
+        }
+        
+        public void UpdateStep(string stepMessage)
+        {
+            if (_dispatcher.CheckAccess())
+            {
+                StepText = stepMessage;
+                ProgressValue = 0; // Reset progress for the new step
+                OperationText = "Please wait..."; // Reset operation text
+            }
+            else
+            {
+                _dispatcher.Invoke(() =>
+                {
+                    StepText = stepMessage;
+                    ProgressValue = 0;
+                    OperationText = "Please wait...";
+                }, DispatcherPriority.Send);
+            }
         }
 
         /// <summary>

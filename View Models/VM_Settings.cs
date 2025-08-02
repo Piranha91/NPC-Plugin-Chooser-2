@@ -291,26 +291,39 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             ContextualPerformanceTracer.Reset(); // Reset at the start of the whole process
 
+            const int totalSteps = 4; // Define the total number of steps
+            
+            // --- STEP 1 ---
+            _splashReporter?.UpdateStep($"Step 1 of {totalSteps}: Updating game environment...");
+            
             using (ContextualPerformanceTracer.Trace("VM_Settings.UpdateEnvironment"))
             {
                 _splashReporter?.UpdateProgress(62, "Updating game environment...");
                 _environmentStateProvider.UpdateEnvironment(62, 8);
             }
+            
+            // --- STEP 2 ---
+            _splashReporter?.UpdateStep($"Step 2 of {totalSteps}: Populating mod list...");
 
             using (ContextualPerformanceTracer.Trace("VM_Settings.PopulateModSettings"))
             {
                 // **NEW ORDER: Populate mods first**
                 _splashReporter?.UpdateProgress(70, "Populating mod list...");
-                await _lazyModListVM.Value.PopulateModSettingsAsync(_splashReporter, 70, 10); // Base 70%, span 10% (e.g. 70-80)
+                await _lazyModListVM.Value.PopulateModSettingsAsync(_splashReporter); // Base 70%, span 10% (e.g. 70-80)
             }
+
+            // --- STEP 3 ---
+            _splashReporter?.UpdateStep($"Step 3 of {totalSteps}: Initializing NPC selection bar...");
 
             using (ContextualPerformanceTracer.Trace("VM_Settings.InitializeNpcSelectionBar"))
             {
                 _splashReporter?.UpdateProgress(80, "Initializing NPC selection bar...");
-                await _lazyNpcSelectionBar.Value.InitializeAsync(_splashReporter, 80, 10); // Base 80%, span 10% (e.g. 80-90)
+                await _lazyNpcSelectionBar.Value.InitializeAsync(_splashReporter); 
             }
             
-            // START: Added Logic for Default Exclusions
+            // --- STEP 4 ---
+            _splashReporter?.UpdateStep($"Step 4 of {totalSteps}: Applying default settings...");
+            
             if (!_model.HasBeenLaunched && _environmentStateProvider.LoadOrder != null)
             {
                 var defaultExclusions = new HashSet<ModKey>();
@@ -466,11 +479,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // The called methods are already async and handle their own threading internally.
                 if (_lazyModListVM.IsValueCreated)
                 {
-                    await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 0, 50);
+                    await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen);
                 }
                 if (_lazyNpcSelectionBar.IsValueCreated)
                 {
-                    await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 50, 50);
+                    await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen);
                 }
                  
                  if (_lazyModListVM.IsValueCreated)
@@ -511,11 +524,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // *** FIX: Removed the incorrect Task.Run wrapper. ***
                 if (_lazyNpcSelectionBar.IsValueCreated)
                 {
-                    await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen, 0, 50);
+                    await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen);
                 }
                 if (_lazyModListVM.IsValueCreated)
                 {
-                    await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen, 50, 50);
+                    await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen);
                 }
                 
                 if (_lazyModListVM.IsValueCreated)
