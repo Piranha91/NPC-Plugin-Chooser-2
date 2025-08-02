@@ -161,6 +161,36 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.BatFilePreCommands).Skip(1).Subscribe(s => _model.BatFilePreCommands = s).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.BatFilePostCommands).Skip(1).Subscribe(s => _model.BatFilePostCommands = s).DisposeWith(_disposables);
+            
+            this.WhenAnyValue(x => x.SelectedRecordOverrideHandlingMode)
+                .Skip(1) // Skip the initial value loaded from the model
+                .Subscribe(mode =>
+                {
+                    // Only show the warning if the user selects a mode other than the default 'Ignore'
+                    if (mode != RecordOverrideHandlingMode.Ignore)
+                    {
+                        const string message = "WARNING: Setting the override handling mode to anything other than 'Ignore' is generally not recommended.\n\n" +
+                                               "It can significantly increase patching time and is only necessary in very specific, rare scenarios.\n\n" +
+                                               "You're almost certainly better off changing this setting only for specific mods in the Mods Menu.\n\n" +
+                                               "Are you sure you want to change this setting?";
+
+                        if (!ScrollableMessageBox.Confirm(message, "Confirm Override Handling Mode", MessageBoxImage.Warning))
+                        {
+                            // If the user clicks "No", use Observable.Timer to schedule the reversion.
+                            // This runs on the UI thread after a 1ms delay, breaking the call-stack and ensuring the ComboBox updates.
+                            Observable.Timer(TimeSpan.FromMilliseconds(1), RxApp.MainThreadScheduler)
+                                .Subscribe(_ =>
+                                {
+                                    SelectedRecordOverrideHandlingMode = RecordOverrideHandlingMode.Ignore;
+                                });
+                        }
+                    }
+
+                    // Persist the final value to the model. This will be the original value if the
+                    // user confirmed, or it will be re-triggered with 'Ignore' if they cancelled.
+                    _model.DefaultRecordOverrideHandlingMode = mode;
+                })
+                .DisposeWith(_disposables);
 
             this.WhenAnyValue(x => x.UseSkyPatcherMode)
                 .Skip(1) // Skip initial value set on load
@@ -315,7 +345,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             // Add the report generation at the very end
-            ScrollableMessageBox.Show(ContextualPerformanceTracer.GenerateDetailedReport("Initial Validation and Load"));
+            ContextualPerformanceTracer.GenerateDetailedReport("Initial Validation and Load");
         }
 
 // Internal version also needs to respect this order if it's ever called independently
@@ -555,17 +585,20 @@ When the ouptut plugin is generated, put it at the end of your load order.";
         {
             string helpText = @"Override Handling Mode:
 
-This setting determines how the default behavior for how the patcher handles mods that override/modify records from the base game or other mods.
+This setting determines how the default behavior for how the patcher handles mods that override/modify non-appearance records from the base game or other mods.
+
+IMPORANT: Handling overrides makes patching take longer, and is only needed in very rare cases. You almost certainly should leave the default behavior as Ignore.
 
 Options:
 
 - Ignore:
-  - The overriden records will be left as-is.
+  - The overriden records will be left as-is. If there are conflicts, it'll be up to you to patch them yourself.
   - The output plugin will be mastered to the mods providing the records being overridden.
 
 - Include:
   - The overriden records will be copied into the output plugin.
-  - In Patch mode, only the changed aspects of the record will be applied.
+  - In Create And Patch mode, only the changed aspects of the record will be applied.
+  - The output plugin will still be mastered to the mods providing the records being overridden.
 
 - Include As New:
   - The overridden records will be added to the output plugin as new records.

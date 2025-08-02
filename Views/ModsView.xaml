@@ -222,8 +222,21 @@
                                                       HorizontalAlignment="Center" 
                                                       VerticalAlignment="Center"
                                                       MaxHeight="25"
-                                                      Visibility="{Binding HasPluginWithOverrideRecords, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                                      ToolTip="This mod has overrides of non-NPC records. NPC2 can handle these using the default option in the settings menu, or on a per-mod basis configured here.">
+                                                      Visibility="{Binding HasPluginWithOverrideRecords, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                 <Viewbox.ToolTip>
+                                                     <ToolTip>
+                                                         <TextBlock TextWrapping="Wrap">
+                                                             This mod has overrides of non-NPC records.
+                                                             <LineBreak/>
+                                                             NPC2 can handle these using the default option in the settings menu, or on a per-mod basis configured here.
+                                                             <LineBreak/>
+                                                             <LineBreak/>
+                                                             IMPORTANT: Just because the plugin has overrides doesn't mean these overrides need to be handled. In most cases, non-NPC overrides are safe to ignore,
+                                                             <LineBreak/>
+                                                             and handling them for large plugins can slow down patching considerably. Only handle them if the NPC appearance is bugged otherwise, or you know that it's required.
+                                                         </TextBlock>
+                                                     </ToolTip>
+                                                 </Viewbox.ToolTip>
                                                  <Image Source="/NPC Plugin Chooser 2;component/Resources/Contains Overrides.png" />
                                              </Viewbox>
                                              <!-- *** FIX: AncestorType is now ListBox *** -->

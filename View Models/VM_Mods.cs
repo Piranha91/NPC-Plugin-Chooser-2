@@ -870,8 +870,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
                         {
                             string modFolderName = Path.GetFileName(modFolderPath);
-                            splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3),
-                                $"Scanning {modFolderName}");
 
                             string tokenFilePath = Path.Combine(modFolderPath, tokenFileName);
                             if (File.Exists(tokenFilePath))
@@ -914,6 +912,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             }
                             else
                             {
+                                splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.3),
+                                    $"Importing New Mod: {modFolderName}");
+                                
                                 FaceGenScanResult scanResult;
                                 using (ContextualPerformanceTracer.Trace("PopulateMods.CollectFaceGenFilesAsync"))
                                 {
@@ -1090,6 +1091,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var maxParallelism = Environment.ProcessorCount;
             var semaphore = new SemaphoreSlim(maxParallelism);
 
+            var modSettingsToLogCount = _allModSettingsInternal.Where(x => x.IsNewlyCreated).Count();
             var refreshTasks = _allModSettingsInternal.Select(async (vm, index) =>
             {
                 await semaphore.WaitAsync(); // Wait for a free slot
@@ -1113,20 +1115,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                             if (vm.IsNewlyCreated)
                             {
+                                // this message is likely to stay up longer because the function call is more extensive
+                                if (index % 1 == 0 && modSettingsToLogCount > 0)
+                                {
+                                    splashReporter?.UpdateProgress(
+                                        baseProgress + (progressSpan * 0.5) +
+                                        (progressSpan * 0.4 * ((double)index / modSettingsToLogCount)),
+                                        $"Analyzing Appearance Mod '{vm.DisplayName}'..."
+                                    );
+                                }
                                 using (ContextualPerformanceTracer.Trace("FindPluginsWithOverrides"))
                                 {
                                     await vm.FindPluginsWithOverrides(_pluginProvider);
                                 }
-                            }
-
-                            // Update progress...
-                            if (index % 10 == 0 && _allModSettingsInternal.Count > 0)
-                            {
-                                splashReporter?.UpdateProgress(
-                                    baseProgress + (progressSpan * 0.5) +
-                                    (progressSpan * 0.4 * ((double)index / _allModSettingsInternal.Count)),
-                                    $"Analyzing mod '{vm.DisplayName}'..."
-                                );
                             }
                         }
                         catch (Exception ex)
