@@ -129,8 +129,8 @@ public static class FaceGenScanner
             string? pluginName = null;
             string? fileToAdd = null;
             
-            string faceGeomPrefix = $"meshes\\actors\\character\\facegendata\\facegeom\\{modKey.FileName}\\";
-            string faceTintPrefix = $"textures\\actors\\character\\facegendata\\facetint\\{modKey.FileName}\\";
+            string faceGeomPrefix = $"meshes\\actors\\character\\facegendata\\facegeom\\"; // don't include the ModKey because we don't know if this is a new NPC or an override of some other plugin
+            string faceTintPrefix = $"textures\\actors\\character\\facegendata\\facetint\\";
             
             foreach (var filePath in entry.Value)
             {
