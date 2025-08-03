@@ -103,7 +103,7 @@ public class Patcher : OptionalUIModule
         try
         {
             _assetHandler.Initialize();
-            _recordDeltaPatcher.Reinitialize();
+            _recordDeltaPatcher.Reinitialize(true);
 
             string baseOutputDirectory;
             bool isSpecifiedDirectory = false;
@@ -227,7 +227,7 @@ public class Patcher : OptionalUIModule
                         }
                     });
 
-                    _recordDeltaPatcher.Reinitialize();
+                    _recordDeltaPatcher.Reinitialize(false);
 
                     var npcsInGroup = npcGroup.ToList();
                     for (int i = 0; i < npcsInGroup.Count; i++)
@@ -479,7 +479,7 @@ public class Patcher : OptionalUIModule
 
                                                         List<RecordDeltaPatcher.PropertyDiff> recordDifs =
                                                             _recordDeltaPatcher.GetPropertyDiffs(overrideRecord,
-                                                                baseRecord);
+                                                                baseRecord, overrideRecord, ctx.ModKey);
                                                         IMajorRecordGetter? winningGetter = null;
                                                         if (recordDifs is not null && recordDifs.Any() &&
                                                             _environmentStateProvider.LinkCache.TryResolve(
@@ -495,7 +495,7 @@ public class Patcher : OptionalUIModule
                                                                 winningRecord != null)
                                                             {
                                                                 _recordDeltaPatcher.ApplyPropertyDiffs(winningRecord,
-                                                                    recordDifs);
+                                                                    recordDifs, winningRecord, ctx.ModKey);
                                                                 deltaPatchedRecords.Add(winningRecord);
                                                             }
                                                             else
@@ -746,6 +746,7 @@ public class Patcher : OptionalUIModule
         finally
         {
             _bsaHandler.UnloadAllBsaReaders();
+            _recordDeltaPatcher.FinalizeLog();
             UpdateProgress(selectionsToProcess.Count, selectionsToProcess.Count, "Finished.");
         }
 

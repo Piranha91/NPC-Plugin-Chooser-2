@@ -11,7 +11,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 
 public class PluginProvider: IDisposable
 {
-    private ConcurrentDictionary<ModKey, (ISkyrimModDisposableGetter plugin, string sourcePath)> _pluginCache = new();
+    private ConcurrentDictionary<ModKey, (ISkyrimModGetter plugin, string sourcePath)> _pluginCache = new();
     private bool _disposed = false; // To prevent multiple dispose calls
 
     private readonly EnvironmentStateProvider _environmentStateProvider;
@@ -23,13 +23,13 @@ public class PluginProvider: IDisposable
         _settings = settings;
     }
 
-    public void LoadPlugins(IEnumerable<ModKey> keys, HashSet<string> modFolderNames)
+    public void LoadPlugins(IEnumerable<ModKey> keys, HashSet<string> modFolderNames, bool asReadyOnly = true)
     {
         foreach (var key in keys)
         {
             if (!_pluginCache.ContainsKey(key))
             {
-                TryGetPlugin(key, modFolderNames, out _, out _);
+                TryGetPlugin(key, modFolderNames, out _, out _, asReadyOnly);
             }
         }
     }
@@ -40,7 +40,11 @@ public class PluginProvider: IDisposable
         {
             if (_pluginCache.TryRemove(key, out var entryToDispose))
             {
-                entryToDispose.plugin.Dispose(); // Dispose the object
+                var disposable = entryToDispose.plugin as ISkyrimModDisposableGetter;
+                if (disposable is not null)
+                {
+                    disposable.Dispose(); // Dispose the object
+                }
             }
         }
     }
@@ -64,7 +68,11 @@ public class PluginProvider: IDisposable
             // Dispose managed state (the cached objects).
             foreach (var kvp in _pluginCache)
             {
-                kvp.Value.plugin.Dispose();
+                var disposable = kvp.Value.plugin as ISkyrimModDisposableGetter;
+                if (disposable is not null)
+                {
+                    disposable.Dispose(); // Dispose the object
+                }
             }
             _pluginCache.Clear();
         }
@@ -72,7 +80,7 @@ public class PluginProvider: IDisposable
         _disposed = true;
     }
 
-    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModDisposableGetter? plugin, out string? pluginSourcePath)
+    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModGetter? plugin, out string? pluginSourcePath, bool asReadOnly = true)
     {
         if (_pluginCache.TryGetValue(modKey, out var value))
         {
@@ -108,9 +116,17 @@ public class PluginProvider: IDisposable
         {
             try
             {
-                var imported = SkyrimMod.Create(_environmentStateProvider.SkyrimVersion)
-                    .FromPath(foundPath)
-                    .Construct();
+                ISkyrimModGetter? imported = null;
+                if (asReadOnly)
+                {
+                    imported = SkyrimMod.Create(_environmentStateProvider.SkyrimVersion)
+                        .FromPath(foundPath)
+                        .Construct();
+                }
+                else
+                {
+                    imported = SkyrimMod.CreateFromBinary(foundPath, _environmentStateProvider.SkyrimVersion);
+                }
                 
                 plugin = imported;
                 pluginSourcePath = foundPath;
@@ -131,9 +147,9 @@ public class PluginProvider: IDisposable
         return false;
     }
 
-    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModDisposableGetter? plugin)
+    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModGetter? plugin, bool asReadyOnly = true)
     {
-        return TryGetPlugin(modKey, fallBackModFolderPaths, out plugin, out _);
+        return TryGetPlugin(modKey, fallBackModFolderPaths, out plugin, out _, asReadyOnly);
     }
 
     public HashSet<ModKey> GetMasterPlugins(ModKey modKey, IEnumerable<string>? fallBackModFolderPaths)

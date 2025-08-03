@@ -4,8 +4,10 @@ using Mutagen.Bethesda.Plugins.Records;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using DynamicData;
 using Mutagen.Bethesda.Plugins; 
 using Noggog; // For Noggog.ExtendedList<>
 
@@ -17,7 +19,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
     /// and handles complex types, collections, and read-only collection properties.
     /// It also includes cycle detection to prevent stack overflows during recursive copying.
     /// </summary>
-    public class RecordDeltaPatcher : OptionalUIModule // Assuming OptionalUIModule provides AppendLog
+    public class RecordDeltaPatcher : OptionalUIModule // Assuming OptionalUIModule provides _internalLog.Add
     {
         #region Fields and Initialization
 
@@ -28,18 +30,54 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         // Stores the values that have been patched onto records, keyed by FormKey, then by property name.
         // Used for conflict detection.
         private readonly Dictionary<FormKey, Dictionary<string, object?>> _patchedValues = new();
+        // A separate, internal log for delta patching warnings.
+        private readonly List<string> _internalLog = new();
+        // Context fields for logging
+        private IMajorRecordGetter? _currentRecordContext;
+        private ModKey? _currentModKeyContext;
 
         /// <summary>
         /// Reinitializes the patcher by clearing any stored patched values.
         /// Reflection caches for getters and setters are typically preserved for performance
         /// unless a full reset of types is anticipated.
         /// </summary>
-        public void Reinitialize()
+        public void Reinitialize(bool clearLog)
         {
             _patchedValues.Clear();
+            if (clearLog)
+            {
+                _internalLog.Clear();
+            }
             // Optionally clear reflection caches if needed:
             // _getterCache.Clear();
             // _setterCache.Clear();
+        }
+
+        /// <summary>
+        /// Writes the internal log to a file if any warnings were generated,
+        /// and then posts a summary message to the main application log.
+        /// </summary>
+        public void FinalizeLog()
+        {
+            // Do nothing if no warnings were logged.
+            if (!_internalLog.Any()) return;
+
+            try
+            {
+                // Place the log file in the same directory as the application executable.
+                string logPath = Path.Combine(AppContext.BaseDirectory, "DeltaPatchingLog.txt");
+                
+                // Write all captured warnings to the file.
+                File.WriteAllLines(logPath, _internalLog);
+
+                // Append a single, clean summary message to the main log.
+                AppendLog($"Some exceptions were encountered during delta patching. This is probably not a problem, but if an NPC with handled overrides does not look right in-game, see the logged exceptions at {logPath}", false, true);
+            }
+            catch (Exception ex)
+            {
+                // If writing the log file fails, report a critical error to the main log.
+                AppendLog($"FATAL: Could not write the DeltaPatchingLog.txt file. Reason: {ex.Message}", true, true);
+            }
         }
         #endregion
 
@@ -104,6 +142,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             public override void Apply(MajorRecord destinationRecord, PropertyInfo destPropInfo, RecordDeltaPatcher patcher)
             {
                 var processedObjects = new HashSet<object>(ReferenceEqualityComparer.Instance); 
+                string logContext = $"[{Auxilliary.GetLogString(patcher._currentRecordContext, true)} | {patcher._currentModKeyContext}]";
 
                 if (NewValue == null) {
                     if (destPropInfo.CanWrite) destPropInfo.SetValue(destinationRecord, null);
@@ -111,7 +150,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                         Type propertyType = destPropInfo.PropertyType;
                         if (typeof(IDictionary).IsAssignableFrom(propertyType)) { (destPropInfo.GetValue(destinationRecord) as IDictionary)?.Clear(); }
                         else if (typeof(IList).IsAssignableFrom(propertyType)) { (destPropInfo.GetValue(destinationRecord) as IList)?.Clear(); }
-                        else patcher.AppendLog($"Warning (ValueDiff.Apply): Cannot set read-only property '{PropertyName}' to null as it's not a recognized clearable collection.", true);
+                        else patcher._internalLog.Add($"{logContext} Warning (ValueDiff.Apply): Cannot set read-only property '{PropertyName}' to null as it's not a recognized clearable collection.");
                     }
                     return;
                 }
@@ -131,15 +170,15 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                         } else { // Fallback: Create instance, then recursively copy properties
                             object? destinationPropertyValue = destPropInfo.GetValue(destinationRecord); bool newInstanceCreated = false;
                             if (destinationPropertyValue == null && !destPropertyType.IsValueType) { 
-                                if (destPropertyType.IsInterface || destPropertyType.IsAbstract) { patcher.AppendLog($"Error (ValueDiff.Apply complex): Cannot create instance of interface/abstract type '{destPropertyType.FullName}' for property '{PropertyName}'.", true); return; }
+                                if (destPropertyType.IsInterface || destPropertyType.IsAbstract) { patcher._internalLog.Add($"{logContext} Error (ValueDiff.Apply complex): Cannot create instance of interface/abstract type '{destPropertyType.FullName}' for property '{PropertyName}'."); return; }
                                 try { destinationPropertyValue = Activator.CreateInstance(destPropertyType); newInstanceCreated = true; } 
-                                catch (Exception ex) { patcher.AppendLog($"Error (ValueDiff.Apply complex): Failed to Activator.CreateInstance for '{destPropertyType.FullName}'. {ex.Message}", true); return; }
+                                catch (Exception ex) { patcher._internalLog.Add($"{logContext} Error (ValueDiff.Apply complex): Failed to Activator.CreateInstance for '{destPropertyType.FullName}'. {ex.Message}"); return; }
                             } else if (destPropertyType.IsValueType) { // For structs, ensure we have an instance to populate
                                  var underlyingType = Nullable.GetUnderlyingType(destPropertyType);
                                  if (destinationPropertyValue == null && underlyingType != null) { destinationPropertyValue = Activator.CreateInstance(underlyingType); }
                                  else if (destinationPropertyValue == null || (destinationPropertyValue.GetType() != destPropertyType && (underlyingType == null || destinationPropertyValue.GetType() != underlyingType))) { destinationPropertyValue = Activator.CreateInstance(destPropertyType); }
                             }
-                            if (destinationPropertyValue == null) { patcher.AppendLog($"Error (ValueDiff.Apply complex): Could not obtain destination for '{PropertyName}'.", true); return; }
+                            if (destinationPropertyValue == null) { patcher._internalLog.Add($"{logContext} Error (ValueDiff.Apply complex): Could not obtain destination for '{PropertyName}'."); return; }
                             
                             patcher.CopyPropertiesRecursively(NewValue, destinationPropertyValue, processedObjects);
                             if (newInstanceCreated || destPropertyType.IsValueType) destPropInfo.SetValue(destinationRecord, destinationPropertyValue); // Set back if new class instance or any struct
@@ -177,11 +216,11 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                         if (readOnlyDestInstance != null && !patcher.IsSimpleType(readOnlyDestInstance.GetType()))
                         {
                             patcher.CopyPropertiesRecursively(NewValue, readOnlyDestInstance, processedObjects);
-                            if (destPropertyType.IsValueType) patcher.AppendLog($"Warning (ValueDiff.Apply): Property '{PropertyName}' is a read-only struct. Changes made by recursion will likely be lost as it cannot be set back.", true);
+                            if (destPropertyType.IsValueType) patcher._internalLog.Add($"{logContext} Warning (ValueDiff.Apply): Property '{PropertyName}' is a read-only struct. Changes made by recursion will likely be lost as it cannot be set back.");
                         }
                         else
                         {
-                            patcher.AppendLog($"Warning (ValueDiff.Apply): Property '{PropertyName}' is read-only and not a recognized modifiable collection or suitable complex object. Cannot apply changes. ValueType: {destPropertyType.IsValueType}, SimpleType: {patcher.IsSimpleType(destPropertyType)}", true);
+                            patcher._internalLog.Add($"{logContext} Warning (ValueDiff.Apply): Property '{PropertyName}' is read-only and not a recognized modifiable collection or suitable complex object. Cannot apply changes. ValueType: {destPropertyType.IsValueType}, SimpleType: {patcher.IsSimpleType(destPropertyType)}");
                         }
                     }
                     // --- END OF MODIFIED LOGIC ---
@@ -228,36 +267,77 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         /// <param name="source">The source object.</param>
         /// <param name="target">The target object to compare against.</param>
         /// <returns>A list of <see cref="PropertyDiff"/> objects representing the differences.</returns>
-        public IReadOnlyList<PropertyDiff> GetPropertyDiffs(dynamic source, dynamic target)
+        // In RecordDeltaPatcher.cs
+        public IReadOnlyList<PropertyDiff> GetPropertyDiffs(dynamic source, dynamic target, IMajorRecordGetter recordContext, ModKey modKeyContext)
         {
             using var _ = ContextualPerformanceTracer.Trace("RecordDeltaPatcher.GetPropertyDiffs");
-            if (source is null) throw new ArgumentNullException(nameof(source)); 
+            // Set context for this operation
+            _currentRecordContext = recordContext;
+            _currentModKeyContext = modKeyContext;
+            string logContext = $"[{Auxilliary.GetLogString(recordContext, true)} | {modKeyContext}]";
+            
+            if (source is null) throw new ArgumentNullException(nameof(source));
             if (target is null) throw new ArgumentNullException(nameof(target));
-            var differences = new List<PropertyDiff>(); 
+            var differences = new List<PropertyDiff>();
             Type sourceType = source.GetType(); Type targetType = target.GetType();
-            var getterProps = GetGetterProperties(sourceType); 
-            var targetReadableProps = GetGetterProperties(targetType); 
+            var getterProps = GetGetterProperties(sourceType);
+            var targetReadableProps = GetGetterProperties(targetType);
 
-            foreach (var piKvp in getterProps) {
+            foreach (var piKvp in getterProps)
+            {
                 PropertyInfo sourcePi = piKvp.Value; string propertyName = sourcePi.Name;
-                object? sourceValue = sourcePi.GetValue(source); object? targetValue = null;
-                if (targetReadableProps.TryGetValue(propertyName, out var targetPi)) targetValue = targetPi.GetValue(target);
-                
-                bool treatAsListDiff = false; 
-                if (sourceValue != null && !(sourceValue is string)) { 
-                    if (sourceValue is IList) treatAsListDiff = true; // Covers arrays, List<T>, ExtendedList<T>
+                object? sourceValue;
+                object? targetValue = null;
+
+                // --- START OF MODIFICATION ---
+                try
+                {
+                    sourceValue = sourcePi.GetValue(source);
+                }
+                catch (Exception ex)
+                {
+                    // Safely create a description of the source object for logging
+                    string sourceDesc = source is IMajorRecordGetter rec ? $"{rec.EditorID ?? rec.FormKey.ToString()}" : $"object of type {source.GetType().Name}";
+                    _internalLog.Add($"{logContext} Warning: Could not read property '{propertyName}' from source {sourceDesc}. Skipping. Error: {ex.Message}");
+                    continue; // Skip to the next property
                 }
 
-                if (treatAsListDiff) {
-                    var sourceListForDiff = (IEnumerable)sourceValue!; 
+                if (targetReadableProps.TryGetValue(propertyName, out var targetPi))
+                {
+                    try
+                    {
+                        targetValue = targetPi.GetValue(target);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Safely create a description of the target object for logging
+                        string targetDesc = target is IMajorRecordGetter rec ? $"{rec.EditorID ?? rec.FormKey.ToString()}" : $"object of type {target.GetType().Name}";
+                        _internalLog.Add($"{logContext} Warning: Could not read property '{propertyName}' from target {targetDesc}. Skipping. Error: {ex.Message}");
+                        continue; // Skip to the next property
+                    }
+                }
+                // --- END OF MODIFICATION ---
+
+                bool treatAsListDiff = false;
+                if (sourceValue != null && !(sourceValue is string))
+                {
+                    if (sourceValue is IList) treatAsListDiff = true;
+                }
+
+                if (treatAsListDiff)
+                {
+                    var sourceListForDiff = (IEnumerable)sourceValue!;
                     var targetList = targetValue as IEnumerable; bool areEqual = false;
-                    if (targetList != null) { 
-                        var sourceObjList = sourceListForDiff.Cast<object?>().ToList(); 
-                        var targetObjList = targetList.Cast<object?>().ToList(); 
-                        if (sourceObjList.Count == targetObjList.Count) areEqual = sourceObjList.SequenceEqual(targetObjList); // Shallow list item comparison
+                    if (targetList != null)
+                    {
+                        var sourceObjList = sourceListForDiff.Cast<object?>().ToList();
+                        var targetObjList = targetList.Cast<object?>().ToList();
+                        if (sourceObjList.Count == targetObjList.Count) areEqual = sourceObjList.SequenceEqual(targetObjList);
                     }
                     if (!areEqual) differences.Add(new ListDiff(propertyName, sourceListForDiff));
-                } else {
+                }
+                else
+                {
                     if (!ValuesAreEqual(sourceValue, targetValue, propertyName)) differences.Add(new ValueDiff(propertyName, sourceValue));
                 }
             }
@@ -282,11 +362,17 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         /// </summary>
         /// <param name="destination">The destination record (must be a <see cref="MajorRecord"/>).</param>
         /// <param name="diffs">The collection of <see cref="PropertyDiff"/> to apply.</param>
-        public void ApplyPropertyDiffs(dynamic destination, IEnumerable<PropertyDiff> diffs) {
+        public void ApplyPropertyDiffs(dynamic destination, IEnumerable<PropertyDiff> diffs, IMajorRecordGetter recordContext, ModKey modKeyContext) {
             using var _ = ContextualPerformanceTracer.Trace("RecordDeltaPatcher.ApplyPropertyDiffs");
+            
+            // Set context for this operation
+            _currentRecordContext = recordContext;
+            _currentModKeyContext = modKeyContext;
+            string logContext = $"[{Auxilliary.GetLogString(recordContext, true)} | {modKeyContext}]";
+            
             if (destination is null) throw new ArgumentNullException(nameof(destination)); 
             if (diffs is null) throw new ArgumentNullException(nameof(diffs));
-            if (destination is not MajorRecord concreteDestination) { AppendLog($"Error: Destination for ApplyPropertyDiffs must be a MajorRecord. Got {destination.GetType().FullName}", true); return; }
+            if (destination is not MajorRecord concreteDestination) { _internalLog.Add($"{logContext} Error: Destination for ApplyPropertyDiffs must be a MajorRecord. Got {destination.GetType().FullName}"); return; }
 
             var allDestReadableProps = GetGetterProperties(concreteDestination.GetType()); 
             var destWritableSetterProps = GetSetterProperties(concreteDestination.GetType()); 
@@ -314,15 +400,15 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                     {
                         propInfoToApply = readablePi;
                     } else { 
-                        AppendLog($"Warning: Setter for property '{diff.PropertyName}' not found, and it's not a recognized modifiable read-only collection. Skipping diff. Type: {readablePropType.FullName}"); 
+                        _internalLog.Add($"{logContext} Warning: Setter for property '{diff.PropertyName}' not found, and it's not a recognized modifiable read-only collection. Skipping diff. Type: {readablePropType.FullName}"); 
                         continue; 
                     }
                 } else { 
-                    AppendLog($"Warning: Property '{diff.PropertyName}' not found on destination type '{concreteDestination.GetType().FullName}'. Skipping diff."); 
+                    _internalLog.Add($"{logContext} Warning: Property '{diff.PropertyName}' not found on destination type '{concreteDestination.GetType().FullName}'. Skipping diff."); 
                     continue; 
                 }
                 
-                if (propInfoToApply == null) { AppendLog($"Internal Error: propInfoToApply is null for '{diff.PropertyName}'. This should have been caught by earlier checks.", true); continue; }
+                if (propInfoToApply == null) { _internalLog.Add($"{logContext} Internal Error: propInfoToApply is null for '{diff.PropertyName}'. This should have been caught by earlier checks."); continue; }
 
                 object? newValueToStore = diff.GetValue();
                 // Conflict checking logic (remains shallow for collections for now)
@@ -330,7 +416,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                     bool isConflict = false;
                     if (oldValue is IReadOnlyList<object?> oldList && newValueToStore is IReadOnlyList<object?> newList) { if (!oldList.SequenceEqual(newList)) isConflict = true; } 
                     else if (!Equals(oldValue, newValueToStore)) { isConflict = true; }
-                    if (isConflict) AppendLog($"CONFLICT: Property '{diff.PropertyName}' on record '{concreteDestination.EditorID ?? concreteDestination.FormKey.ToString()}' already patched, overwriting.");
+                    if (isConflict) _internalLog.Add($"{logContext} CONFLICT: Property '{diff.PropertyName}' on record '{concreteDestination.EditorID ?? concreteDestination.FormKey.ToString()}' already patched, overwriting.");
                 }
                 if (recordPatchedValues != null) recordPatchedValues[diff.PropertyName] = newValueToStore;
 
@@ -350,13 +436,22 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         #endregion
 
         #region Core Recursive Copy Logic
+        
+        private void LogInternal(string message)
+        {
+            string logContext = $"[{Auxilliary.GetLogString(_currentRecordContext, true)} | {_currentModKeyContext}]";
+            _internalLog.Add($"{logContext} {message}");
+        }
 
         /// <summary>
         /// Determines if a type is considered "simple" (primitive, enum, string, common value types, FormLink variants),
         /// meaning it typically doesn't require recursive property copying.
         /// </summary>
-        private bool IsSimpleType(Type type) { 
-            return type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal) || 
+        private bool IsSimpleType(Type type)
+        {
+            if (typeof(Type).IsAssignableFrom(type)) return true;
+
+            return type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal) ||
                    type == typeof(DateTime) || type == typeof(Guid) ||
                    (type.IsValueType && Nullable.GetUnderlyingType(type) == null && type.Namespace != null && type.Namespace.StartsWith("System") && !type.IsGenericType) ||
                    (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IFormLinkGetter<>)) ||
@@ -421,13 +516,13 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                         } else {
                             object? nestedDest = destProp.GetValue(destination); bool newCreated = false;
                             if (nestedDest == null && !destPropType.IsValueType) { 
-                                if (destPropType.IsInterface || destPropType.IsAbstract) { AppendLog($"Error_CPR WritableComplex: Cannot create interface/abstract '{destPropType.Name}' for '{propName}'.",true); continue;}
-                                try { nestedDest = Activator.CreateInstance(destPropType); newCreated = true; } catch (Exception ex) { AppendLog($"Error_CPR WritableComplex: CreateInstance failed for '{destPropType.Name}' for '{propName}'. {ex.Message}",true); continue; }
+                                if (destPropType.IsInterface || destPropType.IsAbstract) { LogInternal("Error_CPR WritableComplex: Cannot create interface/abstract '{destPropType.Name}' for '{propName}'."); continue;}
+                                try { nestedDest = Activator.CreateInstance(destPropType); newCreated = true; } catch (Exception ex) { LogInternal("Error_CPR WritableComplex: CreateInstance failed for '{destPropType.Name}' for '{propName}'. {ex.Message}"); continue; }
                              } else if (destPropType.IsValueType) { 
                                 nestedDest = destProp.GetValue(destination); 
                                 if(nestedDest == null || nestedDest.GetType() != destPropType) nestedDest = Activator.CreateInstance(destPropType); // Ensure correct type for structs
                              }
-                            if (nestedDest == null) { AppendLog($"Error_CPR WritableComplex: Could not obtain instance for '{propName}'.",true); continue; }
+                            if (nestedDest == null) { LogInternal("Error_CPR WritableComplex: Could not obtain instance for '{propName}'."); continue; }
                             this.CopyPropertiesRecursively(sourceValue, nestedDest, processedObjects);
                             if (newCreated || destPropType.IsValueType) destProp.SetValue(destination, nestedDest);
                         }
@@ -441,7 +536,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                         object? readOnlyInstance = destProp.GetValue(destination);
                         if (readOnlyInstance != null && !this.IsSimpleType(readOnlyInstance.GetType())) {
                             this.CopyPropertiesRecursively(sourceValue, readOnlyInstance, processedObjects);
-                            if (destPropType.IsValueType) AppendLog($"Warning_CPR: Property '{propName}' is a read-only struct. Changes by recursion likely lost.", true);
+                            if (destPropType.IsValueType) LogInternal("Warning_CPR: Property '{propName}' is a read-only struct. Changes by recursion likely lost.");
                         } else {
                             // --- MUTE SPECIFIC EXPECTED WARNINGS ---
                             // This prevents logging warnings for known, benign read-only properties on collections (like Count, IsFixedSize, etc.)
@@ -454,7 +549,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
 
                             if (!isExpectedReadOnlySimpleProperty)
                             {
-                                AppendLog($"Warning_CPR: Property '{propName}' on '{destType.Name}' is read-only and not a recognized modifiable collection or suitable complex object. SourceValueType: '{sourceValueType.Name}', DestPropType: {destPropType.FullName}", true);
+                                LogInternal("Warning_CopyPropertiesRecursively: Property '{propName}' on '{destType.Name}' is read-only and not a recognized modifiable collection or suitable complex object. SourceValueType: '{sourceValueType.Name}', DestPropType: {destPropType.FullName}");
                             }
                             // --- END MUTE ---
                         }
@@ -478,14 +573,14 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                     if (destListPropertyType.IsInterface || destListPropertyType.IsAbstract) { 
                         if (destListPropertyType.IsGenericType && destListPropertyType.GetGenericTypeDefinition() == typeof(Noggog.ExtendedList<>)) destListObj = Activator.CreateInstance(destListPropertyType);
                         else if (destListPropertyType.IsGenericType && destListPropertyType.GetGenericArguments().Length > 0 && (destListPropertyType.GetGenericTypeDefinition() == typeof(IList<>) || destListPropertyType.GetGenericTypeDefinition() == typeof(ICollection<>) || destListPropertyType.GetGenericTypeDefinition() == typeof(IEnumerable<>))) { Type itemType = destListPropertyType.GetGenericArguments()[0]; Type concreteListType = typeof(List<>).MakeGenericType(itemType); destListObj = Activator.CreateInstance(concreteListType); }
-                        else { AppendLog($"Warning (CopyListProperty): Cannot create instance for null list property '{destPropertyInfo.Name}' (interface/abstract). Skipping."); return; }
-                    } else { try { destListObj = Activator.CreateInstance(destListPropertyType); } catch (Exception ex) { AppendLog($"Error (CopyListProperty): Failed to create list instance for '{destPropertyInfo.Name}'. {ex.Message}", true); return; } }
+                        else { LogInternal("Warning (CopyListProperty): Cannot create instance for null list property '{destPropertyInfo.Name}' (interface/abstract). Skipping."); return; }
+                    } else { try { destListObj = Activator.CreateInstance(destListPropertyType); } catch (Exception ex) { LogInternal("Error (CopyListProperty): Failed to create list instance for '{destPropertyInfo.Name}'. {ex.Message}"); return; } }
                     destPropertyInfo.SetValue(parentDestinationObject, destListObj);
-                } else { AppendLog($"Warning (CopyListProperty): List property '{destPropertyInfo.Name}' is null and read-only. Cannot create or populate.", true); return; }
+                } else { LogInternal("Warning (CopyListProperty): List property '{destPropertyInfo.Name}' is null and read-only. Cannot create or populate."); return; }
             }
-            if (destListObj is not IList destList) { AppendLog($"Warning (CopyListProperty): Property '{destPropertyInfo.Name}' is not IList. Type: {destListObj?.GetType().FullName}. Skipping."); return; }
+            if (destListObj is not IList destList) { LogInternal("Warning (CopyListProperty): Property '{destPropertyInfo.Name}' is not IList. Type: {destListObj?.GetType().FullName}. Skipping."); return; }
             Type listActualType = destList.GetType(); 
-            if (!listActualType.IsGenericType || listActualType.GetGenericArguments().Length == 0) { AppendLog($"Warning (CopyListProperty): Dest list '{destPropertyInfo.Name}' not generic. Type: {listActualType.FullName}. Skipping."); return; }
+            if (!listActualType.IsGenericType || listActualType.GetGenericArguments().Length == 0) { LogInternal("Warning (CopyListProperty): Dest list '{destPropertyInfo.Name}' not generic. Type: {listActualType.FullName}. Skipping."); return; }
             var destItemType = listActualType.GetGenericArguments()[0]; destList.Clear();
             foreach (var listItemSource in sourceEnumerable) {
                 if (listItemSource == null) { if (!destItemType.IsValueType || Nullable.GetUnderlyingType(destItemType) != null) destList.Add(null); continue; }
@@ -495,9 +590,9 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                     object? concreteListItem = this.TryCreateInstanceFromGetter(destItemType, listItemSource);
                     if (concreteListItem != null) { if (!this.IsSimpleType(destItemType)) this.CopyPropertiesRecursively(listItemSource, concreteListItem, processedObjects); destList.Add(concreteListItem); }
                     else {
-                        if (destItemType.IsInterface || destItemType.IsAbstract) { AppendLog($"Error (CopyListProperty): Cannot CreateInstance for list item interface/abstract '{destItemType.Name}'. Skipping.", true); continue; }
+                        if (destItemType.IsInterface || destItemType.IsAbstract) { LogInternal("Error (CopyListProperty): Cannot CreateInstance for list item interface/abstract '{destItemType.Name}'. Skipping."); continue; }
                         try { concreteListItem = Activator.CreateInstance(destItemType); this.CopyPropertiesRecursively(listItemSource, concreteListItem, processedObjects); destList.Add(concreteListItem); }
-                        catch (Exception ex) { AppendLog($"Error (CopyListProperty): Failed to process list item for {destPropertyInfo.Name}. {ex.Message}", true); }
+                        catch (Exception ex) { LogInternal("Error (CopyListProperty): Failed to process list item for {destPropertyInfo.Name}. {ex.Message}"); }
                     }
                 }
             }
@@ -514,26 +609,26 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                 if (destPropertyInfo.CanWrite) { /* ... create dictionary instance and SetValue ... */
                     if (destDictPropertyType.IsInterface || destDictPropertyType.IsAbstract) {
                         if (destDictPropertyType.IsGenericType && destDictPropertyType.GetGenericArguments().Length == 2 && (destDictPropertyType.GetGenericTypeDefinition() == typeof(IDictionary<,>) || destDictPropertyType.GetGenericTypeDefinition() == typeof(IReadOnlyDictionary<,>))) { Type keyType = destDictPropertyType.GetGenericArguments()[0]; Type valueType = destDictPropertyType.GetGenericArguments()[1]; Type concreteDictType = typeof(Dictionary<,>).MakeGenericType(keyType, valueType); destDictObj = Activator.CreateInstance(concreteDictType); }
-                        else { AppendLog($"Warning (CopyDictionaryProperty): Cannot create instance for null dictionary property '{destPropertyInfo.Name}' (interface/abstract). Skipping."); return; }
-                    } else { try { destDictObj = Activator.CreateInstance(destDictPropertyType); } catch (Exception ex) { AppendLog($"Error (CopyDictionaryProperty): Failed to create dictionary instance for '{destPropertyInfo.Name}'. {ex.Message}", true); return; } }
+                        else { LogInternal("Warning (CopyDictionaryProperty): Cannot create instance for null dictionary property '{destPropertyInfo.Name}' (interface/abstract). Skipping."); return; }
+                    } else { try { destDictObj = Activator.CreateInstance(destDictPropertyType); } catch (Exception ex) { LogInternal("Error (CopyDictionaryProperty): Failed to create dictionary instance for '{destPropertyInfo.Name}'. {ex.Message}"); return; } }
                     destPropertyInfo.SetValue(parentDestinationObject, destDictObj);
-                } else { AppendLog($"Warning (CopyDictionaryProperty): Dictionary property '{destPropertyInfo.Name}' is null and read-only. Cannot create or populate.", true); return; }
+                } else { LogInternal("Warning (CopyDictionaryProperty): Dictionary property '{destPropertyInfo.Name}' is null and read-only. Cannot create or populate."); return; }
             }
-            if (destDictObj is not IDictionary destDict) { AppendLog($"Warning (CopyDictionaryProperty): Property '{destPropertyInfo.Name}' is not IDictionary. Type: {destDictObj?.GetType().FullName}. Skipping."); return; }
+            if (destDictObj is not IDictionary destDict) { LogInternal("Warning (CopyDictionaryProperty): Property '{destPropertyInfo.Name}' is not IDictionary. Type: {destDictObj?.GetType().FullName}. Skipping."); return; }
             Type dictActualType = destDict.GetType();
-            if (!dictActualType.IsGenericType || dictActualType.GetGenericArguments().Length != 2) { AppendLog($"Warning (CopyDictionaryProperty): Dest dictionary '{destPropertyInfo.Name}' not generic with 2 args. Type: {dictActualType.FullName}. Skipping."); return; }
+            if (!dictActualType.IsGenericType || dictActualType.GetGenericArguments().Length != 2) { LogInternal("Warning (CopyDictionaryProperty): Dest dictionary '{destPropertyInfo.Name}' not generic with 2 args. Type: {dictActualType.FullName}. Skipping."); return; }
             Type keyDestType = dictActualType.GetGenericArguments()[0]; Type valueDestType = dictActualType.GetGenericArguments()[1]; destDict.Clear();
             foreach (object kvpObject in sourceEnumerable) {
                 PropertyInfo? keyProp = kvpObject.GetType().GetProperty("Key"); PropertyInfo? valueProp = kvpObject.GetType().GetProperty("Value");
-                if (keyProp == null || valueProp == null) { AppendLog($"Warning (CopyDictionaryProperty): Item in source for '{destPropertyInfo.Name}' not KeyValuePair. Skipping."); continue; }
+                if (keyProp == null || valueProp == null) { LogInternal("Warning (CopyDictionaryProperty): Item in source for '{destPropertyInfo.Name}' not KeyValuePair. Skipping."); continue; }
                 object? sourceKey = keyProp.GetValue(kvpObject); object? sourceVal = valueProp.GetValue(kvpObject);
-                if (sourceKey == null) { AppendLog($"Warning (CopyDictionaryProperty): Source key is null for '{destPropertyInfo.Name}'. Skipping."); continue; }
+                if (sourceKey == null) { LogInternal("Warning (CopyDictionaryProperty): Source key is null for '{destPropertyInfo.Name}'. Skipping."); continue; }
                 object? destKey; 
                 if (keyDestType.IsAssignableFrom(sourceKey.GetType())) destKey = sourceKey;
                 else {
                     destKey = this.TryCreateInstanceFromGetter(keyDestType, sourceKey);
-                    if (destKey == null && !this.IsSimpleType(keyDestType)) { try { destKey = Activator.CreateInstance(keyDestType); /* this.CopyPropertiesRecursively(sourceKey, destKey, processedObjects); // Keys usually not deep copied */ } catch (Exception ex) { AppendLog($"Error (CopyDictionaryProperty) creating key '{sourceKey}': {ex.Message}", true); destKey = null; } }
-                    if (destKey == null) { AppendLog($"Warning (CopyDictionaryProperty): Could not convert key '{sourceKey}'. Skipping entry."); continue; }
+                    if (destKey == null && !this.IsSimpleType(keyDestType)) { try { destKey = Activator.CreateInstance(keyDestType); /* this.CopyPropertiesRecursively(sourceKey, destKey, processedObjects); // Keys usually not deep copied */ } catch (Exception ex) { LogInternal("Error (CopyDictionaryProperty) creating key '{sourceKey}': {ex.Message}"); destKey = null; } }
+                    if (destKey == null) { LogInternal("Warning (CopyDictionaryProperty): Could not convert key '{sourceKey}'. Skipping entry."); continue; }
                 }
                 object? destValue; 
                 if (sourceVal == null) destValue = null;
@@ -542,12 +637,12 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                     destValue = this.TryCreateInstanceFromGetter(valueDestType, sourceVal);
                     if (destValue != null) { if (!this.IsSimpleType(valueDestType)) this.CopyPropertiesRecursively(sourceVal, destValue, processedObjects); }
                     else {
-                         if (valueDestType.IsInterface || valueDestType.IsAbstract) { AppendLog($"Error (CopyDictionaryProperty): Cannot CreateInstance for dict value interface/abstract '{valueDestType.Name}'. Skipping.", true); continue; }
+                         if (valueDestType.IsInterface || valueDestType.IsAbstract) { LogInternal("Error (CopyDictionaryProperty): Cannot CreateInstance for dict value interface/abstract '{valueDestType.Name}'. Skipping."); continue; }
                         try { destValue = Activator.CreateInstance(valueDestType); this.CopyPropertiesRecursively(sourceVal, destValue, processedObjects); }
-                        catch (Exception ex) { AppendLog($"Error (CopyDictionaryProperty): Failed to process dict value for {destPropertyInfo.Name}. {ex.Message}", true); continue; }
+                        catch (Exception ex) { LogInternal("Error (CopyDictionaryProperty): Failed to process dict value for {destPropertyInfo.Name}. {ex.Message}"); continue; }
                     }
                 }
-                try { destDict[destKey] = destValue; } catch (Exception ex) { AppendLog($"Error (CopyDictionaryProperty): Failed to add item to dictionary '{destPropertyInfo.Name}'. Key: '{destKey}'. {ex.Message}", true); }
+                try { destDict[destKey] = destValue; } catch (Exception ex) { LogInternal("Error (CopyDictionaryProperty): Failed to add item to dictionary '{destPropertyInfo.Name}'. Key: '{destKey}'. {ex.Message}"); }
             }
         }
         #endregion

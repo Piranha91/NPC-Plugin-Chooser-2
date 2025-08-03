@@ -1176,7 +1176,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             continue;
                         }
 
-                        ISkyrimModDisposableGetter? plugin;
+                        ISkyrimModGetter? plugin;
                         string? pluginSourcePath;
                         bool pluginFound;
                         using (ContextualPerformanceTracer.Trace("FPO.TryGetPlugin", modKey.FileName))
