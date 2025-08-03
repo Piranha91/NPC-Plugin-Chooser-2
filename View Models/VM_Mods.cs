@@ -866,6 +866,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         var modDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
                         var totalModFolders = modDirectories.Count;
                         var scannedModFolders = 0;
+                        var cachedNonAppearanceDirs = _settings.CachedNonAppearanceMods.Keys.ToHashSet();
                         
                         foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
                         {
@@ -883,7 +884,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 continue; // Skip this directory and move to the next one
                             }
 
-                            if (_settings.CachedNonAppearanceMods.Contains(modFolderPath))
+                            if (cachedNonAppearanceDirs.Contains(modFolderPath))
                             {
                                 continue;
                             }
@@ -955,7 +956,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     }
                                     else if (modKeysInFolder.Any())
                                     {
-                                        _settings.CachedNonAppearanceMods.Add(modFolderPath);
+                                        _settings.CachedNonAppearanceMods.Add(modFolderPath, "Does not provide new NPCs or modify any NPCs currently in load order");
                                     }
                                     else
                                     {
@@ -994,7 +995,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 }
                                 else
                                 {
-                                    _settings.CachedNonAppearanceMods.Add(modFolderPath);
+                                    _settings.CachedNonAppearanceMods.Add(modFolderPath, "No FaceGen Files Found");
                                 }
                             }
 

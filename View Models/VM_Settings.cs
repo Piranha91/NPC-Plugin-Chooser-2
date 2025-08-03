@@ -78,9 +78,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         // --- NEW: Properties for Non-Appearance Mod Filtering ---
         [Reactive] public string NonAppearanceModFilterText { get; set; } = string.Empty;
-        public ObservableCollection<string> FilteredNonAppearanceMods { get; } = new();
-        
-        [Reactive] public ObservableCollection<string> CachedNonAppearanceMods { get; private set; }
+        public ObservableCollection<KeyValuePair<string, string>> FilteredNonAppearanceMods { get; } = new();
+
+        // MODIFIED: Type changed to handle dictionary from model
+        public ObservableCollection<KeyValuePair<string, string>> CachedNonAppearanceMods { get; private set; }
         
         // For throttled saving
         private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
@@ -136,8 +137,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
             
             // Initialize the collection from the model, ordered by folder name for consistent display.
-            CachedNonAppearanceMods = new ObservableCollection<string>(_model.CachedNonAppearanceMods.OrderBy(p => Path.GetFileName(p) ?? p, StringComparer.OrdinalIgnoreCase));
-
+            CachedNonAppearanceMods = new ObservableCollection<KeyValuePair<string, string>>(_model.CachedNonAppearanceMods.OrderBy(kvp => Path.GetFileName(kvp.Key) ?? kvp.Key, StringComparer.OrdinalIgnoreCase));
 
             // Commands (as before)
             SelectGameFolderCommand = ReactiveCommand.CreateFromTask(SelectGameFolderAsync);
@@ -152,8 +152,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
             RemoveCachedModCommand = ReactiveCommand.Create<string>(path =>
             {
                 if (string.IsNullOrWhiteSpace(path)) return;
-                _model.CachedNonAppearanceMods.Remove(path); // Remove from the underlying settings model
-                CachedNonAppearanceMods.Remove(path);      // Remove from the UI collection
+
+                // Remove from the underlying model dictionary
+                _model.CachedNonAppearanceMods.Remove(path);
+
+                // Find and remove the KeyValuePair from the view model collections
+                var itemToRemove = CachedNonAppearanceMods.FirstOrDefault(kvp => kvp.Key == path);
+                if (!itemToRemove.Equals(default(KeyValuePair<string, string>)))
+                {
+                    CachedNonAppearanceMods.Remove(itemToRemove);
+                    FilteredNonAppearanceMods.Remove(itemToRemove);
+                }
             });
 
             // Property subscriptions (as before, ensure .Skip(1) where appropriate if values are set above)
@@ -374,6 +383,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
             }
 
+            RefreshNonAppearanceMods();
+
             // Add the report generation at the very end
             ContextualPerformanceTracer.GenerateDetailedReport("Initial Validation and Load");
         }
@@ -396,6 +407,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
                 ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
             }
+
+            RefreshNonAppearanceMods();
         }
 
         public static Settings LoadSettings()
@@ -507,6 +520,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  {
                      _lazyModListVM.Value.ApplyFilters();
                  }
+                 
+                 RefreshNonAppearanceMods();
              }
              finally
              {
@@ -1311,17 +1326,11 @@ Options:
                 ScrollableMessageBox.ShowError($"Failed to save the updated profile file:\n{ex.Message}", "File Save Error");
             }
         }
-        
-        /// <summary>
-        /// Handles property changes to trigger the filter logic.
-        /// </summary>
-        private void OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+
+        private void RefreshNonAppearanceMods()
         {
-            // If the filter text changed, re-apply the filter.
-            if (e.PropertyName == nameof(NonAppearanceModFilterText))
-            {
-                ApplyNonAppearanceFilter();
-            }
+            CachedNonAppearanceMods = new ObservableCollection<KeyValuePair<string, string>>(_model.CachedNonAppearanceMods.OrderBy(kvp => Path.GetFileName(kvp.Key) ?? kvp.Key, StringComparer.OrdinalIgnoreCase));
+            ApplyNonAppearanceFilter();
         }
 
         /// <summary>
@@ -1334,17 +1343,19 @@ Options:
             FilteredNonAppearanceMods.Clear();
 
             var filter = NonAppearanceModFilterText;
+            var sourceList = CachedNonAppearanceMods;
 
-            IEnumerable<string> itemsToDisplay;
+            IEnumerable<KeyValuePair<string, string>> itemsToDisplay;
 
             if (string.IsNullOrWhiteSpace(filter))
             {
-                itemsToDisplay = CachedNonAppearanceMods;
+                itemsToDisplay = sourceList;
             }
             else
             {
-                itemsToDisplay = CachedNonAppearanceMods.Where(path =>
-                    (Path.GetFileName(path) ?? path).Contains(filter, StringComparison.OrdinalIgnoreCase));
+                // Filter is applied to the Key (the path)
+                itemsToDisplay = sourceList.Where(kvp =>
+                    (Path.GetFileName(kvp.Key) ?? kvp.Key).Contains(filter, StringComparison.OrdinalIgnoreCase));
             }
 
             foreach (var item in itemsToDisplay)

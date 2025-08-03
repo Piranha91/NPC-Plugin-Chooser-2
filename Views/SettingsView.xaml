@@ -228,63 +228,49 @@
                     <TextBox Text="{Binding NonAppearanceModFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,3" ToolTip="Filter the list of non-appearance mods below."/>
 
                           <ListBox ItemsSource="{Binding FilteredNonAppearanceMods}" Height="150" HorizontalContentAlignment="Stretch" BorderThickness="1">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="2">
-    
-                                <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                          
-              <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" 
-          
-                                     Text="{Binding Converter={StaticResource FullPathToFolderNameConverter}}" 
-                                               ToolTip="{Binding}"
-             
-                                  VerticalAlignment="Center"/>
-                                    <Button Grid.Column="1" 
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
                             
-                Content="X" 
-                                            Command="{Binding DataContext.RemoveCachedModCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                    
-        CommandParameter="{Binding}"
-                                            Foreground="Red" 
-                                            FontWeight="Bold"
-   
-                                         Cursor="Hand"
-                                            Margin="10,0,0,0"
-               
-                             VerticalAlignment="Center">
-                                        <Button.Style>
-                               
-             <Style TargetType="Button">
-                                                <Setter Property="Background" Value="Transparent"/>
-                                    
-            <Setter Property="BorderThickness" Value="0"/>
-                                                <Setter Property="Template">
-                                     
-               <Setter.Value>
-                                                        <ControlTemplate TargetType="Button">
-                            
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                        </ControlTemplate>
-          
-                                          </Setter.Value>
-                                                </Setter>
-          
-                                  </Style>
-                                        </Button.Style>
-                          
-          </Button>
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-      
-              </ListBox>
+                            <TextBlock Grid.Column="0" 
+                                       Text="{Binding Key, Converter={StaticResource FullPathToFolderNameConverter}}" 
+                                       ToolTip="{Binding Value}"
+                                       VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" 
+                                    Content="X" 
+                                    Command="{Binding DataContext.RemoveCachedModCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    CommandParameter="{Binding Key}"
+                                    Foreground="Red" 
+                                    FontWeight="Bold"
+                                    Cursor="Hand"
+                                    Margin="10,0,0,0"
+                                    VerticalAlignment="Center">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
 
                     <TextBlock Text="These mods have been auto-determined to not provide NPC replacers.
-If the algorithm made a mistake, remove the mod from this list and re-launch this program to re-analyze it."
+Mouse over each entry to see the reason.
+Delete a mod if you want to re-scan it."
                                FontSize="10" 
                                Foreground="Gray" 
                   
