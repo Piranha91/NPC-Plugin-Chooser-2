@@ -1638,7 +1638,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // Refresh NPC lists for the winner as its sources may have changed/**/
 
                 (var allFaceGenLooseFiles, var allFaceGenBsaFiles) =
-                    CacheFaceGenPathsOnLoad(); ///////////////////////////////////////////////////////////////////////
+                    CacheFaceGenPathsOnLoad(); 
                 Task.Run(() => winner.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles));
 
                 // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)
@@ -1646,8 +1646,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 string winnerName = winner.DisplayName;
                 var npcsToUpdate = _settings.SelectedAppearanceMods
                     .Where(kvp => kvp.Value.Equals(loserName, StringComparison.OrdinalIgnoreCase))
-                    .Select(kvp => kvp.Key) // Get FormKeys of NPCs assigned to the loser
-                    .ToList(); // Materialize the list before modifying the dictionary
+                    .Select(kvp => kvp.Key) 
+                    .ToList(); 
 
                 if (npcsToUpdate.Any())
                 {
@@ -1655,26 +1655,31 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         $"Updating {npcsToUpdate.Count} NPC selections from '{loserName}' to '{winnerName}'.");
                     foreach (var npcKey in npcsToUpdate)
                     {
-                        // Use consistency provider to update both cache and _settings model
                         _consistencyProvider.SetSelectedMod(npcKey, winnerName);
                     }
                 }
-
-
-                // 3. Remove Loser VM
+                
+                // 3. Update the stale data cache within the NPC view model's list
+                foreach (var npcVM in _npcSelectionBar.AllNpcs)
+                {
+                    var modToRemove = npcVM.AppearanceMods.FirstOrDefault(m => m == loser);
+                    if (modToRemove != null)
+                    {
+                        npcVM.AppearanceMods.Remove(modToRemove);
+                        if (!npcVM.AppearanceMods.Contains(winner))
+                        {
+                            npcVM.AppearanceMods.Add(winner);
+                        }
+                    }
+                }
+                
+                // 4. Remove Loser VM
                 bool removed = _allModSettingsInternal.Remove(loser);
                 Debug.WriteLine($"Removed loser VM '{loserName}': {removed}");
 
-
-                // 4. Refresh UI
-                ApplyFilters();
-
-
-                // 5. Inform User
-                ScrollableMessageBox.Show(
-                    $"Automatically merged mod settings:\n\n'{loserName}' was merged into '{winnerName}'.\n\nNPC assignments using '{loserName}' have been updated.",
-                    "Mod Settings Merged"
-                );
+                // 5. Refresh UI
+                ApplyFilters(); // Refreshes the Mods view
+                _npcSelectionBar.RefreshAppearanceSources();
             }
         }
 
