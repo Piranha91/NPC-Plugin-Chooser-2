@@ -26,18 +26,17 @@ namespace NPC_Plugin_Chooser_2.Views // Or NPC_Plugin_Chooser_2.Views.Converters
                 npcCount = iVal;
             }
 
-            if (npcCount == 0)
-            {
-                return "No NPCs defined for this mod";
-            }
-
             if (hasValidMugshots)
             {
-                return $"Show {npcCount} NPC mugshot{(npcCount == 1 ? "" : "s")} for this mod";
+                return $"Show all mugshots for this mod";
+            }
+            else if (npcCount > 0) 
+            {
+                return $"Show placeholders for {npcCount} NPC{(npcCount == 1 ? "" : "s")} (actual mugshot folder not found or is empty)";
             }
             else
             {
-                return $"Show placeholders for {npcCount} NPC{(npcCount == 1 ? "" : "s")} (actual mugshot folder not found or is empty)";
+                return "No NPCs defined for this mod";
             }
         }
 
