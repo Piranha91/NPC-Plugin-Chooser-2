@@ -4,12 +4,48 @@ using ReactiveUI;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System;
+using ReactiveUI.Fody.Helpers;
+using System.Reactive.Linq;
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
     public class VM_ModSelector : ReactiveObject
     {
+        private List<VM_SelectableMod> _allMods = new();
+        private List<ModKey> _masterSortOrder = new();
+
+        [Reactive] public string FilterText { get; set; } = string.Empty;
         public ObservableCollection<VM_SelectableMod> SelectableMods { get; } = new();
+
+        public VM_ModSelector()
+        {
+            this.WhenAnyValue(x => x.FilterText)
+                .Throttle(TimeSpan.FromMilliseconds(200), RxApp.MainThreadScheduler)
+                .Subscribe(_ => ApplyFilter());
+        }
+
+        private void ApplyFilter()
+        {
+            SelectableMods.Clear();
+
+            var filtered = string.IsNullOrWhiteSpace(FilterText)
+                ? _allMods
+                : _allMods.Where(vm => vm.DisplayText.Contains(FilterText, StringComparison.OrdinalIgnoreCase));
+
+            var orderMap = _masterSortOrder
+                .Select((modKey, index) => new { modKey, index })
+                .ToDictionary(item => item.modKey, item => item.index);
+
+            var sortedMods = filtered
+                .OrderBy(vm => orderMap.TryGetValue(vm.ModKey, out var index) ? index : int.MaxValue)
+                .ThenBy(vm => vm.ModKey.ToString());
+
+            foreach (var vm in sortedMods)
+            {
+                SelectableMods.Add(vm);
+            }
+        }
 
         /// <summary>
         /// Loads the selector with available mods, marking those currently selected.
@@ -20,22 +56,22 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// <param name="orderByModKeys">A list defining the desired sort order.</param>
         public void LoadFromModel(IEnumerable<ModKey> availableModKeys, IEnumerable<ModKey> initiallySelectedModKeys, List<ModKey> orderByModKeys)
         {
-            SelectableMods.Clear();
+            _allMods.Clear();
 
             // Handle null inputs gracefully
             var available = availableModKeys?.ToList() ?? new List<ModKey>();
             var initialSelected = initiallySelectedModKeys?.ToList() ?? new List<ModKey>();
-            var order = orderByModKeys ?? new List<ModKey>();
+            _masterSortOrder = orderByModKeys ?? new List<ModKey>();
 
             var selectedSet = new HashSet<ModKey>(initialSelected);
-            var allMods = new List<VM_SelectableMod>();
+            var allModsList = new List<VM_SelectableMod>();
 
             // --- Step 1: Create VM for all available mods ---
             foreach (var modKey in available)
             {
                 bool isSelected = selectedSet.Contains(modKey);
                 var vm = new VM_SelectableMod(modKey, isSelected, isMissing: false);
-                allMods.Add(vm);
+                allModsList.Add(vm);
 
                 // Remove from set to later identify missing mods
                 if (isSelected)
@@ -48,26 +84,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
             foreach (var missingKey in selectedSet)
             {
                 var vm = new VM_SelectableMod(missingKey, isSelected: true, isMissing: true);
-                allMods.Add(vm);
+                allModsList.Add(vm);
             }
 
-            // --- Step 3: Sort the combined list ---
-            // Create a dictionary for efficient order lookup.
-            var orderMap = order
-                .Select((modKey, index) => new { modKey, index })
-                .ToDictionary(item => item.modKey, item => item.index);
+            _allMods = allModsList;
 
-            // Sort the list. Get the index from the map if it exists; otherwise, use a large number
-            // to push it to the end. Unordered items are then sorted alphabetically.
-            var sortedMods = allMods
-                .OrderBy(vm => orderMap.TryGetValue(vm.ModKey, out var index) ? index : int.MaxValue)
-                .ThenBy(vm => vm.ModKey.ToString());
-
-            // --- Step 4: Populate the final ObservableCollection ---
-            foreach (var vm in sortedMods)
-            {
-                SelectableMods.Add(vm);
-            }
+            // --- Step 3: Populate the collection with the initial filter/sort ---
+            ApplyFilter();
         }
 
         /// <summary>
@@ -76,7 +99,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// <returns>A List containing the CorrespondingModKeys of selected items.</returns>
         public List<ModKey> SaveToModel()
         {
-            return SelectableMods
+            return _allMods
                 .Where(vm => vm.IsSelected)
                 .Select(vm => vm.ModKey)
                 .ToList();

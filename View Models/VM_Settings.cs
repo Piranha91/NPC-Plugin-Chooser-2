@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
 using System.IO;
@@ -74,6 +75,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         // --- Properties for Auto-Selection of NPC Appearances
         [Reactive] public VM_ModSelector ImportFromLoadOrderExclusionSelectorViewModel { get; private set; }
+        
+        // --- NEW: Properties for Non-Appearance Mod Filtering ---
+        [Reactive] public string NonAppearanceModFilterText { get; set; } = string.Empty;
+        public ObservableCollection<string> FilteredNonAppearanceMods { get; } = new();
         
         [Reactive] public ObservableCollection<string> CachedNonAppearanceMods { get; private set; }
         
@@ -229,6 +234,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _environmentStateProvider.WhenAnyValue(x => x.EnvironmentIsValid)
                 .ToPropertyEx(this, x => x.EnvironmentIsValid)
                 .DisposeWith(_disposables);
+            
             _environmentStateProvider.WhenAnyValue(x => x.EnvironmentBuilderError)
                 .Select(err => string.IsNullOrWhiteSpace(err) ? string.Empty : $"Environment Error: {err}")
                 .ToPropertyEx(this, x => x.EnvironmentErrorText)
@@ -242,6 +248,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .ToPropertyEx(this, x => x.AvailablePluginsForExclusion)
                 .DisposeWith(_disposables);
+            
+            
+            Observable.Merge(
+                this.WhenAnyValue(x => x.NonAppearanceModFilterText).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.CachedNonAppearanceMods.Count).Select(_ => Unit.Default) // Use Count property
+            )
+            .ObserveOn(RxApp.MainThreadScheduler) 
+            .Subscribe(_ => {
+                ApplyNonAppearanceFilter();
+            })
+            .DisposeWith(_disposables);
             
             this.WhenAnyValue(x => x.AvailablePluginsForExclusion)
                 .Where(list => list != null)
@@ -632,8 +649,9 @@ Options:
             string filePath = openFileDialog.FileName;
             // Store *successfully matched* potential changes
             var potentialChanges = new List<(FormKey NpcKey, ModKey DefaultKey, ModKey AppearanceKey, string NpcName, string TargetModDisplayName)>();
+            var ambiguousChanges = new Dictionary<ModKey, HashSet<string>>();
             var errors = new List<string>();
-            var missingAppearancePlugins = new HashSet<ModKey>(); // Track plugins without matching VM_ModSetting
+            var missingAppearancePlugins = new Dictionary<ModKey, int>();; // Track plugins without matching VM_ModSetting
             int lineNum = 0;
 
             // --- Pass 1: Parse file and identify missing plugins ---
@@ -675,10 +693,11 @@ Options:
                     // Check if a VM_ModSetting exists for the appearance plugin
                     // TryGetModSettingForPlugin now finds a VM where *any* key matches.
                     // We still need the DisplayName for the consistency provider.
-                    if (!_lazyModListVM.Value.TryGetModSettingForPlugin(appearanceKey, out var foundModSettingVm, out string targetModDisplayName))
+                    if (!_lazyModListVM.Value.TryGetModSettingForPlugin(appearanceKey, out var foundModSettingVms))
                     {
                         // Not found - track it and skip adding to potentialChanges for now
-                        missingAppearancePlugins.Add(appearanceKey);
+                        missingAppearancePlugins.TryAdd(appearanceKey, 0);
+                        missingAppearancePlugins[appearanceKey]++;
                         Debug.WriteLine($"ImportEasyNpc: Appearance Plugin '{appearanceKey}' not found in Mods Menu for NPC {npcKey}.");
                         // We don't add this to potentialChanges yet
                     }
@@ -686,7 +705,16 @@ Options:
                     {
                         // Found - add to potential changes
                         string npcName = _lazyNpcSelectionBar.Value.AllNpcs.FirstOrDefault(n => n.NpcFormKey == npcKey)?.DisplayName ?? npcKey.ToString();
-                        potentialChanges.Add((npcKey, defaultKey, appearanceKey, npcName, targetModDisplayName));
+                        potentialChanges.Add((npcKey, defaultKey, appearanceKey, npcName, foundModSettingVms.First().DisplayName));
+
+                        if (foundModSettingVms.Count > 1)
+                        {
+                            ambiguousChanges.TryAdd(appearanceKey, new());
+                            foreach (var vm in foundModSettingVms)
+                            {
+                                ambiguousChanges[appearanceKey].Add(vm.DisplayName);
+                            }
+                        }
                     }
                 } // End foreach line
             }
@@ -700,8 +728,7 @@ Options:
             if (errors.Any())
             {
                 var errorMsg = new StringBuilder($"Encountered {errors.Count} errors while parsing '{Path.GetFileName(filePath)}':\n\n");
-                errorMsg.AppendLine(string.Join("\n", errors.Take(20)));
-                if (errors.Count > 20) errorMsg.AppendLine("\n...");
+                errorMsg.AppendLine(string.Join("\n", errors));
                 errorMsg.AppendLine("\nThese lines were skipped. Continue processing?");
                 if (!ScrollableMessageBox.Confirm(errorMsg.ToString(), "Parsing Errors"))
                 {
@@ -715,16 +742,12 @@ Options:
                 var missingMsg = new StringBuilder("The following Appearance Plugins are assigned in your EasyNPC profile, ");
                 missingMsg.AppendLine("but there are no Mods in your Mods Menu that list them as Corresponding Plugins:");
                 missingMsg.AppendLine();
-                foreach (var missingKey in missingAppearancePlugins.Take(15)) // Show max 15
+                foreach (var missingEntry in missingAppearancePlugins)
                 {
-                    missingMsg.AppendLine($"- {missingKey.FileName}");
+                    missingMsg.AppendLine($"- {missingEntry.Key.FileName}: {missingEntry.Value} NPCs");
                 }
-                if (missingAppearancePlugins.Count > 15) missingMsg.AppendLine("  ...");
-                missingMsg.AppendLine("\nHow would you like to proceed?");
-
-                // Simulate custom buttons with Yes/No mapping
-                missingMsg.AppendLine("\n[Yes] = Continue and Skip NPCs assigned these plugins");
-                missingMsg.AppendLine("[No]  = Cancel Import");
+                
+                missingMsg.AppendLine($"\nWould you like to import the remaining {potentialChanges.Count} NPCs for which a mod could be found?");
 
                 if (!ScrollableMessageBox.Confirm(missingMsg.ToString(), "Missing Appearance Plugin Mappings", MessageBoxImage.Warning)) // User chose Cancel
                 {
@@ -734,7 +757,27 @@ Options:
                 // If Yes, we simply proceed with the already filtered 'potentialChanges' list.
                 Debug.WriteLine("User chose to continue, skipping NPCs with missing appearance plugins.");
             }
+            
+            // --- Handle Ambiguous changes
 
+            if (ambiguousChanges.Any())
+            {
+                var ambiguousMsg = new StringBuilder("The following Appearance Plugins from EasyNPC match multiple AppearanceMods in your mod list:");
+                foreach (var entry in ambiguousChanges)
+                {
+                    ambiguousMsg.AppendLine($"{entry.Key.FileName}: " + string.Join(", ", entry.Value));
+                }
+                
+                ambiguousMsg.AppendLine($"\nWould you like to import the corresponding NPCs using the first matched Appearance Mod for each plugin?");
+
+                if (!ScrollableMessageBox.Confirm(ambiguousMsg.ToString(), "Ambiguous Appearance Plugin Mappings", MessageBoxImage.Warning))
+                {
+                    var toRemove = ambiguousChanges.Keys.ToHashSet();
+                    potentialChanges.RemoveWhere(x => toRemove.Contains(x.AppearanceKey));
+                }
+                // If Yes, we simply proceed with the already filtered 'potentialChanges' list.
+                Debug.WriteLine("User chose to include ambiguous NPCs");
+            }
 
             // Check if there are any changes left to process
             if (!potentialChanges.Any())
@@ -742,7 +785,6 @@ Options:
                 ScrollableMessageBox.Show("No valid changes found to apply after processing the file (possibly due to skipping or parsing errors).", "Import Empty");
                 return;
             }
-
 
             // --- Prepare Confirmation (using the filtered potentialChanges) ---
             var changesToConfirm = new List<string>(); // List of strings for the message box
@@ -1267,6 +1309,47 @@ Options:
             catch (Exception ex)
             {
                 ScrollableMessageBox.ShowError($"Failed to save the updated profile file:\n{ex.Message}", "File Save Error");
+            }
+        }
+        
+        /// <summary>
+        /// Handles property changes to trigger the filter logic.
+        /// </summary>
+        private void OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            // If the filter text changed, re-apply the filter.
+            if (e.PropertyName == nameof(NonAppearanceModFilterText))
+            {
+                ApplyNonAppearanceFilter();
+            }
+        }
+
+        /// <summary>
+        /// Clears and repopulates the filtered list based on the current filter text.
+        /// </summary>
+        private void ApplyNonAppearanceFilter()
+        {
+            if (CachedNonAppearanceMods == null) return;
+
+            FilteredNonAppearanceMods.Clear();
+
+            var filter = NonAppearanceModFilterText;
+
+            IEnumerable<string> itemsToDisplay;
+
+            if (string.IsNullOrWhiteSpace(filter))
+            {
+                itemsToDisplay = CachedNonAppearanceMods;
+            }
+            else
+            {
+                itemsToDisplay = CachedNonAppearanceMods.Where(path =>
+                    (Path.GetFileName(path) ?? path).Contains(filter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            foreach (var item in itemsToDisplay)
+            {
+                FilteredNonAppearanceMods.Add(item);
             }
         }
         

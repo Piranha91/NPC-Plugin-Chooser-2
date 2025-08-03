@@ -1,5 +1,4 @@
-﻿<!-- In Views/ModSelectorView.xaml -->
-<reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.ModSelectorView"
+﻿<reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.ModSelectorView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -7,47 +6,54 @@
              xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
              xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
              xmlns:reactiveui="http://reactiveui.net"
+     
              mc:Ignorable="d"
              x:TypeArguments="vm:VM_ModSelector"
              d:DataContext="{d:DesignInstance Type=vm:VM_ModSelector}"
              d:DesignHeight="200" d:DesignWidth="400">
-    <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="2">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="3">
-            <ItemsControl ItemsSource="{Binding SelectableMods}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="{x:Type vm:VM_SelectableMod}">
-                         <Border Margin="0,1,0,1" Padding="3,2" CornerRadius="2" Background="#F9F9F9" BorderBrush="#E0E0E0" BorderThickness="1">
-                            <StackPanel Orientation="Horizontal">
-                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                          VerticalAlignment="Center"
-                                          Margin="0,0,5,0"/>
-                                <TextBlock Text="{Binding DisplayText}"
-                                           VerticalAlignment="Center"
-                                           ToolTip="{Binding DisplayText}">
-                                    <!-- *** ADDED STYLE WITH TRIGGER HERE *** -->
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <!-- Default Text Color -->
-                                            <Setter Property="Foreground" Value="Black"/>
-                                            <Style.Triggers>
-                                                <!-- Trigger to change color if mod is missing -->
-                                                <DataTrigger Binding="{Binding IsMissingFromEnvironment}" Value="True">
-                                                    <Setter Property="Foreground" Value="Red"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                             </StackPanel>
-                         </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <VirtualizingStackPanel Orientation="Vertical"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-            </ItemsControl>
-        </ScrollViewer>
-    </Border>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBox Grid.Row="0" Text="{Binding FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,3,3" ToolTip="Filter the list of mods below."/>
+        
+        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="1" CornerRadius="2">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="3">
+                <ItemsControl ItemsSource="{Binding SelectableMods}">
+                    <ItemsControl.ItemTemplate>
+                         <DataTemplate DataType="{x:Type vm:VM_SelectableMod}">
+                             <Border Margin="0,1,0,1" Padding="3,2" CornerRadius="2" Background="#F9F9F9" BorderBrush="#E0E0E0" BorderThickness="1">
+                                <StackPanel Orientation="Horizontal">
+                                   <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                              VerticalAlignment="Center"
+                                              Margin="0,0,5,0"/>
+                                   <TextBlock Text="{Binding DisplayText}"
+                                               VerticalAlignment="Center"
+                                       ToolTip="{Binding DisplayText}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="Black"/>
+                                                <Style.Triggers>
+                                                   <DataTrigger Binding="{Binding IsMissingFromEnvironment}" Value="True">
+                                                       <Setter Property="Foreground" Value="Red"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                 </StackPanel>
+                             </Border>
+                       </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel Orientation="Vertical"/>
+                         </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+    </Grid>
 </reactiveui:ReactiveUserControl>
