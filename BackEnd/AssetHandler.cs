@@ -31,6 +31,11 @@ public class AssetHandler : OptionalUIModule
     private Dictionary<string, Dictionary<string, HashSet<string>>> _modContentPaths = new();
     public const string GameDataKey = "GameData";
     
+    // This dictionary will store destination paths and their corresponding error messages
+    // for copy operations that fail because the file is in use.
+    private readonly ConcurrentDictionary<string, string> _potentialCopyFailures = new(StringComparer.OrdinalIgnoreCase);
+
+    
     private HashSet<string> _pathsToIgnore = new();
 
     private Dictionary<string, HashSet<string>>
@@ -59,7 +64,36 @@ public class AssetHandler : OptionalUIModule
 
     public void Initialize()
     {
+        _potentialCopyFailures.Clear();
         LoadAuxiliaryFiles();
+    }
+    
+    /// <summary>
+    /// Iterates through any copy failures that were cached due to "file in use" errors.
+    /// Logs an error only if the destination file does not exist after all operations are complete.
+    /// </summary>
+    public void LogTrueCopyFailures()
+    {
+        AppendLog("Verifying final asset integrity...", false, true);
+        int loggedErrors = 0;
+        foreach (var failure in _potentialCopyFailures)
+        {
+            // Check if the file STILL doesn't exist. If so, it's a real failure.
+            if (!File.Exists(failure.Key))
+            {
+                AppendLog(failure.Value, true, true); // Log the cached error message.
+                loggedErrors++;
+            }
+        }
+
+        if (loggedErrors > 0)
+        {
+            AppendLog($"Verification complete. Found {loggedErrors} true asset copy failures.", true, true);
+        }
+        else
+        {
+            AppendLog("Verification complete. All assets copied successfully.", false, true);
+        }
     }
     
     /// <summary>
@@ -247,10 +281,23 @@ public class AssetHandler : OptionalUIModule
                 FileInfo fileInfo = Auxilliary.CreateDirectoryIfNeeded(destPath, Auxilliary.PathType.File);
                 File.Copy(sourcePath, destPath, true);
             });
+
+            // If this copy succeeded, we can safely remove any error message
+            // that a concurrent, failing thread might have added for the same file.
+            _potentialCopyFailures.TryRemove(destPath, out _);
             return true;
+        }
+        catch (IOException ioEx) when (ioEx.Message.Contains("being used by another process", StringComparison.OrdinalIgnoreCase))
+        {
+            // This is the specific concurrency error. Instead of logging, store the message.
+            // We'll verify if the file actually failed to copy at the very end.
+            string errorMessage = $"Failed to copy file from {sourcePath} to {destPath}: {ExceptionLogger.GetExceptionStack(ioEx)}";
+            _potentialCopyFailures.TryAdd(destPath, errorMessage); // It's fine if another thread already added it.
+            return false;
         }
         catch (Exception ex)
         {
+            // Log all other types of exceptions immediately.
             AppendLog($"Failed to copy file from {sourcePath} to {destPath}: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
             return false;
         }

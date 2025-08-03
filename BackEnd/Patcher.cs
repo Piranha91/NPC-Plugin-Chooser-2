@@ -695,6 +695,9 @@ public class Patcher : OptionalUIModule
 
                     await _assetHandler.MonitorAndWaitForAllTasks(logMessage =>
                         AppendLog("  " + logMessage, false, true));
+                    
+                    // Verify any cached file access errors to see if they were actual failures.
+                    _assetHandler.LogTrueCopyFailures();
 
                     AppendLog("All file operations finished.", false, true);
 
