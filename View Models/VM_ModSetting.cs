@@ -636,7 +636,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     }
 
                                     if (!raceGetter.Keywords.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Keyword
-                                            .ActorTypeNPC))
+                                            .ActorTypeNPC) && !npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
                                     {
                                         continue;
                                     }
@@ -646,7 +646,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     allFaceGenBsaFiles.TryGetValue(this.DisplayName, out var currentBsaCache);
 
                                     if (!FaceGenExists(currentNpcKey, allFaceGenLooseFiles,
-                                            currentBsaCache ?? new HashSet<string>()))
+                                            currentBsaCache ?? new HashSet<string>()) && !npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
                                     {
                                         continue;
                                     }

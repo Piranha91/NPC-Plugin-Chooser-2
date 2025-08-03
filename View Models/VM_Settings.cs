@@ -928,25 +928,32 @@ Options:
                  }
 
                  // Get the CorrespondingModKey from the found VM_ModSetting. This is the plugin we need for the output.
-                 // *** Use the NpcSourcePluginMap to find the specific key for this NPC within this ModSetting ***
-                 if (appearanceMod.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var specificKey))
+                 if (appearanceMod.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var availablePlugins))
                  {
-                     appearancePlugin = specificKey;
-                 }
-                 else if (appearanceMod.AmbiguousNpcFormKeys.Contains(npcFormKey))
-                 {
-                     // NPC is ambiguous within this setting
-                     appearanceModErrors.Add($"NPC {formString}: Source plugin is ambiguous within Mod Setting '{appearanceModName}'. Cannot export.");
-                     continue; // Skip this NPC
+                     if (availablePlugins.Count == 1)
+                     {
+                         appearancePlugin = availablePlugins.First();
+                     }
+                     else if (availablePlugins.Count == 0)
+                     {
+                         appearanceModErrors.Add($"NPC {formString}: Mod Setting '{appearanceModName}' does not have a source plugin for this NPC.");
+                         continue; // Skip this NPC
+                     }
+                     else if ( appearanceMod.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var specificKey))
+                     {
+                         appearancePlugin = specificKey;
+                     }
+                     else
+                     {
+                         appearanceModErrors.Add($"NPC {formString}: Source plugin is ambiguous within Mod Setting '{appearanceModName}'. Cannot export.");
+                         continue; // Skip this NPC
+                     }
                  }
                  else
                  {
-                     // NPC not found in this setting's map (or setting has no plugins)
-                     appearanceModErrors.Add($"NPC {formString}: Mod Setting '{appearanceModName}' does not list a unique source plugin for this NPC.");
+                     appearanceModErrors.Add($"NPC {formString}: Mod Setting '{appearanceModName}' does not have a source plugin for this NPC.");
                      continue; // Skip this NPC
                  }
-
-                 // No need to check IsNull here, as TryGetValue succeeded with a valid key from the map.
 
                  // --- 3c: Determine the Default Plugin ModKey ---
                  ModKey defaultPlugin = default; // Use default ModKey struct (represents null/invalid state)
@@ -1010,8 +1017,7 @@ Options:
              if (allErrors.Any())
              {
                  var errorMsg = new StringBuilder($"Encountered {allErrors.Count} errors during export processing:\n\n");
-                 errorMsg.AppendLine(string.Join("\n", allErrors.Take(20))); // Show first 20 errors
-                 if (allErrors.Count > 20) errorMsg.AppendLine("\n...");
+                 errorMsg.AppendLine(string.Join("\n", allErrors)); // Show first 20 errors
                  errorMsg.AppendLine("\nDo you want to save the successfully processed entries?");
 
                  if (!ScrollableMessageBox.Confirm(errorMsg.ToString(), "Export Errors"))
@@ -1179,7 +1185,7 @@ Options:
                 }
                 else
                 {
-                    lookupErrors.Add($"Skipping NPC {formString}: Mod Setting '{selectedAppearanceModName}' does not list a unique source plugin for this NPC.");
+                    lookupErrors.Add($"Skipping NPC {formString}: Mod Setting '{selectedAppearanceModName}' does not list a source plugin for this NPC.");
                     continue;
                 }
 
@@ -1241,15 +1247,13 @@ Options:
                 if (errors.Any())
                 {
                     reportMsg.AppendLine($"Encountered {errors.Count} errors during processing (these NPCs were skipped):");
-                    reportMsg.AppendLine(string.Join("\n", errors.Take(10).Select(e => $"- {e}")));
-                    if (errors.Count > 10) reportMsg.AppendLine("  ...");
+                    reportMsg.AppendLine(string.Join("\n", errors.Select(e => $"- {e}")));
                     reportMsg.AppendLine();
                 }
                 if (skippedMissingNpcs.Any())
                 {
                      reportMsg.AppendLine($"Skipped {skippedMissingNpcs.Count} NPCs selected in the app because they were not found in the profile file (Add Missing NPCs was disabled):");
-                     reportMsg.AppendLine(string.Join("\n", skippedMissingNpcs.Take(10).Select(s => $"- {s}")));
-                     if (skippedMissingNpcs.Count > 10) reportMsg.AppendLine("  ...");
+                     reportMsg.AppendLine(string.Join("\n", skippedMissingNpcs.Select(s => $"- {s}")));
                      reportMsg.AppendLine();
                 }
                 reportMsg.AppendLine("Do you want to save the updates for the successfully processed NPCs?");
