@@ -826,49 +826,32 @@ Options:
             }
 
             // --- Show Confirmation Dialog ---
-            string confirmationMessage;
+            string confirmationMessage = string.Empty;
             int totalToProcess = potentialChanges.Count; // Based on successfully matched items
 
             if (changesToConfirm.Any()) // Specific *overwrites* will occur
             {
                 confirmationMessage = $"The following {changesToConfirm.Count} existing NPC appearance assignments will be changed:\n\n" +
-                                      string.Join("\n", changesToConfirm.Take(30));
-                if (changesToConfirm.Count > 30) confirmationMessage += "\n...";
-            }
-            else // No overwrites, but settings ARE being applied
-            {
-                confirmationMessage = "No existing NPC appearance assignments will be changed.";
-            }
+                                      string.Join("\n", changesToConfirm);
 
-            confirmationMessage += $"\n\nEasyNPC Default Plugin settings will also be updated for {totalToProcess} processed NPCs.";
-            // No longer need message about adding Mods list entries
-            confirmationMessage += "\n\nDo you want to apply these changes?";
-
-            if (ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Import"))
-            {
-                // --- Apply Changes ---
-                int appliedCount = 0;
-                foreach (var applyItem in potentialChanges) // Iterate the filtered list
+                if (!ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Import"))
                 {
-                    // Update EasyNPC Default Plugin in the model
-                    _model.EasyNpcDefaultPlugins[applyItem.NpcKey] = applyItem.DefaultKey;
-
-                    // Update Selected Appearance Mod using the consistency provider
-                    _consistencyProvider.SetSelectedMod(applyItem.NpcKey, applyItem.TargetModDisplayName);
-                    appliedCount++;
+                    return;
                 }
-
-                // No longer need to check modSettingAdded or call ResortAndRefreshFilters
-
-                // Refresh NPC list filter in case selection state changed
-                _lazyNpcSelectionBar.Value.ApplyFilter(false);
-
-                ScrollableMessageBox.Show($"Successfully imported settings for {appliedCount} NPCs.", "Import Complete");
             }
-            else
+
+            // --- Apply Changes ---
+            foreach (var applyItem in potentialChanges) // Iterate the filtered list
             {
-                 ScrollableMessageBox.Show("Import cancelled.", "Import Cancelled");
+                // Update EasyNPC Default Plugin in the model
+                _model.EasyNpcDefaultPlugins[applyItem.NpcKey] = applyItem.DefaultKey;
+
+                // Update Selected Appearance Mod using the consistency provider
+                _consistencyProvider.SetSelectedMod(applyItem.NpcKey, applyItem.TargetModDisplayName);
             }
+
+            // Refresh NPC list filter in case selection state changed
+            _lazyNpcSelectionBar.Value.ApplyFilter(false);
         }
 
 

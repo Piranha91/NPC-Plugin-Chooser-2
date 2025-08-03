@@ -1478,6 +1478,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Find the first VM where *any* of its CorrespondingModKeys matches the input key.
             foundVms = _allModSettingsInternal.Where(vm =>
                 vm.CorrespondingModKeys.Any(key => key.Equals(appearancePluginKey))).ToList();
+
+            if (foundVms.Count > 1)
+            {
+                foundVms = foundVms.Where(x => !x.IsFaceGenOnlyEntry).ToList();
+            }
             
             return foundVms.Any();
         }
