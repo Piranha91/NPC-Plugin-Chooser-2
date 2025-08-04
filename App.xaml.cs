@@ -139,6 +139,7 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<NpcDescriptionProvider>().AsSelf().SingleInstance();
             builder.RegisterType<PluginProvider>().AsSelf().SingleInstance();
             builder.RegisterType<SkyPatcherInterface>().AsSelf().SingleInstance();
+            builder.RegisterType<EasyNpcTranslator>().AsSelf().SingleInstance();
 
             splashVM.UpdateProgress(30, "Registering ViewModels...");
             builder.RegisterType<VM_MainWindow>().AsSelf().SingleInstance();
