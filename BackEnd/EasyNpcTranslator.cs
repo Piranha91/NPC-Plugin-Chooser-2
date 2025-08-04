@@ -349,207 +349,87 @@ public class EasyNpcTranslator
     public void ExportEasyNpc()
     {
         // --- Step 1: Compile NPCs that need to be exported ---
-
-        // Get the FormKeys of all NPCs that currently have an appearance mod selected.
-        // This is the primary list of NPCs we need to process for export.
         var assignedAppearanceNpcFormKeys = _settings.SelectedAppearanceMods.Keys.ToList();
-
-        // Check if there are any assignments to export.
         if (!assignedAppearanceNpcFormKeys.Any())
         {
-            ScrollableMessageBox.Show("No NPC appearance assignments have been made yet. Nothing to export.",
-                "Export Empty");
+            ScrollableMessageBox.Show("No NPC appearance assignments have been made yet. Nothing to export.", "Export Empty");
             return;
         }
 
         // --- Step 2: Prepare Helper Data and Output Storage ---
-
-        // Retrieve the set of CorrespondingModKeys that the user has configured to exclude
-        // when determining the "default" plugin (usually the conflict winner).
-        // Store this locally for efficient lookup within the loop.
-        var excludedDefaultPlugins =
-            new HashSet<ModKey>(_lazySettingsVM.Value.ExclusionSelectorViewModel.SaveToModel()); // Ensure it's a HashSet for O(1) lookups
-
-        // List to hold the formatted strings for each successfully processed NPC.
-        List<string> outputStrs = new();
-        // Lists to collect errors encountered during processing.
-        List<string> formKeyErrors = new List<string>();
-        List<string> appearanceModErrors = new List<string>();
-        List<string> defaultPluginErrors = new List<string>();
-        Dictionary<string, string> facegenOnlyWarnings = new Dictionary<string, string>();
-
+        var excludedDefaultPlugins = new HashSet<ModKey>(_lazySettingsVM.Value.ExclusionSelectorViewModel.SaveToModel());
+        var outputStrs = new List<string>();
+        var formKeyErrors = new List<string>();
+        var appearanceModErrors = new List<string>();
+        var defaultPluginErrors = new List<string>();
+        var facegenOnlyWarnings = new Dictionary<string, string>();
 
         // --- Step 3: Process each assigned NPC ---
-
-        // Iterate through each NPC FormKey that has an appearance assignment.
         foreach (var npcFormKey in assignedAppearanceNpcFormKeys)
         {
             // --- 3a: Convert FormKey to EasyNPC Form String format ---
-            string formString = string.Empty;
+            string formString;
             try
             {
-                // The EasyNPC format is "PluginFileName.esm#IDHexPart".
-                // FormKey.ToString() gives "IDHexPart:PluginFileName.esm". We need to reverse this.
-                // ModKey.ToString() usually gives "PluginFileName.esm".
-                // IDString() gives the FormID hex part (e.g., "001F3F").
-                formString = $"{npcFormKey.ModKey.FileName}#{npcFormKey.IDString()}"; // Use FileName for consistency
+                formString = $"{npcFormKey.ModKey.FileName}#{npcFormKey.IDString()}";
             }
             catch (Exception e)
             {
-                // If conversion fails (e.g., null ModKey or IDString issues, though unlikely for valid FormKey),
-                // record the error and skip this NPC.
                 formKeyErrors.Add($"Failed to convert FormKey '{npcFormKey}' to string format: {e.Message}");
-                continue; // Skip to the next NPC FormKey
+                continue;
             }
 
             // --- 3b: Get the assigned Appearance Plugin ModKey ---
-            ModKey? appearancePlugin = null; // Use nullable ModKey
-            // Retrieve the display name of the selected appearance mod for this NPC.
-            // We assume if the key exists in SelectedAppearanceMods, the value (name) is valid.
             var appearanceModName = _settings.SelectedAppearanceMods[npcFormKey];
-
-            // Find the VM_ModSetting in the Mods View list that corresponds to this display name.
-            var appearanceMod =
-                _lazyModListVM.Value.AllModSettings.FirstOrDefault(mod => mod.DisplayName == appearanceModName);
-            if (appearanceMod == null)
+            if (!TryGetAppearancePlugin(npcFormKey, appearanceModName, out var appearancePlugin, out var faceGenWarning, out var appearanceError))
             {
-                // If no VM_ModSetting is found (e.g., inconsistency after import/manual changes), record error.
-                appearanceModErrors.Add(
-                    $"NPC {formString}: Could not find Mod Setting entry for assigned appearance '{appearanceModName}'.");
-                continue; // Skip this NPC
+                appearanceModErrors.Add(appearanceError!);
+                continue;
             }
 
-            // Get the CorrespondingModKey from the found VM_ModSetting. This is the plugin we need for the output.
-            if (appearanceMod.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var availablePlugins))
+            if (faceGenWarning != null)
             {
-                if (availablePlugins.Count == 1)
-                {
-                    appearancePlugin = availablePlugins.First();
-                }
-                else if (availablePlugins.Count == 0)
-                {
-                    appearanceModErrors.Add(
-                        $"NPC {formString}: Mod Setting '{appearanceModName}' does not have a source plugin for this NPC.");
-                    continue; // Skip this NPC
-                }
-                else if (appearanceMod.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var specificKey))
-                {
-                    appearancePlugin = specificKey;
-                }
-                else
-                {
-                    appearanceModErrors.Add(
-                        $"NPC {formString}: Source plugin is ambiguous within Mod Setting '{appearanceModName}'. Cannot export.");
-                    continue; // Skip this NPC
-                }
-            }
-            else if (appearanceMod.IsFaceGenOnlyEntry)
-            {
-                appearancePlugin = npcFormKey.ModKey;
-                facegenOnlyWarnings.Add(formString, $"NPC {formString} from {appearanceModName}");
-            }
-            else
-            {
-                appearanceModErrors.Add(
-                    $"NPC {formString}: Mod Setting '{appearanceModName}' does not have a source plugin for this NPC.");
-                continue; // Skip this NPC
+                facegenOnlyWarnings.Add(formString, faceGenWarning);
             }
 
             // --- 3c: Determine the Default Plugin ModKey ---
-            ModKey defaultPlugin = default; // Use default ModKey struct (represents null/invalid state)
-            // First, check if a default plugin has been explicitly set for this NPC (e.g., via import).
-            if (_settings.EasyNpcDefaultPlugins.TryGetValue(npcFormKey, out var presetDefaultPlugin))
+            if (!TryGetDefaultPlugin(npcFormKey, excludedDefaultPlugins, out var defaultPlugin, out var defaultError))
             {
-                defaultPlugin = presetDefaultPlugin;
-            }
-            else // If no preset default, determine it from the load order context.
-            {
-                // Resolve all plugins that provide a record for this NPC, ordered by load order priority (winners first).
-                // This requires the LinkCache from the EnvironmentStateProvider.
-                if (_environmentStateProvider.LinkCache == null)
-                {
-                    defaultPluginErrors.Add(
-                        $"NPC {formString}: Cannot determine default plugin because Link Cache is not available.");
-                    continue; // Cannot proceed without LinkCache
-                }
-
-                var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcFormKey);
-                if (!contexts.Any())
-                {
-                    // Should be unlikely if the NPC exists, but handle defensively.
-                    defaultPluginErrors.Add(
-                        $"NPC {formString}: Cannot determine default plugin because no context found in Link Cache.");
-                    continue; // Skip this NPC
-                }
-
-                // Iterate through the overriding plugins (highest priority first).
-                foreach (var context in contexts)
-                {
-                    // Check if the plugin providing this override is in the exclusion list.
-                    if (!excludedDefaultPlugins.Contains(context.ModKey))
-                    {
-                        // This is the first non-excluded plugin, consider it the default.
-                        defaultPlugin = context.ModKey;
-                        break; // Stop searching once the default is found.
-                    }
-                }
-                // If the loop completes without finding a non-excluded plugin, defaultPlugin remains default(ModKey).
-            }
-
-            // Validate the determined default plugin.
-            if (defaultPlugin.IsNull) // Use IsNull check for default(ModKey)
-            {
-                // This could happen if all overrides were excluded or if resolution failed.
-                defaultPluginErrors.Add($"NPC {formString}: Could not determine a non-excluded Default Plugin.");
-                continue; // Skip this NPC
+                defaultPluginErrors.Add(defaultError!);
+                continue;
             }
 
             // --- 3d: Assemble the output string ---
-            // Format: PluginName#IDHex=DefaultPluginFileName|AppearancePluginFileName|
-            // Use FileName property for cleaner output, matching EasyNPC expectation.
-            outputStrs.Add($"{formString}={defaultPlugin.FileName}|{appearancePlugin.Value.FileName}|");
+            outputStrs.Add($"{formString}={defaultPlugin.FileName}|{appearancePlugin!.Value.FileName}|");
         } // End foreach npcFormKey
 
-
         // --- Step 4: Report Errors and Confirm Save ---
-
-        // Consolidate all errors found during processing.
         var allErrors = formKeyErrors.Concat(appearanceModErrors).Concat(defaultPluginErrors).ToList();
-
-        // If any errors occurred, display them and ask the user whether to proceed with saving the valid entries.
         if (allErrors.Any())
         {
             var errorMsg = new StringBuilder($"Encountered {allErrors.Count} errors during export processing:\n\n");
-            errorMsg.AppendLine(string.Join("\n", allErrors)); 
+            errorMsg.AppendLine(string.Join("\n", allErrors));
             errorMsg.AppendLine("\nDo you want to save the successfully processed entries?");
 
             if (!ScrollableMessageBox.Confirm(errorMsg.ToString(), "Export Errors"))
             {
-                MessageBox.Show("Export cancelled due to errors.", "Export Cancelled", MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-                return; // Cancel the export.
+                MessageBox.Show("Export cancelled due to errors.", "Export Cancelled", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
             }
-            // If Yes, proceed to save the outputStrs list which contains only successful entries.
         }
 
         if (facegenOnlyWarnings.Any())
         {
-            var warningMsg = new StringBuilder($"The following NPCs are assigned to FaceGen-only mods, which EasyNPC can't ");
-            warningMsg.AppendLine(
-                "differentiate from the originating plugin. Press Yes to include them, or No to remove them from the output:\n\n");
-            
-            warningMsg.AppendLine(string.Join("\n", facegenOnlyWarnings.Values)); 
-            
+            var warningMsg = new StringBuilder("The following NPCs are assigned to FaceGen-only mods, which EasyNPC can't ");
+            warningMsg.AppendLine("differentiate from the originating plugin. Press Yes to include them, or No to remove them from the output:\n\n");
+            warningMsg.AppendLine(string.Join("\n", facegenOnlyWarnings.Values));
+
             if (!ScrollableMessageBox.Confirm(warningMsg.ToString(), "Export Warnings"))
             {
-                foreach (var faceGenString in facegenOnlyWarnings.Keys)
-                {
-                    outputStrs.RemoveWhere(x => x.Contains(faceGenString));
-                }
-            } 
+                outputStrs.RemoveAll(line => facegenOnlyWarnings.ContainsKey(line.Split('=')[0]));
+            }
         }
 
-        // Check if there's anything to save after potential errors/skips
         if (!outputStrs.Any())
         {
             ScrollableMessageBox.Show("No valid NPC assignments could be exported.", "Export Empty");
@@ -557,39 +437,28 @@ public class EasyNpcTranslator
         }
 
         // --- Step 5: Get Output File Path ---
-
-        // Prompt user to select an output file path using a Save File Dialog.
         var saveFileDialog = new SaveFileDialog
         {
             Filter = "EasyNPC Profile (*.txt)|*.txt|All files (*.*)|*.*",
             Title = "Save EasyNPC Profile As...",
-            FileName = "EasyNPC_Profile_Export.txt" // Suggest a default filename
+            FileName = "EasyNPC_Profile_Export.txt"
         };
 
         if (saveFileDialog.ShowDialog() != true)
         {
             ScrollableMessageBox.Show("Export cancelled by user.", "Export Cancelled");
-            return; // User cancelled the save dialog.
+            return;
         }
-
         string outputFilePath = saveFileDialog.FileName;
 
-
         // --- Step 6: Write Output File ---
-
         try
         {
-            // Save outputStrs (separated by Environment.NewLine()) to the selected output file.
-            // Use UTF-8 encoding without BOM, which is common for config files.
             File.WriteAllLines(outputFilePath, outputStrs, new UTF8Encoding(false));
-
-            ScrollableMessageBox.Show(
-                $"Successfully exported assignments for {outputStrs.Count} NPCs to:\n{outputFilePath}",
-                "Export Complete");
+            ScrollableMessageBox.Show($"Successfully exported assignments for {outputStrs.Count} NPCs to:\n{outputFilePath}", "Export Complete");
         }
         catch (Exception ex)
         {
-            // Handle potential file writing errors (permissions, disk full, etc.).
             ScrollableMessageBox.ShowError($"Failed to save the export file:\n{ex.Message}", "File Save Error");
         }
     }
@@ -606,86 +475,82 @@ public class EasyNpcTranslator
         {
             Filter = "EasyNPC Profile (*.txt)|*.txt|All files (*.*)|*.*",
             Title = "Select EasyNPC Profile File to Update",
-            CheckFileExists = true // Ensure the file exists
+            CheckFileExists = true
         };
 
         if (openFileDialog.ShowDialog() != true)
         {
             Debug.WriteLine("UpdateEasyNpcProfile: File selection cancelled.");
-            return; // User cancelled
+            return;
         }
-
         string filePath = openFileDialog.FileName;
 
         // --- Step 2: Read Existing Profile and Prepare Data ---
         List<string> originalLines;
-        var lineLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); // Maps FormString -> Line Index
+        var lineLookup = new Dictionary<string, (int LineIndex, ModKey DefaultPlugin)>(StringComparer.OrdinalIgnoreCase);
         var errors = new List<string>();
         int lineNum = 0;
 
         try
         {
-            originalLines = File.ReadAllLines(filePath).ToList(); // Read all lines into memory
-
-            // Build the lookup dictionary from valid lines
+            originalLines = File.ReadAllLines(filePath).ToList();
             foreach (string line in originalLines)
             {
                 lineNum++;
-                if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#') || line.StartsWith("//"))
-                    continue; // Skip comments/empty
+                if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#') || line.StartsWith("//")) continue;
 
                 var equalSplit = line.Split(new[] { '=' }, 2);
-                if (equalSplit.Length != 2) continue; // Skip invalid format lines during lookup build
-                string formStringPart = equalSplit[0].Trim();
+                if (equalSplit.Length != 2) continue;
 
-                // Basic validation of FormString format (Plugin#ID)
+                string formStringPart = equalSplit[0].Trim();
                 var formSplit = formStringPart.Split('#');
-                if (formSplit.Length == 2 && !string.IsNullOrWhiteSpace(formSplit[0]) &&
-                    !string.IsNullOrWhiteSpace(formSplit[1]))
+                if (formSplit.Length != 2 || string.IsNullOrWhiteSpace(formSplit[0]) || string.IsNullOrWhiteSpace(formSplit[1])) continue;
+
+                var pluginInfoPart = equalSplit[1].Trim();
+                var pipeSplit = pluginInfoPart.Split('|');
+                if (pipeSplit.Length < 1 || string.IsNullOrWhiteSpace(pipeSplit[0])) continue;
+
+                try
                 {
-                    if (!lineLookup.TryAdd(formStringPart, lineNum - 1)) // Store 0-based index
+                    var defaultPluginKey = ModKey.FromFileName(pipeSplit[0].Trim());
+                    if (!lineLookup.TryAdd(formStringPart, (lineNum - 1, defaultPluginKey)))
                     {
-                        errors.Add(
-                            $"Duplicate FormString '{formStringPart}' found at line {lineNum}. Only the first occurrence will be updated.");
+                        errors.Add($"Duplicate FormString '{formStringPart}' found at line {lineNum}. Only the first occurrence will be updated.");
                     }
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Could not parse default plugin for FormString '{formStringPart}' at line {lineNum}: {ex.Message}");
                 }
             }
         }
         catch (Exception ex)
         {
-            ScrollableMessageBox.ShowError($"Error reading existing profile file '{filePath}':\n{ex.Message}",
-                "File Read Error");
+            ScrollableMessageBox.ShowError($"Error reading existing profile file '{filePath}':\n{ex.Message}", "File Read Error");
             return;
         }
 
         // --- Step 3: Get App Selections and Prepare Updates ---
-        var appNpcSelections = _settings.SelectedAppearanceMods.ToList(); // Get current selections as pairs
+        var appNpcSelections = _settings.SelectedAppearanceMods.ToList();
         if (!appNpcSelections.Any())
         {
-            ScrollableMessageBox.Show(
-                "No NPC appearance assignments are currently selected in the application. Nothing to update.",
-                "Update Empty");
+            ScrollableMessageBox.Show("No NPC appearance assignments are currently selected in the application. Nothing to update.", "Update Empty");
             return;
         }
 
-        var updatedLines = new List<string>(originalLines); // Create a mutable copy
-        var processedFormStrings =
-            new HashSet<string>(StringComparer
-                .OrdinalIgnoreCase); // Track which FormStrings from the file were updated/found
-        var addedLines = new List<string>(); // Track lines added for missing NPCs
-        var skippedMissingNpcs = new List<string>(); // Track NPCs skipped because addMissingNPCs was false
-        var lookupErrors = new List<string>(); // Track errors finding plugins/defaults
-
-        // Retrieve excluded plugins once
+        var updatedLines = new List<string>(originalLines);
+        var processedFormStrings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var addedLines = new List<string>();
+        var skippedMissingNpcs = new List<string>();
+        var lookupErrors = new List<string>();
         var excludedDefaultPlugins = new HashSet<ModKey>(_lazySettingsVM.Value.ExclusionSelectorViewModel.SaveToModel());
 
         // --- Step 4: Iterate Through App Selections and Update/Prepare Additions ---
         foreach (var kvp in appNpcSelections)
         {
             var npcFormKey = kvp.Key;
-            var selectedAppearanceModName = kvp.Value; // This is the VM_ModSetting.DisplayName
+            var selectedAppearanceModName = kvp.Value;
 
-            // --- 4a: Convert FormKey to EasyNPC Form String ---
             string formString;
             try
             {
@@ -697,111 +562,52 @@ public class EasyNpcTranslator
                 continue;
             }
 
-            // --- 4b: Get Appearance Plugin ModKey from selected VM_ModSetting name ---
-            var appearanceMod =
-                _lazyModListVM.Value.AllModSettings.FirstOrDefault(m => m.DisplayName == selectedAppearanceModName);
-            if (appearanceMod == null)
+            if (!TryGetAppearancePlugin(npcFormKey, selectedAppearanceModName, out var appearancePluginKey, out _, out var appearanceError))
             {
-                lookupErrors.Add(
-                    $"Skipping NPC {formString}: Cannot find Mod Setting entry named '{selectedAppearanceModName}'.");
-                continue;
-            }
-            
-            var appearanceModName = appearanceMod.DisplayName;
-
-            // *** Use the NpcSourcePluginMap to find the specific key for this NPC within this ModSetting ***
-            ModKey appearancePluginKey;
-            if (appearanceMod.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var availablePlugins))
-            {
-                if (appearanceMod.IsFaceGenOnlyEntry)
-                {
-                    appearancePluginKey = npcFormKey.ModKey;
-                }
-                else if (availablePlugins.Count == 1)
-                {
-                    appearancePluginKey = availablePlugins.First();
-                }
-                else if (availablePlugins.Count == 0)
-                {
-                    lookupErrors.Add(
-                        $"NPC {formString}: Mod Setting '{appearanceModName}' does not have a source plugin for this NPC.");
-                    continue; // Skip this NPC
-                }
-                else if (appearanceMod.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var specificKey))
-                {
-                    appearancePluginKey = specificKey;
-                }
-                else
-                {
-                    lookupErrors.Add(
-                        $"NPC {formString}: Source plugin is ambiguous within Mod Setting '{appearanceModName}'. Cannot export.");
-                    continue; // Skip this NPC
-                }
-            }
-            else
-            {
-                lookupErrors.Add(
-                    $"NPC {formString}: Mod Setting '{appearanceModName}' does not have a source plugin for this NPC.");
-                continue; // Skip this NPC
-            }
-
-            // --- 4c: Determine Default Plugin ---
-            ModKey defaultPluginKey = default;
-            if (!_settings.EasyNpcDefaultPlugins.TryGetValue(npcFormKey, out defaultPluginKey))
-            {
-                // Not explicitly set, find winning context
-                if (_environmentStateProvider.LinkCache != null)
-                {
-                    var contexts =
-                        _environmentStateProvider.LinkCache
-                            .ResolveAllContexts<INpc, INpcGetter>(npcFormKey); // Highest first
-                    defaultPluginKey = contexts.FirstOrDefault(ctx => !excludedDefaultPlugins.Contains(ctx.ModKey))
-                        .ModKey; // Get first non-excluded
-                }
-            }
-
-            // Validate default key after attempting to find it
-            if (defaultPluginKey.IsNull)
-            {
-                lookupErrors.Add($"Skipping NPC {formString}: Could not determine a valid Default Plugin.");
+                lookupErrors.Add(appearanceError!);
                 continue;
             }
 
-            // --- 4d: Construct the new line's content ---
-            string newLineContent = $"{defaultPluginKey.FileName}|{appearancePluginKey.FileName}|";
-            string fullNewLine = $"{formString}={newLineContent}";
-
-            // --- 4e: Find existing line or handle missing ---
-            if (lineLookup.TryGetValue(formString, out int lineIndex))
+            // --- Find existing line or handle missing ---
+            if (lineLookup.TryGetValue(formString, out var existingInfo))
             {
-                // NPC exists in the file, update the line in our copy
-                if (updatedLines[lineIndex] != fullNewLine) // Only mark as processed if changed
+                // NPC exists in the file: preserve its default plugin
+                var defaultPluginKey = existingInfo.DefaultPlugin;
+                string newLineContent = $"{defaultPluginKey.FileName}|{appearancePluginKey!.Value.FileName}|";
+                string fullNewLine = $"{formString}={newLineContent}";
+
+                if (updatedLines[existingInfo.LineIndex] != fullNewLine)
                 {
-                    updatedLines[lineIndex] = fullNewLine;
-                    processedFormStrings.Add(formString); // Mark as updated/found
+                    updatedLines[existingInfo.LineIndex] = fullNewLine;
                 }
-                else
-                {
-                    processedFormStrings.Add(formString); // Mark as found even if not changed
-                }
+                processedFormStrings.Add(formString);
             }
             else
             {
-                // NPC not found in the original file
+                // NPC not found in file: add it if requested
                 if (addMissingNPCs)
                 {
-                    addedLines.Add(fullNewLine); // Add to a separate list for appending later
-                    processedFormStrings.Add(formString); // Mark as processed (added)
+                    // Determine a new default plugin since none exists in the file
+                    if (!TryGetDefaultPlugin(npcFormKey, excludedDefaultPlugins, out var defaultPluginKey, out var defaultError))
+                    {
+                        lookupErrors.Add(defaultError!);
+                        continue;
+                    }
+
+                    string newLineContent = $"{defaultPluginKey.FileName}|{appearancePluginKey!.Value.FileName}|";
+                    string fullNewLine = $"{formString}={newLineContent}";
+                    addedLines.Add(fullNewLine);
+                    processedFormStrings.Add(formString);
                 }
                 else
                 {
-                    skippedMissingNpcs.Add(formString); // Track skipped NPC
+                    skippedMissingNpcs.Add(formString);
                 }
             }
         } // End foreach app selection
 
         // --- Step 5: Report Errors and Skipped NPCs ---
-        errors.AddRange(lookupErrors); // Combine parsing and lookup errors
+        errors.AddRange(lookupErrors);
         if (errors.Any() || skippedMissingNpcs.Any())
         {
             var reportMsg = new StringBuilder();
@@ -814,8 +620,7 @@ public class EasyNpcTranslator
 
             if (skippedMissingNpcs.Any())
             {
-                reportMsg.AppendLine(
-                    $"Skipped {skippedMissingNpcs.Count} NPCs selected in the app because they were not found in the profile file (Add Missing NPCs was disabled):");
+                reportMsg.AppendLine($"Skipped {skippedMissingNpcs.Count} NPCs selected in the app because they were not found in the profile file (Add Missing NPCs was disabled):");
                 reportMsg.AppendLine(string.Join("\n", skippedMissingNpcs.Select(s => $"- {s}")));
                 reportMsg.AppendLine();
             }
@@ -829,19 +634,17 @@ public class EasyNpcTranslator
             }
         }
 
-        // Add the newly generated lines (if any) to the end of the updated list
         if (addedLines.Any())
         {
             updatedLines.AddRange(addedLines);
         }
 
-        int updatedCount = processedFormStrings.Count - addedLines.Count; // Number of existing lines modified
+        int updatedCount = processedFormStrings.Count - addedLines.Count;
         int addedCount = addedLines.Count;
 
         if (updatedCount == 0 && addedCount == 0)
         {
-            ScrollableMessageBox.Show("No changes were made to the profile file (assignments might already match).",
-                "No Changes");
+            ScrollableMessageBox.Show("No changes were made to the profile file (assignments might already match).", "No Changes");
             return;
         }
 
@@ -850,8 +653,8 @@ public class EasyNpcTranslator
         {
             Filter = "EasyNPC Profile (*.txt)|*.txt|All files (*.*)|*.*",
             Title = "Save Updated EasyNPC Profile As...",
-            FileName = Path.GetFileName(filePath), // Suggest original name
-            InitialDirectory = Path.GetDirectoryName(filePath) // Start in original directory
+            FileName = Path.GetFileName(filePath),
+            InitialDirectory = Path.GetDirectoryName(filePath)
         };
 
         if (saveFileDialog.ShowDialog() != true)
@@ -859,14 +662,12 @@ public class EasyNpcTranslator
             ScrollableMessageBox.Show("Update cancelled by user.", "Update Cancelled");
             return;
         }
-
         string outputFilePath = saveFileDialog.FileName;
 
         // --- Step 7: Write Updated File ---
         try
         {
-            // Write the potentially modified list (preserving comments/order, appending new)
-            File.WriteAllLines(outputFilePath, updatedLines, new UTF8Encoding(false)); // Use UTF-8 without BOM
+            File.WriteAllLines(outputFilePath, updatedLines, new UTF8Encoding(false));
 
             string successMessage = $"Successfully updated profile file:\n{outputFilePath}\n\n";
             successMessage += $"Existing NPCs Updated: {updatedCount}\n";
@@ -876,8 +677,117 @@ public class EasyNpcTranslator
         }
         catch (Exception ex)
         {
-            ScrollableMessageBox.ShowError($"Failed to save the updated profile file:\n{ex.Message}",
-                "File Save Error");
+            ScrollableMessageBox.ShowError($"Failed to save the updated profile file:\n{ex.Message}", "File Save Error");
         }
+    }
+
+    /// <summary>
+    /// Attempts to find the appropriate appearance plugin ModKey for a given NPC and selected ModSetting.
+    /// Handles FaceGen-only mods and plugin disambiguation.
+    /// </summary>
+    /// <param name="npcFormKey">The FormKey of the NPC.</param>
+    /// <param name="appearanceModName">The display name of the selected appearance mod.</param>
+    /// <param name="appearancePlugin">The resulting appearance plugin ModKey, if found.</param>
+    /// <param name="faceGenWarning">A warning message if the mod is FaceGen-only.</param>
+    /// <param name="errorMessage">An error message if the plugin cannot be determined.</param>
+    /// <returns>True if a plugin was successfully determined, otherwise false.</returns>
+    private bool TryGetAppearancePlugin(FormKey npcFormKey, string appearanceModName, out ModKey? appearancePlugin, out string? faceGenWarning, out string? errorMessage)
+    {
+        appearancePlugin = null;
+        errorMessage = null;
+        faceGenWarning = null;
+        string formString = $"{npcFormKey.ModKey.FileName}#{npcFormKey.IDString()}";
+
+        var appearanceMod = _lazyModListVM.Value.AllModSettings.FirstOrDefault(mod => mod.DisplayName == appearanceModName);
+        if (appearanceMod == null)
+        {
+            errorMessage = $"NPC {formString}: Could not find Mod Setting entry for assigned appearance '{appearanceModName}'.";
+            return false;
+        }
+
+        if (appearanceMod.IsFaceGenOnlyEntry)
+        {
+            appearancePlugin = npcFormKey.ModKey;
+            faceGenWarning = $"NPC {formString} from {appearanceModName}";
+            return true;
+        }
+
+        if (appearanceMod.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var availablePlugins))
+        {
+            if (availablePlugins.Count == 1)
+            {
+                appearancePlugin = availablePlugins.First();
+                return true;
+            }
+            if (availablePlugins.Count == 0)
+            {
+                errorMessage = $"NPC {formString}: Mod Setting '{appearanceModName}' does not have a source plugin for this NPC.";
+                return false;
+            }
+            if (appearanceMod.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var specificKey))
+            {
+                appearancePlugin = specificKey;
+                return true;
+            }
+            
+            errorMessage = $"NPC {formString}: Source plugin is ambiguous within Mod Setting '{appearanceModName}'. Cannot export.";
+            return false;
+        }
+        
+        errorMessage = $"NPC {formString}: Mod Setting '{appearanceModName}' does not have a source plugin for this NPC.";
+        return false;
+    }
+
+    /// <summary>
+    /// Attempts to determine the default plugin for an NPC.
+    /// It first checks for a user-specified default, then falls back to the winning override from the load order.
+    /// </summary>
+    /// <param name="npcFormKey">The FormKey of the NPC.</param>
+    /// <param name="excludedDefaultPlugins">A collection of ModKeys to exclude when determining the winner.</param>
+    /// <param name="defaultPlugin">The resulting default plugin ModKey, if found.</param>
+    /// <param name="errorMessage">An error message if a default plugin cannot be determined.</param>
+    /// <returns>True if a default plugin was successfully determined, otherwise false.</returns>
+    private bool TryGetDefaultPlugin(FormKey npcFormKey, ICollection<ModKey> excludedDefaultPlugins, out ModKey defaultPlugin, out string? errorMessage)
+    {
+        defaultPlugin = default;
+        errorMessage = null;
+        string formString = $"{npcFormKey.ModKey.FileName}#{npcFormKey.IDString()}";
+
+        if (_settings.EasyNpcDefaultPlugins.TryGetValue(npcFormKey, out var presetDefaultPlugin))
+        {
+            defaultPlugin = presetDefaultPlugin;
+        }
+        else
+        {
+            if (_environmentStateProvider.LinkCache == null)
+            {
+                errorMessage = $"NPC {formString}: Cannot determine default plugin because Link Cache is not available.";
+                return false;
+            }
+
+            var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcFormKey);
+            if (!contexts.Any())
+            {
+                errorMessage = $"NPC {formString}: Cannot determine default plugin because no context found in Link Cache.";
+                return false;
+            }
+
+            foreach (var context in contexts)
+            {
+                if (!excludedDefaultPlugins.Contains(context.ModKey))
+                {
+                    defaultPlugin = context.ModKey;
+                    break;
+                }
+            }
+        }
+
+        if (defaultPlugin.IsNull)
+        {
+            errorMessage = $"NPC {formString}: Could not determine a non-excluded Default Plugin.";
+            return false;
+        }
+
+        return true;
     }
 }
