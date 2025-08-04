@@ -1922,5 +1922,123 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             return _overridesCache;
         }
+
+        public void UpdateTemplates(FormKey npcFormKey, VM_ModSetting modSettingVM)
+        {
+            int maxCycleCount = 50; // this should be way overkill
+            List<(FormKey formKey, string displayName)> templateChain = new();
+            List<string> errorMessages = new();
+
+            Dictionary<ModKey, ISkyrimModGetter> plugins = new();
+            foreach (var modKey in modSettingVM.CorrespondingModKeys)
+            {
+                if (_pluginProvider.TryGetPlugin(modKey, modSettingVM.CorrespondingFolderPaths.ToHashSet(),
+                        out var plugin) && plugin != null)
+                {
+                    plugins.Add(modKey, plugin);
+                }
+            }
+
+            int cycleCount = 0;
+            ISkyrimModGetter sourcePlugin;
+            while (cycleCount < maxCycleCount)
+            {
+                var availablePlugins = modSettingVM.AvailablePluginsForNpcs.TryGetValue(npcFormKey);
+                if (availablePlugins is not null && availablePlugins.Any())
+                {
+                    if (availablePlugins.Count == 1)
+                    {
+                        if (plugins.TryGetValue(availablePlugins.First(), out var plugin))
+                        {
+                            sourcePlugin = plugin;
+                        }
+                        else
+                        {
+                            errorMessages.Add($"Could not find plugin {availablePlugins.First()} for {npcFormKey} within {modSettingVM.DisplayName}.");
+                            break;
+                        }
+                    }
+                    else if (modSettingVM.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var disambiguation))
+                    {
+                        if (plugins.TryGetValue(disambiguation, out var plugin))
+                        {
+                            sourcePlugin = plugin;
+                        }
+                        else
+                        {
+                            errorMessages.Add($"Could not find plugin {disambiguation} for {npcFormKey} within {modSettingVM.DisplayName}.");
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        errorMessages.Add($"Could not determine source plugin for {npcFormKey} within plugin {modSettingVM.DisplayName}: [{string.Join(", ", availablePlugins)}])");
+                        break;
+                    }
+                }
+                else
+                {
+                    errorMessages.Add($"Could not find any available plugins for {npcFormKey} within {modSettingVM.DisplayName}");
+                    break;
+                }
+
+                if (sourcePlugin != null)
+                {
+                    var npc = sourcePlugin.Npcs.Where(x => x.FormKey.Equals(npcFormKey)).FirstOrDefault();
+                    if (npc is null)
+                    {
+                        errorMessages.Add($"Could not find {npcFormKey} in {sourcePlugin.ModKey.FileName} even though analysis indicates it should be there");
+                        break;
+                    }
+
+                    var newEntry = (npc.FormKey, Auxilliary.GetNpcLogString(npc, true));
+                    templateChain.Add(newEntry);
+                    
+                    if (npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
+                    {
+                        if (npc.Template is null || npc.Template.IsNull)
+                        {
+                            errorMessages.Add($"The appearance template for {Auxilliary.GetNpcLogString(npc)} in {sourcePlugin.ModKey.FileName} is blank despite it having a Traits template flag");
+                            break;
+                        }
+                        else
+                        {
+                            npcFormKey = npc.Template.FormKey; // repeat for the next template
+                        }
+                    }
+                    else
+                    {
+                        break; // template chain stops here
+                    }
+                }
+            }
+
+            if (templateChain.Any())
+            {
+                StringBuilder message = new();
+                message.AppendLine(
+                    "This NPC inherits appearance from a template, which means that it needs to come from the same mod as the template.");
+                message.AppendLine($"Template Chain: {string.Join(" -> ", templateChain.Select(x => x.displayName))}");
+                message.AppendLine();
+                if (errorMessages.Any())
+                {
+                    message.AppendLine("Note: the following error(s) occured when analyzing the template chain:");
+                    message.AppendLine(string.Join(Environment.NewLine, errorMessages));
+                }
+                message.AppendLine();
+                message.AppendLine("Would you like to apply this mod selection for all NPCs in the chain?");
+
+                if (ScrollableMessageBox.Confirm(message.ToString(), "Update template chain?"))
+                {
+                    int index = 0;
+                    foreach (var entry in templateChain)
+                    {
+                        index++;
+                        if(index == 1) { continue; } // the current mugshot has already been set by the caller
+                        _consistencyProvider.SetSelectedMod(entry.formKey, modSettingVM.DisplayName);
+                    }
+                }
+            }
+        }
     }
 }

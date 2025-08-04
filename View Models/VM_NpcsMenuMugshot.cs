@@ -58,6 +58,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public VM_ModSetting? AssociatedModSetting { get; }
         [Reactive] public string ToolTipString { get; set; } = string.Empty;
         [Reactive] public bool HasIssueNotification { get; set; } = false;
+        [Reactive] public NpcIssueType IssueType { get; set; } = NpcIssueType.Template;
         [Reactive] public string IssueNotificationText { get; set; } = string.Empty;
         public bool IsAmbiguousSource { get; }
         public ObservableCollection<ModKey> AvailableSourcePlugins { get; } = new();
@@ -269,7 +270,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 System.Diagnostics.Debug.WriteLine($"Selecting mod '{ModName}' for NPC '{_npcFormKey}'");
                 _consistencyProvider.SetSelectedMod(_npcFormKey, ModName);
                 
-                CheckAndHandleTemplates();
+                if (HasIssueNotification && IssueType == NpcIssueType.Template)
+                {
+                    if (AssociatedModSetting != null && _lazyMods.IsValueCreated)
+                    {
+                        _lazyMods.Value.UpdateTemplates(_npcFormKey, AssociatedModSetting);
+                    }
+                    else // fall back to simple analzyer
+                    {
+                        CheckAndHandleTemplates();
+                    }
+                }
             }
         }
 
@@ -322,7 +333,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     if (context.Record.Template == null || context.Record.Template.IsNull)
                     {
                         message =
-                            "The associated data for this NPC shows that it is supposed to have a template, but there is no template set. This will probably result in a bugged appearnce.";
+                            "The associated data for this NPC shows that it is supposed to have a template, but there is no template set. This will probably result in a bugged appearance.";
                         title = "Are you sure?";
                         if (!ScrollableMessageBox.Confirm(message, title, displayImagePath: imagePath))
                         {

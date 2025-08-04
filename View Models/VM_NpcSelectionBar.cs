@@ -1778,6 +1778,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             if (modSettingVM.NpcFormKeysToNotifications.TryGetValue(selectionVm.NpcFormKey, out var notif))
             {
                 appearanceVM.HasIssueNotification = true;
+                appearanceVM.IssueType = notif.IssueType;
                 appearanceVM.IssueNotificationText = notif.IssueMessage;
             }
 
