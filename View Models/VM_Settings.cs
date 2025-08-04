@@ -36,7 +36,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
         private readonly EasyNpcTranslator _easyNpcTranslator;
         
-        public ViewModelActivator Activator { get; } = new ViewModelActivator(); 
+        public ViewModelActivator Activator { get; } = new ViewModelActivator();
+
+        public int NumPluginsInEnvironment => _environmentStateProvider.LoadOrder.ListedOrder.Count();
+        public int NumActivePluginsInEnvironment => _environmentStateProvider.LoadOrder.ListedOrder.Count(p => p.Enabled);
 
         // --- Existing & Modified Properties ---
         [Reactive] public string ModsFolder { get; set; }
@@ -226,6 +229,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     _model.UseSkyPatcherMode = UseSkyPatcherMode;
                 })
                 .DisposeWith(_disposables);
+            
+            Observable.Merge(
+                    this.WhenAnyValue(x => x.SkyrimRelease).Select(_ => Unit.Default),
+                    this.WhenAnyValue(x => x.SkyrimGamePath).Select(_ => Unit.Default) // Use Count property
+                )
+                .Skip(1) // Skip the initial value set in the constructor
+                .Throttle(TimeSpan.FromMilliseconds(100))
+                .ObserveOn(RxApp.MainThreadScheduler) 
+                .Subscribe(_ =>
+                {
+                    _environmentStateProvider.SkyrimVersion = SkyrimRelease;
+                    _environmentStateProvider.DataFolderPath = SkyrimGamePath;;
+                    _environmentStateProvider.UpdateEnvironment();
+                });
             
             // Properties that trigger full environment update via InitializeAsync (or a lighter UpdateEnvironmentAndNotify)
             this.WhenAnyValue(x => x.SkyrimGamePath).Skip(1)

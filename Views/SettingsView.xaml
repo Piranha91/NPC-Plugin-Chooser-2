@@ -32,7 +32,7 @@
             <GroupBox Header="Game Environment" Margin="0,0,0,10" Padding="5">
                 <StackPanel>
                     <!-- Skyrim Game Path -->
-                    <TextBlock Text="Skyrim Game Path (Optional - Auto-detects if blank):" Margin="0,0,0,2"/>
+                    <TextBlock Text="Skyrim Game Data Path (Optional - Auto-detects if blank):" Margin="0,0,0,2"/>
                     <Grid Margin="0,0,0,2">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -67,6 +67,15 @@
                                     </Style.Triggers>
                                 </Style>
                             </Run.Style>
+                        </Run>
+                        <Run Text=" - "/>
+                        <Run FontSize="10" Foreground="Black">
+                            <Run.Text>
+                                <MultiBinding StringFormat="{}{0} Plugins in Load Order ({1} Active)">
+                                    <Binding Path="NumPluginsInEnvironment" Mode="OneWay" />
+                                    <Binding Path="NumActivePluginsInEnvironment" Mode="OneWay" />
+                                </MultiBinding>
+                            </Run.Text>
                         </Run>
                     </TextBlock>
                     <TextBlock Text="{Binding EnvironmentErrorText}" Foreground="Red" TextWrapping="Wrap" MaxHeight="100" ScrollViewer.VerticalScrollBarVisibility="Auto">
