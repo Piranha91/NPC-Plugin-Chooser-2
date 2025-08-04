@@ -183,8 +183,6 @@ namespace NPC_Plugin_Chooser_2
             autofacResolver.SetLifetimeScope(container);
             
             splashVM.UpdateProgress(61, "Initializing main application services...");
-            // Resolve VM_Settings. This will trigger its constructor, which should be lightweight.
-            // Then call its InitializeAsync method.
             var settingsViewModel = container.Resolve<VM_Settings>();
             await settingsViewModel.InitializeAsync(); // Pass splashVM implicitly if injected, or explicitly if needed
             

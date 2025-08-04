@@ -1086,7 +1086,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _allModSettingsInternal.AddRange(SortVMs(tempList));
 
             splashReporter?.UpdateStep("Pre-caching asset file paths...");
-            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = CacheFaceGenPathsOnLoad();
+            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = await CacheFaceGenPathsOnLoadAsync(splashReporter);
 
             splashReporter?.UpdateStep("Analyzing mod data...");
             // Limit to the number of logical processors to balance CPU work and I/O
@@ -1309,6 +1309,140 @@ namespace NPC_Plugin_Chooser_2.View_Models
             Debug.WriteLine($"Cached BSA file paths for {allFaceGenBsaFiles.Count} mod settings.");
 
 // -        -- END OF NEW PRE-CACHING LOGIC ---
+            return (allFaceGenLooseFiles, allFaceGenBsaFiles);
+        }
+        
+        private async Task<(HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles)>
+            CacheFaceGenPathsOnLoadAsync(VM_SplashScreen? splashReporter)
+        {
+            // --- Part 1: Cache loose files (this is a fast operation) ---
+            Debug.WriteLine("Caching loose FaceGen file paths...");
+            var allUniqueModPaths = _allModSettingsInternal
+                .SelectMany(vm => vm.CorrespondingFolderPaths)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var allFaceGenLooseFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var modPath in allUniqueModPaths)
+            {
+                if (!Directory.Exists(modPath)) continue;
+
+                var texturesPath = Path.Combine(modPath, "Textures");
+                if (Directory.Exists(texturesPath))
+                {
+                    foreach (var file in Directory.EnumerateFiles(texturesPath, "*.dds", SearchOption.AllDirectories))
+                    {
+                        allFaceGenLooseFiles.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
+                    }
+                }
+
+                var meshesPath = Path.Combine(modPath, "Meshes");
+                if (Directory.Exists(meshesPath))
+                {
+                    foreach (var file in Directory.EnumerateFiles(meshesPath, "*.nif", SearchOption.AllDirectories))
+                    {
+                        allFaceGenLooseFiles.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
+                    }
+                }
+            }
+            Debug.WriteLine($"Cached {allFaceGenLooseFiles.Count} loose file paths.");
+            
+            // --- Part 2: Asynchronously cache BSA files with progress reporting ---
+            splashReporter?.UpdateStep("Pre-caching BSA file paths...");
+            Debug.WriteLine("Pre-caching all relevant BSA paths...");
+
+            var (vmBsaPathsCache, allRelevantBsaPaths) = await Task.Run(() =>
+            {
+                var localVmBsaPathsCache = new Dictionary<string, Dictionary<ModKey, HashSet<string>>>();
+                var localAllRelevantBsaPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var totalVmCount = _allModSettingsInternal.Count;
+                var processedVmCount = 0;
+
+                foreach (var vm in _allModSettingsInternal)
+                {
+                    var pathsToSearch = new HashSet<string>(vm.CorrespondingFolderPaths);
+                    if (vm.DisplayName is BaseGameModSettingName or CreationClubModsettingName)
+                    {
+                        pathsToSearch.Add(_environmentStateProvider.DataFolderPath);
+                    }
+
+                    // This is the expensive, blocking call.
+                    var bsaDictForVm = BsaHandler.GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, pathsToSearch, _settings.SkyrimRelease.ToGameRelease());
+            
+                    localVmBsaPathsCache[vm.DisplayName] = bsaDictForVm;
+
+                    foreach (var bsaPath in bsaDictForVm.Values.SelectMany(paths => paths))
+                    {
+                        localAllRelevantBsaPaths.Add(bsaPath);
+                    }
+
+                    // Report progress after each item in the loop is processed.
+                    processedVmCount++;
+                    var progress = totalVmCount > 0 ? (double)processedVmCount / totalVmCount * 100.0 : 100.0;
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        splashReporter?.UpdateProgress(progress, $"Analyzing assets: {vm.DisplayName}");
+                    });
+                }
+                return (localVmBsaPathsCache, localAllRelevantBsaPaths);
+            });
+            Debug.WriteLine($"Found {allRelevantBsaPaths.Count} unique BSAs to process.");
+
+            // b) Process each unique BSA, reporting progress.
+            splashReporter?.UpdateStep("Caching asset contents...");
+            var bsaContentCache = new ConcurrentDictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            var processingTasks = allRelevantBsaPaths.Select(bsaPath => Task.Run(() =>
+            {
+                var faceGenFilesInArchive = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var bsaReaders = _bsaHandler.OpenBsaArchiveReaders(new[] { bsaPath }, _settings.SkyrimRelease.ToGameRelease(), false);
+
+                if (bsaReaders.TryGetValue(bsaPath, out var reader) && reader.Files.Any())
+                {
+                    foreach (var fileRecord in reader.Files)
+                    {
+                        string path = fileRecord.Path.ToLowerInvariant().Replace('\\', '/');
+                        if (path.StartsWith("meshes/actors/character/facegendata/") ||
+                            path.StartsWith("textures/actors/character/facegendata/"))
+                        {
+                            faceGenFilesInArchive.Add(path);
+                        }
+                    }
+                }
+                bsaContentCache.TryAdd(bsaPath, faceGenFilesInArchive);
+            })).ToList();
+
+            await Task.WhenAll(processingTasks);
+            
+            Debug.WriteLine("Finished caching content from all BSAs.");
+            splashReporter?.UpdateStep("Finalizing asset cache...");
+            
+            // --- Part 3: Assemble the final dictionary for each VM using the caches ---
+            var allFaceGenBsaFiles = new Dictionary<string, HashSet<string>>();
+            foreach (var vm in _allModSettingsInternal)
+            {
+                var bsaFilePathsForVm = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                // Retrieve the pre-computed BSA dictionary from the cache instead of recalculating.
+                if (vmBsaPathsCache.TryGetValue(vm.DisplayName, out var bsaDict))
+                {
+                     // Get all unique BSA paths for this specific VM from the cached result.
+                    var uniqueBsaPathsForVm = bsaDict.Values.SelectMany(paths => paths).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                    // Look up the pre-cached content for each BSA and add it to the VM's set.
+                    foreach (var bsaPath in uniqueBsaPathsForVm)
+                    {
+                        if (bsaContentCache.TryGetValue(bsaPath, out var cachedContent))
+                        {
+                            bsaFilePathsForVm.UnionWith(cachedContent);
+                        }
+                    }
+                }
+                
+                // Store the collected BSA file paths against the VM's DisplayName.
+                allFaceGenBsaFiles[vm.DisplayName] = bsaFilePathsForVm;
+            }
+            
+            Debug.WriteLine($"Assembled BSA file paths for {allFaceGenBsaFiles.Count} mod settings from cache.");
             return (allFaceGenLooseFiles, allFaceGenBsaFiles);
         }
 

@@ -11,12 +11,14 @@ using System.Reactive.Concurrency; // Required for Unit
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks; // Added for Task
 using System.Windows;
 using System.Windows.Forms; // Added for MessageBox
+using System.Runtime.InteropServices;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
@@ -53,6 +55,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
     private readonly AppearanceModFactory _appearanceModFactory;
     private readonly VM_ModSetting.FromModelFactory _modSettingFromModelFactory;
+    
+    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
+    private static extern int StrCmpLogicalW(string x, string y);
 
     // --- Internal State ---
     private HashSet<string> _hiddenModNames = new();
@@ -1375,7 +1380,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     splashReporter?.UpdateProgress(progress, $"Processing: {npcName}");
                 }
                 
-                var selector = new VM_NpcsMenuSelection(initData.NpcData.FormKey, _environmentStateProvider, this);
+                var selector = new VM_NpcsMenuSelection(initData.NpcData.FormKey, _environmentStateProvider, this, _auxilliary);
                 selector.UpdateWithData(initData.NpcData);
 
                 foreach (var mod in initData.AppearanceMods)
@@ -1396,7 +1401,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 try
                 {
-                    var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider, this);
+                    var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider, this, _auxilliary);
                     if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(mugshotFormKey, out var getter))
                     {
                         npcSelector.UpdateWithData(NpcDisplayData.FromGetter(getter));
@@ -1523,8 +1528,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 results = results.Where(npc => predicates.Any(p => p(npc))).ToList();
             }
         }
-
-        results.SortByFormId(_auxilliary);
+        
+        //results.Sort((a, b) => StrCmpLogicalW(a.FormIdString, b.FormIdString));
+        results.SortByFormId();
 
         FilteredNpcs.Clear();
         foreach (var npc in results)

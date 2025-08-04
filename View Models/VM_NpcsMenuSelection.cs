@@ -21,6 +21,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
     {
         private readonly EnvironmentStateProvider _environmentStateProvider;
         private readonly VM_NpcSelectionBar _parentMenu;
+        private readonly Auxilliary _aux;
 
         public NpcDisplayData? NpcData { get; set; } // Keep the original record (null if from mugshot only)
         public FormKey NpcFormKey { get; }
@@ -33,6 +34,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string NpcEditorId { get; set; } = _defaultEditorID;
         private static string _defaultFormKeyString = "No FormKey";
         public string NpcFormKeyString { get; } = _defaultFormKeyString;
+        public string FormIdString { get; }
         private bool _pluginFound = false;
 
         // This property reflects the centrally stored selection
@@ -40,24 +42,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public ObservableCollection<VM_ModSetting> AppearanceMods { get; set; } = new();
 
         // Alternative constructor for NPCs found *only* via mugshots
-        public VM_NpcsMenuSelection(FormKey npcFormKey, EnvironmentStateProvider environmentStateProvider, VM_NpcSelectionBar parentMenu)
+        public VM_NpcsMenuSelection(FormKey npcFormKey, EnvironmentStateProvider environmentStateProvider, VM_NpcSelectionBar parentMenu, Auxilliary aux)
         {
             _environmentStateProvider = environmentStateProvider;
             _parentMenu = parentMenu;
+            _aux = aux;
             NpcFormKey = npcFormKey;
             NpcFormKeyString = npcFormKey.ToString();
+            FormIdString = _aux.FormKeyToFormIDString(NpcFormKey);
             NpcData = null; // Initially null, will be populated by UpdateWithData
-            
-            var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcFormKey);
-            var sourceContext = contexts.LastOrDefault();
-            if (sourceContext != null)
+
+            if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var sourceGetter))
             {
-                var sourceGetter = sourceContext.Record;
-                if (sourceGetter != null)
-                {
-                    _pluginFound = true;
-                    UpdateDisplayName(sourceGetter);
-                }
+                _pluginFound = true;
+                UpdateDisplayName(sourceGetter);
             }
         }
         
@@ -102,17 +100,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// Helper that converts a FormKey to its full FormID string, returning "" if the
         /// FormKey is not found in the current load order.
         /// </param>
-        public static void SortByFormId(this List<VM_NpcsMenuSelection> npcs,
-                                         Auxilliary aux)
+        public static void SortByFormId(this List<VM_NpcsMenuSelection> npcs)
         {
             if (npcs is null) throw new ArgumentNullException(nameof(npcs));
-            if (aux  is null) throw new ArgumentNullException(nameof(aux));
 
             npcs.Sort((a, b) =>
             {
                 // --- Presence test ------------------------------------------------------
-                var aFormId = aux.FormKeyToFormIDString(a.NpcFormKey);
-                var bFormId = aux.FormKeyToFormIDString(b.NpcFormKey);
+                var aFormId = a.FormIdString;
+                var bFormId = b.FormIdString;
 
                 bool aInLoadOrder = aFormId.Length != 0;
                 bool bInLoadOrder = bFormId.Length != 0;

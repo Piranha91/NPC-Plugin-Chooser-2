@@ -128,7 +128,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ModsFolder = _model.ModsFolder;
             MugshotsFolder = _model.MugshotsFolder;
             SkyrimRelease = _model.SkyrimRelease;
+            _environmentStateProvider.SkyrimVersion = SkyrimRelease;
             SkyrimGamePath = _model.SkyrimGamePath;
+            _environmentStateProvider.DataFolderPath = SkyrimGamePath;
             OutputModName = _model.OutputPluginName; // Model's OutputPluginName is the source of truth
             OutputDirectory = _model.OutputDirectory;
             UseSkyPatcherMode = _model.UseSkyPatcherMode;
@@ -234,7 +236,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     this.WhenAnyValue(x => x.SkyrimRelease).Select(_ => Unit.Default),
                     this.WhenAnyValue(x => x.SkyrimGamePath).Select(_ => Unit.Default) // Use Count property
                 )
-                .Skip(1) // Skip the initial value set in the constructor
+                .Skip(2) // Skip the initial value set in the constructor
                 .Throttle(TimeSpan.FromMilliseconds(100))
                 .ObserveOn(RxApp.MainThreadScheduler) 
                 .Subscribe(_ =>
@@ -341,12 +343,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             
             // --- STEP 1 ---
             _splashReporter?.UpdateStep($"Step 1 of {totalSteps}: Updating game environment...");
-            
-            using (ContextualPerformanceTracer.Trace("VM_Settings.UpdateEnvironment"))
-            {
-                _splashReporter?.UpdateProgress(62, "Updating game environment...");
-                _environmentStateProvider.UpdateEnvironment(62, 8);
-            }
             
             // --- STEP 2 ---
             _splashReporter?.UpdateStep($"Step 2 of {totalSteps}: Populating mod list...");
