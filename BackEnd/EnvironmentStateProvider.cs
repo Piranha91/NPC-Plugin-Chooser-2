@@ -1,4 +1,5 @@
-﻿using Mutagen.Bethesda.Plugins.Cache;
+﻿using System.Diagnostics;
+using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Order;
 using Mutagen.Bethesda.Skyrim;
 using Mutagen.Bethesda.Environments;
@@ -38,7 +39,7 @@ public class EnvironmentStateProvider
     public string EnvironmentBuilderError { get; set; }
     
     // Additional fields to help other classes
-    private readonly Dictionary<ModKey, int> _modKeyPositionCache = new();
+    private readonly Dictionary<ModKey, string> _modKeyFormIdPrefixCache = new();
 
     public EnvironmentStateProvider(Settings settings, VM_SplashScreen? splashReporter = null)
     {
@@ -119,13 +120,7 @@ public class EnvironmentStateProvider
 
             CreationClubPlugins = GetCreationClubPlugins();
             
-            var loadOrder = LoadOrder.ListedOrder.ToList();
-            
-            for (int i = 0; i < loadOrder.Count; i++)
-            {
-                // Map each ModKey to its index in the load order.
-                _modKeyPositionCache[loadOrder[i].ModKey] = i;
-            }
+            ComputeFormIdPrefixes();
             
             _splashReporter?.UpdateProgress(baseProgress + progressSpan, "Game environment initialized successfully.");
         }
@@ -164,9 +159,53 @@ public class EnvironmentStateProvider
         return creationClubModKeys;
     }
 
-    public bool TryGetPluginIndex(ModKey modKey, out int index)
+    private void ComputeFormIdPrefixes()
     {
-        if (_modKeyPositionCache.TryGetValue(modKey, out index))
+        var loadOrder = LoadOrder.ListedOrder.ToList();
+        
+        // This is the separate counter for full masters ONLY.
+        int fullMasterIndex = 0; 
+        int lightMasterIndex = 0;
+
+        for (int i = 0; i < loadOrder.Count; i++)
+        {
+            var listing = loadOrder[i];
+            if (listing.Mod != null && listing.Mod.ModHeader.Flags.HasFlag(SkyrimModHeader.HeaderFlag.Small))
+            {
+                // Handle ESLs using the light master counter.
+                if (lightMasterIndex > 4095) // Max is FFF (4095)
+                {
+                    Debug.WriteLine($"WARNING: Load order exceeds the 4096 light master limit. Plugin '{listing.ModKey.FileName}' will not be correctly indexed.");
+                    continue;
+                }
+                        
+                // The prefix uses the current lightMasterIndex, formatted to 3 hex digits.
+                _modKeyFormIdPrefixCache[listing.ModKey] = $"FE{lightMasterIndex:X3}";
+                        
+                // Increment ONLY the light master counter.
+                lightMasterIndex++; 
+            }
+            else
+            {
+                // Handle full masters using the full master counter.
+                if (fullMasterIndex > 253) // Max is FD (253)
+                {
+                    Debug.WriteLine($"WARNING: Load order exceeds the 254 full master limit. Plugin '{listing.ModKey.FileName}' and subsequent plugins will have invalid FormIDs.");
+                    continue;
+                }
+
+                // The prefix is the fullMasterIndex formatted to 2 hex digits.
+                _modKeyFormIdPrefixCache[listing.ModKey] = fullMasterIndex.ToString("X2");
+
+                // Increment ONLY the full master counter.
+                fullMasterIndex++; 
+            }
+        }
+    }
+
+    public bool TryGetPluginIndex(ModKey modKey, out string prefix)
+    {
+        if (_modKeyFormIdPrefixCache.TryGetValue(modKey, out prefix))
         {
             return true;
         }

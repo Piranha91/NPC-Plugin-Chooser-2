@@ -425,35 +425,21 @@ public class Auxilliary
     public bool TryFormKeyToFormIDString(FormKey formKey, out string formIDstr)
     {
         formIDstr = string.Empty;
-        string modIndexHex;
-
-        if (formKey.ModKey.FileName == _environmentStateProvider.OutputPluginName + ".esp")
+        if (_environmentStateProvider.TryGetPluginIndex(formKey.ModKey, out var prefix))
         {
-            // The output plugin is assumed to be last.
-            modIndexHex = _environmentStateProvider.LoadOrder.ListedOrder.Count().ToString("X");
-        }
-        else
-        {
-            // --- REPLACED a slow for-loop with a fast dictionary lookup ---
-            if (_environmentStateProvider.TryGetPluginIndex(formKey.ModKey, out int modIndex))
+            if (prefix.StartsWith("FE"))
             {
-                modIndexHex = modIndex.ToString("X");
+                // For ESLs, the local ID is the last 12 bits (3 hex characters).
+                formIDstr = $"{prefix}{formKey.ID & 0xFFF:X3}";
             }
             else
             {
-                // The plugin for this FormKey is not in the current load order.
-                return false; 
+                // For regular plugins, the local ID is the last 24 bits (6 hex characters).
+                formIDstr = prefix + formKey.IDString();
             }
+            return true;
         }
-
-        // Pad to at least two characters (e.g., "FE", "0A")
-        if (modIndexHex.Length == 1)
-        {
-            modIndexHex = "0" + modIndexHex;
-        }
-
-        formIDstr = modIndexHex + formKey.IDString();
-        return true;
+        return false;
     }
     
     public enum PathType
