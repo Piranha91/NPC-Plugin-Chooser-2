@@ -44,18 +44,20 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // Alternative constructor for NPCs found *only* via mugshots
         public VM_NpcsMenuSelection(FormKey npcFormKey, EnvironmentStateProvider environmentStateProvider, VM_NpcSelectionBar parentMenu, Auxilliary aux)
         {
-            _environmentStateProvider = environmentStateProvider;
-            _parentMenu = parentMenu;
-            _aux = aux;
-            NpcFormKey = npcFormKey;
-            NpcFormKeyString = npcFormKey.ToString();
-            FormIdString = _aux.FormKeyToFormIDString(NpcFormKey);
-            NpcData = null; // Initially null, will be populated by UpdateWithData
-
-            if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var sourceGetter))
+            using (ContextualPerformanceTracer.Trace("NpcMenuEntry.MainConstructor"))
             {
-                _pluginFound = true;
-                UpdateDisplayName(sourceGetter);
+                _environmentStateProvider = environmentStateProvider;
+                _parentMenu = parentMenu;
+                _aux = aux;
+                NpcFormKey = npcFormKey;
+                NpcFormKeyString = npcFormKey.ToString();
+                DisplayName = npcFormKey.ToString();
+                NpcData = null; // Initially null, will be populated by UpdateWithData
+            }
+
+            using (ContextualPerformanceTracer.Trace("NpcMenuEntry.GetFormID"))
+            {
+                FormIdString = _aux.FormKeyToFormIDString(NpcFormKey);
             }
         }
         
@@ -65,26 +67,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             NpcName = npcData.Name ?? _defaultNpcName;
             NpcEditorId = npcData.EditorID ?? _defaultEditorID;
             DisplayName = npcData.DisplayName;
-        }
-
-        public void UpdateDisplayName(INpcGetter sourceGetter)
-        {
-            //NpcGetter = sourceGetter;
-            NpcName = sourceGetter.Name?.String ?? _defaultNpcName;
-            NpcEditorId = sourceGetter.EditorID ?? _defaultEditorID;
-
-            if (NpcName != _defaultNpcName)
-            {
-                DisplayName = NpcName;
-            }
-            else if (NpcEditorId != _defaultEditorID)
-            {
-                DisplayName = NpcEditorId;
-            }
-            else
-            {
-                DisplayName = NpcFormKeyString;
-            }
         }
     }
     

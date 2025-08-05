@@ -1395,23 +1395,52 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         // 4. Handle NPCs that only exist in mugshot data.
         var allNpcKeys = new HashSet<FormKey>(AllNpcs.Select(n => n.NpcFormKey));
         var mugshotOnlyKeys = _mugshotData.Keys.Where(key => !allNpcKeys.Contains(key)).ToList();
-        using (ContextualPerformanceTracer.Trace("InitializeNpcs.CreateMugshotOnlyViewModels"))
+        using (ContextualPerformanceTracer.Trace("InitializeNpcs.CreateMugshotOnlyVMs"))
         {
-            foreach (var mugshotFormKey in mugshotOnlyKeys)
+            var npcFormKeysByModKey = mugshotOnlyKeys.GroupBy(x => x.ModKey).ToArray();
+            foreach (var group in npcFormKeysByModKey)
             {
-                try
-                {
-                    var npcSelector = new VM_NpcsMenuSelection(mugshotFormKey, _environmentStateProvider, this, _auxilliary);
-                    if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(mugshotFormKey, out var getter))
-                    {
-                        npcSelector.UpdateWithData(NpcDisplayData.FromGetter(getter));
-                    }
+                var modKey = group.Key;
+                var npcDict = new Dictionary<FormKey, INpcGetter>();
+                var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
 
-                    AllNpcs.Add(npcSelector);
-                }
-                catch (Exception ex)
+                using (ContextualPerformanceTracer.Trace("CreateMugshotOnlyVMs.PopulateNpcDict"))
                 {
-                    Debug.WriteLine($"Error creating VM for mugshot-only NPC {mugshotFormKey}: {ex.Message}");
+                    if (modListing is not null)
+                    {
+                        npcDict = modListing.Mod.Npcs.ToDictionary(x => x.FormKey, x => x);
+                    }
+                }
+
+                foreach (var npcFormKey in group)
+                {
+                    try
+                    {
+                        VM_NpcsMenuSelection npcSelector;
+
+                        using (ContextualPerformanceTracer.Trace("CreateMugshotOnlyVMs.CreateVM"))
+                        {
+                            npcSelector = new VM_NpcsMenuSelection(npcFormKey, _environmentStateProvider, this,
+                                _auxilliary);
+                        }
+
+                        using (ContextualPerformanceTracer.Trace("CreateMugshotOnlyVMs.UpdateWithData"))
+                        {
+                            if (npcDict.TryGetValue(npcFormKey, out var getter))
+                            {
+                                npcSelector.UpdateWithData(NpcDisplayData.FromGetter(getter));
+                            }
+                        }
+
+                        using (ContextualPerformanceTracer.Trace("CreateMugshotOnlyVMs.AddToList"))
+                        {
+                            AllNpcs.Add(npcSelector);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error creating VM for mugshot-only NPC {npcFormKey}: {ex.Message}");
+                    }
                 }
             }
         }

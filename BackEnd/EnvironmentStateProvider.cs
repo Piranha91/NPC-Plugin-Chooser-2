@@ -36,6 +36,9 @@ public class EnvironmentStateProvider
     public string CreationClubListingsFilePath { get; set; }
     public string LoadOrderFilePath { get; set; }
     public string EnvironmentBuilderError { get; set; }
+    
+    // Additional fields to help other classes
+    private readonly Dictionary<ModKey, int> _modKeyPositionCache = new();
 
     public EnvironmentStateProvider(Settings settings, VM_SplashScreen? splashReporter = null)
     {
@@ -116,6 +119,14 @@ public class EnvironmentStateProvider
 
             CreationClubPlugins = GetCreationClubPlugins();
             
+            var loadOrder = LoadOrder.ListedOrder.ToList();
+            
+            for (int i = 0; i < loadOrder.Count; i++)
+            {
+                // Map each ModKey to its index in the load order.
+                _modKeyPositionCache[loadOrder[i].ModKey] = i;
+            }
+            
             _splashReporter?.UpdateProgress(baseProgress + progressSpan, "Game environment initialized successfully.");
         }
         catch (Exception ex)
@@ -151,5 +162,15 @@ public class EnvironmentStateProvider
         }
         
         return creationClubModKeys;
+    }
+
+    public bool TryGetPluginIndex(ModKey modKey, out int index)
+    {
+        if (_modKeyPositionCache.TryGetValue(modKey, out index))
+        {
+            return true;
+        }
+
+        return false;
     }
 }

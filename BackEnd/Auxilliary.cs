@@ -21,8 +21,8 @@ public class Auxilliary
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly IAssetLinkCache _assetLinkCache;
     
-    public Dictionary<ModKey, string> ModKeyPositionCache = new Dictionary<ModKey, string>();
-    public Dictionary<FormKey, string> FormIDCache = new Dictionary<FormKey, string>();
+
+    public Dictionary<FormKey, string> FormIDCache = new();
     
     public Auxilliary(EnvironmentStateProvider environmentStateProvider)
     {
@@ -99,16 +99,17 @@ public class Auxilliary
     
     public string FormKeyToFormIDString(FormKey formKey)
     {
-        if (FormIDCache.ContainsKey(formKey))
+        if (FormIDCache.TryGetValue(formKey, out var cachedId))
         {
-            return FormIDCache[formKey];
+            return cachedId;
         }
+        
         if (TryFormKeyToFormIDString(formKey, out string formIDstr))
         {
             FormIDCache[formKey] = formIDstr;
             return formIDstr;
         }
-        return String.Empty;
+        return string.Empty;
     }
     
     /// <summary>
@@ -417,45 +418,41 @@ public class Auxilliary
         return (meshPath.ToLowerInvariant(), texPath.ToLowerInvariant());
     }
 
+    /// <summary>
+    /// OPTIMIZED: This method no longer performs a slow linear search.
+    /// It now uses the pre-built dictionary for an instantaneous lookup.
+    /// </summary>
     public bool TryFormKeyToFormIDString(FormKey formKey, out string formIDstr)
     {
         formIDstr = string.Empty;
+        string modIndexHex;
 
         if (formKey.ModKey.FileName == _environmentStateProvider.OutputPluginName + ".esp")
         {
-            formIDstr = _environmentStateProvider.LoadOrder.ListedOrder.Count().ToString("X"); // format FormID assuming the generated patch will be last in the load order
+            // The output plugin is assumed to be last.
+            modIndexHex = _environmentStateProvider.LoadOrder.ListedOrder.Count().ToString("X");
         }
         else
         {
-            if (ModKeyPositionCache.ContainsKey(formKey.ModKey))
+            // --- REPLACED a slow for-loop with a fast dictionary lookup ---
+            if (_environmentStateProvider.TryGetPluginIndex(formKey.ModKey, out int modIndex))
             {
-                formIDstr = ModKeyPositionCache[formKey.ModKey];
+                modIndexHex = modIndex.ToString("X");
             }
             else
             {
-                for (int i = 0; i < _environmentStateProvider.LoadOrder.ListedOrder.Count(); i++)
-                {
-                    var currentListing = _environmentStateProvider.LoadOrder.ListedOrder.ElementAt(i);
-                    if (currentListing.ModKey.Equals(formKey.ModKey))
-                    {
-                        formIDstr = i.ToString("X"); // https://www.delftstack.com/howto/csharp/integer-to-hexadecimal-in-csharp/
-                        ModKeyPositionCache[formKey.ModKey] = formIDstr;
-                        break;
-                    }
-                }
+                // The plugin for this FormKey is not in the current load order.
+                return false; 
             }
         }
-        if (!formIDstr.Any())
+
+        // Pad to at least two characters (e.g., "FE", "0A")
+        if (modIndexHex.Length == 1)
         {
-            return false;
+            modIndexHex = "0" + modIndexHex;
         }
 
-        if (formIDstr.Length == 1)
-        {
-            formIDstr = "0" + formIDstr;
-        }
-
-        formIDstr += formKey.IDString();
+        formIDstr = modIndexHex + formKey.IDString();
         return true;
     }
     
