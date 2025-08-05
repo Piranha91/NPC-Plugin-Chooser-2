@@ -84,8 +84,13 @@ public class PluginProvider: IDisposable
     {
         if (_pluginCache.TryGetValue(modKey, out var value))
         {
-            (plugin, pluginSourcePath) = value;
-            return true;
+            // make sure the type is correct
+            if ((asReadOnly && value.plugin is ISkyrimModDisposableGetter) ||
+                (!asReadOnly && value.plugin is not ISkyrimModDisposableGetter))
+            {
+                (plugin, pluginSourcePath) = value;
+                return true;
+            }
         }
 
         string? foundPath = null;

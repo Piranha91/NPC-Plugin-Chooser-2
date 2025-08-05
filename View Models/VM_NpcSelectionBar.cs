@@ -1815,6 +1815,25 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 appearanceVM.HasIssueNotification = true;
                 appearanceVM.IssueType = notif.IssueType;
                 appearanceVM.IssueNotificationText = notif.IssueMessage;
+
+                if (notif.IssueType == NpcIssueType.Template)
+                {
+                    StringBuilder issueToolTip = new StringBuilder();
+                    if (notif.ReferencedFormKey != null &&
+                        _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(notif.ReferencedFormKey.Value,
+                            out var templateGetter))
+                    {
+                        issueToolTip.Append(
+                            $"Despite having FaceGen files, this NPC from {appearanceVM.ModKey?.FileName ?? "NO PLUGIN"} has the Traits flag so it inherits appearance from {Auxilliary.GetNpcLogString(templateGetter, true)}. If the selected Appearance Mod for this NPC doesn't match that of its Template, visual glitches can occur in-game.");
+                    }
+                    else
+                    {
+                        issueToolTip.Append(
+                            $"Despite having FaceGen files, this NPC from {appearanceVM.ModKey?.FileName ?? "NO PLUGIN"} has the Traits flag so it inherits appearance from {notif.IssueMessage}. If the selected Appearance Mod for this NPC doesn't match that of its Template, visual glitches can occur in-game.");
+                    }
+                    
+                    appearanceVM.IssueNotificationText = issueToolTip.ToString();
+                }
             }
 
             if (!baseModKey.IsNull && specificPluginKey != null && specificPluginKey.Value.Equals(baseModKey))
