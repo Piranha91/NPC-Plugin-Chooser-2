@@ -629,7 +629,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     if (racefk.IsNull)
                                     {
                                         string message = $"Discarded {Auxilliary.GetNpcLogString(npcGetter)} from {DisplayName} because its race is null.";
-                                        Debug.WriteLine(message);
+                                        //Debug.WriteLine(message);
                                         rejectionMessages.Add(message);
                                         continue;
                                     }
@@ -638,7 +638,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                             out var raceGetter) || raceGetter.Keywords == null)
                                     {
                                         string message = $"Discarded {Auxilliary.GetNpcLogString(npcGetter)} from {DisplayName} because its race couldn't be resolved or race keywords are null.";
-                                        Debug.WriteLine(message);
+                                        //Debug.WriteLine(message);
                                         rejectionMessages.Add(message);
                                         continue;
                                     }
@@ -647,7 +647,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                             .ActorTypeNPC) && !npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
                                     {
                                         string message = $"Discarded {Auxilliary.GetNpcLogString(npcGetter)} from {DisplayName} because its race is missing the ActorTypeNPC keyword.";
-                                        Debug.WriteLine(message);
+                                        //Debug.WriteLine(message);
                                         rejectionMessages.Add(message);
                                         continue;
                                     }
@@ -660,7 +660,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                             currentBsaCache ?? new HashSet<string>()) && !npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
                                     {
                                         string message = $"Discarded {Auxilliary.GetNpcLogString(npcGetter)} from {DisplayName} because it has no FaceGen and does not use a template.";
-                                        Debug.WriteLine(message);
+                                        //Debug.WriteLine(message);
                                         rejectionMessages.Add(message);
                                         continue;
                                     }

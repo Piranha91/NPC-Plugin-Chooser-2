@@ -337,8 +337,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // New method for heavy initialization, called from App.xaml.cs
         public async Task InitializeAsync()
         {
-            ContextualPerformanceTracer.Reset(); // Reset at the start of the whole process
-
             const int totalSteps = 4; // Define the total number of steps
             
             // --- STEP 1 ---

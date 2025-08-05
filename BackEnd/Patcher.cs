@@ -270,8 +270,6 @@ public class Patcher : OptionalUIModule
 
                         await Task.Run(async () =>
                         {
-                            using var _context =
-                                ContextualPerformanceTracer.BeginContext(winningNpcOverride.FormKey.ModKey);
                             using var _ = ContextualPerformanceTracer.Trace("Patcher.MainLoopIteration");
 
                             AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'");

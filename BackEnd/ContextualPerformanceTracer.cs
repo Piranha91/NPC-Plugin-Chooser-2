@@ -1,76 +1,132 @@
-﻿// [ContextualPerformanceTracer.cs] - Full Code After Modifications
+﻿// [ContextualPerformanceTracer.cs] - Final Version with Both Group-Specific and Comprehensive Reporting
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading; // Required for Interlocked
-using Mutagen.Bethesda.Plugins;
+using System.Threading;
 
 namespace NPC_Plugin_Chooser_2.BackEnd
 {
     public static class ContextualPerformanceTracer
     {
-        private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, ProfileData>> _stats = new();
+        private static readonly ConcurrentDictionary<Guid, ProfileData> _stats = new();
         private static readonly AsyncLocal<string?> _currentContext = new();
-        
-        private static readonly HashSet<string> OfficialPlugins = new(StringComparer.OrdinalIgnoreCase)
-        {
-            "Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm"
-        };
+        private static readonly AsyncLocal<Guid?> _currentParentId = new();
 
         private class ProfileData
         {
-            public long CallCount;
-            public double TotalMilliseconds;
-            public double MaxMilliseconds;
-            public readonly object LockObj = new();
+            public string FunctionName { get; }
+            public string Context { get; }
+            public Guid Id { get; }
+            public Guid? ParentId { get; }
+            public double TotalMilliseconds { get; set; }
+            public long CallCount { get; set; }
+            public double MaxMilliseconds { get; set; }
+            public ConcurrentBag<ProfileData> Children { get; } = new();
+
+            public ProfileData(string functionName, string context, Guid id, Guid? parentId)
+            {
+                FunctionName = functionName;
+                Context = context;
+                Id = id;
+                ParentId = parentId;
+            }
         }
 
+        private class ReportNode
+        {
+            public string FunctionName { get; }
+            public long TotalCalls { get; set; }
+            public double TotalMilliseconds { get; set; }
+            public double MaxMilliseconds { get; set; }
+            public List<ReportNode> Children { get; } = new();
+
+            public ReportNode(string functionName)
+            {
+                FunctionName = functionName;
+            }
+        }
+        
         public static void Reset()
         {
             _stats.Clear();
             _currentContext.Value = null;
+            _currentParentId.Value = null;
             Debug.WriteLine($"--- ContextualPerformanceTracer Reset ---");
         }
 
-        public static IDisposable BeginContext(ModKey sourceModKey)
+        public static IDisposable BeginContext(string contextName)
         {
-            string npcSourceMod = sourceModKey.FileName;
-            string context;
-
-            if (OfficialPlugins.Contains(npcSourceMod))
-            {
-                context = "Base Game";
-            }
-            else if (npcSourceMod.StartsWith("cc", StringComparison.OrdinalIgnoreCase) && npcSourceMod.EndsWith(".esl", StringComparison.OrdinalIgnoreCase))
-            {
-                context = "Creation Club";
-            }
-            else
-            {
-                context = "Mod-Added";
-            }
-
-            _currentContext.Value = context;
-            
+            _currentContext.Value = contextName;
             return new ContextScope();
         }
 
         public static IDisposable Trace(string functionName, string? detail = null)
         {
-            string contextToUse = _currentContext.Value ?? "No Context";
+            string contextToUse = _currentContext.Value ?? "No Batch Context";
             string fullFunctionName = detail == null ? functionName : $"{functionName}[{detail}]";
-            return new Tracer(contextToUse, fullFunctionName);
+            var parentId = _currentParentId.Value;
+            var newId = Guid.NewGuid();
+            var data = new ProfileData(fullFunctionName, contextToUse, newId, parentId);
+            _stats.TryAdd(newId, data);
+            _currentParentId.Value = newId;
+            return new Tracer(newId);
         }
 
-        public static string GenerateReportForGroup(string groupName, bool showFunctionStats)
+        /// <summary>
+        /// RESTORED: Generates a comprehensive, hierarchical report for ALL contexts traced since the last Reset().
+        /// This is the replacement for your call in VM_Settings.cs.
+        /// </summary>
+        public static string GenerateDetailedReport(string reportTitle)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"\n================= DETAILED PERFORMANCE REPORT: [{reportTitle}] =================");
+
+            if (_stats.IsEmpty)
+            {
+                sb.AppendLine("No performance data was recorded.");
+                sb.AppendLine("========================================================================================");
+                Debug.WriteLine(sb.ToString());
+                return sb.ToString();
+            }
+
+            // Group all traced data by the context they ran in.
+            var allContexts = _stats.Values.GroupBy(d => d.Context);
+
+            foreach (var contextGroup in allContexts.OrderBy(g => g.Key))
+            {
+                sb.AppendLine($"\n--- Context: {contextGroup.Key} ---");
+                sb.AppendLine("Function                               |      Calls |     Total (ms) |     Avg (ms) |     Max (ms)");
+                sb.AppendLine("---------------------------------------+------------+----------------+--------------+--------------");
+                
+                var groupStats = contextGroup.ToList();
+                var rootNodes = BuildCallTree(groupStats);
+                var aggregatedRoot = AggregateNodes(rootNodes);
+
+                foreach (var node in aggregatedRoot.Children.OrderByDescending(c => c.TotalMilliseconds))
+                {
+                    PrintNode(sb, node, 0);
+                }
+            }
+
+            sb.AppendLine("========================================================================================");
+            Debug.WriteLine(sb.ToString());
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Generates a report for a single, specified group. Still available for the Patcher's specific use case.
+        /// </summary>
+        public static string GenerateReportForGroup(string groupName, bool showFunctionStats = true)
         {
             var sb = new StringBuilder();
             sb.AppendLine($"\n================= PERFORMANCE REPORT for Group: [{groupName}] =================");
 
-            if (_stats.IsEmpty)
+            var groupStats = _stats.Values.Where(d => d.Context.Equals(groupName, StringComparison.Ordinal)).ToList();
+
+            if (!groupStats.Any())
             {
                 sb.AppendLine("No performance data was recorded for this group.");
                 sb.AppendLine("=====================================================================================");
@@ -78,18 +134,10 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                 return sb.ToString();
             }
 
-            long totalNpcsProcessed = 0;
-            double totalNpcProcessingTime = 0;
-
-            foreach (var contextStats in _stats.Values)
-            {
-                if (contextStats.TryGetValue("Patcher.MainLoopIteration", out var mainLoopData))
-                {
-                    totalNpcsProcessed += mainLoopData.CallCount;
-                    totalNpcProcessingTime += mainLoopData.TotalMilliseconds;
-                }
-            }
-
+            var mainLoopIterations = groupStats.Where(s => s.FunctionName == "Patcher.MainLoopIteration").ToList();
+            long totalNpcsProcessed = mainLoopIterations.Count;
+            double totalNpcProcessingTime = mainLoopIterations.Sum(s => s.TotalMilliseconds);
+            
             if (totalNpcsProcessed > 0)
             {
                 double avgTimePerNpc = totalNpcProcessingTime / totalNpcsProcessed;
@@ -104,209 +152,128 @@ namespace NPC_Plugin_Chooser_2.BackEnd
 
             if (showFunctionStats)
             {
-                var allFunctions = _stats
-                    .SelectMany(contextKvp =>
-                        contextKvp.Value.Select(funcKvp => new { FunctionName = funcKvp.Key, Data = funcKvp.Value }))
-                    .GroupBy(x => x.FunctionName)
-                    .Select(g => new
-                    {
-                        FunctionName = g.Key,
-                        TotalCalls = g.Sum(x => x.Data.CallCount),
-                        TotalMilliseconds = g.Sum(x => x.Data.TotalMilliseconds),
-                        MaxMilliseconds = g.Max(x => x.Data.MaxMilliseconds)
-                    })
-                    .OrderByDescending(x => x.TotalMilliseconds)
-                    .ToList();
-
-                sb.AppendLine("\n--- Sub-function Details ---");
-                sb.AppendLine(
-                    "Function                               |      Calls |     Total (ms) |     Avg (ms) |     Max (ms)");
-                sb.AppendLine(
-                    "---------------------------------------+------------+----------------+--------------+--------------");
-
-                foreach (var func in allFunctions)
-                {
-                    if (func.TotalCalls <= 0) continue;
-                    double avg = func.TotalMilliseconds / func.TotalCalls;
-                    string name = func.FunctionName.PadRight(38);
-                    if (name.Length > 38) name = name.Substring(0, 38);
-                    sb.AppendLine(
-                        $"{name} | {func.TotalCalls,10} | {func.TotalMilliseconds,14:N2} | {avg,12:N4} | {func.MaxMilliseconds,12:N2}");
-                }
-            }
-
-            sb.AppendLine("=====================================================================================");
-            
-            Debug.WriteLine(sb.ToString());
-            
-            return sb.ToString();
-        }
-        
-        public static string GenerateValidationReport()
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("\n============== VALIDATION PERFORMANCE REPORT ==============");
-
-            if (_stats.IsEmpty)
-            {
-                sb.AppendLine("No performance data was recorded during validation.");
-            }
-            else
-            {
+                sb.AppendLine("\n--- Sub-function Details (Hierarchical) ---");
                 sb.AppendLine("Function                               |      Calls |     Total (ms) |     Avg (ms) |     Max (ms)");
                 sb.AppendLine("---------------------------------------+------------+----------------+--------------+--------------");
 
-                var orderedFunctions = _stats
-                    .SelectMany(contextKvp => contextKvp.Value.Select(funcKvp => funcKvp))
-                    .OrderByDescending(kvp => kvp.Value.TotalMilliseconds);
-
-                foreach (var (functionName, data) in orderedFunctions)
+                var rootNodes = BuildCallTree(groupStats);
+                var aggregatedRoot = AggregateNodes(rootNodes);
+                foreach (var node in aggregatedRoot.Children.OrderByDescending(c => c.TotalMilliseconds))
                 {
-                    if (data.CallCount <= 0) continue;
-                    double avg = data.TotalMilliseconds / data.CallCount;
-                    string name = functionName.PadRight(38);
-                    if (name.Length > 38) name = name.Substring(0, 38);
-                    sb.AppendLine($"{name} | {data.CallCount,10} | {data.TotalMilliseconds,14:N2} | {avg,12:N4} | {data.MaxMilliseconds,12:N2}");
+                    PrintNode(sb, node, 0);
                 }
             }
             
-            sb.AppendLine("==========================================================");
-            
+            sb.AppendLine("=====================================================================================");
             Debug.WriteLine(sb.ToString());
             return sb.ToString();
+        }
+
+        #region Helper Methods for Reporting
+        private static List<ProfileData> BuildCallTree(IEnumerable<ProfileData> flatList)
+        {
+            var nodeDict = flatList.ToDictionary(n => n.Id);
+            var rootNodes = new List<ProfileData>();
+
+            foreach (var node in flatList)
+            {
+                if (node.ParentId.HasValue && nodeDict.TryGetValue(node.ParentId.Value, out var parent))
+                {
+                    parent.Children.Add(node);
+                }
+                else
+                {
+                    rootNodes.Add(node);
+                }
+            }
+            return rootNodes;
+        }
+
+        private static ReportNode AggregateNodes(IEnumerable<ProfileData> nodes)
+        {
+            var root = new ReportNode("root");
+            var queue = new Queue<(IEnumerable<ProfileData> sourceNodes, ReportNode parentReportNode)>();
+            if (nodes.Any())
+            {
+                queue.Enqueue((nodes, root));
+            }
+
+            while (queue.Count > 0)
+            {
+                var (currentLevelNodes, parentReportNode) = queue.Dequeue();
+
+                var groupedByName = currentLevelNodes
+                    .GroupBy(n => n.FunctionName)
+                    .Select(g =>
+                    {
+                        var aggregatedNode = new ReportNode(g.Key)
+                        {
+                            TotalCalls = g.Count(),
+                            TotalMilliseconds = g.Sum(n => n.TotalMilliseconds),
+                            MaxMilliseconds = g.Max(n => n.MaxMilliseconds),
+                        };
+
+                        var allChildren = g.SelectMany(n => n.Children);
+                        if (allChildren.Any())
+                        {
+                            queue.Enqueue((allChildren, aggregatedNode));
+                        }
+
+                        return aggregatedNode;
+                    });
+                
+                parentReportNode.Children.AddRange(groupedByName);
+            }
+            return root;
         }
         
-        /// <summary>
-        /// Generates a performance report with detailed breakdowns by context.
-        /// </summary>
-        public static string GenerateDetailedReport(string reportTitle)
+        private static void PrintNode(StringBuilder sb, ReportNode node, int depth)
         {
-            var sb = new StringBuilder();
-            sb.AppendLine($"\n================= DETAILED PERFORMANCE REPORT: [{reportTitle}] =================");
+            if (node.TotalCalls <= 0) return;
 
-            if (_stats.IsEmpty)
+            double avg = node.TotalMilliseconds / node.TotalCalls;
+            string indent = new string(' ', depth * 2);
+            string funcName = $"{indent}{node.FunctionName}";
+
+            const int nameColumnWidth = 38;
+            funcName = funcName.Length > nameColumnWidth
+                ? funcName.Substring(0, nameColumnWidth - 3) + "..."
+                : funcName.PadRight(nameColumnWidth);
+
+            sb.AppendLine($"{funcName} | {node.TotalCalls,10} | {node.TotalMilliseconds,14:N2} | {avg,12:N4} | {node.MaxMilliseconds,12:N2}");
+
+            foreach (var child in node.Children.OrderByDescending(c => c.TotalMilliseconds))
             {
-                sb.AppendLine("No performance data was recorded.");
-                sb.AppendLine("=====================================================================================");
-                Debug.WriteLine(sb.ToString());
-                return sb.ToString();
+                PrintNode(sb, child, depth + 1);
             }
-
-            var allFunctions = _stats
-                .SelectMany(contextKvp =>
-                    contextKvp.Value.Select(funcKvp => new { FunctionNameWithDetail = funcKvp.Key, Data = funcKvp.Value }))
-                .ToList();
-
-            var funcDetailRegex = new Regex(@"^(?<func>.+?)(\[(?<detail>.+)\])?$");
-
-            var aggregatedByFunction = allFunctions
-                .Select(f =>
-                {
-                    var match = funcDetailRegex.Match(f.FunctionNameWithDetail);
-                    return new
-                    {
-                        BaseFunction = match.Groups["func"].Value,
-                        Detail = match.Groups["detail"].Success ? match.Groups["detail"].Value : "N/A",
-                        f.Data
-                    };
-                })
-                .GroupBy(f => f.BaseFunction)
-                .Select(g => new
-                {
-                    BaseFunction = g.Key,
-                    TotalMilliseconds = g.Sum(x => x.Data.TotalMilliseconds),
-                    TotalCalls = g.Sum(x => x.Data.CallCount),
-                    Details = g.GroupBy(detailGroup => detailGroup.Detail)
-                               .Select(detail => new
-                               {
-                                   DetailName = detail.Key,
-                                   TotalMilliseconds = detail.Sum(x => x.Data.TotalMilliseconds),
-                                   TotalCalls = detail.Sum(x => x.Data.CallCount),
-                                   MaxMilliseconds = detail.Max(x => x.Data.MaxMilliseconds)
-                               })
-                               .OrderByDescending(d => d.TotalMilliseconds)
-                               .ToList()
-                })
-                .OrderByDescending(f => f.TotalMilliseconds)
-                .ToList();
-
-
-            sb.AppendLine("\n--- Performance Summary by Function ---");
-            sb.AppendLine("Function                               |      Calls |     Total (ms) |     Avg (ms)");
-            sb.AppendLine("---------------------------------------+------------+----------------+--------------");
-
-            foreach (var func in aggregatedByFunction)
-            {
-                if (func.TotalCalls <= 0) continue;
-                double avg = func.TotalMilliseconds / func.TotalCalls;
-                string name = func.BaseFunction.PadRight(38);
-                if (name.Length > 38) name = name.Substring(0, 38);
-                sb.AppendLine($"{name} | {func.TotalCalls,10} | {func.TotalMilliseconds,14:N2} | {avg,12:N4}");
-            }
-
-            sb.AppendLine("\n--- Detailed Breakdown ---");
-            foreach (var func in aggregatedByFunction)
-            {
-                if (func.Details.Count == 1 && func.Details.First().DetailName == "N/A")
-                {
-                    continue; 
-                }
-
-                sb.AppendLine($"\n--- Function: {func.BaseFunction} (Total: {func.TotalMilliseconds:N2} ms) ---");
-                sb.AppendLine("Detail                                 |      Calls |     Total (ms) |     Avg (ms) |     Max (ms)");
-                sb.AppendLine("---------------------------------------+------------+----------------+--------------+--------------");
-                
-                int detailsToShow = 15;
-                foreach (var detail in func.Details.Take(detailsToShow))
-                {
-                     if (detail.TotalCalls <= 0) continue;
-                     double avg = detail.TotalMilliseconds / detail.TotalCalls;
-                     string name = detail.DetailName.PadRight(38);
-                     if (name.Length > 38) name = name.Substring(0, 38);
-                     sb.AppendLine($"{name} | {detail.TotalCalls,10} | {detail.TotalMilliseconds,14:N2} | {avg,12:N4} | {detail.MaxMilliseconds,12:N2}");
-                }
-                if(func.Details.Count > detailsToShow)
-                {
-                    sb.AppendLine($"... and {func.Details.Count - detailsToShow} more.");
-                }
-            }
-
-            sb.AppendLine("=====================================================================================");
-
-            Debug.WriteLine(sb.ToString());
-            return sb.ToString();
         }
+        #endregion
 
+        #region Private Helper Classes
         private class Tracer : IDisposable
         {
-            private readonly string _context;
-            private readonly string _functionName;
+            private readonly Guid _traceId;
+            private readonly Guid? _parentIdOnExit;
             private readonly Stopwatch _stopwatch;
 
-            public Tracer(string context, string functionName)
+            public Tracer(Guid traceId)
             {
-                _context = context;
-                _functionName = functionName;
+                _traceId = traceId;
+                _parentIdOnExit = _stats[traceId].ParentId;
                 _stopwatch = Stopwatch.StartNew();
             }
 
             public void Dispose()
             {
                 _stopwatch.Stop();
-                double elapsed = _stopwatch.Elapsed.TotalMilliseconds;
-
-                var contextStats = _stats.GetOrAdd(_context, _ => new ConcurrentDictionary<string, ProfileData>());
-                var data = contextStats.GetOrAdd(_functionName, _ => new ProfileData());
-
-                lock (data.LockObj)
-                {
-                    data.CallCount++;
-                    data.TotalMilliseconds += elapsed;
-                    if (elapsed > data.MaxMilliseconds) data.MaxMilliseconds = elapsed;
-                }
+                var data = _stats[_traceId];
+                data.TotalMilliseconds = _stopwatch.Elapsed.TotalMilliseconds;
+                data.MaxMilliseconds = data.TotalMilliseconds;
+                data.CallCount = 1;
+                _currentParentId.Value = _parentIdOnExit;
             }
         }
-        
+
         private class ContextScope : IDisposable
         {
             public void Dispose()
@@ -314,10 +281,6 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                 _currentContext.Value = null;
             }
         }
-        
-        private class NoOpDisposable : IDisposable
-        {
-            public void Dispose() { }
-        }
+        #endregion
     }
 }

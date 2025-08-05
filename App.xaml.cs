@@ -39,73 +39,66 @@ namespace NPC_Plugin_Chooser_2
 
         protected override async void OnStartup(StartupEventArgs e)
         {
-            base.OnStartup(e);
-            
-            this.Exit += OnApplicationExit;
-
-            // 1. Create and show splash screen
-            _splashVM = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, keepTopMost: false);
-
-            _splashVM.UpdateProgress(0, "Initializing application...");
-
-            // 2. Perform main application initialization asynchronously
-            _container = await InitializeCoreApplicationAsync(_splashVM);
-
-            // 3. Setup and show MainWindow
-            _splashVM.UpdateProgress(95, "Loading main window...");
-
-            MainWindow mainWindow = null;
-            try
+            using (ContextualPerformanceTracer.Trace("App.OnStartup"))
             {
-                // Resolve the MainWindow *View* using the service locator.
-                var mainWindowView = Locator.Current.GetService<IViewFor<VM_MainWindow>>();
-                if (mainWindowView is MainWindow mw)
+                base.OnStartup(e);
+                this.Exit += OnApplicationExit;
+
+                _splashVM = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, keepTopMost: false);
+                _splashVM.UpdateProgress(0, "Initializing application...");
+
+                _container = await InitializeCoreApplicationAsync(_splashVM);
+
+                _splashVM.UpdateProgress(95, "Loading main window...");
+
+                Window mainWindow = null;
+
+                try
                 {
-                    mainWindow = mw;
+                    var mainWindowView = Locator.Current.GetService<IViewFor<VM_MainWindow>>();
+                    if (mainWindowView is MainWindow typedMainWindow)
+                    {
+                        mainWindow = typedMainWindow;
+                    }
+                    else if (mainWindowView is Window genericWindow)
+                    {
+                        genericWindow.Show();
+                        _splashVM.UpdateProgress(100, "Application loaded.");
+                        await Task.Delay(200);
+                        await _splashVM.CloseSplashScreenAsync();
+                        return; // Skip further logic since it's not the real MainWindow
+                    }
                 }
-                else if (mainWindowView is Window w) // Fallback if it's a Window but not MainWindow type
+                catch (Exception ex)
                 {
-                     // This case might indicate a registration issue or if you swapped MainWindow for another Window type.
-                     // For now, we assume it's a MainWindow or create one.
-                     w.Show(); // Show it, but we might not have the specific MainWindow instance.
-                     // Attempt to get VM if possible
-                     var mainVM = Locator.Current.GetService<VM_MainWindow>();
-                     mainVM?.InitializeApplicationState(isStartup: true);
-                     _splashVM.UpdateProgress(100, "Application loaded.");
-                     await Task.Delay(200); // Keep splash visible briefly
-                     _splashScreenWindow.Close();
-                     return; // Exit if we showed a generic window and can't proceed with MainWindow specific logic
+                    _splashVM.UpdateProgress(96, $"Error resolving main window: {ex.Message.Split('\n')[0]}");
+                    System.Diagnostics.Debug.WriteLine($"Error resolving MainWindow: {ex}");
                 }
-            }
-            catch (Exception ex)
-            {
-                _splashVM.UpdateProgress(96, $"Error resolving main window: {ex.Message.Split('\n')[0]}");
-                // Log detailed error
-                System.Diagnostics.Debug.WriteLine($"Error resolving MainWindow: {ex}");
-            }
 
-            if (mainWindow == null)
-            {
-                mainWindow = new MainWindow(); // Fallback: Create directly
+                if (mainWindow == null)
+                {
+                    mainWindow = new MainWindow(); // Fallback
+                }
+
+                mainWindow.Show();
+
+                // Attempt to get ViewModel from DataContext or container
+                var mainWindowViewModel =
+                    mainWindow.DataContext as VM_MainWindow ??
+                    (mainWindow as MainWindow)?.ViewModel ??
+                    Locator.Current.GetService<VM_MainWindow>();
+
+                using (ContextualPerformanceTracer.Trace("App.OnStartup.InitializeApplicationState"))
+                {
+                    mainWindowViewModel?.InitializeApplicationState(isStartup: true);
+                }
+
+                _splashVM.UpdateProgress(100, "Application loaded.");
+                await Task.Delay(250);
+                await _splashVM.CloseSplashScreenAsync();
             }
-            
-            mainWindow.Show();
-
-            // Initialize application state after window is shown
-            VM_MainWindow mainWindowViewModel = null;
-            if (mainWindow.DataContext is VM_MainWindow vmFromDC) {
-                mainWindowViewModel = vmFromDC;
-            } else if (mainWindow is MainWindow mwInstance) {
-                mainWindowViewModel = mwInstance.ViewModel;
-            }
-            mainWindowViewModel ??= Locator.Current.GetService<VM_MainWindow>();
-
-            mainWindowViewModel?.InitializeApplicationState(isStartup: true);
-
-            _splashVM.UpdateProgress(100, "Application loaded.");
-            await Task.Delay(250); // Keep splash visible briefly
-            await _splashVM.CloseSplashScreenAsync();
         }
+
 
         private async Task<IContainer> InitializeCoreApplicationAsync(VM_SplashScreen splashVM)
         {
@@ -183,7 +176,12 @@ namespace NPC_Plugin_Chooser_2
             autofacResolver.SetLifetimeScope(container);
             
             splashVM.UpdateProgress(61, "Initializing main application services...");
-            var settingsViewModel = container.Resolve<VM_Settings>();
+            VM_Settings? settingsViewModel;
+            using (ContextualPerformanceTracer.Trace("InitializeCoreApplicationAsync.ResolveSettingsVM"))
+            {
+                settingsViewModel = container.Resolve<VM_Settings>();
+            }
+
             await settingsViewModel.InitializeAsync(); // Pass splashVM implicitly if injected, or explicitly if needed
             
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
