@@ -10,6 +10,7 @@ using System.Reflection;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.View_Models;
+using YamlDotNet.RepresentationModel;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -19,6 +20,8 @@ public class EnvironmentStateProvider
     private IGameEnvironment<ISkyrimMod, ISkyrimModGetter> _environment;
     private readonly VM_SplashScreen? _splashReporter; // Nullable if used optionally
     public ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>> LoadOrder => _environment.LoadOrder;
+    public List<IModListingGetter<ISkyrimModGetter>> LoadOrderList => LoadOrder.ListedOrder.ToList();
+    public List<ModKey> LoadOrderModKeys => LoadOrderList.Select(m => m.ModKey).ToList();
     public ILinkCache<ISkyrimMod, ISkyrimModGetter> LinkCache => _environment.LinkCache;
     public SkyrimRelease SkyrimVersion { get; set; }
     public DirectoryPath ExtraSettingsDataPath { get; set; }

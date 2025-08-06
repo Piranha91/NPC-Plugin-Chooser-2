@@ -4,6 +4,7 @@ using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
+using Noggog;
 using NPC_Plugin_Chooser_2.Models;
 using static NPC_Plugin_Chooser_2.BackEnd.RecordHandler;
 
@@ -23,15 +24,26 @@ public class PluginProvider: IDisposable
         _settings = settings;
     }
 
-    public void LoadPlugins(IEnumerable<ModKey> keys, HashSet<string> modFolderNames, bool asReadyOnly = true)
+    public HashSet<ISkyrimModGetter> LoadPlugins(IEnumerable<ModKey> keys, HashSet<string> modFolderNames, bool asReadyOnly = true)
     {
+        HashSet<ISkyrimModGetter> plugins = new();
         foreach (var key in keys)
         {
-            if (!_pluginCache.ContainsKey(key))
+            if (_pluginCache.TryGetValue(key, out var entry))
             {
-                TryGetPlugin(key, modFolderNames, out _, out _, asReadyOnly);
+                plugins.Add(entry.plugin);
+            }
+            else
+            {
+                TryGetPlugin(key, modFolderNames, out var plugin, out _, asReadyOnly);
+                if (plugin != null)
+                {
+                    plugins.Add(plugin);
+                }
             }
         }
+        
+        return plugins;
     }
 
     public void UnloadPlugins(IEnumerable<ModKey> keys)

@@ -244,6 +244,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     _environmentStateProvider.SkyrimVersion = SkyrimRelease;
                     _environmentStateProvider.DataFolderPath = SkyrimGamePath;;
                     _environmentStateProvider.UpdateEnvironment();
+                    _aux.Reinitialize(); // clear the FormID cache
                 });
             
             // Properties that trigger full environment update via InitializeAsync (or a lighter UpdateEnvironmentAndNotify)
@@ -514,6 +515,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  _model.ModSettings.Clear();
                  _model.CachedNonAppearanceMods.Clear();
                  //
+                 
+                 // Clear FormID cache and Valid Race Cache
+                 _aux.Reinitialize();
                  
                  _lazyMainWindowVm.Value.IsLoadingFolders = true;
                  var footerMsg = "First time analyzing mods folder. Subsequent runs will be faster.";

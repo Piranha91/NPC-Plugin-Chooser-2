@@ -1184,6 +1184,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     // If RecalculateMugshotValidity or ApplyFilters were async and returned Task,
                     // you could await them here. Since they are not, the async () => is for InvokeAsync.
                 });
+                
+                // Save the race cache used in RefreshNpcLists()
+                _aux.SaveRaceCache();
             }
             catch (AggregateException aggEx)
             {

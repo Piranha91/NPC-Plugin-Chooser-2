@@ -1,4 +1,6 @@
-﻿using System.IO;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.IO;
 using Loqui;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
@@ -21,13 +23,32 @@ public class Auxilliary
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly IAssetLinkCache _assetLinkCache;
     
-
+    // caches to speed up building
     public Dictionary<FormKey, string> FormIDCache = new();
+    private ConcurrentDictionary<FormKey, RaceEvaluation> _raceValidityCache = new();
+    private string _raceValidityCacheFileName = "RaceEvalCache.json";
+    
+    private enum RaceEvaluation
+    {
+        Valid,
+        InvalidNull,
+        InvalidNotInLoadOrder,
+        InvalidNullKeywords,
+        InvalidNotNpc
+    }
     
     public Auxilliary(EnvironmentStateProvider environmentStateProvider)
     {
         _environmentStateProvider = environmentStateProvider;
         _assetLinkCache = new AssetLinkCache(_environmentStateProvider.LinkCache);
+        LoadRaceCache();
+    }
+
+    public void Reinitialize()
+    {
+        FormIDCache.Clear();
+        _raceValidityCache.Clear();
+        LoadRaceCache();
     }
 
     public static string GetLogString(IMajorRecordGetter majorRecordGetter, bool fullString = false)
@@ -65,6 +86,153 @@ public class Auxilliary
             logString += GetLogString(npcGetter, fullString);
         }
         return logString;
+    }
+
+    public bool IsValidAppearanceRace(FormKey raceFormKey, INpcGetter npcGetter, out string rejectionMessage, IRaceGetter? sourcePluginRace = null)
+    {
+        bool isCached = false;
+        bool isValid = true;
+        rejectionMessage = "";
+        RaceEvaluation raceEvaluation;
+
+        using (ContextualPerformanceTracer.Trace("IVAR.CacheCheck1"))
+        {
+            isCached = _raceValidityCache.TryGetValue(raceFormKey, out raceEvaluation);
+            // Try Cache first
+            if (isCached && raceEvaluation == RaceEvaluation.Valid)
+            {
+                return true;
+            }
+        }
+
+        bool isTemplate = false;
+        using (ContextualPerformanceTracer.Trace("IVAR.TemplateCheck"))
+        {
+            isTemplate = npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag
+                .Traits);
+
+            if (isTemplate)
+            {
+                return true; // return true without cacheing; this NPC's race is irrelevant
+            }
+        }
+        
+        if (!isCached)
+        {
+            // new race, had not yet been cached
+            IRaceGetter? raceGetter = null;
+            string identifier = raceFormKey.ToString();
+            using (ContextualPerformanceTracer.Trace("IVAR.NewRace.Resolution"))
+            {
+                bool raceResolved = false;
+
+                if (sourcePluginRace != null)
+                {
+                    raceGetter = sourcePluginRace;
+                }
+                else if (raceFormKey.IsNull)
+                {
+                    raceEvaluation = RaceEvaluation.InvalidNull;
+                }
+                else if (!_environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(raceFormKey,
+                             out raceGetter) || raceGetter is null)
+                {
+                    raceEvaluation = RaceEvaluation.InvalidNotInLoadOrder;
+                }
+            }
+
+            if (raceGetter is not null)
+            {
+                using (ContextualPerformanceTracer.Trace("IVAR.NewRace.Evaluation"))
+                {
+                    if (raceGetter.Keywords == null)
+                    {
+                        raceEvaluation = RaceEvaluation.InvalidNullKeywords;
+                        identifier = GetLogString(raceGetter, true);
+                    }
+                    else if (!isTemplate && !raceGetter.Keywords.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim
+                                 .Keyword
+                                 .ActorTypeNPC))
+                    {
+                        raceEvaluation = RaceEvaluation.InvalidNotNpc;
+                        identifier = GetLogString(raceGetter, true);
+                    }
+                    else
+                    {
+                        raceEvaluation = RaceEvaluation.Valid;
+                        identifier = GetLogString(raceGetter, true);
+                    }
+
+                    // now cache the newly evaluated race
+                    using (ContextualPerformanceTracer.Trace("IVAR.AddToCache"))
+                    {
+                        _raceValidityCache.TryAdd(raceFormKey, raceEvaluation);
+                        Debug.WriteLine(
+                            $"Evaluating validity for new race: {identifier} with result: {raceEvaluation}");
+                    }
+                }
+            }
+        }
+        
+        using (ContextualPerformanceTracer.Trace("IVAR.Decision"))
+        {
+            if (raceEvaluation == RaceEvaluation.InvalidNull)
+            {
+                rejectionMessage = "its race is null.";
+                return false;
+            }
+            if (raceEvaluation == RaceEvaluation.InvalidNotInLoadOrder)
+            {
+                rejectionMessage = "its race is not in the current load order.";
+                return false;
+            }
+            if (raceEvaluation == RaceEvaluation.InvalidNullKeywords)
+            {
+                rejectionMessage = "its race is missing Keywords.";
+                return false;
+            }
+
+            if (raceEvaluation == RaceEvaluation.InvalidNotNpc)
+            {
+                rejectionMessage = "its race is missing the ActorTypeNPC keyword.";
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    public void SaveRaceCache()
+    {
+        string cachePath = Path.Combine(AppContext.BaseDirectory, _raceValidityCacheFileName);
+
+        var filteredCache = _raceValidityCache.Where(x => !x.Key.IsNull); // null formkeys don't serialize correctly
+        
+        JSONhandler<ConcurrentDictionary<FormKey, RaceEvaluation>>.SaveJSONFile(new ConcurrentDictionary<FormKey, RaceEvaluation>(filteredCache), cachePath, out bool success, out string exceptionMessage );
+        if (!success)
+        {
+            Debug.WriteLine("Exception while saving race cache." + Environment.NewLine + exceptionMessage);
+        }
+    }
+
+    public void LoadRaceCache()
+    {
+        string cachePath = Path.Combine(AppContext.BaseDirectory, _raceValidityCacheFileName);
+        if (File.Exists(cachePath))
+        {
+            var rawCache = JSONhandler<ConcurrentDictionary<FormKey, RaceEvaluation>>.LoadJSONFile(cachePath, out bool success, out string exceptionMessage );
+            if (!success)
+            {
+                _raceValidityCache = new();
+                Debug.WriteLine("Exception while loading race cache." + Environment.NewLine + exceptionMessage);
+            }
+            else
+            {
+                var filteredCache = rawCache.Where(x => x.Value != RaceEvaluation.InvalidNotInLoadOrder); // try re-evaluating these races in case they appear in the load order
+                _raceValidityCache = new ConcurrentDictionary<FormKey, RaceEvaluation>(filteredCache);
+                _raceValidityCache.TryAdd(new FormKey(), RaceEvaluation.InvalidNull);
+            }
+        }
     }
 
     public List<ModKey> GetModKeysInDirectory(string modFolderPath, List<string>? warnings, bool onlyEnabled)
