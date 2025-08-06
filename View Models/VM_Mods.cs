@@ -402,10 +402,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // Asynchronously refresh its NPC lists if it might have mod data (though unlink usually makes it mugshot-only)
             // For a new mugshot-only entry, RefreshNpcLists won't find much, but it's harmless.
-
+            
             (var allFaceGenLooseFiles, var allFaceGenBsaFiles) =
-                CacheFaceGenPathsOnLoad(); //////////////////////////////////////////////////////////////////////////
-            Task.Run(() => newVm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles));
+                CacheFaceGenPathsOnLoad(); 
+            
+            var plugins = _pluginProvider.LoadPlugins(newVm.CorrespondingModKeys, newVm.CorrespondingFolderPaths.ToHashSet());
+            Task.Run(() => newVm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles, plugins));
+            _pluginProvider.UnloadPlugins(newVm.CorrespondingModKeys);
         }
 
         /// <summary>
@@ -1106,7 +1109,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         var modFolderPathsForVm = vm.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
             
                         // Explicitly load only the plugins needed for this task
-                        _pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPathsForVm);
+                        var plugins =_pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPathsForVm);
                         try
                         {
                             var currentAnalyzed = Interlocked.Increment(ref analyzedCount);
@@ -1117,7 +1120,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             using (ContextualPerformanceTracer.Trace("RefreshNpcLists"))
                             {
                                 // Perform the analysis using the now-cached plugins
-                                vm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles);
+                                vm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles, plugins);
                             }
 
                             if (vm.IsNewlyCreated)
@@ -1760,8 +1763,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // Refresh NPC lists for the winner as its sources may have changed/**/
 
                 (var allFaceGenLooseFiles, var allFaceGenBsaFiles) =
-                    CacheFaceGenPathsOnLoad(); 
-                Task.Run(() => winner.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles));
+                    CacheFaceGenPathsOnLoad();
+
+                var plugins = _pluginProvider.LoadPlugins(winner.CorrespondingModKeys, winner.CorrespondingFolderPaths.ToHashSet());
+                Task.Run(() => winner.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles, plugins));
+                _pluginProvider.UnloadPlugins(winner.CorrespondingModKeys);
 
                 // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)
                 string loserName = loser.DisplayName;

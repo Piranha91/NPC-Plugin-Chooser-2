@@ -1,195 +1,229 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
-using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
-using Noggog;
 using NPC_Plugin_Chooser_2.Models;
-using static NPC_Plugin_Chooser_2.BackEnd.RecordHandler;
 
-namespace NPC_Plugin_Chooser_2.BackEnd;
-
-public class PluginProvider: IDisposable
+namespace NPC_Plugin_Chooser_2.BackEnd
 {
-    private ConcurrentDictionary<ModKey, (ISkyrimModGetter plugin, string sourcePath)> _pluginCache = new();
-    private bool _disposed = false; // To prevent multiple dispose calls
-
-    private readonly EnvironmentStateProvider _environmentStateProvider;
-    private readonly Settings _settings;
-
-    public PluginProvider(EnvironmentStateProvider environmentStateProvider, Settings settings)
+    public class PluginProvider : IDisposable
     {
-        _environmentStateProvider = environmentStateProvider;
-        _settings = settings;
-    }
-
-    public HashSet<ISkyrimModGetter> LoadPlugins(IEnumerable<ModKey> keys, HashSet<string> modFolderNames, bool asReadyOnly = true)
-    {
-        HashSet<ISkyrimModGetter> plugins = new();
-        foreach (var key in keys)
+        // Helper class to hold the plugin and its usage count
+        private class CachedPlugin
         {
-            if (_pluginCache.TryGetValue(key, out var entry))
+            public ISkyrimModGetter Plugin { get; }
+            public string SourcePath { get; }
+            public int ReferenceCount { get; set; }
+
+            public CachedPlugin(ISkyrimModGetter plugin, string sourcePath)
             {
-                plugins.Add(entry.plugin);
+                Plugin = plugin;
+                SourcePath = sourcePath;
+                ReferenceCount = 1; // Start with one reference upon creation
             }
-            else
+        }
+
+        // --- State ---
+        private readonly ConcurrentDictionary<ModKey, CachedPlugin> _pluginCache = new();
+        private readonly object _cacheLock = new(); // Used to synchronize access to ReferenceCount
+        private bool _disposed = false;
+
+        private readonly EnvironmentStateProvider _environmentStateProvider;
+        private readonly Settings _settings;
+
+        public PluginProvider(EnvironmentStateProvider environmentStateProvider, Settings settings)
+        {
+            _environmentStateProvider = environmentStateProvider;
+            _settings = settings;
+        }
+
+        /// <summary>
+        /// Gets a set of plugins for the given keys.
+        /// It increments the reference count for each returned plugin.
+        /// </summary>
+        public HashSet<ISkyrimModGetter> LoadPlugins(IEnumerable<ModKey> keys, HashSet<string> modFolderNames, bool asReadyOnly = true)
+        {
+            var plugins = new HashSet<ISkyrimModGetter>();
+            if (keys == null) return plugins;
+
+            lock (_cacheLock)
             {
-                TryGetPlugin(key, modFolderNames, out var plugin, out _, asReadyOnly);
-                if (plugin != null)
+                foreach (var key in keys.Distinct())
                 {
-                    plugins.Add(plugin);
+                    if (_pluginCache.TryGetValue(key, out var entry))
+                    {
+                        // Plugin exists, increment its reference count
+                        entry.ReferenceCount++;
+                        plugins.Add(entry.Plugin);
+                    }
+                    else
+                    {
+                        // Plugin not in cache, load it from disk
+                        if (TryGetPluginInternal(key, modFolderNames, out var plugin, out var sourcePath, asReadyOnly) && plugin != null)
+                        {
+                            var newEntry = new CachedPlugin(plugin, sourcePath);
+                            _pluginCache[key] = newEntry; // Adds with ReferenceCount = 1
+                            plugins.Add(plugin);
+                        }
+                    }
+                }
+            }
+            return plugins;
+        }
+
+        /// <summary>
+        /// Decrements the reference count for each plugin.
+        /// If a plugin's reference count reaches zero, it is disposed and removed from the cache.
+        /// </summary>
+        public void UnloadPlugins(IEnumerable<ModKey> keys)
+        {
+            if (keys == null) return;
+
+            lock (_cacheLock)
+            {
+                foreach (var key in keys.Distinct())
+                {
+                    if (_pluginCache.TryGetValue(key, out var entry))
+                    {
+                        entry.ReferenceCount--;
+                        if (entry.ReferenceCount <= 0)
+                        {
+                            // No more references, safe to dispose
+                            _pluginCache.TryRemove(key, out _);
+                            (entry.Plugin as IDisposable)?.Dispose();
+                        }
+                    }
                 }
             }
         }
-        
-        return plugins;
-    }
 
-    public void UnloadPlugins(IEnumerable<ModKey> keys)
-    {
-        foreach (var key in keys)
+        // Internal loading logic without reference counting - only called from within a lock.
+        private bool TryGetPluginInternal(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModGetter? plugin, out string pluginSourcePath, bool asReadOnly = true)
         {
-            if (_pluginCache.TryRemove(key, out var entryToDispose))
+            plugin = null;
+            pluginSourcePath = null;
+            string? foundPath = null;
+
+            if (fallBackModFolderPaths != null)
             {
-                var disposable = entryToDispose.plugin as ISkyrimModDisposableGetter;
-                if (disposable is not null)
+                foreach (var modFolderPath in fallBackModFolderPaths)
                 {
-                    disposable.Dispose(); // Dispose the object
+                    var candidatePath = Path.Combine(modFolderPath, modKey.ToString());
+                    if (File.Exists(candidatePath))
+                    {
+                        foundPath = candidatePath;
+                        break;
+                    }
                 }
             }
-        }
-    }
 
-    // ## NEW IDisposable Implementation ##
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        if (disposing)
-        {
-            // Dispose managed state (the cached objects).
-            foreach (var kvp in _pluginCache)
+            if (foundPath == null && _environmentStateProvider.DataFolderPath.Exists)
             {
-                var disposable = kvp.Value.plugin as ISkyrimModDisposableGetter;
-                if (disposable is not null)
-                {
-                    disposable.Dispose(); // Dispose the object
-                }
-            }
-            _pluginCache.Clear();
-        }
-
-        _disposed = true;
-    }
-
-    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModGetter? plugin, out string? pluginSourcePath, bool asReadOnly = true)
-    {
-        if (_pluginCache.TryGetValue(modKey, out var value))
-        {
-            // make sure the type is correct
-            if ((asReadOnly && value.plugin is ISkyrimModDisposableGetter) ||
-                (!asReadOnly && value.plugin is not ISkyrimModDisposableGetter))
-            {
-                (plugin, pluginSourcePath) = value;
-                return true;
-            }
-        }
-
-        string? foundPath = null;
- 
-        if (fallBackModFolderPaths != null)
-        {
-            foreach (var modFolderPath in fallBackModFolderPaths)
-            {
-                var candidatePath = Path.Combine(modFolderPath, modKey.ToString());
+                var candidatePath = Path.Combine(_environmentStateProvider.DataFolderPath, modKey.ToString());
                 if (File.Exists(candidatePath))
                 {
                     foundPath = candidatePath;
-                    break;
                 }
             }
-        }
-        
-        if (foundPath == null && _environmentStateProvider.DataFolderPath.Exists)
-        {
-            var candidatePath = Path.Combine(_environmentStateProvider.DataFolderPath, modKey.ToString());
-            if (File.Exists(candidatePath))
+
+            if (foundPath != null)
             {
-                foundPath = candidatePath;
+                try
+                {
+                    ISkyrimModGetter? imported = asReadOnly
+                        ? SkyrimMod.CreateFromBinaryOverlay(foundPath, _environmentStateProvider.SkyrimVersion)
+                        : SkyrimMod.CreateFromBinary(foundPath, _environmentStateProvider.SkyrimVersion);
+
+                    plugin = imported;
+                    pluginSourcePath = foundPath;
+                    return plugin != null;
+                }
+                catch (Exception e)
+                {
+                    // It's better to let the exception bubble up here to the analysis task
+                    throw new Exception($"Failed to load plugin from: {foundPath}", e);
+                }
+            }
+
+            return false;
+        }
+
+        // Public TryGetPlugin - should be used sparingly, if ever, outside of the main analysis loop
+        public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModGetter? plugin, out string? pluginSourcePath, bool asReadyOnly = true)
+        {
+            lock (_cacheLock)
+            {
+                 if (_pluginCache.TryGetValue(modKey, out var value))
+                 {
+                    plugin = value.Plugin;
+                    pluginSourcePath = value.SourcePath;
+                    return true;
+                 }
+                 else
+                 {
+                     return TryGetPluginInternal(modKey, fallBackModFolderPaths, out plugin, out pluginSourcePath, asReadyOnly);
+                 }
             }
         }
 
-        if (foundPath != null)
+        public void Dispose()
         {
-            try
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed) return;
+            if (disposing)
             {
-                ISkyrimModGetter? imported = null;
-                if (asReadOnly)
+                lock (_cacheLock)
                 {
-                    imported = SkyrimMod.Create(_environmentStateProvider.SkyrimVersion)
-                        .FromPath(foundPath)
-                        .Construct();
+                    foreach (var kvp in _pluginCache)
+                    {
+                        (kvp.Value.Plugin as IDisposable)?.Dispose();
+                    }
+                    _pluginCache.Clear();
+                }
+            }
+            _disposed = true;
+        }
+
+        // Other public methods (unchanged from your version, just ensure they exist)
+        public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModGetter? plugin, bool asReadyOnly = true)
+        {
+            return TryGetPlugin(modKey, fallBackModFolderPaths, out plugin, out _, asReadyOnly);
+        }
+        
+        public HashSet<ModKey> GetMasterPlugins(ModKey modKey, IEnumerable<string>? fallBackModFolderPaths)
+        {
+            var masterPlugins = new HashSet<ModKey>();
+            // Note: This temporarily loads a plugin without proper ref counting if not already in cache.
+            // Use with caution or refactor if it becomes part of a concurrent loop.
+            if (TryGetPlugin(modKey, fallBackModFolderPaths?.ToHashSet(), out var plugin, out _) && plugin != null)
+            {
+                masterPlugins.UnionWith(plugin.ModHeader.MasterReferences.Select(x => x.Master));
+            }
+            return masterPlugins;
+        }
+
+        public string GetStatusReport()
+        {
+            lock (_cacheLock)
+            {
+                if (_pluginCache.IsEmpty)
+                {
+                    return "No plugins currently cached.";
                 }
                 else
                 {
-                    imported = SkyrimMod.CreateFromBinary(foundPath, _environmentStateProvider.SkyrimVersion);
-                }
-                
-                plugin = imported;
-                pluginSourcePath = foundPath;
-                if (plugin != null)
-                {
-                    _pluginCache.TryAdd(modKey, (plugin, foundPath));
-                    return true;
+                    return "Cached Plugins: " + Environment.NewLine + string.Join(Environment.NewLine, _pluginCache.Select(x => $"\t{x.Key} (Ref Count: {x.Value.ReferenceCount})"));
                 }
             }
-            catch (Exception e)
-            {
-                throw new Exception("Failed to load plugin from: " + foundPath, e);
-            }
-        }
-
-        plugin = null;
-        pluginSourcePath = null;
-        return false;
-    }
-
-    public bool TryGetPlugin(ModKey modKey, HashSet<string>? fallBackModFolderPaths, out ISkyrimModGetter? plugin, bool asReadyOnly = true)
-    {
-        return TryGetPlugin(modKey, fallBackModFolderPaths, out plugin, out _, asReadyOnly);
-    }
-
-    public HashSet<ModKey> GetMasterPlugins(ModKey modKey, IEnumerable<string>? fallBackModFolderPaths)
-    {
-        HashSet<ModKey> masterPlugins = new();
-
-        if (TryGetPlugin(modKey, fallBackModFolderPaths?.ToHashSet(), out var plugin, out _) && plugin != null)
-        {
-            masterPlugins.UnionWith(plugin.ModHeader.MasterReferences.Select(x => x.Master).ToHashSet());
-        }
-        
-        return masterPlugins;
-    }
-
-    public string GetStatusReport()
-    {
-        if (_pluginCache.IsEmpty)
-        {
-            return "No plugins currently cached.";
-        }
-        else
-        {
-            return "Cached Plugins: " + Environment.NewLine + string.Join(Environment.NewLine, _pluginCache.Select(x => "\t" + x.Key.ToString()));
         }
     }
 }
