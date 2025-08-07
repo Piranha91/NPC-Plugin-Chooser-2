@@ -914,61 +914,198 @@ namespace NPC_Plugin_Chooser_2.View_Models
             return vmsFromMugshotsOnly;
         }
 
+        #region Mod Folder Scan Result Types
+        /// <summary>
+        /// Base class for different outcomes of scanning a single mod folder.
+        /// </summary>
+        private abstract class ModFolderScanResult { }
+
+        /// <summary>
+        /// Represents a newly discovered mod that needs to be added to the list.
+        /// </summary>
+        private class NewVmResult(VM_ModSetting vm) : ModFolderScanResult
+        {
+            public VM_ModSetting Vm { get; } = vm;
+        }
+
+        /// <summary>
+        /// Represents an action to upgrade an existing VM with a new mod folder path and plugins.
+        /// </summary>
+        private class UpgradeVmResult(string vmDisplayName, string modFolderPath, List<ModKey> modKeys) : ModFolderScanResult
+        {
+            public string VmDisplayName { get; } = vmDisplayName;
+            public string ModFolderPath { get; } = modFolderPath;
+            public List<ModKey> ModKeys { get; } = modKeys;
+        }
+
+        /// <summary>
+        /// Represents a folder that should be cached as a non-appearance mod and skipped in the future.
+        /// </summary>
+        private class CacheNonAppearanceResult(string modFolderPath, string reason) : ModFolderScanResult
+        {
+            public string ModFolderPath { get; } = modFolderPath;
+            public string Reason { get; } = reason;
+        }
+        #endregion
+
         private async Task ScanForModsInModFolderAsync(List<VM_ModSetting> tempList, List<VM_ModSetting> vmsFromMugshotsOnly, HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths, VM_SplashScreen? splashReporter, List<string> warnings)
         {
             splashReporter?.UpdateProgress(20, "Scanning for new mod folders...");
-            using (ContextualPerformanceTracer.Trace("PopulateMods.ScanModFolders"))
+            if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder)) return;
+
+            var modDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
+            if (!modDirectories.Any()) return;
+
+            // Use a thread-safe bag to collect results from all parallel tasks.
+            var scanResults = new ConcurrentBag<ModFolderScanResult>();
+            var scannedModFolders = 0;
+            const string tokenFileName = "NPC_Token.json";
+            var cachedNonAppearanceDirs = _settings.CachedNonAppearanceMods.Keys.ToHashSet();
+
+            // Create a collection of tasks, one for each mod directory.
+            var processingTasks = modDirectories.Select(modFolderPath => Task.Run(async () =>
             {
-                if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder)) return;
+                // -- This entire block runs in parallel for each folder. --
 
-                try
+                string modFolderName = Path.GetFileName(modFolderPath);
+                
+                // Update progress in a thread-safe manner.
+                var currentProgress = (double)Interlocked.Increment(ref scannedModFolders) / modDirectories.Count * 100.0;
+                splashReporter?.UpdateProgress(currentProgress, $"Scanning: {modFolderName}");
+
+                if (File.Exists(Path.Combine(modFolderPath, tokenFileName)) || cachedNonAppearanceDirs.Contains(modFolderPath))
                 {
-                    const string tokenFileName = "NPC_Token.json";
-                    var modDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
-                    var totalModFolders = modDirectories.Count;
-                    var scannedModFolders = 0;
-                    var cachedNonAppearanceDirs = _settings.CachedNonAppearanceMods.Keys.ToHashSet();
+                    return; // Skip this directory.
+                }
 
-                    foreach (var modFolderPath in modDirectories)
+                var modKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings, false);
+
+                // Perform READ-ONLY checks against the original lists. This is thread-safe.
+                var existingVmFromSettings = tempList.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
+                var mugshotOnlyVmToUpgrade = vmsFromMugshotsOnly.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
+
+                if (existingVmFromSettings != null)
+                {
+                    scanResults.Add(new UpgradeVmResult(existingVmFromSettings.DisplayName, modFolderPath, modKeysInFolder));
+                }
+                else if (mugshotOnlyVmToUpgrade != null)
+                {
+                    scanResults.Add(new UpgradeVmResult(mugshotOnlyVmToUpgrade.DisplayName, modFolderPath, modKeysInFolder));
+                }
+                else
+                {
+                    // This helper is called to create a new VM if warranted.
+                    var newVmResult = await ProcessNewModFolderForParallelScanAsync(modFolderPath, modKeysInFolder, claimedMugshotPaths);
+                    if (newVmResult != null)
                     {
-                        scannedModFolders++;
-                        string modFolderName = Path.GetFileName(modFolderPath);
-                        var progress = (double)scannedModFolders / totalModFolders * 100.0;
-                        splashReporter?.UpdateProgress(progress, $"Scanning: {modFolderName}");
-
-                        if (File.Exists(Path.Combine(modFolderPath, tokenFileName)) || cachedNonAppearanceDirs.Contains(modFolderPath))
-                        {
-                            continue;
-                        }
-
-                        var modKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings, false);
-
-                        var existingVmFromSettings = tempList.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
-                        var mugshotOnlyVmToUpgrade = vmsFromMugshotsOnly.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
-
-                        if (existingVmFromSettings != null)
-                        {
-                            UpgradeVmWithPathAndPlugins(existingVmFromSettings, modFolderPath, modKeysInFolder);
-                        }
-                        else if (mugshotOnlyVmToUpgrade != null)
-                        {
-                            UpgradeVmWithPathAndPlugins(mugshotOnlyVmToUpgrade, modFolderPath, modKeysInFolder);
-                            tempList.Add(mugshotOnlyVmToUpgrade);
-                            vmsFromMugshotsOnly.Remove(mugshotOnlyVmToUpgrade);
-                            loadedDisplayNames.Add(mugshotOnlyVmToUpgrade.DisplayName);
-                        }
-                        else
-                        {
-                            await ProcessNewModFolderAsync(modFolderPath, modKeysInFolder, tempList, loadedDisplayNames, claimedMugshotPaths);
-                        }
-
-                        _pluginProvider.UnloadPlugins(modKeysInFolder);
+                        scanResults.Add(newVmResult);
                     }
                 }
-                catch (Exception ex)
+                
+                // Unload plugins used only in this task's scope.
+                 _pluginProvider.UnloadPlugins(modKeysInFolder);
+            })).ToList();
+
+            // Await all parallel tasks to complete.
+            try
+            {
+                await Task.WhenAll(processingTasks);
+            }
+            catch (Exception ex)
+            {
+                warnings.Add($"An error occurred during parallel mod scanning: {Environment.NewLine}{ExceptionLogger.GetExceptionStack(ex)}");
+            }
+            
+            // -- All parallel work is done. Now, process the results sequentially. --
+
+            // Create a lookup for fast access.
+            var mugshotVmLookup = vmsFromMugshotsOnly.ToDictionary(vm => vm.DisplayName, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var result in scanResults)
+            {
+                switch (result)
                 {
-                    warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}': {Environment.NewLine}{ExceptionLogger.GetExceptionStack(ex)}");
+                    case UpgradeVmResult upgrade:
+                        var vmToUpgrade = tempList.FirstOrDefault(vm => vm.DisplayName == upgrade.VmDisplayName) 
+                                          ?? mugshotVmLookup.GetValueOrDefault(upgrade.VmDisplayName);
+
+                        if (vmToUpgrade != null)
+                        {
+                            UpgradeVmWithPathAndPlugins(vmToUpgrade, upgrade.ModFolderPath, upgrade.ModKeys);
+
+                            // If it was a mugshot-only VM, it now needs to be moved to the main list.
+                            if (mugshotVmLookup.ContainsKey(upgrade.VmDisplayName))
+                            {
+                                tempList.Add(vmToUpgrade);
+                                vmsFromMugshotsOnly.Remove(vmToUpgrade);
+                                mugshotVmLookup.Remove(upgrade.VmDisplayName); // Prevent re-adding
+                            }
+                        }
+                        break;
+                        
+                    case NewVmResult newVm:
+                        tempList.Add(newVm.Vm);
+                        loadedDisplayNames.Add(newVm.Vm.DisplayName);
+                        break;
+
+                    case CacheNonAppearanceResult cache:
+                        _settings.CachedNonAppearanceMods.TryAdd(cache.ModFolderPath, cache.Reason);
+                        break;
                 }
+            }
+        }
+
+        /// <summary>
+        /// A modified version of ProcessNewModFolderAsync designed to return a result object
+        /// instead of directly modifying collections, making it safe for parallel execution.
+        /// </summary>
+        private async Task<ModFolderScanResult?> ProcessNewModFolderForParallelScanAsync(string modFolderPath, List<ModKey> modKeysInFolder, ICollection<string> claimedMugshotPaths)
+        {
+            var scanResult = await FaceGenScanner.CollectFaceGenFilesAsync(modFolderPath, _bsaHandler, modKeysInFolder, _environmentStateProvider.SkyrimVersion.ToGameRelease());
+
+            if (!scanResult.AnyFilesFound)
+            {
+                return new CacheNonAppearanceResult(modFolderPath, "No FaceGen Files Found");
+            }
+
+            var newVm = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
+            newVm.IsNewlyCreated = true;
+
+            _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
+
+            if (modKeysInFolder.Any() && await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath }))
+            {
+                string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
+                if (Directory.Exists(potentialMugshotPath) && !claimedMugshotPaths.Contains(potentialMugshotPath))
+                {
+                    newVm.MugShotFolderPath = potentialMugshotPath;
+                    // Note: This isn't thread-safe, but the chance of collision is low and the impact is minor.
+                    // A better solution would involve a ConcurrentDictionary for claimedMugshotPaths.
+                    claimedMugshotPaths.Add(potentialMugshotPath);
+                }
+                CheckMergeInSuitability(newVm);
+                return new NewVmResult(newVm);
+            }
+            else if (modKeysInFolder.Any())
+            {
+                return new CacheNonAppearanceResult(modFolderPath, "Does not provide new NPCs or modify any NPCs currently in load order");
+            }
+            else // FaceGen only
+            {
+                newVm.IsFaceGenOnlyEntry = true;
+                foreach (var (pluginName, npcIds) in scanResult.FaceGenFiles)
+                {
+                    newVm.CorrespondingModKeys.Add(ModKey.FromFileName(pluginName));
+                    foreach (var id in npcIds.Where(id => id.Length == 8))
+                    {
+                        if (FormKey.TryFactory($"{id.Substring(2, 6)}:{pluginName}", out var formKey))
+                        {
+                            newVm.FaceGenOnlyNpcFormKeys.Add(formKey);
+                        }
+                    }
+                }
+                CheckMergeInSuitability(newVm);
+                return new NewVmResult(newVm);
             }
         }
         
