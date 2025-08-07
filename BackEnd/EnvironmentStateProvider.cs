@@ -20,8 +20,7 @@ public class EnvironmentStateProvider
     private IGameEnvironment<ISkyrimMod, ISkyrimModGetter> _environment;
     private readonly VM_SplashScreen? _splashReporter; // Nullable if used optionally
     public ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>> LoadOrder => _environment.LoadOrder;
-    public List<IModListingGetter<ISkyrimModGetter>> LoadOrderList => LoadOrder.ListedOrder.ToList();
-    public List<ModKey> LoadOrderModKeys => LoadOrderList.Select(m => m.ModKey).ToList();
+    public IEnumerable<ModKey> LoadOrderModKeys => LoadOrder.ListedOrder.Select(m => m.ModKey);
     public ILinkCache<ISkyrimMod, ISkyrimModGetter> LinkCache => _environment.LinkCache;
     public SkyrimRelease SkyrimVersion { get; set; }
     public DirectoryPath ExtraSettingsDataPath { get; set; }

@@ -594,7 +594,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         using (ContextualPerformanceTracer.Trace("RefreshNpcLists.CachePluginRaces"))
                         {
                             // If the plugin is not in the load order, cache its race to pass to downstream evaluation function so it doesn't waste time searching the main link cache for a FormKey that was never there
-                            var loadOrderPlugins = _environmentStateProvider.LoadOrderModKeys;
+                            var loadOrderPlugins = _environmentStateProvider.LoadOrderModKeys.ToHashSet(); // source is IEnumerable; makes sure to convert.
                             foreach (var plugin in plugins)
                             {
                                 foreach (var race in plugin.Races)
