@@ -786,20 +786,78 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public async Task PopulateModSettingsAsync(VM_SplashScreen? splashReporter)
         {
+            // Phase 1: Initialize and load data from disk
+            var (tempList, loadedDisplayNames, claimedMugshotPaths, warnings) = InitializePopulation(splashReporter);
+
+            LoadModsFromSettings(tempList, loadedDisplayNames, claimedMugshotPaths);
+
+            var vmsFromMugshotsOnly = ScanForMugshotOnlyMods(loadedDisplayNames, claimedMugshotPaths, warnings, splashReporter);
+
+            await ScanForModsInModFolderAsync(tempList, vmsFromMugshotsOnly, loadedDisplayNames, claimedMugshotPaths, splashReporter, warnings);
+
+            // Phase 2: Consolidate and sort the gathered data
+            FinalizeModList(tempList, vmsFromMugshotsOnly);
+            AddBaseAndCreationClubMods(tempList);
+            _allModSettingsInternal.Clear();
+            _allModSettingsInternal.AddRange(SortVMs(tempList));
+
+            // Phase 3: Perform heavy analysis on the consolidated data
+            splashReporter?.UpdateStep("Pre-caching asset file paths...");
+            var faceGenCache = await CacheFaceGenPathsOnLoadAsync(splashReporter);
+
+            try
+            {
+                await AnalyzeModSettingsAsync(splashReporter, faceGenCache);
+
+                // Phase 4: Run final UI-dependent work
+                splashReporter?.UpdateStep("Finalizing mod settings...");
+                await FinalizeAndApplySettingsOnUI(warnings);
+                
+                _aux.SaveRaceCache();
+            }
+            catch (AggregateException aggEx)
+            {
+                // Handle exceptions from the analysis phase
+                foreach (var ex in aggEx.Flatten().InnerExceptions)
+                {
+                    Debug.WriteLine($"Async NPC list refresh error (outer): {ex.Message}");
+                    Application.Current.Dispatcher.Invoke(() => warnings.Add($"Async NPC list refresh error: {ex.Message}"));
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in PopulateModSettingsAsync after WhenAll: {ex.Message}");
+                Application.Current.Dispatcher.Invoke(() => warnings.Add($"Unexpected error: {ex.Message}"));
+            }
+            finally
+            {
+                splashReporter?.UpdateStep("Mod settings populated.");
+            }
+        }
+
+        private (List<VM_ModSetting> tempList, HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths, List<string> warnings) 
+            InitializePopulation(VM_SplashScreen? splashReporter)
+        {
             _allModSettingsInternal.Clear();
             _overridesCache.Clear();
-            var warnings = new List<string>();
-            var loadedDisplayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var tempList = new List<VM_ModSetting>();
             IsLoadingNpcData = true;
-            var claimedMugshotPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var warnings = new List<string>();
 
             if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
+            {
                 warnings.Add("Environment is not valid. Cannot accurately link plugins.");
+            }
 
             splashReporter?.UpdateStep("Processing configured mod settings...");
 
-            // first load mods from settings that already exist
+            return (new List<VM_ModSetting>(), 
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase), 
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase), 
+                    warnings);
+        }
+
+        private void LoadModsFromSettings(List<VM_ModSetting> tempList, HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths)
+        {
             using (ContextualPerformanceTracer.Trace("PopulateMods.FromSettings"))
             {
                 foreach (var settingModel in _settings.ModSettings)
@@ -810,12 +868,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         claimedMugshotPaths.Add(vm.MugShotFolderPath);
                     else if (string.IsNullOrWhiteSpace(vm.MugShotFolderPath))
                     {
-                        if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) &&
-                            Directory.Exists(_settings.MugshotsFolder))
+                        if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) && Directory.Exists(_settings.MugshotsFolder))
                         {
                             string potentialPathByName = Path.Combine(_settings.MugshotsFolder, vm.DisplayName);
-                            if (Directory.Exists(potentialPathByName) &&
-                                !claimedMugshotPaths.Contains(potentialPathByName))
+                            if (Directory.Exists(potentialPathByName) && !claimedMugshotPaths.Contains(potentialPathByName))
                             {
                                 vm.MugShotFolderPath = potentialPathByName;
                                 claimedMugshotPaths.Add(potentialPathByName);
@@ -827,8 +883,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     loadedDisplayNames.Add(vm.DisplayName);
                 }
             }
+        }
 
-            // then load mods from mugshots (whether they exist in the Mods directory or not).
+        private List<VM_ModSetting> ScanForMugshotOnlyMods(HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths, List<string> warnings, VM_SplashScreen? splashReporter)
+        {
             splashReporter?.UpdateStep("Scanning for new mod folders...");
             var vmsFromMugshotsOnly = new List<VM_ModSetting>();
             using (ContextualPerformanceTracer.Trace("PopulateMods.ScanMugshots"))
@@ -843,184 +901,162 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             {
                                 string folderName = Path.GetFileName(dirPath);
                                 if (!loadedDisplayNames.Contains(folderName))
-                                    vmsFromMugshotsOnly.Add(
-                                        _modSettingFromMugshotPathFactory(folderName, dirPath, this));
+                                    vmsFromMugshotsOnly.Add(_modSettingFromMugshotPathFactory(folderName, dirPath, this));
                             }
                         }
                     }
                     catch (Exception ex)
                     {
-                        warnings.Add(
-                            $"Error scanning Mugshots folder '{_settings.MugshotsFolder}': {Environment.NewLine}{ExceptionLogger.GetExceptionStack(ex)}");
+                        warnings.Add($"Error scanning Mugshots folder '{_settings.MugshotsFolder}': {Environment.NewLine}{ExceptionLogger.GetExceptionStack(ex)}");
                     }
                 }
             }
+            return vmsFromMugshotsOnly;
+        }
 
-
-            // Then load mods from mods folder (e.g. mods for which mugshots are not installed)
+        private async Task ScanForModsInModFolderAsync(List<VM_ModSetting> tempList, List<VM_ModSetting> vmsFromMugshotsOnly, HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths, VM_SplashScreen? splashReporter, List<string> warnings)
+        {
             splashReporter?.UpdateProgress(20, "Scanning for new mod folders...");
             using (ContextualPerformanceTracer.Trace("PopulateMods.ScanModFolders"))
             {
-                if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
+                if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder)) return;
+
+                try
                 {
-                    try
+                    const string tokenFileName = "NPC_Token.json";
+                    var modDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
+                    var totalModFolders = modDirectories.Count;
+                    var scannedModFolders = 0;
+                    var cachedNonAppearanceDirs = _settings.CachedNonAppearanceMods.Keys.ToHashSet();
+
+                    foreach (var modFolderPath in modDirectories)
                     {
-                        const string tokenFileName = "NPC_Token.json"; // Define the token file name
-                        var modDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
-                        var totalModFolders = modDirectories.Count;
-                        var scannedModFolders = 0;
-                        var cachedNonAppearanceDirs = _settings.CachedNonAppearanceMods.Keys.ToHashSet();
-                        
-                        foreach (var modFolderPath in Directory.EnumerateDirectories(_settings.ModsFolder))
+                        scannedModFolders++;
+                        string modFolderName = Path.GetFileName(modFolderPath);
+                        var progress = (double)scannedModFolders / totalModFolders * 100.0;
+                        splashReporter?.UpdateProgress(progress, $"Scanning: {modFolderName}");
+
+                        if (File.Exists(Path.Combine(modFolderPath, tokenFileName)) || cachedNonAppearanceDirs.Contains(modFolderPath))
                         {
-                            scannedModFolders++;
-                            string modFolderName = Path.GetFileName(modFolderPath);
-                            var progress = (double)scannedModFolders / totalModFolders * 100.0;
-                            splashReporter?.UpdateProgress(progress, $"Scanning: {modFolderName}");
-
-
-                            string tokenFilePath = Path.Combine(modFolderPath, tokenFileName);
-                            if (File.Exists(tokenFilePath))
-                            {
-                                Debug.WriteLine(
-                                    $"Skipping directory '{Path.GetFileName(modFolderPath)}' as it contains a token file and appears to be a previous patcher output.");
-                                continue; // Skip this directory and move to the next one
-                            }
-
-                            if (cachedNonAppearanceDirs.Contains(modFolderPath))
-                            {
-                                continue;
-                            }
-
-                            var modKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings, false);
-
-                            var existingVmFromSettings = tempList.FirstOrDefault(vm =>
-                                vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
-                            var mugshotOnlyVmToUpgrade = vmsFromMugshotsOnly.FirstOrDefault(vm =>
-                                vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
-
-                            if (existingVmFromSettings != null)
-                            {
-                                if (!existingVmFromSettings.CorrespondingFolderPaths.Contains(modFolderPath,
-                                        StringComparer.OrdinalIgnoreCase))
-                                    existingVmFromSettings.CorrespondingFolderPaths.Add(modFolderPath);
-                                foreach (var key in modKeysInFolder)
-                                    if (!existingVmFromSettings.CorrespondingModKeys.Contains(key))
-                                        existingVmFromSettings.CorrespondingModKeys.Add(key);
-                            }
-                            else if (mugshotOnlyVmToUpgrade != null)
-                            {
-                                mugshotOnlyVmToUpgrade.CorrespondingFolderPaths.Add(modFolderPath);
-                                foreach (var key in modKeysInFolder)
-                                    if (!mugshotOnlyVmToUpgrade.CorrespondingModKeys.Contains(key))
-                                        mugshotOnlyVmToUpgrade.CorrespondingModKeys.Add(key);
-                                tempList.Add(mugshotOnlyVmToUpgrade);
-                                vmsFromMugshotsOnly.Remove(mugshotOnlyVmToUpgrade);
-                                loadedDisplayNames.Add(mugshotOnlyVmToUpgrade.DisplayName);
-                            }
-                            else
-                            {
-                                FaceGenScanResult scanResult;
-                                using (ContextualPerformanceTracer.Trace("PopulateMods.CollectFaceGenFilesAsync"))
-                                {
-                                    scanResult = await FaceGenScanner.CollectFaceGenFilesAsync(modFolderPath,
-                                        _bsaHandler,
-                                        modKeysInFolder, _environmentStateProvider.SkyrimVersion.ToGameRelease());
-                                }
-
-                                if (scanResult.AnyFilesFound)
-                                {
-                                    var faceGenFiles = scanResult.FaceGenFiles;
-                                    var newVm = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
-                                    newVm.IsNewlyCreated = true;
-
-                                    // load resources
-                                    using (ContextualPerformanceTracer.Trace("PopulateMods.LoadPlugins"))
-                                    {
-                                        _pluginProvider.LoadPlugins(modKeysInFolder,
-                                            new HashSet<string> { modFolderPath });
-                                    }
-                                    //
-
-                                    if (modKeysInFolder.Any() &&
-                                        await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath })) // profiling is internal
-                                    {
-                                        string potentialMugshotPath =
-                                            Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
-                                        if (Directory.Exists(potentialMugshotPath) &&
-                                            !claimedMugshotPaths.Contains(potentialMugshotPath))
-                                        {
-                                            newVm.MugShotFolderPath = potentialMugshotPath;
-                                            claimedMugshotPaths.Add(potentialMugshotPath);
-                                        }
-
-                                        tempList.Add(newVm);
-                                        loadedDisplayNames.Add(newVm.DisplayName);
-                                    }
-                                    else if (modKeysInFolder.Any())
-                                    {
-                                        _settings.CachedNonAppearanceMods.Add(modFolderPath, "Does not provide new NPCs or modify any NPCs currently in load order");
-                                    }
-                                    else
-                                    {
-                                        newVm.IsFaceGenOnlyEntry = true;
-
-                                        foreach (var pluginName in faceGenFiles.Keys)
-                                        {
-                                            var modKey = ModKey.FromFileName(pluginName);
-                                            newVm.CorrespondingModKeys.Add(modKey);
-
-                                            var NpcIds = faceGenFiles[pluginName];
-                                            foreach (var id in NpcIds)
-                                            {
-                                                if (id.Length != 8)
-                                                {
-                                                    continue;
-                                                } // not a FormID
-
-                                                var subId = id.Substring(2, 6);
-                                                var formKeyStr = subId + ":" + pluginName;
-                                                if (FormKey.TryFactory(formKeyStr, out var formKey))
-                                                {
-                                                    newVm.FaceGenOnlyNpcFormKeys.Add(formKey);
-                                                }
-                                            }
-                                        }
-
-                                        tempList.Add(newVm);
-                                        loadedDisplayNames.Add(newVm.DisplayName);
-                                    }
-
-                                    using (ContextualPerformanceTracer.Trace("PopulateMods.CheckMergeInSuitability"))
-                                    {
-                                        CheckMergeInSuitability(newVm);
-                                    }
-                                }
-                                else
-                                {
-                                    _settings.CachedNonAppearanceMods.Add(modFolderPath, "No FaceGen Files Found");
-                                }
-                            }
-
-                            // Unload Resources
-                            _pluginProvider.UnloadPlugins(modKeysInFolder);
-                            //
+                            continue;
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        warnings.Add(
-                            $"Error scanning Mods folder '{_settings.ModsFolder}': {Environment.NewLine}{ExceptionLogger.GetExceptionStack(ex)}");
+
+                        var modKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings, false);
+
+                        var existingVmFromSettings = tempList.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
+                        var mugshotOnlyVmToUpgrade = vmsFromMugshotsOnly.FirstOrDefault(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase));
+
+                        if (existingVmFromSettings != null)
+                        {
+                            UpgradeVmWithPathAndPlugins(existingVmFromSettings, modFolderPath, modKeysInFolder);
+                        }
+                        else if (mugshotOnlyVmToUpgrade != null)
+                        {
+                            UpgradeVmWithPathAndPlugins(mugshotOnlyVmToUpgrade, modFolderPath, modKeysInFolder);
+                            tempList.Add(mugshotOnlyVmToUpgrade);
+                            vmsFromMugshotsOnly.Remove(mugshotOnlyVmToUpgrade);
+                            loadedDisplayNames.Add(mugshotOnlyVmToUpgrade.DisplayName);
+                        }
+                        else
+                        {
+                            await ProcessNewModFolderAsync(modFolderPath, modKeysInFolder, tempList, loadedDisplayNames, claimedMugshotPaths);
+                        }
+
+                        _pluginProvider.UnloadPlugins(modKeysInFolder);
                     }
                 }
+                catch (Exception ex)
+                {
+                    warnings.Add($"Error scanning Mods folder '{_settings.ModsFolder}': {Environment.NewLine}{ExceptionLogger.GetExceptionStack(ex)}");
+                }
+            }
+        }
+        
+        private void UpgradeVmWithPathAndPlugins(VM_ModSetting vm, string modFolderPath, List<ModKey> modKeysInFolder)
+        {
+            if (!vm.CorrespondingFolderPaths.Contains(modFolderPath, StringComparer.OrdinalIgnoreCase))
+            {
+                vm.CorrespondingFolderPaths.Add(modFolderPath);
+            }
+            foreach (var key in modKeysInFolder)
+            {
+                if (!vm.CorrespondingModKeys.Contains(key))
+                {
+                    vm.CorrespondingModKeys.Add(key);
+                }
+            }
+        }
+
+        private async Task ProcessNewModFolderAsync(string modFolderPath, List<ModKey> modKeysInFolder, List<VM_ModSetting> tempList, HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths)
+        {
+            FaceGenScanResult scanResult;
+            using (ContextualPerformanceTracer.Trace("PopulateMods.CollectFaceGenFilesAsync"))
+            {
+                scanResult = await FaceGenScanner.CollectFaceGenFilesAsync(modFolderPath, _bsaHandler, modKeysInFolder, _environmentStateProvider.SkyrimVersion.ToGameRelease());
             }
 
+            if (!scanResult.AnyFilesFound)
+            {
+                _settings.CachedNonAppearanceMods.Add(modFolderPath, "No FaceGen Files Found");
+                return;
+            }
+
+            var newVm = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
+            newVm.IsNewlyCreated = true;
+
+            using (ContextualPerformanceTracer.Trace("PopulateMods.LoadPlugins"))
+            {
+                _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
+            }
+
+            if (modKeysInFolder.Any() && await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath }))
+            {
+                string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
+                if (Directory.Exists(potentialMugshotPath) && !claimedMugshotPaths.Contains(potentialMugshotPath))
+                {
+                    newVm.MugShotFolderPath = potentialMugshotPath;
+                    claimedMugshotPaths.Add(potentialMugshotPath);
+                }
+                tempList.Add(newVm);
+                loadedDisplayNames.Add(newVm.DisplayName);
+            }
+            else if (modKeysInFolder.Any())
+            {
+                _settings.CachedNonAppearanceMods.Add(modFolderPath, "Does not provide new NPCs or modify any NPCs currently in load order");
+            }
+            else // FaceGen only
+            {
+                newVm.IsFaceGenOnlyEntry = true;
+                foreach (var (pluginName, npcIds) in scanResult.FaceGenFiles)
+                {
+                    newVm.CorrespondingModKeys.Add(ModKey.FromFileName(pluginName));
+                    foreach (var id in npcIds.Where(id => id.Length == 8))
+                    {
+                        if (FormKey.TryFactory($"{id.Substring(2, 6)}:{pluginName}", out var formKey))
+                        {
+                            newVm.FaceGenOnlyNpcFormKeys.Add(formKey);
+                        }
+                    }
+                }
+                tempList.Add(newVm);
+                loadedDisplayNames.Add(newVm.DisplayName);
+            }
+
+            using (ContextualPerformanceTracer.Trace("PopulateMods.CheckMergeInSuitability"))
+            {
+                CheckMergeInSuitability(newVm);
+            }
+        }
+
+        private void FinalizeModList(List<VM_ModSetting> tempList, List<VM_ModSetting> vmsFromMugshotsOnly)
+        {
             foreach (var mugshotVm in vmsFromMugshotsOnly)
-                if (!tempList.Any(existing =>
-                        existing.DisplayName.Equals(mugshotVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!tempList.Any(existing => existing.DisplayName.Equals(mugshotVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
                 {
                     tempList.Add(mugshotVm);
                 }
+            }
 
             foreach (var vm in tempList)
             {
@@ -1029,98 +1065,59 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     vm.IsMugshotOnlyEntry = false;
                 }
             }
-            // --- End of existing logic ---
-
-            // Add base game plugins if not handled by mods (e.g. cleaned versions of the plugins)
-
-            var baseGameModKeys = _environmentStateProvider.BaseGamePlugins.ToHashSet(); // copy to allow set modification
-            var creationClubModKeys = _environmentStateProvider.CreationClubPlugins.ToHashSet(); // copy to allow set modification
+        }
+        
+        private void AddBaseAndCreationClubMods(List<VM_ModSetting> tempList)
+        {
+            var baseGameModKeys = _environmentStateProvider.BaseGamePlugins;
+            var creationClubModKeys = _environmentStateProvider.CreationClubPlugins;
 
             baseGameModKeys.RemoveWhere(mk => tempList.Any(vm => !vm.IsFaceGenOnlyEntry && !vm.IsMugshotOnlyEntry && vm.CorrespondingModKeys.Contains(mk)));
             creationClubModKeys.RemoveWhere(mk => tempList.Any(vm => !vm.IsFaceGenOnlyEntry && !vm.IsMugshotOnlyEntry && vm.CorrespondingModKeys.Contains(mk)));
 
-            if (creationClubModKeys.Any())
+            if (creationClubModKeys.Any() && !tempList.Any(vm => vm.DisplayName.Equals(CreationClubModsettingName, StringComparison.OrdinalIgnoreCase)))
             {
-                // Check if a mod setting with the Creation Club name already exists.
-                var existingCcMod = tempList.FirstOrDefault(vm =>
-                    vm.DisplayName.Equals(CreationClubModsettingName, StringComparison.OrdinalIgnoreCase));
-
-                if (existingCcMod == null)
-                {
-                    // Only create and add a new one if it doesn't already exist.
-                    // Create the json model first and load data from there to select the correct constructor
-                    var ccMod = new ModSetting()
-                    {
-                        DisplayName = CreationClubModsettingName,
-                        CorrespondingModKeys = creationClubModKeys.ToList(),
-                        IsAutoGenerated = true,
-                        MergeInDependencyRecords = false
-                    };
-                    var ccModVm = _modSettingFromModelFactory(ccMod, this);
-                    ccModVm.MergeInDependencyRecordsVisible = false;
-                    tempList.Add(ccModVm);
-                }
+                var ccMod = new ModSetting() { DisplayName = CreationClubModsettingName, CorrespondingModKeys = creationClubModKeys.ToList(), IsAutoGenerated = true, MergeInDependencyRecords = false };
+                var ccModVm = _modSettingFromModelFactory(ccMod, this);
+                ccModVm.MergeInDependencyRecordsVisible = false;
+                tempList.Add(ccModVm);
             }
 
-            if (baseGameModKeys.Any())
+            if (baseGameModKeys.Any() && !tempList.Any(vm => vm.DisplayName.Equals(BaseGameModSettingName, StringComparison.OrdinalIgnoreCase)))
             {
-                // Check if a mod setting with the Base Game name already exists.
-                var existingBaseMod = tempList.FirstOrDefault(vm =>
-                    vm.DisplayName.Equals(BaseGameModSettingName, StringComparison.OrdinalIgnoreCase));
-
-                if (existingBaseMod == null)
-                {
-                    // Only create and add a new one if it doesn't already exist.
-                    // Create the json model first and load data from there to select the correct constructor
-                    var baseMod = new ModSetting()
-                    {
-                        DisplayName = BaseGameModSettingName,
-                        CorrespondingModKeys = baseGameModKeys.ToList(),
-                        IsAutoGenerated = true,
-                        MergeInDependencyRecords = false
-                    };
-                    var baseModVm = _modSettingFromModelFactory(baseMod, this);
-                    baseModVm.MergeInDependencyRecordsVisible = false;
-                    tempList.Add(baseModVm);
-                }
+                var baseMod = new ModSetting() { DisplayName = BaseGameModSettingName, CorrespondingModKeys = baseGameModKeys.ToList(), IsAutoGenerated = true, MergeInDependencyRecords = false };
+                var baseModVm = _modSettingFromModelFactory(baseMod, this);
+                baseModVm.MergeInDependencyRecordsVisible = false;
+                tempList.Add(baseModVm);
             }
-
-            _allModSettingsInternal.Clear();
-            _allModSettingsInternal.AddRange(SortVMs(tempList));
-
-            splashReporter?.UpdateStep("Pre-caching asset file paths...");
-            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) = await CacheFaceGenPathsOnLoadAsync(splashReporter);
-
+        }
+        
+        private async Task AnalyzeModSettingsAsync(VM_SplashScreen? splashReporter, (HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles) faceGenCache)
+        {
             splashReporter?.UpdateStep("Analyzing mod data...");
-            // Limit to the number of logical processors to balance CPU work and I/O
             var maxParallelism = Environment.ProcessorCount;
             var semaphore = new SemaphoreSlim(maxParallelism);
-
-            var modSettingsToLogCount = _allModSettingsInternal.Where(x => x.IsNewlyCreated).Count();
+            var modSettingsToLogCount = _allModSettingsInternal.Count(x => x.IsNewlyCreated);
             var analyzedCount = 0;
-            var refreshTasks = _allModSettingsInternal.Select(async (vm, index) =>
+
+            var refreshTasks = _allModSettingsInternal.Select(async vm =>
             {
-                await semaphore.WaitAsync(); // Wait for a free slot
+                await semaphore.WaitAsync();
                 try
                 {
                     await Task.Run(async () =>
                     {
-                        // Get the paths for this specific VM
                         var modFolderPathsForVm = vm.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            
-                        // Explicitly load only the plugins needed for this task
-                        var plugins =_pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPathsForVm);
+                        var plugins = _pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPathsForVm);
                         try
                         {
                             var currentAnalyzed = Interlocked.Increment(ref analyzedCount);
-                            var progress = (double)currentAnalyzed / modSettingsToLogCount * 100.0;
+                            var progress = modSettingsToLogCount > 0 ? (double)currentAnalyzed / modSettingsToLogCount * 100.0 : 0;
                             splashReporter?.UpdateProgress(progress, $"Analyzing: {vm.DisplayName}");
-                            
-                            // Perform the analysis using the now-cached plugins
+
                             using (ContextualPerformanceTracer.Trace("RefreshNpcLists"))
                             {
-                                // Perform the analysis using the now-cached plugins
-                                vm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles, plugins);
+                                vm.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins);
                             }
 
                             if (vm.IsNewlyCreated)
@@ -1131,85 +1128,47 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            Debug.WriteLine($"Error during analysis for {vm.DisplayName}: {ex.Message}");
-                        }
                         finally
                         {
-                            // CRUCIAL: Unload the plugins after analysis is complete,
-                            // even if an error occurred.
                             _pluginProvider.UnloadPlugins(vm.CorrespondingModKeys);
                         }
                     });
                 }
                 finally
                 {
-                    semaphore.Release(); // Release the slot
+                    semaphore.Release();
                 }
             }).ToList();
 
-            try
+            await Task.WhenAll(refreshTasks);
+        }
+
+        private async Task FinalizeAndApplySettingsOnUI(List<string> warnings)
+        {
+            await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                await Task.WhenAll(refreshTasks);
-
-                splashReporter?.UpdateStep("Finalizing mod settings...");
-
-                // Phase 4: Run UI-dependent work on the UI thread
-                // Use Dispatcher.InvokeAsync for WPF
-                await Application.Current.Dispatcher.InvokeAsync(async () =>
+                foreach (var vm in _allModSettingsInternal)
                 {
-                    foreach (var vm in _allModSettingsInternal)
+                    if (vm.HasAlteredMergeLogic)
                     {
-                        // Now, create the appropriate brush on the UI thread
-                        if (vm.HasAlteredMergeLogic)
-                        {
-                            vm.MergeInDependencyRecords = false;
-                            vm.MergeInLabelColor = new(System.Windows.Media.Colors.Purple);
-                        }
-                        else
-                        {
-                            // Assign the default brush here, on the UI thread
-                            vm.MergeInLabelColor = new(System.Windows.Media.Colors.Black);
-                        }
-                        
-                        RecalculateMugshotValidity(vm);
+                        vm.MergeInDependencyRecords = false;
+                        vm.MergeInLabelColor = new(System.Windows.Media.Colors.Purple);
                     }
-
-                    IsLoadingNpcData = false;
-                    ApplyFilters();
-
-                    if (warnings.Any())
+                    else
                     {
-                        ScrollableMessageBox.ShowWarning(string.Join("\n", warnings),
-                            "Mod Settings Population Warning");
+                        vm.MergeInLabelColor = new(System.Windows.Media.Colors.Black);
                     }
-                    // If RecalculateMugshotValidity or ApplyFilters were async and returned Task,
-                    // you could await them here. Since they are not, the async () => is for InvokeAsync.
-                });
-                
-                // Save the race cache used in RefreshNpcLists()
-                _aux.SaveRaceCache();
-            }
-            catch (AggregateException aggEx)
-            {
-                foreach (var ex in aggEx.Flatten().InnerExceptions)
-                {
-                    Debug.WriteLine($"Async NPC list refresh error (outer): {ex.Message}");
-                    // Safely add to warnings on UI thread (if warnings is a UI bound collection, otherwise direct add is fine)
-                    Application.Current.Dispatcher.Invoke(() =>
-                        warnings.Add($"Async NPC list refresh error: {ex.Message}"));
+                    RecalculateMugshotValidity(vm);
                 }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error in PopulateModSettingsAsync after WhenAll: {ex.Message}");
-                Application.Current.Dispatcher.Invoke(() => warnings.Add($"Unexpected error: {ex.Message}"));
-            }
-            finally
-            {
-                splashReporter?.UpdateStep("Mod settings populated.");
-            }
+
+                IsLoadingNpcData = false;
+                ApplyFilters();
+
+                if (warnings.Any())
+                {
+                    ScrollableMessageBox.ShowWarning(string.Join("\n", warnings), "Mod Settings Population Warning");
+                }
+            });
         }
 
         private (HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles)
