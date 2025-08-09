@@ -52,17 +52,20 @@
                     <!-- Environment Status -->
                     <TextBlock Text="Environment Status:" FontWeight="Bold" Margin="0,5,0,2"/>
                     <TextBlock>
-                        <Run Text="Mutagen Environment Initialized: "/>
+                        <Run Text="Mutagen Environment Status: "/>
                         <Run FontWeight="Bold">
                             <Run.Style>
                                 <Style TargetType="Run">
-                                    <Setter Property="Text" Value="{Binding EnvironmentIsValid, Mode=OneWay}"/>
+                                    <Setter Property="Text" Value="{Binding EnvironmentStatus, Mode=OneWay}"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding EnvironmentIsValid, Mode=OneWay}" Value="True">
+                                        <DataTrigger Binding="{Binding EnvironmentStatus}" Value="Valid">
                                             <Setter Property="Foreground" Value="Green"/>
                                         </DataTrigger>
-                                        <DataTrigger Binding="{Binding EnvironmentIsValid, Mode=OneWay}" Value="False">
+                                        <DataTrigger Binding="{Binding EnvironmentStatus}" Value="Invalid">
                                             <Setter Property="Foreground" Value="Red"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding EnvironmentStatus}" Value="Pending">
+                                            <Setter Property="Foreground" Value="Orange"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
@@ -143,7 +146,7 @@
 
                     <!-- Output Plugin Name (Was Output Mod Name) -->
                     <TextBlock Text="Output Plugin Name:" Margin="0,0,0,2"/>
-                    <TextBox Text="{Binding OutputPluginName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                    <TextBox Text="{Binding TargetPluginName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
                     <!-- Output Mod Name (Conceptual - No UI Element Needed, value comes from model default) -->
 
                     <!-- Patching Mode (New) -->

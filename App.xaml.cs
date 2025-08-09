@@ -175,7 +175,7 @@ namespace NPC_Plugin_Chooser_2
             var container = builder.Build();
             autofacResolver.SetLifetimeScope(container);
             
-            splashVM.UpdateProgress(61, "Initializing main application services...");
+            splashVM.UpdateProgress(65, "Initializing main application services...");
             VM_Settings? settingsViewModel;
             using (ContextualPerformanceTracer.Trace("InitializeCoreApplicationAsync.ResolveSettingsVM"))
             {

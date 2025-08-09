@@ -51,11 +51,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // Reactive handling for conditions changing *after* initial setup
             Observable.CombineLatest(
-                    _environmentStateProvider.WhenAnyValue(x => x.EnvironmentIsValid),
+                    _environmentStateProvider.WhenAnyValue(x => x.Status),
                     _settingsViewModel.WhenAnyValue(x => x.ModsFolder),
                     this.WhenAnyValue(x => x.IsLoadingFolders), // <-- Observe the new property
-                    (envIsValid, _, isLoading) => // <-- Capture the new 'isLoading' value
-                        envIsValid &&
+                    (status, _, isLoading) => // <-- Capture the new 'isLoading' value
+                        status == EnvironmentStateProvider.EnvironmentStatus.Valid &&
                         !string.IsNullOrWhiteSpace(_settings.ModsFolder) &&
                         Directory.Exists(_settings.ModsFolder) &&
                         !isLoading // <-- Add this condition
@@ -96,7 +96,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public void InitializeApplicationState(bool isStartup)
         {
-            bool gameEnvironmentCanBeCreated = _environmentStateProvider.EnvironmentIsValid;
+            bool gameEnvironmentCanBeCreated = _environmentStateProvider.Status == EnvironmentStateProvider.EnvironmentStatus.Valid;
             bool modsFolderIsValid = !string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder);
             bool conditionsMet = gameEnvironmentCanBeCreated && modsFolderIsValid;
 

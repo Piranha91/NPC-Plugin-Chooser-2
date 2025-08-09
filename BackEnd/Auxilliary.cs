@@ -1,6 +1,8 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.Reactive.Disposables;
+using System.Reactive.Linq;
 using Loqui;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
@@ -11,6 +13,7 @@ using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using System.Security.Cryptography;
 using System.Text;
+using ReactiveUI;
 
 #if NET8_0_OR_GREATER
 using System.IO.Hashing;
@@ -18,10 +21,12 @@ using System.IO.Hashing;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
-public class Auxilliary
+public class Auxilliary : IDisposable
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
-    private readonly IAssetLinkCache _assetLinkCache;
+    private IAssetLinkCache _assetLinkCache;
+    
+    private readonly CompositeDisposable _disposables = new();
     
     // caches to speed up building
     public Dictionary<FormKey, string> FormIDCache = new();
@@ -40,11 +45,28 @@ public class Auxilliary
     public Auxilliary(EnvironmentStateProvider environmentStateProvider)
     {
         _environmentStateProvider = environmentStateProvider;
-        _assetLinkCache = new AssetLinkCache(_environmentStateProvider.LinkCache);
-        LoadRaceCache();
+        
+        _environmentStateProvider.OnEnvironmentUpdated
+            .ObserveOn(RxApp.MainThreadScheduler) // Ensure re-initialization happens on the UI thread if needed
+            .Subscribe(_ =>
+            {
+                if (_environmentStateProvider.LinkCache is null)
+                {
+                    Debug.WriteLine("Aux: Environment state is not initialized");
+                    return;
+                }
+                _assetLinkCache = new AssetLinkCache(_environmentStateProvider.LinkCache);
+            })
+            .DisposeWith(_disposables); // Add the subscription to the container for easy cleanup
+    }
+    
+    public void Dispose()
+    {
+        // Clean up all subscriptions when this object is disposed
+        _disposables.Dispose();
     }
 
-    public void Reinitialize()
+    public void ReinitializeModDependentProperties()
     {
         FormIDCache.Clear();
         _raceValidityCache.Clear();
@@ -241,7 +263,7 @@ public class Auxilliary
         string modFolderName = Path.GetFileName(modFolderPath);
         try
         {
-            var enabledKeys = _environmentStateProvider.EnvironmentIsValid ? _environmentStateProvider.LoadOrder.Keys.ToHashSet() : new HashSet<ModKey>();
+            var enabledKeys = _environmentStateProvider.Status == EnvironmentStateProvider.EnvironmentStatus.Valid ? _environmentStateProvider.LoadOrder.Keys.ToHashSet() : new HashSet<ModKey>();
 
             foreach (var filePath in Directory.EnumerateFiles(modFolderPath, "*.es*", SearchOption.TopDirectoryOnly))
             {

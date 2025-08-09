@@ -21,7 +21,7 @@ public class Settings
     // Output Settings
     public string OutputDirectory { get; set; } = "NPC Output"; 
     public bool AppendTimestampToOutputDirectory { get; set; } = false; 
-    public string OutputPluginName { get; set; } = "NPC"; 
+    public string OutputPluginName { get; set; } = string.Empty;
     public PatchingMode PatchingMode { get; set; } = PatchingMode.CreateAndPatch; 
     public bool UseSkyPatcherMode { get; set; } = false;
     

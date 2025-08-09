@@ -786,6 +786,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public async Task PopulateModSettingsAsync(VM_SplashScreen? splashReporter)
         {
+            _aux.ReinitializeModDependentProperties();
             // Phase 1: Initialize and load data from disk
             var (tempList, loadedDisplayNames, claimedMugshotPaths, warnings) = InitializePopulation(splashReporter);
 
@@ -843,7 +844,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             IsLoadingNpcData = true;
             var warnings = new List<string>();
 
-            if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
+            if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid || _environmentStateProvider.LoadOrder == null)
             {
                 warnings.Add("Environment is not valid. Cannot accurately link plugins.");
             }

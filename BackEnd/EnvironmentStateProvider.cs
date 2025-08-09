@@ -6,15 +6,19 @@ using Mutagen.Bethesda.Environments;
 using Noggog;
 using NPC_Plugin_Chooser_2.Models;
 using System.IO;
+using System.Reactive;
+using System.Reactive.Subjects;
 using System.Reflection;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.View_Models;
+using ReactiveUI;
+using ReactiveUI.Fody.Helpers;
 using YamlDotNet.RepresentationModel;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
-public class EnvironmentStateProvider
+public class EnvironmentStateProvider : ReactiveObject
 {
     // "Core" state properties and fields
     private IGameEnvironment<ISkyrimMod, ISkyrimModGetter> _environment;
@@ -22,28 +26,46 @@ public class EnvironmentStateProvider
     public ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>> LoadOrder => _environment.LoadOrder;
     public IEnumerable<ModKey> LoadOrderModKeys => LoadOrder.ListedOrder.Select(m => m.ModKey);
     public ILinkCache<ISkyrimMod, ISkyrimModGetter> LinkCache => _environment.LinkCache;
-    public SkyrimRelease SkyrimVersion { get; set; }
+    public SkyrimRelease SkyrimVersion { get; private set; }
     public DirectoryPath ExtraSettingsDataPath { get; set; }
     public DirectoryPath InternalDataPath { get; set; }
-    public DirectoryPath DataFolderPath { get; set; }
+    public DirectoryPath DataFolderPath { get; private set; }
     public ISkyrimMod OutputMod { get; set; }
     public HashSet<ModKey> BaseGamePlugins => Implicits.Get(SkyrimVersion.ToGameRelease()).BaseMasters.ToHashSet();
     public HashSet<ModKey> CreationClubPlugins  { get; set; }
     public ModKey AbsoluteBasePlugin = ModKey.FromFileName("Skyrim.esm");
     
-    public string OutputPluginName { get; set; }
-    public string OutputPluginFileName => OutputPluginName + ".esp";
-    public bool EnvironmentIsValid { get; set; } = false;
+    public static string DefaultPluginName { get; } = "NPC";
+    public string OutputPluginName { get; private set; }
+    public string OutputPluginFileName => (OutputPluginName ?? DefaultPluginName) + ".esp";
     
     // Additional properties (for logging only)
     public string CreationClubListingsFilePath { get; set; }
     public string LoadOrderFilePath { get; set; }
-    public string EnvironmentBuilderError { get; set; }
+    [Reactive] public string EnvironmentBuilderError { get; set; }
+    [Reactive] public int NumPlugins { get; set; } = 0;
+    [Reactive] public int NumActivePlugins { get; set; } = 0;
+    [Reactive] public EnvironmentStatus Status { get; private set; } = EnvironmentStatus.Invalid;
     
     // Additional fields to help other classes
     private readonly Dictionary<ModKey, string> _modKeyFormIdPrefixCache = new();
+    private SkyrimRelease _targetSkyrimRelease;
+    private string _targetDataFolderPath;
+    
+    // 1. Create a private Subject to control the broadcast
+    private readonly Subject<Unit> _environmentUpdatedSubject = new();
 
-    public EnvironmentStateProvider(Settings settings, VM_SplashScreen? splashReporter = null)
+    // 2. Expose it publicly as an IObservable so others can subscribe but not broadcast
+    public IObservable<Unit> OnEnvironmentUpdated => _environmentUpdatedSubject;
+
+    public enum EnvironmentStatus
+    {
+        Valid,
+        Invalid,
+        Pending
+    }
+
+    public EnvironmentStateProvider(VM_SplashScreen? splashReporter = null)
     {
         _splashReporter = splashReporter;
         
@@ -60,31 +82,25 @@ public class EnvironmentStateProvider
         
         ExtraSettingsDataPath = Path.Combine(exeLocation, "Settings");
         InternalDataPath = Path.Combine(exeLocation, "InternalData");
+    }
 
-        SkyrimVersion = settings.SkyrimRelease;
-        if (!settings.SkyrimGamePath.IsNullOrWhitespace())
-        {
-            DataFolderPath = settings.SkyrimGamePath;
-        }
-        
-        if (!settings.OutputPluginName.IsNullOrWhitespace())
-        {
-            OutputPluginName = settings.OutputPluginName;
-        }
-        
-        UpdateEnvironment(70);
+    public void SetEnvironmentTarget(SkyrimRelease skyrimRelease, string dataFolderPath, string outputPluginName)
+    {
+        SkyrimVersion = skyrimRelease;
+        _targetDataFolderPath = dataFolderPath;
+        OutputPluginName = !string.IsNullOrWhiteSpace(outputPluginName) ? outputPluginName : DefaultPluginName;
     }
 
     public void UpdateEnvironment(double baseProgress = 0, double progressSpan = 5)
     {
         _splashReporter?.UpdateProgress(baseProgress, "Initializing game environment...");
         EnvironmentBuilderError = string.Empty;
-        EnvironmentIsValid = false;
+        Status = EnvironmentStatus.Pending;
         
         var builder = GameEnvironment.Typical.Builder<ISkyrimMod, ISkyrimModGetter>(SkyrimVersion.ToGameRelease());
-        if (!DataFolderPath.ToString().IsNullOrWhitespace())
+        if (!_targetDataFolderPath.IsNullOrWhitespace() && Directory.Exists(_targetDataFolderPath))
         {
-            builder = builder.WithTargetDataFolder(DataFolderPath);
+            builder = builder.WithTargetDataFolder(_targetDataFolderPath);
         }
 
         var validatedName = Path.GetFileNameWithoutExtension(OutputPluginName);
@@ -113,8 +129,6 @@ public class EnvironmentStateProvider
                 _splashReporter?.UpdateProgress(baseProgress + progressSpan, $"Environment Error: {EnvironmentBuilderError}");
                 return;
             }
-
-            EnvironmentIsValid = true;
             
             CreationClubListingsFilePath = _environment.CreationClubListingsFilePath ?? string.Empty;
             LoadOrderFilePath = _environment.LoadOrderFilePath;
@@ -124,13 +138,19 @@ public class EnvironmentStateProvider
             
             ComputeFormIdPrefixes();
             
+            Status = EnvironmentStatus.Valid;
+            NumPlugins = LoadOrder.ListedOrder.Count();
+            NumActivePlugins = LoadOrder.ListedOrder.Count(p => p.Enabled);
             _splashReporter?.UpdateProgress(baseProgress + progressSpan, "Game environment initialized successfully.");
         }
         catch (Exception ex)
         {
             EnvironmentBuilderError = ExceptionLogger.GetExceptionStack(ex);
             _splashReporter?.UpdateProgress(baseProgress + progressSpan, "Error initializing game environment.");
+            Status = EnvironmentStatus.Invalid;
         }
+        
+        _environmentUpdatedSubject.OnNext(Unit.Default);
     }
     
     public HashSet<ModKey> GetCreationClubPlugins()

@@ -1291,7 +1291,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             CurrentNpcDescription = null;
         });
 
-        if (!_environmentStateProvider.EnvironmentIsValid)
+        if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid)
         {
             splashReporter?.UpdateStep("Environment not valid for NPC list.");
             ScrollableMessageBox.ShowWarning(

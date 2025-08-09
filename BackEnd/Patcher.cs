@@ -78,7 +78,7 @@ public class Patcher : OptionalUIModule
 
         var processedNpcsTokenData = new Dictionary<FormKey, NpcAppearanceData>();
 
-        if (!_environmentStateProvider.EnvironmentIsValid || _environmentStateProvider.LoadOrder == null)
+        if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid || _environmentStateProvider.LoadOrder == null)
         {
             AppendLog("ERROR: Environment is not valid. Aborting.", true);
             ResetProgress();

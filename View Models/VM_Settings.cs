@@ -38,16 +38,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         public ViewModelActivator Activator { get; } = new ViewModelActivator();
 
-        public int NumPluginsInEnvironment => _environmentStateProvider.LoadOrder.ListedOrder.Count();
-        public int NumActivePluginsInEnvironment => _environmentStateProvider.LoadOrder.ListedOrder.Count(p => p.Enabled);
+        public int NumPluginsInEnvironment => _environmentStateProvider.NumPlugins;
+        public int NumActivePluginsInEnvironment => _environmentStateProvider.NumActivePlugins;
 
         // --- Existing & Modified Properties ---
         [Reactive] public string ModsFolder { get; set; }
         [Reactive] public string MugshotsFolder { get; set; }
         [Reactive] public SkyrimRelease SkyrimRelease { get; set; }
         [Reactive] public string SkyrimGamePath { get; set; }
-        // OutputModName now maps to the conceptual name in the model
-        [Reactive] public string OutputModName { get; set; }
+        // TargetPluginName now maps to the conceptual name in the model
+        [Reactive] public string TargetPluginName { get; set; }
 
         // --- New Output Settings Properties ---
         [Reactive] public string OutputDirectory { get; set; }
@@ -71,7 +71,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string BatFilePostCommands { get; set; }
 
         // --- Read-only properties reflecting environment state ---
-        [ObservableAsProperty] public bool EnvironmentIsValid { get; }
+        [ObservableAsProperty] public EnvironmentStateProvider.EnvironmentStatus EnvironmentStatus { get; }
         [ObservableAsProperty] public string EnvironmentErrorText { get; }
         
         // --- Properties for modifying EasyNPC Import/Export ---
@@ -114,24 +114,43 @@ namespace NPC_Plugin_Chooser_2.View_Models
             Lazy<VM_MainWindow> lazyMainWindowVm,
             EasyNpcTranslator easyNpcTranslator) 
         {
+            _model = settingsModel;
+            
             _environmentStateProvider = environmentStateProvider;
+            _environmentStateProvider.OnEnvironmentUpdated
+                .ObserveOn(RxApp.MainThreadScheduler) // Ensure UI updates happen on the UI thread
+                .Subscribe(_ =>
+                {
+                    this.RaisePropertyChanged(nameof(NumPluginsInEnvironment));
+                    this.RaisePropertyChanged(nameof(NumActivePluginsInEnvironment));
+                })
+                .DisposeWith(_disposables);
+                        
+            // At the time ths constructor is called, the model has already been read in via App.xaml.cs
+            // This should be refactored later, but for now treat the _model values as the ground truth
+            SkyrimRelease = _model?.SkyrimRelease ?? SkyrimRelease.SkyrimSE;
+            SkyrimGamePath = _model?.SkyrimGamePath ?? string.Empty;
+            TargetPluginName = _model?.OutputPluginName ?? EnvironmentStateProvider.DefaultPluginName; // Model's OutputPluginName is the source of truth
+            if (TargetPluginName.IsNullOrEmpty())
+            {
+                TargetPluginName = EnvironmentStateProvider.DefaultPluginName;
+            }
+            // Now that the environment parameters have been set, initialize the environment
+            _environmentStateProvider.SetEnvironmentTarget(SkyrimRelease, SkyrimGamePath, TargetPluginName);
+            _environmentStateProvider.UpdateEnvironment();
+            // Finished environment initialization
+            
             _aux = aux;
             _lazyNpcSelectionBar = lazyNpcSelectionBar;
             _lazyModListVM = lazyModListVm;
-            _model = settingsModel;
             _consistencyProvider = consistencyProvider;
             _splashReporter = splashReporter;
             _lazyMainWindowVm = lazyMainWindowVm;
             _easyNpcTranslator = easyNpcTranslator;
 
-            // Initialize VM properties from the model (as before)
+            // Initialize other VM properties from the model
             ModsFolder = _model.ModsFolder;
             MugshotsFolder = _model.MugshotsFolder;
-            SkyrimRelease = _model.SkyrimRelease;
-            _environmentStateProvider.SkyrimVersion = SkyrimRelease;
-            SkyrimGamePath = _model.SkyrimGamePath;
-            _environmentStateProvider.DataFolderPath = SkyrimGamePath;
-            OutputModName = _model.OutputPluginName; // Model's OutputPluginName is the source of truth
             OutputDirectory = _model.OutputDirectory;
             UseSkyPatcherMode = _model.UseSkyPatcherMode;
             AppendTimestampToOutputDirectory = _model.AppendTimestampToOutputDirectory;
@@ -232,39 +251,31 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 })
                 .DisposeWith(_disposables);
             
-            Observable.Merge(
-                    this.WhenAnyValue(x => x.SkyrimRelease).Select(_ => Unit.Default),
-                    this.WhenAnyValue(x => x.SkyrimGamePath).Select(_ => Unit.Default) // Use Count property
-                )
-                .Skip(2) // Skip the initial value set in the constructor
-                .Throttle(TimeSpan.FromMilliseconds(100))
-                .ObserveOn(RxApp.MainThreadScheduler) 
+            // Consolidate all environment update logic into a single, throttled subscription.
+            var gameEnvironmentChanged = Observable.Merge(
+                this.WhenAnyValue(x => x.SkyrimRelease).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.SkyrimGamePath).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.TargetPluginName).Select(_ => Unit.Default));
+
+            gameEnvironmentChanged
+                .Skip(3) // Skip the 3 initial values set in the constructor
+                .Throttle(TimeSpan.FromMilliseconds(250), RxApp.MainThreadScheduler) // Throttle to prevent rapid-fire updates
                 .Subscribe(_ =>
                 {
-                    _environmentStateProvider.SkyrimVersion = SkyrimRelease;
-                    _environmentStateProvider.DataFolderPath = SkyrimGamePath;;
+                    // 1. Update the model to persist the new settings
+                    _model.SkyrimRelease = SkyrimRelease;
+                    _model.SkyrimGamePath = SkyrimGamePath;
+                    _model.OutputPluginName = TargetPluginName;
+
+                    // 2. Set the target and update the environment
+                    _environmentStateProvider.SetEnvironmentTarget(SkyrimRelease, SkyrimGamePath, TargetPluginName);
                     _environmentStateProvider.UpdateEnvironment();
-                    _aux.Reinitialize(); // clear the FormID cache
-                });
-            
-            // Properties that trigger full environment update via InitializeAsync (or a lighter UpdateEnvironmentAndNotify)
-            this.WhenAnyValue(x => x.SkyrimGamePath).Skip(1)
-                .Do(s => { _model.SkyrimGamePath = s; _environmentStateProvider.DataFolderPath = s; })
-                .Select(_ => Unit.Default).InvokeCommand(ReactiveCommand.CreateFromTask(InitializeAsyncInternal)).DisposeWith(_disposables);
-
-            this.WhenAnyValue(x => x.SkyrimRelease).Skip(1)
-                .Do(r => { _model.SkyrimRelease = r; _environmentStateProvider.SkyrimVersion = r; })
-                .Select(_ => Unit.Default).InvokeCommand(ReactiveCommand.CreateFromTask(InitializeAsyncInternal)).DisposeWith(_disposables);
-            
-            this.WhenAnyValue(x => x.OutputModName).Skip(1) // OutputModName from UI is the driver
-                .Where(name => !string.IsNullOrWhiteSpace(name))
-                .Do(name => { _model.OutputPluginName = name; _environmentStateProvider.OutputPluginName = name; })
-                 .Select(_ => Unit.Default).InvokeCommand(ReactiveCommand.CreateFromTask(InitializeAsyncInternal)).DisposeWith(_disposables);
-
+                })
+                .DisposeWith(_disposables);
 
             // OAPHs for environment state
-            _environmentStateProvider.WhenAnyValue(x => x.EnvironmentIsValid)
-                .ToPropertyEx(this, x => x.EnvironmentIsValid)
+            _environmentStateProvider.WhenAnyValue(x => x.Status)
+                .ToPropertyEx(this, x => x.EnvironmentStatus)
                 .DisposeWith(_disposables);
             
             _environmentStateProvider.WhenAnyValue(x => x.EnvironmentBuilderError)
@@ -273,8 +284,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .DisposeWith(_disposables);
             
             // Populate AvailablePluginsForExclusion
-            this.WhenAnyValue(x => x.EnvironmentIsValid)
-                .Select(_ => _environmentStateProvider.EnvironmentIsValid && _environmentStateProvider.LoadOrder != null
+            this.WhenAnyValue(x => x.EnvironmentStatus)
+                .Select(_ => _environmentStateProvider.Status == EnvironmentStateProvider.EnvironmentStatus.Valid && _environmentStateProvider.LoadOrder != null
                     ? _environmentStateProvider.LoadOrder.Keys.OrderBy(k => k.ToString(), StringComparer.OrdinalIgnoreCase).ToList()
                     : Enumerable.Empty<ModKey>())
                 .ObserveOn(RxApp.MainThreadScheduler)
@@ -313,8 +324,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             this.WhenActivated(d =>
             {
-                // Initial load of exclusions (if EnvironmentIsValid might already be true from construction)
-                if (EnvironmentIsValid && AvailablePluginsForExclusion != null && AvailablePluginsForExclusion.Any())
+                // Initial load of exclusions (if EnvironmentStatus might already be true from construction)
+                if (EnvironmentStatus == EnvironmentStateProvider.EnvironmentStatus.Valid && AvailablePluginsForExclusion != null && AvailablePluginsForExclusion.Any())
                 {
                      ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
                      ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
@@ -338,13 +349,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // New method for heavy initialization, called from App.xaml.cs
         public async Task InitializeAsync()
         {
-            const int totalSteps = 4; // Define the total number of steps
-            
+            const int totalSteps = 3; // Define the total number of steps
+
             // --- STEP 1 ---
-            _splashReporter?.UpdateStep($"Step 1 of {totalSteps}: Updating game environment...");
-            
-            // --- STEP 2 ---
-            _splashReporter?.UpdateStep($"Step 2 of {totalSteps}: Populating mod list...");
+            _splashReporter?.UpdateStep($"Step 1 of {totalSteps}: Populating mod list...");
 
             using (ContextualPerformanceTracer.Trace("VM_Settings.PopulateModSettings"))
             {
@@ -353,8 +361,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 await _lazyModListVM.Value.PopulateModSettingsAsync(_splashReporter); // Base 70%, span 10% (e.g. 70-80)
             }
 
-            // --- STEP 3 ---
-            _splashReporter?.UpdateStep($"Step 3 of {totalSteps}: Initializing NPC selection bar...");
+            // --- STEP 2 ---
+            _splashReporter?.UpdateStep($"Step 2 of {totalSteps}: Initializing NPC selection bar...");
 
             using (ContextualPerformanceTracer.Trace("VM_Settings.InitializeNpcSelectionBar"))
             {
@@ -362,8 +370,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 await _lazyNpcSelectionBar.Value.InitializeAsync(_splashReporter); 
             }
             
-            // --- STEP 4 ---
-            _splashReporter?.UpdateStep($"Step 4 of {totalSteps}: Applying default settings...");
+            // --- STEP 3 ---
+            _splashReporter?.UpdateStep($"Step 3 of {totalSteps}: Applying default settings...");
             
             if (!_model.HasBeenLaunched && _environmentStateProvider.LoadOrder != null)
             {
@@ -388,11 +396,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             // END: Added Logic
     
-            this.RaisePropertyChanged(nameof(EnvironmentIsValid));
+            this.RaisePropertyChanged(nameof(EnvironmentStatus));
             this.RaisePropertyChanged(nameof(EnvironmentErrorText));
             this.RaisePropertyChanged(nameof(AvailablePluginsForExclusion));
     
-            if (EnvironmentIsValid && AvailablePluginsForExclusion != null)
+            if (EnvironmentStatus == EnvironmentStateProvider.EnvironmentStatus.Valid && AvailablePluginsForExclusion != null)
             {
                 ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
                 ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
@@ -414,10 +422,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             await _lazyModListVM.Value.PopulateModSettingsAsync(null); 
             await _lazyNpcSelectionBar.Value.InitializeAsync(null);
     
-            this.RaisePropertyChanged(nameof(EnvironmentIsValid));
+            this.RaisePropertyChanged(nameof(EnvironmentStatus));
             this.RaisePropertyChanged(nameof(EnvironmentErrorText));
             this.RaisePropertyChanged(nameof(AvailablePluginsForExclusion));
-            if (EnvironmentIsValid && AvailablePluginsForExclusion != null)
+            if (EnvironmentStatus == EnvironmentStateProvider.EnvironmentStatus.Valid && AvailablePluginsForExclusion != null)
             {
                 ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
                 ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
@@ -515,9 +523,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  _model.ModSettings.Clear();
                  _model.CachedNonAppearanceMods.Clear();
                  //
-                 
-                 // Clear FormID cache and Valid Race Cache
-                 _aux.Reinitialize();
                  
                  _lazyMainWindowVm.Value.IsLoadingFolders = true;
                  var footerMsg = "First time analyzing mods folder. Subsequent runs will be faster.";

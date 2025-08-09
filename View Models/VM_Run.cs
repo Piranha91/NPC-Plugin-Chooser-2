@@ -128,8 +128,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Command should be executable if the environment is valid (to start) OR if it's already running (to cancel).
             var canExecute = this.WhenAnyValue(
                 x => x.IsRunning,
-                x => x._environmentStateProvider.EnvironmentIsValid,
-                (running, valid) => running || valid);
+                x => x._environmentStateProvider.Status,
+                (running, status) => running || status == EnvironmentStateProvider.EnvironmentStatus.Valid);
 
             // This command's delegate is SYNCHRONOUS. It fires off the async work or cancels it.
             RunCommand = ReactiveCommand.Create(TogglePatcherExecution, canExecute);
@@ -203,7 +203,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var canGenerateBat = this.WhenAnyValue(
                 x => x.IsRunning,
                 x => x.SelectedNpcGroup,
-                (running, group) => !running && !string.IsNullOrEmpty(group) && _environmentStateProvider.EnvironmentIsValid
+                (running, group) => !running && !string.IsNullOrEmpty(group) && _environmentStateProvider.Status == EnvironmentStateProvider.EnvironmentStatus.Valid
             );
 
             GenerateSpawnBatCommand = ReactiveCommand.CreateFromTask(GenerateSpawnBatFileAsync, canGenerateBat);
@@ -237,9 +237,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // Update Available Groups when NpcGroupAssignments changes in settings
             UpdateAvailableGroups();
 
-            // Subscribe to VM_Settings EnvironmentIsValid changes to refresh groups when env becomes valid
-            _vmSettings.WhenAnyValue(x => x.EnvironmentIsValid)
-                .Where(isValid => isValid)
+            // Subscribe to VM_Settings EnvironmentStatus changes to refresh groups when env becomes valid
+            _vmSettings.WhenAnyValue(x => x.EnvironmentStatus)
+                .Where(status => status == EnvironmentStateProvider.EnvironmentStatus.Valid)
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(_ => UpdateAvailableGroups());
 
@@ -545,7 +545,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             AppendLog("Core Plugins:" + Environment.NewLine + string.Join(Environment.NewLine, _environmentStateProvider.BaseGamePlugins.Select(x => "\t" + x.ToString())), forceLog: true);
             AppendLog("CC Plugins:" + Environment.NewLine + string.Join(Environment.NewLine, _environmentStateProvider.CreationClubPlugins.Select(x => "\t" + x.ToString())), forceLog: true);
             AppendLog("Load Order:" + Environment.NewLine + string.Join(Environment.NewLine, _environmentStateProvider.LoadOrder.Select(x => "\t" + (x.Value.Enabled ? "*" : "-") + x.Key.ToString())), forceLog: true);
-            AppendLog(_environmentStateProvider.EnvironmentIsValid ? "Environment is Valid" : "Environment is Invalid", forceLog: true);
+            AppendLog("Environment Status: " + _environmentStateProvider.Status, forceLog: true);
             AppendLog(Environment.NewLine, forceLog: true);
             AppendLog("===Program Variables===", forceLog: true);
             AppendLog("Plugin Provider: " + _pluginProvider.GetStatusReport(), forceLog: true);
