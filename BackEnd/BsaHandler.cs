@@ -32,8 +32,14 @@ public class BsaHandler : OptionalUIModule
         AppendLog("Unloaded all cached BSA readers.");
     }
     
-    public static HashSet<string> GetBsaPathsForPluginInDir(ModKey modKey, string directory, GameRelease gameRelease)
+    public HashSet<string> GetBsaPathsForPluginInDir(ModKey modKey, string directory, GameRelease gameRelease)
     {
+        if (directory.Equals(_environmentStateProvider.DataFolderPath, StringComparison.OrdinalIgnoreCase))
+        {
+            // doesn't require re-enumerating directory
+            return PluginArchiveIndex.GetOwnedBsaFiles(modKey, directory);
+        }
+        
         try
         {
             // Important: This should be the only call to Archive.GetApplicableArchivePaths in the entire application
@@ -43,44 +49,11 @@ public class BsaHandler : OptionalUIModule
         }
         catch (InvalidOperationException) // Archive.GetApplicableArchivePaths is prone to throwing this on some plugins. Cause unclear.
         {
-            string currentPluginBase = Path.GetFileNameWithoutExtension(modKey.FileName.ToString());
-
-            // 1. Find all ".esp" files to establish a list of all known plugin base names.
-            // 2. Order them by length descending to ensure the most specific name is matched first.
-            //    (e.g., "MyPlugin - Addon" is checked before "MyPlugin").
-            var allPluginBases = Directory.EnumerateFiles(directory, "*.esp", SearchOption.TopDirectoryOnly)
-                .Select(path => Path.GetFileNameWithoutExtension(path))
-                .OrderByDescending(name => name.Length)
-                .ToList();
-
-            // Find all BSA files and filter them based on the corrected logic.
-            return Directory.EnumerateFiles(directory, "*.bsa", SearchOption.TopDirectoryOnly)
-                .Where(bsaPath => {
-                    string bsaBaseName = Path.GetFileNameWithoutExtension(bsaPath);
-
-                    // Find the longest possible plugin base that this BSA could belong to.
-                    string? ownerPluginBase = allPluginBases.FirstOrDefault(pluginBase => bsaBaseName.StartsWith(pluginBase));
-
-                    // If no owner is found, or the owner isn't the plugin we're looking for, skip it.
-                    if (ownerPluginBase != currentPluginBase)
-                    {
-                        return false;
-                    }
-
-                    // 3. We have a match, but we must validate it's a "proper" match.
-                    // It's either an exact match (e.g., "MyPlugin.bsa" for "MyPlugin.esp")...
-                    bool isExactMatch = bsaBaseName.Length == ownerPluginBase.Length;
-                    // ...or a sub-archive, which must be separated by a space.
-                    // (e.g., "MyPlugin - Textures.bsa" for "MyPlugin.esp").
-                    bool isSubArchiveMatch = bsaBaseName.Length > ownerPluginBase.Length && bsaBaseName[ownerPluginBase.Length] == ' ';
-
-                    return isExactMatch || isSubArchiveMatch;
-                })
-                .ToHashSet();
+            return PluginArchiveIndex.GetOwnedBsaFiles(modKey, directory);
         }
     }
 
-    public static HashSet<string> GetBsaPathsForPluginInDirs(ModKey modKey, IEnumerable<string> directories,
+    public HashSet<string> GetBsaPathsForPluginInDirs(ModKey modKey, IEnumerable<string> directories,
         GameRelease gameRelease)
     {
         HashSet<string> bsaPaths = new();
@@ -91,7 +64,7 @@ public class BsaHandler : OptionalUIModule
         return bsaPaths;
     }
 
-    public static Dictionary<ModKey, HashSet<string>> GetBsaPathsForPluginsInDirs(IEnumerable<ModKey> modKeys,
+    public Dictionary<ModKey, HashSet<string>> GetBsaPathsForPluginsInDirs(IEnumerable<ModKey> modKeys,
         IEnumerable<string> directories, GameRelease gameRelease)
     {
         Dictionary<ModKey, HashSet<string>> bsaPaths = new();

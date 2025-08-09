@@ -1365,7 +1365,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     pathsToSearch.Add(_environmentStateProvider.DataFolderPath);
                 }
 
-                var bsaDict = BsaHandler.GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, pathsToSearch,
+                var bsaDict = _bsaHandler.GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, pathsToSearch,
                     _settings.SkyrimRelease.ToGameRelease());
 
                 foreach (var modKey in vm.CorrespondingModKeys)
@@ -1469,7 +1469,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
 
                     // This is the expensive, blocking call.
-                    var bsaDictForVm = BsaHandler.GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, pathsToSearch, _settings.SkyrimRelease.ToGameRelease());
+                    var bsaDictForVm = _bsaHandler.GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, pathsToSearch, _settings.SkyrimRelease.ToGameRelease());
             
                     localVmBsaPathsCache[vm.DisplayName] = bsaDictForVm;
 
