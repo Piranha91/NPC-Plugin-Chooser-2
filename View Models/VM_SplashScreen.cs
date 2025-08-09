@@ -7,6 +7,8 @@ using ReactiveUI.Fody.Helpers;
 using System.Windows.Threading;
 using NPC_Plugin_Chooser_2.Views; // Required for Dispatcher
 using System.Windows; // Required for Application
+using System.Diagnostics; // Required for Stopwatch
+using System; // Required for TimeSpan
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -17,12 +19,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string OperationText { get; private set; }
         [Reactive] public string? FooterMessage { get; private set; }
         [Reactive] public string? StepText { get; private set; }
+        [Reactive] public string ElapsedTimeString { get; private set; } // New property for the timer
+
         public string ImagePath => "pack://application:,,,/Resources/SplashScreenImage.png";
 
-        private Dispatcher _dispatcher;
+        private readonly Dispatcher _dispatcher;
         private Window? _window; // Reference to the window
-        
-        public Interaction<Unit, Unit> RequestOpen  { get; } = new();
+        private readonly DispatcherTimer _timer; // New timer
+        private readonly Stopwatch _stopwatch; // New stopwatch
+
+        public Interaction<Unit, Unit> RequestOpen { get; } = new();
         public Interaction<Unit, Unit> RequestClose { get; } = new();
 
         public VM_SplashScreen(string programVersion)
@@ -30,15 +36,29 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ProgramVersion = programVersion;
             OperationText = "Initializing...";
             ProgressValue = 0;
+            ElapsedTimeString = "Elapsed: 00:00:00"; // Initial value
             _dispatcher = Dispatcher.CurrentDispatcher;
+
+            // --- Start of new code ---
+            _stopwatch = Stopwatch.StartNew();
+            _timer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _timer.Tick += (sender, args) =>
+            {
+                ElapsedTimeString = $"Elapsed: {_stopwatch.Elapsed:hh\\:mm\\:ss}";
+            };
+            _timer.Start();
+            // --- End of new code ---
         }
 
         public void UpdateProgress(double percent, string message)
         {
             if (_dispatcher.CheckAccess())
             {
-                ProgressValue  = percent;
-                OperationText  = message;
+                ProgressValue = percent;
+                OperationText = message;
             }
             else
             {
@@ -126,6 +146,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             Action closeAction = () =>
             {
+                // --- Start of modified code ---
+                _timer.Stop();
+                _stopwatch.Stop();
+                // --- End of modified code ---
+                
                 if (_window != null)
                 {
                     // Re-enable the owner if it exists and was disabled
