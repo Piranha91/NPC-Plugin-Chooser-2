@@ -87,6 +87,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // MODIFIED: Type changed to handle dictionary from model
         public ObservableCollection<KeyValuePair<string, string>> CachedNonAppearanceMods { get; private set; }
         
+        // --- New: Properties for display settings
+        [Reactive] public bool NormalizeImageDimensions { get; set; }
+        
         // For throttled saving
         private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
         private readonly CompositeDisposable _disposables = new CompositeDisposable(); // To manage subscriptions
@@ -159,6 +162,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             AddMissingNpcsOnUpdate = _model.AddMissingNpcsOnUpdate;
             BatFilePreCommands = _model.BatFilePreCommands;
             BatFilePostCommands = _model.BatFilePostCommands;
+            NormalizeImageDimensions = _model.NormalizeImageDimensions;
             
             ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
             ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
@@ -315,6 +319,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     var currentLoadOrderExclusionSelections = ImportFromLoadOrderExclusionSelectorViewModel.SaveToModel();
                     ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentLoadOrderExclusionSelections, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
                 }).DisposeWith(_disposables);
+            
+            this.WhenAnyValue(x => x.NormalizeImageDimensions)
+                .Skip(1) // Skip the initial value set from the model
+                .Subscribe(b => _model.NormalizeImageDimensions = b)
+                .DisposeWith(_disposables);
 
             _saveRequestSubject
                 .Throttle(_saveThrottleTime, RxApp.TaskpoolScheduler)

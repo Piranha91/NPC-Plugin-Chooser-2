@@ -419,7 +419,8 @@ namespace NPC_Plugin_Chooser_2.Views
                             tempCollectionForPacker, // Pass the casted & potentially filtered collection
                             availableHeight,
                             availableWidth,
-                            5 // xamlItemUniformMargin (from XAML Margin="5")
+                            5, // xamlItemUniformMargin (from XAML Margin="5")
+                            ViewModel.NormalizeImageDimensions
                         );
 
                         // After packer runs, items in tempCollectionForPacker have updated ImageWidth/Height.

@@ -91,6 +91,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private const double _minZoomPercentage = 1.0;
         private const double _maxZoomPercentage = 1000.0;
         private const double _zoomStepPercentage = 2.5; // For +/- buttons and scroll wheel
+        
+        // --- New: Other Display Controls
+        public bool NormalizeImageDimensions => _settings.NormalizeImageDimensions;
 
         // --- NEW: Source Plugin Disambiguation (Right Panel - Above Mugshots, below Mod Name) ---
         [Reactive] public ModKey? SelectedSourcePluginForDisambiguation { get; set; }

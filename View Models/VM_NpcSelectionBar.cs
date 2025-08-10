@@ -129,6 +129,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private const double _maxZoomPercentage = 1000.0;
     private const double _zoomStepPercentage = 2.5; // For +/- buttons and scroll wheel
     [Reactive] public bool NpcsViewHasUserManuallyZoomed { get; set; } = false;
+    
+    // --- New: Other Display Controls
+    public bool NormalizeImageDimensions => _settings.NormalizeImageDimensions;
 
     // --- NPC Group Properties ---
     [Reactive] public string SelectedGroupName { get; set; } = string.Empty;

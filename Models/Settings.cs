@@ -37,6 +37,7 @@ public class Settings
     public Dictionary<FormKey, HashSet<string>> HiddenModsPerNpc { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> NpcGroupAssignments { get; set; } = new();
     public HashSet<ModKey> ImportFromLoadOrderExclusions { get; set; } = new();
+    public bool NormalizeImageDimensions { get; set; } = false;
 
     // EasyNPC Interchangeability / Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); 

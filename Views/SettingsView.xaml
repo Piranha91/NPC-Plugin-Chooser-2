@@ -182,6 +182,15 @@
                               ToolTip="Generates a SkyPatcher .ini file for runtime patching instead of a traditional ESP. This is an advanced feature that may conflict with other runtime patchers."/>
                 </StackPanel>
             </GroupBox>
+            
+            <!-- Section: Display Settings -->
+            <GroupBox Header="Display Settings" Margin="0,0,0,10" Padding="5">
+                <StackPanel>
+                    <CheckBox Content="Normalize Image Dimensions"
+                              IsChecked="{Binding NormalizeImageDimensions, Mode=TwoWay}"
+                              ToolTip="If checked, all images will be cropped and resized to the most common dimensions for a uniform appearance. This may slightly increase load times."/>
+                </StackPanel>
+            </GroupBox>
 
             <!-- Section 4: EasyNPC Transfer -->
             <GroupBox Header="EasyNPC Transfer" Margin="0,0,0,10" Padding="5">
