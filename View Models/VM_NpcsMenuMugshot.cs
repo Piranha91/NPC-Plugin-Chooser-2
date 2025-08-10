@@ -20,6 +20,7 @@ using System.Linq;
 using GongSolutions.Wpf.DragDrop;
 using System.Text;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Mutagen.Bethesda.Skyrim;
 
 namespace NPC_Plugin_Chooser_2.View_Models
@@ -70,6 +71,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public double OriginalDipWidth { get; set; }
         public double OriginalDipHeight { get; set; }
         public double OriginalDipDiagonal { get; set; }
+        [Reactive] public ImageSource? MugshotSource { get; set; }
 
         // --- NEW Property for Compare Checkbox ---
         [Reactive] public bool IsCheckedForCompare { get; set; } = false;
@@ -181,6 +183,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     // Initial display size can be set to original DIP size, ImagePacker will adjust it
                     ImageWidth = OriginalDipWidth;
                     ImageHeight = OriginalDipHeight;
+                    
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.UriSource = new Uri(ImagePath, UriKind.Absolute);
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad; // Releases file lock
+                    bitmap.EndInit();
+                    bitmap.Freeze(); // Good practice for performance
+                    this.MugshotSource = bitmap;
                 }
                 catch (Exception ex)
                 {

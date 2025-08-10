@@ -1,7 +1,10 @@
-﻿namespace NPC_Plugin_Chooser_2.View_Models;
+﻿using System.Windows.Media;
+
+namespace NPC_Plugin_Chooser_2.View_Models;
 
 public interface IHasMugshotImage
 {
+    public ImageSource? MugshotSource { get; set; }
     // Displayed size, affected by ImagePacker and zoom
     public double ImageWidth { get; set; }
     public double ImageHeight { get; set; }

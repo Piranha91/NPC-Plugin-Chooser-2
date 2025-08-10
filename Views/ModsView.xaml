@@ -440,7 +440,7 @@
                                          ToolTip="{Binding NpcDisplayName}">
                                      <!-- This Grid is the reference for the icon's percentage sizing -->
                                      <Grid Background="WhiteSmoke">
-                                        <Image Source="{Binding ImagePath}" Stretch="Uniform" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                                        <Image Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True">
                                             <Image.Style>
                                                 <Style TargetType="Image">
                                                     <Setter Property="Opacity" Value="1.0" />

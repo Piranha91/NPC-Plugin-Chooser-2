@@ -15,6 +15,7 @@ using System.Diagnostics;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using NPC_Plugin_Chooser_2.BackEnd; // For Debug.WriteLine
 
 namespace NPC_Plugin_Chooser_2.View_Models
@@ -48,6 +49,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public double OriginalDipWidth { get; set; }
         public double OriginalDipHeight { get; set; }
         public double OriginalDipDiagonal { get; set; }
+        [Reactive] public ImageSource? MugshotSource { get; set; }
         
         public bool IsAmbiguousSource { get; } 
         public ObservableCollection<ModKey> AvailableSourcePlugins { get; } = new();
@@ -129,6 +131,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     OriginalDipDiagonal = Math.Sqrt(dipWidth * dipWidth + dipHeight * dipHeight);
                     ImageWidth = OriginalDipWidth;
                     ImageHeight = OriginalDipHeight;
+                    
+                    // --- ADD THIS INITIALIZATION LOGIC ---
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.UriSource = new Uri(ImagePath, UriKind.Absolute);
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad; // Releases file lock
+                    bitmap.EndInit();
+                    bitmap.Freeze(); // Good practice for performance
+                    this.MugshotSource = bitmap;
+                    // --- END OF ADDED LOGIC ---
                 }
                 catch (Exception ex)
                 {
