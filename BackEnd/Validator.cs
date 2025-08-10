@@ -64,7 +64,7 @@ public class Validator : OptionalUIModule
 
             var kvp = selectionsList[i];
             var npcFormKey = kvp.Key;
-            var selectedModDisplayName = kvp.Value;
+            var selectedModDisplayName = kvp.Value.ModName;
             string npcIdentifier = npcFormKey.ToString();
 
             bool shouldUpdateUI = (i % 100 == 0) || (i == totalToScreen - 1);

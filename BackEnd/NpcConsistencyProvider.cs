@@ -14,126 +14,103 @@ namespace NPC_Plugin_Chooser_2.BackEnd
     public class NpcSelectionChangedEventArgs : EventArgs
     {
         public FormKey NpcFormKey { get; }
-        public string? SelectedMod { get; }
+        public string? SelectedModName { get; }
+        public FormKey SourceNpcFormKey { get; } // Can be .Null
 
-        public NpcSelectionChangedEventArgs(FormKey npcFormKey, string? selectedMod)
+        public NpcSelectionChangedEventArgs(FormKey npcFormKey, string? selectedModName, FormKey sourceNpcFormKey)
         {
             NpcFormKey = npcFormKey;
-            SelectedMod = selectedMod;
+            SelectedModName = selectedModName;
+            SourceNpcFormKey = sourceNpcFormKey;
         }
     }
 
     // Manages the state of which mod is selected for each NPC
     public class NpcConsistencyProvider
     {
-        private readonly Settings _settingsModel; 
-        private readonly Dictionary<FormKey, string> _selectedMods; // Internal cache
-        private readonly Lazy<VM_Settings> _lazyVmSettings; // Direct reference to VM_Settings
+        private readonly Settings _settingsModel;
+        private readonly Dictionary<FormKey, (string ModName, FormKey NpcFormKey)> _selectedMods; // Internal cache
+        private readonly Lazy<VM_Settings> _lazyVmSettings;
 
         // Observable to notify when a selection changes
-        private readonly Subject<NpcSelectionChangedEventArgs> _npcSelectionChanged = new Subject<NpcSelectionChangedEventArgs>();
+        private readonly Subject<NpcSelectionChangedEventArgs> _npcSelectionChanged = new();
         public IObservable<NpcSelectionChangedEventArgs> NpcSelectionChanged => _npcSelectionChanged;
-
 
         public NpcConsistencyProvider(Settings settings, Lazy<VM_Settings> lazyVmSettings)
         {
-            _settingsModel  = settings;
+            _settingsModel = settings;
             _lazyVmSettings = lazyVmSettings;
-            // Initialize from persistent settings
-            _selectedMods = new Dictionary<FormKey, string>(_settingsModel .SelectedAppearanceMods ?? new());
+            _selectedMods = new Dictionary<FormKey, (string, FormKey)>(_settingsModel.SelectedAppearanceMods ?? new());
         }
 
-        public void SetSelectedMod(FormKey npcFormKey, string selectedMod)
+        public void SetSelectedMod(FormKey npcFormKey, string selectedMod, FormKey sourceNpcFormKey)
         {
-            // Prevent setting null/empty string via this method, use ClearSelectedMod instead
             if (string.IsNullOrEmpty(selectedMod)) return;
-            
+
             bool changed = false;
-            if (!_selectedMods.TryGetValue(npcFormKey, out var currentModKey) || currentModKey != selectedMod)
+            var newSelection = (ModName: selectedMod, NpcFormKey: sourceNpcFormKey);
+            if (!_selectedMods.TryGetValue(npcFormKey, out var currentSelection) ||
+                !currentSelection.Equals(newSelection))
             {
-                _selectedMods[npcFormKey] = selectedMod;
-                _settingsModel .SelectedAppearanceMods[npcFormKey] = selectedMod; // Update persistent settings
+                _selectedMods[npcFormKey] = newSelection;
+                _settingsModel.SelectedAppearanceMods[npcFormKey] = newSelection;
                 changed = true;
             }
 
             if (changed)
             {
-                // Notify subscribers
-                _npcSelectionChanged.OnNext(new NpcSelectionChangedEventArgs(npcFormKey, selectedMod));
-                var vmSettings = _lazyVmSettings.Value;
-                if (vmSettings != null)
-                {
-                    vmSettings.RequestThrottledSave();
-                }
+                _npcSelectionChanged.OnNext(new NpcSelectionChangedEventArgs(npcFormKey, selectedMod,
+                    sourceNpcFormKey));
+                _lazyVmSettings.Value?.RequestThrottledSave();
             }
         }
-        
-        /// <summary>
-        /// Clears the selected appearance mod for the specified NPC.
-        /// </summary>
-        /// <param name="npcFormKey">The FormKey of the NPC whose selection should be cleared.</param>
+
         public void ClearSelectedMod(FormKey npcFormKey)
         {
             bool changed = false;
             if (_selectedMods.ContainsKey(npcFormKey))
             {
                 _selectedMods.Remove(npcFormKey);
-                // Also remove from the persistent settings model
-                _settingsModel .SelectedAppearanceMods.Remove(npcFormKey);
+                _settingsModel.SelectedAppearanceMods.Remove(npcFormKey);
                 changed = true;
             }
 
             if (changed)
             {
-                // Notify subscribers, passing null for selectedMod to indicate deselection
-                _npcSelectionChanged.OnNext(new NpcSelectionChangedEventArgs(npcFormKey, null));
-                var vmSettings = _lazyVmSettings.Value;
-                if (vmSettings != null)
-                {
-                    vmSettings.RequestThrottledSave();
-                }
+                _npcSelectionChanged.OnNext(new NpcSelectionChangedEventArgs(npcFormKey, null, FormKey.Null));
+                _lazyVmSettings.Value?.RequestThrottledSave();
             }
         }
-        
-        /// <summary>
-        /// Clears all selected appearance mods.
-        /// </summary>
+
         public void ClearAllSelections()
         {
-            // Make a copy of the keys to notify subscribers for each deselection
             var keysToClear = new List<FormKey>(_selectedMods.Keys);
 
             _selectedMods.Clear();
             _settingsModel.SelectedAppearanceMods.Clear();
 
-            // Notify subscribers for each NPC that was deselected
             foreach (var npcFormKey in keysToClear)
             {
-                _npcSelectionChanged.OnNext(new NpcSelectionChangedEventArgs(npcFormKey, null));
+                _npcSelectionChanged.OnNext(new NpcSelectionChangedEventArgs(npcFormKey, null, FormKey.Null));
             }
-    
-            var vmSettings = _lazyVmSettings.Value;
-            if (vmSettings != null)
-            {
-                vmSettings.RequestThrottledSave();
-            }
+
+            _lazyVmSettings.Value?.RequestThrottledSave();
         }
 
-        public string? GetSelectedMod(FormKey npcFormKey) // Return nullable string
+        public (string? ModName, FormKey SourceNpcFormKey) GetSelectedMod(FormKey npcFormKey)
         {
-            if (_selectedMods.TryGetValue(npcFormKey, out var selectedModKey))
+            if (_selectedMods.TryGetValue(npcFormKey, out var selectedMod))
             {
-                return selectedModKey;
+                return (selectedMod.ModName, selectedMod.NpcFormKey);
             }
-            return null; // Return null if no specific selection exists
+
+            return (null, FormKey.Null);
         }
 
-        public bool IsModSelected(FormKey npcFormKey, string modToCheck)
+        public bool IsModSelected(FormKey npcFormKey, string modToCheck, FormKey sourceNpcFormKey)
         {
-            return GetSelectedMod(npcFormKey) == modToCheck;
+            var (selectedModName, selectedSourceKey) = GetSelectedMod(npcFormKey);
+            return selectedModName == modToCheck && selectedSourceKey.Equals(sourceNpcFormKey);
         }
-
-        // Add SaveSettings method if needed
-        // public void SaveSettings() { /* Implement saving _settings */ }
     }
 }

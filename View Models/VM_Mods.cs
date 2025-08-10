@@ -1910,18 +1910,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)
                 string loserName = loser.DisplayName;
                 string winnerName = winner.DisplayName;
-                var npcsToUpdate = _settings.SelectedAppearanceMods
-                    .Where(kvp => kvp.Value.Equals(loserName, StringComparison.OrdinalIgnoreCase))
-                    .Select(kvp => kvp.Key) 
+                var selectionsToUpdate = _settings.SelectedAppearanceMods
+                    .Where(kvp => kvp.Value.ModName.Equals(loserName, StringComparison.OrdinalIgnoreCase))
                     .ToList(); 
 
-                if (npcsToUpdate.Any())
+                if (selectionsToUpdate.Any())
                 {
                     Debug.WriteLine(
-                        $"Updating {npcsToUpdate.Count} NPC selections from '{loserName}' to '{winnerName}'.");
-                    foreach (var npcKey in npcsToUpdate)
+                        $"Updating {selectionsToUpdate.Count} NPC selections from '{loserName}' to '{winnerName}'.");
+                    foreach (var selection in selectionsToUpdate)
                     {
-                        _consistencyProvider.SetSelectedMod(npcKey, winnerName);
+                        var targetNpcKey = selection.Key;
+                        var originalSourceNpcKey = selection.Value.NpcFormKey;
+
+                        // Call SetSelectedMod with the new winner mod name, but the original source NPC key.
+                        _consistencyProvider.SetSelectedMod(targetNpcKey, winnerName, originalSourceNpcKey);
                     }
                 }
                 
@@ -2316,7 +2319,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     {
                         index++;
                         if(index == 1) { continue; } // the current mugshot has already been set by the caller
-                        _consistencyProvider.SetSelectedMod(entry.formKey, modSettingVM.DisplayName);
+                        _consistencyProvider.SetSelectedMod(entry.formKey, modSettingVM.DisplayName, entry.formKey);
                     }
                 }
             }

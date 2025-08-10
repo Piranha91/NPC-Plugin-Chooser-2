@@ -295,7 +295,7 @@ public class EasyNpcTranslator
         foreach (var change in potentialChanges)
         {
             // Get current selection display name
-            string? currentSelectionDisplayName = _consistencyProvider.GetSelectedMod(change.NpcKey);
+            string? currentSelectionDisplayName = _consistencyProvider.GetSelectedMod(change.NpcKey).ModName ?? null;
 
             // Add to confirmation list ONLY if overwriting an EXISTING selection
             if (!string.IsNullOrEmpty(currentSelectionDisplayName) &&
@@ -335,7 +335,7 @@ public class EasyNpcTranslator
             _settings.EasyNpcDefaultPlugins[applyItem.NpcKey] = applyItem.DefaultKey;
 
             // Update Selected Appearance Mod using the consistency provider
-            _consistencyProvider.SetSelectedMod(applyItem.NpcKey, applyItem.TargetModDisplayName);
+            _consistencyProvider.SetSelectedMod(applyItem.NpcKey, applyItem.TargetModDisplayName, applyItem.NpcKey);
         }
 
         // Refresh NPC list filter in case selection state changed
@@ -380,7 +380,11 @@ public class EasyNpcTranslator
             }
 
             // --- 3b: Get the assigned Appearance Plugin ModKey ---
-            var appearanceModName = _settings.SelectedAppearanceMods[npcFormKey];
+            var appearanceModName = _settings.SelectedAppearanceMods[npcFormKey].ModName ?? null;
+            if (appearanceModName is null)
+            {
+                continue;
+            }
             if (!TryGetAppearancePlugin(npcFormKey, appearanceModName, out var appearancePlugin, out var faceGenWarning, out var appearanceError))
             {
                 appearanceModErrors.Add(appearanceError!);
@@ -549,7 +553,7 @@ public class EasyNpcTranslator
         foreach (var kvp in appNpcSelections)
         {
             var npcFormKey = kvp.Key;
-            var selectedAppearanceModName = kvp.Value;
+            var selectedAppearanceModName = kvp.Value.ModName ?? null;
 
             string formString;
             try
@@ -559,6 +563,11 @@ public class EasyNpcTranslator
             catch (Exception e)
             {
                 lookupErrors.Add($"Skipping NPC {npcFormKey}: Cannot format FormKey - {e.Message}");
+                continue;
+            }
+
+            if (selectedAppearanceModName is null)
+            {
                 continue;
             }
 

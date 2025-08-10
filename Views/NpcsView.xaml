@@ -393,6 +393,8 @@
                                         <Separator/>
                                          
                                          <MenuItem Header="Show Full Image" Command="{Binding ToggleFullScreenCommand}"/>
+                                         <Separator/>
+                                         <MenuItem Header="Share with NPC" Command="{Binding ShareWithNpcCommand}"/>
                                      </ContextMenu>
                                  </Border.ContextMenu>
                              </Border>

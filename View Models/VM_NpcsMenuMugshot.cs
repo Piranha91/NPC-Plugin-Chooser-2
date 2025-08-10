@@ -29,7 +29,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
     public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage, IDragSource, IDropTarget
     {
 // --- Existing fields ---
-        private readonly FormKey _npcFormKey;
+        private readonly FormKey _targetNpcFormKey;
         private readonly Settings _settings;
         private readonly NpcConsistencyProvider _consistencyProvider;
         private readonly VM_NpcSelectionBar _vmNpcSelectionBar;
@@ -45,6 +45,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- Existing properties ---
         public ModKey? ModKey { get; }
         public string ModName { get; }
+        public FormKey SourceNpcFormKey { get; } // The NPC that provides the appearance
         [Reactive] public string ImagePath { get; set; } = string.Empty;
         [Reactive] public double ImageWidth { get; set; } // Displayed width
         [Reactive] public double ImageHeight { get; set; } // Displayed height
@@ -88,6 +89,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> JumpToModCommand { get; }
         public ReactiveCommand<ModKey, Unit> SetNpcSourcePluginCommand { get; }
         public ReactiveCommand<Unit, Unit> SelectSameSourcePluginWherePossibleCommand { get; }
+        public ReactiveCommand<Unit, Unit> ShareWithNpcCommand { get; }
 
         // --- Placeholder Image Configuration --- 
         private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
@@ -100,7 +102,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public VM_NpcsMenuMugshot(
             string modName,
             string npcDisplayName,
-            FormKey npcFormKey,
+            FormKey targetNpcFormKey,
+            FormKey sourceNpcFormKey,
             ModKey? overrideModeKey,
             string? imagePath, // This is the path to the *actual* mugshot if one exists for this mod/NPC combo
             Settings settings,
@@ -113,7 +116,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _lazyMods = lazyMods;
             AssociatedModSetting = _lazyMods.Value?.AllModSettings.FirstOrDefault(m => m.DisplayName == modName);
             ModKey = overrideModeKey ?? AssociatedModSetting?.CorrespondingModKeys.FirstOrDefault();
-            _npcFormKey = npcFormKey;
+            _targetNpcFormKey = targetNpcFormKey;
+            SourceNpcFormKey = sourceNpcFormKey;
             _settings = settings;
             _consistencyProvider = consistencyProvider;
             _vmNpcSelectionBar = vmNpcSelectionBar;
@@ -128,10 +132,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             
             // --- NEW Ambiguous Source Initialization ---
-            IsAmbiguousSource = AssociatedModSetting?.AmbiguousNpcFormKeys.Contains(_npcFormKey) ?? false;
-            CurrentSourcePlugin = AssociatedModSetting?.NpcPluginDisambiguation.GetValueOrDefault(_npcFormKey);
+            IsAmbiguousSource = AssociatedModSetting?.AmbiguousNpcFormKeys.Contains(_targetNpcFormKey) ?? false;
+            CurrentSourcePlugin = AssociatedModSetting?.NpcPluginDisambiguation.GetValueOrDefault(_targetNpcFormKey);
 
-            if (IsAmbiguousSource && AssociatedModSetting != null && AssociatedModSetting.AvailablePluginsForNpcs.TryGetValue(_npcFormKey, out var available))
+            if (IsAmbiguousSource && AssociatedModSetting != null && AssociatedModSetting.AvailablePluginsForNpcs.TryGetValue(_targetNpcFormKey, out var available))
             {
                 AvailableSourcePlugins = new ObservableCollection<ModKey>(available.OrderBy(k => k.FileName.String));
             }
@@ -224,7 +228,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .DisposeWith(Disposables);
 
             CanJumpToMod = _vmNpcSelectionBar.CanJumpToMod(modName);
-            IsSelected = _consistencyProvider.IsModSelected(_npcFormKey, ModName);
+            IsSelected = _consistencyProvider.IsModSelected(_targetNpcFormKey, ModName, SourceNpcFormKey);
             SelectCommand = ReactiveCommand.Create(SelectThisMod);
             var canToggleFullScreen =
                 this.WhenAnyValue(x => x.ImagePath, path => !string.IsNullOrEmpty(path) && File.Exists(path));
@@ -236,6 +240,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
             UnhideAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnhideAllFromMod(this));
             JumpToModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.JumpToMod(this),
                 this.WhenAnyValue(x => x.CanJumpToMod));
+            
+            // The command now sends a message containing itself.
+            ShareWithNpcCommand = ReactiveCommand.Create(() => 
+            {
+                MessageBus.Current.SendMessage(new ShareAppearanceRequest(this));
+            });
+            ShareWithNpcCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error sharing NPC appearance: {ex.Message}")).DisposeWith(Disposables);
+
             SelectCommand.ThrownExceptions
                 .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting mod: {ex.Message}"))
                 .DisposeWith(Disposables);
@@ -259,10 +271,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             JumpToModCommand.ThrownExceptions
                 .Subscribe(ex => ScrollableMessageBox.Show($"Error jumping to mod: {ex.Message}"))
                 .DisposeWith(Disposables);
+            
             _consistencyProvider.NpcSelectionChanged
-                .Where(args => args.NpcFormKey == _npcFormKey)
+                .Where(args => args.NpcFormKey == _targetNpcFormKey)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(args => IsSelected = (args.SelectedMod == ModName))
+                .Subscribe(args => IsSelected = (args.SelectedModName == ModName && args.SourceNpcFormKey.Equals(this.SourceNpcFormKey)))
                 .DisposeWith(Disposables);
 
             SetBorderAndTooltip(IsSelected);
@@ -272,19 +285,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             if (IsSelected)
             {
-                System.Diagnostics.Debug.WriteLine($"Deselecting mod '{ModName}' for NPC '{_npcFormKey}'");
-                _consistencyProvider.ClearSelectedMod(_npcFormKey);
+                System.Diagnostics.Debug.WriteLine($"Deselecting mod '{ModName}' for NPC '{_targetNpcFormKey}'");
+                _consistencyProvider.ClearSelectedMod(_targetNpcFormKey);
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine($"Selecting mod '{ModName}' for NPC '{_npcFormKey}'");
-                _consistencyProvider.SetSelectedMod(_npcFormKey, ModName);
+                System.Diagnostics.Debug.WriteLine($"Selecting mod '{ModName}' for NPC '{_targetNpcFormKey}'");
+                _consistencyProvider.SetSelectedMod(_targetNpcFormKey, ModName, SourceNpcFormKey);
                 
                 if (HasIssueNotification && IssueType == NpcIssueType.Template)
                 {
                     if (AssociatedModSetting != null && _lazyMods.IsValueCreated)
                     {
-                        _lazyMods.Value.UpdateTemplates(_npcFormKey, AssociatedModSetting);
+                        _lazyMods.Value.UpdateTemplates(_targetNpcFormKey, AssociatedModSetting);
                     }
                     else // fall back to simple analzyer
                     {
@@ -326,12 +339,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private void CheckAndHandleTemplates()
         {
-            if (_npcFormKey != null && ModKey != null)
+            if (_targetNpcFormKey != null && ModKey != null)
             {
                 string imagePath = @"Resources\Face Bug.png";
                 
                 var context = _environmentStateProvider.LinkCache
-                    .ResolveAllContexts<INpc, INpcGetter>(_npcFormKey)
+                    .ResolveAllContexts<INpc, INpcGetter>(_targetNpcFormKey)
                     .FirstOrDefault(x => x.ModKey.Equals(ModKey));
 
                 if (context != null &&
@@ -347,7 +360,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         title = "Are you sure?";
                         if (!ScrollableMessageBox.Confirm(message, title, displayImagePath: imagePath))
                         {
-                            _consistencyProvider.ClearSelectedMod(_npcFormKey);
+                            _consistencyProvider.ClearSelectedMod(_targetNpcFormKey);
                         }
                     }
                     else if (AssociatedModSetting != null)
@@ -372,12 +385,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             title = "Are you sure?";
                             if (!ScrollableMessageBox.Confirm(message, title, displayImagePath: imagePath))
                             {
-                                _consistencyProvider.ClearSelectedMod(_npcFormKey);
+                                _consistencyProvider.ClearSelectedMod(_targetNpcFormKey);
                             }
                         }
                         else if (AssociatedModSetting.NpcFormKeys.Contains(context.Record.Template.FormKey) &&
                                  !_consistencyProvider.IsModSelected(context.Record.Template.FormKey,
-                                     AssociatedModSetting.DisplayName))
+                                     AssociatedModSetting.DisplayName, context.Record.Template.FormKey))
                         {
                             message =
                                 "The associated data for this NPC shows that it is supposed to use " +
@@ -388,7 +401,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             title = "Auto-Select Template?";
                             if (ScrollableMessageBox.Confirm(message, title, displayImagePath: imagePath))
                             {
-                                _consistencyProvider.SetSelectedMod(context.Record.Template.FormKey, AssociatedModSetting.DisplayName);
+                                _consistencyProvider.SetSelectedMod(context.Record.Template.FormKey, AssociatedModSetting.DisplayName, context.Record.Template.FormKey);
                             }
                         }
                     }
@@ -400,31 +413,31 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             if (AssociatedModSetting == null || !IsAmbiguousSource)
             {
-                Debug.WriteLine($"SetNpcSourcePluginInternal called for non-ambiguous NPC {_npcFormKey}. This should not happen.");
+                Debug.WriteLine($"SetNpcSourcePluginInternal called for non-ambiguous NPC {_targetNpcFormKey}. This should not happen.");
                 return;
             }
             if (selectedPluginKey.IsNull)
             {
-                Debug.WriteLine($"SetNpcSourcePluginInternal called with a null/invalid ModKey for NPC {_npcFormKey}.");
+                Debug.WriteLine($"SetNpcSourcePluginInternal called with a null/invalid ModKey for NPC {_targetNpcFormKey}.");
                 return;
             }
 
             // Call back to the parent VM_ModSetting to handle the logic
-            bool successfullyUpdated = AssociatedModSetting.SetSingleNpcSourcePlugin(_npcFormKey, selectedPluginKey);
+            bool successfullyUpdated = AssociatedModSetting.SetSingleNpcSourcePlugin(_targetNpcFormKey, selectedPluginKey);
 
             if (successfullyUpdated)
             {
                 // The parent VM_ModSetting has updated its NpcPluginDisambiguation map.
                 // Now, this specific VM_NpcsMenuMugshot instance should update its own CurrentSourcePlugin
                 // to reflect the new choice for the context menu checkmark.
-                if (AssociatedModSetting.NpcPluginDisambiguation.TryGetValue(this._npcFormKey, out var newResolvedSource))
+                if (AssociatedModSetting.NpcPluginDisambiguation.TryGetValue(this._targetNpcFormKey, out var newResolvedSource))
                 {
                     this.CurrentSourcePlugin = newResolvedSource;
                 }
                 else
                 {
                     this.CurrentSourcePlugin = selectedPluginKey;
-                    Debug.WriteLine($"Warning: Could not re-resolve source for NPC {_npcFormKey} from NpcPluginDisambiguation map after setting. Displayed checkmark might be based on direct selection.");
+                    Debug.WriteLine($"Warning: Could not re-resolve source for NPC {_targetNpcFormKey} from NpcPluginDisambiguation map after setting. Displayed checkmark might be based on direct selection.");
                 }
             }
         }
@@ -572,9 +585,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // NEW: Handle drop between two real mugshots
             if (sourceIsRealMugshotVm && targetIsRealMugshotVm)
             {
-                var fromMod = this.ModName;     // Mod B (the target of the drop)
-                var toMod = sourceItem.ModName; // Mod A (the item being dragged)
-                _vmNpcSelectionBar.MassUpdateNpcSelections(fromMod, toMod);
+                var fromMod = sourceItem.ModName;
+                var fromNpc = sourceItem.SourceNpcFormKey;
+                var toMod = this.ModName;
+                var toNpc = this.SourceNpcFormKey;
+                _vmNpcSelectionBar.MassUpdateNpcSelections(fromMod, fromNpc, toMod, toNpc);
                 return; // Exit after handling this case
             }
 
@@ -637,13 +652,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     var npcKeysToUpdate = _settings.SelectedAppearanceMods
                         .Where(kvp =>
-                            kvp.Value.Equals(mugshotSourceModSetting.DisplayName, StringComparison.OrdinalIgnoreCase))
+                            kvp.Value.ModName.Equals(mugshotSourceModSetting.DisplayName, StringComparison.OrdinalIgnoreCase))
                         .Select(kvp => kvp.Key).ToList();
+
+                    // Re-assign their selection to the newly merged mod.
                     foreach (var npcKey in npcKeysToUpdate)
                     {
-                        _consistencyProvider.SetSelectedMod(npcKey, placeholderTargetModSetting.DisplayName);
+                        // The source of the new selection is the NPC's own FormKey.
+                        _consistencyProvider.SetSelectedMod(npcKey, placeholderTargetModSetting.DisplayName, npcKey);
                     }
 
+                    // Remove the now-redundant mugshot-only mod setting.
                     bool wasRemoved = _lazyMods.Value?.RemoveModSetting(mugshotSourceModSetting) ?? false;
                     if (!wasRemoved)
                     {

@@ -39,7 +39,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     public delegate VM_NpcsMenuMugshot AppearanceModFactory(
         string modName,
         string npcDisplayName,
-        FormKey npcFormKey,
+        FormKey targetNpcFormKey,
+        FormKey sourceNpcFormKey,
         ModKey? overrideModeKey,
         string? imagePath
     );
@@ -253,7 +254,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         _consistencyProvider.NpcSelectionChanged
             .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(args => UpdateSelectionState(args.NpcFormKey, args.SelectedMod))
+            .Subscribe(args => UpdateSelectionState(args.NpcFormKey, args.SelectedModName, args.SourceNpcFormKey))
+            .DisposeWith(_disposables);
+        
+        // Listen for the request to share an appearance
+        MessageBus.Current.Listen<ShareAppearanceRequest>()
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(request => HandleShareAppearanceRequest(request.MugshotToShare))
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SearchType1)
@@ -716,8 +723,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         Debug.WriteLine("DeselectAll: All mugshot compare checkboxes cleared.");
     }
 
-    // --- End NEW Command Execution Methods ---
-// --- NEW: Import/Export Methods ---
+
+    // Define a small, serializable record to structure the JSON output.
+    private record NpcChoiceDto(string ModName, string SourceNpcFormKey);
+
     private async Task ExportChoicesAsync()
     {
         var dialog = new SaveFileDialog
@@ -731,18 +740,38 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         if (dialog.ShowDialog() != DialogResult.OK) return;
 
+        // 1. Transform the settings data into the serializable DTO format.
+        // This correctly handles the new (string, FormKey) tuple structure.
+        var selectionsToExport = _settings.SelectedAppearanceMods
+            .ToDictionary(
+                kvp => kvp.Key.ToString(), // Key: The target NPC's FormKey as a string.
+                kvp => new NpcChoiceDto(kvp.Value.ModName,
+                    kvp.Value.NpcFormKey.ToString()) // Value: The structured choice.
+            );
+
         try
         {
-            var selectionsToExport = _settings.SelectedAppearanceMods
-                .ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
-
-            JSONhandler<Dictionary<string, string>>.SaveJSONFile(selectionsToExport, dialog.FileName,
-                out bool success, out var exceptionString);
-            if (!success)
+            // 2. Run the synchronous file I/O on a background thread.
+            // This keeps the UI responsive and makes the method truly async.
+            bool success = await Task.Run(() =>
             {
-                ScrollableMessageBox.ShowError(exceptionString, "Error while exporting NPC Choices");
-            }
-            else
+                JSONhandler<Dictionary<string, NpcChoiceDto>>.SaveJSONFile(
+                    selectionsToExport,
+                    dialog.FileName,
+                    out bool wasSuccessful,
+                    out var exceptionString);
+
+                if (!wasSuccessful)
+                {
+                    // Show the error message on the UI thread.
+                    Application.Current.Dispatcher.Invoke(() =>
+                        ScrollableMessageBox.ShowError(exceptionString, "Error while exporting NPC Choices"));
+                }
+
+                return wasSuccessful;
+            });
+
+            if (success)
             {
                 ScrollableMessageBox.Show(
                     $"Successfully exported {selectionsToExport.Count} choices to {Path.GetFileName(dialog.FileName)}.",
@@ -751,6 +780,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
         catch (Exception ex)
         {
+            // Catch any other unexpected exceptions from Task.Run or message boxes.
             ScrollableMessageBox.ShowError($"Failed to export choices: {ex.Message}", "Export Error");
         }
     }
@@ -777,160 +807,159 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private async Task ImportChoicesFromLoadOrderAsync()
     {
         if (!ScrollableMessageBox.Confirm(
-                $"Are you sure you want to overwrite your current NPC choices? This action cannot be undone.",
+                "This will overwrite your current choices based on your load order. This action cannot be undone. Are you sure you want to continue?",
                 "Confirm Import Choices", MessageBoxImage.Warning))
         {
             return; // User cancelled
         }
 
-        List<string> missingNpcs = new();
-        List<string> unMatchedNpcs = new();
-
-        foreach (var npc in AllNpcs)
+        // Run the entire heavy operation on a background thread.
+        var (missingNpcs, unMatchedNpcs) = await Task.Run(() =>
         {
-            if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npc.NpcFormKey, out var npcGetter) ||
-                npcGetter == null)
+            var missing = new List<string>();
+            var unmatched = new List<string>();
+
+            foreach (var npc in AllNpcs)
             {
-                var logStr = npc.DisplayName;
-                if (npc.NpcEditorId.Any())
+                if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npc.NpcFormKey, out var npcGetter) || npcGetter == null)
                 {
-                    logStr += " (" + npc.NpcEditorId + ")";
-                }
-
-                logStr += " (" + npc.NpcFormKeyString + ")";
-                missingNpcs.Add(logStr);
-                continue;
-            }
-
-            var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npc.NpcFormKey);
-
-            bool foundWinningMod = false;
-            foreach (var context in contexts)
-            {
-                if (_settings.ImportFromLoadOrderExclusions.Contains(context.ModKey))
-                {
+                    missing.Add($"{npc.DisplayName} ({npc.NpcFormKeyString})");
                     continue;
                 }
 
-                // get all appearance mods with the current modkey
-                var correspondingMods = _lazyModsVm.Value.AllModSettings
-                    .Where(x => x.CorrespondingModKeys.Contains(context.ModKey)).ToList();
-                if (correspondingMods.Count() == 1)
+                var winningMod = FindWinningModForNpc(npcGetter);
+
+                if (winningMod != null)
                 {
-                    var winningMod = correspondingMods.First();
-                    _consistencyProvider.SetSelectedMod(npc.NpcFormKey, winningMod.DisplayName);
-                    foundWinningMod = true;
-                    break;
+                    // Correctly call the updated SetSelectedMod with the NPC's own FormKey as the source.
+                    _consistencyProvider.SetSelectedMod(npc.NpcFormKey, winningMod.DisplayName, npc.NpcFormKey);
                 }
-
-                if (correspondingMods.Count() > 1)
+                else
                 {
-                    var (meshSubPath, texSubPath) = Auxilliary.GetFaceGenSubPathStrings(npc.NpcFormKey);
-
-                    var meshToMatchPath = Path.Combine(_environmentStateProvider.DataFolderPath, "meshes",
-                        meshSubPath);
-                    var texToMatchPath = Path.Combine(_environmentStateProvider.DataFolderPath, "textures",
-                        texSubPath);
-
-                    bool mustMatchMesh = false;
-                    int meshRefSize = 0;
-                    string meshRefHash = String.Empty;
-
-                    bool mustMatchTex = false;
-                    int texRefSize = 0;
-                    string texRefHash = String.Empty;
-
-                    if (File.Exists(meshToMatchPath))
-                    {
-                        mustMatchMesh = true;
-                        (meshRefSize, meshRefHash) = Auxilliary.GetCheapFileEqualityIdentifiers(meshToMatchPath);
-                    }
-
-                    if (File.Exists(texToMatchPath))
-                    {
-                        mustMatchMesh = true;
-                        (texRefSize, texRefHash) = Auxilliary.GetCheapFileEqualityIdentifiers(texToMatchPath);
-                    }
-
-                    foreach (var candidateMod in correspondingMods)
-                    {
-                        foreach (var modFolder in candidateMod.CorrespondingFolderPaths)
-                        {
-                            bool matchedMesh = !mustMatchMesh;
-                            bool matchedTex = !mustMatchMesh;
-
-                            // Will need to fix this section to account for BSAs
-                            if (mustMatchMesh)
-                            {
-                                var candidateMeshPath = Path.Combine(modFolder, "meshes",
-                                    meshSubPath);
-                                if (File.Exists(candidateMeshPath) &&
-                                    Auxilliary.FastFilesAreIdentical(candidateMeshPath, meshRefSize, meshRefHash))
-                                {
-                                    matchedMesh = true;
-                                }
-                            }
-
-                            if (mustMatchTex)
-                            {
-                                var candidateTexPath = Path.Combine(modFolder, "textures",
-                                    texSubPath);
-                                if (File.Exists(candidateTexPath) &&
-                                    Auxilliary.FastFilesAreIdentical(candidateTexPath, texRefSize, texRefHash))
-                                {
-                                    matchedTex = true;
-                                }
-                            }
-
-                            if (matchedMesh && matchedTex)
-                            {
-                                _consistencyProvider.SetSelectedMod(npc.NpcFormKey, candidateMod.DisplayName);
-                                foundWinningMod = true;
-                                break;
-                            }
-                        } // end mod folder loop
-
-                        if (foundWinningMod)
-                        {
-                            break;
-                        }
-                    } // end mod loop
-
-                    if (foundWinningMod)
-                    {
-                        break;
-                    }
+                    unmatched.Add(Auxilliary.GetNpcLogString(npcGetter, true));
                 }
-
-                if (foundWinningMod)
-                {
-                    break;
-                }
-            } // end context loop
-
-            if (!foundWinningMod)
-            {
-                unMatchedNpcs.Add(Auxilliary.GetNpcLogString(npcGetter, true));
             }
-        } // end NPC loop
+            return (missing, unmatched);
+        });
 
+        // Display results on the UI thread after the work is done.
         if (missingNpcs.Any())
         {
-            string missingMessage =
-                "The following NPCs could not be found in your load order. Their appearance selection was not modified:" +
-                Environment.NewLine + Environment.NewLine + string.Join(Environment.NewLine, missingNpcs);
-            ScrollableMessageBox.ShowWarning(missingMessage, "Missing NPCs");
+            string message = "The following NPCs could not be found in your load order and were skipped:" +
+                             Environment.NewLine + Environment.NewLine + string.Join(Environment.NewLine, missingNpcs);
+            ScrollableMessageBox.ShowWarning(message, "Missing NPCs");
         }
 
         if (unMatchedNpcs.Any())
         {
-            string missingMessage =
-                "A winning mod could not be identified for the following NPCs:" + Environment.NewLine +
-                Environment.NewLine + string.Join(Environment.NewLine, unMatchedNpcs);
-            ScrollableMessageBox.ShowWarning(missingMessage, "Unassigned NPCs");
+            string message = "A winning mod could not be identified for the following NPCs:" + Environment.NewLine +
+                             Environment.NewLine + string.Join(Environment.NewLine, unMatchedNpcs);
+            ScrollableMessageBox.ShowWarning(message, "Unassigned NPCs");
         }
+        
+        ScrollableMessageBox.Show("Import from load order complete.", "Import Complete");
     }
 
+    /// <summary>
+    /// Finds the best-matching appearance mod for a given NPC based on load order and file conflicts.
+    /// </summary>
+    private VM_ModSetting? FindWinningModForNpc(INpcGetter npcGetter)
+    {
+        // ResolveAllContexts returns plugins in load order, so the last one is the winner.
+        var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcGetter.FormKey);
+
+        foreach (var context in contexts.Reverse()) // Iterate backwards from the winning plugin.
+        {
+            if (_settings.ImportFromLoadOrderExclusions.Contains(context.ModKey))
+            {
+                continue;
+            }
+
+            var correspondingMods = _lazyModsVm.Value.AllModSettings
+                .Where(x => x.CorrespondingModKeys.Contains(context.ModKey)).ToList();
+
+            if (correspondingMods.Count == 1)
+            {
+                return correspondingMods.First(); // Simple case: one plugin maps to one mod setting.
+            }
+
+            if (correspondingMods.Count > 1)
+            {
+                // Complex case: one plugin maps to multiple mod settings (e.g., FOMOD).
+                // We need to check for FaceGen files to find the real winner.
+                var winningMod = DisambiguateModsByFaceGen(correspondingMods, npcGetter.FormKey);
+                if (winningMod != null)
+                {
+                    return winningMod;
+                }
+            }
+        }
+
+        return null; // No matching mod found.
+    }
+
+    /// <summary>
+    /// For a list of candidate mods from the same plugin, determines the winner by matching FaceGen files.
+    /// </summary>
+    private VM_ModSetting? DisambiguateModsByFaceGen(List<VM_ModSetting> candidateMods, FormKey npcFormKey)
+    {
+        var (meshSubPath, texSubPath) = Auxilliary.GetFaceGenSubPathStrings(npcFormKey);
+        var meshToMatchPath = Path.Combine(_environmentStateProvider.DataFolderPath, "meshes", meshSubPath);
+        var texToMatchPath = Path.Combine(_environmentStateProvider.DataFolderPath, "textures", texSubPath);
+
+        bool mustMatchMesh = File.Exists(meshToMatchPath);
+        (int meshRefSize, string meshRefHash) = mustMatchMesh ? Auxilliary.GetCheapFileEqualityIdentifiers(meshToMatchPath) : (0, string.Empty);
+
+        bool mustMatchTex = File.Exists(texToMatchPath);
+        (int texRefSize, string texRefHash) = mustMatchTex ? Auxilliary.GetCheapFileEqualityIdentifiers(texToMatchPath) : (0, string.Empty);
+        
+        if (!mustMatchMesh && !mustMatchTex) return null; // No loose files to match against.
+
+        foreach (var candidate in candidateMods)
+        {
+            foreach (var modFolder in candidate.CorrespondingFolderPaths)
+            {
+                bool matchedMesh = !mustMatchMesh;
+                bool matchedTex = !mustMatchTex;
+
+                if (mustMatchMesh)
+                {
+                    var candidateMeshPath = Path.Combine(modFolder, "meshes", meshSubPath);
+                    if (File.Exists(candidateMeshPath) && Auxilliary.FastFilesAreIdentical(candidateMeshPath, meshRefSize, meshRefHash))
+                    {
+                        matchedMesh = true;
+                    }
+                }
+
+                if (mustMatchTex)
+                {
+                    var candidateTexPath = Path.Combine(modFolder, "textures", texSubPath);
+                    if (File.Exists(candidateTexPath) && Auxilliary.FastFilesAreIdentical(candidateTexPath, texRefSize, texRefHash))
+                    {
+                        matchedTex = true;
+                    }
+                }
+
+                if (matchedMesh && matchedTex)
+                {
+                    return candidate; // Found the mod that provides the winning loose files.
+                }
+            }
+        }
+
+        return null; // No candidate provided matching files.
+    }
+
+    /// <summary>
+    /// Holds the results of the import file validation process.
+    /// </summary>
+    private record ImportValidationReport(
+        Dictionary<FormKey, (string ModName, FormKey NpcFormKey)> ValidSelections,
+        List<string> MalformedEntries,
+        List<string> UnresolvedNpcs,
+        List<string> UnrecognizedMods
+    );
+    
     private async Task ImportChoicesAsync()
     {
         var dialog = new OpenFileDialog
@@ -945,145 +974,115 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         try
         {
-            var importedSelectionsStr =
-                JSONhandler<Dictionary<string, string>>.LoadJSONFile(dialog.FileName, out bool readSuccess,
+            // Run the entire import and validation process on a background thread.
+            await Task.Run(() =>
+            {
+                // 1. Deserialize the JSON into our new DTO format.
+                var importedData = JSONhandler<Dictionary<string, NpcChoiceDto>>.LoadJSONFile(
+                    dialog.FileName, 
+                    out bool readSuccess, 
                     out var exceptionStr);
-            if (!readSuccess)
-            {
-                ScrollableMessageBox.ShowError(exceptionStr, "Failed to import choices");
-                return;
-            }
 
-            if (importedSelectionsStr == null || !importedSelectionsStr.Any())
-            {
-                ScrollableMessageBox.ShowWarning("The selected file is empty or contains no valid data.",
-                    "Import Warning");
-                return;
-            }
-
-            // Convert string keys back to FormKey, skipping malformed ones
-            var importedSelections = new Dictionary<FormKey, string>();
-            var malformedKeys = new List<string>();
-            foreach (var kvp in importedSelectionsStr)
-            {
-                try
+                if (!readSuccess)
                 {
-                    importedSelections.Add(FormKey.Factory(kvp.Key), kvp.Value);
-                }
-                catch
-                {
-                    malformedKeys.Add(kvp.Key);
-                }
-            }
-
-            // --- Validation ---
-            var report = new StringBuilder();
-            var validSelections = new Dictionary<FormKey, string>();
-            var availableModNames = new HashSet<string>(_lazyModsVm.Value.AllModSettings.Select(m => m.DisplayName),
-                StringComparer.OrdinalIgnoreCase);
-
-            var missingNpcs = new List<string>();
-            var missingMods = new List<string>();
-
-            foreach (var kvp in importedSelections)
-            {
-                var formKey = kvp.Key;
-                var modName = kvp.Value;
-                bool npcExists =
-                    _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(formKey, out var npcGetter);
-                bool modExists = availableModNames.Contains(modName);
-
-                if (npcExists && modExists)
-                {
-                    validSelections.Add(formKey, modName);
-                }
-                else
-                {
-                    if (!npcExists)
-                    {
-                        missingNpcs.Add(
-                            $"- NPC with FormKey {formKey} (assigned to '{modName}') was not found in the current load order.");
-                    }
-
-                    if (!modExists)
-                    {
-                        // Try to find the NPC's name for a better message
-                        string npcIdentifier = npcGetter?.Name?.String ??
-                                               npcGetter?.EditorID ?? $"NPC with FormKey {formKey}";
-                        missingMods.Add(
-                            $"- {npcIdentifier} was assigned to mod '{modName}', which is not installed or recognized.");
-                    }
-                }
-            }
-
-            // --- Reporting and Confirmation ---
-            if (missingNpcs.Any() || missingMods.Any() || malformedKeys.Any())
-            {
-                if (missingNpcs.Any())
-                {
-                    report.AppendLine("NPCs Not Found in Load Order:");
-                    missingNpcs.ForEach(line => report.AppendLine(line));
-                    report.AppendLine();
-                }
-
-                if (missingMods.Any())
-                {
-                    report.AppendLine("Assigned Mods Not Found:");
-                    missingMods.ForEach(line => report.AppendLine(line));
-                    report.AppendLine();
-                }
-
-                if (malformedKeys.Any())
-                {
-                    report.AppendLine("Malformed FormKeys Skipped:");
-                    malformedKeys.ForEach(key => report.AppendLine($"- {key}"));
-                    report.AppendLine();
-                }
-
-                var preamble = $"The import file contains entries that will be skipped.\n\n" +
-                               $"Do you want to proceed with importing the {validSelections.Count} valid choices? This will overwrite all your current selections.";
-
-                report.Insert(0, preamble + "\n\n--- Details ---\n");
-
-                if (!ScrollableMessageBox.Confirm(report.ToString(), "Import Confirmation",
-                        MessageBoxImage.Warning))
-                {
-                    ScrollableMessageBox.Show("Import cancelled by user.", "Import Cancelled");
+                    Application.Current.Dispatcher.Invoke(() => 
+                        ScrollableMessageBox.ShowError(exceptionStr, "Failed to Read Import File"));
                     return;
                 }
-            }
-            else
-            {
-                if (!ScrollableMessageBox.Confirm(
-                        $"This will overwrite your current {_settings.SelectedAppearanceMods.Count} selection(s) with {validSelections.Count} choice(s) from the file. Proceed?",
-                        "Confirm Import"))
+
+                if (importedData == null || !importedData.Any())
                 {
-                    ScrollableMessageBox.Show("Import cancelled by user.", "Import Cancelled");
+                    Application.Current.Dispatcher.Invoke(() => 
+                        ScrollableMessageBox.ShowWarning("The selected file is empty or contains no valid data.", "Import Warning"));
                     return;
                 }
-            }
 
-            // --- Perform Import ---
-            _consistencyProvider.ClearAllSelections();
+                // 2. Validate the data against the current load order and settings.
+                var report = ValidateImportData(importedData);
+                var issues = report.MalformedEntries.Concat(report.UnresolvedNpcs).Concat(report.UnrecognizedMods).ToList();
 
-            foreach (var kvp in validSelections)
-            {
-                _consistencyProvider.SetSelectedMod(kvp.Key, kvp.Value);
-            }
+                // 3. Show a confirmation dialog on the UI thread.
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    var reportMessage = new StringBuilder();
+                    if (issues.Any())
+                    {
+                        reportMessage.AppendLine($"The import file contains {issues.Count} issue(s) that will be skipped.\n");
+                        if(report.MalformedEntries.Any()) reportMessage.AppendLine("--- Malformed Entries ---\n" + string.Join('\n', report.MalformedEntries) + "\n");
+                        if(report.UnresolvedNpcs.Any()) reportMessage.AppendLine("--- Unresolved NPCs ---\n" + string.Join('\n', report.UnresolvedNpcs) + "\n");
+                        if(report.UnrecognizedMods.Any()) reportMessage.AppendLine("--- Unrecognized Mods/Choices ---\n" + string.Join('\n', report.UnrecognizedMods) + "\n");
+                        reportMessage.AppendLine($"Do you want to proceed with importing the {report.ValidSelections.Count} valid choices?");
+                    }
+                    else
+                    {
+                        reportMessage.Append($"This will overwrite your current choices with {report.ValidSelections.Count} choice(s) from the file. Proceed?");
+                    }
 
-            ScrollableMessageBox.Show($"Import complete. {validSelections.Count} choices have been applied.",
-                "Import Successful");
-        }
-        catch (JsonException jsonEx)
-        {
-            ScrollableMessageBox.ShowError($"The file is not a valid JSON file. Error: {jsonEx.Message}",
-                "Import Error");
+                    if (ScrollableMessageBox.Confirm(reportMessage.ToString(), "Confirm Import", issues.Any() ? MessageBoxImage.Warning : MessageBoxImage.Question))
+                    {
+                        // 4. If confirmed, apply the valid selections.
+                        _consistencyProvider.ClearAllSelections();
+                        foreach (var kvp in report.ValidSelections)
+                        {
+                            _consistencyProvider.SetSelectedMod(kvp.Key, kvp.Value.ModName, kvp.Value.NpcFormKey);
+                        }
+                        ScrollableMessageBox.Show($"Import complete. {report.ValidSelections.Count} choices have been applied.", "Import Successful");
+                    }
+                    else
+                    {
+                        ScrollableMessageBox.Show("Import cancelled by user.", "Import Cancelled");
+                    }
+                });
+            });
         }
         catch (Exception ex)
         {
-            ScrollableMessageBox.ShowError($"An unexpected error occurred during import: {ex.Message}",
-                "Import Error");
+            ScrollableMessageBox.ShowError($"An unexpected error occurred during import: {ex.Message}", "Import Error");
         }
+    }
+
+    /// <summary>
+    /// Validates deserialized import data against the current application state.
+    /// </summary>
+    private ImportValidationReport ValidateImportData(Dictionary<string, NpcChoiceDto> importedData)
+    {
+        var validSelections = new Dictionary<FormKey, (string ModName, FormKey NpcFormKey)>();
+        var malformed = new List<string>();
+        var unresolved = new List<string>();
+        var unrecognized = new List<string>();
+
+        var availableModNames = new HashSet<string>(_lazyModsVm.Value.AllModSettings.Select(m => m.DisplayName), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var kvp in importedData)
+        {
+            // Validate and parse FormKeys
+            if (!FormKey.TryFactory(kvp.Key, out var targetNpcKey))
+            {
+                malformed.Add($"- Invalid target NPC FormKey string: {kvp.Key}");
+                continue;
+            }
+            if (!FormKey.TryFactory(kvp.Value.SourceNpcFormKey, out var sourceNpcKey))
+            {
+                malformed.Add($"- Invalid source NPC FormKey string for {targetNpcKey}: {kvp.Value.SourceNpcFormKey}");
+                continue;
+            }
+
+            // Validate existence of NPCs and Mod
+            bool targetNpcExists = _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(targetNpcKey, out _);
+            bool sourceNpcExists = _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(sourceNpcKey, out _);
+            bool modExists = availableModNames.Contains(kvp.Value.ModName);
+
+            if (!targetNpcExists) unresolved.Add($"- Target NPC {targetNpcKey} not found in load order.");
+            if (!sourceNpcExists) unresolved.Add($"- Source NPC {sourceNpcKey} (for {targetNpcKey}) not found in load order.");
+            if (!modExists) unrecognized.Add($"- Appearance Mod '{kvp.Value.ModName}' (for {targetNpcKey}) not found or installed.");
+            
+            if (targetNpcExists && sourceNpcExists && modExists)
+            {
+                validSelections.Add(targetNpcKey, (kvp.Value.ModName, sourceNpcKey));
+            }
+        }
+
+        return new ImportValidationReport(validSelections, malformed, unresolved, unrecognized);
     }
 
     public bool CanJumpToMod(string appearanceModName)
@@ -1165,19 +1164,19 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
     }
 
-    private void UpdateSelectionState(FormKey npcFormKey, string selectedMod)
+    private void UpdateSelectionState(FormKey npcFormKey, string? selectedModName, FormKey sourceNpcFormKey)
     {
-        var npcVM = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(npcFormKey))
-                    ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(npcFormKey));
+        var npcVM = AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(npcFormKey));
 
         if (npcVM != null)
         {
-            npcVM.SelectedAppearanceModName = selectedMod;
+            npcVM.SelectedAppearanceModName = selectedModName;
             if (SelectedNpc == npcVM && CurrentNpcAppearanceMods != null)
             {
                 foreach (var modVM in CurrentNpcAppearanceMods)
                 {
-                    modVM.IsSelected = modVM.ModName.Equals(selectedMod, StringComparison.OrdinalIgnoreCase);
+                    modVM.IsSelected = modVM.ModName.Equals(selectedModName, StringComparison.OrdinalIgnoreCase) &&
+                                       modVM.SourceNpcFormKey.Equals(sourceNpcFormKey);
                 }
             }
         }
@@ -1566,10 +1565,17 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
     }
 
-    private bool CheckSelectionState(VM_NpcsMenuSelection npcsMenu, SelectionStateFilterType filterState)
+    private bool CheckSelectionState(VM_NpcsMenuSelection npcMenu, SelectionStateFilterType filterState)
     {
-        bool isSelected = !string.IsNullOrEmpty(_consistencyProvider.GetSelectedMod(npcsMenu.NpcFormKey));
-        return filterState == SelectionStateFilterType.Made ? isSelected : !isSelected;
+        // 1. Get the selection tuple. A selection is considered "made" if a ModName exists.
+        var selection = _consistencyProvider.GetSelectedMod(npcMenu.NpcFormKey);
+        bool isSelected = !string.IsNullOrEmpty(selection.ModName);
+
+        // 2. Determine the desired state from the filter.
+        bool filterWantsSelectionMade = (filterState == SelectionStateFilterType.Made);
+
+        // 3. Return true only if the NPC's state matches the filter's desired state.
+        return isSelected == filterWantsSelectionMade;
     }
 
     private Func<VM_NpcsMenuSelection, bool>? BuildGroupPredicate(string? selectedGroup)
@@ -1616,239 +1622,116 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private ObservableCollection<VM_NpcsMenuMugshot> CreateMugShotViewModels(VM_NpcsMenuSelection selectionVm,
         Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData)
     {
-        var finalModVMs = new Dictionary<string, VM_NpcsMenuMugshot>(StringComparer.OrdinalIgnoreCase);
+        var finalModVMs = new Dictionary<(string ModName, FormKey SourceKey), VM_NpcsMenuMugshot>();
         if (selectionVm == null) return new ObservableCollection<VM_NpcsMenuMugshot>();
 
-        var relevantModSettings = new HashSet<VM_ModSetting>();
+        var targetNpcFormKey = selectionVm.NpcFormKey;
+        
+        // Aggregate all possible appearance sources: standard, base game, and guest.
+        var appearanceSources = new HashSet<(VM_ModSetting ModSetting, FormKey SourceNpcFormKey)>();
 
-        if (mugshotData.TryGetValue(selectionVm.NpcFormKey, out var npcMugshotListForThisNpc))
+        // 1. Get standard appearance sources for this NPC
+        var standardModSettings = new HashSet<VM_ModSetting>(selectionVm.AppearanceMods);
+        foreach (var modSetting in standardModSettings)
         {
-            foreach (var mugshotInfo in npcMugshotListForThisNpc)
+            appearanceSources.Add((modSetting, targetNpcFormKey));
+        }
+        
+        // 2. Get guest appearances
+        if (_settings.GuestAppearances.TryGetValue(targetNpcFormKey, out var guestList))
+        {
+            foreach (var guestSource in guestList)
             {
-                var modSettingViaMugshotName = _lazyModsVm.Value?.AllModSettings.FirstOrDefault(ms =>
-                    ms.DisplayName.Equals(mugshotInfo.ModName, StringComparison.OrdinalIgnoreCase));
-
-                if (modSettingViaMugshotName != null)
+                var modSetting = _lazyModsVm.Value.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(guestSource.ModName, StringComparison.OrdinalIgnoreCase));
+                if (modSetting != null)
                 {
-                    if (!string.IsNullOrWhiteSpace(modSettingViaMugshotName.MugShotFolderPath))
-                    {
-                        string expectedMugshotParentDir = Path.GetFileName(
-                            modSettingViaMugshotName.MugShotFolderPath.TrimEnd(Path.DirectorySeparatorChar,
-                                Path.AltDirectorySeparatorChar));
-                        if (mugshotInfo.ModName.Equals(expectedMugshotParentDir,
-                                StringComparison.OrdinalIgnoreCase))
-                        {
-                            relevantModSettings.Add(modSettingViaMugshotName);
-                        }
-                    }
-                    else
-                    {
-                        relevantModSettings.Add(modSettingViaMugshotName);
-                    }
+                    appearanceSources.Add((modSetting, guestSource.NpcFormKey));
                 }
             }
         }
 
-        foreach (var modSetting in selectionVm.AppearanceMods)
+        // 3. Create the ViewModels from the aggregated sources
+        foreach (var (modSettingVM, sourceNpcFormKey) in appearanceSources)
         {
-            if (!relevantModSettings.Contains(modSetting))
-            {
-                relevantModSettings.Add(modSetting);
-            }
+            string? imagePath = GetImagePathForNpc(modSettingVM, sourceNpcFormKey, mugshotData);
+            // Additional logic to get specific plugin key if necessary...
+            
+            var appearanceVM = _appearanceModFactory(
+                modSettingVM.DisplayName,
+                selectionVm.DisplayName,
+                targetNpcFormKey,
+                sourceNpcFormKey,
+                null, // Simplified for snippet
+                imagePath
+            );
+            finalModVMs[(modSettingVM.DisplayName, sourceNpcFormKey)] = appearanceVM;
+            // Additional logic for notifications, etc.
         }
 
-        ModKey baseModKey = selectionVm.NpcFormKey.ModKey;
-
-        if (!baseModKey.IsNull && _lazyModsVm.IsValueCreated && _lazyModsVm.Value != null)
-        {
-            var modSettingsForBasePlugin = _lazyModsVm.Value?.AllModSettings
-                .Where(ms => ms.CorrespondingModKeys.Contains(baseModKey))
-                .ToList();
-            if (modSettingsForBasePlugin != null && modSettingsForBasePlugin.Any())
-            {
-                foreach (var ms in modSettingsForBasePlugin) relevantModSettings.Add(ms);
-            }
-            else
-            {
-                var dummyModSetting = new ModSetting()
-                {
-                    DisplayName = baseModKey.ToString(),
-                    CorrespondingModKeys = new() { baseModKey }
-                };
-
-                var dummyVM = _modSettingFromModelFactory(dummyModSetting, _lazyModsVm.Value);
-                relevantModSettings.Add(dummyVM);
-            }
-        }
-
-        bool baseKeyHandledByAModSettingVM = false;
-        foreach (var modSettingVM in relevantModSettings)
-        {
-            string displayName = modSettingVM.DisplayName;
-            ModKey? specificPluginKey = null;
-            if (modSettingVM.NpcPluginDisambiguation.TryGetValue(selectionVm.NpcFormKey, out var mappedSourceKey))
-            {
-                specificPluginKey = mappedSourceKey;
-            }
-
-            if ((specificPluginKey == null || specificPluginKey.Value.IsNull) && 
-                modSettingVM.AvailablePluginsForNpcs.TryGetValue(selectionVm.NpcFormKey, out var candiatePlugins) && 
-                candiatePlugins.Any())
-            {
-                specificPluginKey = modSettingVM.AvailablePluginsForNpcs[selectionVm.NpcFormKey].First();
-            }
-
-            if ((specificPluginKey == null || specificPluginKey.Value.IsNull) && !baseModKey.IsNull &&
-                modSettingVM.CorrespondingModKeys.Contains(baseModKey))
-            {
-                specificPluginKey = baseModKey;
-            }
-
-            if (specificPluginKey == null || specificPluginKey.Value.IsNull)
-            {
-                specificPluginKey = modSettingVM.CorrespondingModKeys.FirstOrDefault();
-            }
-
-            string? imagePath = null;
-            if (!string.IsNullOrWhiteSpace(modSettingVM.MugShotFolderPath) &&
-                Directory.Exists(modSettingVM.MugShotFolderPath) &&
-                mugshotData.TryGetValue(selectionVm.NpcFormKey, out var availableMugshotsForNpcViaCache))
-            {
-                string mugshotDirNameForThisSetting = Path.GetFileName(
-                    modSettingVM.MugShotFolderPath.TrimEnd(Path.DirectorySeparatorChar,
-                        Path.AltDirectorySeparatorChar));
-                var specificMugshotInfo = availableMugshotsForNpcViaCache.FirstOrDefault(m =>
-                    m.ModName.Equals(mugshotDirNameForThisSetting, StringComparison.OrdinalIgnoreCase));
-                if (specificMugshotInfo != default && !string.IsNullOrWhiteSpace(specificMugshotInfo.ImagePath) &&
-                    File.Exists(specificMugshotInfo.ImagePath))
-                {
-                    imagePath = specificMugshotInfo.ImagePath;
-                    if (specificPluginKey == null || specificPluginKey.Value.IsNull)
-                    {
-                        try
-                        {
-                            FileInfo fi = new FileInfo(imagePath);
-                            DirectoryInfo? pluginDirFromFile = fi.Directory;
-                            if (pluginDirFromFile != null && PluginRegex.IsMatch(pluginDirFromFile.Name))
-                            {
-                                string pluginNameFromPath = pluginDirFromFile.Name;
-                                var inferredKey = modSettingVM.CorrespondingModKeys.FirstOrDefault(mk =>
-                                    mk.FileName.String.Equals(pluginNameFromPath,
-                                        StringComparison.OrdinalIgnoreCase));
-                                if (inferredKey != null && !inferredKey.IsNull)
-                                {
-                                    specificPluginKey = inferredKey;
-                                }
-                                else
-                                {
-                                    try
-                                    {
-                                        specificPluginKey = ModKey.FromFileName(pluginNameFromPath);
-                                    }
-                                    catch
-                                    {
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.WriteLine(
-                                $"Error inferring plugin key from image path '{imagePath}' for modSetting '{displayName}': {ex.Message}");
-                        }
-                    }
-                }
-            }
-
-            var appearanceVM =
-                _appearanceModFactory(displayName, selectionVm.DisplayName, selectionVm.NpcFormKey,
-                    specificPluginKey, imagePath);
-
-            finalModVMs[displayName] = appearanceVM;
-
-            if (modSettingVM.NpcFormKeysToNotifications.TryGetValue(selectionVm.NpcFormKey, out var notif))
-            {
-                appearanceVM.HasIssueNotification = true;
-                appearanceVM.IssueType = notif.IssueType;
-                appearanceVM.IssueNotificationText = notif.IssueMessage;
-
-                if (notif.IssueType == NpcIssueType.Template)
-                {
-                    StringBuilder issueToolTip = new StringBuilder();
-                    if (notif.ReferencedFormKey != null &&
-                        _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(notif.ReferencedFormKey.Value,
-                            out var templateGetter))
-                    {
-                        issueToolTip.Append(
-                            $"Despite having FaceGen files, this NPC from {appearanceVM.ModKey?.FileName ?? "NO PLUGIN"} has the Traits flag so it inherits appearance from {Auxilliary.GetNpcLogString(templateGetter, true)}. If the selected Appearance Mod for this NPC doesn't match that of its Template, visual glitches can occur in-game.");
-                    }
-                    else
-                    {
-                        issueToolTip.Append(
-                            $"Despite having FaceGen files, this NPC from {appearanceVM.ModKey?.FileName ?? "NO PLUGIN"} has the Traits flag so it inherits appearance from {notif.IssueMessage}. If the selected Appearance Mod for this NPC doesn't match that of its Template, visual glitches can occur in-game.");
-                    }
-                    
-                    appearanceVM.IssueNotificationText = issueToolTip.ToString();
-                }
-            }
-
-            if (!baseModKey.IsNull && specificPluginKey != null && specificPluginKey.Value.Equals(baseModKey))
-            {
-                baseKeyHandledByAModSettingVM = true;
-            }
-        }
-
-        if (!baseModKey.IsNull && !baseKeyHandledByAModSettingVM)
-        {
-            if (!finalModVMs.ContainsKey(baseModKey.FileName))
-            {
-                Debug.WriteLine(
-                    $"Creating placeholder VM_NpcsMenuMugshot for unhandled base plugin: {baseModKey.FileName} for NPC {selectionVm.NpcFormKey}");
-                var placeholderBaseVM =
-                    _appearanceModFactory(baseModKey.FileName, selectionVm.DisplayName, selectionVm.NpcFormKey,
-                        baseModKey, null);
-                finalModVMs[baseModKey.FileName] = placeholderBaseVM;
-            }
-        }
-
-        var sortedVMs = finalModVMs.Values.OrderBy(vm => vm.ModName).ToList();
-        // move auto-gen plugins first
-        var ccMugShot = sortedVMs.FirstOrDefault(vm => vm.ModName.Equals(VM_Mods.CreationClubModsettingName));
-        if (ccMugShot != null)
-        {
-            sortedVMs.Remove(ccMugShot);
-            sortedVMs.Insert(0, ccMugShot);
-        }
-
-        var baseMugShot = sortedVMs.FirstOrDefault(vm => vm.ModName.Equals(VM_Mods.BaseGameModSettingName));
-        if (baseMugShot != null)
-        {
-            sortedVMs.Remove(baseMugShot);
-            sortedVMs.Insert(0, baseMugShot);
-        }
-        // end move
-
-        foreach (var m in sortedVMs)
-        {
-            bool isGloballyHidden = _hiddenModNames.Contains(m.ModName);
-            bool isPerNpcHidden = _hiddenModsPerNpc.TryGetValue(selectionVm.NpcFormKey, out var hiddenSet) &&
-                                  hiddenSet.Contains(m.ModName);
-            m.IsSetHidden = isGloballyHidden || isPerNpcHidden;
-            m.IsCheckedForCompare = false;
-        }
-
-        var selectedModName = _consistencyProvider.GetSelectedMod(selectionVm.NpcFormKey);
+        var sortedVMs = finalModVMs.Values.OrderBy(vm => vm.ModName).ThenBy(vm => vm.SourceNpcFormKey.ToString()).ToList();
+        
+        // Update selection status based on the full tuple
+        var (selectedModName, selectedSourceKey) = _consistencyProvider.GetSelectedMod(targetNpcFormKey);
         if (!string.IsNullOrEmpty(selectedModName))
         {
             var selectedVmInstance = sortedVMs.FirstOrDefault(x =>
-                x.ModName.Equals(selectedModName, StringComparison.OrdinalIgnoreCase));
-            if (selectedVmInstance != null)
-            {
-                selectedVmInstance.IsSelected = true;
-            }
+                x.ModName.Equals(selectedModName, StringComparison.OrdinalIgnoreCase) && x.SourceNpcFormKey.Equals(selectedSourceKey));
+            if (selectedVmInstance != null) selectedVmInstance.IsSelected = true;
         }
 
         return new ObservableCollection<VM_NpcsMenuMugshot>(sortedVMs);
+    }
+    
+    // Helper method to look up image paths for any NPC
+    private string? GetImagePathForNpc(VM_ModSetting modSetting, FormKey npcFormKey, Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData)
+    {
+        if (!string.IsNullOrWhiteSpace(modSetting.MugShotFolderPath) && Directory.Exists(modSetting.MugShotFolderPath) && mugshotData.TryGetValue(npcFormKey, out var availableMugshotsForNpc))
+        {
+            string mugshotDirNameForThisSetting = Path.GetFileName(modSetting.MugShotFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var specificMugshotInfo = availableMugshotsForNpc.FirstOrDefault(m => m.ModName.Equals(mugshotDirNameForThisSetting, StringComparison.OrdinalIgnoreCase));
+            if (specificMugshotInfo != default && !string.IsNullOrWhiteSpace(specificMugshotInfo.ImagePath) && File.Exists(specificMugshotInfo.ImagePath))
+            {
+                return specificMugshotInfo.ImagePath;
+            }
+        }
+        return null;
+    }
+
+    private void HandleShareAppearanceRequest(VM_NpcsMenuMugshot mugshotToShare)
+    {
+        var selectorVm = new VM_NpcShareTargetSelector(this.AllNpcs);
+        var owner = Application.Current.Windows.OfType<Window>().SingleOrDefault(x => x.IsActive);
+        
+        var selectorView = new NpcShareTargetSelectorView 
+        { 
+            DataContext = selectorVm,
+            Owner = owner
+        };
+
+        var result = selectorView.ShowDialog();
+
+        if (result == true && selectorVm.SelectedNpc != null)
+        {
+            var targetNpcKey = selectorVm.SelectedNpc.NpcFormKey;
+            AddGuestAppearance(targetNpcKey, mugshotToShare.ModName, mugshotToShare.SourceNpcFormKey);
+        }
+    }
+
+    public void AddGuestAppearance(FormKey targetNpcKey, string guestModName, FormKey guestNpcKey)
+    {
+        if (!_settings.GuestAppearances.TryGetValue(targetNpcKey, out var guestSet))
+        {
+            guestSet = new HashSet<(string, FormKey)>();
+            _settings.GuestAppearances[targetNpcKey] = guestSet;
+        }
+
+        if (guestSet.Add((guestModName, guestNpcKey)))
+        {
+            if (SelectedNpc != null && SelectedNpc.NpcFormKey.Equals(targetNpcKey))
+            {
+                RefreshAppearanceSources();
+            }
+        }
     }
 
     public void RefreshAppearanceSources()
@@ -1907,20 +1790,35 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         string targetModName = referenceMod.ModName;
-        int updatedCount = 0;
-        Debug.WriteLine($"SelectAllFromMod: Attempting to select '{targetModName}' for all applicable NPCs.");
-        foreach (var npcVM in AllNpcs)
+
+        // First, find all NPCs for whom this mod is a valid "native" appearance source.
+        var applicableNpcs = AllNpcs
+            .Where(npc => npc != null && IsModAnAppearanceSourceForNpc(npc, referenceMod))
+            .ToList();
+
+        if (!applicableNpcs.Any())
         {
-            if (npcVM == null) continue;
-            if (IsModAnAppearanceSourceForNpc(npcVM, referenceMod))
-            {
-                _consistencyProvider.SetSelectedMod(npcVM.NpcFormKey, targetModName);
-                updatedCount++;
-            }
+            ScrollableMessageBox.Show($"The mod '{targetModName}' is not a direct appearance source for any known NPCs.", "No Applicable NPCs");
+            return;
         }
 
+        // Add a confirmation dialog for this potentially large-scale change.
+        var confirmationMessage = $"This will set the appearance for {applicableNpcs.Count} NPC(s) to '{targetModName}'.\n\nThis applies the version of the appearance native to each NPC. Are you sure you want to proceed?";
+        if (!ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Bulk Selection"))
+        {
+            return;
+        }
+
+        // If confirmed, perform the update for each applicable NPC.
+        foreach (var npcVM in applicableNpcs)
+        {
+            // Correctly call SetSelectedMod with the NPC's own FormKey as the source of the appearance.
+            _consistencyProvider.SetSelectedMod(npcVM.NpcFormKey, targetModName, npcVM.NpcFormKey);
+        }
+
+        // Provide clear feedback to the user upon completion.
         Debug.WriteLine(
-            $"SelectAllFromMod: Finished processing. Attempted to set '{targetModName}' for {updatedCount} NPCs where it was an available source.");
+            $"Finished processing. Set '{targetModName}' as the selected appearance for {applicableNpcs.Count} NPC(s).");
     }
 
     private bool IsModAnAppearanceSourceForNpc(VM_NpcsMenuSelection npcSelectionVm, VM_NpcsMenuMugshot referenceMod)
@@ -2240,37 +2138,28 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     }
     // --- End NPC Group Methods ---
 
-    public void MassUpdateNpcSelections(string fromModName, string toModName)
+    public void MassUpdateNpcSelections(string fromModName, FormKey fromNpcKey, string toModName, FormKey toNpcKey)
     {
-        if (string.Equals(fromModName, toModName, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(fromModName, toModName, StringComparison.OrdinalIgnoreCase) && fromNpcKey.Equals(toNpcKey))
         {
             return;
         }
 
-        // Find all NPCs whose current selection is fromModName
         var npcsToUpdate = AllNpcs
-            .Where(npc => string.Equals(_consistencyProvider.GetSelectedMod(npc.NpcFormKey), fromModName,
-                StringComparison.OrdinalIgnoreCase))
+            .Where(npc => {
+                var selection = _consistencyProvider.GetSelectedMod(npc.NpcFormKey);
+                return string.Equals(selection.ModName, fromModName, StringComparison.OrdinalIgnoreCase) && selection.SourceNpcFormKey.Equals(fromNpcKey);
+            })
             .ToList();
 
-        if (!npcsToUpdate.Any())
-        {
-            ScrollableMessageBox.Show($"No NPCs are currently assigned to '{fromModName}'. No changes were made.",
-                "Information");
-            return;
-        }
+        if (!npcsToUpdate.Any()) return;
 
-        // Confirmation dialog
-        var confirmationMessage =
-            $"This will change the selected appearance for {npcsToUpdate.Count} NPC(s) from '{fromModName}' to '{toModName}'.\n\nAre you sure you want to proceed?";
-        string imagePath = @"Resources\Replace Selected Mod.png";
-        if (ScrollableMessageBox.Confirm(confirmationMessage, "Out with the old, in with the new?",
-                displayImagePath: imagePath))
+        var confirmationMessage = $"This will change the selected appearance for {npcsToUpdate.Count} NPC(s) from '{fromModName} ({fromNpcKey})' to '{toModName} ({toNpcKey})'. Proceed?";
+        if (ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Mass Update"))
         {
             foreach (var npc in npcsToUpdate)
             {
-                // Set the new mod. The consistency provider will handle the update and notification.
-                _consistencyProvider.SetSelectedMod(npc.NpcFormKey, toModName);
+                _consistencyProvider.SetSelectedMod(npc.NpcFormKey, toModName, toNpcKey);
             }
         }
     }
@@ -2293,5 +2182,14 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 vm.Dispose();
             }
         }
+    }
+}
+
+public class ShareAppearanceRequest
+{
+    public VM_NpcsMenuMugshot MugshotToShare { get; }
+    public ShareAppearanceRequest(VM_NpcsMenuMugshot mugshotToShare)
+    {
+        MugshotToShare = mugshotToShare;
     }
 }

@@ -1,0 +1,33 @@
+﻿<Window x:Class="NPC_Plugin_Chooser_2.Views.NpcShareTargetSelectorView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+        mc:Ignorable="d"
+        Title="Select Target NPC to Share Appearance With" Height="450" Width="400" WindowStartupLocation="CenterOwner"
+        d:DataContext="{d:DesignInstance Type=vm:VM_NpcShareTargetSelector}">
+    <DockPanel Margin="10">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="OK" Width="75" Margin="5" IsDefault="True" Command="{Binding OkCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"/>
+            <Button Content="Cancel" Width="75" Margin="5" IsCancel="True" Command="{Binding CancelCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"/>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+            <ComboBox ItemsSource="{Binding AvailableSearchTypes}" SelectedItem="{Binding SearchType}" MinWidth="80"/>
+            <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" Width="250" Margin="5,0,0,0"/>
+        </StackPanel>
+
+        <ListBox ItemsSource="{Binding FilteredNpcs}" SelectedItem="{Binding SelectedNpc}">
+            <ListBox.ItemTemplate>
+                <DataTemplate DataType="{x:Type vm:VM_NpcsMenuSelection}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding DisplayName}" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding NpcEditorId}" FontStyle="Italic" Margin="10,0,0,0"/>
+                        <TextBlock Text="{Binding NpcFormKeyString}" Foreground="Gray" Margin="10,0,0,0"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</Window>

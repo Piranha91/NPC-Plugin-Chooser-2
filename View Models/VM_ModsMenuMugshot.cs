@@ -85,7 +85,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // START MODIFIED SECTION
             // Set initial selection state based on the consistency provider
-            IsSelected = _consistencyProvider.IsModSelected(NpcFormKey, _parentVMModSetting.DisplayName);
+            IsSelected = _consistencyProvider.IsModSelected(NpcFormKey, _parentVMModSetting.DisplayName, NpcFormKey);
 
             // Set initial border color and subscribe to future changes in selection
             BorderColor = IsSelected ? _selectedBrush : _deselectedBrush;
@@ -99,7 +99,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _consistencyProvider.NpcSelectionChanged
                 .Where(args => args.NpcFormKey == this.NpcFormKey)
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(args => IsSelected = (args.SelectedMod == _parentVMModSetting.DisplayName))
+                .Subscribe(args => IsSelected = (args.SelectedModName == _parentVMModSetting.DisplayName && 
+                                                 args.SourceNpcFormKey.Equals(NpcFormKey)))
                 .DisposeWith(_disposables);
             // END MODIFIED SECTION
             

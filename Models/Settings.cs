@@ -32,7 +32,12 @@ public class Settings
     // UI / Other
     public bool ShowNpcDescriptions { get; set; } = true;
     public List<ModSetting> ModSettings { get; set; } = new();
-    public Dictionary<FormKey, string> SelectedAppearanceMods { get; set; } = new();
+    // The string is the ModName, the FormKey is the NPC within that mod providing the appearance.
+    public Dictionary<FormKey, (string ModName, FormKey NpcFormKey)> SelectedAppearanceMods { get; set; } = new();
+    // Key: FormKey of NPC receiving the appearance.
+    // Value: A set of tuples, where each tuple represents a "guest" mugshot.
+    // Tuple: (string ModName of the guest appearance, FormKey of the guest NPC).
+    public Dictionary<FormKey, HashSet<(string ModName, FormKey NpcFormKey)>> GuestAppearances { get; set; } = new();
     public HashSet<string> HiddenModNames { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> HiddenModsPerNpc { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> NpcGroupAssignments { get; set; } = new();
