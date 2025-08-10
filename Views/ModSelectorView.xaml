@@ -20,8 +20,11 @@
         <TextBox Grid.Row="0" Text="{Binding FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,3,3" ToolTip="Filter the list of mods below."/>
         
         <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="1" CornerRadius="2">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="3">
-                <ItemsControl ItemsSource="{Binding SelectableMods}">
+            <ListBox ItemsSource="{Binding SelectableMods}" 
+                     HorizontalContentAlignment="Stretch"
+                     VirtualizingStackPanel.IsVirtualizing="True"
+                     VirtualizingStackPanel.VirtualizationMode="Recycling"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl.ItemTemplate>
                          <DataTemplate DataType="{x:Type vm:VM_SelectableMod}">
                              <Border Margin="0,1,0,1" Padding="3,2" CornerRadius="2" Background="#F9F9F9" BorderBrush="#E0E0E0" BorderThickness="1">
@@ -52,8 +55,7 @@
                             <VirtualizingStackPanel Orientation="Vertical"/>
                          </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
-                </ItemsControl>
-            </ScrollViewer>
+                </ListBox>
         </Border>
     </Grid>
 </reactiveui:ReactiveUserControl>
