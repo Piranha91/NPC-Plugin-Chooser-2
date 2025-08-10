@@ -1,4 +1,4 @@
-﻿// [ImagePacker.cs] - Corrected with robust drawing logic
+﻿// [ImagePacker.cs] - Refactored for stateless calculation and robust rendering
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -7,9 +7,9 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
-using System.Windows.Media.Imaging; // Required for BitmapSource
+using System.Windows.Media.Imaging;
 using NPC_Plugin_Chooser_2.View_Models;
-using System.Diagnostics; // Required for Debug.WriteLine
+using System.Diagnostics;
 
 namespace NPC_Plugin_Chooser_2.Views
 {
@@ -27,111 +27,94 @@ namespace NPC_Plugin_Chooser_2.Views
 
             if (!visibleImages.Any())
             {
-                foreach (var img in imagesToPackCollection)
-                {
-                    img.ImageWidth = 0;
-                    img.ImageHeight = 0;
-                }
+                foreach (var img in imagesToPackCollection) { img.ImageWidth = 0; img.ImageHeight = 0; }
                 return 1.0;
             }
 
+            double finalPackerScale;
+
             if (normalizeAndCropImages)
             {
-                var modeSize = visibleImages
+                // --- REFACTORED NORMALIZATION AND PACKING LOGIC ---
+
+                // 1. Determine the mode size in PIXELS. This is our target for all images.
+                var modePixelSize = visibleImages
                     .Select(img => new Size(img.OriginalPixelWidth, img.OriginalPixelHeight))
                     .GroupBy(size => size)
                     .OrderByDescending(g => g.Count())
                     .Select(g => g.Key)
                     .FirstOrDefault();
 
-                if (modeSize.IsEmpty && visibleImages.Any())
+                if (modePixelSize.IsEmpty && visibleImages.Any())
                 {
-                    modeSize = new Size(visibleImages.First().OriginalPixelWidth, visibleImages.First().OriginalPixelHeight);
+                    modePixelSize = new Size(visibleImages.First().OriginalPixelWidth, visibleImages.First().OriginalPixelHeight);
+                }
+                
+                Debug.WriteLine($"[ImagePacker] Normalization Mode Size determined to be: {modePixelSize.Width}x{modePixelSize.Height}");
+
+                if (modePixelSize.IsEmpty || modePixelSize.Width == 0)
+                {
+                    // Fallback to original behavior if a valid mode cannot be found
+                    Debug.WriteLine("[ImagePacker] Could not determine valid mode size. Packing with original dimensions.");
+                    return FitWithOriginalDimensions(imagesToPackCollection, visibleImages, availableHeight, availableWidth, xamlItemUniformMargin);
                 }
 
-                Debug.WriteLine($"[ImagePacker] Normalization Mode Size determined to be: {modeSize.Width}x{modeSize.Height}");
+                // 2. Calculate a single scale factor assuming ALL images will conform to the mode size.
+                // We use a standard 96 DPI for this layout calculation.
+                double modeDipWidth = modePixelSize.Width;
+                double modeDipHeight = modePixelSize.Height;
+                var uniformBaseDimensions = Enumerable.Repeat((modeDipWidth, modeDipHeight), visibleImages.Count).ToList();
+                
+                finalPackerScale = CalculatePackerScale(uniformBaseDimensions, availableHeight, availableWidth, xamlItemUniformMargin);
+                Debug.WriteLine($"[ImagePacker] Calculated a UNIFORM packer scale of: {finalPackerScale:F4}");
 
-                if (modeSize.IsEmpty || modeSize.Width == 0 || modeSize.Height == 0)
+                // 3. Apply normalization and the final uniform size in a single pass.
+                foreach (var img in visibleImages)
                 {
-                    Debug.WriteLine("[ImagePacker] Warning: Mode size is invalid. Skipping normalization.");
-                }
-                else
-                {
-                    foreach (var img in visibleImages)
+                    // A) If this specific image needs to be physically changed, do it now.
+                    if (img.OriginalPixelWidth != modePixelSize.Width || img.OriginalPixelHeight != modePixelSize.Height)
                     {
-                        if (img.OriginalPixelWidth != modeSize.Width || img.OriginalPixelHeight != modeSize.Height)
+                        try
                         {
-                            Debug.WriteLine($"[ImagePacker] Normalizing image: {Path.GetFileName(img.ImagePath)} (Original: {img.OriginalPixelWidth}x{img.OriginalPixelHeight})");
-                            try
-                            {
-                                using Image originalImage = Image.FromFile(img.ImagePath);
-                                using Bitmap normalizedBitmap = CenterCropAndResize(originalImage, modeSize.Width, modeSize.Height);
-                                BitmapSource normalizedSource = BitmapToImageSource(normalizedBitmap);
-
-                                img.MugshotSource = normalizedSource;
-                                img.OriginalPixelWidth = modeSize.Width;
-                                img.OriginalPixelHeight = modeSize.Height;
-
-                                double hRes = originalImage.HorizontalResolution > 1 ? originalImage.HorizontalResolution : 96.0;
-                                double vRes = originalImage.VerticalResolution > 1 ? originalImage.VerticalResolution : 96.0;
-                                img.OriginalDipWidth = modeSize.Width * (96.0 / hRes);
-                                img.OriginalDipHeight = modeSize.Height * (96.0 / vRes);
-                                img.OriginalDipDiagonal = Math.Sqrt(img.OriginalDipWidth * img.OriginalDipWidth + img.OriginalDipHeight * img.OriginalDipHeight);
-                            }
-                            catch (Exception ex)
-                            {
-                                Debug.WriteLine($"[ImagePacker] ERROR normalizing image {img.ImagePath} in memory: {ex.Message}");
-                            }
+                            using Image originalImage = Image.FromFile(img.ImagePath);
+                            using Bitmap normalizedBitmap = CenterCropAndResize(originalImage, modePixelSize.Width, modePixelSize.Height);
+                            img.MugshotSource = BitmapToImageSource(normalizedBitmap);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"[ImagePacker] ERROR normalizing image {img.ImagePath}: {ex.Message}");
                         }
                     }
+
+                    // B) Apply the final calculated size to EVERY visible image.
+                    // This ensures all borders are the same size, regardless of original dimensions.
+                    img.ImageWidth = modeDipWidth * finalPackerScale;
+                    img.ImageHeight = modeDipHeight * finalPackerScale;
                 }
             }
-
-            var baseContentDimensions = visibleImages
-                .Select(img => (img.OriginalDipWidth, img.OriginalDipHeight))
-                .ToList();
-
-            double low = 0;
-            double high = 10.0;
-            if (baseContentDimensions.Any())
+            else
             {
-                var firstBaseDim = baseContentDimensions.First();
-                double effectiveFirstItemW = firstBaseDim.Item1 + 2 * xamlItemUniformMargin;
-                double effectiveFirstItemH = firstBaseDim.Item2 + 2 * xamlItemUniformMargin;
-
-                if (effectiveFirstItemW > 0.001) high = Math.Min(high, availableWidth / effectiveFirstItemW); else high = 0.001;
-                if (effectiveFirstItemH > 0.001) high = Math.Min(high, availableHeight / effectiveFirstItemH); else high = 0.001;
-                high = Math.Max(0.001, high);
+                // If not normalizing, use the original logic.
+                finalPackerScale = FitWithOriginalDimensions(imagesToPackCollection, visibleImages, availableHeight, availableWidth, xamlItemUniformMargin);
             }
 
-            int iterations = 0;
-            const int maxIterations = 100;
-            const double epsilonForBinarySearch = 0.001;
+            return finalPackerScale;
+        }
 
-            while (high - low > epsilonForBinarySearch && iterations < maxIterations)
+        private static double FitWithOriginalDimensions(
+            ObservableCollection<IHasMugshotImage> fullCollection,
+            List<IHasMugshotImage> visibleImages,
+            double availableHeight, double availableWidth, int xamlItemUniformMargin)
+        {
+            var originalDimensions = visibleImages.Select(img => (img.OriginalDipWidth, img.OriginalDipHeight)).ToList();
+            double packerScale = CalculatePackerScale(originalDimensions, availableHeight, availableWidth, xamlItemUniformMargin);
+
+            foreach (var img in fullCollection)
             {
-                double midPackerScale = low + (high - low) / 2;
-                if (midPackerScale <= 0) { low = 0; break; }
-
-                if (CanPackAll(baseContentDimensions, midPackerScale, availableWidth, availableHeight, xamlItemUniformMargin))
+                if (img.IsVisible)
                 {
-                    low = midPackerScale;
-                }
-                else
-                {
-                    high = midPackerScale;
-                }
-                iterations++;
-            }
-
-            double finalPackerScale = Math.Max(0.0, low);
-
-            foreach (var img in imagesToPackCollection)
-            {
-                if (img.IsVisible && img.OriginalDipWidth > 0 && img.OriginalDipHeight > 0)
-                {
-                    img.ImageWidth = img.OriginalDipWidth * finalPackerScale;
-                    img.ImageHeight = img.OriginalDipHeight * finalPackerScale;
+                    img.ImageWidth = img.OriginalDipWidth * packerScale;
+                    img.ImageHeight = img.OriginalDipHeight * packerScale;
                 }
                 else
                 {
@@ -139,130 +122,119 @@ namespace NPC_Plugin_Chooser_2.Views
                     img.ImageHeight = 0;
                 }
             }
-
-            return finalPackerScale;
+            return packerScale;
         }
 
-        private static BitmapSource BitmapToImageSource(System.Drawing.Bitmap bitmap)
+        private static double CalculatePackerScale(List<(double Width, double Height)> dimensions, double availableHeight, double availableWidth, int xamlItemUniformMargin)
         {
-            using (var memory = new MemoryStream())
+            double low = 0;
+            double high = 10.0;
+            if (dimensions.Any())
             {
-                bitmap.Save(memory, ImageFormat.Png);
-                memory.Position = 0;
-
-                var bitmapImage = new BitmapImage();
-                bitmapImage.BeginInit();
-                bitmapImage.StreamSource = memory;
-                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                bitmapImage.EndInit();
-                bitmapImage.Freeze();
-
-                return bitmapImage;
+                var firstDim = dimensions.First();
+                double effectiveW = firstDim.Width + 2 * xamlItemUniformMargin;
+                double effectiveH = firstDim.Height + 2 * xamlItemUniformMargin;
+                if (effectiveW > 0.001) high = Math.Min(high, availableWidth / effectiveW); else high = 0.001;
+                if (effectiveH > 0.001) high = Math.Min(high, availableHeight / effectiveH); else high = Math.Min(high, 0.001);
+                high = Math.Max(0.001, high);
             }
+
+            int iterations = 0;
+            const int maxIterations = 100;
+            const double epsilon = 0.001;
+
+            while (high - low > epsilon && iterations < maxIterations)
+            {
+                double mid = low + (high - low) / 2;
+                if (mid <= 0) { low = 0; break; }
+                if (CanPackAll(dimensions, mid, availableWidth, availableHeight, xamlItemUniformMargin))
+                {
+                    low = mid;
+                }
+                else
+                {
+                    high = mid;
+                }
+                iterations++;
+            }
+            return Math.Max(0.0, low);
+        }
+
+        private static BitmapSource BitmapToImageSource(Bitmap bitmap)
+        {
+            using var memory = new MemoryStream();
+            bitmap.Save(memory, ImageFormat.Png);
+            memory.Position = 0;
+            var bitmapImage = new BitmapImage();
+            bitmapImage.BeginInit();
+            bitmapImage.StreamSource = memory;
+            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+            bitmapImage.EndInit();
+            bitmapImage.Freeze();
+            return bitmapImage;
         }
 
         private static Bitmap CenterCropAndResize(Image original, int targetWidth, int targetHeight)
         {
-            Debug.WriteLine($"    -> CenterCropAndResize: Original={original.Width}x{original.Height}, Target={targetWidth}x{targetHeight}");
             var result = new Bitmap(targetWidth, targetHeight);
             result.SetResolution(original.HorizontalResolution, original.VerticalResolution);
-
             using var g = Graphics.FromImage(result);
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.SmoothingMode = SmoothingMode.HighQuality;
-            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-            g.CompositingQuality = CompositingQuality.HighQuality;
 
-            // --- REVISED AND CORRECTED DRAWING LOGIC ---
             float srcAspect = (float)original.Width / original.Height;
             float dstAspect = (float)targetWidth / targetHeight;
-            
             RectangleF srcRect;
 
-            // Determine the portion of the source image to use to match the destination aspect ratio
-            if (srcAspect > dstAspect) // Source is wider than destination -> crop horizontally
+            if (srcAspect > dstAspect)
             {
                 float newWidth = original.Height * dstAspect;
                 float xOffset = (original.Width - newWidth) / 2f;
                 srcRect = new RectangleF(xOffset, 0, newWidth, original.Height);
-                Debug.WriteLine($"    -> Source is WIDER. Cropping horizontally. Source Rect to use: {srcRect}");
             }
-            else // Source is taller or same aspect as destination -> crop vertically
+            else
             {
                 float newHeight = original.Width / dstAspect;
                 float yOffset = (original.Height - newHeight) / 2f;
                 srcRect = new RectangleF(0, yOffset, original.Width, newHeight);
-                Debug.WriteLine($"    -> Source is TALLER or SAME. Cropping vertically. Source Rect to use: {srcRect}");
             }
-
-            // The destination rectangle is always the entire target bitmap area
-            RectangleF dstRect = new RectangleF(0, 0, targetWidth, targetHeight);
-
-            // This DrawImage overload handles scaling the source rectangle to fit the destination rectangle
+            var dstRect = new RectangleF(0, 0, targetWidth, targetHeight);
             g.DrawImage(original, dstRect, srcRect, GraphicsUnit.Pixel);
-
             return result;
         }
 
-
-        private static bool CanPackAll(
-            List<(double Width, double Height)> baseContentSizes,
-            double packerScale,
-            double containerWidth, double containerHeight,
-            int xamlItemUniformMargin)
+        private static bool CanPackAll(List<(double Width, double Height)> baseContentSizes, double packerScale, double containerWidth, double containerHeight, int xamlItemUniformMargin)
         {
-            const double epsilon = 0.00001;
-            double currentX = 0, currentY = 0, currentRowMaxEffectiveHeight = 0;
-
-            if (containerWidth < 2 * xamlItemUniformMargin || containerHeight < 2 * xamlItemUniformMargin)
-                return !baseContentSizes.Any();
-
-            foreach (var (baseContentW, baseContentH) in baseContentSizes)
+            double currentX = 0, currentY = 0, rowMaxHeight = 0;
+            foreach (var (w, h) in baseContentSizes)
             {
-                double scaledContentW = baseContentW * packerScale;
-                double scaledContentH = baseContentH * packerScale;
-                double effectiveItemW = scaledContentW + 2 * xamlItemUniformMargin;
-                double effectiveItemH = scaledContentH + 2 * xamlItemUniformMargin;
-
-                if (scaledContentW < 0.1) effectiveItemW = 2 * xamlItemUniformMargin;
-                if (scaledContentH < 0.1) effectiveItemH = 2 * xamlItemUniformMargin;
-
-                if (effectiveItemW > containerWidth + epsilon || effectiveItemH > containerHeight + epsilon) return false;
-
-                if (currentX + effectiveItemW > containerWidth + epsilon)
+                double itemW = (w * packerScale) + (2 * xamlItemUniformMargin);
+                double itemH = (h * packerScale) + (2 * xamlItemUniformMargin);
+                if (itemW > containerWidth || itemH > containerHeight) return false;
+                if (currentX + itemW > containerWidth)
                 {
                     currentX = 0;
-                    currentY += currentRowMaxEffectiveHeight;
-                    currentRowMaxEffectiveHeight = 0;
+                    currentY += rowMaxHeight;
+                    rowMaxHeight = 0;
                 }
-
-                if (currentY + effectiveItemH > containerHeight + epsilon) return false;
-
-                currentX += effectiveItemW;
-                currentRowMaxEffectiveHeight = Math.Max(currentRowMaxEffectiveHeight, effectiveItemH);
+                if (currentY + itemH > containerHeight) return false;
+                currentX += itemW;
+                rowMaxHeight = Math.Max(rowMaxHeight, itemH);
             }
             return true;
         }
 
         public static (int PixelWidth, int PixelHeight, double DipWidth, double DipHeight) GetImageDimensions(string imagePath)
         {
-            if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath))
-                return (0, 0, 0, 0);
+            if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath)) return (0, 0, 0, 0);
             try
             {
                 using var stream = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 using var img = Image.FromStream(stream, useEmbeddedColorManagement: false, validateImageData: false);
-                int pixelWidth = img.Width;
-                int pixelHeight = img.Height;
-                double hRes = img.HorizontalResolution > 1 ? img.HorizontalResolution : 96.0;
-                double vRes = img.VerticalResolution > 1 ? img.VerticalResolution : 96.0;
-                double dipWidth = pixelWidth * (96.0 / hRes);
-                double dipHeight = pixelHeight * (96.0 / vRes);
-                return (pixelWidth, pixelHeight, dipWidth, dipHeight);
+                return (img.Width, img.Height, img.Width, img.Height); // Assuming 96 DPI for simplicity
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in GetImageDimensions for {imagePath}: {ex.Message}");
+                Debug.WriteLine($"Error in GetImageDimensions for {imagePath}: {ex.Message}");
                 return (0, 0, 0, 0);
             }
         }
