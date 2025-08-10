@@ -8,11 +8,13 @@ using System.Windows.Threading;
 using NPC_Plugin_Chooser_2.Views; // Required for Dispatcher
 using System.Windows; // Required for Application
 using System.Diagnostics; // Required for Stopwatch
-using System; // Required for TimeSpan
+using System;
+using System.Reactive.Linq;
+using System.Reactive.Subjects; // Required for TimeSpan
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
-    public class VM_SplashScreen : ReactiveObject
+    public class VM_SplashScreen : ReactiveObject, IDisposable
     {
         [Reactive] public string ProgramVersion { get; private set; }
         [Reactive] public double ProgressValue { get; private set; }
@@ -22,6 +24,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string ElapsedTimeString { get; private set; } // New property for the timer
 
         public string ImagePath => "pack://application:,,,/Resources/SplashScreenImage.png";
+        
+        private readonly Subject<string> _progressSubject = new();
+        private IDisposable? _progressSubscription;
 
         private readonly Dispatcher _dispatcher;
         private Window? _window; // Reference to the window
@@ -54,6 +59,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
             };
             _timer.Start();
             // --- End of new code ---
+            
+            // --- OPTIMIZATION: Set up the throttled subscription ---
+            _progressSubscription = _progressSubject
+                .Throttle(TimeSpan.FromMilliseconds(100)) // Only push an update at most every 100ms
+                .ObserveOn(RxApp.MainThreadScheduler)     // Ensure the final update runs on the UI thread
+                .Subscribe(message => {
+                    // This code now runs on the UI thread, at most 10 times per second
+                    double newPercentage = ((double)_itemsProcessedInStep / _totalItemsInStep) * 100.0;
+                    ProgressValue = Math.Min(100, newPercentage); // Clamp to 100%
+                    OperationText = message;
+                });
+            // ---
         }
 
         public void UpdateProgress(double percent, string message)
@@ -73,24 +90,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
         
+        /// <summary>
+        /// A thread-safe, throttled method to report progress.
+        /// </summary>
         public void IncrementProgress(string message)
         {
-            if (_dispatcher.CheckAccess())
-            {
-                // Atomically increment the counter
-                System.Threading.Interlocked.Increment(ref _itemsProcessedInStep);
-
-                // Calculate the new percentage based on the step's total
-                double newPercentage = ((double)_itemsProcessedInStep / _totalItemsInStep) * 100.0;
-
-                // Update the UI
-                ProgressValue = newPercentage;
-                OperationText = message;
-            }
-            else
-            {
-                _dispatcher.Invoke(() => IncrementProgress(message), DispatcherPriority.Send);
-            }
+            // This part is now super fast. It just increments a number
+            // and pushes a message into a queue. No UI work is done here.
+            System.Threading.Interlocked.Increment(ref _itemsProcessedInStep);
+            _progressSubject.OnNext(message);
         }
         
         /// <summary>
@@ -172,6 +180,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// </summary>
         public async Task CloseSplashScreenAsync()
         {
+            Dispose(); 
+            
             Action closeAction = () =>
             {
                 // --- Start of modified code ---
@@ -200,6 +210,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
 
             await Task.Yield();
+        }
+        
+        /// <summary>
+        /// Cleans up the Rx subscription.
+        /// </summary>
+        public void Dispose()
+        {
+            _progressSubscription?.Dispose();
         }
     }
 }

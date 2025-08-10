@@ -1280,9 +1280,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         public List<VM_ModSetting> AppearanceMods { get; init; } = new();
     }
 
+    // In VM_NpcSelectionBar.cs
+
     public async Task InitializeAsync(VM_SplashScreen? splashReporter)
     {
-        // 1. Clear all UI-bound collections on the UI thread first.
+        // 1. UI-thread cleanup (unchanged)
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
             SelectedNpc = null;
@@ -1301,6 +1303,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             return;
         }
 
+        // --- Scan Mugshots (largely unchanged) ---
         splashReporter?.UpdateStep("Scanning mugshot directory...");
         using (ContextualPerformanceTracer.Trace("InitializeNpcs.ScanMugshots"))
         {
@@ -1308,152 +1311,97 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         await Application.Current.Dispatcher.InvokeAsync(UpdateAvailableNpcGroups);
+        splashReporter?.UpdateStep("Analyzing NPC data...");
 
-        splashReporter?.UpdateStep("Setting up NPC list...");
+        // --- OPTIMIZATION: New batched approach ---
+        Dictionary<FormKey, NpcDisplayData> npcDisplayDataCache = new();
+        Dictionary<FormKey, VM_NpcsMenuSelection> npcViewModelMap = new();
 
-        // 2. Perform ALL heavy data processing in the background.
-        var processedNpcData = new List<NpcInitializationData>();
-        using (ContextualPerformanceTracer.Trace("InitializeNpcs.ProcessNpcData"))
+        await Task.Run(() =>
         {
-            processedNpcData = await Task.Run(() =>
+            // 2. AGGREGATE all unique FormKeys from all sources first.
+            var allRequiredNpcKeys = new HashSet<FormKey>();
+            if (_lazyModsVm.Value?.AllModSettings != null)
             {
-                var npcDataMap = new Dictionary<FormKey, (NpcDisplayData? NpcData, List<VM_ModSetting> Mods)>();
-
-                if (_lazyModsVm.Value?.AllModSettings == null)
-                {
-                    Debug.WriteLine(
-                        "Warning: InitializeAsync called before AllModSettings was populated. Returning empty NPC list.");
-                    return new List<NpcInitializationData>();
-                }
-
-                // Aggregate all NPCs from all mod settings first
                 foreach (var modSetting in _lazyModsVm.Value.AllModSettings)
                 {
-                    foreach (var formKeyToName in modSetting.NpcFormKeysToDisplayName)
+                    foreach (var formKey in modSetting.NpcFormKeysToDisplayName.Keys)
                     {
-                        var npcFormKey = formKeyToName.Key;
-                        if (!npcDataMap.TryGetValue(npcFormKey, out var data))
-                        {
-                            data = (null, new List<VM_ModSetting>());
-                            npcDataMap[npcFormKey] = data;
-                        }
-
-                        data.Mods.Add(modSetting);
+                        allRequiredNpcKeys.Add(formKey);
                     }
-                }
-
-                // Now, resolve the NpcDisplayData for each unique NPC
-                var finalDataList = new List<NpcInitializationData>();
-                
-                splashReporter?.UpdateStep("Populating NPC List", finalDataList.Count);
-                
-                foreach (var kvp in npcDataMap)
-                {
-                    var npcFormKey = kvp.Key;
-                    var appearanceMods = kvp.Value.Mods;
-
-                    string displayStr = npcFormKey.ToString();
-
-                    if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter))
-                    {
-                        // Create lightweight object and discard the getter
-                        var displayData = NpcDisplayData.FromGetter(npcGetter);
-                        displayStr = displayData.DisplayName;
-                        finalDataList.Add(new NpcInitializationData
-                            { NpcData = displayData, AppearanceMods = appearanceMods });
-                    }
-                    splashReporter?.IncrementProgress($"Processed {displayStr}");
-                }
-
-                return finalDataList;
-            });
-        }
-
-        // 3. Now back on the UI thread, create the ViewModel objects.
-        using (ContextualPerformanceTracer.Trace("InitializeNpcs.CreateViewModels"))
-        {
-            splashReporter?.UpdateStep("Adding NPCs to List", processedNpcData.Count);
-            foreach (var initData in processedNpcData)
-            {
-                var selector = new VM_NpcsMenuSelection(initData.NpcData.FormKey, _environmentStateProvider, this, _auxilliary);
-                selector.UpdateWithData(initData.NpcData);
-
-                foreach (var mod in initData.AppearanceMods)
-                {
-                    selector.AppearanceMods.Add(mod);
-                }
-
-                AllNpcs.Add(selector);
-                
-                // Update progress with the name of the NPC being processed
-                var npcName = initData.NpcData?.DisplayName ?? "Unknown";
-                splashReporter?.IncrementProgress($"Processing: {npcName}");
-            }
-        }
-
-        // 4. Handle NPCs that only exist in mugshot data.
-        var allNpcKeys = new HashSet<FormKey>(AllNpcs.Select(n => n.NpcFormKey));
-        var mugshotOnlyKeys = _mugshotData.Keys.Where(key => !allNpcKeys.Contains(key)).ToList();
-        using (ContextualPerformanceTracer.Trace("InitializeNpcs.CreateMugshotOnlyVMs"))
-        {
-            splashReporter?.UpdateStep("Gathering loose mugshots", mugshotOnlyKeys.Count);
-            var npcFormKeysByModKey = mugshotOnlyKeys.GroupBy(x => x.ModKey).ToArray();
-            foreach (var group in npcFormKeysByModKey)
-            {
-                var modKey = group.Key;
-                var npcDict = new Dictionary<FormKey, INpcGetter>();
-                var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
-
-                using (ContextualPerformanceTracer.Trace("CreateMugshotOnlyVMs.PopulateNpcDict"))
-                {
-                    if (modListing is not null)
-                    {
-                        npcDict = modListing.Mod.Npcs.ToDictionary(x => x.FormKey, x => x);
-                    }
-                }
-
-                foreach (var npcFormKey in group)
-                {
-                    string displayStr = npcFormKey.ToString();
-                    try
-                    {
-                        VM_NpcsMenuSelection npcSelector;
-
-                        using (ContextualPerformanceTracer.Trace("CreateMugshotOnlyVMs.CreateVM"))
-                        {
-                            npcSelector = new VM_NpcsMenuSelection(npcFormKey, _environmentStateProvider, this,
-                                _auxilliary);
-                        }
-
-                        using (ContextualPerformanceTracer.Trace("CreateMugshotOnlyVMs.UpdateWithData"))
-                        {
-                            if (npcDict.TryGetValue(npcFormKey, out var getter))
-                            {
-                                npcSelector.UpdateWithData(NpcDisplayData.FromGetter(getter));
-                            }
-                        }
-
-                        using (ContextualPerformanceTracer.Trace("CreateMugshotOnlyVMs.AddToList"))
-                        {
-                            AllNpcs.Add(npcSelector);
-                        }
-
-                        displayStr = npcSelector.DisplayName;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error creating VM for mugshot-only NPC {npcFormKey}: {ex.Message}");
-                    }
-                    
-                    splashReporter?.IncrementProgress(displayStr);
                 }
             }
-        }
 
-        // 5. Final cleanup and filtering on the UI thread.
+            foreach (var key in _mugshotData.Keys)
+            {
+                allRequiredNpcKeys.Add(key);
+            }
+
+            // 3. BATCH PROCESS: Resolve all NPCs in a single pass.
+            splashReporter?.UpdateStep("Resolving NPC records", allRequiredNpcKeys.Count);
+            foreach (var npcFormKey in allRequiredNpcKeys)
+            {
+                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter))
+                {
+                    // Store lightweight data, discard the heavy getter.
+                    var npcData = NpcDisplayData.FromGetter(npcGetter);
+                    npcDisplayDataCache[npcFormKey] = npcData;
+                    splashReporter?.IncrementProgress(npcData.DisplayName);
+                }
+                else
+                {
+                    splashReporter?.IncrementProgress(npcFormKey.ToString());
+                }
+            }
+
+            // 4. POPULATE: Create all ViewModel objects from the cached data.
+            splashReporter?.UpdateStep("Creating NPC list", npcDisplayDataCache.Count);
+
+            // Create VMs for NPCs that were successfully resolved
+            foreach (var kvp in npcDisplayDataCache)
+            {
+                var npcVM = new VM_NpcsMenuSelection(kvp.Key, _environmentStateProvider, this, _auxilliary);
+                npcVM.UpdateWithData(kvp.Value);
+                npcViewModelMap[kvp.Key] = npcVM;
+                splashReporter?.IncrementProgress(npcVM.DisplayName);
+            }
+
+            // Create placeholder VMs for mugshot-only NPCs that couldn't be resolved in the load order
+            splashReporter?.UpdateStep("Adding Loose Mugshots", _mugshotData.Count);
+            foreach (var mugshotKey in _mugshotData.Keys)
+            {
+                if (!npcViewModelMap.ContainsKey(mugshotKey))
+                {
+                    var npcVM = new VM_NpcsMenuSelection(mugshotKey, _environmentStateProvider, this, _auxilliary);
+                    npcViewModelMap[mugshotKey] = npcVM;
+                    splashReporter?.IncrementProgress(npcVM.DisplayName);
+                }
+            }
+
+            // Assign appearance mods to the newly created ViewModels
+            if (_lazyModsVm.Value?.AllModSettings != null)
+            {
+                foreach (var modSetting in _lazyModsVm.Value.AllModSettings)
+                {
+                    foreach (var npcFormKey in modSetting.NpcFormKeysToDisplayName.Keys)
+                    {
+                        if (npcViewModelMap.TryGetValue(npcFormKey, out var npcVM))
+                        {
+                            npcVM.AppearanceMods.Add(modSetting);
+                        }
+                    }
+                }
+            }
+        });
+
+        // 5. Finalize on UI thread
         splashReporter?.UpdateStep("Finalizing NPC List...");
         using (ContextualPerformanceTracer.Trace("InitializeNpcs.FinalCleanup"))
         {
+            // Add all created VMs to the final list
+            AllNpcs.AddRange(npcViewModelMap.Values);
+
+            // Remove any NPCs that ultimately have no appearance sources
             for (int i = AllNpcs.Count - 1; i >= 0; i--)
             {
                 var currentNpc = AllNpcs[i];
@@ -1466,14 +1414,14 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         await Application.Current.Dispatcher.InvokeAsync(() => ApplyFilter(initializing: true));
 
-        // 6. Restore previous selection or select the first item.
+        // 6. Restore selection (unchanged)
         VM_NpcsMenuSelection? npcToSelectOnLoad = null;
         if (!_settings.LastSelectedNpcFormKey.IsNull)
         {
             npcToSelectOnLoad = FilteredNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey))
-                              ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey));
+                                ?? AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(_settings.LastSelectedNpcFormKey));
         }
-        
+
         SelectedNpc = npcToSelectOnLoad ?? FilteredNpcs.FirstOrDefault();
 
         if (SelectedNpc != null)
