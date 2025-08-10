@@ -1,4 +1,4 @@
-﻿// [ImagePacker.cs] - Refactored for stateless calculation and robust rendering
+﻿// [ImagePacker.cs] - Final fix for state management during zoom
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -35,9 +35,6 @@ namespace NPC_Plugin_Chooser_2.Views
 
             if (normalizeAndCropImages)
             {
-                // --- REFACTORED NORMALIZATION AND PACKING LOGIC ---
-
-                // 1. Determine the mode size in PIXELS. This is our target for all images.
                 var modePixelSize = visibleImages
                     .Select(img => new Size(img.OriginalPixelWidth, img.OriginalPixelHeight))
                     .GroupBy(size => size)
@@ -50,51 +47,53 @@ namespace NPC_Plugin_Chooser_2.Views
                     modePixelSize = new Size(visibleImages.First().OriginalPixelWidth, visibleImages.First().OriginalPixelHeight);
                 }
                 
-                Debug.WriteLine($"[ImagePacker] Normalization Mode Size determined to be: {modePixelSize.Width}x{modePixelSize.Height}");
-
                 if (modePixelSize.IsEmpty || modePixelSize.Width == 0)
                 {
-                    // Fallback to original behavior if a valid mode cannot be found
-                    Debug.WriteLine("[ImagePacker] Could not determine valid mode size. Packing with original dimensions.");
                     return FitWithOriginalDimensions(imagesToPackCollection, visibleImages, availableHeight, availableWidth, xamlItemUniformMargin);
                 }
 
-                // 2. Calculate a single scale factor assuming ALL images will conform to the mode size.
-                // We use a standard 96 DPI for this layout calculation.
                 double modeDipWidth = modePixelSize.Width;
                 double modeDipHeight = modePixelSize.Height;
                 var uniformBaseDimensions = Enumerable.Repeat((modeDipWidth, modeDipHeight), visibleImages.Count).ToList();
                 
                 finalPackerScale = CalculatePackerScale(uniformBaseDimensions, availableHeight, availableWidth, xamlItemUniformMargin);
-                Debug.WriteLine($"[ImagePacker] Calculated a UNIFORM packer scale of: {finalPackerScale:F4}");
 
-                // 3. Apply normalization and the final uniform size in a single pass.
                 foreach (var img in visibleImages)
                 {
-                    // A) If this specific image needs to be physically changed, do it now.
                     if (img.OriginalPixelWidth != modePixelSize.Width || img.OriginalPixelHeight != modePixelSize.Height)
                     {
                         try
                         {
                             using Image originalImage = Image.FromFile(img.ImagePath);
                             using Bitmap normalizedBitmap = CenterCropAndResize(originalImage, modePixelSize.Width, modePixelSize.Height);
+                            
+                            // This part is the same, we update the source and dimensions
                             img.MugshotSource = BitmapToImageSource(normalizedBitmap);
+                            img.OriginalPixelWidth = modePixelSize.Width;
+                            img.OriginalPixelHeight = modePixelSize.Height;
+                            
+                            double hRes = originalImage.HorizontalResolution > 1 ? originalImage.HorizontalResolution : 96.0;
+                            double vRes = originalImage.VerticalResolution > 1 ? originalImage.VerticalResolution : 96.0;
+                            img.OriginalDipWidth = modePixelSize.Width * (96.0 / hRes);
+                            img.OriginalDipHeight = modePixelSize.Height * (96.0 / vRes);
+
+                            // --- THIS IS THE FIX ---
+                            // We must also update the diagonal so that subsequent zoom calculations are correct.
+                            img.OriginalDipDiagonal = Math.Sqrt(img.OriginalDipWidth * img.OriginalDipWidth + img.OriginalDipHeight * img.OriginalDipHeight);
+
                         }
                         catch (Exception ex)
                         {
                             Debug.WriteLine($"[ImagePacker] ERROR normalizing image {img.ImagePath}: {ex.Message}");
                         }
                     }
-
-                    // B) Apply the final calculated size to EVERY visible image.
-                    // This ensures all borders are the same size, regardless of original dimensions.
+                    
                     img.ImageWidth = modeDipWidth * finalPackerScale;
                     img.ImageHeight = modeDipHeight * finalPackerScale;
                 }
             }
             else
             {
-                // If not normalizing, use the original logic.
                 finalPackerScale = FitWithOriginalDimensions(imagesToPackCollection, visibleImages, availableHeight, availableWidth, xamlItemUniformMargin);
             }
 
@@ -230,7 +229,13 @@ namespace NPC_Plugin_Chooser_2.Views
             {
                 using var stream = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 using var img = Image.FromStream(stream, useEmbeddedColorManagement: false, validateImageData: false);
-                return (img.Width, img.Height, img.Width, img.Height); // Assuming 96 DPI for simplicity
+                int pixelWidth = img.Width;
+                int pixelHeight = img.Height;
+                double hRes = img.HorizontalResolution > 1 ? img.HorizontalResolution : 96.0;
+                double vRes = img.VerticalResolution > 1 ? img.VerticalResolution : 96.0;
+                double dipWidth = pixelWidth * (96.0 / hRes);
+                double dipHeight = pixelHeight * (96.0 / vRes);
+                return (pixelWidth, pixelHeight, dipWidth, dipHeight);
             }
             catch (Exception ex)
             {
