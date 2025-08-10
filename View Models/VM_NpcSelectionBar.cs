@@ -1308,9 +1308,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         await Application.Current.Dispatcher.InvokeAsync(UpdateAvailableNpcGroups);
-        splashReporter?.UpdateStep("Updating NPC groups...");
 
-        splashReporter?.UpdateStep("Querying NPC records from mods...");
+        splashReporter?.UpdateStep("Setting up NPC list...");
 
         // 2. Perform ALL heavy data processing in the background.
         var processedNpcData = new List<NpcInitializationData>();
@@ -1345,18 +1344,25 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
                 // Now, resolve the NpcDisplayData for each unique NPC
                 var finalDataList = new List<NpcInitializationData>();
+                
+                splashReporter?.UpdateStep("Populating NPC List", finalDataList.Count);
+                
                 foreach (var kvp in npcDataMap)
                 {
                     var npcFormKey = kvp.Key;
                     var appearanceMods = kvp.Value.Mods;
 
+                    string displayStr = npcFormKey.ToString();
+
                     if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter))
                     {
                         // Create lightweight object and discard the getter
                         var displayData = NpcDisplayData.FromGetter(npcGetter);
+                        displayStr = displayData.DisplayName;
                         finalDataList.Add(new NpcInitializationData
                             { NpcData = displayData, AppearanceMods = appearanceMods });
                     }
+                    splashReporter?.IncrementProgress($"Processed {displayStr}");
                 }
 
                 return finalDataList;
@@ -1364,22 +1370,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         // 3. Now back on the UI thread, create the ViewModel objects.
-        splashReporter?.UpdateStep("Creating NPC view models...");
         using (ContextualPerformanceTracer.Trace("InitializeNpcs.CreateViewModels"))
         {
-            int totalNpcsToProcess = processedNpcData.Count;
-            int processedNpcCount = 0;
+            splashReporter?.UpdateStep("Adding NPCs to List", processedNpcData.Count);
             foreach (var initData in processedNpcData)
             {
-                processedNpcCount++;
-                if (totalNpcsToProcess > 0)
-                {
-                    var progress = (double)processedNpcCount / totalNpcsToProcess * 100.0;
-                    // Update progress with the name of the NPC being processed
-                    var npcName = initData.NpcData?.DisplayName ?? "Unknown";
-                    splashReporter?.UpdateProgress(progress, $"Processing: {npcName}");
-                }
-                
                 var selector = new VM_NpcsMenuSelection(initData.NpcData.FormKey, _environmentStateProvider, this, _auxilliary);
                 selector.UpdateWithData(initData.NpcData);
 
@@ -1389,6 +1384,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
 
                 AllNpcs.Add(selector);
+                
+                // Update progress with the name of the NPC being processed
+                var npcName = initData.NpcData?.DisplayName ?? "Unknown";
+                splashReporter?.IncrementProgress($"Processing: {npcName}");
             }
         }
 
@@ -1397,6 +1396,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         var mugshotOnlyKeys = _mugshotData.Keys.Where(key => !allNpcKeys.Contains(key)).ToList();
         using (ContextualPerformanceTracer.Trace("InitializeNpcs.CreateMugshotOnlyVMs"))
         {
+            splashReporter?.UpdateStep("Gathering loose mugshots", mugshotOnlyKeys.Count);
             var npcFormKeysByModKey = mugshotOnlyKeys.GroupBy(x => x.ModKey).ToArray();
             foreach (var group in npcFormKeysByModKey)
             {
@@ -1414,6 +1414,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
                 foreach (var npcFormKey in group)
                 {
+                    string displayStr = npcFormKey.ToString();
                     try
                     {
                         VM_NpcsMenuSelection npcSelector;
@@ -1436,11 +1437,15 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                         {
                             AllNpcs.Add(npcSelector);
                         }
+
+                        displayStr = npcSelector.DisplayName;
                     }
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"Error creating VM for mugshot-only NPC {npcFormKey}: {ex.Message}");
                     }
+                    
+                    splashReporter?.IncrementProgress(displayStr);
                 }
             }
         }

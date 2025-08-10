@@ -888,7 +888,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private List<VM_ModSetting> ScanForMugshotOnlyMods(HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths, List<string> warnings, VM_SplashScreen? splashReporter)
         {
-            splashReporter?.UpdateStep("Scanning for new mod folders...");
+            //splashReporter?.UpdateStep("Scanning for new Mugshots...");
             var vmsFromMugshotsOnly = new List<VM_ModSetting>();
             using (ContextualPerformanceTracer.Trace("PopulateMods.ScanMugshots"))
             {
@@ -951,7 +951,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private async Task ScanForModsInModFolderAsync(List<VM_ModSetting> tempList, List<VM_ModSetting> vmsFromMugshotsOnly, HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths, VM_SplashScreen? splashReporter, List<string> warnings)
         {
-            splashReporter?.UpdateProgress(20, "Scanning for new mod folders...");
             if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder)) return;
 
             var modDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
@@ -962,6 +961,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var scannedModFolders = 0;
             const string tokenFileName = "NPC_Token.json";
             var cachedNonAppearanceDirs = _settings.CachedNonAppearanceMods.Keys.ToHashSet();
+            
+            splashReporter?.UpdateStep($"Scanning {modDirectories.Count} folders for new appearance mods", modDirectories.Count);
 
             // Create a collection of tasks, one for each mod directory.
             var processingTasks = modDirectories.Select(modFolderPath => Task.Run(async () =>
@@ -972,10 +973,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 
                 // Update progress in a thread-safe manner.
                 var currentProgress = (double)Interlocked.Increment(ref scannedModFolders) / modDirectories.Count * 100.0;
-                splashReporter?.UpdateProgress(currentProgress, $"Scanning: {modFolderName}");
 
                 if (File.Exists(Path.Combine(modFolderPath, tokenFileName)) || cachedNonAppearanceDirs.Contains(modFolderPath))
                 {
+                    splashReporter?.IncrementProgress($"Scanned: {modFolderName}");
                     return; // Skip this directory.
                 }
 
@@ -1005,6 +1006,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 
                 // Unload plugins used only in this task's scope.
                  _pluginProvider.UnloadPlugins(modKeysInFolder);
+                 
+                 splashReporter?.IncrementProgress($"Scanned: {modFolderName}");
             })).ToList();
 
             // Await all parallel tasks to complete.
@@ -1232,13 +1235,49 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         private async Task AnalyzeModSettingsAsync(VM_SplashScreen? splashReporter, (HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles) faceGenCache)
         {
-            splashReporter?.UpdateStep("Analyzing mod data...");
             var maxParallelism = Environment.ProcessorCount;
             var semaphore = new SemaphoreSlim(maxParallelism);
+            
+            var allVMs = _allModSettingsInternal.ToList(); // Create a copy to iterate over
+            var vmsToAnalyze = new List<VM_ModSetting>();
+            
             var modSettingsToLogCount = _allModSettingsInternal.Count(x => x.IsNewlyCreated);
             var analyzedCount = 0;
+            splashReporter?.UpdateStep($"Preparing to analyze data for {modSettingsToLogCount} Mods...");
+            
+            // --- CACHING LOGIC ---
+            using (ContextualPerformanceTracer.Trace("AnalyzeModSettings.CacheValidation"))
+            {
+                foreach (var vm in allVMs)
+                {
+                    // Don't use cache for newly discovered mods or facegen-only entries
+                    if (vm.IsNewlyCreated || vm.IsFaceGenOnlyEntry)
+                    {
+                        vm.LastKnownState = null; // Ensure no old state is saved
+                        vmsToAnalyze.Add(vm);
+                        continue;
+                    }
 
-            var refreshTasks = _allModSettingsInternal.Select(async vm =>
+                    var currentSnapshot = GenerateSnapshot(vm);
+                    if (currentSnapshot != null && vm.LastKnownState != null && currentSnapshot.Equals(vm.LastKnownState))
+                    {
+                        // CACHE HIT: The mod is unchanged. Do nothing.
+                        Debug.WriteLine($"Cache HIT for: {vm.DisplayName}");
+                        // The VM was already populated from the model, so we are done with it.
+                        vm.LastKnownState = currentSnapshot; // Keep the snapshot updated in the VM to save it again.
+                    }
+                    else
+                    {
+                        // CACHE MISS: Mod has changed or snapshot failed. Needs analysis.
+                        Debug.WriteLine($"Cache MISS for: {vm.DisplayName}");
+                        vmsToAnalyze.Add(vm);
+                        vm.LastKnownState = currentSnapshot; // Store the NEW snapshot to be saved after analysis
+                    }
+                }
+            }
+            // --- END CACHING LOGIC ---
+
+            var refreshTasks = vmsToAnalyze.Select(async vm =>
             {
                 await semaphore.WaitAsync();
                 try
@@ -1249,10 +1288,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         var plugins = _pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPathsForVm);
                         try
                         {
-                            var currentAnalyzed = Interlocked.Increment(ref analyzedCount);
-                            var progress = modSettingsToLogCount > 0 ? (double)currentAnalyzed / modSettingsToLogCount * 100.0 : 0;
-                            splashReporter?.UpdateProgress(progress, $"Analyzing: {vm.DisplayName}");
-
                             using (ContextualPerformanceTracer.Trace("RefreshNpcLists"))
                             {
                                 vm.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins);
@@ -1269,6 +1304,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         finally
                         {
                             _pluginProvider.UnloadPlugins(vm.CorrespondingModKeys);
+                            var currentAnalyzed = Interlocked.Increment(ref analyzedCount);
+                            var progress = modSettingsToLogCount > 0 ? (double)currentAnalyzed / modSettingsToLogCount * 100.0 : 0;
+                            splashReporter?.UpdateProgress(progress, $"Analyzed: {vm.DisplayName}");
                         }
                     });
                 }
@@ -2278,6 +2316,75 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         _consistencyProvider.SetSelectedMod(entry.formKey, modSettingVM.DisplayName);
                     }
                 }
+            }
+        }
+
+        private ModStateSnapshot? GenerateSnapshot(VM_ModSetting vm)
+        {
+            try
+            {
+                var snapshot = new ModStateSnapshot();
+                var allPaths = new HashSet<string>(vm.CorrespondingFolderPaths, StringComparer.OrdinalIgnoreCase);
+                if (vm.IsAutoGenerated)
+                {
+                    allPaths.Add(_environmentStateProvider.DataFolderPath);
+                }
+
+                // 1. Snapshot Plugins
+                foreach (var modKey in vm.CorrespondingModKeys)
+                {
+                    if (_pluginProvider.TryGetPlugin(modKey, allPaths, out _, out var path) && path != null)
+                    {
+                        var info = new FileInfo(path);
+                        snapshot.PluginSnapshots.Add(new FileSnapshot
+                            { FileName = info.Name, FileSize = info.Length, LastWriteTimeUtc = info.LastWriteTimeUtc });
+                    }
+                }
+
+                // 2. Snapshot BSAs
+                var bsaPaths = _bsaHandler
+                    .GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, allPaths,
+                        _settings.SkyrimRelease.ToGameRelease()).Values.SelectMany(p => p).Distinct();
+                foreach (var bsaPath in bsaPaths)
+                {
+                    var info = new FileInfo(bsaPath);
+                    if (info.Exists)
+                    {
+                        snapshot.BsaSnapshots.Add(new FileSnapshot
+                            { FileName = info.Name, FileSize = info.Length, LastWriteTimeUtc = info.LastWriteTimeUtc });
+                    }
+                }
+
+                // 3. Snapshot Directories (for loose FaceGen)
+                foreach (var modPath in vm.CorrespondingFolderPaths)
+                {
+                    string faceGeomPath = Path.Combine(modPath, "meshes", "actors", "character", "facegendata",
+                        "facegeom");
+                    string faceTintPath = Path.Combine(modPath, "textures", "actors", "character", "facegendata",
+                        "facetint");
+
+                    foreach (var dirPath in new[] { faceGeomPath, faceTintPath })
+                    {
+                        var dirInfo = new DirectoryInfo(dirPath);
+                        if (dirInfo.Exists)
+                        {
+                            snapshot.DirectorySnapshots.Add(new DirectorySnapshot
+                            {
+                                Path = dirInfo.FullName,
+                                FileCount = Directory.EnumerateFiles(dirInfo.FullName, "*", SearchOption.AllDirectories)
+                                    .Count(),
+                                LastWriteTimeUtc = dirInfo.LastWriteTimeUtc
+                            });
+                        }
+                    }
+                }
+
+                return snapshot;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to generate snapshot for {vm.DisplayName}: {ex.Message}");
+                return null; // Return null on failure to ensure re-analysis
             }
         }
     }

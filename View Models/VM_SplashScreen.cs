@@ -27,6 +27,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private Window? _window; // Reference to the window
         private readonly DispatcherTimer _timer; // New timer
         private readonly Stopwatch _stopwatch; // New stopwatch
+        
+        private int _itemsProcessedInStep;
+        private int _totalItemsInStep = 1; // Default to 1 to avoid division by zero
 
         public Interaction<Unit, Unit> RequestOpen { get; } = new();
         public Interaction<Unit, Unit> RequestClose { get; } = new();
@@ -67,6 +70,26 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     ProgressValue = percent;
                     OperationText = message;
                 }, DispatcherPriority.Send);
+            }
+        }
+        
+        public void IncrementProgress(string message)
+        {
+            if (_dispatcher.CheckAccess())
+            {
+                // Atomically increment the counter
+                System.Threading.Interlocked.Increment(ref _itemsProcessedInStep);
+
+                // Calculate the new percentage based on the step's total
+                double newPercentage = ((double)_itemsProcessedInStep / _totalItemsInStep) * 100.0;
+
+                // Update the UI
+                ProgressValue = newPercentage;
+                OperationText = message;
+            }
+            else
+            {
+                _dispatcher.Invoke(() => IncrementProgress(message), DispatcherPriority.Send);
             }
         }
         
@@ -120,22 +143,27 @@ namespace NPC_Plugin_Chooser_2.View_Models
             await Task.Yield();
         }
         
-        public void UpdateStep(string stepMessage)
+        public void UpdateStep(string stepMessage, int totalItemsInStep = 1)
         {
-            if (_dispatcher.CheckAccess())
+            Action updateAction = () =>
             {
                 StepText = stepMessage;
                 ProgressValue = 0; // Reset progress for the new step
                 OperationText = "Please wait..."; // Reset operation text
+
+                // --- ADD THESE LINES ---
+                _itemsProcessedInStep = 0;
+                _totalItemsInStep = totalItemsInStep > 0 ? totalItemsInStep : 1; // Ensure at least 1 to avoid division by zero
+                // --- END ---
+            };
+
+            if (_dispatcher.CheckAccess())
+            {
+                updateAction();
             }
             else
             {
-                _dispatcher.Invoke(() =>
-                {
-                    StepText = stepMessage;
-                    ProgressValue = 0;
-                    OperationText = "Please wait...";
-                }, DispatcherPriority.Send);
+                _dispatcher.Invoke(updateAction, DispatcherPriority.Send);
             }
         }
 
