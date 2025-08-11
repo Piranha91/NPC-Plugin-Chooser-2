@@ -681,7 +681,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                                         NpcFormKeysToNotifications[currentNpcKey] = (
                                             IssueType: NpcIssueType.Template,
-                                            IssueMessage: templateStr,
+                                            IssueMessage: $"Despite having FaceGen files, this NPC from {plugin.ModKey.FileName} has the Traits flag so it inherits appearance from {templateStr}. If the selected Appearance Mod for this NPC doesn't match that of its Template, visual glitches can occur in-game.",
                                             FormKey: npcGetter.Template?.FormKey);
                                     }
                                 }
