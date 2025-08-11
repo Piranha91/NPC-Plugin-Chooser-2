@@ -65,7 +65,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public bool IsAmbiguousSource { get; }
         public ObservableCollection<ModKey> AvailableSourcePlugins { get; } = new();
         [Reactive] public ModKey? CurrentSourcePlugin { get; set; }
-        public bool IsGuestAppearance { get; }
+        public bool IsGuestAppearance { get; } 
+        public string TargetDisplayName { get; }
+        public string OriginalTargetName { get; set; }
         
 
         // --- NEW IHasMugshotImage properties ---
@@ -123,6 +125,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _targetNpcFormKey = targetNpcFormKey;
             SourceNpcFormKey = sourceNpcFormKey;
             IsGuestAppearance = !targetNpcFormKey.Equals(sourceNpcFormKey);
+            TargetDisplayName = npcDisplayName;
+            OriginalTargetName = npcDisplayName;
             _settings = settings;
             _consistencyProvider = consistencyProvider;
             _vmNpcSelectionBar = vmNpcSelectionBar;

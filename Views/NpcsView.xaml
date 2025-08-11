@@ -302,6 +302,31 @@
                                              <Image Source="/NPC Plugin Chooser 2;component/Resources/Multiple Plugins for NPC.png" />
                                          </Viewbox>
                                      </Grid>
+                                     
+                                     <Grid HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0 0 0 10"
+                                           Visibility="{Binding IsGuestAppearance, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                           Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                           Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+
+                                         <Grid.ToolTip>
+                                             <ToolTip>
+                                                 <ToolTip.Content>
+                                                     <TextBlock>
+                                                         <TextBlock.Text>
+                                                             <MultiBinding StringFormat="Select this mugshot to apply this version of {0}'s appearance to {1}.">
+                                                                 <Binding Path="OriginalTargetName"/>
+                                                                 <Binding Path="TargetDisplayName"/>
+                                                             </MultiBinding>
+                                                         </TextBlock.Text>
+                                                     </TextBlock>
+                                                 </ToolTip.Content>
+                                             </ToolTip>
+                                         </Grid.ToolTip>
+
+                                         <Viewbox Stretch="Uniform">
+                                             <Image Source="/NPC Plugin Chooser 2;component/Resources/Guest Plugin.png"/>
+                                         </Viewbox>
+                                     </Grid>
 
                                      <CheckBox x:Name="CompareCheckBox" 
                                                IsChecked="{Binding IsCheckedForCompare, Mode=TwoWay}"

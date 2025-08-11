@@ -1633,7 +1633,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         var targetNpcFormKey = selectionVm.NpcFormKey;
 
         // Helper function to centralize VM creation and prevent duplicates.
-        void CreateVmIfNotExists(string modName, FormKey sourceNpcKey)
+        void CreateVmIfNotExists(string modName, FormKey sourceNpcKey, string? overrideSourceNpc = null)
         {
             var vmKey = (modName, sourceNpcKey);
             if (finalModVMs.ContainsKey(vmKey)) return;
@@ -1660,6 +1660,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 appearanceVM.IssueType = notif.IssueType;
                 appearanceVM.IssueNotificationText = notif.IssueMessage;
             }
+            
+            // Add the name of the original NPC, if different from source
+            if (overrideSourceNpc is not null)
+            {
+                appearanceVM.OriginalTargetName = overrideSourceNpc;
+            }
 
             finalModVMs.Add(vmKey, appearanceVM);
         }
@@ -1675,7 +1681,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             foreach (var guest in guestList)
             {
-                CreateVmIfNotExists(guest.ModName, guest.NpcFormKey);
+                CreateVmIfNotExists(guest.ModName, guest.NpcFormKey, guest.NpcDisplayName);
             }
         }
 
@@ -1779,19 +1785,19 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         if (result == true && selectorVm.SelectedNpc != null)
         {
             var targetNpcKey = selectorVm.SelectedNpc.NpcFormKey;
-            AddGuestAppearance(targetNpcKey, mugshotToShare.ModName, mugshotToShare.SourceNpcFormKey);
+            AddGuestAppearance(targetNpcKey, mugshotToShare.ModName, mugshotToShare.SourceNpcFormKey, mugshotToShare.TargetDisplayName);
         }
     }
 
-    public void AddGuestAppearance(FormKey targetNpcKey, string guestModName, FormKey guestNpcKey)
+    public void AddGuestAppearance(FormKey targetNpcKey, string guestModName, FormKey guestNpcKey, string guestDisplayStr)
     {
         if (!_settings.GuestAppearances.TryGetValue(targetNpcKey, out var guestSet))
         {
-            guestSet = new HashSet<(string, FormKey)>();
+            guestSet = new HashSet<(string, FormKey, string)>();
             _settings.GuestAppearances[targetNpcKey] = guestSet;
         }
 
-        if (guestSet.Add((guestModName, guestNpcKey)))
+        if (guestSet.Add((guestModName, guestNpcKey, guestDisplayStr)))
         {
             if (SelectedNpc != null && SelectedNpc.NpcFormKey.Equals(targetNpcKey))
             {
@@ -1807,15 +1813,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         var targetNpcKey = this.SelectedNpc.NpcFormKey;
         var guestModName = mugshotToUnshare.ModName;
         var guestNpcKey = mugshotToUnshare.SourceNpcFormKey;
+        var guestNpcDisplayName = mugshotToUnshare.OriginalTargetName;
 
-        RemoveGuestAppearance(targetNpcKey, guestModName, guestNpcKey);
+        RemoveGuestAppearance(targetNpcKey, guestModName, guestNpcKey, guestNpcDisplayName);
     }
 
-    public void RemoveGuestAppearance(FormKey targetNpcKey, string guestModName, FormKey guestNpcKey)
+    public void RemoveGuestAppearance(FormKey targetNpcKey, string guestModName, FormKey guestNpcKey, string guestDisplayStr)
     {
         if (_settings.GuestAppearances.TryGetValue(targetNpcKey, out var guestSet))
         {
-            var guestToRemove = (guestModName, guestNpcKey);
+            var guestToRemove = (guestModName, guestNpcKey, guestDisplayStr);
             if (guestSet.Remove(guestToRemove))
             {
                 // Check if the removed guest was the active selection for the target NPC.
