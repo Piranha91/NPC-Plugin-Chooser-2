@@ -394,7 +394,35 @@
                                          
                                          <MenuItem Header="Show Full Image" Command="{Binding ToggleFullScreenCommand}"/>
                                          <Separator/>
-                                         <MenuItem Header="Share with NPC" Command="{Binding ShareWithNpcCommand}"/>
+                                         <MenuItem Command="{Binding ShareWithNpcCommand}"
+                                                   ToolTip="Make this appearance available for another NPC.">
+                                             <MenuItem.Style>
+                                                 <Style TargetType="MenuItem">
+                                                     <Setter Property="Header" Value="Share with NPC"/>
+                                                     <Setter Property="Visibility" Value="Visible"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding IsGuestAppearance}" Value="True">
+                                                             <Setter Property="Visibility" Value="Collapsed"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </MenuItem.Style>
+                                         </MenuItem>
+
+                                         <MenuItem Command="{Binding UnshareFromNpcCommand}"
+                                                   ToolTip="Remove this guest appearance from the current NPC.">
+                                             <MenuItem.Style>
+                                                 <Style TargetType="MenuItem">
+                                                     <Setter Property="Header" Value="Unshare from this NPC"/>
+                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding IsGuestAppearance}" Value="True">
+                                                             <Setter Property="Visibility" Value="Visible"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </MenuItem.Style>
+                                         </MenuItem>
                                      </ContextMenu>
                                  </Border.ContextMenu>
                              </Border>

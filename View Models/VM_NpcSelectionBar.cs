@@ -262,6 +262,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(request => HandleShareAppearanceRequest(request.MugshotToShare))
             .DisposeWith(_disposables);
+        
+        MessageBus.Current.Listen<UnshareAppearanceRequest>()
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(request => HandleUnshareAppearanceRequest(request.MugshotToUnshare))
+            .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SearchType1)
             .Select(type => type == NpcSearchType.SelectionState)
@@ -1794,6 +1799,50 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             }
         }
     }
+    
+    private void HandleUnshareAppearanceRequest(VM_NpcsMenuMugshot mugshotToUnshare)
+    {
+        // The mugshot carries all the necessary information.
+        // The target is the currently selected NPC.
+        var targetNpcKey = this.SelectedNpc.NpcFormKey;
+        var guestModName = mugshotToUnshare.ModName;
+        var guestNpcKey = mugshotToUnshare.SourceNpcFormKey;
+
+        RemoveGuestAppearance(targetNpcKey, guestModName, guestNpcKey);
+    }
+
+    public void RemoveGuestAppearance(FormKey targetNpcKey, string guestModName, FormKey guestNpcKey)
+    {
+        if (_settings.GuestAppearances.TryGetValue(targetNpcKey, out var guestSet))
+        {
+            var guestToRemove = (guestModName, guestNpcKey);
+            if (guestSet.Remove(guestToRemove))
+            {
+                // Check if the removed guest was the active selection for the target NPC.
+                var currentSelection = _consistencyProvider.GetSelectedMod(targetNpcKey);
+                if (currentSelection.ModName == guestModName && currentSelection.SourceNpcFormKey.Equals(guestNpcKey))
+                {
+                    // If it was, clear the selection to prevent a dangling reference.
+                    _consistencyProvider.ClearSelectedMod(targetNpcKey);
+                    Debug.WriteLine($"Cleared active selection for NPC {targetNpcKey} because its guest appearance was removed.");
+                }
+                Debug.WriteLine($"Removed guest appearance {guestToRemove} from NPC {targetNpcKey}");
+                
+                // If this was the last guest for this NPC, remove the entry entirely.
+                if (!guestSet.Any())
+                {
+                    _settings.GuestAppearances.Remove(targetNpcKey);
+                }
+
+                // If the NPC whose appearances were just modified is currently selected, refresh the view.
+                // This will cause the unshared mugshot to disappear.
+                if (SelectedNpc != null && SelectedNpc.NpcFormKey.Equals(targetNpcKey))
+                {
+                    RefreshAppearanceSources();
+                }
+            }
+        }
+    }
 
     public void RefreshAppearanceSources()
     {
@@ -2252,5 +2301,14 @@ public class ShareAppearanceRequest
     public ShareAppearanceRequest(VM_NpcsMenuMugshot mugshotToShare)
     {
         MugshotToShare = mugshotToShare;
+    }
+}
+
+public class UnshareAppearanceRequest
+{
+    public VM_NpcsMenuMugshot MugshotToUnshare { get; }
+    public UnshareAppearanceRequest(VM_NpcsMenuMugshot mugshotToUnshare)
+    {
+        MugshotToUnshare = mugshotToUnshare;
     }
 }

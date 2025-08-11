@@ -65,6 +65,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public bool IsAmbiguousSource { get; }
         public ObservableCollection<ModKey> AvailableSourcePlugins { get; } = new();
         [Reactive] public ModKey? CurrentSourcePlugin { get; set; }
+        public bool IsGuestAppearance { get; }
+        
 
         // --- NEW IHasMugshotImage properties ---
         public int OriginalPixelWidth { get; set; }
@@ -90,6 +92,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<ModKey, Unit> SetNpcSourcePluginCommand { get; }
         public ReactiveCommand<Unit, Unit> SelectSameSourcePluginWherePossibleCommand { get; }
         public ReactiveCommand<Unit, Unit> ShareWithNpcCommand { get; }
+        public ReactiveCommand<Unit, Unit> UnshareFromNpcCommand { get; }
+        
 
         // --- Placeholder Image Configuration --- 
         private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
@@ -118,6 +122,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ModKey = overrideModeKey ?? AssociatedModSetting?.CorrespondingModKeys.FirstOrDefault();
             _targetNpcFormKey = targetNpcFormKey;
             SourceNpcFormKey = sourceNpcFormKey;
+            IsGuestAppearance = !targetNpcFormKey.Equals(sourceNpcFormKey);
             _settings = settings;
             _consistencyProvider = consistencyProvider;
             _vmNpcSelectionBar = vmNpcSelectionBar;
@@ -247,6 +252,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 MessageBus.Current.SendMessage(new ShareAppearanceRequest(this));
             });
             ShareWithNpcCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error sharing NPC appearance: {ex.Message}")).DisposeWith(Disposables);
+            
+            UnshareFromNpcCommand = ReactiveCommand.Create(() => 
+            {
+                MessageBus.Current.SendMessage(new UnshareAppearanceRequest(this));
+            });
+            UnshareFromNpcCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error un-sharing NPC appearance: {ex.Message}")).DisposeWith(Disposables);
 
             SelectCommand.ThrownExceptions
                 .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting mod: {ex.Message}"))
