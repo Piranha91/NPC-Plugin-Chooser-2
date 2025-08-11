@@ -1618,73 +1618,134 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 return null;
         }
     }
-
+    
     private ObservableCollection<VM_NpcsMenuMugshot> CreateMugShotViewModels(VM_NpcsMenuSelection selectionVm,
         Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData)
     {
-        var finalModVMs = new Dictionary<(string ModName, FormKey SourceKey), VM_NpcsMenuMugshot>();
         if (selectionVm == null) return new ObservableCollection<VM_NpcsMenuMugshot>();
 
+        var finalModVMs = new Dictionary<(string ModName, FormKey SourceKey), VM_NpcsMenuMugshot>();
         var targetNpcFormKey = selectionVm.NpcFormKey;
-        
-        // Aggregate all possible appearance sources: standard, base game, and guest.
-        var appearanceSources = new HashSet<(VM_ModSetting ModSetting, FormKey SourceNpcFormKey)>();
 
-        // 1. Get standard appearance sources for this NPC
-        var standardModSettings = new HashSet<VM_ModSetting>(selectionVm.AppearanceMods);
-        foreach (var modSetting in standardModSettings)
+        // Helper function to centralize VM creation and prevent duplicates.
+        void CreateVmIfNotExists(string modName, FormKey sourceNpcKey)
         {
-            appearanceSources.Add((modSetting, targetNpcFormKey));
+            var vmKey = (modName, sourceNpcKey);
+            if (finalModVMs.ContainsKey(vmKey)) return;
+
+            // Find an associated mod setting if it exists. This is optional.
+            var modSettingVM = _lazyModsVm.Value.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(modName, StringComparison.OrdinalIgnoreCase));
+            
+            string? imagePath = GetImagePathForNpc(modSettingVM, sourceNpcKey, mugshotData);
+            var specificPluginKey = GetPluginKeyForNpc(modSettingVM, sourceNpcKey);
+
+            var appearanceVM = _appearanceModFactory(
+                modName,
+                selectionVm.DisplayName,
+                targetNpcFormKey,
+                sourceNpcKey,
+                specificPluginKey,
+                imagePath
+            );
+            
+            // Add issue notifications if the mod setting exists and has them.
+            if (modSettingVM != null && modSettingVM.NpcFormKeysToNotifications.TryGetValue(sourceNpcKey, out var notif))
+            {
+                appearanceVM.HasIssueNotification = true;
+                appearanceVM.IssueType = notif.IssueType;
+                appearanceVM.IssueNotificationText = notif.IssueMessage;
+            }
+
+            finalModVMs.Add(vmKey, appearanceVM);
         }
-        
-        // 2. Get guest appearances
+
+        // --- Source 1: Standard appearances from the NPC's game data ---
+        foreach (var modSetting in selectionVm.AppearanceMods)
+        {
+            CreateVmIfNotExists(modSetting.DisplayName, targetNpcFormKey);
+        }
+
+        // --- Source 2: Guest appearances from settings ---
         if (_settings.GuestAppearances.TryGetValue(targetNpcFormKey, out var guestList))
         {
-            foreach (var guestSource in guestList)
+            foreach (var guest in guestList)
             {
-                var modSetting = _lazyModsVm.Value.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(guestSource.ModName, StringComparison.OrdinalIgnoreCase));
-                if (modSetting != null)
+                CreateVmIfNotExists(guest.ModName, guest.NpcFormKey);
+            }
+        }
+
+        // --- Source 3: All other mugshots from the cache for this NPC ---
+        // This corrected section ensures mugshot-only mods are always included.
+        if (mugshotData.TryGetValue(targetNpcFormKey, out var allMugshotsForNpc))
+        {
+            foreach (var mugshotInfo in allMugshotsForNpc)
+            {
+                // The source NPC for a standard mugshot is the target NPC itself.
+                if (_lazyModsVm.Value.AllModSettings.Any(m => m.DisplayName.Equals(mugshotInfo.ModName, StringComparison.OrdinalIgnoreCase)))
                 {
-                    appearanceSources.Add((modSetting, guestSource.NpcFormKey));
+                    CreateVmIfNotExists(mugshotInfo.ModName, targetNpcFormKey);
                 }
             }
         }
 
-        // 3. Create the ViewModels from the aggregated sources
-        foreach (var (modSettingVM, sourceNpcFormKey) in appearanceSources)
+        // --- Finalize: Sort, configure, and set the current selection ---
+        var npcSourcePlugin = targetNpcFormKey.ModKey;
+        var sortedVMs = finalModVMs.Values
+                        // Primary sort: Use OrderByDescending on a boolean to put the "native" mod first.
+                        .OrderByDescending(vm => vm.AssociatedModSetting?.CorrespondingModKeys.Contains(npcSourcePlugin) ?? false)
+                        // Secondary sort: Alphabetical by the appearance mod's name.
+                        .ThenBy(vm => vm.ModName)
+                        // Tertiary sort: For guest appearances from the same mod, sort by source NPC.
+                        .ThenBy(vm => vm.SourceNpcFormKey.ToString())
+                        .ToList();
+        
+        // Configure IsSetHidden and IsCheckedForCompare properties
+        foreach (var m in sortedVMs)
         {
-            string? imagePath = GetImagePathForNpc(modSettingVM, sourceNpcFormKey, mugshotData);
-            // Additional logic to get specific plugin key if necessary...
-            
-            var appearanceVM = _appearanceModFactory(
-                modSettingVM.DisplayName,
-                selectionVm.DisplayName,
-                targetNpcFormKey,
-                sourceNpcFormKey,
-                null, // Simplified for snippet
-                imagePath
-            );
-            finalModVMs[(modSettingVM.DisplayName, sourceNpcFormKey)] = appearanceVM;
-            // Additional logic for notifications, etc.
+            bool isGloballyHidden = _hiddenModNames.Contains(m.ModName);
+            bool isPerNpcHidden = _hiddenModsPerNpc.TryGetValue(targetNpcFormKey, out var hiddenSet) && hiddenSet.Contains(m.ModName);
+            m.IsSetHidden = isGloballyHidden || isPerNpcHidden;
+            m.IsCheckedForCompare = false;
         }
 
-        var sortedVMs = finalModVMs.Values.OrderBy(vm => vm.ModName).ThenBy(vm => vm.SourceNpcFormKey.ToString()).ToList();
-        
-        // Update selection status based on the full tuple
+        // Set the currently selected item's border
         var (selectedModName, selectedSourceKey) = _consistencyProvider.GetSelectedMod(targetNpcFormKey);
         if (!string.IsNullOrEmpty(selectedModName))
         {
             var selectedVmInstance = sortedVMs.FirstOrDefault(x =>
                 x.ModName.Equals(selectedModName, StringComparison.OrdinalIgnoreCase) && x.SourceNpcFormKey.Equals(selectedSourceKey));
-            if (selectedVmInstance != null) selectedVmInstance.IsSelected = true;
+            if (selectedVmInstance != null)
+            {
+                selectedVmInstance.IsSelected = true;
+            }
         }
 
         return new ObservableCollection<VM_NpcsMenuMugshot>(sortedVMs);
+    }
+
+    // You will also need this helper method if you don't have it already.
+    private ModKey? GetPluginKeyForNpc(VM_ModSetting? modSetting, FormKey npcFormKey)
+    {
+        if (modSetting == null) return null;
+
+        if (modSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var mappedSourceKey))
+        {
+            return mappedSourceKey;
+        }
+        
+        if (modSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var candidatePlugins) && candidatePlugins.Any())
+        {
+            return candidatePlugins.First();
+        }
+        
+        return modSetting.CorrespondingModKeys.FirstOrDefault();
     }
     
     // Helper method to look up image paths for any NPC
     private string? GetImagePathForNpc(VM_ModSetting modSetting, FormKey npcFormKey, Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData)
     {
+        if (modSetting == null) return null;
+        
         if (!string.IsNullOrWhiteSpace(modSetting.MugShotFolderPath) && Directory.Exists(modSetting.MugShotFolderPath) && mugshotData.TryGetValue(npcFormKey, out var availableMugshotsForNpc))
         {
             string mugshotDirNameForThisSetting = Path.GetFileName(modSetting.MugShotFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
