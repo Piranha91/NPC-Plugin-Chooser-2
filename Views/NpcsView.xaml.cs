@@ -268,7 +268,52 @@ namespace NPC_Plugin_Chooser_2.Views
 
                 // Add other view-specific subscriptions to 'd'
                 _viewBindings.Add(d); // If you want to manage 'd' within _viewBindings
+                
+                // Animate Add button on successful execution
+                ViewModel.AddCurrentNpcToGroupCommand
+                    .Where(wasSuccessful => wasSuccessful) // Only trigger if the command returned true
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(_ => AnimateButtonConfirmation(AddCurrentNpcButton, "Add Cur"))
+                    .DisposeWith(d);
+
+                // Animate Remove button on successful execution
+                ViewModel.RemoveCurrentNpcFromGroupCommand
+                    .Where(wasSuccessful => wasSuccessful) // Only trigger if the command returned true
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(_ => AnimateButtonConfirmation(RemoveCurrentNpcButton, "Rem Cur"))
+                    .DisposeWith(d);
+                
+                // Animate Add button on successful execution
+                ViewModel.AddAllVisibleNpcsToGroupCommand
+                    .Where(wasSuccessful => wasSuccessful) // Only trigger if the command returned true
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(_ => AnimateButtonConfirmation(AddVisibleNpcsButton, "Add Vis"))
+                    .DisposeWith(d);
+
+                // Animate Remove button on successful execution
+                ViewModel.RemoveAllVisibleNpcsFromGroupCommand
+                    .Where(wasSuccessful => wasSuccessful) // Only trigger if the command returned true
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(_ => AnimateButtonConfirmation(RemoveVisibleNpcsButton, "Rem Vis"))
+                    .DisposeWith(d);
             });
+        }
+        
+        private async void AnimateButtonConfirmation(Button button, string originalContent)
+        {
+            // Store the original background brush
+            var originalBackground = button.Background;
+
+            // Set the "Done" state
+            button.Background = System.Windows.Media.Brushes.LawnGreen;
+            button.Content = "Done";
+
+            // Wait for 2 seconds
+            await Task.Delay(TimeSpan.FromSeconds(2));
+
+            // Revert to the original state
+            button.Background = originalBackground;
+            button.Content = originalContent;
         }
 
         private void HideUnhideButton_Click(object sender, RoutedEventArgs e)

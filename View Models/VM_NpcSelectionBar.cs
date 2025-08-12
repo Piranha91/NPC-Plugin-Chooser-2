@@ -137,10 +137,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     // --- NPC Group Properties ---
     [Reactive] public string SelectedGroupName { get; set; } = string.Empty;
     public ObservableCollection<string> AvailableNpcGroups { get; } = new();
-    public ReactiveCommand<Unit, Unit> AddCurrentNpcToGroupCommand { get; }
-    public ReactiveCommand<Unit, Unit> RemoveCurrentNpcFromGroupCommand { get; }
-    public ReactiveCommand<Unit, Unit> AddAllVisibleNpcsToGroupCommand { get; }
-    public ReactiveCommand<Unit, Unit> RemoveAllVisibleNpcsFromGroupCommand { get; }
+    public ReactiveCommand<Unit, bool> AddCurrentNpcToGroupCommand { get; }
+    public ReactiveCommand<Unit, bool> RemoveCurrentNpcFromGroupCommand { get; }
+    public ReactiveCommand<Unit, bool> AddAllVisibleNpcsToGroupCommand { get; }
+    public ReactiveCommand<Unit, bool> RemoveAllVisibleNpcsFromGroupCommand { get; }
     // --- End NPC Group Properties ---
 
     // --- NEW: Compare/Hide/Deselect Functionality ---
@@ -1454,10 +1454,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     }
 
     // In VM_NpcSelectionBar.cs
-    public void ApplyFilter(bool initializing)
+    public void ApplyFilter(bool initializing, bool preserveSelection = true)
     {
         List<VM_NpcsMenuSelection> results = AllNpcs;
         var predicates = new List<Func<VM_NpcsMenuSelection, bool>>();
+        
+        // Preserve the currently selected NPC
+        var npcToPreserve = SelectedNpc;
 
         // --- Your existing predicate building logic ---
         if (SearchType1 == NpcSearchType.SelectionState)
@@ -1542,7 +1545,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         // Standard selection logic if not navigating programmatically
-        var previouslySelectedNpcKey = SelectedNpc?.NpcFormKey;
+        var previouslySelectedNpcKey = npcToPreserve?.NpcFormKey;
         VM_NpcsMenuSelection? newSelection = null;
 
         if (previouslySelectedNpcKey != null)
@@ -1557,7 +1560,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             newSelection = FilteredNpcs[0];
         }
 
-        if (SelectedNpc != newSelection) // Only update if it's actually different
+        if (SelectedNpc != newSelection && preserveSelection) // Only update if it's actually different
         {
             Debug.WriteLine(
                 $"ApplyFilter: Setting SelectedNpc to '{newSelection?.DisplayName ?? "null"}'. Previous was '{SelectedNpc?.DisplayName ?? "null"}'.");
@@ -2033,9 +2036,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     }
 
     // --- NPC Group Methods ---
-    private void AddCurrentNpcToGroup()
+    private bool AddCurrentNpcToGroup()
     {
-        if (SelectedNpc == null || string.IsNullOrWhiteSpace(SelectedGroupName)) return;
+        if (SelectedNpc == null || string.IsNullOrWhiteSpace(SelectedGroupName)) return false;
+        
         var npcKey = SelectedNpc.NpcFormKey;
         var groupName = SelectedGroupName.Trim();
         if (!_settings.NpcGroupAssignments.TryGetValue(npcKey, out var groups))
@@ -2053,12 +2057,15 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         else
         {
             Debug.WriteLine($"NPC {npcKey} already in group '{groupName}'");
+            return false;
         }
+
+        return true;
     }
 
-    private void RemoveCurrentNpcFromGroup()
+    private bool RemoveCurrentNpcFromGroup()
     {
-        if (SelectedNpc == null || string.IsNullOrWhiteSpace(SelectedGroupName)) return;
+        if (SelectedNpc == null || string.IsNullOrWhiteSpace(SelectedGroupName)) return false;
         var npcKey = SelectedNpc.NpcFormKey;
         var groupName = SelectedGroupName.Trim();
         if (_settings.NpcGroupAssignments.TryGetValue(npcKey, out var groups))
@@ -2078,12 +2085,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             else
             {
                 Debug.WriteLine($"NPC {npcKey} was not in group '{groupName}'");
+                return false;
             }
         }
         else
         {
             Debug.WriteLine($"NPC {npcKey} has no group assignments.");
+            return false;
         }
+
+        return true;
     }
 
     private bool AreAnyFiltersActive()
@@ -2103,29 +2114,29 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         return false;
     }
 
-    private void AddAllVisibleNpcsToGroup()
+    private bool AddAllVisibleNpcsToGroup()
     {
-        if (FilteredNpcs.Count == 0 || string.IsNullOrWhiteSpace(SelectedGroupName)) return;
+        if (FilteredNpcs.Count == 0 || string.IsNullOrWhiteSpace(SelectedGroupName)) return false;
         var groupName = SelectedGroupName.Trim();
         int count = FilteredNpcs.Count;
         int totalNpcCount = AllNpcs.Count;
         if (!AreAnyFiltersActive())
         {
-            if (ScrollableMessageBox.Confirm(
+            if (!ScrollableMessageBox.Confirm(
                     $"No filters are currently applied. Are you sure you want to add ALL {totalNpcCount} NPCs in your game to the group '{groupName}'?",
                     "Confirm Add All NPCs"))
             {
                 Debug.WriteLine("Add All Visible NPCs to Group cancelled by user (no filters active).");
-                return;
+                return false;
             }
         }
         else
         {
-            if (ScrollableMessageBox.Confirm($"Add all {count} currently visible NPCs to the group '{groupName}'?",
+            if (!ScrollableMessageBox.Confirm($"Add all {count} currently visible NPCs to the group '{groupName}'?",
                     "Confirm Add Visible NPCs"))
             {
                 Debug.WriteLine("Add All Visible NPCs to Group cancelled by user.");
-                return;
+                return false;
             }
         }
 
@@ -2153,33 +2164,33 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         ApplyFilter(false);
         Debug.WriteLine($"Added {addedCount} visible NPCs to group '{groupName}'.");
-        ScrollableMessageBox.Show($"Added {addedCount} visible NPCs to group '{groupName}'.", "Operation Complete");
+        return true;
     }
 
-    private void RemoveAllVisibleNpcsFromGroup()
+    private bool RemoveAllVisibleNpcsFromGroup()
     {
-        if (FilteredNpcs.Count == 0 || string.IsNullOrWhiteSpace(SelectedGroupName)) return;
+        if (FilteredNpcs.Count == 0 || string.IsNullOrWhiteSpace(SelectedGroupName)) return false;
         var groupName = SelectedGroupName.Trim();
         int count = FilteredNpcs.Count;
         int totalNpcCount = AllNpcs.Count;
         if (!AreAnyFiltersActive())
         {
-            if (ScrollableMessageBox.Confirm(
+            if (!ScrollableMessageBox.Confirm(
                     $"No filters are currently applied. Are you sure you want to attempt removing ALL {totalNpcCount} NPCs in your game from the group '{groupName}'?",
                     "Confirm Remove All NPCs", MessageBoxImage.Warning))
             {
                 Debug.WriteLine("Remove All Visible NPCs from Group cancelled by user (no filters active).");
-                return;
+                return false;
             }
         }
         else
         {
-            if (ScrollableMessageBox.Confirm(
+            if (!ScrollableMessageBox.Confirm(
                     $"Remove all {count} currently visible NPCs from the group '{groupName}'?",
                     "Confirm Remove Visible NPCs"))
             {
                 Debug.WriteLine("Remove All Visible NPCs from Group cancelled by user.");
-                return;
+                return false;
             }
         }
 
@@ -2208,8 +2219,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         ApplyFilter(false);
         Debug.WriteLine($"Removed {removedCount} visible NPCs from group '{groupName}'.");
-        ScrollableMessageBox.Show($"Removed {removedCount} visible NPCs from group '{groupName}'.",
-            "Operation Complete");
+        return true;
     }
 
     private void UpdateAvailableNpcGroups()
@@ -2248,6 +2258,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         if (!selectionStillExists)
         {
             SelectedGroupName = string.Empty;
+        }
+        else
+        {
+            SelectedGroupName = currentSelection;
         }
 
         MessageBus.Current.SendMessage(new NpcGroupsChangedMessage());
