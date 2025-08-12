@@ -12,6 +12,7 @@ namespace NPC_Plugin_Chooser_2.Models // Or appropriate namespace
         public bool SelectionIsValid { get; }
         public INpcGetter WinningNpcOverride { get; }
         public ModSetting AppearanceModSetting { get; }
+        public FormKey AppearanceNpcFormKey { get; }
 
         // --- Remove These ---
         // public bool HasFaceGen { get; }
@@ -19,11 +20,12 @@ namespace NPC_Plugin_Chooser_2.Models // Or appropriate namespace
         // public ModKey? AppearanceModKey { get; }
 
         // Update the constructor to match
-        public ScreeningResult(bool isValid, INpcGetter winningNpcOverride, ModSetting appearanceModSetting)
+        public ScreeningResult(bool isValid, INpcGetter winningNpcOverride, ModSetting appearanceModSetting, FormKey appearanceNpcFormKey)
         {
             this.SelectionIsValid = isValid;
             this.WinningNpcOverride = winningNpcOverride;
             this.AppearanceModSetting = appearanceModSetting;
+            this.AppearanceNpcFormKey = appearanceNpcFormKey;
         }
     }
 }

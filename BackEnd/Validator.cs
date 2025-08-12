@@ -62,9 +62,10 @@ public class Validator : OptionalUIModule
         {
             ct.ThrowIfCancellationRequested();
 
-            var kvp = selectionsList[i];
+            KeyValuePair<FormKey, (string ModName, FormKey AppearanceNpcFormKey)> kvp = selectionsList[i];
             var npcFormKey = kvp.Key;
             var selectedModDisplayName = kvp.Value.ModName;
+            var appearanceNpcFormKey = kvp.Value.AppearanceNpcFormKey;
             string npcIdentifier = npcFormKey.ToString();
 
             bool shouldUpdateUI = (i % 100 == 0) || (i == totalToScreen - 1);
@@ -131,11 +132,11 @@ public class Validator : OptionalUIModule
                 {
                     sourcePlugin = npcFormKey.ModKey;
                 }
-                else if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var disambiguatedPlugin))
+                else if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(appearanceNpcFormKey, out var disambiguatedPlugin))
                 {
                     sourcePlugin = disambiguatedPlugin;
                 }
-                else if (appearanceModSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var availablePlugins) && availablePlugins.Any())
+                else if (appearanceModSetting.AvailablePluginsForNpcs.TryGetValue(appearanceNpcFormKey, out var availablePlugins) && availablePlugins.Any())
                 {
                     sourcePlugin = availablePlugins.FirstOrDefault();
                 }
@@ -174,7 +175,8 @@ public class Validator : OptionalUIModule
             _screeningCache[npcFormKey] = new ScreeningResult(
                 true,
                 winningNpcOverride,
-                appearanceModSetting
+                appearanceModSetting,
+                appearanceNpcFormKey
             );
 
             /*

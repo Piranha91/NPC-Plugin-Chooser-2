@@ -377,6 +377,7 @@ public class AssetHandler : OptionalUIModule
     /// and scheduling them for asynchronous processing.
     /// </summary>
     public async Task ScheduleCopyNpcAssets(
+        FormKey targetNpcFormKey, // the NPC to which the appearance is being applied
         INpcGetter appearanceNpcRecord,
         ModSetting appearanceModSetting,
         string outputBasePath,
@@ -402,9 +403,17 @@ public class AssetHandler : OptionalUIModule
         // 1. FaceGen Assets
         var (faceMeshRelativePath, faceTexRelativePath) =
             Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, true);
+        
+        FormKey surrogateNpcFormKey = FormKey.Null;;
 
         bool useSkyPatcher =
-            _skyPatcherInterface.TryGetSurrogateFormKey(appearanceNpcRecord.FormKey, out var surrogateNpcFormKey);
+            _skyPatcherInterface.TryGetSurrogateFormKey(appearanceNpcRecord.FormKey, out surrogateNpcFormKey);
+        
+        bool isFaceSwap = !targetNpcFormKey.Equals(appearanceNpcRecord.FormKey);
+        if (!useSkyPatcher && isFaceSwap)
+        {
+            surrogateNpcFormKey = targetNpcFormKey;
+        }
         
         // START: ADDED WARNING LOGIC FOR MISMATCHED FACEGEN FILES
         var (meshSourceType, _, _) = FindAssetSource(faceMeshRelativePath, appearanceModSetting);
@@ -420,7 +429,7 @@ public class AssetHandler : OptionalUIModule
         }
         // END: ADDED WARNING LOGIC
 
-        if (useSkyPatcher)
+        if (useSkyPatcher || isFaceSwap)
         {
             (var surrogateFaceGenNifPath, var surrogateFaceGenDdsPath) = // These store the paths for the original NPC FormKey - e.g. the one being copied from
                 Auxilliary.GetFaceGenSubPathStrings(surrogateNpcFormKey, true);

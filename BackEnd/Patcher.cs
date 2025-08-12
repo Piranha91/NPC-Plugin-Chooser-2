@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
@@ -238,6 +238,7 @@ public class Patcher : OptionalUIModule
                         var result = kvp.Value;
                         var winningNpcOverride = result.WinningNpcOverride;
                         var appearanceModSetting = result.AppearanceModSetting;
+                        var appearanceNpcFormKey = kvp.Value.AppearanceNpcFormKey;
 
                         string selectedModDisplayName = appearanceModSetting?.DisplayName ?? "N/A";
                         string npcIdentifier =
@@ -278,9 +279,9 @@ public class Patcher : OptionalUIModule
                             ModKey? appearanceModKey = null;
                             bool correspondingRecordFound = false;
 
-                            if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey,
+                            if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(appearanceNpcFormKey,
                                     out var disambiguationKey) &&
-                                _recordHandler.TryGetRecordGetterFromMod(npcFormKey.ToLink<INpcGetter>(),
+                                _recordHandler.TryGetRecordGetterFromMod(appearanceNpcFormKey.ToLink<INpcGetter>(),
                                     disambiguationKey,
                                     currentModFolderPaths,
                                     RecordHandler.RecordLookupFallBack.None, out var disambiguatedRecord) &&
@@ -298,7 +299,7 @@ public class Patcher : OptionalUIModule
                                 {
                                     foreach (var candidateKey in appearanceModSetting.CorrespondingModKeys)
                                     {
-                                        if (_recordHandler.TryGetRecordGetterFromMod(npcFormKey.ToLink<INpcGetter>(),
+                                        if (_recordHandler.TryGetRecordGetterFromMod(appearanceNpcFormKey.ToLink<INpcGetter>(),
                                                 candidateKey, currentModFolderPaths,
                                                 RecordHandler.RecordLookupFallBack.None,
                                                 out var record) &&
@@ -362,7 +363,7 @@ public class Patcher : OptionalUIModule
                                     // If the mesh is missing, perform the more expensive check to see if the plugin *actually* changed head data.
                                     // Resolve the original base record for this NPC (e.g., from Skyrim.esm).
                                     if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(
-                                            appearanceNpcRecord.FormKey,
+                                            npcFormKey,
                                             out var baseNpcGetter, ResolveTarget.Origin))
                                     {
                                         // Compare the head-related properties of the appearance record to the base record.
@@ -639,7 +640,7 @@ public class Patcher : OptionalUIModule
 
                             if (patchNpc != null && appearanceModSetting != null)
                             {
-                                await _assetHandler.ScheduleCopyNpcAssets(appearanceNpcRecord,
+                                await _assetHandler.ScheduleCopyNpcAssets(npcFormKey, appearanceNpcRecord,
                                     appearanceModSetting, // appearanceNpcRecord here rather than patchNpc is intentional
                                     _currentRunOutputAssetPath, npcIdentifier);
                                 await _assetHandler.ScheduleCopyAssetLinkFiles(assetLinks, appearanceModSetting,
