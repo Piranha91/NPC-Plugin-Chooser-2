@@ -199,7 +199,7 @@ public class Patcher : OptionalUIModule
                 {
                     ct.ThrowIfCancellationRequested();
 
-                    ContextualPerformanceTracer.Reset();
+                    using var _ = ContextualPerformanceTracer.BeginContext(npcGroup.Key);
 
                     AppendLog($"\n--- Loading resources for batch: {npcGroup.Key} ---", false, true);
 
