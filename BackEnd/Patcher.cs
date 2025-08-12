@@ -6,6 +6,7 @@ using Mutagen.Bethesda.Plugins.Assets;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
+using Noggog;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
 
@@ -706,7 +707,7 @@ public class Patcher : OptionalUIModule
                     try
                     {
                         _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath);
-                        AppendLog($"Output mod saved successfully.", false, true);
+                        AppendLog($"Saved plugin: {outputPluginPath}.", false, true);
 
                         AppendLog("Writing NPC token file...", false, false);
                         var tokenFilePath = Path.Combine(_currentRunOutputAssetPath, "NPC_Token.json");
@@ -829,6 +830,17 @@ public class Patcher : OptionalUIModule
         targetNpc.TintLayers.Clear();
         targetNpc.TintLayers.AddRange(sourceNpc.TintLayers?.Select(t => t.DeepCopy()) ??
                                       Enumerable.Empty<TintLayer>());
+
+        if (sourceNpc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female))
+        {
+            // Set Female bit
+            targetNpc.Configuration.Flags |= NpcConfiguration.Flag.Female;
+        }
+        else
+        {
+            // Clear Female bit
+            targetNpc.Configuration.Flags &= ~NpcConfiguration.Flag.Female;
+        }
 
         List<MajorRecord> mergedInRecords = new();
         var importSourceModKeys = appearanceModSetting.CorrespondingModKeys
