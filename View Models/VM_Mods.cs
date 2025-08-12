@@ -1330,7 +1330,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     if (vm.HasAlteredMergeLogic)
                     {
-                        vm.MergeInDependencyRecords = false;
                         vm.MergeInLabelColor = new(System.Windows.Media.Colors.Purple);
                     }
                     else
@@ -2189,7 +2188,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             if (isBaseGame || nonAppearanceRecordCount > totalRecordCount / 2)
             {
-                modSettingVM.HasAlteredMergeLogic = true; 
+                modSettingVM.HasAlteredMergeLogic = true;
+                modSettingVM.MergeInDependencyRecords = false;
                 modSettingVM.MergeInToolTip =
                     $"N.P.C. has determined that the plugin(s) in {modSettingVM.DisplayName} have more non-appearance records than appearance records, " +
                     Environment.NewLine +
