@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
@@ -904,6 +904,17 @@ public class Patcher : OptionalUIModule
                 AppendLog(
                     $"  ERROR duplicating dependencies for {npcIdentifier}: {ExceptionLogger.GetExceptionStack(ex)}",
                     true);
+            }
+        }
+        else // set the formlinks to the original values
+        {
+            targetNpc.WornArmor.SetTo(sourceNpc.WornArmor);
+            targetNpc.HeadTexture.SetTo(sourceNpc.HeadTexture);
+            targetNpc.HairColor.SetTo(sourceNpc.HairColor);
+            targetNpc.HeadParts.Clear();
+            foreach (var hp in sourceNpc.HeadParts)
+            {
+                targetNpc.HeadParts.Add(hp);
             }
         }
 
