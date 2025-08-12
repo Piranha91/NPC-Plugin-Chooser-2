@@ -69,7 +69,7 @@ public class Validator : OptionalUIModule
             string npcIdentifier = npcFormKey.ToString();
 
             bool shouldUpdateUI = (i % 100 == 0) || (i == totalToScreen - 1);
-            
+
             using (ContextualPerformanceTracer.Trace("Validator.ResolveNpcOverride"))
             {
                 if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out winningNpcOverride))
@@ -88,8 +88,34 @@ public class Validator : OptionalUIModule
                     continue;
                 }
             }
-            npcIdentifier =
-                $"{winningNpcOverride.Name?.String ?? winningNpcOverride.EditorID ?? npcFormKey.ToString()} ({npcFormKey})";
+
+            npcIdentifier = Auxilliary.GetNpcLogString(winningNpcOverride);
+            
+            using (ContextualPerformanceTracer.Trace("Validator.CheckFaceSwap"))
+            {
+                if (_settings.PatchingMode != PatchingMode.CreateAndPatch && !npcFormKey.Equals(appearanceNpcFormKey))
+                {
+                    var appearanceNpcIdenentifier = appearanceNpcFormKey.ToString();
+                    if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(appearanceNpcFormKey,
+                            out var appearanceNpcGetter) && appearanceNpcGetter != null)
+                    {
+                        appearanceNpcIdenentifier = Auxilliary.GetNpcLogString(appearanceNpcGetter);
+                    }
+                    
+                    var errorMsg =
+                        $"Can't swap {npcIdentifier} to use {appearanceNpcIdenentifier}'s appearance in {_settings.PatchingMode} mode. Skipping.";
+                    AppendLog($"  SCREENING WARNING: {errorMsg}");
+                    invalidSelections.Add(
+                        $"{npcIdentifier} -> '{selectedModDisplayName}' ({appearanceNpcIdenentifier}) - (Can't appearance swap in {_settings.PatchingMode} mode)");
+                    if (shouldUpdateUI)
+                    {
+                        UpdateProgress(i + 1, totalToScreen, $"Screening: {npcIdentifier}");
+                    }
+
+                    await Task.Delay(1, ct);
+                    continue;
+                }
+            }
 
             if (shouldUpdateUI)
             {
