@@ -2137,8 +2137,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// </summary>
         private void CheckMergeInSuitability(VM_ModSetting modSettingVM)
         {
-            int totalRecordCount = 0;
             int appearanceRecordCount = 0;
+            int nonAppearanceRecordCount = 0;
             bool isBaseGame = false;
 
             // Define the set of appearance-related record types to skip in the main enumeration
@@ -2181,12 +2181,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // Lazily enumerate and count ONLY the non-appearance records
                 int nonAppearanceRecordCountForPlugin = Auxilliary.LazyEnumerateMajorRecords(plugin, appearanceTypesToSkip).Count();
                 
-                totalRecordCount += appearanceRecordCount + nonAppearanceRecordCountForPlugin;
+                nonAppearanceRecordCount += nonAppearanceRecordCountForPlugin;
             }
+            
 
-            int nonAppearanceRecordCount = totalRecordCount - appearanceRecordCount;
-
-            if (isBaseGame || nonAppearanceRecordCount > totalRecordCount / 2)
+            if (isBaseGame || nonAppearanceRecordCount > appearanceRecordCount)
             {
                 modSettingVM.HasAlteredMergeLogic = true;
                 modSettingVM.MergeInDependencyRecords = false;
