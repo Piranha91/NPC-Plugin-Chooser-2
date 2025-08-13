@@ -548,6 +548,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             AppendLog("Environment Status: " + _environmentStateProvider.Status, forceLog: true);
             AppendLog(Environment.NewLine, forceLog: true);
             AppendLog("===Program Variables===", forceLog: true);
+            AppendLog(_lazyVmMods.Value.GetStatusReport(), forceLog: true);
+            AppendLog(Environment.NewLine, forceLog: true);
             AppendLog("Plugin Provider: " + _pluginProvider.GetStatusReport(), forceLog: true);
             AppendLog("Record Handler: " + _recordHandler.GetStatusReport(), forceLog: true);
             AppendLog("BSA Handler: " + _bsaHandler.GetStatusReport(), forceLog: true);
