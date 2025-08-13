@@ -34,6 +34,7 @@ public class ModSetting
     public RecordOverrideHandlingMode? ModRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
 
     public HashSet<ModKey> PluginsWithOverrideRecords { get; set; } = new();
+    public bool IncludeOutfits { get; set; } = false;
     public bool HasAlteredMergeLogic { get; set; } = false; 
     public ModStateSnapshot? LastKnownState { get; set; }
 }

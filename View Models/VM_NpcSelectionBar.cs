@@ -160,6 +160,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> ImportChoicesCommand { get; }
     public ReactiveCommand<Unit, Unit> ClearChoicesCommand { get; }
     // --- End Import/Export Commands ---
+    
+    public ReactiveCommand<object, Unit> SetNpcOutfitOverrideCommand { get; }
 
     // --- Constructor ---
     public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider,
@@ -211,6 +213,17 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             NpcsViewIsZoomLocked = false;
             NpcsViewHasUserManuallyZoomed = false;
             _refreshImageSizesSubject.OnNext(Unit.Default);
+        });
+        
+        SetNpcOutfitOverrideCommand = ReactiveCommand.Create<object>(param =>
+        {
+            // This is the corrected, compatible code:
+            if (param is object[] arr && arr.Length == 2 && 
+                arr[0] is OutfitOverride newOverride && 
+                arr[1] is VM_NpcsMenuSelection npcVM)
+            {
+                SetNpcOutfitOverride(npcVM.NpcFormKey, newOverride);
+            }
         });
 
         ZoomInNpcsCommand.ThrownExceptions
@@ -2292,6 +2305,32 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 _consistencyProvider.SetSelectedMod(npc.NpcFormKey, toModName, toNpcKey);
             }
+        }
+    }
+    
+    public OutfitOverride GetNpcOutfitOverride(FormKey npcFormKey)
+    {
+        if (_settings.NpcOutfitOverrides.TryGetValue(npcFormKey, out var storedOverride))
+        {
+            return storedOverride;
+        }
+        return OutfitOverride.UseModSetting;
+    }
+
+    private void SetNpcOutfitOverride(FormKey npcFormKey, OutfitOverride newOverride)
+    {
+        if (newOverride == OutfitOverride.UseModSetting)
+        {
+            // If setting back to default, remove the key to keep the dictionary clean.
+            if (_settings.NpcOutfitOverrides.Remove(npcFormKey))
+            {
+                Debug.WriteLine($"Removed outfit override for NPC {npcFormKey}.");
+            }
+        }
+        else
+        {
+            _settings.NpcOutfitOverrides[npcFormKey] = newOverride;
+            Debug.WriteLine($"Set outfit override for NPC {npcFormKey} to {newOverride}.");
         }
     }
 

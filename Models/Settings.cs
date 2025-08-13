@@ -41,6 +41,7 @@ public class Settings
     public HashSet<string> HiddenModNames { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> HiddenModsPerNpc { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> NpcGroupAssignments { get; set; } = new();
+    public Dictionary<FormKey, OutfitOverride> NpcOutfitOverrides { get; set; } = new();
     public HashSet<ModKey> ImportFromLoadOrderExclusions { get; set; } = new();
     public bool NormalizeImageDimensions { get; set; } = false;
 

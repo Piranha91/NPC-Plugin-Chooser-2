@@ -386,7 +386,16 @@
                                              ToolTip="Separates the assigned mugshot folder into its own entry, if its name differs from the primary mod data folder."
                                              Visibility="{Binding CanUnlinkMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                      
-                                     <Button Grid.Row="6" Grid.Column="0"
+                                     <CheckBox Grid.Row="6" Grid.Column="0"
+                                               Content="Include Outfits"
+                                               IsChecked="{Binding IncludeOutfits, Mode=TwoWay}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,5,0,0"
+                                               HorizontalAlignment="Left"
+                                               ToolTip="If checked, outfits from this mod will be transferred along with NPC appearance when in Create and Patch mode."/>
+
+                                     
+                                     <Button Grid.Row="7" Grid.Column="0"
                                              Content="Delete"
                                              Command="{Binding DeleteCommand}"
                                              HorizontalAlignment="Right"

@@ -11,6 +11,7 @@
              xmlns:reactiveui="http://reactiveui.net"
              xmlns:System="clr-namespace:System;assembly=mscorlib"
              xmlns:dd="urn:gong-wpf-dragdrop"
+             xmlns:models="clr-namespace:NPC_Plugin_Chooser_2.Models"
              mc:Ignorable="d"
              x:TypeArguments="vm:VM_NpcSelectionBar"
              d:DataContext="{d:DesignInstance Type=vm:VM_NpcSelectionBar}"
@@ -25,7 +26,13 @@
         <local:LineOffsetConverter x:Key="LineOffsetConverter"/>
         <local:ModKeyToStringConverter x:Key="ModKeyToStringConverter"/>
         <local:AreModKeysEqualMultiConverter x:Key="AreModKeysEqualMultiConverter"/>
-
+        <local:TupleConverter x:Key="TupleConverter"/>
+        <local:OutfitOverrideStateConverter x:Key="OutfitOverrideStateConverter"/>
+        <ObjectDataProvider x:Key="OutfitOverrideEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="models:OutfitOverride"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
 
         <ObjectDataProvider x:Key="NpcSearchTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters> <x:Type TypeName="vm:NpcSearchType"/> </ObjectDataProvider.MethodParameters>
@@ -192,6 +199,43 @@
                                      <Border.ToolTip>
                                          <ToolTip> <StackPanel> <TextBlock Text="{Binding NpcName}" /> <TextBlock Text="{Binding NpcEditorId}" /> <TextBlock Text="{Binding NpcFormKeyString}" /> </StackPanel> </ToolTip>
                                      </Border.ToolTip>
+                                     <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Include Outfits"
+                                                      ItemsSource="{Binding Source={StaticResource OutfitOverrideEnumValues}}">
+                                                <MenuItem.ItemContainerStyle>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Header" Value="{Binding Converter={StaticResource EnumDescConverter}}"/>
+                                                        <Setter Property="IsCheckable" Value="True"/>
+        
+                                                        <Setter Property="Command" Value="{Binding Path=DataContext.SetNpcOutfitOverrideCommand, Source={StaticResource DataContextProxy}}"/>
+
+                                                        <Setter Property="CommandParameter">
+                                                            <Setter.Value>
+                                                                <MultiBinding Converter="{StaticResource TupleConverter}">
+                                                                    <Binding Path="."/>
+                                                                    <Binding Path="PlacementTarget.DataContext" RelativeSource="{RelativeSource AncestorType=ContextMenu}" />
+                                                                </MultiBinding>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                        <Setter Property="IsChecked">
+                                                            <Setter.Value>
+                                                                <MultiBinding Converter="{StaticResource OutfitOverrideStateConverter}" Mode="OneWay">
+                                                                    <Binding Path="." />
+                                                                    <Binding Path="PlacementTarget.DataContext.NpcFormKey" 
+                                                                             RelativeSource="{RelativeSource AncestorType=ContextMenu}"
+                                                                             Mode="OneWay"/>
+                    
+                                                                    <Binding Path="DataContext" Source="{StaticResource DataContextProxy}" />
+
+                                                                </MultiBinding>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </Style>
+                                                </MenuItem.ItemContainerStyle>
+                                            </MenuItem>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
                                      <TextBlock Text="{Binding DisplayName}" />
                                  </Border>
                              </DataTemplate>

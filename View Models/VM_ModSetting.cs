@@ -57,7 +57,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public ObservableCollection<string> CorrespondingFolderPaths { get; private set; } = new();
         [Reactive] public bool MergeInDependencyRecords { get; set; } = true;
         [Reactive] public bool MergeInDependencyRecordsVisible { get; set; } = true;
-       
+        [Reactive] public bool IncludeOutfits { get; set; } = true;
 
         [Reactive] public string MergeInToolTip { get; set; } = ModSetting.DefaultMergeInTooltip;
         [Reactive] public SolidColorBrush? MergeInLabelColor { get; set; } = null; // null initialization is intentional
@@ -169,6 +169,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             MugShotFolderPath = model.MugShotFolderPath; // Load persisted mugshot folder path
             NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(model.NpcPluginDisambiguation ?? new Dictionary<FormKey, ModKey>());
             MergeInDependencyRecords = model.MergeInDependencyRecords;
+            IncludeOutfits = model.IncludeOutfits;
             MergeInToolTip = model.MergeInToolTip;
             MergeInLabelColor = model.MergeInLabelColor;
             OverrideRecordOverrideHandlingMode = model.ModRecordOverrideHandlingMode;
@@ -414,6 +415,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 AmbiguousNpcFormKeys = this.AmbiguousNpcFormKeys,
                 IsFaceGenOnlyEntry = IsFaceGenOnlyEntry,
                 MergeInDependencyRecords = MergeInDependencyRecords,
+                IncludeOutfits = IncludeOutfits,
                 MergeInToolTip = MergeInToolTip,
                 MergeInLabelColor = MergeInLabelColor,
                 ModRecordOverrideHandlingMode = OverrideRecordOverrideHandlingMode,
