@@ -475,8 +475,10 @@ public class AssetHandler : OptionalUIModule
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Select(RegularizeOrNull)
                 .Where(rel => rel is not null)
+                .Select(rel => rel!) // null-forgiving operator converts string? → string
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
+        
+        AddCorrespondingNumericalNifPaths(assetRelPaths, new HashSet<string>()); // safe to pass non-nif files because the function filters for .nif paths anyway
         foreach (var relPath in assetRelPaths)
         {
             if (relPath != null)
