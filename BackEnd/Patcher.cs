@@ -424,11 +424,29 @@ public class Patcher : OptionalUIModule
                                                     winningNpcOverride);
                                         }
 
+                                        bool includeOutfit = false;
+                                        if (_settings.NpcOutfitOverrides.TryGetValue(npcFormKey,
+                                                out var outfitOverrideChoice))
+                                        {
+                                            switch (outfitOverrideChoice)
+                                            {
+                                                case OutfitOverride.No: includeOutfit = false; break;
+                                                case OutfitOverride.Yes: includeOutfit = true; break;
+                                                case OutfitOverride.UseModSetting:
+                                                    includeOutfit = appearanceModSetting.IncludeOutfits; break;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            includeOutfit = appearanceModSetting.IncludeOutfits;
+                                        }
+                                        
+
                                         var mergedInAppearanceRecords = CopyAppearanceData(appearanceNpcRecord,
                                             patchNpc,
                                             appearanceModSetting, appearanceModKey.Value,
                                             currentModFolderPaths, npcIdentifier,
-                                            mergeInDependencyRecords);
+                                            mergeInDependencyRecords, includeOutfit);
                                         _aux.CollectShallowAssetLinks(mergedInAppearanceRecords, assetLinks);
                                         if (mergeInDependencyRecords)
                                         {
@@ -819,7 +837,7 @@ public class Patcher : OptionalUIModule
 
     private List<MajorRecord> CopyAppearanceData(INpcGetter sourceNpc, Npc targetNpc, ModSetting appearanceModSetting,
         ModKey sourceNpcContextModKey, HashSet<string> currentModFolderPaths, string npcIdentifier,
-        bool mergeInDependencyRecords)
+        bool mergeInDependencyRecords, bool includeOutfit)
     {
         using var _ = ContextualPerformanceTracer.Trace("Patcher.CopyAppearanceData");
         targetNpc.FaceMorph = sourceNpc.FaceMorph?.DeepCopy();
@@ -910,6 +928,21 @@ public class Patcher : OptionalUIModule
                         string.Join(Environment.NewLine, skinExceptions), true, true);
                 }
 
+                if (includeOutfit)
+                {
+                    List<string> outfitExceptions = new();
+                    var outfitRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.DefaultOutfit, sourceNpc.DefaultOutfit,
+                        _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,
+                        currentModFolderPaths, ref outfitExceptions);
+                    if (outfitExceptions.Any())
+                    {
+                        AppendLog(
+                            "Exceptions during outfit assignment: " + Environment.NewLine +
+                            string.Join(Environment.NewLine, outfitExceptions), true, true);
+                    }
+                    mergedInRecords.AddRange(outfitRecords);
+                }
+
                 AppendLog($"    Completed dependency processing for {npcIdentifier}.");
             }
             catch (Exception ex)
@@ -928,6 +961,11 @@ public class Patcher : OptionalUIModule
             foreach (var hp in sourceNpc.HeadParts)
             {
                 targetNpc.HeadParts.Add(hp);
+            }
+
+            if (includeOutfit)
+            {
+                targetNpc.DefaultOutfit.SetTo(sourceNpc.DefaultOutfit);
             }
         }
 
