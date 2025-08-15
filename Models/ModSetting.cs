@@ -2,6 +2,7 @@
 using System.Windows.Media;
 using Mutagen.Bethesda.Plugins;
 using Newtonsoft.Json;
+using NPC_Plugin_Chooser_2.View_Models;
 
 namespace NPC_Plugin_Chooser_2.Models;
 
@@ -36,5 +37,11 @@ public class ModSetting
     public HashSet<ModKey> PluginsWithOverrideRecords { get; set; } = new();
     public bool IncludeOutfits { get; set; } = false;
     public bool HasAlteredMergeLogic { get; set; } = false; 
+    public Dictionary<FormKey, (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)> 
+        NpcFormKeysToNotifications
+    {
+        get;
+        set;
+    } = new();
     public ModStateSnapshot? LastKnownState { get; set; }
 }
