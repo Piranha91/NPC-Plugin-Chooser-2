@@ -859,6 +859,17 @@ public class Patcher : OptionalUIModule
             // Clear Female bit
             targetNpc.Configuration.Flags &= ~NpcConfiguration.Flag.Female;
         }
+        
+        if (sourceNpc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
+        {
+            // Set Traits bit
+            targetNpc.Configuration.TemplateFlags |= NpcConfiguration.TemplateFlag.Traits;
+        }
+        else
+        {
+            // Clear Female bit
+            targetNpc.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
+        }
 
         List<MajorRecord> mergedInRecords = new();
         var importSourceModKeys = appearanceModSetting.CorrespondingModKeys
