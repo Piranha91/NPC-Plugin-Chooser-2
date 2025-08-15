@@ -11,7 +11,8 @@ public class SkyPatcherInterface : OptionalUIModule
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private List<string> outputLines = new();
-    private Dictionary<FormKey, FormKey> _remappedNpcs = new(); // key: SkyPatcher NPC, Value: original NPC
+    private Dictionary<FormKey, FormKey> _keyOriginalValSurrogate = new(); // key: orignal NPC, Value: SkyPatcher NPC
+    private Dictionary<FormKey, FormKey> _keySurrogateValOrriginal = new();
 
     public SkyPatcherInterface(EnvironmentStateProvider environmentStateProvider)
     {
@@ -21,7 +22,8 @@ public class SkyPatcherInterface : OptionalUIModule
     public void Reinitialize(string outputRootDir)
     {
         outputLines = new List<string>();
-        _remappedNpcs.Clear();
+        _keyOriginalValSurrogate.Clear();
+        _keySurrogateValOrriginal.Clear();
         if (!ClearIni(_environmentStateProvider.OutputMod.ModKey, outputRootDir, out string exceptionStr))
         {
             AppendLog(exceptionStr);
@@ -35,13 +37,19 @@ public class SkyPatcherInterface : OptionalUIModule
         var edid = npcGetter.EditorID ?? "NoEditorID";
         npcCopy.EditorID = edid + "_Template";
         
-        _remappedNpcs.Add(npcGetter.FormKey, npcCopy.FormKey);
+        _keyOriginalValSurrogate.Add(npcGetter.FormKey, npcCopy.FormKey);
+        _keySurrogateValOrriginal.Add(npcCopy.FormKey, npcGetter.FormKey);
         return npcCopy;
     }
 
     public bool TryGetSurrogateFormKey(FormKey originalNpcFormKey, out FormKey surrogateNpcFormKey)
     {
-        return _remappedNpcs.TryGetValue(originalNpcFormKey, out surrogateNpcFormKey);
+        return _keyOriginalValSurrogate.TryGetValue(originalNpcFormKey, out surrogateNpcFormKey);
+    }
+
+    public bool TryGetOriginalFormKey(FormKey surrogateNpcFormKey, out FormKey originalNpcFormKey)
+    {
+        return _keySurrogateValOrriginal.TryGetValue(surrogateNpcFormKey, out originalNpcFormKey);
     }
 
     public void ApplyViaSkyPatcher(INpcGetter originalNpc, INpcGetter surrogateNpc)
@@ -87,6 +95,39 @@ public class SkyPatcherInterface : OptionalUIModule
         string height = heightFlt.ToString();
         
         outputLines.Add($"filterByNPCs={npc}:height={height}");
+    }
+
+    public void ToggleGender(FormKey applyTo, Gender gender)
+    {
+        string npc = FormatFormKeyForSkyPatcher(applyTo);
+        if (gender == Gender.Female)
+        {
+            outputLines.Add($"filterByNPCs={npc}:setFlags=female");
+        }
+        else
+        {
+            outputLines.Add($"filterByNPCs={npc}:removeFlags=female");
+        }
+    }
+
+    public void ToggleTemplateTraitsStatus(FormKey applyTo, bool useTraits)
+    {
+        string npc = FormatFormKeyForSkyPatcher(applyTo);
+        if (useTraits)
+        {
+            outputLines.Add($"filterByNPCs={npc}:setTemplateFlags=traits");
+        }
+        else
+        {
+            outputLines.Add($"filterByNPCs={npc}:removeTemplateFlags=traits");
+        }
+    }
+
+    public void SetOutfit(FormKey applyTo, IOutfitGetter outfit)
+    {
+        string npc = FormatFormKeyForSkyPatcher(applyTo);
+        string outfitStr = FormatFormKeyForSkyPatcher(outfit.FormKey);
+        outputLines.Add($"filterByNPCs={npc}:outfitDefault={outfitStr}");
     }
 
     public bool WriteIni(string outputRootFolder)

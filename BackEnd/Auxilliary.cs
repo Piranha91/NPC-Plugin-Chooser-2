@@ -302,6 +302,28 @@ public class Auxilliary : IDisposable
         return string.Empty;
     }
     
+    public static bool IsFemale(INpcGetter npc)
+    {
+        return npc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female);
+    }
+
+    public static Gender GetGender(INpcGetter npc)
+    {
+        if (IsFemale(npc))
+        {
+            return Gender.Female;
+        }
+        else
+        {
+            return Gender.Male;
+        }
+    }
+
+    public static bool HasTraitsFlag(INpcGetter npc)
+    {
+        return npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits);
+    }
+    
     /// <summary>
     /// Lazily enumerates all major records in a mod without loading them all into memory at once.
     /// Processing stops as soon as the consuming loop breaks.
@@ -918,4 +940,11 @@ public class Auxilliary : IDisposable
         hasher.GetHashAndReset(digest);
         return Convert.ToHexString(digest);        // e.g. "A1B2C3D4E5F6..."
     }
+}
+
+
+public enum Gender
+{
+    Female,
+    Male
 }

@@ -585,6 +585,16 @@ public class Patcher : OptionalUIModule
                                         if (_settings.UseSkyPatcherMode)
                                         {
                                             patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(appearanceNpcRecord);
+                                            
+                                            if (ShouldChangeGender(winningNpcOverride, patchNpc, out var genderToSet) && genderToSet != null)
+                                            {
+                                                _skyPatcherInterface.ToggleGender(npcFormKey, genderToSet.Value);
+                                            }
+
+                                            if (ShouldChangeTraitsStatus(winningNpcOverride, patchNpc, out bool hasTraitsStatus))
+                                            {
+                                                _skyPatcherInterface.ToggleTemplateTraitsStatus(npcFormKey, hasTraitsStatus);
+                                            }
                                         }
                                         else
                                         {
@@ -849,26 +859,32 @@ public class Patcher : OptionalUIModule
         targetNpc.TintLayers.AddRange(sourceNpc.TintLayers?.Select(t => t.DeepCopy()) ??
                                       Enumerable.Empty<TintLayer>());
 
-        if (sourceNpc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female))
+        bool useSkyPatcher = false;
+        FormKey skyPatcherOriginalFormKey = FormKey.Null;
+        if (_settings.UseSkyPatcherMode &&
+            _skyPatcherInterface.TryGetOriginalFormKey(targetNpc.FormKey, out skyPatcherOriginalFormKey))
         {
-            // Set Female bit
-            targetNpc.Configuration.Flags |= NpcConfiguration.Flag.Female;
+            useSkyPatcher = true;
         }
-        else
+
+        if (ShouldChangeGender(targetNpc, sourceNpc, out var genderToSet) && genderToSet != null)
         {
-            // Clear Female bit
-            targetNpc.Configuration.Flags &= ~NpcConfiguration.Flag.Female;
+            SetGender(targetNpc, genderToSet.Value);
+
+            if (useSkyPatcher)
+            {
+                _skyPatcherInterface.ToggleGender(skyPatcherOriginalFormKey, genderToSet.Value);
+            }
         }
-        
-        if (sourceNpc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
+
+        if (ShouldChangeTraitsStatus(targetNpc, sourceNpc, out bool hasTraitsStatus))
         {
-            // Set Traits bit
-            targetNpc.Configuration.TemplateFlags |= NpcConfiguration.TemplateFlag.Traits;
-        }
-        else
-        {
-            // Clear Female bit
-            targetNpc.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
+            SetTraitsFlag(targetNpc, hasTraitsStatus);
+
+            if (useSkyPatcher)
+            {
+                _skyPatcherInterface.ToggleTemplateTraitsStatus(skyPatcherOriginalFormKey, hasTraitsStatus);
+            }
         }
 
         List<MajorRecord> mergedInRecords = new();
@@ -990,6 +1006,77 @@ public class Patcher : OptionalUIModule
         }
 
         return mergedInRecords;
+    }
+
+    private bool ShouldChangeGender(INpcGetter targetNpc, INpcGetter appearanceNpc, out Gender? changeTo)
+    {
+        changeTo = null;
+        
+        var targetGender = Auxilliary.GetGender(targetNpc);
+        var appearanceGender = Auxilliary.GetGender(appearanceNpc);
+        if (appearanceGender == Gender.Male && targetGender == Gender.Female)
+        {
+            changeTo = Gender.Male;
+            return true;
+        }
+
+        if (appearanceGender == Gender.Female && targetGender == Gender.Male)
+        {
+            changeTo = Gender.Female;
+            return true;
+        }
+
+        return false;
+    }
+
+    private void SetGender(Npc targetNpc, Gender gender)
+    {
+        if (gender == Gender.Female)
+        {
+            // Set Female bit
+            targetNpc.Configuration.Flags |= NpcConfiguration.Flag.Female;
+        }
+        else
+        {
+            // Clear Female bit
+            targetNpc.Configuration.Flags &= ~NpcConfiguration.Flag.Female;
+        }
+    }
+
+    private void SetTraitsFlag(Npc targetNpc, bool hasTraits)
+    {
+        if (hasTraits)
+        {
+            // Set Traits bit
+            targetNpc.Configuration.TemplateFlags |= NpcConfiguration.TemplateFlag.Traits;
+        }
+        else
+        {
+            // Clear Traits bit
+            targetNpc.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
+        }
+    }
+
+    private bool ShouldChangeTraitsStatus(INpcGetter targetNpc, INpcGetter appearanceNpc, out bool hasTraits)
+    {
+        hasTraits = false;
+
+        bool targetHasTraits = Auxilliary.HasTraitsFlag(targetNpc);
+        bool apparanceHasTraits = Auxilliary.HasTraitsFlag(appearanceNpc);
+
+        if (apparanceHasTraits && !targetHasTraits)
+        {
+            hasTraits = true;
+            return true;
+        }
+
+        if (!apparanceHasTraits && targetHasTraits)
+        {
+            hasTraits = false;
+            return true;
+        }
+        
+        return false;
     }
 
     private bool NPCisTemplated(INpcGetter? npc)
