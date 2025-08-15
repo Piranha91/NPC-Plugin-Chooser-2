@@ -1675,6 +1675,27 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 appearanceVM.HasIssueNotification = true;
                 appearanceVM.IssueType = notif.IssueType;
                 appearanceVM.IssueNotificationText = notif.IssueMessage;
+
+                if (notif.IssueType == NpcIssueType.Template)
+                {
+                    if (notif.ReferencedFormKey != null)
+                    {
+                        var assignment = _consistencyProvider.GetSelectedMod(notif.ReferencedFormKey.Value);
+                        if (assignment.ModName != null)
+                        {
+                            appearanceVM.IssueNotificationText += "\n" + $"The template NPC is currently set to: {assignment.ModName}";
+                            if (!assignment.SourceNpcFormKey.Equals(notif.ReferencedFormKey))
+                            {
+                                appearanceVM.IssueNotificationText +=
+                                    $" (using appearance from {assignment.SourceNpcFormKey.ToString()})";
+                            }
+                        }
+                        else
+                        {
+                            appearanceVM.IssueNotificationText += "\n" + $"The template NPC does not yet have an appearance mod assigned";
+                        }
+                    }
+                }
             }
             
             // Add the name of the original NPC, if different from source
