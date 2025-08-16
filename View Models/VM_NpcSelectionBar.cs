@@ -1299,9 +1299,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         public NpcDisplayData NpcData { get; init; }
         public List<VM_ModSetting> AppearanceMods { get; init; } = new();
     }
-
-    // In VM_NpcSelectionBar.cs
-
+    
     public async Task InitializeAsync(VM_SplashScreen? splashReporter)
     {
         // 1. UI-thread cleanup (unchanged)
@@ -1370,6 +1368,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
                 else
                 {
+                    var npcData = NpcDisplayData.FromFormKey(npcFormKey);
+                    if (!npcDisplayDataCache.ContainsKey(npcFormKey))
+                    {
+                        npcDisplayDataCache.Add(npcFormKey, npcData);
+                    }
                     splashReporter?.IncrementProgress(npcFormKey.ToString());
                 }
             }
@@ -1393,6 +1396,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 if (!npcViewModelMap.ContainsKey(mugshotKey))
                 {
                     var npcVM = new VM_NpcsMenuSelection(mugshotKey, _environmentStateProvider, this, _auxilliary);
+                    npcVM.IsInLoadOrder = false;
                     npcViewModelMap[mugshotKey] = npcVM;
                     splashReporter?.IncrementProgress(npcVM.DisplayName);
                 }

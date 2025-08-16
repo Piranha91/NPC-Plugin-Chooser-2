@@ -14,6 +14,7 @@ public record NpcDisplayData
     public string? EditorID { get; init; }
     public bool IsTemplateUser { get; init; }
     public FormKey TemplateFormKey { get; init; }
+    public bool IsInLoadOrder { get; init; }
 
     /// <summary>
     /// A helper property to consistently determine the best display name.
@@ -31,7 +32,20 @@ public record NpcDisplayData
             Name = npcGetter.Name?.String,
             EditorID = npcGetter.EditorID,
             IsTemplateUser = npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits),
-            TemplateFormKey = npcGetter.Template.FormKey
+            TemplateFormKey = npcGetter.Template.FormKey,
+            IsInLoadOrder = true
+        };
+    }
+
+    /// <summary>
+    /// Creates an NpcDisplayData instance from a FormKey if the getter isn't available
+    /// </summary>
+    public static NpcDisplayData FromFormKey(FormKey formKey)
+    {
+        return new NpcDisplayData
+        {
+            FormKey = formKey,
+            IsInLoadOrder = false
         };
     }
 }

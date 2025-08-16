@@ -36,6 +36,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public string NpcFormKeyString { get; } = _defaultFormKeyString;
         public string FormIdString { get; }
         private bool _pluginFound = false;
+        public bool IsInLoadOrder { get; set; }
 
         // This property reflects the centrally stored selection
         [Reactive] public string? SelectedAppearanceModName { get; set; }
@@ -67,6 +68,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             NpcName = npcData.Name ?? _defaultNpcName;
             NpcEditorId = npcData.EditorID ?? _defaultEditorID;
             DisplayName = npcData.DisplayName;
+            IsInLoadOrder = npcData.IsInLoadOrder;
         }
     }
     
