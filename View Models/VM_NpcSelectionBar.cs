@@ -110,6 +110,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
     // --- UI / Display Properties ---
     [Reactive] public bool ShowHiddenMods { get; set; } = false;
+    [Reactive] public bool ShowUnloadedNpcs { get; set; } = true;
     [Reactive] public bool ShowNpcDescriptions { get; set; }
     public List<VM_NpcsMenuSelection> AllNpcs { get; } = new();
     public ObservableCollection<VM_NpcsMenuSelection> FilteredNpcs { get; } = new();
@@ -324,6 +325,17 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState) SearchText3 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter3 = null;
+            })
+            .DisposeWith(_disposables);
+
+        ShowUnloadedNpcs = _settings.ShowUnloadedNpcs;
+        this.WhenAnyValue(x => x.ShowUnloadedNpcs)
+            .Skip(1) // Skip the initial value on load
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(show => 
+            {
+                _settings.ShowUnloadedNpcs = show;
+                ApplyFilter(false);
             })
             .DisposeWith(_disposables);
 
@@ -1474,6 +1486,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     public void ApplyFilter(bool initializing, bool preserveSelection = true)
     {
         List<VM_NpcsMenuSelection> results = AllNpcs;
+
+        if (!ShowUnloadedNpcs)
+        {
+            results = AllNpcs.Where(n => n.IsInLoadOrder).ToList();
+        }
+        
         var predicates = new List<Func<VM_NpcsMenuSelection, bool>>();
         
         // Preserve the currently selected NPC
