@@ -498,31 +498,44 @@ public class Patcher : OptionalUIModule
                                                         List<RecordDeltaPatcher.PropertyDiff> recordDifs =
                                                             _recordDeltaPatcher.GetPropertyDiffs(overrideRecord,
                                                                 baseRecord, overrideRecord, ctx.ModKey);
-                                                        IMajorRecordGetter? winningGetter = null;
-                                                        if (recordDifs is not null && recordDifs.Any() &&
-                                                            _environmentStateProvider.LinkCache.TryResolve(
-                                                                ctx.Record.FormKey,
-                                                                ctx.Record.Type, out winningGetter) &&
-                                                            winningGetter != null)
+
+                                                        if (recordDifs is not null && recordDifs.Any())
                                                         {
-                                                            if (Auxilliary.TryGetOrAddGenericRecordAsOverride(
-                                                                    winningGetter,
-                                                                    _environmentStateProvider.OutputMod,
-                                                                    out var winningRecord,
-                                                                    out string exceptionString) &&
-                                                                winningRecord != null)
+                                                            IMajorRecordGetter? winningGetter = null;
+                                                            var loquiType = Auxilliary.GetRecordGetterType(ctx.Record);
+                                                            
+                                                            if (
+                                                                (loquiType != null && _environmentStateProvider.LinkCache.TryResolve(
+                                                                    ctx.Record.FormKey,
+                                                                    ctx.Record.Type, out winningGetter)
+                                                                
+                                                                ||
+                                                                
+                                                                _environmentStateProvider.LinkCache.TryResolve( // fallback because the typed lookup fails for IRaceGetter
+                                                                    ctx.Record.FormKey, out winningGetter)
+                                                                ) &&
+                                                                winningGetter != null)
                                                             {
-                                                                _recordDeltaPatcher.ApplyPropertyDiffs(winningRecord,
-                                                                    recordDifs, winningRecord, ctx.ModKey);
-                                                                deltaPatchedRecords.Add(winningRecord);
-                                                            }
-                                                            else
-                                                            {
-                                                                AppendLog(
-                                                                    Auxilliary.GetNpcLogString(patchNpc) +
-                                                                    ": Could not merge in winning override for " +
-                                                                    Auxilliary.GetLogString(winningGetter) + ": " +
-                                                                    exceptionString, true, true);
+                                                                if (Auxilliary.TryGetOrAddGenericRecordAsOverride(
+                                                                        winningGetter,
+                                                                        _environmentStateProvider.OutputMod,
+                                                                        out var winningRecord,
+                                                                        out string exceptionString) &&
+                                                                    winningRecord != null)
+                                                                {
+                                                                    _recordDeltaPatcher.ApplyPropertyDiffs(
+                                                                        winningRecord,
+                                                                        recordDifs, winningRecord, ctx.ModKey);
+                                                                    deltaPatchedRecords.Add(winningRecord);
+                                                                }
+                                                                else
+                                                                {
+                                                                    AppendLog(
+                                                                        Auxilliary.GetNpcLogString(patchNpc) +
+                                                                        ": Could not merge in winning override for " +
+                                                                        Auxilliary.GetLogString(winningGetter) + ": " +
+                                                                        exceptionString, true, true);
+                                                                }
                                                             }
                                                         }
                                                     }
