@@ -76,9 +76,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     [Reactive] public string SearchText1 { get; set; } = string.Empty;
     [Reactive] public NpcSearchType SearchType1 { get; set; } = NpcSearchType.Name;
     [Reactive] public string SearchText2 { get; set; } = string.Empty;
-    [Reactive] public NpcSearchType SearchType2 { get; set; } = NpcSearchType.EditorID;
+    [Reactive] public NpcSearchType SearchType2 { get; set; } = NpcSearchType.InAppearanceMod;
     [Reactive] public string SearchText3 { get; set; } = string.Empty;
-    [Reactive] public NpcSearchType SearchType3 { get; set; } = NpcSearchType.InAppearanceMod;
+    [Reactive] public NpcSearchType SearchType3 { get; set; } = NpcSearchType.Group;
+    
+    private const string AllNpcsGroup = "All NPCs";
 
     // Visibility & Selection State Filters
     [ObservableAsProperty] public bool IsSelectionStateSearch1 { get; }
@@ -1640,7 +1642,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
     private Func<VM_NpcsMenuSelection, bool>? BuildGroupPredicate(string? selectedGroup)
     {
-        if (string.IsNullOrWhiteSpace(selectedGroup)) return null;
+        if (string.IsNullOrWhiteSpace(selectedGroup) || selectedGroup == AllNpcsGroup)
+        {
+            return null;
+        }
+
         return npc => _settings.NpcGroupAssignments.TryGetValue(npc.NpcFormKey, out var groups) &&
                       groups != null &&
                       groups.Contains(selectedGroup);
@@ -2324,6 +2330,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         string? currentSelection = SelectedGroupName;
         bool selectionStillExists = false;
         AvailableNpcGroups.Clear();
+        AvailableNpcGroups.Add(AllNpcsGroup);
         foreach (var group in sortedGroups)
         {
             AvailableNpcGroups.Add(group);
