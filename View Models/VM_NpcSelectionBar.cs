@@ -110,6 +110,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
     // --- UI / Display Properties ---
     [Reactive] public bool ShowHiddenMods { get; set; } = false;
+    [Reactive] public bool ShowSingleOptionNpcs { get; set; } = true;
     [Reactive] public bool ShowUnloadedNpcs { get; set; } = true;
     [Reactive] public bool ShowNpcDescriptions { get; set; }
     public List<VM_NpcsMenuSelection> AllNpcs { get; } = new();
@@ -325,6 +326,17 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState) SearchText3 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter3 = null;
+            })
+            .DisposeWith(_disposables);
+        
+        ShowSingleOptionNpcs = _settings.ShowSingleOptionNpcs;
+        this.WhenAnyValue(x => x.ShowSingleOptionNpcs)
+            .Skip(1) // Skip the initial value on load
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(show => 
+            {
+                _settings.ShowSingleOptionNpcs = show;
+                ApplyFilter(false);
             })
             .DisposeWith(_disposables);
 
@@ -1487,9 +1499,14 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     {
         List<VM_NpcsMenuSelection> results = AllNpcs;
 
+        if (!ShowSingleOptionNpcs)
+        {
+            results = results.Where(n => n.AppearanceMods.Count > 1).ToList();
+        }
+
         if (!ShowUnloadedNpcs)
         {
-            results = AllNpcs.Where(n => n.IsInLoadOrder).ToList();
+            results = results.Where(n => n.IsInLoadOrder).ToList();
         }
         
         var predicates = new List<Func<VM_NpcsMenuSelection, bool>>();
@@ -1957,7 +1974,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         ToggleModVisibility();
     }
 
-    public void SelectAllFromMod(VM_NpcsMenuMugshot referenceMod)
+    public void SelectAllFromMod(VM_NpcsMenuMugshot referenceMod, bool onlyAvailable)
     {
         if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName))
         {
@@ -1969,7 +1986,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         // First, find all NPCs for whom this mod is a valid "native" appearance source.
         var applicableNpcs = AllNpcs
-            .Where(npc => npc != null && IsModAnAppearanceSourceForNpc(npc, referenceMod))
+            .Where(npc => npc != null && IsModAnAppearanceSourceForNpc(npc, referenceMod) &&
+                          (!onlyAvailable || !_consistencyProvider.DoesNpcHaveSelection(npc.NpcFormKey)))
             .ToList();
 
         if (!applicableNpcs.Any())

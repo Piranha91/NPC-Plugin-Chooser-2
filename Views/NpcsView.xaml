@@ -92,7 +92,8 @@
                     <Button x:Name="RemoveVisibleNpcsButton" Content="Rem Vis" Margin="2,0" Padding="3,1" VerticalAlignment="Center" Command="{Binding RemoveAllVisibleNpcsFromGroupCommand}" ToolTip="Remove all NPCs currently visible in the list below from the specified group"/>
                 </StackPanel>
 
-                <CheckBox Content="Show Unloaded NPCs" Margin="15,2,5,2" IsChecked="{Binding ShowUnloadedNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that are not part of your current load order (e.g., from mugshots of uninstalled mods)."/>
+                <CheckBox Content="Show Single Single-Option NPCs" Margin="15,2,5,2" IsChecked="{Binding ShowSingleOptionNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that only have one available appearance."/>
+                <CheckBox Content="Show Unloaded NPCs" Margin="15,2,5,2" IsChecked="{Binding ShowUnloadedNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that are not part of your current load order (e.g., from mugshots or inactive mods)."/>
                 <CheckBox Content="Show Hidden Mods" Margin="5,2" IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Toggle visibility of hidden appearance mods"/>
                 <CheckBox Content="Show NPC Descriptions" Margin="5,2,15,2" IsChecked="{Binding ShowNpcDescriptions, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If checked, shows descriptions for selected base game NPCs from online sources."/>
 
@@ -427,6 +428,7 @@
                                          <MenuItem Header="Unhide" Command="{Binding UnhideCommand}" />
                                          <Separator />
                                          <MenuItem Header="Select All From This Mod" Command="{Binding SelectAllFromThisModCommand}" />
+                                         <MenuItem Header="Select Available From This Mod" Command="{Binding SelectAvailableFromThisModCommand}" />
                                          <MenuItem Header="Hide All From This Mod" Command="{Binding HideAllFromThisModCommand}" />
                                          <MenuItem Header="Unhide All From This Mod" Command="{Binding UnhideAllFromThisModCommand}" />
                                          <Separator />

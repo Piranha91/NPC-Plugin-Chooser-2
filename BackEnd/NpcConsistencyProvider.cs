@@ -112,5 +112,10 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             var (selectedModName, selectedSourceKey) = GetSelectedMod(npcFormKey);
             return selectedModName == modToCheck && selectedSourceKey.Equals(sourceNpcFormKey);
         }
+
+        public bool DoesNpcHaveSelection(FormKey npcFormKey)
+        {
+            return _selectedMods.ContainsKey(npcFormKey);
+        }
     }
 }

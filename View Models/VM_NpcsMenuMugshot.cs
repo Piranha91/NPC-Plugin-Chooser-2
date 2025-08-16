@@ -88,6 +88,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> HideCommand { get; }
         public ReactiveCommand<Unit, Unit> UnhideCommand { get; }
         public ReactiveCommand<Unit, Unit> SelectAllFromThisModCommand { get; }
+        public ReactiveCommand<Unit, Unit> SelectAvailableFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> HideAllFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> UnhideAllFromThisModCommand { get; }
         public ReactiveCommand<Unit, Unit> JumpToModCommand { get; }
@@ -244,7 +245,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             ToggleFullScreenCommand = ReactiveCommand.Create(ToggleFullScreen, canToggleFullScreen);
             HideCommand = ReactiveCommand.Create(HideThisMod);
             UnhideCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnhideSelectedMod(this));
-            SelectAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.SelectAllFromMod(this));
+            SelectAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.SelectAllFromMod(this, false));
+            SelectAvailableFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.SelectAllFromMod(this, true));
             HideAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.HideAllFromMod(this));
             UnhideAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnhideAllFromMod(this));
             JumpToModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.JumpToMod(this),

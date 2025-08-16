@@ -31,6 +31,7 @@ public class Settings
 
     // UI / Other
     public bool ShowNpcDescriptions { get; set; } = true;
+    public bool ShowSingleOptionNpcs { get; set; } = true;
     public bool ShowUnloadedNpcs { get; set; } = true;
     public List<ModSetting> ModSettings { get; set; } = new();
     // The string is the ModName, the FormKey is the NPC within that mod providing the appearance.
