@@ -678,7 +678,7 @@ public class Patcher : OptionalUIModule
 
                                 if (_settings.UseSkyPatcherMode)
                                 {
-                                    _skyPatcherInterface.ApplyViaSkyPatcher(appearanceNpcRecord, patchNpc);
+                                    _skyPatcherInterface.ApplyViaSkyPatcher(npcFormKey, patchNpc);
                                 }
                             }
                             else

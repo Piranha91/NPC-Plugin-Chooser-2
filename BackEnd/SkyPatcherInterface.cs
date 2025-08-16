@@ -10,9 +10,20 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 public class SkyPatcherInterface : OptionalUIModule
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
-    private List<string> outputLines = new();
+    private Dictionary<FormKey, NpcContainer> _outputs = new();
     private Dictionary<FormKey, FormKey> _keyOriginalValSurrogate = new(); // key: orignal NPC, Value: SkyPatcher NPC
     private Dictionary<FormKey, FormKey> _keySurrogateValOrriginal = new();
+
+    private class NpcContainer
+    {
+        public FormKey NpcFormKey { get; set; }
+        public List<string> ActionStrings { get; set; } = new();
+
+        public NpcContainer(FormKey npcFormKey)
+        {
+            NpcFormKey = npcFormKey;
+        }
+    }
 
     public SkyPatcherInterface(EnvironmentStateProvider environmentStateProvider)
     {
@@ -21,7 +32,7 @@ public class SkyPatcherInterface : OptionalUIModule
 
     public void Reinitialize(string outputRootDir)
     {
-        outputLines = new List<string>();
+        _outputs.Clear();
         _keyOriginalValSurrogate.Clear();
         _keySurrogateValOrriginal.Clear();
         if (!ClearIni(_environmentStateProvider.OutputMod.ModKey, outputRootDir, out string exceptionStr))
@@ -39,6 +50,7 @@ public class SkyPatcherInterface : OptionalUIModule
         
         _keyOriginalValSurrogate.Add(npcGetter.FormKey, npcCopy.FormKey);
         _keySurrogateValOrriginal.Add(npcCopy.FormKey, npcGetter.FormKey);
+        _outputs.Add(npcGetter.FormKey, new(npcGetter.FormKey));
         return npcCopy;
     }
 
@@ -52,82 +64,94 @@ public class SkyPatcherInterface : OptionalUIModule
         return _keySurrogateValOrriginal.TryGetValue(surrogateNpcFormKey, out originalNpcFormKey);
     }
 
-    public void ApplyViaSkyPatcher(INpcGetter originalNpc, INpcGetter surrogateNpc)
+    public void ApplyViaSkyPatcher(FormKey applyTo, INpcGetter appearanceTemplate)
     {
-
-        ApplyFace(originalNpc.FormKey, surrogateNpc.FormKey);
-        if (!surrogateNpc.WornArmor.IsNull)
+        ApplyFace(applyTo, appearanceTemplate.FormKey);
+        if (!appearanceTemplate.WornArmor.IsNull)
         {
-            ApplySkin(originalNpc.FormKey, surrogateNpc.WornArmor.FormKey);
+            ApplySkin(applyTo, appearanceTemplate.WornArmor.FormKey);
         }
-        ApplyHeight(originalNpc.FormKey, surrogateNpc.Height);
+        ApplyHeight(applyTo, appearanceTemplate.Height);
     }
 
     public void ApplyFace(FormKey applyTo, FormKey faceTemplate) // This doesn't work if the face texture isn't baked into the facegen nif. Not useful for SynthEBD.
     {
-        if (applyTo.IsNull || faceTemplate.IsNull)
+        if (applyTo.IsNull || faceTemplate.IsNull || !_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
         {
             return;
         }
-        
-        string npc = FormatFormKeyForSkyPatcher(applyTo); 
+
         string template = FormatFormKeyForSkyPatcher(faceTemplate);
         
-        outputLines.Add($"filterByNPCs={npc}:copyVisualStyle={template}");
+        npcContainer.ActionStrings.Add($"copyVisualStyle={template}");
     }
     
     public void ApplySkin(FormKey applyTo, FormKey skinFk)
     {
-        if (applyTo.IsNull || skinFk.IsNull)
+        if (applyTo.IsNull || skinFk.IsNull || !_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
         {
             return;
         }
         
-        string npc = FormatFormKeyForSkyPatcher(applyTo); 
         string skin = FormatFormKeyForSkyPatcher(skinFk);
         
-        outputLines.Add($"filterByNPCs={npc}:skin={skin}");
+        npcContainer.ActionStrings.Add($"skin={skin}");
     }
     
     public void ApplyHeight(FormKey applyTo, float heightFlt)
     {
-        string npc = FormatFormKeyForSkyPatcher(applyTo); 
         string height = heightFlt.ToString();
         
-        outputLines.Add($"filterByNPCs={npc}:height={height}");
+        if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
+        {
+            return;
+        }
+        
+        npcContainer.ActionStrings.Add($"height={height}");
     }
 
     public void ToggleGender(FormKey applyTo, Gender gender)
     {
-        string npc = FormatFormKeyForSkyPatcher(applyTo);
+        if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
+        {
+            return;
+        }
+        
         if (gender == Gender.Female)
         {
-            outputLines.Add($"filterByNPCs={npc}:setFlags=female");
+            npcContainer.ActionStrings.Add("setFlags=female");
         }
         else
         {
-            outputLines.Add($"filterByNPCs={npc}:removeFlags=female");
+            npcContainer.ActionStrings.Add("removeFlags=female");
         }
     }
 
     public void ToggleTemplateTraitsStatus(FormKey applyTo, bool useTraits)
     {
-        string npc = FormatFormKeyForSkyPatcher(applyTo);
+        if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
+        {
+            return;
+        }
+        
         if (useTraits)
         {
-            outputLines.Add($"filterByNPCs={npc}:setTemplateFlags=traits");
+            npcContainer.ActionStrings.Add("setTemplateFlags=traits");
         }
         else
         {
-            outputLines.Add($"filterByNPCs={npc}:removeTemplateFlags=traits");
+            npcContainer.ActionStrings.Add("removeTemplateFlags=traits");
         }
     }
 
     public void SetOutfit(FormKey applyTo, IOutfitGetter outfit)
     {
-        string npc = FormatFormKeyForSkyPatcher(applyTo);
+        if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
+        {
+            return;
+        }
         string outfitStr = FormatFormKeyForSkyPatcher(outfit.FormKey);
-        outputLines.Add($"filterByNPCs={npc}:outfitDefault={outfitStr}");
+        npcContainer.ActionStrings.Add($"outfitDefault={outfitStr}");
     }
 
     public bool WriteIni(string outputRootFolder)
@@ -141,8 +165,18 @@ public class SkyPatcherInterface : OptionalUIModule
             {
                 Directory.CreateDirectory(outputDir);
             }
+            
+            StringBuilder sb = new();
 
-            File.WriteAllLines(outputPath, outputLines, new UTF8Encoding(false));
+            foreach (var entry in _outputs.Values)
+            {
+                string npc = FormatFormKeyForSkyPatcher(entry.NpcFormKey);
+                sb.Append($"filterByNPCs={npc}:");
+                sb.Append(string.Join(",", entry.ActionStrings.Order()));
+                sb.Append(Environment.NewLine);
+            }
+
+            File.WriteAllText(outputPath, sb.ToString(), new UTF8Encoding(false));
             AppendLog("Saved SkyPatcher Ini File to " + outputPath, false, true);
             return true;
         }
@@ -193,7 +227,7 @@ public class SkyPatcherInterface : OptionalUIModule
 
     public bool HasSkinEntries()
     {
-        return outputLines.Any();
+        return _outputs.Any();
     }
     
     public static string FormatFormKeyForSkyPatcher(FormKey FK)
