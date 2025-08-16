@@ -13,9 +13,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         [Description("In Appearance Mod")]
         InAppearanceMod,
+        
+        [Description("Chosen In Mod")]
+        ChosenInMod,
 
-        [Description("From Mod")]
-        FromMod,
+        [Description("From Plugin")]
+        FromPlugin,
 
         [Description("FormKey")]
         FormKey,

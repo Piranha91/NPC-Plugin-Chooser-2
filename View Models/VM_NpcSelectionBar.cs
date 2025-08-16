@@ -1669,7 +1669,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                         m.DisplayName.Contains(searchText, StringComparison.OrdinalIgnoreCase)) ||
                     (_mugshotData.TryGetValue(npc.NpcFormKey, out var mugshots) &&
                      mugshots.Any(m => m.ModName.Contains(searchText, StringComparison.OrdinalIgnoreCase)));
-            case NpcSearchType.FromMod:
+            case NpcSearchType.ChosenInMod:
+                return npc =>
+                    _consistencyProvider.GetSelectedMod(npc.NpcFormKey).ModName?
+                        .Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false;
+            case NpcSearchType.FromPlugin:
                 return npc =>
                     npc.NpcFormKey.ModKey.FileName.String.Contains(searchText, StringComparison.OrdinalIgnoreCase);
             case NpcSearchType.FormKey:
