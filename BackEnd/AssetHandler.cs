@@ -407,7 +407,7 @@ public class AssetHandler : OptionalUIModule
         FormKey surrogateNpcFormKey = FormKey.Null;;
 
         bool useSkyPatcher =
-            _skyPatcherInterface.TryGetSurrogateFormKey(appearanceNpcRecord.FormKey, out surrogateNpcFormKey);
+            _skyPatcherInterface.TryGetSurrogateFormKey(targetNpcFormKey, out surrogateNpcFormKey);
         
         bool isFaceSwap = !targetNpcFormKey.Equals(appearanceNpcRecord.FormKey);
         if (!useSkyPatcher && isFaceSwap)
