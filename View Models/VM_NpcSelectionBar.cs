@@ -262,6 +262,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ToPropertyEx(this, x => x.CurrentNpcAppearanceMods);
 
         this.WhenAnyValue(x => x.CurrentNpcAppearanceMods)
+            // Add a 50ms throttle. This gives the UI thread a moment to complete the
+            // layout pass for the newly loaded mugshots before the resize signal is sent.
+            .Throttle(TimeSpan.FromMilliseconds(50), RxApp.MainThreadScheduler) 
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ =>
             {
