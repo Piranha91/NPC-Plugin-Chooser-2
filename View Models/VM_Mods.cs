@@ -94,6 +94,7 @@ public class VM_Mods : ReactiveObject
 
     // --- New: Other Display Controls
     public bool NormalizeImageDimensions => _settings.NormalizeImageDimensions;
+    public int MaxMugshotsToFit => _settings.MaxMugshotsToFit;
 
     // --- NEW: Source Plugin Disambiguation (Right Panel - Above Mugshots, below Mod Name) ---
     [Reactive] public ModKey? SelectedSourcePluginForDisambiguation { get; set; }

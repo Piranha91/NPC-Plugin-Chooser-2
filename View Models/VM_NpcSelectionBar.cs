@@ -137,6 +137,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     
     // --- New: Other Display Controls
     public bool NormalizeImageDimensions => _settings.NormalizeImageDimensions;
+    public int MaxMugshotsToFit => _settings.MaxMugshotsToFit;
 
     // --- NPC Group Properties ---
     [Reactive] public string SelectedGroupName { get; set; } = string.Empty;

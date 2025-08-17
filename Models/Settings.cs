@@ -46,6 +46,7 @@ public class Settings
     public Dictionary<FormKey, OutfitOverride> NpcOutfitOverrides { get; set; } = new();
     public HashSet<ModKey> ImportFromLoadOrderExclusions { get; set; } = new();
     public bool NormalizeImageDimensions { get; set; } = false;
+    public int MaxMugshotsToFit { get; set; } = 50;
 
     // EasyNPC Interchangeability / Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); 

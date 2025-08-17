@@ -425,7 +425,8 @@ namespace NPC_Plugin_Chooser_2.Views
                             availableHeight,
                             availableWidth,
                             _mugshotMargin,
-                            ViewModel.NormalizeImageDimensions
+                            ViewModel.NormalizeImageDimensions,
+                            ViewModel.MaxMugshotsToFit
                         );
                         ViewModel.NpcsViewZoomLevel = packerScaleFactor * 100.0;
                     }

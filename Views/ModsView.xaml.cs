@@ -420,7 +420,8 @@ namespace NPC_Plugin_Chooser_2.Views
                             availableHeight,
                             availableWidth,
                             5, // xamlItemUniformMargin (from XAML Margin="5")
-                            ViewModel.NormalizeImageDimensions
+                            ViewModel.NormalizeImageDimensions,
+                            ViewModel.MaxMugshotsToFit
                         );
 
                         // After packer runs, items in tempCollectionForPacker have updated ImageWidth/Height.

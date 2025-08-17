@@ -19,7 +19,8 @@ namespace NPC_Plugin_Chooser_2.Views
             ObservableCollection<IHasMugshotImage> imagesToPackCollection,
             double availableHeight, double availableWidth,
             int xamlItemUniformMargin,
-            bool normalizeAndCropImages = true)
+            bool normalizeAndCropImages = true,
+            int maxMugshotsToFit = 50)
         {
             var visibleImages = imagesToPackCollection
                 .Where(x => x.IsVisible && x.OriginalDipWidth > 0 && x.OriginalDipHeight > 0 && !string.IsNullOrEmpty(x.ImagePath) && File.Exists(x.ImagePath))
@@ -49,12 +50,12 @@ namespace NPC_Plugin_Chooser_2.Views
                 
                 if (modePixelSize.IsEmpty || modePixelSize.Width == 0)
                 {
-                    return FitWithOriginalDimensions(imagesToPackCollection, visibleImages, availableHeight, availableWidth, xamlItemUniformMargin);
+                    return FitWithOriginalDimensions(imagesToPackCollection, visibleImages, availableHeight, availableWidth, xamlItemUniformMargin, maxMugshotsToFit);
                 }
 
                 double modeDipWidth = modePixelSize.Width;
                 double modeDipHeight = modePixelSize.Height;
-                var uniformBaseDimensions = Enumerable.Repeat((modeDipWidth, modeDipHeight), visibleImages.Count).ToList();
+                var uniformBaseDimensions = Enumerable.Repeat((modeDipWidth, modeDipHeight), Math.Min(visibleImages.Count, maxMugshotsToFit)).ToList();
                 
                 finalPackerScale = CalculatePackerScale(uniformBaseDimensions, availableHeight, availableWidth, xamlItemUniformMargin);
 
@@ -94,7 +95,7 @@ namespace NPC_Plugin_Chooser_2.Views
             }
             else
             {
-                finalPackerScale = FitWithOriginalDimensions(imagesToPackCollection, visibleImages, availableHeight, availableWidth, xamlItemUniformMargin);
+                finalPackerScale = FitWithOriginalDimensions(imagesToPackCollection, visibleImages, availableHeight, availableWidth, xamlItemUniformMargin, maxMugshotsToFit);
             }
 
             return finalPackerScale;
@@ -103,10 +104,11 @@ namespace NPC_Plugin_Chooser_2.Views
         private static double FitWithOriginalDimensions(
             ObservableCollection<IHasMugshotImage> fullCollection,
             List<IHasMugshotImage> visibleImages,
-            double availableHeight, double availableWidth, int xamlItemUniformMargin)
+            double availableHeight, double availableWidth, int xamlItemUniformMargin,
+            int maxMugshotsToFit)
         {
-            var originalDimensions = visibleImages.Select(img => (img.OriginalDipWidth, img.OriginalDipHeight)).ToList();
-            double packerScale = CalculatePackerScale(originalDimensions, availableHeight, availableWidth, xamlItemUniformMargin);
+            var dimensionsToPack = visibleImages.Take(maxMugshotsToFit).Select(img => (img.OriginalDipWidth, img.OriginalDipHeight)).ToList();
+            double packerScale = CalculatePackerScale(dimensionsToPack, availableHeight, availableWidth, xamlItemUniformMargin);
 
             foreach (var img in fullCollection)
             {

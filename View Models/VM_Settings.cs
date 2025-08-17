@@ -89,6 +89,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         // --- New: Properties for display settings
         [Reactive] public bool NormalizeImageDimensions { get; set; }
+        [Reactive] public int MaxMugshotsToFit { get; set; }
         
         // For throttled saving
         private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
@@ -163,6 +164,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             BatFilePreCommands = _model.BatFilePreCommands;
             BatFilePostCommands = _model.BatFilePostCommands;
             NormalizeImageDimensions = _model.NormalizeImageDimensions;
+            MaxMugshotsToFit = _model.MaxMugshotsToFit;
             
             ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
             ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
@@ -323,6 +325,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.NormalizeImageDimensions)
                 .Skip(1) // Skip the initial value set from the model
                 .Subscribe(b => _model.NormalizeImageDimensions = b)
+                .DisposeWith(_disposables);
+            
+            this.WhenAnyValue(x => x.MaxMugshotsToFit)
+                .Skip(1)
+                .Subscribe(val => _model.MaxMugshotsToFit = val)
                 .DisposeWith(_disposables);
 
             _saveRequestSubject

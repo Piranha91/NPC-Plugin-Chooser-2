@@ -188,7 +188,14 @@
                 <StackPanel>
                     <CheckBox Content="Normalize Image Dimensions"
                               IsChecked="{Binding NormalizeImageDimensions, Mode=TwoWay}"
-                              ToolTip="If checked, all images will be cropped and resized to the most common dimensions for a uniform appearance. This may slightly increase load times."/>
+                              ToolTip="If checked, all images will be cropped and resized to the most common dimensions for a uniform appearance. This may slightly increase load times."/> 
+                    
+                    <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                        <TextBlock Text="Max # Mugshots To Fit:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                        <TextBox Text="{Binding MaxMugshotsToFit, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                 Width="50"
+                                 ToolTip="The maximum number of mugshots to fit on-screen when auto-sizing. A lower number results in larger images."/>
+                    </StackPanel>
                 </StackPanel>
             </GroupBox>
 
