@@ -464,7 +464,7 @@ public class VM_Mods : ReactiveObject
         _npcSelectionBar?.RefreshAppearanceSources();
     }
     
-    private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
+private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
 {
     _mugshotLoadingCts?.Cancel();
     _mugshotLoadingCts = new CancellationTokenSource();
@@ -492,10 +492,10 @@ public class VM_Mods : ReactiveObject
     {
         try
         {
+            // Phase 1: Gather all data first. This is fast and happens for both algorithms.
             var mugshotData = new List<(string ImagePath, FormKey NpcFormKey, string NpcDisplayName)>();
             bool hasRealMugshots = false;
 
-            // Phase 1: Gather all data first (this is fast I/O)
             if (selectedModSetting.HasValidMugshots && !string.IsNullOrWhiteSpace(selectedModSetting.MugShotFolderPath) && Directory.Exists(selectedModSetting.MugShotFolderPath))
             {
                 var imageFiles = Directory.EnumerateFiles(selectedModSetting.MugShotFolderPath, "*.*", SearchOption.AllDirectories)
@@ -511,68 +511,82 @@ public class VM_Mods : ReactiveObject
                     
                     if (FormKey.TryFactory(formKeyString, out var npcFormKey))
                     {
-                        // **FIX:** Restore full name resolution logic using LinkCache
                         string npcDisplayName = 
                             selectedModSetting.NpcFormKeysToDisplayName.TryGetValue(npcFormKey, out var knownName) ? knownName
                             : (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter)
                                 ? npcGetter.Name?.String ?? npcGetter.EditorID ?? npcFormKey.ToString()
                                 : "Unknown NPC (" + formKeyString + ")");
-
                         mugshotData.Add((imagePath, npcFormKey, npcDisplayName));
                         hasRealMugshots = true;
                     }
                 }
             }
-            // ... (The rest of the method remains the same as the previous step)
-            if (!hasRealMugshots) 
+
+            if (!hasRealMugshots) // Fallback to placeholders
             {
                 mugshotData.AddRange(selectedModSetting.NpcFormKeysToDisplayName
                     .Select(kvp => (FullPlaceholderPath, kvp.Key, kvp.Value)));
             }
-            if (!mugshotData.Any()) 
-            {
+
+            if (!mugshotData.Any()) {
                  await Application.Current.Dispatcher.InvokeAsync(() => IsLoadingMugshots = false);
                  return;
             }
 
             int maxToFit = _settings.MaxMugshotsToFit;
-            var firstChunkData = mugshotData.Take(maxToFit).ToList();
-            var firstChunkVMs = new List<VM_ModsMenuMugshot>();
 
-            foreach (var data in firstChunkData)
+            // **DECISION POINT: Choose algorithm based on mugshot count**
+            if (mugshotData.Count <= maxToFit)
             {
-                if (token.IsCancellationRequested) return;
-                var vm = CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName);
-                firstChunkVMs.Add(vm);
+                // --- ALGORITHM 1: Small Mod (Load all, then sort and display) ---
+                var vms = mugshotData
+                    .Select(data => CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName))
+                    .OrderBy(vm => vm.NpcDisplayName)
+                    .ToList();
+
+                await Application.Current.Dispatcher.InvokeAsync(() => {
+                    if (token.IsCancellationRequested) return;
+                    foreach (var vm in vms) CurrentModNpcMugshots.Add(vm);
+                    _refreshMugshotSizesSubject.OnNext(Unit.Default); // Resize the entire batch
+                });
             }
-
-            await Application.Current.Dispatcher.InvokeAsync(() => {
-                if (token.IsCancellationRequested) return;
-                foreach (var vm in firstChunkVMs) CurrentModNpcMugshots.Add(vm);
-                _refreshMugshotSizesSubject.OnNext(Unit.Default);
-            });
-
-            await Task.Delay(50, token);
-
-            double userZoomFactor = this.ModsViewZoomLevel / 100.0;
-            double averageDiagonal = firstChunkVMs.Any(vm => vm.OriginalDipDiagonal > 0) ? firstChunkVMs.Where(vm => vm.OriginalDipDiagonal > 0).Average(vm => vm.OriginalDipDiagonal) : 100.0;
-            
-            var remainingData = mugshotData.Skip(maxToFit).ToList();
-            foreach (var data in remainingData)
+            else
             {
-                if (token.IsCancellationRequested) return;
-                var vm = CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName);
-
-                if (vm.OriginalDipDiagonal > 0 && userZoomFactor > 0)
+                // --- ALGORITHM 2: Large Mod (Progressive load and resize) ---
+                var firstChunkData = mugshotData.Take(maxToFit).ToList();
+                var firstChunkVMs = new List<VM_ModsMenuMugshot>();
+                foreach (var data in firstChunkData)
                 {
-                    double individualScaleFactor = (averageDiagonal / vm.OriginalDipDiagonal) * userZoomFactor;
-                    vm.ImageWidth = vm.OriginalDipWidth * individualScaleFactor;
-                    vm.ImageHeight = vm.OriginalDipHeight * individualScaleFactor;
+                    if (token.IsCancellationRequested) return;
+                    firstChunkVMs.Add(CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName));
                 }
 
                 await Application.Current.Dispatcher.InvokeAsync(() => {
-                    if (!token.IsCancellationRequested) CurrentModNpcMugshots.Add(vm);
+                    if (token.IsCancellationRequested) return;
+                    foreach (var vm in firstChunkVMs) CurrentModNpcMugshots.Add(vm);
+                    _refreshMugshotSizesSubject.OnNext(Unit.Default);
                 });
+                
+                await Task.Delay(50, token);
+
+                double userZoomFactor = this.ModsViewZoomLevel / 100.0;
+                double averageDiagonal = firstChunkVMs.Any(vm => vm.OriginalDipDiagonal > 0) ? firstChunkVMs.Where(vm => vm.OriginalDipDiagonal > 0).Average(vm => vm.OriginalDipDiagonal) : 100.0;
+                
+                var remainingData = mugshotData.Skip(maxToFit).ToList();
+                foreach (var data in remainingData)
+                {
+                    if (token.IsCancellationRequested) return;
+                    var vm = CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName);
+                    if (vm.OriginalDipDiagonal > 0 && userZoomFactor > 0)
+                    {
+                        double individualScaleFactor = (averageDiagonal / vm.OriginalDipDiagonal) * userZoomFactor;
+                        vm.ImageWidth = vm.OriginalDipWidth * individualScaleFactor;
+                        vm.ImageHeight = vm.OriginalDipHeight * individualScaleFactor;
+                    }
+                    await Application.Current.Dispatcher.InvokeAsync(() => {
+                        if (!token.IsCancellationRequested) CurrentModNpcMugshots.Add(vm);
+                    });
+                }
             }
         }
         catch (TaskCanceledException) { /* Suppress cancellation error */ }
@@ -591,6 +605,7 @@ public class VM_Mods : ReactiveObject
     return Task.CompletedTask;
 }
 
+// Helper method used by both algorithms
 private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, string imagePath, FormKey npcFormKey, string npcDisplayName)
 {
     bool isAmbiguous = modSetting.AmbiguousNpcFormKeys.Contains(npcFormKey);
