@@ -43,6 +43,7 @@ public class VM_Mods : ReactiveObject
     private readonly PluginProvider _pluginProvider;
     private readonly BsaHandler _bsaHandler;
     private readonly ConcurrentDictionary<(string pluginSourcePath, ModKey modKey), bool> _overridesCache = new();
+    private CancellationTokenSource? _mugshotLoadingCts;
 
     private readonly CompositeDisposable _disposables = new();
 
@@ -462,196 +463,143 @@ public class VM_Mods : ReactiveObject
         // Assuming _npcSelectionBar is the injected instance.
         _npcSelectionBar?.RefreshAppearanceSources();
     }
+    
+    private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
+{
+    _mugshotLoadingCts?.Cancel();
+    _mugshotLoadingCts = new CancellationTokenSource();
+    var token = _mugshotLoadingCts.Token;
 
-    // View Models/VM_Mods.cs
-
-    private async Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
+    if (selectedModSetting == null)
     {
-        if (selectedModSetting == null)
-        {
-            SelectedModForMugshots = null;
-            CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
-            CurrentModNpcMugshots.Clear();
-            return;
-        }
-
-        IsLoadingMugshots = true;
-        SelectedModForMugshots = selectedModSetting;
+        SelectedModForMugshots = null;
         CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
         CurrentModNpcMugshots.Clear();
+        return Task.CompletedTask;
+    }
 
-        if (!ModsViewIsZoomLocked)
-        {
-            ModsViewHasUserManuallyZoomed = false;
-        }
+    IsLoadingMugshots = true;
+    SelectedModForMugshots = selectedModSetting;
+    CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
+    CurrentModNpcMugshots.Clear();
 
-        // Create a temporary list to hold data for VM creation. This is thread-safe.
-        var mugshotCreationData =
-            new List<(string ImagePath, FormKey NpcFormKey, string NpcDisplayName, bool IsAmbiguous, List<ModKey>
-                AvailablePlugins, ModKey? CurrentSource)>();
+    if (!ModsViewIsZoomLocked)
+    {
+        ModsViewHasUserManuallyZoomed = false;
+    }
 
+    _ = Task.Run(async () =>
+    {
         try
         {
-            // Gather data on a background thread without creating view models
-            if (selectedModSetting.HasValidMugshots &&
-                !string.IsNullOrWhiteSpace(selectedModSetting.MugShotFolderPath) &&
-                Directory.Exists(selectedModSetting.MugShotFolderPath))
+            var mugshotData = new List<(string ImagePath, FormKey NpcFormKey, string NpcDisplayName)>();
+            bool hasRealMugshots = false;
+
+            // Phase 1: Gather all data first (this is fast I/O)
+            if (selectedModSetting.HasValidMugshots && !string.IsNullOrWhiteSpace(selectedModSetting.MugShotFolderPath) && Directory.Exists(selectedModSetting.MugShotFolderPath))
             {
-                await Task.Run(() =>
+                var imageFiles = Directory.EnumerateFiles(selectedModSetting.MugShotFolderPath, "*.*", SearchOption.AllDirectories)
+                    .Where(f => Regex.IsMatch(Path.GetFileName(f), @"^[0-9A-F]{8}\.(png|jpg|jpeg|bmp)$", RegexOptions.IgnoreCase));
+
+                foreach (var imagePath in imageFiles)
                 {
-                    var imageFiles = Directory.EnumerateFiles(selectedModSetting.MugShotFolderPath, "*.*",
-                            SearchOption.AllDirectories)
-                        .Where(f => Regex.IsMatch(Path.GetFileName(f), @"^[0-9A-F]{8}\.(png|jpg|jpeg|bmp)$",
-                            RegexOptions.IgnoreCase))
-                        .ToList();
-
-                    foreach (var imagePath in imageFiles)
+                    if (token.IsCancellationRequested) return;
+                    string fileName = Path.GetFileName(imagePath);
+                    string hexPart = Path.GetFileNameWithoutExtension(fileName);
+                    string pluginName = new FileInfo(imagePath).Directory.Name;
+                    string formKeyString = $"{hexPart.Substring(Math.Max(0, hexPart.Length - 6))}:{pluginName}";
+                    
+                    if (FormKey.TryFactory(formKeyString, out var npcFormKey))
                     {
-                        string fileName = Path.GetFileName(imagePath);
-                        string hexPart = Path.GetFileNameWithoutExtension(fileName);
-                        DirectoryInfo? pluginDir = new FileInfo(imagePath).Directory;
+                        // **FIX:** Restore full name resolution logic using LinkCache
+                        string npcDisplayName = 
+                            selectedModSetting.NpcFormKeysToDisplayName.TryGetValue(npcFormKey, out var knownName) ? knownName
+                            : (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter)
+                                ? npcGetter.Name?.String ?? npcGetter.EditorID ?? npcFormKey.ToString()
+                                : "Unknown NPC (" + formKeyString + ")");
 
-                        if (pluginDir != null && Regex.IsMatch(pluginDir.Name, @"^.+\.(esm|esp|esl)$",
-                                RegexOptions.IgnoreCase))
-                        {
-                            string pluginName = pluginDir.Name;
-                            string formIdHex = hexPart.Substring(Math.Max(0, hexPart.Length - 6));
-                            string formKeyString = $"{formIdHex}:{pluginName}";
-
-                            try
-                            {
-                                FormKey npcFormKey = FormKey.Factory(formKeyString);
-                                string npcDisplayName;
-
-                                if (selectedModSetting.NpcFormKeysToDisplayName.TryGetValue(npcFormKey,
-                                        out var knownNpcName))
-                                {
-                                    npcDisplayName = knownNpcName;
-                                }
-                                else if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey,
-                                             out var npcGetter))
-                                {
-                                    npcDisplayName = npcGetter.Name?.String ??
-                                                     npcGetter.EditorID ?? npcFormKey.ToString();
-                                }
-                                else
-                                {
-                                    npcDisplayName = "Unknown NPC (" + formKeyString + ")";
-                                }
-
-                                bool isAmbiguous = selectedModSetting.AmbiguousNpcFormKeys.Contains(npcFormKey);
-
-                                List<ModKey> availableModKeys = new();
-                                ModKey? currentSource = null;
-
-                                if (selectedModSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey,
-                                        out List<ModKey>? availableModKeysForNpc))
-                                {
-                                    availableModKeys = availableModKeysForNpc;
-                                    if (selectedModSetting.NpcPluginDisambiguation.ContainsKey(npcFormKey))
-                                    {
-                                        currentSource = selectedModSetting.NpcPluginDisambiguation[npcFormKey];
-                                    }
-                                    else
-                                    {
-                                        currentSource = availableModKeys.FirstOrDefault();
-                                    }
-                                }
-
-                                // Add the data to the temporary list instead of creating the VM here
-                                mugshotCreationData.Add((imagePath, npcFormKey, npcDisplayName, isAmbiguous,
-                                    availableModKeys, currentSource));
-                            }
-                            catch (Exception ex)
-                            {
-                                Debug.WriteLine(
-                                    $"Error creating FormKey/VM for real mugshot {imagePath}: {ex.Message}");
-                            }
-                        }
+                        mugshotData.Add((imagePath, npcFormKey, npcDisplayName));
+                        hasRealMugshots = true;
                     }
+                }
+            }
+            // ... (The rest of the method remains the same as the previous step)
+            if (!hasRealMugshots) 
+            {
+                mugshotData.AddRange(selectedModSetting.NpcFormKeysToDisplayName
+                    .Select(kvp => (FullPlaceholderPath, kvp.Key, kvp.Value)));
+            }
+            if (!mugshotData.Any()) 
+            {
+                 await Application.Current.Dispatcher.InvokeAsync(() => IsLoadingMugshots = false);
+                 return;
+            }
+
+            int maxToFit = _settings.MaxMugshotsToFit;
+            var firstChunkData = mugshotData.Take(maxToFit).ToList();
+            var firstChunkVMs = new List<VM_ModsMenuMugshot>();
+
+            foreach (var data in firstChunkData)
+            {
+                if (token.IsCancellationRequested) return;
+                var vm = CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName);
+                firstChunkVMs.Add(vm);
+            }
+
+            await Application.Current.Dispatcher.InvokeAsync(() => {
+                if (token.IsCancellationRequested) return;
+                foreach (var vm in firstChunkVMs) CurrentModNpcMugshots.Add(vm);
+                _refreshMugshotSizesSubject.OnNext(Unit.Default);
+            });
+
+            await Task.Delay(50, token);
+
+            double userZoomFactor = this.ModsViewZoomLevel / 100.0;
+            double averageDiagonal = firstChunkVMs.Any(vm => vm.OriginalDipDiagonal > 0) ? firstChunkVMs.Where(vm => vm.OriginalDipDiagonal > 0).Average(vm => vm.OriginalDipDiagonal) : 100.0;
+            
+            var remainingData = mugshotData.Skip(maxToFit).ToList();
+            foreach (var data in remainingData)
+            {
+                if (token.IsCancellationRequested) return;
+                var vm = CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName);
+
+                if (vm.OriginalDipDiagonal > 0 && userZoomFactor > 0)
+                {
+                    double individualScaleFactor = (averageDiagonal / vm.OriginalDipDiagonal) * userZoomFactor;
+                    vm.ImageWidth = vm.OriginalDipWidth * individualScaleFactor;
+                    vm.ImageHeight = vm.OriginalDipHeight * individualScaleFactor;
+                }
+
+                await Application.Current.Dispatcher.InvokeAsync(() => {
+                    if (!token.IsCancellationRequested) CurrentModNpcMugshots.Add(vm);
                 });
             }
-
-            if (!mugshotCreationData.Any() && PlaceholderExists)
-            {
-                if (selectedModSetting.NpcFormKeysToDisplayName.Any())
-                {
-                    Debug.WriteLine(
-                        $"ShowMugshotsAsync: Loading placeholders for {selectedModSetting.DisplayName} ({selectedModSetting.NpcFormKeysToDisplayName.Count} known NPCs).");
-                    await Task.Run(() =>
-                    {
-                        foreach (var npcEntry in selectedModSetting.NpcFormKeysToDisplayName)
-                        {
-                            FormKey npcFormKey = npcEntry.Key;
-                            string npcDisplayName = npcEntry.Value;
-
-                            bool isAmbiguous = selectedModSetting.AmbiguousNpcFormKeys.Contains(npcFormKey);
-
-                            List<ModKey> availableModKeys = new();
-                            ModKey? currentSource = null;
-
-                            if (selectedModSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey,
-                                    out List<ModKey>? availableModKeysForNpc))
-                            {
-                                availableModKeys = availableModKeysForNpc;
-                                if (selectedModSetting.NpcPluginDisambiguation.ContainsKey(npcFormKey))
-                                {
-                                    currentSource = selectedModSetting.NpcPluginDisambiguation[npcFormKey];
-                                }
-                                else
-                                {
-                                    currentSource = availableModKeys.FirstOrDefault();
-                                }
-                            }
-
-                            // Add placeholder data to the temporary list
-                            mugshotCreationData.Add((FullPlaceholderPath, npcFormKey, npcDisplayName, isAmbiguous,
-                                availableModKeys, currentSource));
-                        }
-                    });
-                }
-                else
-                {
-                    Debug.WriteLine(
-                        $"ShowMugshotsAsync: No real mugshots for {selectedModSetting.DisplayName}, and no NPCs known to this mod setting to show placeholders for.");
-                }
-            }
-
-            // Now, back on the UI thread, create the VMs from the collected data.
-            var mugshotVMs = mugshotCreationData
-                .Select(data => new VM_ModsMenuMugshot(
-                    data.ImagePath,
-                    data.NpcFormKey,
-                    data.NpcDisplayName,
-                    this,
-                    data.IsAmbiguous,
-                    data.AvailablePlugins,
-                    data.CurrentSource,
-                    selectedModSetting,
-                    _consistencyProvider))
-                .OrderBy(vm => vm.NpcDisplayName)
-                .ToList();
-
-            CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
-            CurrentModNpcMugshots.Clear();
-            foreach (var vm in mugshotVMs)
-                CurrentModNpcMugshots.Add(vm);
         }
+        catch (TaskCanceledException) { /* Suppress cancellation error */ }
         catch (Exception ex)
         {
-            ScrollableMessageBox.ShowWarning(
-                $"Failed to load mugshot data for {selectedModSetting.DisplayName}:\n{ex.Message}",
-                "Mugshot Load Error");
-            CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
-            CurrentModNpcMugshots.Clear();
+            await Application.Current.Dispatcher.InvokeAsync(() => ScrollableMessageBox.ShowWarning($"Failed to load mugshot data for {selectedModSetting.DisplayName}:\n{ex.Message}", "Mugshot Load Error"));
         }
         finally
         {
-            IsLoadingMugshots = false;
-            if (CurrentModNpcMugshots.Any())
-                _refreshMugshotSizesSubject.OnNext(Unit.Default);
+            await Application.Current.Dispatcher.InvokeAsync(() => {
+                if (!token.IsCancellationRequested) IsLoadingMugshots = false;
+            });
         }
-    }
+    }, token);
+
+    return Task.CompletedTask;
+}
+
+private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, string imagePath, FormKey npcFormKey, string npcDisplayName)
+{
+    bool isAmbiguous = modSetting.AmbiguousNpcFormKeys.Contains(npcFormKey);
+    var availableModKeys = modSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var keys) ? keys : new List<ModKey>();
+    var currentSource = modSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var source) ? (ModKey?)source : availableModKeys.FirstOrDefault();
+    
+    var vm = new VM_ModsMenuMugshot(imagePath, npcFormKey, npcDisplayName, this, isAmbiguous, availableModKeys, currentSource, modSetting, _consistencyProvider);
+    return vm;
+}
 
     // --- NEW or MODIFIED IF NEEDED: Dispose method for cleaning up subscriptions ---
     public void Dispose() // If VM_Mods needs to be disposable

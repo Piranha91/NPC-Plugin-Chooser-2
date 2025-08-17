@@ -94,6 +94,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(selected => BorderColor = selected ? _selectedBrush : _deselectedBrush)
                 .DisposeWith(_disposables);
+            
+            // Freeze the brushes to make them thread-safe for background creation
+            if (_selectedBrush.CanFreeze) _selectedBrush.Freeze();
+            if (_deselectedBrush.CanFreeze) _deselectedBrush.Freeze();
 
             // Subscribe to global selection changes to keep this mugshot's border up to date
             _consistencyProvider.NpcSelectionChanged

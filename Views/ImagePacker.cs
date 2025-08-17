@@ -65,23 +65,39 @@ namespace NPC_Plugin_Chooser_2.Views
                     {
                         try
                         {
-                            using Image originalImage = Image.FromFile(img.ImagePath);
-                            using Bitmap normalizedBitmap = CenterCropAndResize(originalImage, modePixelSize.Width, modePixelSize.Height);
+                            Image? originalImage = null;
+                            MemoryStream? memoryStream = null;
                             
-                            // This part is the same, we update the source and dimensions
-                            img.MugshotSource = BitmapToImageSource(normalizedBitmap);
-                            img.OriginalPixelWidth = modePixelSize.Width;
-                            img.OriginalPixelHeight = modePixelSize.Height;
-                            
-                            double hRes = originalImage.HorizontalResolution > 1 ? originalImage.HorizontalResolution : 96.0;
-                            double vRes = originalImage.VerticalResolution > 1 ? originalImage.VerticalResolution : 96.0;
-                            img.OriginalDipWidth = modePixelSize.Width * (96.0 / hRes);
-                            img.OriginalDipHeight = modePixelSize.Height * (96.0 / vRes);
+                            // **FIX:** Use the in-memory BitmapSource if it exists, otherwise load from file.
+                            if (img.MugshotSource is BitmapSource bmpSource)
+                            {
+                                memoryStream = new MemoryStream();
+                                var encoder = new PngBitmapEncoder();
+                                encoder.Frames.Add(BitmapFrame.Create(bmpSource));
+                                encoder.Save(memoryStream);
+                                memoryStream.Position = 0;
+                                originalImage = Image.FromStream(memoryStream);
+                            }
+                            else
+                            {
+                                originalImage = Image.FromFile(img.ImagePath);
+                            }
 
-                            // --- THIS IS THE FIX ---
-                            // We must also update the diagonal so that subsequent zoom calculations are correct.
-                            img.OriginalDipDiagonal = Math.Sqrt(img.OriginalDipWidth * img.OriginalDipWidth + img.OriginalDipHeight * img.OriginalDipHeight);
-
+                            using (originalImage)
+                            using (memoryStream) // Ensures the memory stream is also disposed
+                            {
+                                using Bitmap normalizedBitmap = CenterCropAndResize(originalImage, modePixelSize.Width, modePixelSize.Height);
+                                
+                                img.MugshotSource = BitmapToImageSource(normalizedBitmap);
+                                img.OriginalPixelWidth = modePixelSize.Width;
+                                img.OriginalPixelHeight = modePixelSize.Height;
+                                
+                                double hRes = originalImage.HorizontalResolution > 1 ? originalImage.HorizontalResolution : 96.0;
+                                double vRes = originalImage.VerticalResolution > 1 ? originalImage.VerticalResolution : 96.0;
+                                img.OriginalDipWidth = modePixelSize.Width * (96.0 / hRes);
+                                img.OriginalDipHeight = modePixelSize.Height * (96.0 / vRes);
+                                img.OriginalDipDiagonal = Math.Sqrt(img.OriginalDipWidth * img.OriginalDipWidth + img.OriginalDipHeight * img.OriginalDipHeight);
+                            }
                         }
                         catch (Exception ex)
                         {
