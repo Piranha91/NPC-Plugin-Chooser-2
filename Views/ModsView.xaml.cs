@@ -413,10 +413,19 @@ namespace NPC_Plugin_Chooser_2.Views
                         // or if we pass a new ObservableCollection as it expects.
                         // For now, let's assume the packer method is updated or we make a temp collection.
 
+                        // Get the singleton ImagePacker instance from the service locator.
+                        var imagePacker = Locator.Current.GetService<ImagePacker>();
+                        if (imagePacker == null)
+                        {
+                            Debug.WriteLine("ModsView.RefreshMugshotImageSizes: ImagePacker service could not be resolved.");
+                            return;
+                        }
+
                         var tempCollectionForPacker = new ObservableCollection<IHasMugshotImage>(imagesForPacker.Cast<IHasMugshotImage>());
 
-                        double packerScaleFactor = ImagePacker.FitOriginalImagesToContainer(
-                            tempCollectionForPacker, // Pass the casted & potentially filtered collection
+                        // Call the instance method on the retrieved service.
+                        double packerScaleFactor = imagePacker.FitOriginalImagesToContainer(
+                            tempCollectionForPacker,
                             availableHeight,
                             availableWidth,
                             5, // xamlItemUniformMargin (from XAML Margin="5")

@@ -42,8 +42,10 @@ public class VM_Mods : ReactiveObject
     private readonly Auxilliary _aux;
     private readonly PluginProvider _pluginProvider;
     private readonly BsaHandler _bsaHandler;
+    private readonly ImagePacker _imagePacker;
     private readonly ConcurrentDictionary<(string pluginSourcePath, ModKey modKey), bool> _overridesCache = new();
     private CancellationTokenSource? _mugshotLoadingCts;
+    private TaskCompletionSource<PackingResult> _packingCompletionSource;
 
     private readonly CompositeDisposable _disposables = new();
 
@@ -135,7 +137,8 @@ public class VM_Mods : ReactiveObject
         BsaHandler bsaHandler,
         VM_ModSetting.FromModelFactory modSettingFromModelFactory,
         VM_ModSetting.FromMugshotPathFactory modSettingFromMugshotPathFactory,
-        VM_ModSetting.FromModFolderFactory modSettingFromModFolderFactory)
+        VM_ModSetting.FromModFolderFactory modSettingFromModFolderFactory,
+        ImagePacker imagePacker)
     {
         _settings = settings;
         _environmentStateProvider = environmentStateProvider;
@@ -148,6 +151,9 @@ public class VM_Mods : ReactiveObject
         _modSettingFromModelFactory = modSettingFromModelFactory;
         _modSettingFromMugshotPathFactory = modSettingFromMugshotPathFactory;
         _modSettingFromModFolderFactory = modSettingFromModFolderFactory;
+        _imagePacker = imagePacker;
+        
+        _imagePacker.PackingCompleted += OnImagePackingCompleted;
 
         ShowMugshotsCommand = ReactiveCommand.CreateFromTask<VM_ModSetting>(ShowMugshotsAsync);
         ShowMugshotsCommand.ThrownExceptions.Subscribe(ex =>
@@ -379,6 +385,12 @@ public class VM_Mods : ReactiveObject
 
         ApplyFilters(); // Apply initial filter
     }
+    
+    private void OnImagePackingCompleted(PackingResult result)
+    {
+        // When the event fires, complete the waiting task with the results.
+        _packingCompletionSource?.TrySetResult(result);
+    }
 
     /// <summary>
     /// Adds a new VM_ModSetting (typically created by Unlink operation) to the internal list
@@ -464,7 +476,7 @@ public class VM_Mods : ReactiveObject
         _npcSelectionBar?.RefreshAppearanceSources();
     }
     
-private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
+    private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
 {
     _mugshotLoadingCts?.Cancel();
     _mugshotLoadingCts = new CancellationTokenSource();
@@ -561,31 +573,39 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
                     firstChunkVMs.Add(CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName));
                 }
 
+                // --- MODIFICATION START: Replace Task.Delay with guaranteed Dispatcher sequencing ---
+                double definitiveWidth = 0;
+                double definitiveHeight = 0;
+
+                // --- MODIFICATION: Replace Task.Delay with robust awaitable task ---
+                _packingCompletionSource = new TaskCompletionSource<PackingResult>();
+
                 await Application.Current.Dispatcher.InvokeAsync(() => {
                     if (token.IsCancellationRequested) return;
                     foreach (var vm in firstChunkVMs) CurrentModNpcMugshots.Add(vm);
                     _refreshMugshotSizesSubject.OnNext(Unit.Default);
                 });
-                
-                await Task.Delay(50, token);
 
-                double userZoomFactor = this.ModsViewZoomLevel / 100.0;
-                double averageDiagonal = firstChunkVMs.Any(vm => vm.OriginalDipDiagonal > 0) ? firstChunkVMs.Where(vm => vm.OriginalDipDiagonal > 0).Average(vm => vm.OriginalDipDiagonal) : 100.0;
+                // Asynchronously wait for the OnImagePackingCompleted event handler to fire.
+                PackingResult result = await _packingCompletionSource.Task;
+                if (token.IsCancellationRequested) return;
                 
                 var remainingData = mugshotData.Skip(maxToFit).ToList();
                 foreach (var data in remainingData)
                 {
                     if (token.IsCancellationRequested) return;
                     var vm = CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName);
-                    if (vm.OriginalDipDiagonal > 0 && userZoomFactor > 0)
+
+                    // Apply the definitive size received from the packer's completion event.
+                    if (result.DefinitiveWidth > 0 && result.DefinitiveHeight > 0)
                     {
-                        double individualScaleFactor = (averageDiagonal / vm.OriginalDipDiagonal) * userZoomFactor;
-                        vm.ImageWidth = vm.OriginalDipWidth * individualScaleFactor;
-                        vm.ImageHeight = vm.OriginalDipHeight * individualScaleFactor;
+                        vm.ImageWidth = result.DefinitiveWidth;
+                        vm.ImageHeight = result.DefinitiveHeight;
                     }
+                        
                     await Application.Current.Dispatcher.InvokeAsync(() => {
                         if (!token.IsCancellationRequested) CurrentModNpcMugshots.Add(vm);
-                    });
+                    }, System.Windows.Threading.DispatcherPriority.Normal, token);
                 }
             }
         }

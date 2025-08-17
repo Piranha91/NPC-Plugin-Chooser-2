@@ -417,10 +417,19 @@ namespace NPC_Plugin_Chooser_2.Views
 
                     if (availableHeight > 0 && availableWidth > 0)
                     {
+                        // Get the singleton ImagePacker instance from the service locator.
+                        var imagePacker = Locator.Current.GetService<ImagePacker>();
+                        if (imagePacker == null)
+                        {
+                            Debug.WriteLine("NpcsView.RefreshImageSizes: ImagePacker service could not be resolved.");
+                            return;
+                        }
+
                         var imagesForPacker =
                             new ObservableCollection<IHasMugshotImage>(imagesToProcess.Cast<IHasMugshotImage>());
 
-                        double packerScaleFactor = ImagePacker.FitOriginalImagesToContainer(
+                        // Call the instance method on the retrieved service.
+                        double packerScaleFactor = imagePacker.FitOriginalImagesToContainer(
                             imagesForPacker,
                             availableHeight,
                             availableWidth,

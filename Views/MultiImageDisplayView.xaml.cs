@@ -13,6 +13,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using Splat;
 
 namespace NPC_Plugin_Chooser_2.Views
 {
@@ -244,7 +245,14 @@ namespace NPC_Plugin_Chooser_2.Views
                     {
                         // ImagePacker.FitOriginalImagesToContainer expects an ObservableCollection.
                         // ViewModel.ImagesToDisplay is already of this type.
-                        double packerScaleFactor = ImagePacker.FitOriginalImagesToContainer(
+                        // Get the singleton ImagePacker instance from the service locator.
+                        var imagePacker = Locator.Current.GetService<ImagePacker>();
+                        if (imagePacker == null)
+                        {
+                            Debug.WriteLine("NpcsView.RefreshImageSizes: ImagePacker service could not be resolved.");
+                            return;
+                        }
+                        double packerScaleFactor = imagePacker.FitOriginalImagesToContainer(
                             ViewModel.ImagesToDisplay, 
                             availableHeight,
                             availableWidth,
