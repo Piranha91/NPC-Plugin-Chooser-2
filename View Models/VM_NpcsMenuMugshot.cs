@@ -602,11 +602,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // NEW: Handle drop between two real mugshots
             if (sourceIsRealMugshotVm && targetIsRealMugshotVm)
             {
-                var fromMod = sourceItem.ModName;
-                var fromNpc = sourceItem.SourceNpcFormKey;
-                var toMod = this.ModName;
-                var toNpc = this.SourceNpcFormKey;
-                _vmNpcSelectionBar.MassUpdateNpcSelections(fromMod, fromNpc, toMod, toNpc);
+                var droppedMod = sourceItem.ModName;
+                var droppedNpc = sourceItem.SourceNpcFormKey;
+                var targetMod = this.ModName;
+                var targetNpc = this.SourceNpcFormKey;
+                _vmNpcSelectionBar.MassUpdateNpcSelections(targetMod, targetNpc, droppedMod, droppedNpc);
                 return; // Exit after handling this case
             }
 

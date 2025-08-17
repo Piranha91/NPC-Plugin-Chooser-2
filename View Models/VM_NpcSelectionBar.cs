@@ -2365,17 +2365,24 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             return;
         }
 
+        var targetMod = _lazyModsVm.Value.AllModSettings.FirstOrDefault(x => x.DisplayName == toModName);
+        if (targetMod == null)
+        {
+            return;
+        }
+
         var npcsToUpdate = AllNpcs
             .Where(npc => {
                 var selection = _consistencyProvider.GetSelectedMod(npc.NpcFormKey);
-                return string.Equals(selection.ModName, fromModName, StringComparison.OrdinalIgnoreCase) && selection.SourceNpcFormKey.Equals(fromNpcKey);
+                return string.Equals(selection.ModName, fromModName, StringComparison.OrdinalIgnoreCase) && targetMod.AvailablePluginsForNpcs.ContainsKey(npc.NpcFormKey);
             })
             .ToList();
 
         if (!npcsToUpdate.Any()) return;
 
         var confirmationMessage = $"This will change the selected appearance for {npcsToUpdate.Count} NPC(s) from '{fromModName} ({fromNpcKey})' to '{toModName} ({toNpcKey})'. Proceed?";
-        if (ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Mass Update"))
+        string imagePath = @"Resources\Replace Selected Mod.png";
+        if (ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Mass Update", displayImagePath: imagePath))
         {
             foreach (var npc in npcsToUpdate)
             {
