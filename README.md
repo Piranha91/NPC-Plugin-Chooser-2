@@ -74,8 +74,15 @@ Install like you would any other similar utility such as EasyNPC. Extract the co
     * If you just type in a name, you’ll get that folder created as a subfolder within the mods folder from step 2
     * If you want to specify a folder in a different mod manager, type in the full path (or browse & select it)
 7. Switch to the NPCs tab and make your selections.
-8. Switch to the Run tab & run the patcher
-9. Enable the resulting plugin and assets in your mod manager. Make sure the assets overwrite all conflicts.
+    * To select from an existing option, just click the Mugshot or Placeholder for your desired appearance mod. The border will turn green if the selection is valid.
+    * To apply the appearance from a different NPC:
+    	* navigate to that NPC
+     	* right click on the Mugshot or Placeholder corresponding to the appearance you want to use
+        * select the "Share With NPC" option in the context menu
+        * in the window that appears, search for the NPC you want to apply the appearance to
+        * Click [Share and Select] to apply the appearance, or simply [Share] to make the appearance available to that NPC without actually selecting it yet
+9. Switch to the Run tab & run the patcher
+10. Enable the resulting plugin and assets in your mod manager. Make sure the assets overwrite all conflicts.
 
 
 # Detailed Usage
@@ -393,10 +400,11 @@ The NPCs Menu is where you’ll make your appearance mod selections. It has a fe
 * Unhide All From This Mod: Unhides all mugshots from this mod
 * Jump To Mod: Switches to the **Mods Menu** and jumps to the selected mod
 * Show Full Image: Shows a full screen image of the mugshot (you can also do this with **Ctrl + Rclick**) 
-* Share with NPC: Sends the mugshot to another NPC, where you can use its appearance as a replacer. Note that it does NOT auto-select the mugshot; it only makes it available. You have to go to that NPC and select it yourself:
+* Share with NPC: Sends the mugshot to another NPC, where you can use its appearance as a replacer. **Click Share and Select** to apply the appearance, or **Share** to make the mugshot available without yet applying it.
 
 
-<img width="1206" height="722" alt="20 Appearance Target" src="https://github.com/user-attachments/assets/eae7d972-c248-46f8-bbdf-f09961a52955" />
+
+<img width="764" height="474" alt="20 Appearance Target Revised" src="https://github.com/user-attachments/assets/c3736a62-2b55-46df-8a97-9641540b8c00" />
 
 
 <img width="2168" height="626" alt="21 Appearance Share" src="https://github.com/user-attachments/assets/f35a9bce-491d-49fe-957b-48dc7f37ec7b" />
