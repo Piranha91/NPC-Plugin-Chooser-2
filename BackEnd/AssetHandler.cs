@@ -203,8 +203,11 @@ public class AssetHandler : OptionalUIModule
         return sourceType != AssetSourceType.NotFound;
     }
     
-    static string? RegularizeOrNull(string path) =>
-        Auxilliary.TryRegularizePath(path, out var rel) ? rel : null;
+    static string RegularizeOrSelf(string path)
+    {
+        Auxilliary.TryRegularizePath(path, out var rel);
+        return rel;
+    }
     
     /// <summary>
     /// Returns a task that will complete when all scheduled asset operations have finished.
@@ -319,10 +322,8 @@ public class AssetHandler : OptionalUIModule
             var regularizedPaths = new HashSet<string>();
             foreach (var t in texturesInNif)
             {
-                if (Auxilliary.TryRegularizePath(t, out var regularizedPath))
-                {
-                    regularizedPaths.Add(regularizedPath);
-                }
+                Auxilliary.TryRegularizePath(t, out var regularizedPath);
+                regularizedPaths.Add(regularizedPath);
             }
 
             if (!regularizedPaths.Any()) return;
@@ -456,7 +457,7 @@ public class AssetHandler : OptionalUIModule
 
         foreach (var relPath in allAssetPaths)
         {
-            if (Auxilliary.TryRegularizePath(relPath, out string regularizedPath))
+            Auxilliary.TryRegularizePath(relPath, out string regularizedPath);
             // This method is fire-and-forget; the task is added to the concurrent dictionary 
             // and runs in the background. It will not re-process assets it has already seen.
             RequestAssetCopyAsync(regularizedPath, appearanceModSetting, outputBasePath);
@@ -473,7 +474,7 @@ public class AssetHandler : OptionalUIModule
             assetLinks
                 .Select(x => x.GivenPath)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Select(RegularizeOrNull)
+                .Select(RegularizeOrSelf)
                 .Where(rel => rel is not null)
                 .Select(rel => rel!) // null-forgiving operator converts string? → string
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);

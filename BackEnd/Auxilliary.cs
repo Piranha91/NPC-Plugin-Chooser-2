@@ -615,15 +615,11 @@ public class Auxilliary : IDisposable
 
         if (regularized)
         {
-            if (TryRegularizePath(meshPath, out var regularizedMeshPath))
-            {
-                meshPath = regularizedMeshPath;
-            }
+            TryRegularizePath(meshPath, out var regularizedMeshPath);
+            meshPath = regularizedMeshPath;
 
-            if (TryRegularizePath(texPath, out var regularizedTexPath))
-            {
-                texPath = regularizedTexPath;
-            }
+            TryRegularizePath(texPath, out var regularizedTexPath);
+            texPath = regularizedTexPath;
         }
 
         // Return lowercase paths for case-insensitive comparisons later
@@ -702,8 +698,13 @@ public class Auxilliary : IDisposable
     ///   • relative paths that already start with <type>\
     ///   • bare “arbitrary\file.ext”, inferring <type> from the extension.
     /// </summary>
+    /// <returns>
+    /// True if the path was guaranteed to be regularized (e.g., a "data" prefix was removed
+    /// or a type folder was added). Returns false otherwise.
+    /// </returns>
     public static bool TryRegularizePath(string? inputPath, out string regularizedPath)
     {
+        // A path will be returned in all cases, so initialize it to a known value.
         regularizedPath = string.Empty;
 
         if (string.IsNullOrWhiteSpace(inputPath))
@@ -718,41 +719,59 @@ public class Auxilliary : IDisposable
         {
             ".dds" => "textures",
             ".nif" => "meshes",
+            ".tri" => "meshes",
             _      => null
         };
-        if (expectedType is null) return false;   // unsupported extension
 
         // Split into components.
         var segments = path
             .Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries)
             .ToList();
 
-        // Try to find “…\data\<type>\…”
+        // The return value will be true if we perform an action that guarantees regularization.
+        var canGuaranteeRegularization = false;
+        
+        // Check if the path contains “…\data\…” as a prefix to be removed.
+        // This is the first regularization check.
         var dataIdx = segments
             .FindIndex(s => s.Equals("data", StringComparison.OrdinalIgnoreCase));
 
         if (dataIdx >= 0 && dataIdx + 1 < segments.Count)
         {
-            // Absolute path including “…\data\<type>\…”
-            var typeSegment = segments[dataIdx + 1];
-            if (!typeSegment.Equals(expectedType, StringComparison.OrdinalIgnoreCase))
-                return false;                     // data\[type] conflicts with extension
-
+            // If the path contains "...data\..." as a prefix, we can guarantee
+            // that it has been regularized by removing that prefix.
             regularizedPath = string.Join("\\", segments.Skip(dataIdx + 1));
-            return true;
+            canGuaranteeRegularization = true;
         }
-
-        // Relative path already starts with a type folder?
-        if (segments[0].Equals(expectedType, StringComparison.OrdinalIgnoreCase))
+        // If we couldn't remove the "data" prefix, then we check if the file extension
+        // is a known type, which allows us to perform further regularization.
+        else if (expectedType is not null)
         {
-            regularizedPath = string.Join("\\", segments);
-            return true;
+            // We can guarantee regularization because we know the type and can act on it.
+            canGuaranteeRegularization = true;
+
+            // Relative path already starts with a type folder?
+            if (segments[0].Equals(expectedType, StringComparison.OrdinalIgnoreCase))
+            {
+                regularizedPath = string.Join("\\", segments);
+            }
+            else
+            {
+                // Bare “arbitrary\file.ext” – prepend inferred type.
+                regularizedPath = $"{expectedType}\\{string.Join("\\", segments)}";
+            }
+        }
+        // If the path did not contain a "data" prefix, and the file extension is
+        // not one of the supported types, we return the input path as-is.
+        // We cannot guarantee that it has been regularized.
+        else
+        {
+            regularizedPath = path;
         }
 
-        // Bare “arbitrary\file.ext” – prepend inferred type.
-        regularizedPath = $"{expectedType}\\{string.Join("\\", segments)}";
-        return true;
+        return canGuaranteeRegularization;
     }
+
 
     public static bool TryDuplicateGenericRecordAsNew(IMajorRecordGetter recordGetter, ISkyrimMod outputMod, out dynamic? duplicateRecord, out string exceptionString)
     {
