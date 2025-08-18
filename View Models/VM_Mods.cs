@@ -1236,8 +1236,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
     private void AddBaseAndCreationClubMods(List<VM_ModSetting> tempList)
     {
-        var baseGameModKeys = _environmentStateProvider.BaseGamePlugins;
-        var creationClubModKeys = _environmentStateProvider.CreationClubPlugins;
+        var baseGameModKeys = _environmentStateProvider.BaseGamePlugins ?? new();
+        var creationClubModKeys = _environmentStateProvider.CreationClubPlugins ?? new();
 
         baseGameModKeys.RemoveWhere(mk => tempList.Any(vm =>
             !vm.IsFaceGenOnlyEntry && !vm.IsMugshotOnlyEntry && vm.CorrespondingModKeys.Contains(mk)));

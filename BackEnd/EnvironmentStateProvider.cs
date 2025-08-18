@@ -32,7 +32,7 @@ public class EnvironmentStateProvider : ReactiveObject
     public DirectoryPath DataFolderPath { get; private set; }
     public ISkyrimMod OutputMod { get; set; }
     public HashSet<ModKey> BaseGamePlugins => Implicits.Get(SkyrimVersion.ToGameRelease()).BaseMasters.ToHashSet();
-    public HashSet<ModKey> CreationClubPlugins  { get; set; }
+    public HashSet<ModKey> CreationClubPlugins { get; set; } = new();
     public ModKey AbsoluteBasePlugin = ModKey.FromFileName("Skyrim.esm");
     
     public static string DefaultPluginName { get; } = "NPC";
