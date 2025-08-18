@@ -1869,13 +1869,20 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             DataContext = selectorVm,
             Owner = owner
         };
+        
+        selectorView.ShowDialog();
 
-        var result = selectorView.ShowDialog();
+        var result = selectorVm.ReturnStatus;
 
-        if (result == true && selectorVm.SelectedNpc != null)
+        if ((result == ShareReturn.ShareAndSelect || result == ShareReturn.Share) && selectorVm.SelectedNpc != null)
         {
             var targetNpcKey = selectorVm.SelectedNpc.NpcFormKey;
             AddGuestAppearance(targetNpcKey, mugshotToShare.ModName, mugshotToShare.SourceNpcFormKey, mugshotToShare.TargetDisplayName);
+
+            if (result == ShareReturn.ShareAndSelect)
+            {
+                _consistencyProvider.SetSelectedMod(targetNpcKey, mugshotToShare.ModName, mugshotToShare.SourceNpcFormKey);
+            }
         }
     }
 

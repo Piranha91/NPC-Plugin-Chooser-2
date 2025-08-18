@@ -12,6 +12,13 @@ using ReactiveUI.Fody.Helpers;
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
+    public enum ShareReturn
+    {
+        ShareAndSelect,
+        Share,
+        Cancel
+    }
+    
     public class VM_NpcShareTargetSelector : ReactiveObject
     {
         private readonly List<VM_NpcsMenuSelection> _allNpcs;
@@ -26,8 +33,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             .Where(e => e == NpcSearchType.Name || e == NpcSearchType.EditorID || e == NpcSearchType.FormKey)
             .ToArray();
 
-        public ReactiveCommand<Window, Unit> OkCommand { get; }
+        public ReactiveCommand<Window, Unit> ShareAndSelectCommand { get; }
+        public ReactiveCommand<Window, Unit> ShareCommand { get; }
         public ReactiveCommand<Window, Unit> CancelCommand { get; }
+
+        public ShareReturn ReturnStatus { get; set; } = ShareReturn.Cancel;
 
         public VM_NpcShareTargetSelector(List<VM_NpcsMenuSelection> allNpcs)
         {
@@ -41,14 +51,22 @@ namespace NPC_Plugin_Chooser_2.View_Models
             var canOk = this.WhenAnyValue(x => x.SelectedNpc)
                 .Select(npc => npc != null);
             
-            OkCommand = ReactiveCommand.Create<Window>(window =>
+            ShareAndSelectCommand = ReactiveCommand.Create<Window>(window =>
             {
-                if (window != null) window.DialogResult = true;
+                ReturnStatus = ShareReturn.ShareAndSelect;
+                window.Close();
+            }, canOk);
+            
+            ShareCommand = ReactiveCommand.Create<Window>(window =>
+            {
+                ReturnStatus = ShareReturn.Share;
+                window.Close();
             }, canOk);
             
             CancelCommand = ReactiveCommand.Create<Window>(window =>
             {
-                 if (window != null) window.DialogResult = false;
+                 ReturnStatus = ShareReturn.Cancel;
+                 window.Close();
             });
             
             ApplyFilter();
