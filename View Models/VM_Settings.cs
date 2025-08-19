@@ -32,7 +32,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Lazy<VM_NpcSelectionBar> _lazyNpcSelectionBar;
         private readonly Lazy<VM_Mods> _lazyModListVM;
         private readonly NpcConsistencyProvider _consistencyProvider; 
-        private readonly VM_SplashScreen? _splashReporter;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
         private readonly EasyNpcTranslator _easyNpcTranslator;
         
@@ -108,13 +107,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<string, Unit> RemoveCachedModCommand { get; }
 
         public VM_Settings(
-            EnvironmentStateProvider environmentStateProvider, 
+            EnvironmentStateProvider environmentStateProvider,
             Auxilliary aux,
-            Settings settingsModel, 
-            Lazy<VM_NpcSelectionBar> lazyNpcSelectionBar, 
-            Lazy<VM_Mods> lazyModListVm, 
+            Settings settingsModel,
+            Lazy<VM_NpcSelectionBar> lazyNpcSelectionBar,
+            Lazy<VM_Mods> lazyModListVm,
             NpcConsistencyProvider consistencyProvider,
-            VM_SplashScreen splashReporter,
             Lazy<VM_MainWindow> lazyMainWindowVm,
             EasyNpcTranslator easyNpcTranslator) 
         {
@@ -148,7 +146,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _lazyNpcSelectionBar = lazyNpcSelectionBar;
             _lazyModListVM = lazyModListVm;
             _consistencyProvider = consistencyProvider;
-            _splashReporter = splashReporter;
             _lazyMainWindowVm = lazyMainWindowVm;
             _easyNpcTranslator = easyNpcTranslator;
 
@@ -315,11 +312,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .Subscribe(availablePlugins =>
                 {
                     var currentUISelctions = ExclusionSelectorViewModel.SaveToModel(); // Save current UI state
-                    ExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentUISelctions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList()); // Reload with new available, preserving selections
+                    ExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentUISelctions, _environmentStateProvider?.LoadOrder?.ListedOrder?.Select(x => x.ModKey).ToList() ?? new List<ModKey>()); // Reload with new available, preserving selections
                     
                     // ADDED: Do the same for the new selector
                     var currentLoadOrderExclusionSelections = ImportFromLoadOrderExclusionSelectorViewModel.SaveToModel();
-                    ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentLoadOrderExclusionSelections, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
+                    ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(availablePlugins, currentLoadOrderExclusionSelections, _environmentStateProvider?.LoadOrder?.ListedOrder?.Select(x => x.ModKey).ToList() ?? new List<ModKey>());
                 }).DisposeWith(_disposables);
             
             this.WhenAnyValue(x => x.NormalizeImageDimensions)
@@ -343,8 +340,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 // Initial load of exclusions (if EnvironmentStatus might already be true from construction)
                 if (EnvironmentStatus == EnvironmentStateProvider.EnvironmentStatus.Valid && AvailablePluginsForExclusion != null && AvailablePluginsForExclusion.Any())
                 {
-                     ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
-                     ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
+                     ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder?.ListedOrder?.Select(x => x.ModKey).ToList() ?? new List<ModKey>());
+                     ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder?.ListedOrder?.Select(x => x.ModKey).ToList() ?? new List<ModKey>());
                 }
                 
                 // Subscribe to NPC Selection changes for saving LastSelectedNpc
@@ -363,34 +360,44 @@ namespace NPC_Plugin_Chooser_2.View_Models
         }
 
         // New method for heavy initialization, called from App.xaml.cs
-        public async Task InitializeAsync()
+        public async Task InitializeAsync(VM_SplashScreen? splashReporter)
         {
             const int totalSteps = 3; // Define the total number of steps
+
+            if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid)
+            {
+                Thread.Sleep(1000);
+            }
+
+            if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid)
+            {
+                return;
+            }
 
             try
             {
                 // --- STEP 1 ---
-                _splashReporter?.UpdateStep($"Step 1 of {totalSteps}: Populating mod list...");
+                splashReporter?.UpdateStep($"Step 1 of {totalSteps}: Populating mod list...");
 
                 using (ContextualPerformanceTracer.Trace("VM_Settings.PopulateModSettings"))
                 {
                     // **NEW ORDER: Populate mods first**
-                    _splashReporter?.UpdateProgress(70, "Populating mod list...");
+                    splashReporter?.UpdateProgress(70, "Populating mod list...");
                     await _lazyModListVM.Value
-                        .PopulateModSettingsAsync(_splashReporter); // Base 70%, span 10% (e.g. 70-80)
+                        .PopulateModSettingsAsync(splashReporter); // Base 70%, span 10% (e.g. 70-80)
                 }
 
                 // --- STEP 2 ---
-                _splashReporter?.UpdateStep($"Step 2 of {totalSteps}: Initializing NPC selection bar...");
+                splashReporter?.UpdateStep($"Step 2 of {totalSteps}: Initializing NPC selection bar...");
 
                 using (ContextualPerformanceTracer.Trace("VM_Settings.InitializeNpcSelectionBar"))
                 {
-                    _splashReporter?.UpdateProgress(80, "Initializing NPC selection bar...");
-                    await _lazyNpcSelectionBar.Value.InitializeAsync(_splashReporter);
+                    splashReporter?.UpdateProgress(80, "Initializing NPC selection bar...");
+                    await _lazyNpcSelectionBar.Value.InitializeAsync(splashReporter);
                 }
 
                 // --- STEP 3 ---
-                _splashReporter?.UpdateStep($"Step 3 of {totalSteps}: Applying default settings...");
+                splashReporter?.UpdateStep($"Step 3 of {totalSteps}: Applying default settings...");
 
                 if (!_model.HasBeenLaunched && _environmentStateProvider.LoadOrder != null)
                 {
@@ -437,13 +444,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             catch (Exception e)
             {
-                _splashReporter?.ShowMessagesOnClose("An error occured during initialization: " + Environment.NewLine + Environment.NewLine + ExceptionLogger.GetExceptionStack(e));
+                splashReporter?.ShowMessagesOnClose("An error occured during initialization: " + Environment.NewLine + Environment.NewLine + ExceptionLogger.GetExceptionStack(e));
             }
         }
 
 // Internal version also needs to respect this order if it's ever called independently
 // in a way that could lead to this state.
-        private async Task InitializeAsyncInternal()
+        private async Task InitializeAsyncInternal(VM_SplashScreen? splashReporter)
         {
             _environmentStateProvider.UpdateEnvironment();
 
@@ -505,6 +512,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public void SaveSettings()
         {
+            if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid)
+            {
+                return;
+            }
             _model.EasyNpcDefaultPluginExclusions = new HashSet<ModKey>(ExclusionSelectorViewModel.SaveToModel());
             _model.ImportFromLoadOrderExclusions = new HashSet<ModKey>(ImportFromLoadOrderExclusionSelectorViewModel.SaveToModel());
             _lazyModListVM.Value.SaveModSettingsToModel();

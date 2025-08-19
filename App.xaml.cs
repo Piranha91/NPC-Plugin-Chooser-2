@@ -27,9 +27,8 @@ namespace NPC_Plugin_Chooser_2
     public partial class App : Application
     {
         private SplashScreenWindow _splashScreenWindow;
-        private VM_SplashScreen _splashVM;
         private IContainer _container;
-        public const string ProgramVersion = "2.0.2"; // Central version definition
+        public const string ProgramVersion = "2.0.2c"; // Central version definition
 
         // App constructor should be minimal
         public App()
@@ -44,19 +43,19 @@ namespace NPC_Plugin_Chooser_2
                 base.OnStartup(e);
                 this.Exit += OnApplicationExit;
 
-                _splashVM = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, keepTopMost: false);
-                _splashVM.UpdateProgress(0, "Initializing application...");
+                var splashVM = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, keepTopMost: false);
+                splashVM.UpdateProgress(0, "Initializing application...");
 
                 try
                 {
-                    _container = await InitializeCoreApplicationAsync(_splashVM);
+                    _container = await InitializeCoreApplicationAsync(splashVM);
                 }
                 catch (Exception ex)
                 {
-                    _splashVM?.ShowMessagesOnClose("An error occured during startup: " + Environment.NewLine + Environment.NewLine + ExceptionLogger.GetExceptionStack(ex));
+                    splashVM?.ShowMessagesOnClose("An error occured during startup: " + Environment.NewLine + Environment.NewLine + ExceptionLogger.GetExceptionStack(ex));
                 }
 
-                _splashVM.UpdateProgress(95, "Loading main window...");
+                splashVM.UpdateProgress(95, "Loading main window...");
 
                 Window mainWindow = null;
 
@@ -70,15 +69,15 @@ namespace NPC_Plugin_Chooser_2
                     else if (mainWindowView is Window genericWindow)
                     {
                         genericWindow.Show();
-                        _splashVM.UpdateProgress(100, "Application loaded.");
+                        splashVM.UpdateProgress(100, "Application loaded.");
                         await Task.Delay(200);
-                        await _splashVM.CloseSplashScreenAsync();
+                        await splashVM.CloseSplashScreenAsync();
                         return; // Skip further logic since it's not the real MainWindow
                     }
                 }
                 catch (Exception ex)
                 {
-                    _splashVM.UpdateProgress(96, $"Error resolving main window: {ex.Message.Split('\n')[0]}");
+                    splashVM.UpdateProgress(96, $"Error resolving main window: {ex.Message.Split('\n')[0]}");
                     System.Diagnostics.Debug.WriteLine($"Error resolving MainWindow: {ex}");
                 }
 
@@ -100,9 +99,9 @@ namespace NPC_Plugin_Chooser_2
                     mainWindowViewModel?.InitializeApplicationState(isStartup: true);
                 }
 
-                _splashVM.UpdateProgress(100, "Application loaded.");
+                splashVM.UpdateProgress(100, "Application loaded.");
                 await Task.Delay(250);
-                await _splashVM.CloseSplashScreenAsync();
+                await splashVM.CloseSplashScreenAsync();
             }
         }
 
@@ -122,9 +121,6 @@ namespace NPC_Plugin_Chooser_2
             splashVM.UpdateProgress(15, "Loading settings model...");
             var settingsModel = VM_Settings.LoadSettings(); // Use the static method from your Settings model
             builder.RegisterInstance(settingsModel).AsSelf().SingleInstance();
-
-            // Register VM_SplashScreen so it can be injected
-            builder.RegisterInstance(splashVM).As<VM_SplashScreen>().SingleInstance();
 
             splashVM.UpdateProgress(20, "Registering core components...");
             builder.RegisterType<EnvironmentStateProvider>().AsSelf().SingleInstance();
@@ -191,7 +187,7 @@ namespace NPC_Plugin_Chooser_2
                 settingsViewModel = container.Resolve<VM_Settings>();
             }
 
-            await settingsViewModel.InitializeAsync(); // Pass splashVM implicitly if injected, or explicitly if needed
+            await settingsViewModel.InitializeAsync(splashVM); // Pass splashVM implicitly if injected, or explicitly if needed
             
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
             return container;

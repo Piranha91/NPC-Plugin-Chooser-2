@@ -22,9 +22,10 @@ public class EnvironmentStateProvider : ReactiveObject
 {
     // "Core" state properties and fields
     private IGameEnvironment<ISkyrimMod, ISkyrimModGetter> _environment;
-    private readonly VM_SplashScreen? _splashReporter; // Nullable if used optionally
-    public ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>> LoadOrder => _environment.LoadOrder;
-    public IEnumerable<ModKey> LoadOrderModKeys => LoadOrder.ListedOrder.Select(m => m.ModKey);
+    private static ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>> _emptyLoadOrder =
+        new LoadOrder<IModListingGetter<ISkyrimModGetter>>();
+    public ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>>? LoadOrder => _environment?.LoadOrder ?? _emptyLoadOrder;
+    public IEnumerable<ModKey> LoadOrderModKeys => LoadOrder?.ListedOrder?.Select(m => m.ModKey) ?? new HashSet<ModKey>();
     public ILinkCache<ISkyrimMod, ISkyrimModGetter>? LinkCache => _environment?.LinkCache;
     public SkyrimRelease SkyrimVersion { get; private set; }
     public DirectoryPath ExtraSettingsDataPath { get; set; }
@@ -67,8 +68,6 @@ public class EnvironmentStateProvider : ReactiveObject
 
     public EnvironmentStateProvider(VM_SplashScreen? splashReporter = null)
     {
-        _splashReporter = splashReporter;
-        
         string? exeLocation = null;
         var assembly = Assembly.GetEntryAssembly();
         if (assembly != null)
@@ -91,9 +90,8 @@ public class EnvironmentStateProvider : ReactiveObject
         OutputPluginName = !string.IsNullOrWhiteSpace(outputPluginName) ? outputPluginName : DefaultPluginName;
     }
 
-    public void UpdateEnvironment(double baseProgress = 0, double progressSpan = 5)
+    public void UpdateEnvironment()
     {
-        _splashReporter?.UpdateProgress(baseProgress, "Initializing game environment...");
         EnvironmentBuilderError = string.Empty;
         Status = EnvironmentStatus.Pending;
         
@@ -112,7 +110,6 @@ public class EnvironmentStateProvider : ReactiveObject
 
         try
         {
-            _splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.2), "Building game environment object...");
             string notificationStr = "";
             _environment = builder
                 .TransformModListings(x =>
@@ -139,12 +136,9 @@ public class EnvironmentStateProvider : ReactiveObject
                 return;
             }
             
-            _splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.6), "Validating load order path...");
-            
             if (!_environment.LoadOrderFilePath.Exists)
             {
                 EnvironmentBuilderError =  "Load order file path at " + _environment.LoadOrderFilePath.Path + " does not exist"; // prevent successful initialization in the wrong mode.
-                _splashReporter?.UpdateProgress(baseProgress + progressSpan, $"Environment Error: {EnvironmentBuilderError}");
                 Status = EnvironmentStatus.Invalid;
                 return;
             }
@@ -160,12 +154,10 @@ public class EnvironmentStateProvider : ReactiveObject
             Status = EnvironmentStatus.Valid;
             NumPlugins = LoadOrder.ListedOrder.Count();
             NumActivePlugins = LoadOrder.ListedOrder.Count(p => p.Enabled);
-            _splashReporter?.UpdateProgress(baseProgress + progressSpan, "Game environment initialized successfully.");
         }
         catch (Exception ex)
         {
             EnvironmentBuilderError = ExceptionLogger.GetExceptionStack(ex);
-            _splashReporter?.UpdateProgress(baseProgress + progressSpan, "Error initializing game environment.");
             Status = EnvironmentStatus.Invalid;
         }
         
