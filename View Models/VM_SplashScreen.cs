@@ -10,7 +10,8 @@ using System.Windows; // Required for Application
 using System.Diagnostics; // Required for Stopwatch
 using System;
 using System.Reactive.Linq;
-using System.Reactive.Subjects; // Required for TimeSpan
+using System.Reactive.Subjects;
+using System.Text; // Required for TimeSpan
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -22,6 +23,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string? FooterMessage { get; private set; }
         [Reactive] public string? StepText { get; private set; }
         [Reactive] public string ElapsedTimeString { get; private set; } // New property for the timer
+        [Reactive] public string LogText { get; private set; }
+
+        public ReactiveCommand<Unit, Unit> OkCommand { get; }
 
         public string ImagePath => "pack://application:,,,/Resources/SplashScreenImage.png";
         
@@ -71,6 +75,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     OperationText = message;
                 });
             // ---
+            
+            LogText = string.Empty;
+            OkCommand = ReactiveCommand.CreateFromTask(async () =>
+            {
+                await CloseSplashScreenAsync();
+            });
         }
 
         public void UpdateProgress(double percent, string message)
@@ -180,6 +190,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// </summary>
         public async Task CloseSplashScreenAsync()
         {
+            if (LogText.Any())
+            {
+                ScrollableMessageBox.Show(LogText, "Initialization Error");
+            }
             Dispose(); 
             
             Action closeAction = () =>
@@ -212,6 +226,29 @@ namespace NPC_Plugin_Chooser_2.View_Models
             await Task.Yield();
         }
         
+        /// <summary>
+        /// Keeps the splash screen open and displays the provided messages.
+        /// </summary>
+        public void ShowMessagesOnClose(IEnumerable<string> messages)
+        {
+            // Generate the log text
+            var sb = new StringBuilder();
+            foreach (var message in messages)
+            {
+                sb.AppendLine(message);
+            }
+            LogText += Environment.NewLine + Environment.NewLine + sb.ToString();
+            
+        }
+        
+        /// <summary>
+        /// Keeps the splash screen open and displays a single message.
+        /// </summary>
+        public void ShowMessagesOnClose(string message)
+        {
+            ShowMessagesOnClose(new[] { message });
+        }
+
         /// <summary>
         /// Cleans up the Rx subscription.
         /// </summary>

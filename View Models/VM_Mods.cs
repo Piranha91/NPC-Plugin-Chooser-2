@@ -839,7 +839,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid ||
             _environmentStateProvider.LoadOrder == null)
         {
-            warnings.Add("Environment is not valid. Cannot accurately link plugins.");
+            splashReporter?.ShowMessagesOnClose("Mods Menu: InitializePopulation: Environment is not valid. Cannot accurately link plugins. You should only see this message if you launch this program and you don't have Skyrim SE/AE installed in your SteamApps directory. Go to your settings and point them at your correct Data folder and Game version.");
         }
 
         splashReporter?.UpdateStep("Processing configured mod settings...");
@@ -1009,7 +1009,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             {
                 // This helper is called to create a new VM if warranted.
                 var newVmResult =
-                    await ProcessNewModFolderForParallelScanAsync(modFolderPath, modKeysInFolder, claimedMugshotPaths);
+                    await ProcessNewModFolderForParallelScanAsync(modFolderPath, modKeysInFolder, claimedMugshotPaths, splashReporter);
                 if (newVmResult != null)
                 {
                     scanResults.Add(newVmResult);
@@ -1078,7 +1078,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// instead of directly modifying collections, making it safe for parallel execution.
     /// </summary>
     private async Task<ModFolderScanResult?> ProcessNewModFolderForParallelScanAsync(string modFolderPath,
-        List<ModKey> modKeysInFolder, ICollection<string> claimedMugshotPaths)
+        List<ModKey> modKeysInFolder, ICollection<string> claimedMugshotPaths, VM_SplashScreen? splashReporter)
     {
         var scanResult = await FaceGenScanner.CollectFaceGenFilesAsync(modFolderPath, _bsaHandler, modKeysInFolder,
             _environmentStateProvider.SkyrimVersion.ToGameRelease());
@@ -1104,7 +1104,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 claimedMugshotPaths.Add(potentialMugshotPath);
             }
 
-            CheckMergeInSuitability(newVm);
+            CheckMergeInSuitability(newVm, splashReporter);
             return new NewVmResult(newVm);
         }
         else if (modKeysInFolder.Any())
@@ -1127,7 +1127,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 }
             }
 
-            CheckMergeInSuitability(newVm);
+            CheckMergeInSuitability(newVm, splashReporter);
             return new NewVmResult(newVm);
         }
     }
@@ -1149,7 +1149,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     }
 
     private async Task ProcessNewModFolderAsync(string modFolderPath, List<ModKey> modKeysInFolder,
-        List<VM_ModSetting> tempList, HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths)
+        List<VM_ModSetting> tempList, HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths, VM_SplashScreen? splashReporter)
     {
         FaceGenScanResult scanResult;
         using (ContextualPerformanceTracer.Trace("PopulateMods.CollectFaceGenFilesAsync"))
@@ -1210,7 +1210,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         using (ContextualPerformanceTracer.Trace("PopulateMods.CheckMergeInSuitability"))
         {
-            CheckMergeInSuitability(newVm);
+            CheckMergeInSuitability(newVm, splashReporter);
         }
     }
 
@@ -2183,7 +2183,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// Checks the number of potential appearance records vs. total records
     /// If most of the records are not related to NPC appearance, flag that this mod probably shouldn't be merged in
     /// </summary>
-    private void CheckMergeInSuitability(VM_ModSetting modSettingVM)
+    private void CheckMergeInSuitability(VM_ModSetting modSettingVM, VM_SplashScreen? splashReporter)
     {
         int appearanceRecordCount = 0;
         int nonAppearanceRecordCount = 0;
@@ -2228,8 +2228,33 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             appearanceRecordCount += plugin.Eyes.Count;
 
             // Lazily enumerate and count ONLY the non-appearance records
-            int nonAppearanceRecordCountForPlugin =
-                Auxilliary.LazyEnumerateMajorRecords(plugin, appearanceTypesToSkip).Count();
+            int nonAppearanceRecordCountForPlugin = 0;
+            try
+            {
+                nonAppearanceRecordCountForPlugin = Auxilliary.LazyEnumerateMajorRecords(plugin, appearanceTypesToSkip).Count();
+            }
+            catch (Exception e)
+            {
+                // write error log file here
+                string logDirectory = Path.Combine(AppContext.BaseDirectory, "LoadingErrors");
+                Directory.CreateDirectory(logDirectory);
+                string safeDisplayName = Auxilliary.MakeStringPathSafe(modSettingVM.DisplayName);
+                string logFilePath = Path.Combine(logDirectory, $"{safeDisplayName}.txt");
+
+                splashReporter?.ShowMessagesOnClose(
+                    $"An error occurred during mod scanning for {plugin.ModKey.FileName} in {modSettingVM.DisplayName}. See {logDirectory} for details.");
+
+                string errorMessage = $"An error occurred during mod scanning for {plugin.ModKey.FileName}: {Environment.NewLine}{ExceptionLogger.GetExceptionStack(e)}";
+
+                if (File.Exists(logFilePath))
+                {
+                    File.AppendAllText(logFilePath, Environment.NewLine + Environment.NewLine + "---" + Environment.NewLine + Environment.NewLine + errorMessage);
+                }
+                else
+                {
+                    File.WriteAllText(logFilePath, errorMessage);
+                }
+            }
 
             nonAppearanceRecordCount += nonAppearanceRecordCountForPlugin;
         }

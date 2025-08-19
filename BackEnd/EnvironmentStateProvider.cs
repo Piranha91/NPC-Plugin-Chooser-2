@@ -25,7 +25,7 @@ public class EnvironmentStateProvider : ReactiveObject
     private readonly VM_SplashScreen? _splashReporter; // Nullable if used optionally
     public ILoadOrderGetter<IModListingGetter<ISkyrimModGetter>> LoadOrder => _environment.LoadOrder;
     public IEnumerable<ModKey> LoadOrderModKeys => LoadOrder.ListedOrder.Select(m => m.ModKey);
-    public ILinkCache<ISkyrimMod, ISkyrimModGetter> LinkCache => _environment.LinkCache;
+    public ILinkCache<ISkyrimMod, ISkyrimModGetter>? LinkCache => _environment?.LinkCache;
     public SkyrimRelease SkyrimVersion { get; private set; }
     public DirectoryPath ExtraSettingsDataPath { get; set; }
     public DirectoryPath InternalDataPath { get; set; }
@@ -120,6 +120,24 @@ public class EnvironmentStateProvider : ReactiveObject
                         .TrimPluginAndDependents(OutputMod.ModKey))
                     .WithOutputMod(OutputMod)
                 .Build();
+
+            if (!Directory.Exists(_environment.DataFolderPath))
+            {
+                Status = EnvironmentStatus.Invalid;
+                return;
+            }
+
+            if (_environment.LoadOrder?.ListedOrder?.Count() == 0)
+            {
+                Status = EnvironmentStatus.Invalid;
+                return;
+            }
+
+            if (!_environment.LoadOrder.ContainsKey(AbsoluteBasePlugin))
+            {
+                Status = EnvironmentStatus.Invalid;
+                return;
+            }
             
             _splashReporter?.UpdateProgress(baseProgress + (progressSpan * 0.6), "Validating load order path...");
             
@@ -127,6 +145,7 @@ public class EnvironmentStateProvider : ReactiveObject
             {
                 EnvironmentBuilderError =  "Load order file path at " + _environment.LoadOrderFilePath.Path + " does not exist"; // prevent successful initialization in the wrong mode.
                 _splashReporter?.UpdateProgress(baseProgress + progressSpan, $"Environment Error: {EnvironmentBuilderError}");
+                Status = EnvironmentStatus.Invalid;
                 return;
             }
             

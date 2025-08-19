@@ -25,11 +25,10 @@ namespace NPC_Plugin_Chooser_2.Views
             if (ViewModel == null)
             {
                 MessageBox.Show(
-                    "Critical Error: Could not resolve the Main Window ViewModel. The application will close.",
+                    "Critical Error: Could not resolve the Main Window ViewModel.",
                     "Initialization Failed",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
-                Application.Current.Shutdown();
                 return;
             }
             

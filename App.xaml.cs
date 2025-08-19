@@ -1,4 +1,4 @@
-﻿// App.xaml.cs
+// App.xaml.cs
 using Autofac;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
@@ -29,7 +29,7 @@ namespace NPC_Plugin_Chooser_2
         private SplashScreenWindow _splashScreenWindow;
         private VM_SplashScreen _splashVM;
         private IContainer _container;
-        public const string ProgramVersion = "2.0.1"; // Central version definition
+        public const string ProgramVersion = "2.0.2"; // Central version definition
 
         // App constructor should be minimal
         public App()
@@ -47,7 +47,14 @@ namespace NPC_Plugin_Chooser_2
                 _splashVM = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, keepTopMost: false);
                 _splashVM.UpdateProgress(0, "Initializing application...");
 
-                _container = await InitializeCoreApplicationAsync(_splashVM);
+                try
+                {
+                    _container = await InitializeCoreApplicationAsync(_splashVM);
+                }
+                catch (Exception ex)
+                {
+                    _splashVM?.ShowMessagesOnClose("An error occured during startup: " + Environment.NewLine + Environment.NewLine + ExceptionLogger.GetExceptionStack(ex));
+                }
 
                 _splashVM.UpdateProgress(95, "Loading main window...");
 
@@ -165,6 +172,7 @@ namespace NPC_Plugin_Chooser_2
             Locator.CurrentMutable.InitializeReactiveUI();
 
             splashVM.UpdateProgress(55, "Registering View Factories with Splat...");
+            Locator.CurrentMutable.Register(() => new MainWindow(), typeof(IViewFor<VM_MainWindow>));
             Locator.CurrentMutable.Register(() => new NpcsView(), typeof(IViewFor<VM_NpcSelectionBar>));
             Locator.CurrentMutable.Register(() => new SettingsView(), typeof(IViewFor<VM_Settings>));
             Locator.CurrentMutable.Register(() => new RunView(), typeof(IViewFor<VM_Run>));

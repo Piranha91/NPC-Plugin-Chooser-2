@@ -367,65 +367,78 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             const int totalSteps = 3; // Define the total number of steps
 
-            // --- STEP 1 ---
-            _splashReporter?.UpdateStep($"Step 1 of {totalSteps}: Populating mod list...");
-
-            using (ContextualPerformanceTracer.Trace("VM_Settings.PopulateModSettings"))
+            try
             {
-                // **NEW ORDER: Populate mods first**
-                _splashReporter?.UpdateProgress(70, "Populating mod list...");
-                await _lazyModListVM.Value.PopulateModSettingsAsync(_splashReporter); // Base 70%, span 10% (e.g. 70-80)
-            }
+                // --- STEP 1 ---
+                _splashReporter?.UpdateStep($"Step 1 of {totalSteps}: Populating mod list...");
 
-            // --- STEP 2 ---
-            _splashReporter?.UpdateStep($"Step 2 of {totalSteps}: Initializing NPC selection bar...");
-
-            using (ContextualPerformanceTracer.Trace("VM_Settings.InitializeNpcSelectionBar"))
-            {
-                _splashReporter?.UpdateProgress(80, "Initializing NPC selection bar...");
-                await _lazyNpcSelectionBar.Value.InitializeAsync(_splashReporter); 
-            }
-            
-            // --- STEP 3 ---
-            _splashReporter?.UpdateStep($"Step 3 of {totalSteps}: Applying default settings...");
-            
-            if (!_model.HasBeenLaunched && _environmentStateProvider.LoadOrder != null)
-            {
-                var defaultExclusions = new HashSet<ModKey>();
-                var loadOrderSet = new HashSet<ModKey>(_environmentStateProvider.LoadOrder.Keys);
-
-                // 1. Add official master files (DLC, etc.) from the current game release if they are in the load order
-                defaultExclusions.UnionWith(_environmentStateProvider.BaseGamePlugins);
-                
-                // 2. Add Creation Club plugins by name
-                defaultExclusions.UnionWith(_environmentStateProvider.CreationClubPlugins);
-
-                // 3. Add the Unofficial Patch if it exists in the load order
-                var ussepKey = ModKey.FromFileName("unofficial skyrim special edition patch.esp");
-                if (loadOrderSet.Contains(ussepKey))
+                using (ContextualPerformanceTracer.Trace("VM_Settings.PopulateModSettings"))
                 {
-                    defaultExclusions.Add(ussepKey);
+                    // **NEW ORDER: Populate mods first**
+                    _splashReporter?.UpdateProgress(70, "Populating mod list...");
+                    await _lazyModListVM.Value
+                        .PopulateModSettingsAsync(_splashReporter); // Base 70%, span 10% (e.g. 70-80)
                 }
 
-                _model.ImportFromLoadOrderExclusions = defaultExclusions;
-                _model.HasBeenLaunched = true; // Mark defaults as set
+                // --- STEP 2 ---
+                _splashReporter?.UpdateStep($"Step 2 of {totalSteps}: Initializing NPC selection bar...");
+
+                using (ContextualPerformanceTracer.Trace("VM_Settings.InitializeNpcSelectionBar"))
+                {
+                    _splashReporter?.UpdateProgress(80, "Initializing NPC selection bar...");
+                    await _lazyNpcSelectionBar.Value.InitializeAsync(_splashReporter);
+                }
+
+                // --- STEP 3 ---
+                _splashReporter?.UpdateStep($"Step 3 of {totalSteps}: Applying default settings...");
+
+                if (!_model.HasBeenLaunched && _environmentStateProvider.LoadOrder != null)
+                {
+                    var defaultExclusions = new HashSet<ModKey>();
+                    var loadOrderSet = new HashSet<ModKey>(_environmentStateProvider.LoadOrder.Keys);
+
+                    // 1. Add official master files (DLC, etc.) from the current game release if they are in the load order
+                    defaultExclusions.UnionWith(_environmentStateProvider.BaseGamePlugins);
+
+                    // 2. Add Creation Club plugins by name
+                    defaultExclusions.UnionWith(_environmentStateProvider.CreationClubPlugins);
+
+                    // 3. Add the Unofficial Patch if it exists in the load order
+                    var ussepKey = ModKey.FromFileName("unofficial skyrim special edition patch.esp");
+                    if (loadOrderSet.Contains(ussepKey))
+                    {
+                        defaultExclusions.Add(ussepKey);
+                    }
+
+                    _model.ImportFromLoadOrderExclusions = defaultExclusions;
+                    _model.HasBeenLaunched = true; // Mark defaults as set
+                }
+                // END: Added Logic
+
+                this.RaisePropertyChanged(nameof(EnvironmentStatus));
+                this.RaisePropertyChanged(nameof(EnvironmentErrorText));
+                this.RaisePropertyChanged(nameof(AvailablePluginsForExclusion));
+
+                if (EnvironmentStatus == EnvironmentStateProvider.EnvironmentStatus.Valid &&
+                    AvailablePluginsForExclusion != null)
+                {
+                    ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion,
+                        _model.EasyNpcDefaultPluginExclusions,
+                        _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
+                    ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion,
+                        _model.ImportFromLoadOrderExclusions,
+                        _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
+                }
+
+                RefreshNonAppearanceMods();
+
+                // Add the report generation at the very end
+                ContextualPerformanceTracer.GenerateDetailedReport("Initial Validation and Load");
             }
-            // END: Added Logic
-    
-            this.RaisePropertyChanged(nameof(EnvironmentStatus));
-            this.RaisePropertyChanged(nameof(EnvironmentErrorText));
-            this.RaisePropertyChanged(nameof(AvailablePluginsForExclusion));
-    
-            if (EnvironmentStatus == EnvironmentStateProvider.EnvironmentStatus.Valid && AvailablePluginsForExclusion != null)
+            catch (Exception e)
             {
-                ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
-                ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
+                _splashReporter?.ShowMessagesOnClose("An error occured during initialization: " + Environment.NewLine + Environment.NewLine + ExceptionLogger.GetExceptionStack(e));
             }
-
-            RefreshNonAppearanceMods();
-
-            // Add the report generation at the very end
-            ContextualPerformanceTracer.GenerateDetailedReport("Initial Validation and Load");
         }
 
 // Internal version also needs to respect this order if it's ever called independently
@@ -453,12 +466,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public static Settings LoadSettings()
         {
             string settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");
-            Settings loadedSettings = null;
+            Settings? loadedSettings = null;
             if (File.Exists(settingsPath))
             {
                  loadedSettings = JSONhandler<Settings>.LoadJSONFile(settingsPath, out bool success, out string exception);
-                 if (!success)
+                 if (!success || loadedSettings == null) // Add the null check here
                  {
+                     if (success && loadedSettings == null) // Optional: more specific error message
+                     {
+                         exception = "Settings file was empty or invalid.";
+                     }
                      ScrollableMessageBox.ShowWarning($"Error loading settings from {settingsPath}:\n{exception}\n\nDefault settings will be used.", "Settings Load Error");
                      loadedSettings = new Settings(); // Use defaults on error
                  }

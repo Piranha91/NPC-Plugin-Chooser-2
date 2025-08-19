@@ -23,13 +23,19 @@ public class JSONhandler<T>
         return jsonSettings;
     }
 
-    public static T Deserialize(string jsonInputStr, out bool success, out string exception)
+    public static T? Deserialize(string jsonInputStr, out bool success, out string exception, bool canBeNull = false)
     {
         try
         {
             success = true;
             exception = "";
-            return JsonConvert.DeserializeObject<T>(jsonInputStr, GetMyMutagenJSONSettings());
+            var output = JsonConvert.DeserializeObject<T>(jsonInputStr, GetMyMutagenJSONSettings());
+            if (output == null && !canBeNull)
+            {
+                success = false;
+                exception = "JSON object was null";
+            }
+            return output;
         }
         catch (Exception ex)
         {
@@ -39,7 +45,7 @@ public class JSONhandler<T>
         }
     }
 
-    public static T LoadJSONFile(string loadLoc, out bool success, out string exception)
+    public static T? LoadJSONFile(string loadLoc, out bool success, out string exception, bool canBeNull = false)
     {
         if (!File.Exists(loadLoc))
         {
@@ -61,7 +67,7 @@ public class JSONhandler<T>
             return default(T);
         }
 
-        return Deserialize(contents, out success, out exception);
+        return Deserialize(contents, out success, out exception, canBeNull);
     }
 
     public static string Serialize(T input, out bool success, out string exception)
@@ -94,8 +100,8 @@ public class JSONhandler<T>
         }
     }
 
-    public static T CloneViaJSON(T input)
+    public static T? CloneViaJSON(T input, bool canBeNull = false)
     {
-        return Deserialize(Serialize(input, out _, out _), out _, out _);
+        return Deserialize(Serialize(input, out _, out _), out _, out _, canBeNull);
     }
 }

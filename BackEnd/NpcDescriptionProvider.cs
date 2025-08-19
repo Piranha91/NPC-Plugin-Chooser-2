@@ -1,4 +1,4 @@
-﻿// BackEnd/NpcDescriptionProvider.cs
+// BackEnd/NpcDescriptionProvider.cs
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -96,12 +96,15 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         public async Task<string?> GetDescriptionAsync(FormKey npcFormKey, string? displayName, string? editorId)
         {
             // 1. Check conditions
-            if (!_settings.ShowNpcDescriptions || npcFormKey.IsNull || !BaseGamePlugins.Contains(npcFormKey.ModKey.FileName))
+            string? overrideDescription = null;
+            if (!_settings.ShowNpcDescriptions || npcFormKey.IsNull || 
+                (!BaseGamePlugins.Contains(npcFormKey.ModKey.FileName) && 
+                 !_overrideDescriptions.TryGetValue(npcFormKey, out overrideDescription)))
             {
                 return null;
             }
             
-            if (_overrideDescriptions.TryGetValue(npcFormKey, out string overrideDescription))
+            if (overrideDescription is not null)
             {
                 return overrideDescription; // skip API look-ups if override present
             }

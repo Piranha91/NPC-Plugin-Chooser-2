@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using Noggog;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -24,6 +25,11 @@ public static class PluginArchiveIndex
 
     public static HashSet<string> GetOwnedBsaFiles(Mutagen.Bethesda.Plugins.ModKey modKey, string directory)
     {
+        if (modKey.IsNull || directory.IsNullOrWhitespace() || Directory.Exists(directory))
+        {
+            return new HashSet<string>();
+        }
+        
         var index = _cache.GetOrAdd(directory, dir => new Lazy<DirectoryIndex>(() => BuildIndex(dir))).Value;
 
         string currentPluginBase = Path.GetFileNameWithoutExtension(modKey.FileName.ToString());
@@ -41,6 +47,12 @@ public static class PluginArchiveIndex
 
     private static DirectoryIndex BuildIndex(string directory)
     {
+        // Add a guard clause to protect against empty or null paths
+        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+        {
+            return new DirectoryIndex(new List<string>(), new Dictionary<string, string[]>());
+        }
+        
         var allPluginBases = Directory.EnumerateFiles(directory, "*.esp", SearchOption.TopDirectoryOnly)
             .Select(path => Path.GetFileNameWithoutExtension(path))
             .Where(n => !string.IsNullOrEmpty(n))

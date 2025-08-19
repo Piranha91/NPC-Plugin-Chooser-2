@@ -50,7 +50,7 @@ public class Auxilliary : IDisposable
             .ObserveOn(RxApp.MainThreadScheduler) // Ensure re-initialization happens on the UI thread if needed
             .Subscribe(_ =>
             {
-                if (_environmentStateProvider.LinkCache is null)
+                if (_environmentStateProvider is null || _environmentStateProvider?.LinkCache is null)
                 {
                     Debug.WriteLine("Aux: Environment state is not initialized");
                     return;
@@ -243,7 +243,7 @@ public class Auxilliary : IDisposable
         if (File.Exists(cachePath))
         {
             var rawCache = JSONhandler<ConcurrentDictionary<FormKey, RaceEvaluation>>.LoadJSONFile(cachePath, out bool success, out string exceptionMessage );
-            if (!success)
+            if (!success || rawCache == null)
             {
                 _raceValidityCache = new();
                 Debug.WriteLine("Exception while loading race cache." + Environment.NewLine + exceptionMessage);

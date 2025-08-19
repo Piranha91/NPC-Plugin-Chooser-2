@@ -1247,12 +1247,34 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             using (ContextualPerformanceTracer.Trace("FPO.RecordLoop", key.modKey.FileName))
                             {
                                 // Iterates lazily. Stops pulling records from the plugin file as soon as the break is hit.
-                                foreach (var record in Auxilliary.LazyEnumerateMajorRecords(plugin, appearanceTypesToSkip))
+                                try
                                 {
-                                    if (!CorrespondingModKeys.Contains(record.FormKey.ModKey))
+                                    foreach (var record in Auxilliary.LazyEnumerateMajorRecords(plugin, appearanceTypesToSkip))
                                     {
-                                        result = true;
-                                        break; // This now prevents further enumeration and parsing
+                                        if (!CorrespondingModKeys.Contains(record.FormKey.ModKey))
+                                        {
+                                            result = true;
+                                            break; // This now prevents further enumeration and parsing
+                                        }
+                                    }
+                                }
+                                catch (Exception e)
+                                {
+                                    // write error log file here
+                                    string logDirectory = Path.Combine(AppContext.BaseDirectory, "LoadingErrors");
+                                    Directory.CreateDirectory(logDirectory);
+                                    string safeDisplayName = Auxilliary.MakeStringPathSafe(DisplayName);
+                                    string logFilePath = Path.Combine(logDirectory, $"{safeDisplayName}.txt");
+
+                                    string errorMessage = $"An error occurred during mod scanning for {plugin.ModKey.FileName}: {Environment.NewLine}{ExceptionLogger.GetExceptionStack(e)}";
+
+                                    if (File.Exists(logFilePath))
+                                    {
+                                        File.AppendAllText(logFilePath, Environment.NewLine + Environment.NewLine + "---" + Environment.NewLine + Environment.NewLine + errorMessage);
+                                    }
+                                    else
+                                    {
+                                        File.WriteAllText(logFilePath, errorMessage);
                                     }
                                 }
                             }

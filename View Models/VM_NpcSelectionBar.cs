@@ -1344,9 +1344,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid)
         {
             splashReporter?.UpdateStep("Environment not valid for NPC list.");
-            ScrollableMessageBox.ShowWarning(
-                $"Environment is not valid. Check settings.\nError: {_environmentStateProvider.EnvironmentBuilderError}",
-                "Environment Error");
+            splashReporter?.ShowMessagesOnClose(
+                $"NPC Bar: InitializeAsync: Environment is not valid. You should only see this message if you launch this program and you don't have Skyrim SE/AE installed in your SteamApps directory. Go to your settings and point them at your correct Data folder and Game version.");
+
             _mugshotData.Clear();
             return;
         }
