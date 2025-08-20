@@ -32,6 +32,13 @@ public class Auxilliary : IDisposable
     public Dictionary<FormKey, string> FormIDCache = new();
     private ConcurrentDictionary<FormKey, RaceEvaluation> _raceValidityCache = new();
     private string _raceValidityCacheFileName = "RaceEvalCache.json";
+
+    public static HashSet<string> ValidPluginExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".esp",
+        ".esm",
+        ".esl"
+    };
     
     private enum RaceEvaluation
     {

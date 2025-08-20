@@ -25,7 +25,7 @@ public static class PluginArchiveIndex
 
     public static HashSet<string> GetOwnedBsaFiles(Mutagen.Bethesda.Plugins.ModKey modKey, string directory)
     {
-        if (modKey.IsNull || directory.IsNullOrWhitespace() || Directory.Exists(directory))
+        if (modKey.IsNull || directory.IsNullOrWhitespace() || !Directory.Exists(directory))
         {
             return new HashSet<string>();
         }
@@ -53,8 +53,9 @@ public static class PluginArchiveIndex
             return new DirectoryIndex(new List<string>(), new Dictionary<string, string[]>());
         }
         
-        var allPluginBases = Directory.EnumerateFiles(directory, "*.esp", SearchOption.TopDirectoryOnly)
-            .Select(path => Path.GetFileNameWithoutExtension(path))
+        var allPluginBases = Auxilliary.ValidPluginExtensions
+            .SelectMany(ext => Directory.EnumerateFiles(directory, $"*{ext}", SearchOption.TopDirectoryOnly))
+            .Select(Path.GetFileNameWithoutExtension)
             .Where(n => !string.IsNullOrEmpty(n))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(n => n!.Length)
