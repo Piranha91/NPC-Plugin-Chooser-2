@@ -820,6 +820,27 @@ public class Auxilliary : IDisposable
             return false;
         } 
     }
+    
+    public static bool TryGetPatchRecordGroup(Type getterType, ISkyrimModGetter outputMod, out dynamic? group)
+    {
+        bool success = false;
+        group = null;
+        try
+        {
+            group = outputMod.GetTopLevelGroup(getterType);
+        }
+        catch
+        {
+
+        }
+
+        if (group == null)
+        {
+            group = outputMod.GetTopLevelGroup(GetLoquiType(getterType));
+        }
+
+        return group != null;
+    }
 
     public static Type? GetRecordGetterType(IMajorRecordGetter recordGetter)
     {

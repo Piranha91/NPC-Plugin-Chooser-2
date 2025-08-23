@@ -17,6 +17,7 @@ public static class PatcherExtensions
         RecordHandler recordHandler,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         bool onlySubRecords, 
+        bool handleInjectedRecords,
         HashSet<string> fallBackModFolderNames,
         RecordLookupFallBack fallBackMode,
         ref Dictionary<FormKey, FormKey> mapping,
@@ -69,7 +70,7 @@ public static class PatcherExtensions
                 continue;
             }
 
-            if (modKeysToDuplicateFrom.Contains(link.FormKey.ModKey) &&
+            if ((modKeysToDuplicateFrom.Contains(link.FormKey.ModKey) || handleInjectedRecords) &&
                 recordHandler.TryGetRecordFromMods(link, modKeysToDuplicateFrom, fallBackModFolderNames, fallBackMode, out var linkRec) && 
                 linkRec != null)
             {
@@ -77,7 +78,7 @@ public static class PatcherExtensions
                 // 3. Add newly discovered links to the stack instead of making a recursive call
                 foreach (var containedLink in linkRec.EnumerateFormLinks())
                 {
-                    if (modKeysToDuplicateFrom.Contains(containedLink.FormKey.ModKey))
+                    if (modKeysToDuplicateFrom.Contains(containedLink.FormKey.ModKey) || handleInjectedRecords)
                     {
                         linksToProcess.Push(containedLink);
                     }

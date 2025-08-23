@@ -454,6 +454,7 @@ public class Patcher : OptionalUIModule
                                             var mergedInRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(
                                                 _environmentStateProvider.OutputMod, patchNpc,
                                                 appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true,
+                                                appearanceModSetting.HandleInjectedRecords,
                                                 currentModFolderPaths,
                                                 ref mergeInExceptions);
                                             if (mergeInExceptions.Any())
@@ -556,6 +557,7 @@ public class Patcher : OptionalUIModule
                                                         _recordHandler.DuplicateFromOnlyReferencedGetters(
                                                             _environmentStateProvider.OutputMod, deltaPatchedRecords,
                                                             importSourceModKeys, appearanceModKey.Value, true,
+                                                            appearanceModSetting.HandleInjectedRecords,
                                                             currentModFolderPaths,
                                                             ref mergeInExceptions);
                                                     if (mergeInExceptions.Any())
@@ -577,6 +579,7 @@ public class Patcher : OptionalUIModule
                                                     appearanceNpcRecord, patchNpc,
                                                     appearanceModSetting.CorrespondingModKeys,
                                                     appearanceModKey.Value, patchNpc.FormKey.ModKey,
+                                                    appearanceModSetting.HandleInjectedRecords,
                                                     currentModFolderPaths,
                                                     ref overrideExceptionStrings);
                                                 if (overrideExceptionStrings.Any())
@@ -622,6 +625,7 @@ public class Patcher : OptionalUIModule
                                             var mergedInRecords = _recordHandler.DuplicateFromOnlyReferencedGetters(
                                                 _environmentStateProvider.OutputMod, patchNpc,
                                                 appearanceModSetting.CorrespondingModKeys, appearanceModKey.Value, true,
+                                                appearanceModSetting.HandleInjectedRecords,
                                                 currentModFolderPaths,
                                                 ref mergeInExceptions);
                                             if (mergeInExceptions.Any())
@@ -656,6 +660,7 @@ public class Patcher : OptionalUIModule
                                                     appearanceNpcRecord, patchNpc,
                                                     appearanceModSetting.CorrespondingModKeys,
                                                     appearanceModKey.Value, patchNpc.FormKey.ModKey,
+                                                    appearanceModSetting.HandleInjectedRecords,
                                                     currentModFolderPaths,
                                                     ref overrideExceptionStrings);
                                                 if (overrideExceptionStrings.Any())
@@ -912,7 +917,7 @@ public class Patcher : OptionalUIModule
             {
                 List<string> skinExceptions = new();
                 var skinRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.WornArmor, sourceNpc.WornArmor,
-                    _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,
+                    _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, appearanceModSetting.HandleInjectedRecords,
                     currentModFolderPaths, ref skinExceptions);
                 if (skinExceptions.Any())
                 {
@@ -925,7 +930,7 @@ public class Patcher : OptionalUIModule
 
                 List<string> headExceptions = new();
                 var headRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.HeadTexture, sourceNpc.HeadTexture,
-                    _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,
+                    _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, appearanceModSetting.HandleInjectedRecords,
                     currentModFolderPaths, ref headExceptions);
                 if (headExceptions.Any())
                 {
@@ -938,7 +943,7 @@ public class Patcher : OptionalUIModule
 
                 List<string> colorExceptions = new();
                 var hairColorRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.HairColor, sourceNpc.HairColor,
-                    _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,
+                    _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, appearanceModSetting.HandleInjectedRecords,
                     currentModFolderPaths, ref colorExceptions);
                 if (colorExceptions.Any())
                 {
@@ -955,7 +960,7 @@ public class Patcher : OptionalUIModule
                 {
                     var targetHp = new FormLink<IHeadPartGetter>();
                     var headPartRecords = _recordHandler.DuplicateInOrAddFormLink(targetHp, hp,
-                        _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,
+                        _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, appearanceModSetting.HandleInjectedRecords,
                         currentModFolderPaths, ref headPartExceptions);
                     targetNpc.HeadParts.Add(targetHp);
                     mergedInRecords.AddRange(headPartRecords);
@@ -972,7 +977,7 @@ public class Patcher : OptionalUIModule
                 {
                     List<string> outfitExceptions = new();
                     var outfitRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.DefaultOutfit, sourceNpc.DefaultOutfit,
-                        _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey,
+                        _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, appearanceModSetting.HandleInjectedRecords,
                         currentModFolderPaths, ref outfitExceptions);
                     if (outfitExceptions.Any())
                     {

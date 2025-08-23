@@ -23,6 +23,7 @@ public class ModSetting
     public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
 
     public bool MergeInDependencyRecords { get; set; } = true;
+    public bool HandleInjectedRecords { get; set; } = false;
     [JsonIgnore] 
     public static string DefaultMergeInTooltip =
         "If checked, all records needed by the mod will be merged into the output." +

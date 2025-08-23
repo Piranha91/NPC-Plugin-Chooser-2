@@ -345,6 +345,16 @@
                                              Margin="5 0 0 0"
                                              ToolTip="{Binding MergeInDependencyRecords}"
                                              Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         
+                                         <TextBlock Text="Search for Injected Records" VerticalAlignment="Center" 
+                                                    Margin="10 0 0 0"
+                                                    ToolTip="If checked, the patcher will search for and merge in records that are injected. This can potentially make patching take longer."
+                                                    Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         <CheckBox
+                                             IsChecked="{Binding HandleInjectedRecords}"
+                                             Margin="5 0 0 0"
+                                             ToolTip="If checked, the patcher will search for and merge in records that are injected. This can potentially make patching take longer."
+                                             Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                      </StackPanel>
                                      
                                      <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
@@ -578,6 +588,10 @@
                     <Button Content="Include" Command="{Binding BatchIncludeOutfitsCommand}" Margin="5,0" Padding="5,2" ToolTip="Enable 'Include Outfits' for ALL mods."/>
                     <Button Content="Exclude" Command="{Binding BatchExcludeOutfitsCommand}" Padding="5,2" ToolTip="Disable 'Include Outfits' for ALL mods."/>
                     <TextBlock Text="Outfits" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                    
+                    <Button Content="Enable" Command="{Binding BatchEnableInjectedRecordsCommand}" Margin="10,0" Padding="5,2" ToolTip="Enable 'Search for Injected Records' for ALL mods."/>
+                    <Button Content="Disable" Command="{Binding BatchDisableInjectedRecordsCommand}" Padding="5,2" ToolTip="Disable 'Search for Injected Records' for ALL mods."/>
+                    <TextBlock Text="Injected Record Search" VerticalAlignment="Center" Margin="5,0,0,0"/>
                 </StackPanel>
                 
                 <!-- Existing Zoom controls -->

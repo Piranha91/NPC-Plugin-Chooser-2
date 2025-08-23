@@ -102,6 +102,7 @@ public class RecordHandler
         TMod modToDuplicateInto,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey, 
+        bool handleInjectedRecords,
         HashSet<string> fallBackModFolderNames,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
@@ -113,26 +114,27 @@ public class RecordHandler
             targetFormLink.SetToNull();
             return mergedInRecords;
         }
-
-        if (!modKeysToDuplicateFrom.Contains(formLinkToCopy.FormKey.ModKey))
-        {
-            targetFormLink.SetTo(formLinkToCopy);
-            return mergedInRecords;
-        }
         
         if (_currentDuplicateInMappings.TryGetValue(targetFormLink.FormKey, out var remappedFormKey))
         {
             targetFormLink.SetTo(remappedFormKey);
             return mergedInRecords;
         }
+        
+        if (!modKeysToDuplicateFrom.Contains(formLinkToCopy.FormKey.ModKey) && !handleInjectedRecords)
+        {
+            targetFormLink.SetTo(formLinkToCopy);
+            return mergedInRecords;
+        }
 
         if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, fallBackModFolderNames, RecordLookupFallBack.None, out var record) || record == null)
         {
+            targetFormLink.SetTo(formLinkToCopy);
             return mergedInRecords;
         }
         
         mergedInRecords = DuplicateFromOnlyReferencedGetters(modToDuplicateInto, record, modKeysToDuplicateFrom, 
-            rootContextModKey, false, fallBackModFolderNames, ref exceptionStrings, typesToInspect);
+            rootContextModKey, false, handleInjectedRecords, fallBackModFolderNames, ref exceptionStrings, typesToInspect);
 
         if (_currentDuplicateInMappings.ContainsKey(formLinkToCopy.FormKey))
         {
@@ -147,12 +149,29 @@ public class RecordHandler
         return mergedInRecords;
     }
 
+    private bool ExplicitRecordCheck(IFormLinkGetter<IMajorRecordGetter> formLinkToCopy,IEnumerable<ModKey> modKeysToDuplicateFrom, HashSet<string> fallBackModFolderNames, out IMajorRecordGetter? recordGetter)
+    {
+        recordGetter = null;
+        // extra check
+        foreach (var modKey in modKeysToDuplicateFrom)
+        {
+            if (TryGetRecordGetterFromMod(formLinkToCopy, modKey, fallBackModFolderNames, RecordLookupFallBack.None,
+                    out recordGetter))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public List<MajorRecord> DuplicateFromOnlyReferencedGetters<TMod>(
         TMod modToDuplicateInto,
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey,
         bool onlySubRecords, 
+        bool handleInjectedRecords,
         HashSet<string> fallBackModFolderNames,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
@@ -165,6 +184,7 @@ public class RecordHandler
             this,
             modKeysToDuplicateFrom,
             onlySubRecords,
+            handleInjectedRecords,
             fallBackModFolderNames,
             RecordLookupFallBack.None, // Don't fall back to winning override or origin - if the chain of new records breaks, don't search through overrides
             // Override searching is the job of RecordHandler.DeepGetOverriddenDependencyRecords()
@@ -180,6 +200,7 @@ public class RecordHandler
         IEnumerable<IMajorRecordGetter> recordsToDuplicate,
         ModKey modKeyToDuplicateFrom,
         bool onlySubRecords, 
+        bool handleInjectedRecords,
         HashSet<string> fallBackModFolderNames,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
@@ -191,6 +212,7 @@ public class RecordHandler
             new[] { modKeyToDuplicateFrom },
             modKeyToDuplicateFrom,
             onlySubRecords,
+            handleInjectedRecords,
             fallBackModFolderNames,
             ref exceptionStrings,
             typesToInspect);
@@ -203,6 +225,7 @@ public class RecordHandler
         IEnumerable<ModKey> modKeysToDuplicateFrom,
         ModKey rootContextModKey,
         bool onlySubRecords,
+        bool handleInjectedRecords,
         HashSet<string> fallBackModFolderNames,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
@@ -214,6 +237,7 @@ public class RecordHandler
             modKeysToDuplicateFrom,
             rootContextModKey,
             onlySubRecords,
+            handleInjectedRecords,
             fallBackModFolderNames,
             ref exceptionStrings,
             typesToInspect);
@@ -225,6 +249,7 @@ public class RecordHandler
         IMajorRecordGetter recordToDuplicate,
         ModKey modKeyToDuplicateFrom,
         bool onlySubRecords,
+        bool handleInjectedRecords,
         HashSet<string> fallBackModFolderNames,
         ref List<string> exceptionStrings,
         params Type[] typesToInspect)
@@ -236,6 +261,7 @@ public class RecordHandler
             new[] { modKeyToDuplicateFrom },
             modKeyToDuplicateFrom,
             onlySubRecords,
+            handleInjectedRecords,
             fallBackModFolderNames,
             ref exceptionStrings,
             typesToInspect);
@@ -329,7 +355,7 @@ public class RecordHandler
     #region Merge In Overrides of Existing Records
 
     public HashSet<IMajorRecord> // return is For Caller's Information only; duplication and remapping happens internally
-        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings)
+        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateInOverrideRecords");
         HashSet<IMajorRecord> mergedInRecords = new();
@@ -355,7 +381,7 @@ public class RecordHandler
             .Distinct()
             .Where(k => k != npcSourceModKey) // don't copy from the mod that defines the NPC, since that is a base mod
             .ToHashSet();
-        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, importSourceModKeys, rootContextKey, true, fallBackModFolderNames, ref exceptionStrings);
+        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, mergedInRecords, importSourceModKeys, rootContextKey, true, handleInjectedRecords, fallBackModFolderNames, ref exceptionStrings);
         
         mergedInRecords.UnionWith(newMergedSubRecords);
         

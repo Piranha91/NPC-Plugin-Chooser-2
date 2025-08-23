@@ -88,6 +88,8 @@ public class VM_Mods : ReactiveObject
     // --- Batch Action Controls ---
     public ReactiveCommand<Unit, Unit> BatchIncludeOutfitsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchExcludeOutfitsCommand { get; }
+    public ReactiveCommand<Unit, Unit> BatchEnableInjectedRecordsCommand { get; }
+    public ReactiveCommand<Unit, Unit> BatchDisableInjectedRecordsCommand { get; }
 
     // --- NEW: Zoom Control Properties & Commands for ModsView ---
     [Reactive] public double ModsViewZoomLevel { get; set; }
@@ -417,9 +419,41 @@ public class VM_Mods : ReactiveObject
             }
         });
         
+        BatchEnableInjectedRecordsCommand = ReactiveCommand.Create(() =>
+        {
+            const string message = "Searching for injected records makes patching take longer, and most appearance mods don't need it. Are you sure you want to enable this for all mods?";
+
+            if (!_settings.SuppressPopupWarnings && !ScrollableMessageBox.Confirm(message, "Confirm Injected Record Search"))
+            {
+                return;
+            }
+            
+            foreach (var modSetting in _allModSettingsInternal)
+            {
+                if (modSetting.MergeInDependencyRecords)
+                {
+                    modSetting.IsPerformingBatchAction = true;
+                    modSetting.HandleInjectedRecords = true;
+                    modSetting.IsPerformingBatchAction = false;
+                }
+            }
+        });
+
+        BatchDisableInjectedRecordsCommand = ReactiveCommand.Create(() =>
+        {
+            foreach (var modSetting in _allModSettingsInternal)
+            {
+                modSetting.IsPerformingBatchAction = true;
+                modSetting.HandleInjectedRecords = false;
+                modSetting.IsPerformingBatchAction = false;
+            }
+        });
+        
         BatchIncludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error including outfits: {ex.Message}")).DisposeWith(_disposables);
         BatchExcludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error excluding outfits: {ex.Message}")).DisposeWith(_disposables);
-
+        BatchEnableInjectedRecordsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling injected record handling: {ex.Message}")).DisposeWith(_disposables);
+        BatchDisableInjectedRecordsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disalbing injected record handling: {ex.Message}")).DisposeWith(_disposables);
+        
         ApplyFilters(); // Apply initial filter
     }
     
