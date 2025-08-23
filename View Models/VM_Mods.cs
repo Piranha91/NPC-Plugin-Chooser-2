@@ -84,6 +84,10 @@ public class VM_Mods : ReactiveObject
     // Subject for triggering right panel image refresh
     private readonly Subject<Unit> _refreshMugshotSizesSubject = new Subject<Unit>();
     public IObservable<Unit> RefreshMugshotSizesObservable => _refreshMugshotSizesSubject.AsObservable();
+    
+    // --- Batch Action Controls ---
+    public ReactiveCommand<Unit, Unit> BatchIncludeOutfitsCommand { get; }
+    public ReactiveCommand<Unit, Unit> BatchExcludeOutfitsCommand { get; }
 
     // --- NEW: Zoom Control Properties & Commands for ModsView ---
     [Reactive] public double ModsViewZoomLevel { get; set; }
@@ -382,6 +386,26 @@ public class VM_Mods : ReactiveObject
                 }
             })
             .DisposeWith(_disposables);
+        
+        // --- NEW: Initialize Batch Action Commands ---
+        BatchIncludeOutfitsCommand = ReactiveCommand.Create(() =>
+        {
+            foreach (var modSetting in _allModSettingsInternal)
+            {
+                modSetting.IncludeOutfits = true;
+            }
+        });
+
+        BatchExcludeOutfitsCommand = ReactiveCommand.Create(() =>
+        {
+            foreach (var modSetting in _allModSettingsInternal)
+            {
+                modSetting.IncludeOutfits = false;
+            }
+        });
+        
+        BatchIncludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error including outfits: {ex.Message}")).DisposeWith(_disposables);
+        BatchExcludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error excluding outfits: {ex.Message}")).DisposeWith(_disposables);
 
         ApplyFilters(); // Apply initial filter
     }
