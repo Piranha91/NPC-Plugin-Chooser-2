@@ -23,6 +23,7 @@
         <local:ModKeyToStringConverter x:Key="ModKeyToStringConverter"/>
         <local:AreModKeysEqualMultiConverter x:Key="AreModKeysEqualMultiConverter"/>
         <local:PercentageSizingConverter x:Key="PercentageSizingConverter"/>
+        <local:PatchingModeToVisibilityConverter x:Key="PatchingModeConverter" />
 
         <Style x:Key="LinkButtonStyle" TargetType="Button">
              <Setter Property="Cursor" Value="Hand"/>
@@ -402,7 +403,11 @@
                                                VerticalAlignment="Center"
                                                Margin="0,5,0,0"
                                                HorizontalAlignment="Left"
-                                               ToolTip="If checked, outfits from this mod will be transferred along with NPC appearance when in Create and Patch mode."/>
+                                               ToolTip="If checked, outfits from this mod will be transferred along with NPC appearance when in Create and Patch mode."
+                                               Visibility="{Binding DataContext.CurrentPatchingMode, 
+                                                 ElementName=ModSettingsItemsControl, 
+                                                 Converter={StaticResource PatchingModeConverter}, 
+                                                 ConverterParameter=CreateAndPatch}"/>
 
                                      
                                      <Button Grid.Row="7" Grid.Column="0"

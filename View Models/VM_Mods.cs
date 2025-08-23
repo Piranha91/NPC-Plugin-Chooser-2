@@ -39,6 +39,7 @@ public class VM_Mods : ReactiveObject
     private readonly VM_NpcSelectionBar _npcSelectionBar; // To access AllNpcs and navigate
     private readonly NpcConsistencyProvider _consistencyProvider;
     private readonly Lazy<VM_MainWindow> _lazyMainWindowVm; // *** NEW: To switch tabs ***
+    private readonly Lazy<VM_Settings> _lazySettingsVM;
     private readonly Auxilliary _aux;
     private readonly PluginProvider _pluginProvider;
     private readonly BsaHandler _bsaHandler;
@@ -51,6 +52,9 @@ public class VM_Mods : ReactiveObject
 
     public const string BaseGameModSettingName = "Base Game";
     public const string CreationClubModsettingName = "Creation Club";
+
+    private readonly ObservableAsPropertyHelper<PatchingMode> _currentPatchingMode;
+    public PatchingMode CurrentPatchingMode => _currentPatchingMode.Value;
 
     // Subject and Observable for scroll requests
     private readonly BehaviorSubject<VM_ModSetting?> _requestScrollToModSubject =
@@ -141,8 +145,8 @@ public class VM_Mods : ReactiveObject
     // *** Updated Constructor Signature ***
     public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider,
         VM_NpcSelectionBar npcSelectionBar, NpcConsistencyProvider consistencyProvider,
-        Lazy<VM_MainWindow> lazyMainWindowVm, Auxilliary aux, PluginProvider pluginProvider,
-        BsaHandler bsaHandler,
+        Lazy<VM_MainWindow> lazyMainWindowVm, Lazy<VM_Settings> lazySettingsVm, Auxilliary aux, 
+        PluginProvider pluginProvider, BsaHandler bsaHandler,
         VM_ModSetting.FromModelFactory modSettingFromModelFactory,
         VM_ModSetting.FromMugshotPathFactory modSettingFromMugshotPathFactory,
         VM_ModSetting.FromModFolderFactory modSettingFromModFolderFactory,
@@ -153,6 +157,7 @@ public class VM_Mods : ReactiveObject
         _npcSelectionBar = npcSelectionBar;
         _consistencyProvider = consistencyProvider;
         _lazyMainWindowVm = lazyMainWindowVm;
+        _lazySettingsVM = lazySettingsVm;
         _aux = aux;
         _pluginProvider = pluginProvider;
         _bsaHandler = bsaHandler;
@@ -390,6 +395,9 @@ public class VM_Mods : ReactiveObject
                 }
             })
             .DisposeWith(_disposables);
+        
+        this.WhenAnyValue(x => x._lazySettingsVM.Value.SelectedPatchingMode)
+            .ToProperty(this, x => x.CurrentPatchingMode, out _currentPatchingMode);
         
         // --- NEW: Initialize Batch Action Commands ---
         BatchIncludeOutfitsCommand = ReactiveCommand.Create(() =>
