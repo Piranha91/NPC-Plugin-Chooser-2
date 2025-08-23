@@ -57,7 +57,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public ObservableCollection<string> CorrespondingFolderPaths { get; private set; } = new();
         [Reactive] public bool MergeInDependencyRecords { get; set; } = true;
         [Reactive] public bool MergeInDependencyRecordsVisible { get; set; } = true;
-        [Reactive] public bool IncludeOutfits { get; set; } = true;
+        [Reactive] public bool IncludeOutfits { get; set; } = false;
 
         [Reactive] public string MergeInToolTip { get; set; } = ModSetting.DefaultMergeInTooltip;
         [Reactive] public SolidColorBrush? MergeInLabelColor { get; set; } = null; // null initialization is intentional
