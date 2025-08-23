@@ -218,12 +218,20 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 }
 
                 _allMugshots.Add(new VM_SummaryMugshot(imagePath, targetNpcKey, targetNpcName, modName, sourceNpcName, isGuest, isAmbiguous, hasIssue, issueText, hasNoData, noDataText, hasMugshot, _lazyMainWindowVm, _npcsViewModel, _modsViewModel));
-                _allListItems.Add(new VM_SummaryListItem(targetNpcName, modName, sourceNpcName, isGuest));
+                _allListItems.Add(new VM_SummaryListItem(targetNpcKey, targetNpcName, modName, sourceNpcName, isGuest));
             }
             
-            // Sort the lists once
-            _allMugshots = _allMugshots.OrderBy(m => m.NpcDisplayName).ToList();
-            _allListItems = _allListItems.OrderBy(i => i.NpcDisplayName).ToList();
+            // Sort the lists once: NPCs with resolved names first, then alphabetically.
+            // This now checks IsInLoadOrder, which is a reliable flag for a resolved name.
+            _allMugshots = _allMugshots
+                .OrderBy(m => (npcViewModelMap.TryGetValue(m.TargetNpcFormKey, out var npcVM) && npcVM.IsInLoadOrder) ? 0 : 1)
+                .ThenBy(m => m.NpcDisplayName)
+                .ToList();
+
+            _allListItems = _allListItems
+                .OrderBy(i => (npcViewModelMap.TryGetValue(i.TargetNpcFormKey, out var npcVM) && npcVM.IsInLoadOrder) ? 0 : 1)
+                .ThenBy(i => i.NpcDisplayName)
+                .ToList();
 
             UpdateDisplay();
         }

@@ -150,13 +150,15 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 
     public class VM_SummaryListItem : ReactiveObject
     {
+        public FormKey TargetNpcFormKey { get; } // <-- ADD THIS
         public string NpcDisplayName { get; }
         public string SelectedModName { get; }
         public string SourceNpcDisplayName { get; }
         public bool IsGuestAppearance { get; }
 
-        public VM_SummaryListItem(string npcName, string modName, string sourceNpcName, bool isGuest)
+        public VM_SummaryListItem(FormKey targetNpcKey, string npcName, string modName, string sourceNpcName, bool isGuest) // <-- MODIFY SIGNATURE
         {
+            TargetNpcFormKey = targetNpcKey; // <-- ADD THIS
             NpcDisplayName = npcName;
             SelectedModName = modName;
             SourceNpcDisplayName = sourceNpcName;
