@@ -124,14 +124,17 @@ public class AssetHandler : OptionalUIModule
 
                 foreach (var dataFolder in mod.CorrespondingFolderPaths)
                 {
-                    // This is the blocking call that we are moving to a background thread.
-                    string[] allFilePaths = Directory.GetFiles(
-                        dataFolder,
-                        "*",
-                        SearchOption.AllDirectories);
+                    if (Directory.Exists(dataFolder))
+                    {
+                        // This is the blocking call that we are moving to a background thread.
+                        string[] allFilePaths = Directory.GetFiles(
+                            dataFolder,
+                            "*",
+                            SearchOption.AllDirectories);
 
-                    var fileSet = new HashSet<string>(allFilePaths, StringComparer.OrdinalIgnoreCase);
-                    subDict.Add(dataFolder, fileSet);
+                        var fileSet = new HashSet<string>(allFilePaths, StringComparer.OrdinalIgnoreCase);
+                        subDict.Add(dataFolder, fileSet);
+                    }
                 }
             }
 
