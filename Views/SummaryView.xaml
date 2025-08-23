@@ -114,27 +114,22 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <ListBox ItemsSource="{Binding DisplayedItems}" HorizontalContentAlignment="Stretch"
-                     Visibility="{Binding IsListView, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <ListBox.ItemTemplate>
-                    <DataTemplate DataType="{x:Type vm:VM_SummaryListItem}">
-                        <Grid Margin="2">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="{Binding NpcDisplayName}" FontWeight="SemiBold"/>
-                            <TextBlock Grid.Column="1" Text=" -> " Margin="10,0" Foreground="Gray"/>
-                            <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                <TextBlock Text="{Binding SelectedModName}"/>
-                                <TextBlock Text="{Binding SourceNpcDisplayName, StringFormat=' (from {0})'}" FontStyle="Italic" Foreground="DarkSlateGray"
-                                           Visibility="{Binding IsGuestAppearance, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            </StackPanel>
-                        </Grid>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
+            <DataGrid ItemsSource="{Binding DisplayedItems}"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      CanUserAddRows="False"
+                      GridLinesVisibility="All"
+                      HeadersVisibility="Column"
+                      SelectionMode="Extended"
+                      SelectionUnit="FullRow"
+                      Visibility="{Binding IsListView, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="NPC" Binding="{Binding NpcDisplayName}" Width="2*"/>
+                    <DataGridTextColumn Header="Selected Mod" Binding="{Binding SelectedModName}" Width="2*"/>
+
+                    <DataGridTextColumn Header="Source NPC (if different)" Binding="{Binding SourceNpcForDisplay}" Width="2*"/>
+                </DataGrid.Columns>
+            </DataGrid>
 
         </Grid>
 

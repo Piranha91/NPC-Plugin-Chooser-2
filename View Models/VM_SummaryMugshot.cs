@@ -155,6 +155,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         public string SelectedModName { get; }
         public string SourceNpcDisplayName { get; }
         public bool IsGuestAppearance { get; }
+        public string SourceNpcForDisplay => IsGuestAppearance ? SourceNpcDisplayName : string.Empty;
 
         public VM_SummaryListItem(FormKey targetNpcKey, string npcName, string modName, string sourceNpcName, bool isGuest) // <-- MODIFY SIGNATURE
         {
