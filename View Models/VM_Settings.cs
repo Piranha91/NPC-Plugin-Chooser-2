@@ -89,6 +89,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- New: Properties for display settings
         [Reactive] public bool NormalizeImageDimensions { get; set; }
         [Reactive] public int MaxMugshotsToFit { get; set; }
+        [Reactive] public bool SuppressPopupWarnings { get; set; }
         
         // For throttled saving
         private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
@@ -162,6 +163,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             BatFilePostCommands = _model.BatFilePostCommands;
             NormalizeImageDimensions = _model.NormalizeImageDimensions;
             MaxMugshotsToFit = _model.MaxMugshotsToFit;
+            SuppressPopupWarnings = _model.SuppressPopupWarnings;
             
             ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
             ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
@@ -206,12 +208,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.BatFilePreCommands).Skip(1).Subscribe(s => _model.BatFilePreCommands = s).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.BatFilePostCommands).Skip(1).Subscribe(s => _model.BatFilePostCommands = s).DisposeWith(_disposables);
             
+            this.WhenAnyValue(x => x.SuppressPopupWarnings)
+                .Skip(1)
+                .Subscribe(b => _model.SuppressPopupWarnings = b)
+                .DisposeWith(_disposables);
+            
             this.WhenAnyValue(x => x.SelectedRecordOverrideHandlingMode)
                 .Skip(1) // Skip the initial value loaded from the model
                 .Subscribe(mode =>
                 {
                     // Only show the warning if the user selects a mode other than the default 'Ignore'
-                    if (mode != RecordOverrideHandlingMode.Ignore)
+                    if (mode != RecordOverrideHandlingMode.Ignore && !SuppressPopupWarnings)
                     {
                         const string message = "WARNING: Setting the override handling mode to anything other than 'Ignore' is generally not recommended.\n\n" +
                                                "It can significantly increase patching time and is only necessary in very specific, rare scenarios.\n\n" +
@@ -243,7 +250,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     if (useSkyPatcher) // If the checkbox was just checked
                     {
                         const string message = "SkyPatcher is a powerful tool for overwriting conflicts. Be aware that it might conflict with other runtime editing tools such as RSV and SynthEBD. Are you sure you want to use SkyPatcher Mode?";
-                        if (!ScrollableMessageBox.Confirm(message, "Confirm SkyPatcher Mode"))
+                        if (!SuppressPopupWarnings && !ScrollableMessageBox.Confirm(message, "Confirm SkyPatcher Mode"))
                         {
                             // If user clicks "No", revert the checkbox state
                             UseSkyPatcherMode = false;

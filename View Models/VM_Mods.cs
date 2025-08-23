@@ -128,6 +128,8 @@ public class VM_Mods : ReactiveObject
 
     // Concurrency management
     private bool _isPopulatingModSettings = false;
+    
+    public bool SuppressPopupWarnings => _settings.SuppressPopupWarnings;
 
     // Factory fields
     private readonly VM_ModSetting.FromModelFactory _modSettingFromModelFactory;
@@ -390,9 +392,18 @@ public class VM_Mods : ReactiveObject
         // --- NEW: Initialize Batch Action Commands ---
         BatchIncludeOutfitsCommand = ReactiveCommand.Create(() =>
         {
+            const string message = "Modifying NPC outfits on an existing save can lead to NPCs unequipping their outifts entirely. Are you sure you want to enable outfit modification?";
+
+            if (!_settings.SuppressPopupWarnings && !ScrollableMessageBox.Confirm(message, "Confirm Outfit Forwarding"))
+            {
+                return;
+            }
+            
             foreach (var modSetting in _allModSettingsInternal)
             {
+                modSetting.IsPerformingBatchAction = true;
                 modSetting.IncludeOutfits = true;
+                modSetting.IsPerformingBatchAction = false;
             }
         });
 
@@ -400,7 +411,9 @@ public class VM_Mods : ReactiveObject
         {
             foreach (var modSetting in _allModSettingsInternal)
             {
+                modSetting.IsPerformingBatchAction = true;
                 modSetting.IncludeOutfits = false;
+                modSetting.IsPerformingBatchAction = false;
             }
         });
         

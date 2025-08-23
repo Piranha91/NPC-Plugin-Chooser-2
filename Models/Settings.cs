@@ -47,6 +47,7 @@ public class Settings
     public HashSet<ModKey> ImportFromLoadOrderExclusions { get; set; } = new();
     public bool NormalizeImageDimensions { get; set; } = false;
     public int MaxMugshotsToFit { get; set; } = 50;
+    public bool SuppressPopupWarnings { get; set; } = false;
 
     // EasyNPC Interchangeability / Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); 
