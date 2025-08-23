@@ -89,6 +89,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- New: Properties for display settings
         [Reactive] public bool NormalizeImageDimensions { get; set; }
         [Reactive] public int MaxMugshotsToFit { get; set; }
+        [Reactive] public int MaxNpcsPerPageSummaryView { get; set; }
         [Reactive] public bool SuppressPopupWarnings { get; set; }
         
         // For throttled saving

@@ -15,6 +15,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // Injected ViewModels for the different tabs
         private readonly VM_NpcSelectionBar _npcsViewModel;
         private readonly VM_Mods _modsViewModel;
+        private readonly VM_Summary _summaryViewModel;
         private readonly VM_Settings _settingsViewModel;
         private readonly VM_Run _runViewModel;
 
@@ -27,6 +28,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // Properties to control which tab is selected (bound to RadioButtons)
         [Reactive] public bool IsNpcsTabSelected { get; set; } // Default tab
         [Reactive] public bool IsModsTabSelected { get; set; }
+        [Reactive] public bool IsSummaryTabSelected { get; set; }
         [Reactive] public bool IsSettingsTabSelected { get; set; }
         [Reactive] public bool IsRunTabSelected { get; set; }
         [Reactive] public bool AreOtherTabsEnabled { get; private set; }
@@ -35,6 +37,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public VM_MainWindow(
             VM_NpcSelectionBar npcsViewModel,
             VM_Mods modsViewModel,
+            VM_Summary summaryViewModel,
             VM_Settings settingsViewModel,
             VM_Run runViewModel,
             EnvironmentStateProvider environmentStateProvider,
@@ -42,6 +45,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             _npcsViewModel = npcsViewModel;
             _modsViewModel = modsViewModel;
+            _summaryViewModel = summaryViewModel;
             _settingsViewModel = settingsViewModel;
             _runViewModel = runViewModel;
             _environmentStateProvider = environmentStateProvider;
@@ -84,6 +88,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.IsModsTabSelected)
                 .Where(isSelected => isSelected && AreOtherTabsEnabled)
                 .Subscribe(_ => { if (CurrentViewModel != _modsViewModel) CurrentViewModel = _modsViewModel; });
+            
+            this.WhenAnyValue(x => x.IsSummaryTabSelected)
+                .Where(isSelected => isSelected && AreOtherTabsEnabled)
+                .Subscribe(_ => { if (CurrentViewModel != _summaryViewModel) CurrentViewModel = _summaryViewModel; });
 
             this.WhenAnyValue(x => x.IsSettingsTabSelected)
                 .Where(isSelected => isSelected)

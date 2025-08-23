@@ -47,6 +47,7 @@ public class Settings
     public HashSet<ModKey> ImportFromLoadOrderExclusions { get; set; } = new();
     public bool NormalizeImageDimensions { get; set; } = false;
     public int MaxMugshotsToFit { get; set; } = 50;
+    public int MaxNpcsPerPageSummaryView { get; set; } = 100;
     public bool SuppressPopupWarnings { get; set; } = false;
 
     // EasyNPC Interchangeability / Settings
@@ -63,6 +64,8 @@ public class Settings
     public bool NpcsViewIsZoomLocked { get; set; } = false;
     public double ModsViewZoomLevel { get; set; } = 100.0; 
     public bool ModsViewIsZoomLocked { get; set; } = false;
+    public double SummaryViewZoomLevel { get; set; } = 100.0;
+    public bool SummaryViewIsZoomLocked { get; set; } = false;
 
     // Last Selected NPC ***
     public FormKey LastSelectedNpcFormKey { get; set; } // Will be FormKey.Null if none or invalid

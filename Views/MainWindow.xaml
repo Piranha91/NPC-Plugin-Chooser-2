@@ -75,6 +75,13 @@
                        GroupName="MainTabs"
                        IsChecked="{Binding IsModsTabSelected, Mode=TwoWay}"
                        IsEnabled="{Binding AreOtherTabsEnabled}" />
+          
+          <RadioButton x:Name="SummaryRadioButton"
+                       Style="{StaticResource TabToggleButtonStyle}"
+                       Content="Summary"
+                       GroupName="MainTabs"
+                       IsChecked="{Binding IsSummaryTabSelected, Mode=TwoWay}"
+                       IsEnabled="{Binding AreOtherTabsEnabled}" />
         
           <RadioButton x:Name="SettingsRadioButton"
                        Style="{StaticResource TabToggleButtonStyle}"

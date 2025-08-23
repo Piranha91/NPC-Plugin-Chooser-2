@@ -1858,6 +1858,27 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
         return null;
     }
+    
+    public string? GetMugshotPathForNpc(string modName, FormKey npcFormKey)
+    {
+        // Find the mod setting associated with the given mod name.
+        var modSetting = _lazyModsVm.Value.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(modName, StringComparison.OrdinalIgnoreCase));
+        if (modSetting == null)
+        {
+            // If no mod setting exists (e.g., a mugshot-only entry not yet linked),
+            // we can still try to find a direct match in the raw mugshot data.
+            if (_mugshotData.TryGetValue(npcFormKey, out var mugshots))
+            {
+                var match = mugshots.FirstOrDefault(m => m.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase));
+                if (match != default) return match.ImagePath;
+            }
+            return null;
+        }
+    
+        // Use the existing private helper method to get the specific image path,
+        // ensuring consistency with the rest of the application.
+        return GetImagePathForNpc(modSetting, npcFormKey, _mugshotData);
+    }
 
     private void HandleShareAppearanceRequest(VM_NpcsMenuMugshot mugshotToShare)
     {

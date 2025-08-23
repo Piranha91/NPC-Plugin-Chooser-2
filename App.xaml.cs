@@ -146,7 +146,8 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<VM_NpcSelectionBar>().AsSelf().SingleInstance();
             builder.RegisterType<VM_Settings>().AsSelf().SingleInstance(); 
             builder.RegisterType<VM_Run>().AsSelf().SingleInstance();
-            builder.RegisterType<VM_Mods>().AsSelf().SingleInstance();   
+            builder.RegisterType<VM_Mods>().AsSelf().SingleInstance();  
+            builder.RegisterType<VM_Summary>().AsSelf().SingleInstance();
             builder.RegisterType<VM_FullScreenImage>().AsSelf();
             builder.RegisterType<VM_ModsMenuMugshot>().AsSelf();
             builder.RegisterType<VM_NpcsMenuMugshot>().AsSelf();
@@ -159,6 +160,7 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<NpcsView>().As<IViewFor<VM_NpcSelectionBar>>();
             builder.RegisterType<SettingsView>().As<IViewFor<VM_Settings>>();
             builder.RegisterType<RunView>().As<IViewFor<VM_Run>>();
+            builder.RegisterType<SummaryView>().As<IViewFor<VM_Summary>>();
             builder.RegisterType<ModsView>().As<IViewFor<VM_Mods>>();
             builder.RegisterType<FullScreenImageView>().As<IViewFor<VM_FullScreenImage>>();
             builder.RegisterType<MultiImageDisplayView>().As<IViewFor<VM_MultiImageDisplay>>();
@@ -176,6 +178,7 @@ namespace NPC_Plugin_Chooser_2
             Locator.CurrentMutable.Register(() => new NpcsView(), typeof(IViewFor<VM_NpcSelectionBar>));
             Locator.CurrentMutable.Register(() => new SettingsView(), typeof(IViewFor<VM_Settings>));
             Locator.CurrentMutable.Register(() => new RunView(), typeof(IViewFor<VM_Run>));
+            Locator.CurrentMutable.Register(() => new SummaryView(), typeof(IViewFor<VM_Summary>));
             Locator.CurrentMutable.Register(() => new ModsView(), typeof(IViewFor<VM_Mods>));
             Locator.CurrentMutable.Register(() => new FullScreenImageView(), typeof(IViewFor<VM_FullScreenImage>));
             Locator.CurrentMutable.Register(() => new MultiImageDisplayView(), typeof(IViewFor<VM_MultiImageDisplay>));

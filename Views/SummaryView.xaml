@@ -1,0 +1,164 @@
+﻿<reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.SummaryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
+             xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+             xmlns:reactiveui="http://reactiveui.net"
+             mc:Ignorable="d"
+             x:TypeArguments="vm:VM_Summary"
+             d:DataContext="{d:DesignInstance Type=vm:VM_Summary}"
+             d:DesignHeight="600" d:DesignWidth="1000">
+
+    <UserControl.Resources>
+        <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <local:PercentageSizingConverter x:Key="PercentageSizingConverter"/>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/> <RowDefinition Height="*"/>    <RowDefinition Height="Auto"/> </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#F0F0F0" BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="5">
+            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="View Mode:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <RadioButton Content="Gallery" GroupName="ViewMode" IsChecked="{Binding IsGalleryView, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <RadioButton Content="List" GroupName="ViewMode" VerticalAlignment="Center" Margin="0,0,15,0"/>
+
+                <TextBlock Text="NPC Group:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <ComboBox MinWidth="150" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedNpcGroup, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,15,0"/>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Visibility="{Binding IsGalleryView, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="Max # NPCs per page:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <TextBox Text="{Binding MaxNpcsPerPage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="50" VerticalAlignment="Center"/>
+                </StackPanel>
+            </WrapPanel>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <ScrollViewer x:Name="MugshotScrollViewer" Grid.Row="1"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                          PreviewMouseWheel="MugshotScrollViewer_PreviewMouseWheel"
+                          SizeChanged="MugshotScrollViewer_SizeChanged"
+                          Visibility="{Binding IsGalleryView, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <ItemsControl ItemsSource="{Binding DisplayedItems}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal"
+                                       Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:VM_SummaryMugshot}">
+                            <Border BorderThickness="2" BorderBrush="Gray" Margin="5" CornerRadius="2"
+                                    Width="{Binding ImageWidth}" Height="{Binding ImageHeight}">
+                                <Border.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Show Full Image" Command="{Binding ToggleFullScreenCommand}"/>
+                                        <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/>
+                                        <MenuItem Header="Jump to Mod in List" Command="{Binding JumpToModCommand}"/>
+                                    </ContextMenu>
+                                </Border.ContextMenu>
+
+                                <Grid Background="WhiteSmoke">
+                                    <Image Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                                        <Image.Style>
+                                            <Style TargetType="Image">
+                                                <Setter Property="Opacity" Value="1.0" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasMugshot}" Value="False">
+                                                        <Setter Property="Opacity" Value="0.3"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Image.Style>
+                                    </Image>
+                                    
+                                    <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Background="#AA000000" Padding="3,1">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding NpcDisplayName}" Foreground="White" FontSize="10" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="{Binding ModDisplayName}" Foreground="LightGray" FontSize="9" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" FontStyle="Italic"/>
+                                        </StackPanel>
+                                    </Border>
+                                    
+                                    <Grid HorizontalAlignment="Left" VerticalAlignment="Top" Margin="2" Width="16" Height="16"
+                                          Visibility="{Binding HasIssueNotification, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                          ToolTip="{Binding IssueNotificationText}">
+                                        <Viewbox Stretch="Uniform"><TextBlock Text="!" FontWeight="Bold" Foreground="Red"/></Viewbox>
+                                    </Grid>
+                                    <Grid HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2" Width="16" Height="16"
+                                          Visibility="{Binding HasNoData, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                          ToolTip="{Binding NoDataNotificationText}">
+                                        <Viewbox Stretch="Uniform"><Image Source="/NPC Plugin Chooser 2;component/Resources/No Associated Data.png" /></Viewbox>
+                                    </Grid>
+                                    <Grid HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0 0 0 20"
+                                          Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                          ToolTip="This NPC is defined in multiple source plugins."
+                                          Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                          Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+                                        <Viewbox Stretch="Uniform"><Image Source="/NPC Plugin Chooser 2;component/Resources/Multiple Plugins for NPC.png" /></Viewbox>
+                                    </Grid>
+                                    <Grid HorizontalAlignment="Right" VerticalAlignment="Top" Margin="2"
+                                          Visibility="{Binding IsGuestAppearance, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                          ToolTip="This is a guest appearance from another NPC."
+                                          Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                          Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+                                        <Viewbox Stretch="Uniform"><Image Source="/NPC Plugin Chooser 2;component/Resources/Guest Plugin.png"/></Viewbox>
+                                    </Grid>
+
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <ListBox ItemsSource="{Binding DisplayedItems}" HorizontalContentAlignment="Stretch"
+                     Visibility="{Binding IsListView, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:VM_SummaryListItem}">
+                        <Grid Margin="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding NpcDisplayName}" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Column="1" Text=" -> " Margin="10,0" Foreground="Gray"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                <TextBlock Text="{Binding SelectedModName}"/>
+                                <TextBlock Text="{Binding SourceNpcDisplayName, StringFormat=' (from {0})'}" FontStyle="Italic" Foreground="DarkSlateGray"
+                                           Visibility="{Binding IsGuestAppearance, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+        </Grid>
+
+        <Border Grid.Row="2" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="5">
+            <Grid>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center"
+                            Visibility="{Binding IsGalleryView, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Button Content="&lt;" Command="{Binding PreviousPageCommand}" Width="25" Height="25" Margin="0,0,5,0" ToolTip="Previous Page"/>
+                    <TextBlock Text="{Binding PageDisplay}" VerticalAlignment="Center" Margin="5,0"/>
+                    <Button Content="&gt;" Command="{Binding NextPageCommand}" Width="25" Height="25" Margin="5,0,0,0" ToolTip="Next Page"/>
+                </StackPanel>
+                
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button x:Name="ZoomOutButton" Content="-" Command="{Binding ZoomOutSummaryCommand}" Width="25" Height="25" Margin="2,0" ToolTip="Zoom Out (Ctrl+Scroll Wheel)"/>
+                    <TextBox x:Name="ZoomPercentageTextBox" Width="60" Height="25" Margin="2,0" TextAlignment="Center" VerticalContentAlignment="Center"
+                             Text="{Binding SummaryViewZoomLevel, StringFormat='F2', Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             PreviewMouseWheel="ZoomPercentageTextBox_PreviewMouseWheel"
+                             ToolTip="Current Zoom Level. Editable. Ctrl+Scroll Wheel in image area or Scroll Wheel here to adjust."/>
+                    <TextBlock Text="%" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <Button x:Name="ZoomInButton" Content="+" Command="{Binding ZoomInSummaryCommand}" Width="25" Height="25" Margin="2,0" ToolTip="Zoom In (Ctrl+Scroll Wheel)"/>
+                    <CheckBox x:Name="LockZoomCheckBox" Content="Lock Zoom" IsChecked="{Binding SummaryViewIsZoomLocked, Mode=TwoWay}" Margin="10,0,5,0" VerticalAlignment="Center" ToolTip="Lock the current zoom level. If unchecked, zoom adjusts to fit images."/>
+                    <Button x:Name="ResetZoomButton" Content="Reset Zoom" Command="{Binding ResetZoomSummaryCommand}" Margin="5,0,0,0" Padding="5,2" ToolTip="Reset zoom to automatically fit images."/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</reactiveui:ReactiveUserControl>

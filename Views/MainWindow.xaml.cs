@@ -56,6 +56,10 @@ namespace NPC_Plugin_Chooser_2.Views
                           v  => v.ModsRadioButton.IsChecked)
                     .DisposeWith(disposables);
                 this.Bind(ViewModel,
+                        vm => vm.IsSummaryTabSelected,
+                        v  => v.SummaryRadioButton.IsChecked)
+                    .DisposeWith(disposables);
+                this.Bind(ViewModel,
                           vm => vm.IsSettingsTabSelected,
                           v  => v.SettingsRadioButton.IsChecked)
                     .DisposeWith(disposables);
@@ -68,8 +72,9 @@ namespace NPC_Plugin_Chooser_2.Views
                 this.WhenAnyValue(x => x.ViewModel.AreOtherTabsEnabled)
                     .Do(enabled =>
                     {
-                        NpcsRadioButton.IsEnabled     = enabled;
+                        NpcsRadioButton.IsEnabled      = enabled;
                         ModsRadioButton.IsEnabled      = enabled;
+                        SummaryRadioButton.IsEnabled   = enabled;
                         RunRadioButton.IsEnabled       = enabled;
                         // Settings remains always enabled
                     })
@@ -85,6 +90,7 @@ namespace NPC_Plugin_Chooser_2.Views
                             // Clear to let your style/template restore normal look
                             NpcsRadioButton.ClearValue(Control.ForegroundProperty);
                             ModsRadioButton.ClearValue(Control.ForegroundProperty);
+                            SummaryRadioButton.ClearValue(Control.ForegroundProperty);
                             RunRadioButton.ClearValue(Control.ForegroundProperty);
                         }
                         else
@@ -94,6 +100,9 @@ namespace NPC_Plugin_Chooser_2.Views
                                 Control.ForegroundProperty,
                                 SystemColors.GrayTextBrushKey);
                             ModsRadioButton.SetResourceReference(
+                                Control.ForegroundProperty,
+                                SystemColors.GrayTextBrushKey);
+                            SummaryRadioButton.SetResourceReference(
                                 Control.ForegroundProperty,
                                 SystemColors.GrayTextBrushKey);
                             RunRadioButton.SetResourceReference(
