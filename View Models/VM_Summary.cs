@@ -118,8 +118,40 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 _refreshImageSizesSubject.OnNext(Unit.Default);
             });
 
-            this.WhenAnyValue(x => x.SummaryViewZoomLevel).Skip(1).Subscribe(zoom => _settings.SummaryViewZoomLevel = zoom).DisposeWith(_disposables);
-            this.WhenAnyValue(x => x.SummaryViewIsZoomLocked).Skip(1).Subscribe(locked => _settings.SummaryViewIsZoomLocked = locked).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.SummaryViewZoomLevel)
+                .Skip(1) // Don't fire on initial load
+                .Throttle(TimeSpan.FromMilliseconds(100))
+                .Subscribe(zoom =>
+                {
+                    // Clamp the value to prevent invalid zoom levels
+                    double clampedZoom = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, zoom));
+                    _settings.SummaryViewZoomLevel = clampedZoom;
+
+                    // If the value was clamped, update the ViewModel property to reflect it
+                    if (Math.Abs(SummaryViewZoomLevel - clampedZoom) > 0.001)
+                    {
+                        SummaryViewZoomLevel = clampedZoom;
+                        return; // The property change will re-trigger this subscription, so we exit
+                    }
+
+                    // If the user is manually zooming or the zoom is locked,
+                    // explicitly signal the view to refresh the image sizes.
+                    if (SummaryViewIsZoomLocked || SummaryViewHasUserManuallyZoomed)
+                    {
+                        _refreshImageSizesSubject.OnNext(Unit.Default);
+                    }
+                })
+                .DisposeWith(_disposables);
+
+            this.WhenAnyValue(x => x.SummaryViewIsZoomLocked)
+                .Skip(1)
+                .Subscribe(isLocked =>
+                {
+                    _settings.SummaryViewIsZoomLocked = isLocked;
+                    // When locking/unlocking, always refresh the view to apply the correct scaling
+                    _refreshImageSizesSubject.OnNext(Unit.Default);
+                })
+                .DisposeWith(_disposables);
 
             // Trigger updates
             this.WhenAnyValue(x => x.CurrentPage, x => x.IsGalleryView, x => x.SelectedNpcGroup, x => x.MaxNpcsPerPage)
