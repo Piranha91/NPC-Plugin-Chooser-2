@@ -120,6 +120,10 @@ namespace NPC_Plugin_Chooser_2
 
             splashVM.UpdateProgress(15, "Loading settings model...");
             var settingsModel = VM_Settings.LoadSettings(); // Use the static method from your Settings model
+            // Run the update handler to migrate settings before they are used by the application.
+            splashVM.UpdateProgress(16, "Checking for setting updates...");
+            var updateHandler = new UpdateHandler(settingsModel);
+            updateHandler.CheckForUpdatesAndPatch();
             builder.RegisterInstance(settingsModel).AsSelf().SingleInstance();
 
             splashVM.UpdateProgress(20, "Registering core components...");
