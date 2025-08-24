@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Windows.Media;
 using NPC_Plugin_Chooser_2.Models;
@@ -92,7 +93,7 @@ public class UpdateHandler
 
         if (settingsVersion < "2.0.5") // DEBUG
         {
-            UpdateTo2_0_4_Final(modsVm, splashReporter);
+            await UpdateTo2_0_4_Final(modsVm, splashReporter);
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -112,25 +113,35 @@ public class UpdateHandler
         ScrollableMessageBox.Show(message, "Updating to 2.0.4");
     }
 
-    private void UpdateTo2_0_4_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
+    private async Task UpdateTo2_0_4_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
     {
-        splashReporter?.UpdateStep($"Updating settings from version {_settings.ProgramVersion} to {App.ProgramVersion}", modsVm.AllModSettings.Count);
-        foreach (var modVm in modsVm.AllModSettings)
-        {
-            splashReporter?.IncrementProgress(string.Empty);
-            if (modVm.DisplayName == VM_Mods.BaseGameModSettingName || 
-                modVm.DisplayName == VM_Mods.CreationClubModsettingName ||
-                modVm.IsFaceGenOnlyEntry)
-            {
-                continue;
-            }
+        var modsToScan = modsVm.AllModSettings.Where(modVm =>
+            modVm.DisplayName != VM_Mods.BaseGameModSettingName &&
+            modVm.DisplayName != VM_Mods.CreationClubModsettingName &&
+            !modVm.IsFaceGenOnlyEntry).ToList();
 
-            var task = Task.Run(() =>
-                modVm.CheckForInjectedRecords(splashReporter == null ? null : splashReporter.ShowMessagesOnClose));
-            if (task.Result)
+        splashReporter?.UpdateStep($"Updating to 2.0.4: Scanning mods for injected records...", modsToScan.Count);
+            
+        var modsWithInjectedRecords = new ConcurrentBag<VM_ModSetting>();
+
+        // 1. Perform the expensive, IO-bound work on background threads
+        await Task.Run(() =>
+        {
+            Parallel.ForEach(modsToScan, modVm =>
             {
-                modVm.HandleInjectedRecordsLabelColor = new(Colors.MediumPurple); // must create on UI thread
-            }
+                // .Result is acceptable here as we are already inside a background thread via Task.Run
+                if (modVm.CheckForInjectedRecords(splashReporter == null ? null : splashReporter.ShowMessagesOnClose).Result)
+                {
+                    modsWithInjectedRecords.Add(modVm);
+                }
+                splashReporter?.IncrementProgress(string.Empty);
+            });
+        });
+
+        // 2. Perform the UI update on the UI thread after all parallel work is complete
+        foreach (var modVm in modsWithInjectedRecords)
+        {
+            modVm.HandleInjectedRecordsLabelColor = new SolidColorBrush(Colors.MediumPurple);
         }
     }
 }
