@@ -91,7 +91,7 @@ public class UpdateHandler
         // all intermediate patches (for < 2.0.8, < 2.0.9, etc.) should be applied in order.
         // The `if` statements are not `else if` for this reason.
 
-        if (settingsVersion < "2.0.5") // DEBUG
+        if (settingsVersion < "2.0.4")
         {
             await UpdateTo2_0_4_Final(modsVm, splashReporter);
         }
