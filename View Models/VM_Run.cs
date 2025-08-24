@@ -538,6 +538,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         private async Task GenerateEnvironmentReportAsync()
         {
+            AppendLog("Program Version: " + App.ProgramVersion, forceLog: true);
             AppendLog("===Game Environment===", forceLog: true);
             AppendLog("Game Type: " + _environmentStateProvider.SkyrimVersion, forceLog: true);
             AppendLog("Game Directory: " + _environmentStateProvider.DataFolderPath, forceLog: true);
@@ -548,6 +549,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             AppendLog("Environment Status: " + _environmentStateProvider.Status, forceLog: true);
             AppendLog(Environment.NewLine, forceLog: true);
             AppendLog("===Program Variables===", forceLog: true);
+            AppendLog(_vmSettings.GetStatusReport(), forceLog: true);
             AppendLog(_lazyVmMods.Value.GetStatusReport(), forceLog: true);
             AppendLog(Environment.NewLine, forceLog: true);
             AppendLog("Plugin Provider: " + _pluginProvider.GetStatusReport(), forceLog: true);

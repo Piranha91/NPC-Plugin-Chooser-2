@@ -2553,7 +2553,17 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         sb.AppendLine("Installed Appearance Mods:");
         foreach (var mod in _allModSettingsInternal)
         {
-            sb.AppendLine($"{mod.DisplayName}: {mod.NpcFormKeys.Count} NPCs");
+            sb.AppendLine($"{mod.DisplayName}" + 
+                          (mod.IsFaceGenOnlyEntry ? " (FaceGen-Only)" : string.Empty) + 
+                          (mod.IsMugshotOnlyEntry ? " (Mugshots-Only)" : string.Empty));
+            if (!mod.IsFaceGenOnlyEntry && !mod.IsMugshotOnlyEntry)
+            {
+                sb.AppendLine($"\t{mod.NpcFormKeys.Count} NPCs in plugin(s).");
+            }
+
+            sb.AppendLine($"\tMerge-in: {mod.MergeInDependencyRecords}");
+            sb.AppendLine($"\tInjected Record Handling: {mod.HandleInjectedRecords}");
+            sb.AppendLine($"\tInclude Outfits: {mod.IncludeOutfits}");
         }
         
         return sb.ToString();

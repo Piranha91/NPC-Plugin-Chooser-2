@@ -51,7 +51,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- New Output Settings Properties ---
         [Reactive] public string OutputDirectory { get; set; }
         [Reactive] public bool AppendTimestampToOutputDirectory { get; set; }
-        [Reactive] public string OutputPluginName { get; set; } // New property for the actual plugin filename
         [Reactive] public bool UseSkyPatcherMode { get; set; }
         [Reactive] public PatchingMode SelectedPatchingMode { get; set; }
         public IEnumerable<PatchingMode> PatchingModes { get; } = Enum.GetValues(typeof(PatchingMode)).Cast<PatchingMode>();
@@ -768,6 +767,20 @@ Options:
             {
                 FilteredNonAppearanceMods.Add(item);
             }
+        }
+
+        public string GetStatusReport()
+        {
+            StringBuilder sb = new StringBuilder();
+
+            sb.AppendLine("Mods Folder: " + ModsFolder);
+            sb.AppendLine("Mugshots Folder: " + MugshotsFolder);
+            sb.AppendLine("Patching Mode: " + SelectedPatchingMode);
+            sb.AppendLine("Output Directory: " + OutputDirectory);
+            sb.AppendLine("Output Name: " + TargetPluginName);
+            sb.AppendLine("Default Override Handling: " + SelectedRecordOverrideHandlingMode);
+            sb.AppendLine("SkyPatcher Mode: " + UseSkyPatcherMode);
+            return sb.ToString();
         }
         
         public void Dispose()
