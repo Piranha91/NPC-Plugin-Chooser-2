@@ -906,48 +906,89 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
     }
     
+    // In VM_Mods.cs
+
     public async Task RefreshSingleModSettingAsync(VM_ModSetting vmToRefresh)
+    {
+        if (vmToRefresh == null) return;
+
+        // 1. Generate caches for the specific mod being refreshed.
+        var faceGenCache = await CacheFaceGenPathsOnLoadAsync(new[] { vmToRefresh }, null); // No splash screen
+
+        // 2. Update the mod keys based on current folder contents
+        vmToRefresh.UpdateCorrespondingModKeys();
+        
+        // 3. Load the necessary plugins for this mod
+        var modFolderPathsForVm = vmToRefresh.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var plugins = _pluginProvider.LoadPlugins(vmToRefresh.CorrespondingModKeys, modFolderPathsForVm);
+
+        try
         {
-            if (vmToRefresh == null) return;
-        
-            // We need the FaceGen caches, but recreating them for a single refresh is inefficient.
-            // We'll use the existing ones if available, or generate them if this is the first time.
-            // For simplicity here, we'll just regenerate them. A more optimized approach
-            // might check for their existence first.
-            var faceGenCache = await CacheFaceGenPathsOnLoadAsync(new[] { vmToRefresh }, null); // No splash screen
-        
-            // 1. Update the mod keys based on current folder contents
-            vmToRefresh.UpdateCorrespondingModKeys();
+            // 4a. Re-evaluate the mod's fundamental type (Appearance vs. Non-Appearance)
+            if (vmToRefresh.CorrespondingModKeys.Any())
+            {
+                // If there are plugins, check if they are appearance-related.
+                vmToRefresh.IsFaceGenOnlyEntry = !await ContainsAppearancePluginsAsync(vmToRefresh.CorrespondingModKeys, modFolderPathsForVm);
+            }
+            else
+            {
+                // If there are NO plugins, it's only a valid appearance mod if it contains FaceGen files.
+                bool hasFaceGen = faceGenCache.allFaceGenLooseFiles.Any() || 
+                                  (faceGenCache.allFaceGenBsaFiles.TryGetValue(vmToRefresh.DisplayName, out var bsaFiles) && bsaFiles.Any());
+
+                if (hasFaceGen)
+                {
+                    vmToRefresh.IsFaceGenOnlyEntry = true;
+                }
+                else
+                {
+                    // This mod has no plugins AND no FaceGen. It's no longer an appearance mod.
+                    ScrollableMessageBox.Show(
+                        $"The mod '{vmToRefresh.DisplayName}' no longer contains any plugins or FaceGen files. It will be removed from the appearance mods list.",
+                        "Mod Removed");
+
+                    // Note: Don't add it to cached non appearance mods. If the user deleted the facegen or plugin contents in error, they have a chance to rstore them.
+                    // If the user doesn't restore them, this mod will be identified as non-appearance and chached at next startup.
+
+                    // Remove the VM from the list and exit.
+                    RemoveModSetting(vmToRefresh);
+                    return; // Stop further processing for this mod.
+                }
+            }
             
-            // 2. Load the necessary plugins for this mod
-            var modFolderPathsForVm = vmToRefresh.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var plugins = _pluginProvider.LoadPlugins(vmToRefresh.CorrespondingModKeys, modFolderPathsForVm);
-        
-            try
+            // 4b. Re-run the core analysis functions
+            vmToRefresh.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins);
+            
+            var analysisTasks = new List<Task>
             {
-                // 3. Re-run the core analysis functions
-                vmToRefresh.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins);
-                await vmToRefresh.FindPluginsWithOverrides(_pluginProvider);
-                vmToRefresh.CheckMergeInSuitability(null); // No splash reporter to show messages
-        
-                // 4. Update UI-dependent properties
-                RecalculateMugshotValidity(vmToRefresh);
-        
-                // 5. Notify the rest of the application
-                RequestNpcSelectionBarRefresh();
-        
-                ScrollableMessageBox.Show($"Successfully refreshed '{vmToRefresh.DisplayName}'.", "Refresh Complete");
-            }
-            catch (Exception ex)
+                Task.Run(() => vmToRefresh.CheckMergeInSuitability(null)),
+                vmToRefresh.FindPluginsWithOverrides(_pluginProvider)
+            };
+
+            if (!vmToRefresh.IsFaceGenOnlyEntry)
             {
-                ScrollableMessageBox.ShowError($"Failed to refresh '{vmToRefresh.DisplayName}':\n{ex.Message}");
+                analysisTasks.Add(vmToRefresh.CheckForInjectedRecords(null));
             }
-            finally
-            {
-                // 6. Unload the plugins
-                _pluginProvider.UnloadPlugins(vmToRefresh.CorrespondingModKeys);
-            }
+
+            await Task.WhenAll(analysisTasks);
+
+            // 5. Update UI-dependent properties
+            RecalculateMugshotValidity(vmToRefresh);
+
+            RequestNpcSelectionBarRefresh();
+
+            ScrollableMessageBox.Show($"Successfully refreshed '{vmToRefresh.DisplayName}'.", "Refresh Complete");
         }
+        catch (Exception ex)
+        {
+            ScrollableMessageBox.ShowError($"Failed to refresh '{vmToRefresh.DisplayName}':\n{ex.Message}");
+        }
+        finally
+        {
+            // 6. Unload the plugins
+            _pluginProvider.UnloadPlugins(vmToRefresh.CorrespondingModKeys);
+        }
+    }
 
     private (List<VM_ModSetting> tempList, HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths,
         List<string> warnings)
@@ -1040,14 +1081,14 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// <summary>
     /// Base class for different outcomes of scanning a single mod folder.
     /// </summary>
-    private abstract class ModFolderScanResult
+    private abstract record ModFolderScanResult
     {
     }
 
     /// <summary>
     /// Represents a newly discovered mod that needs to be added to the list.
     /// </summary>
-    private class NewVmResult(VM_ModSetting vm) : ModFolderScanResult
+    private record NewVmResult(VM_ModSetting vm) : ModFolderScanResult
     {
         public VM_ModSetting Vm { get; } = vm;
     }
@@ -1055,7 +1096,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// <summary>
     /// Represents an action to upgrade an existing VM with a new mod folder path and plugins.
     /// </summary>
-    private class UpgradeVmResult(string vmDisplayName, string modFolderPath, List<ModKey> modKeys)
+    private record UpgradeVmResult(string vmDisplayName, string modFolderPath, List<ModKey> modKeys)
         : ModFolderScanResult
     {
         public string VmDisplayName { get; } = vmDisplayName;
@@ -1066,11 +1107,25 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// <summary>
     /// Represents a folder that should be cached as a non-appearance mod and skipped in the future.
     /// </summary>
-    private class CacheNonAppearanceResult(string modFolderPath, string reason) : ModFolderScanResult
+    private record CacheNonAppearanceResult(string modFolderPath, string reason) : ModFolderScanResult
     {
         public string ModFolderPath { get; } = modFolderPath;
         public string Reason { get; } = reason;
     }
+    
+    /// <summary>
+    /// A data-transfer object holding the necessary information to create a VM_ModSetting on the UI thread.
+    /// </summary>
+    private record NewVmCreationData(
+        string ModFolderPath,
+        List<ModKey> ModKeys,
+        bool IsFaceGenOnly,
+        HashSet<FormKey> FaceGenFormKeys,
+        bool ShouldDisableMergeIn, // Result from CheckMergeInSuitability
+        string MergeInTooltip,     // Result from CheckMergeInSuitability
+        bool FoundInjectedRecords, // Result from CheckForInjectedRecords
+        string InjectedTooltip     // Result from CheckForInjectedRecords
+    ) : ModFolderScanResult;
 
     #endregion
 
@@ -1183,9 +1238,43 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
                     break;
 
-                case NewVmResult newVm:
-                    tempList.Add(newVm.Vm);
-                    loadedDisplayNames.Add(newVm.Vm.DisplayName);
+                case NewVmCreationData newData:
+                    // This code now runs on the UI thread. It's safe to create the VM here.
+                    var newVm = _modSettingFromModFolderFactory(newData.ModFolderPath, newData.ModKeys, this);
+                    newVm.IsNewlyCreated = true;
+
+                    // Apply the pre-calculated analysis results from the DTO
+                    if (newData.ShouldDisableMergeIn)
+                    {
+                        newVm.MergeInDependencyRecords = false;
+                        newVm.MergeInToolTip = newData.MergeInTooltip;
+                        newVm.MergeInLabelColor = new(Colors.Purple);
+                        newVm.HasAlteredMergeLogic = true; // keeps the text color from being overwritten
+                    }
+                    if (newData.FoundInjectedRecords)
+                    {
+                        newVm.IsPerformingBatchAction = true; // suppress warning popup that would appear if user changes the setting manually
+                        newVm.HandleInjectedRecords = true;
+                        newVm.HandleInjectedOverridesToolTip = newData.InjectedTooltip;
+                        newVm.HandleInjectedRecordsLabelColor = new(Colors.Purple);
+                        newVm.IsPerformingBatchAction = false;
+                    }
+                    if (newData.IsFaceGenOnly)
+                    {
+                        newVm.IsFaceGenOnlyEntry = true;
+                        newVm.FaceGenOnlyNpcFormKeys = newData.FaceGenFormKeys;
+                    }
+            
+                    // Link to existing mugshot folder if one exists
+                    string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
+                    if (Directory.Exists(potentialMugshotPath) && !claimedMugshotPaths.Contains(potentialMugshotPath))
+                    {
+                        newVm.MugShotFolderPath = potentialMugshotPath;
+                        claimedMugshotPaths.Add(potentialMugshotPath);
+                    }
+
+                    tempList.Add(newVm);
+                    loadedDisplayNames.Add(newVm.DisplayName);
                     break;
 
                 case CacheNonAppearanceResult cache:
@@ -1210,24 +1299,33 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             return new CacheNonAppearanceResult(modFolderPath, "No FaceGen Files Found");
         }
 
-        var newVm = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
-        newVm.IsNewlyCreated = true;
+        // This VM will be discarded and never touches the UI.
+        var tempVmForAnalysis = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
+        tempVmForAnalysis.IsNewlyCreated = true;
 
         _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
 
         if (modKeysInFolder.Any() && await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath }))
         {
-            string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
-            if (Directory.Exists(potentialMugshotPath) && !claimedMugshotPaths.Contains(potentialMugshotPath))
-            {
-                newVm.MugShotFolderPath = potentialMugshotPath;
-                // Note: This isn't thread-safe, but the chance of collision is low and the impact is minor.
-                // A better solution would involve a ConcurrentDictionary for claimedMugshotPaths.
-                claimedMugshotPaths.Add(potentialMugshotPath);
-            }
+            // Run analysis using the temporary VM
+            tempVmForAnalysis.CheckMergeInSuitability(
+                splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
+            bool injectedFound =
+                await tempVmForAnalysis.CheckForInjectedRecords(splashReporter == null
+                    ? null
+                    : splashReporter.ShowMessagesOnClose);
 
-            newVm.CheckMergeInSuitability(splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
-            return new NewVmResult(newVm);
+            // Return a DTO with the data, not the VM itself
+            return new NewVmCreationData(
+                modFolderPath,
+                modKeysInFolder,
+                IsFaceGenOnly: false,
+                FaceGenFormKeys: new HashSet<FormKey>(),
+                ShouldDisableMergeIn: !tempVmForAnalysis.MergeInDependencyRecords,
+                MergeInTooltip: tempVmForAnalysis.MergeInToolTip,
+                FoundInjectedRecords: injectedFound,
+                InjectedTooltip: tempVmForAnalysis.HandleInjectedOverridesToolTip
+            );
         }
         else if (modKeysInFolder.Any())
         {
@@ -1236,21 +1334,32 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
         else // FaceGen only
         {
-            newVm.IsFaceGenOnlyEntry = true;
+            var faceGenKeys = new HashSet<FormKey>();
             foreach (var (pluginName, npcIds) in scanResult.FaceGenFiles)
             {
-                newVm.CorrespondingModKeys.Add(ModKey.FromFileName(pluginName));
                 foreach (var id in npcIds.Where(id => id.Length == 8))
                 {
                     if (FormKey.TryFactory($"{id.Substring(2, 6)}:{pluginName}", out var formKey))
                     {
-                        newVm.FaceGenOnlyNpcFormKeys.Add(formKey);
+                        faceGenKeys.Add(formKey);
                     }
                 }
             }
 
-            newVm.CheckMergeInSuitability(splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
-            return new NewVmResult(newVm);
+            tempVmForAnalysis.CheckMergeInSuitability(
+                splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
+
+            // Return a DTO for a FaceGen-only mod
+            return new NewVmCreationData(
+                modFolderPath,
+                modKeysInFolder,
+                IsFaceGenOnly: true,
+                FaceGenFormKeys: faceGenKeys,
+                ShouldDisableMergeIn: !tempVmForAnalysis.MergeInDependencyRecords,
+                MergeInTooltip: tempVmForAnalysis.MergeInToolTip,
+                FoundInjectedRecords: false, // No plugin to check
+                InjectedTooltip: ModSetting.DefaultRecordInjectionToolTip
+            );
         }
     }
 
