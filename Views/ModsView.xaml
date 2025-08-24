@@ -434,7 +434,7 @@
                                              VerticalAlignment="Center"
                                              Content="Refresh"
                                              ToolTip="Refresh this mod's data from its source folders."
-                                             Visibility="{Binding CanDelete, Converter={StaticResource BooleanNegationConverter}}"/>
+                                             Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}"/>
                                  </Grid> 
                              </Border> 
                          </DataTemplate>
