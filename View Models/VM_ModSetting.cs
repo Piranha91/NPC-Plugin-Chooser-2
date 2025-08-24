@@ -15,6 +15,7 @@ using System.Linq;
 using System.Reactive.Disposables;
 using System.Windows.Media;
 using DynamicData;
+using Mutagen.Bethesda;
 using Mutagen.Bethesda.Archives;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
@@ -70,6 +71,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public SolidColorBrush? MergeInLabelColor { get; set; } = null; // null initialization is intentional
         public bool HasAlteredMergeLogic { get; set; } = false;
         [Reactive] public bool HandleInjectedRecords { get; set; } = false;
+        
+        [Reactive] public string HandleInjectedOverridesToolTip { get; set; } = ModSetting.DefaultRecordInjectionToolTip;
+        [Reactive] public SolidColorBrush? HandleInjectedRecordsLabelColor { get; set; } = new(Colors.Black);
+        
         [Reactive] public RecordOverrideHandlingMode? OverrideRecordOverrideHandlingMode { get; set; }
         public IEnumerable<KeyValuePair<RecordOverrideHandlingMode?,string>> RecordOverrideHandlingModes { get; }
             = new[]
@@ -108,6 +113,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly Auxilliary _aux;
         private readonly BsaHandler _bsaHandler;
         private readonly PluginProvider _pluginProvider;
+        private readonly RecordHandler _recordHandler;
 
         // Flag indicating if this VM was created dynamically only from a Mugshot folder
         // and wasn't loaded from the persisted ModSettings.
@@ -170,8 +176,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// Constructor used when loading from an existing Models.ModSetting.
         /// Called by FromModelFactory.
         /// </summary>
-        public VM_ModSetting(Models.ModSetting model, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler, PluginProvider pluginProvider)
-            : this(model.DisplayName, parentVm, aux, bsaHandler, pluginProvider, isMugshotOnly: false, 
+        public VM_ModSetting(Models.ModSetting model, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler, PluginProvider pluginProvider, RecordHandler recordHandler)
+            : this(model.DisplayName, parentVm, aux, bsaHandler, pluginProvider, recordHandler, isMugshotOnly: false, 
                 correspondingFolderPaths: model.CorrespondingFolderPaths,
                 correspondingModKeys: model.CorrespondingModKeys)
         {
@@ -185,6 +191,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             MergeInToolTip = model.MergeInToolTip;
             MergeInLabelColor = model.MergeInLabelColor;
             HandleInjectedRecords = model.HandleInjectedRecords;
+            HandleInjectedOverridesToolTip = model.HandleInjectedOverridesToolTip;
+            HandleInjectedRecordsLabelColor = model.HandleInjectedRecordsLabelColor;
             OverrideRecordOverrideHandlingMode = model.ModRecordOverrideHandlingMode;
             // AvailablePluginsForNpcs should be re-calculated on load.
             // IsMugshotOnlyEntry is set to false via chaining
@@ -210,8 +218,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// Constructor used when creating dynamically from a Mugshot folder.
         /// Called by FromMugshotPathFactory.
         /// </summary>
-        public VM_ModSetting(string displayName, string mugshotPath, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler, PluginProvider pluginProvider)
-            : this(displayName, parentVm, aux, bsaHandler, pluginProvider, isMugshotOnly: true)
+        public VM_ModSetting(string displayName, string mugshotPath, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler, PluginProvider pluginProvider, RecordHandler recordHandler)
+            : this(displayName, parentVm, aux, bsaHandler, pluginProvider, recordHandler, isMugshotOnly: true)
         {
             MugShotFolderPath = mugshotPath;
         }
@@ -220,9 +228,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// Constructor used when creating from a new mod folder entry.
         /// Called by FromModFolderFactory.
         /// </summary>
-        public VM_ModSetting(string modFolderPath, IEnumerable<ModKey>? plugins, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler, PluginProvider pluginProvider)
+        public VM_ModSetting(string modFolderPath, IEnumerable<ModKey>? plugins, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler, PluginProvider pluginProvider, RecordHandler recordHandler)
             : this(Path.GetFileName(modFolderPath) ?? "Invalid Path", 
-                parentVm, aux, bsaHandler, pluginProvider, 
+                parentVm, aux, bsaHandler, pluginProvider, recordHandler,
                 isMugshotOnly: false, 
                 correspondingFolderPaths: new List<string>() {modFolderPath},
                 correspondingModKeys: plugins ?? aux.GetModKeysInDirectory(modFolderPath, new List<string>(), false))
@@ -235,7 +243,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// Making it public for simplicity with Autofac delegate factories if they directly target this,
         /// but current setup chains to it.
         /// </summary>
-        private VM_ModSetting(string displayName, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler, PluginProvider pluginProvider, bool isMugshotOnly,
+        private VM_ModSetting(string displayName, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler, PluginProvider pluginProvider, RecordHandler recordHandler, bool isMugshotOnly,
             IEnumerable<string>? correspondingFolderPaths = null, IEnumerable<ModKey>? correspondingModKeys = null)
         {
             _parentVm = parentVm;
@@ -246,6 +254,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _aux = aux;
             _bsaHandler = bsaHandler;
             _pluginProvider = pluginProvider;
+            _recordHandler = recordHandler;
 
             // Initialize NpcPluginDisambiguation if not loaded from model (chained constructors handle this)
             if (NpcPluginDisambiguation == null) // Should only be null if this base constructor is called directly without chaining from model constructor
@@ -527,8 +536,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 MergeInDependencyRecords = MergeInDependencyRecords,
                 IncludeOutfits = IncludeOutfits,
                 MergeInToolTip = MergeInToolTip,
-                MergeInLabelColor = MergeInLabelColor,
+                MergeInLabelColor = MergeInLabelColor ?? new (Colors.Black),
                 HandleInjectedRecords = HandleInjectedRecords,
+                HandleInjectedOverridesToolTip = HandleInjectedOverridesToolTip,
+                HandleInjectedRecordsLabelColor = HandleInjectedRecordsLabelColor ?? new (Colors.Black),
                 ModRecordOverrideHandlingMode = OverrideRecordOverrideHandlingMode,
                 IsAutoGenerated = IsAutoGenerated,
                 PluginsWithOverrideRecords = _pluginsWithOverrideRecords,
@@ -1161,6 +1172,101 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     Environment.NewLine + ModSetting.DefaultMergeInTooltip;
             }
         }
+
+        /// <summary>
+        /// Checks that all records expected in master plugins actually exist in those plugins
+        /// If one doesn't, the plugin is flagged as having injected records
+        /// </summary>
+        public async Task<bool> CheckForInjectedRecords(Action<string>? showMessageAction)
+        {
+            foreach (var modKey in CorrespondingModKeys)
+            {
+                if (_environmentStateProvider.BaseGamePlugins.Contains(modKey) ||
+                    _environmentStateProvider.CreationClubPlugins.Contains(modKey))
+                {
+                    continue;
+                }
+    
+                if (!_pluginProvider.TryGetPlugin(modKey, this.CorrespondingFolderPaths.ToHashSet(),
+                        out var plugin) || plugin == null)
+                {
+                    continue;
+                }
+    
+                // Lazily enumerate and check records
+                try
+                {
+                    // collect records that are either overrides or injected (modkey is not this plugin)
+                    var potentialInjections = Auxilliary.LazyEnumerateMajorRecords(plugin)
+                        .Where(record => !record.FormKey.ModKey.Equals(plugin.ModKey))
+                        .ToHashSet();
+
+                    var injectionsByModKey = potentialInjections.GroupBy(record => record.FormKey.ModKey);
+                    List<ModKey> missingMasters = new();
+                    foreach (var pluginRecords in injectionsByModKey)
+                    {
+                        var masterModKey = pluginRecords.Key;
+
+                        if (CorrespondingModKeys.Contains(masterModKey))
+                        {
+                            continue; // don't worry about checking for injection here because if the plugin is in CorrespondingModKeys, the patcher code will try to merge in its records anyway
+                        }
+                        
+                        var masterPlugin = _environmentStateProvider.LoadOrder?.TryGetValue(masterModKey);
+                        if (masterPlugin == null)
+                        {
+                            missingMasters.Add(masterModKey);
+                            continue;
+                        }
+
+                        foreach (var record in pluginRecords)
+                        {
+                            // if the record actually exists in the master, then this is an override. Otherwise, it's an injection
+                            if (!_recordHandler.TryGetRecordGetterFromMod(record.ToLink(), masterModKey, new(),
+                                    RecordHandler.RecordLookupFallBack.None, out _))
+                            {
+                                IsPerformingBatchAction = true;
+                                HandleInjectedRecords = true;
+                                var injectionName = Auxilliary.GetLogString(record, true);
+                                HandleInjectedOverridesToolTip =
+                                    $"This plugin has been scanned and found to contain at least one injected record ({injectionName}). It is recommended to enable Injected Record Handling";
+                                IsPerformingBatchAction = false;
+                                return true;
+                            }
+                        }
+                    }
+
+                    if (missingMasters.Any())
+                    {
+                        showMessageAction?.Invoke(
+                            $"Warning: {plugin.ModKey.FileName} in {this.DisplayName} could not be fully scanned for injected records because its master(s) {string.Join(" and ", missingMasters)} are not in your load order. You can complete the scan by adding the master and clicking the Refresh button for {DisplayName} in the Mods Menu.");
+                    }
+                }
+                catch (Exception e)
+                {
+                    // write error log file here
+                    string logDirectory = Path.Combine(AppContext.BaseDirectory, "LoadingErrors");
+                    Directory.CreateDirectory(logDirectory);
+                    string safeDisplayName = Auxilliary.MakeStringPathSafe(this.DisplayName);
+                    string logFilePath = Path.Combine(logDirectory, $"{safeDisplayName}_InjectionCheck.txt");
+    
+                    showMessageAction?.Invoke(
+                        $"An error occurred during mod record injection scanning for {plugin.ModKey.FileName} in {this.DisplayName}. See {logDirectory} for details.");
+    
+                    string errorMessage = $"An error occurred during mod scanning for {plugin.ModKey.FileName}: {Environment.NewLine}{ExceptionLogger.GetExceptionStack(e)}";
+    
+                    if (File.Exists(logFilePath))
+                    {
+                        File.AppendAllText(logFilePath, Environment.NewLine + Environment.NewLine + "---" + Environment.NewLine + Environment.NewLine + errorMessage);
+                    }
+                    else
+                    {
+                        File.WriteAllText(logFilePath, errorMessage);
+                    }
+                }
+            }
+            return false;
+        }
         
         public ModStateSnapshot? GenerateSnapshot()
         {
@@ -1423,7 +1529,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             // 1. Create the new "Mugshot-Only" VM
             // It will be mugshot-only by definition because it has no CorrespondingFolderPaths/CorrespondingModKeys initially
-            var newMugshotOnlyVm = new VM_ModSetting(displayName: mugshotDirName, mugshotPath: originalMugshotPath, parentVm: _parentVm, aux: _aux, bsaHandler: _bsaHandler, pluginProvider: _pluginProvider);
+            var newMugshotOnlyVm = new VM_ModSetting(displayName: mugshotDirName, mugshotPath: originalMugshotPath, parentVm: _parentVm, aux: _aux, bsaHandler: _bsaHandler, pluginProvider: _pluginProvider, recordHandler: _recordHandler);
             // Ensure IsMugshotOnlyEntry is correctly set based on its initial state
             newMugshotOnlyVm.IsMugshotOnlyEntry = true; 
             // It won't have NPC lists immediately, that will be populated if/when VM_Mods calls RefreshNpcLists on all.

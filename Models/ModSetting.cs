@@ -24,6 +24,11 @@ public class ModSetting
 
     public bool MergeInDependencyRecords { get; set; } = true;
     public bool HandleInjectedRecords { get; set; } = false;
+    [JsonIgnore]
+    public static string DefaultRecordInjectionToolTip =
+        "If checked, the patcher will search for and merge in records that are injected. This can potentially make patching take longer.";
+    public string HandleInjectedOverridesToolTip { get; set; } = DefaultRecordInjectionToolTip;
+    public SolidColorBrush HandleInjectedRecordsLabelColor { get; set; } = new(Colors.Black);
     [JsonIgnore] 
     public static string DefaultMergeInTooltip =
         "If checked, all records needed by the mod will be merged into the output." +

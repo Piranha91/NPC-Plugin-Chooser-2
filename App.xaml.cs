@@ -123,7 +123,7 @@ namespace NPC_Plugin_Chooser_2
             // Run the update handler to migrate settings before they are used by the application.
             splashVM.UpdateProgress(16, "Checking for setting updates...");
             var updateHandler = new UpdateHandler(settingsModel);
-            updateHandler.CheckForUpdatesAndPatch();
+            updateHandler.InitialCheckForUpdatesAndPatch();
             builder.RegisterInstance(settingsModel).AsSelf().SingleInstance();
 
             splashVM.UpdateProgress(20, "Registering core components...");
@@ -195,6 +195,9 @@ namespace NPC_Plugin_Chooser_2
             }
 
             await settingsViewModel.InitializeAsync(splashVM); // Pass splashVM implicitly if injected, or explicitly if needed
+            
+            var modsViewModel = container.Resolve<VM_Mods>();
+            await updateHandler.FinalCheckForUpdatesAndPatch(modsViewModel, splashVM);
             
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
             return container;

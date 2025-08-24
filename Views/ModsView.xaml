@@ -369,7 +369,8 @@
                                          <TextBlock Text="Handle Injected Records" 
                                                     VerticalAlignment="Center" 
                                                     Margin="10 0 0 0"
-                                                    ToolTip="If checked, the patcher will search for and merge in records that are injected. This can potentially make patching take longer."
+                                                    ToolTip="{Binding HandleInjectedOverridesToolTip}"
+                                                    Foreground="{Binding HandleInjectedRecordsLabelColor}"
                                                     Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          <CheckBox
                                              IsChecked="{Binding HandleInjectedRecords}"
