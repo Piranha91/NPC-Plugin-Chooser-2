@@ -1,4 +1,5 @@
 ﻿using Microsoft.Build.Tasks;
+using System.Collections.Concurrent;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
@@ -19,7 +20,7 @@ public class RecordHandler
     private HashSet<IFormLinkGetter> _currenTraversedFormLinks = new();
     
     // For converting plugins into linkcaches and avoiding having to resolve all contexts to get mod-specific records
-    private Dictionary<ModKey, ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>> _modLinkCaches = new();
+    private ConcurrentDictionary<ModKey, ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>> _modLinkCaches = new();
 
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private PluginProvider _pluginProvider;
@@ -55,33 +56,33 @@ public class RecordHandler
     {
         foreach (var modKey in modKeys)
         {
-            _modLinkCaches.Remove(modKey);
+            _modLinkCaches.TryRemove(modKey, out _);
         }
     }
 
     private bool TryAddPluginToCaches(ModKey modKey, HashSet<string> fallBackModFolderNames)
     {
-        if (_modLinkCaches.ContainsKey(modKey))
+        // Use GetOrAdd for an atomic "get or create" operation.
+        // The value factory (the second argument) is only executed if the key is not already present.
+        var linkCache = _modLinkCaches.GetOrAdd(modKey, key =>
         {
-            return true;
-        }
-        
-        // Fallback to load order for base game records etc.
-        var modListing = _environmentStateProvider.LoadOrder.TryGetValue(modKey);
-        if (modListing != null && modListing.Mod != null)
-        {
-            _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences()));
-            return true;
-        }
-        
-        // This will now only be hit if a plugin was needed that wasn't part of the pre-loaded batch
-        if (_pluginProvider.TryGetPlugin(modKey, fallBackModFolderNames, out var plugin) && plugin != null)
-        {
-            _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences()));
-            return true;
-        }
+            // Logic to create the link cache if it doesn't exist.
+            var modListing = _environmentStateProvider.LoadOrder?.TryGetValue(key);
+            if (modListing != null && modListing.Mod != null)
+            {
+                return new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences());
+            }
 
-        return false;
+            if (_pluginProvider.TryGetPlugin(key, fallBackModFolderNames, out var plugin) && plugin != null)
+            {
+                return new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences());
+            }
+
+            return null; // Return null if it can't be created.
+        });
+
+        // The method succeeds if the linkCache is not null (either it existed before or was successfully created).
+        return linkCache != null;
     }
 
     #region Merge In New Records
