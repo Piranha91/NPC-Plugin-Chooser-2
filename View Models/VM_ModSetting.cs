@@ -154,8 +154,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> BrowseMugshotFolderCommand { get; }
         public ReactiveCommand<Unit, Unit> UnlinkMugshotDataCommand { get; }
         
-        // Command for deleting the mod setting ***
         public ReactiveCommand<Unit, Unit> DeleteCommand { get; }
+        public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
 
         // --- Private Fields ---
         private readonly VM_Mods _parentVm; // Reference to the parent VM (VM_Mods)
@@ -408,6 +408,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             UnlinkMugshotDataCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error unlinking mugshot data: {ex.Message}"));
             DeleteCommand = ReactiveCommand.Create(Delete, this.WhenAnyValue(x => x.CanDelete));
             DeleteCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error executing DeleteCommand: {ex.Message}"));
+            RefreshCommand = ReactiveCommand.CreateFromTask(RefreshAsync);
+            RefreshCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing mod '{DisplayName}': {ex.Message}"));
 
             this.WhenAnyValue(x => x.CorrespondingFolderPaths.Count)
                 .Subscribe(_ => this.RaisePropertyChanged(nameof(CanUnlinkMugshots)))
@@ -1062,6 +1064,172 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             return false;
         }
+ 
+        /// <summary>
+        /// Checks the number of potential appearance records vs. total records.
+        /// If most of the records are not related to NPC appearance, flag that this mod probably shouldn't be merged in.
+        /// </summary>
+        public void CheckMergeInSuitability(Action<string>? showMessageAction)
+        {
+            int appearanceRecordCount = 0;
+            int nonAppearanceRecordCount = 0;
+            bool isBaseGame = false;
+    
+            // Define the set of appearance-related record types to skip in the main enumeration
+            var appearanceTypesToSkip = new HashSet<Type>()
+            {
+                typeof(INpcGetter),
+                typeof(IArmorGetter),
+                typeof(IArmorAddonGetter),
+                typeof(ITextureSetGetter),
+                typeof(IHeadPartGetter),
+                typeof(IHairGetter),
+                typeof(IColorRecordGetter),
+                typeof(IEyesGetter)
+            };
+    
+            foreach (var modKey in this.CorrespondingModKeys)
+            {
+                if (_environmentStateProvider.BaseGamePlugins.Contains(modKey) ||
+                    _environmentStateProvider.CreationClubPlugins.Contains(modKey))
+                {
+                    isBaseGame = true;
+                    break;
+                }
+    
+                if (!_pluginProvider.TryGetPlugin(modKey, this.CorrespondingFolderPaths.ToHashSet(),
+                        out var plugin) || plugin == null)
+                {
+                    continue;
+                }
+    
+                // Get counts of appearance records instantly (O(1) operation)
+                appearanceRecordCount += plugin.Npcs.Count;
+                appearanceRecordCount += plugin.Armors.Count;
+                appearanceRecordCount += plugin.ArmorAddons.Count;
+                appearanceRecordCount += plugin.TextureSets.Count;
+                appearanceRecordCount += plugin.HeadParts.Count;
+                appearanceRecordCount += plugin.Hairs.Count;
+                appearanceRecordCount += plugin.Colors.Count;
+                appearanceRecordCount += plugin.Eyes.Count;
+    
+                // Lazily enumerate and count ONLY the non-appearance records
+                int nonAppearanceRecordCountForPlugin = 0;
+                try
+                {
+                    nonAppearanceRecordCountForPlugin = Auxilliary.LazyEnumerateMajorRecords(plugin, appearanceTypesToSkip).Count();
+                }
+                catch (Exception e)
+                {
+                    // write error log file here
+                    string logDirectory = Path.Combine(AppContext.BaseDirectory, "LoadingErrors");
+                    Directory.CreateDirectory(logDirectory);
+                    string safeDisplayName = Auxilliary.MakeStringPathSafe(this.DisplayName);
+                    string logFilePath = Path.Combine(logDirectory, $"{safeDisplayName}.txt");
+    
+                    showMessageAction?.Invoke(
+                        $"An error occurred during mod scanning for {plugin.ModKey.FileName} in {this.DisplayName}. See {logDirectory} for details.");
+    
+                    string errorMessage = $"An error occurred during mod scanning for {plugin.ModKey.FileName}: {Environment.NewLine}{ExceptionLogger.GetExceptionStack(e)}";
+    
+                    if (File.Exists(logFilePath))
+                    {
+                        File.AppendAllText(logFilePath, Environment.NewLine + Environment.NewLine + "---" + Environment.NewLine + Environment.NewLine + errorMessage);
+                    }
+                    else
+                    {
+                        File.WriteAllText(logFilePath, errorMessage);
+                    }
+                }
+    
+                nonAppearanceRecordCount += nonAppearanceRecordCountForPlugin;
+            }
+    
+    
+            if (isBaseGame || nonAppearanceRecordCount > appearanceRecordCount)
+            {
+                this.HasAlteredMergeLogic = true;
+                this.MergeInDependencyRecords = false;
+                this.MergeInToolTip =
+                    $"N.P.C. has determined that the plugin(s) in {this.DisplayName} have more non-appearance records than appearance records, " +
+                    Environment.NewLine +
+                    "suggesting that it's not just an appearance replacer mod. Merge-in has been disabled by default. You can re-enable it, but be warned that " +
+                    Environment.NewLine +
+                    "merging in large plugins with a lot of non-appearance records can freeze the patcher and is completely unnecessary if the plugin is staying in your load order" +
+                    Environment.NewLine +
+                    "and you're just making sure its NPC appearances are winning conflicts." + Environment.NewLine +
+                    Environment.NewLine + ModSetting.DefaultMergeInTooltip;
+            }
+        }
+        
+        public ModStateSnapshot? GenerateSnapshot()
+        {
+            try
+            {
+                var snapshot = new ModStateSnapshot();
+                var allPaths = new HashSet<string>(this.CorrespondingFolderPaths, StringComparer.OrdinalIgnoreCase);
+                if (this.IsAutoGenerated)
+                {
+                    allPaths.Add(_environmentStateProvider.DataFolderPath);
+                }
+    
+                // 1. Snapshot Plugins
+                foreach (var modKey in this.CorrespondingModKeys)
+                {
+                    if (_pluginProvider.TryGetPlugin(modKey, allPaths, out _, out var path) && path != null)
+                    {
+                        var info = new FileInfo(path);
+                        snapshot.PluginSnapshots.Add(new FileSnapshot
+                            { FileName = info.Name, FileSize = info.Length, LastWriteTimeUtc = info.LastWriteTimeUtc });
+                    }
+                }
+    
+                // 2. Snapshot BSAs
+                var bsaPaths = _bsaHandler
+                    .GetBsaPathsForPluginsInDirs(this.CorrespondingModKeys, allPaths,
+                        _skyrimRelease.ToGameRelease()).Values.SelectMany(p => p).Distinct();
+                foreach (var bsaPath in bsaPaths)
+                {
+                    var info = new FileInfo(bsaPath);
+                    if (info.Exists)
+                    {
+                        snapshot.BsaSnapshots.Add(new FileSnapshot
+                            { FileName = info.Name, FileSize = info.Length, LastWriteTimeUtc = info.LastWriteTimeUtc });
+                    }
+                }
+    
+                // 3. Snapshot Directories (for loose FaceGen)
+                foreach (var modPath in this.CorrespondingFolderPaths)
+                {
+                    string faceGeomPath = Path.Combine(modPath, "meshes", "actors", "character", "facegendata",
+                        "facegeom");
+                    string faceTintPath = Path.Combine(modPath, "textures", "actors", "character", "facegendata",
+                        "facetint");
+    
+                    foreach (var dirPath in new[] { faceGeomPath, faceTintPath })
+                    {
+                        var dirInfo = new DirectoryInfo(dirPath);
+                        if (dirInfo.Exists)
+                        {
+                            snapshot.DirectorySnapshots.Add(new DirectorySnapshot
+                            {
+                                Path = dirInfo.FullName,
+                                FileCount = Directory.EnumerateFiles(dirInfo.FullName, "*", SearchOption.AllDirectories)
+                                    .Count(),
+                                LastWriteTimeUtc = dirInfo.LastWriteTimeUtc
+                            });
+                        }
+                    }
+                }
+    
+                return snapshot;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to generate snapshot for {this.DisplayName}: {ex.Message}");
+                return null; // Return null on failure to ensure re-analysis
+            }
+        }
         
         /// <summary>
         /// Sets the source plugin for a single NPC that has multiple potential source plugins within this ModSetting.
@@ -1395,6 +1563,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         }
                     }
                 }
+            }
+        }
+        
+        private async Task RefreshAsync()
+        {
+            if (_parentVm != null)
+            {
+                // This is the key part: we ask the parent VM to perform the refresh.
+                // This keeps the logic that needs global context (like FaceGen caches)
+                // in the parent, which is a clean separation of concerns.
+                await _parentVm.RefreshSingleModSettingAsync(this);
+            }
+            else
+            {
+                Debug.WriteLine($"Cannot refresh '{DisplayName}': Parent VM is null.");
             }
         }
     }

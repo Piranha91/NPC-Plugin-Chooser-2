@@ -873,7 +873,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         // Phase 3: Perform heavy analysis on the consolidated data
         splashReporter?.UpdateStep("Pre-caching asset file paths...");
-        var faceGenCache = await CacheFaceGenPathsOnLoadAsync(splashReporter);
+        var faceGenCache = await CacheFaceGenPathsOnLoadAsync(_allModSettingsInternal, splashReporter);
 
         try
         {
@@ -905,6 +905,49 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             splashReporter?.UpdateStep("Mod settings populated.");
         }
     }
+    
+    public async Task RefreshSingleModSettingAsync(VM_ModSetting vmToRefresh)
+        {
+            if (vmToRefresh == null) return;
+        
+            // We need the FaceGen caches, but recreating them for a single refresh is inefficient.
+            // We'll use the existing ones if available, or generate them if this is the first time.
+            // For simplicity here, we'll just regenerate them. A more optimized approach
+            // might check for their existence first.
+            var faceGenCache = await CacheFaceGenPathsOnLoadAsync(new[] { vmToRefresh }, null); // No splash screen
+        
+            // 1. Update the mod keys based on current folder contents
+            vmToRefresh.UpdateCorrespondingModKeys();
+            
+            // 2. Load the necessary plugins for this mod
+            var modFolderPathsForVm = vmToRefresh.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var plugins = _pluginProvider.LoadPlugins(vmToRefresh.CorrespondingModKeys, modFolderPathsForVm);
+        
+            try
+            {
+                // 3. Re-run the core analysis functions
+                vmToRefresh.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins);
+                await vmToRefresh.FindPluginsWithOverrides(_pluginProvider);
+                vmToRefresh.CheckMergeInSuitability(null); // No splash reporter to show messages
+        
+                // 4. Update UI-dependent properties
+                RecalculateMugshotValidity(vmToRefresh);
+        
+                // 5. Notify the rest of the application
+                RequestNpcSelectionBarRefresh();
+        
+                ScrollableMessageBox.Show($"Successfully refreshed '{vmToRefresh.DisplayName}'.", "Refresh Complete");
+            }
+            catch (Exception ex)
+            {
+                ScrollableMessageBox.ShowError($"Failed to refresh '{vmToRefresh.DisplayName}':\n{ex.Message}");
+            }
+            finally
+            {
+                // 6. Unload the plugins
+                _pluginProvider.UnloadPlugins(vmToRefresh.CorrespondingModKeys);
+            }
+        }
 
     private (List<VM_ModSetting> tempList, HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths,
         List<string> warnings)
@@ -1183,7 +1226,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 claimedMugshotPaths.Add(potentialMugshotPath);
             }
 
-            CheckMergeInSuitability(newVm, splashReporter);
+            newVm.CheckMergeInSuitability(splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
             return new NewVmResult(newVm);
         }
         else if (modKeysInFolder.Any())
@@ -1206,7 +1249,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 }
             }
 
-            CheckMergeInSuitability(newVm, splashReporter);
+            newVm.CheckMergeInSuitability(splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
             return new NewVmResult(newVm);
         }
     }
@@ -1289,7 +1332,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         using (ContextualPerformanceTracer.Trace("PopulateMods.CheckMergeInSuitability"))
         {
-            CheckMergeInSuitability(newVm, splashReporter);
+            newVm.CheckMergeInSuitability(splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
         }
     }
 
@@ -1376,7 +1419,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     continue;
                 }
 
-                var currentSnapshot = GenerateSnapshot(vm);
+                var currentSnapshot = vm.GenerateSnapshot();
                 if (currentSnapshot != null && vm.LastKnownState != null && currentSnapshot.Equals(vm.LastKnownState))
                 {
                     // CACHE HIT: The mod is unchanged. Do nothing.
@@ -1575,11 +1618,12 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     }
 
     private async Task<(HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles)>
-        CacheFaceGenPathsOnLoadAsync(VM_SplashScreen? splashReporter)
+        CacheFaceGenPathsOnLoadAsync(IEnumerable<VM_ModSetting> vmsToProcess, VM_SplashScreen? splashReporter)
     {
+        var vmsToProcessList = vmsToProcess.ToList();
         // --- Part 1: Cache loose files (this is a fast operation) ---
         Debug.WriteLine("Caching loose FaceGen file paths...");
-        var allUniqueModPaths = _allModSettingsInternal
+        var allUniqueModPaths = vmsToProcessList
             .SelectMany(vm => vm.CorrespondingFolderPaths)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -1618,10 +1662,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             var localVmBsaPathsCache = new Dictionary<string, Dictionary<ModKey, HashSet<string>>>();
             var localAllRelevantBsaPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var totalVmCount = _allModSettingsInternal.Count;
+            var totalVmCount = vmsToProcessList.Count;
             var processedVmCount = 0;
 
-            foreach (var vm in _allModSettingsInternal)
+            foreach (var vm in vmsToProcessList)
             {
                 var pathsToSearch = new HashSet<string>(vm.CorrespondingFolderPaths);
                 if (vm.DisplayName is BaseGameModSettingName or CreationClubModsettingName)
@@ -1685,7 +1729,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         // --- Part 3: Assemble the final dictionary for each VM using the caches ---
         var allFaceGenBsaFiles = new Dictionary<string, HashSet<string>>();
-        foreach (var vm in _allModSettingsInternal)
+        foreach (var vm in vmsToProcessList)
         {
             var bsaFilePathsForVm = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -2258,103 +2302,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         });
     }
 
-    /// <summary>
-    /// Checks the number of potential appearance records vs. total records
-    /// If most of the records are not related to NPC appearance, flag that this mod probably shouldn't be merged in
-    /// </summary>
-    private void CheckMergeInSuitability(VM_ModSetting modSettingVM, VM_SplashScreen? splashReporter)
-    {
-        int appearanceRecordCount = 0;
-        int nonAppearanceRecordCount = 0;
-        bool isBaseGame = false;
-
-        // Define the set of appearance-related record types to skip in the main enumeration
-        var appearanceTypesToSkip = new HashSet<Type>()
-        {
-            typeof(INpcGetter),
-            typeof(IArmorGetter),
-            typeof(IArmorAddonGetter),
-            typeof(ITextureSetGetter),
-            typeof(IHeadPartGetter),
-            typeof(IHairGetter),
-            typeof(IColorRecordGetter),
-            typeof(IEyesGetter)
-        };
-
-        foreach (var modKey in modSettingVM.CorrespondingModKeys)
-        {
-            if (_environmentStateProvider.BaseGamePlugins.Contains(modKey) ||
-                _environmentStateProvider.CreationClubPlugins.Contains(modKey))
-            {
-                isBaseGame = true;
-                break;
-            }
-
-            if (!_pluginProvider.TryGetPlugin(modKey, modSettingVM.CorrespondingFolderPaths.ToHashSet(),
-                    out var plugin) || plugin == null)
-            {
-                continue;
-            }
-
-            // Get counts of appearance records instantly (O(1) operation)
-            appearanceRecordCount += plugin.Npcs.Count;
-            appearanceRecordCount += plugin.Armors.Count;
-            appearanceRecordCount += plugin.ArmorAddons.Count;
-            appearanceRecordCount += plugin.TextureSets.Count;
-            appearanceRecordCount += plugin.HeadParts.Count;
-            appearanceRecordCount += plugin.Hairs.Count;
-            appearanceRecordCount += plugin.Colors.Count;
-            appearanceRecordCount += plugin.Eyes.Count;
-
-            // Lazily enumerate and count ONLY the non-appearance records
-            int nonAppearanceRecordCountForPlugin = 0;
-            try
-            {
-                nonAppearanceRecordCountForPlugin = Auxilliary.LazyEnumerateMajorRecords(plugin, appearanceTypesToSkip).Count();
-            }
-            catch (Exception e)
-            {
-                // write error log file here
-                string logDirectory = Path.Combine(AppContext.BaseDirectory, "LoadingErrors");
-                Directory.CreateDirectory(logDirectory);
-                string safeDisplayName = Auxilliary.MakeStringPathSafe(modSettingVM.DisplayName);
-                string logFilePath = Path.Combine(logDirectory, $"{safeDisplayName}.txt");
-
-                splashReporter?.ShowMessagesOnClose(
-                    $"An error occurred during mod scanning for {plugin.ModKey.FileName} in {modSettingVM.DisplayName}. See {logDirectory} for details.");
-
-                string errorMessage = $"An error occurred during mod scanning for {plugin.ModKey.FileName}: {Environment.NewLine}{ExceptionLogger.GetExceptionStack(e)}";
-
-                if (File.Exists(logFilePath))
-                {
-                    File.AppendAllText(logFilePath, Environment.NewLine + Environment.NewLine + "---" + Environment.NewLine + Environment.NewLine + errorMessage);
-                }
-                else
-                {
-                    File.WriteAllText(logFilePath, errorMessage);
-                }
-            }
-
-            nonAppearanceRecordCount += nonAppearanceRecordCountForPlugin;
-        }
-
-
-        if (isBaseGame || nonAppearanceRecordCount > appearanceRecordCount)
-        {
-            modSettingVM.HasAlteredMergeLogic = true;
-            modSettingVM.MergeInDependencyRecords = false;
-            modSettingVM.MergeInToolTip =
-                $"N.P.C. has determined that the plugin(s) in {modSettingVM.DisplayName} have more non-appearance records than appearance records, " +
-                Environment.NewLine +
-                "suggesting that it's not just an appearance replacer mod. Merge-in has been disabled by default. You can re-enable it, but be warned that " +
-                Environment.NewLine +
-                "merging in large plugins with a lot of non-appearance records can freeze the patcher and is completely unnecessary if the plugin is staying in your load order" +
-                Environment.NewLine +
-                "and you're just making sure its NPC appearances are winning conflicts." + Environment.NewLine +
-                Environment.NewLine + ModSetting.DefaultMergeInTooltip;
-        }
-    }
-
     public ConcurrentDictionary<(string pluginSourcePath, ModKey modKey), bool> GetOverrideCache()
     {
         return _overridesCache;
@@ -2489,74 +2436,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
     }
 
-    private ModStateSnapshot? GenerateSnapshot(VM_ModSetting vm)
-    {
-        try
-        {
-            var snapshot = new ModStateSnapshot();
-            var allPaths = new HashSet<string>(vm.CorrespondingFolderPaths, StringComparer.OrdinalIgnoreCase);
-            if (vm.IsAutoGenerated)
-            {
-                allPaths.Add(_environmentStateProvider.DataFolderPath);
-            }
-
-            // 1. Snapshot Plugins
-            foreach (var modKey in vm.CorrespondingModKeys)
-            {
-                if (_pluginProvider.TryGetPlugin(modKey, allPaths, out _, out var path) && path != null)
-                {
-                    var info = new FileInfo(path);
-                    snapshot.PluginSnapshots.Add(new FileSnapshot
-                        { FileName = info.Name, FileSize = info.Length, LastWriteTimeUtc = info.LastWriteTimeUtc });
-                }
-            }
-
-            // 2. Snapshot BSAs
-            var bsaPaths = _bsaHandler
-                .GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, allPaths,
-                    _settings.SkyrimRelease.ToGameRelease()).Values.SelectMany(p => p).Distinct();
-            foreach (var bsaPath in bsaPaths)
-            {
-                var info = new FileInfo(bsaPath);
-                if (info.Exists)
-                {
-                    snapshot.BsaSnapshots.Add(new FileSnapshot
-                        { FileName = info.Name, FileSize = info.Length, LastWriteTimeUtc = info.LastWriteTimeUtc });
-                }
-            }
-
-            // 3. Snapshot Directories (for loose FaceGen)
-            foreach (var modPath in vm.CorrespondingFolderPaths)
-            {
-                string faceGeomPath = Path.Combine(modPath, "meshes", "actors", "character", "facegendata",
-                    "facegeom");
-                string faceTintPath = Path.Combine(modPath, "textures", "actors", "character", "facegendata",
-                    "facetint");
-
-                foreach (var dirPath in new[] { faceGeomPath, faceTintPath })
-                {
-                    var dirInfo = new DirectoryInfo(dirPath);
-                    if (dirInfo.Exists)
-                    {
-                        snapshot.DirectorySnapshots.Add(new DirectorySnapshot
-                        {
-                            Path = dirInfo.FullName,
-                            FileCount = Directory.EnumerateFiles(dirInfo.FullName, "*", SearchOption.AllDirectories)
-                                .Count(),
-                            LastWriteTimeUtc = dirInfo.LastWriteTimeUtc
-                        });
-                    }
-                }
-            }
-
-            return snapshot;
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Failed to generate snapshot for {vm.DisplayName}: {ex.Message}");
-            return null; // Return null on failure to ensure re-analysis
-        }
-    }
+    
 
     public string GetStatusReport()
     {

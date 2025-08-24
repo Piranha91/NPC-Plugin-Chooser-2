@@ -212,13 +212,13 @@
                                          <RowDefinition Height="Auto"/> 
                                          <RowDefinition Height="Auto"/> 
                                          <RowDefinition Height="Auto"/> 
+                                         <RowDefinition Height="Auto"/> 
                                      </Grid.RowDefinitions>
                                      <Grid.ColumnDefinitions>
                                          <ColumnDefinition Width="*"/>
                                      </Grid.ColumnDefinitions>
-
-                                     <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,5">
-                                         <StackPanel Orientation="Horizontal">
+                                     
+                                     <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal">
                                              <Viewbox Stretch="Uniform" 
                                                       HorizontalAlignment="Center" 
                                                       VerticalAlignment="Center"
@@ -253,6 +253,7 @@
                                              </Button.ToolTip>
                                              <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="14"/>
                                              </Button>
+        
                                              <TextBlock Text="{Binding ModKeyDisplaySuffix}"
                                                         FontWeight="Normal" 
                                                         FontSize="12" Margin="5,0,0,0" VerticalAlignment="Center" Foreground="DarkSlateGray">
@@ -286,19 +287,19 @@
                                                  </TextBlock.Style>
                                              </TextBlock>
                                          </StackPanel>
-                                         <Grid Margin="10,5,0,0">
-                                             <Grid.ColumnDefinitions>
-                                                 <ColumnDefinition Width="Auto"/>
-                                                 <ColumnDefinition Width="*"/>
-                                                 <ColumnDefinition Width="Auto"/>
-                                             </Grid.ColumnDefinitions>
-                                             <TextBlock Grid.Column="0" Text="Mugshot Folder:" VerticalAlignment="Center" ToolTip="Folder where mugshots for this mod are located"/>
-                                             <TextBlock Grid.Column="1" Text="{Binding MugShotFolderPath, TargetNullValue='(Not Set)'}" VerticalAlignment="Center" Margin="5,0" ToolTip="{Binding MugShotFolderPath}" TextTrimming="CharacterEllipsis"/>
-                                             <Button Grid.Column="2" Content="Browse..." Command="{Binding BrowseMugshotFolderCommand}" Padding="5,1" VerticalAlignment="Center" ToolTip="Select the folder containing Mugshots for this mod"/>
-                                         </Grid>
-                                     </StackPanel>
-
+                                     
                                      <Grid Grid.Row="1" Grid.Column="0" Margin="0,5,0,5">
+                                         <Grid.ColumnDefinitions>
+                                             <ColumnDefinition Width="Auto"/>
+                                             <ColumnDefinition Width="*"/>
+                                             <ColumnDefinition Width="Auto"/>
+                                         </Grid.ColumnDefinitions>
+                                         <TextBlock Grid.Column="0" Text="Mugshot Folder:" FontWeight="SemiBold" VerticalAlignment="Center" ToolTip="Folder where mugshots for this mod are located"/>
+                                         <TextBlock Grid.Column="1" Text="{Binding MugShotFolderPath, TargetNullValue='(Not Set)'}" VerticalAlignment="Center" Margin="5,0" ToolTip="{Binding MugShotFolderPath}" TextTrimming="CharacterEllipsis"/>
+                                         <Button Grid.Column="2" Content="Browse..." Command="{Binding BrowseMugshotFolderCommand}" Padding="5,1" VerticalAlignment="Center" ToolTip="Select the folder containing Mugshots for this mod"/>
+                                     </Grid>
+
+                                     <Grid Grid.Row="2" Grid.Column="0" Margin="0,5,0,5">
                                           <Grid.ColumnDefinitions>
                                               <ColumnDefinition Width="Auto"/>
                                               <ColumnDefinition Width="*"/>
@@ -310,7 +311,7 @@
                                                   ToolTip="Add another data folder where the contents of this mod are located"/>
                                      </Grid>
 
-                                      <ItemsControl Grid.Row="2" Grid.Column="0" ItemsSource="{Binding CorrespondingFolderPaths}" Margin="10,0,0,0">
+                                      <ItemsControl Grid.Row="3" Grid.Column="0" ItemsSource="{Binding CorrespondingFolderPaths}" Margin="10,0,0,0">
                                          <ItemsControl.ItemTemplate>
                                              <DataTemplate>
                                                  <Grid Margin="0,2">
@@ -336,29 +337,49 @@
                                          </ItemsControl.ItemTemplate>
                                      </ItemsControl>
                                      
-                                     <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
-                                         <TextBlock Text="Merge In Dependency Records" VerticalAlignment="Center" 
+                                     <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
+                                         <TextBlock Text="Merge Dependencies" 
+                                                    VerticalAlignment="Center" 
                                                     ToolTip="{Binding MergeInToolTip}"
                                                     Foreground="{Binding MergeInLabelColor}"
                                                     Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          <CheckBox
                                              IsChecked="{Binding MergeInDependencyRecords}"
+                                             VerticalAlignment="Center"
                                              Margin="5 0 0 0"
                                              ToolTip="{Binding MergeInDependencyRecords}"
                                              Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          
-                                         <TextBlock Text="Search for Injected Records" VerticalAlignment="Center" 
+                                         <TextBlock Text="Include Outfits" 
+                                                    VerticalAlignment="Center" 
+                                                    Margin="10 0 0 0"
+                                                    ToolTip="If checked, outfits from this mod will be transferred along with NPC appearance when in Create and Patch mode."
+                                                    Visibility="{Binding DataContext.CurrentPatchingMode}"/>
+                                         
+                                         <CheckBox IsChecked="{Binding IncludeOutfits, Mode=TwoWay}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="5 0 0 0"
+                                                   HorizontalAlignment="Left"
+                                                   ToolTip="If checked, outfits from this mod will be transferred along with NPC appearance when in Create and Patch mode."
+                                                   Visibility="{Binding DataContext.CurrentPatchingMode, 
+                                                 ElementName=ModSettingsItemsControl, 
+                                                 Converter={StaticResource PatchingModeConverter}, 
+                                                 ConverterParameter=CreateAndPatch}"/>
+                                         
+                                         <TextBlock Text="Handle Injected Records" 
+                                                    VerticalAlignment="Center" 
                                                     Margin="10 0 0 0"
                                                     ToolTip="If checked, the patcher will search for and merge in records that are injected. This can potentially make patching take longer."
                                                     Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          <CheckBox
                                              IsChecked="{Binding HandleInjectedRecords}"
+                                             VerticalAlignment="Center" 
                                              Margin="5 0 0 0"
                                              ToolTip="If checked, the patcher will search for and merge in records that are injected. This can potentially make patching take longer."
                                              Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                      </StackPanel>
                                      
-                                     <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
+                                     <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
                                          <TextBlock Text="Record Override Handling Mode" VerticalAlignment="Center">
                                              <TextBlock.ToolTip>
                                                  <ToolTip>
@@ -389,27 +410,14 @@
                                              Margin="5 0 0 0"/>
                                      </StackPanel>
                                      
-                                     <Button Grid.Row="5" Grid.Column="0"
+                                     <Button Grid.Row="6" Grid.Column="0"
                                              Content="Unlink Mugshot Data"
                                              Command="{Binding UnlinkMugshotDataCommand}"
                                              HorizontalAlignment="Left"
                                              Margin="0,10,0,0" Padding="5,2"
                                              ToolTip="Separates the assigned mugshot folder into its own entry, if its name differs from the primary mod data folder."
                                              Visibility="{Binding CanUnlinkMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                     
-                                     <CheckBox Grid.Row="6" Grid.Column="0"
-                                               Content="Include Outfits"
-                                               IsChecked="{Binding IncludeOutfits, Mode=TwoWay}"
-                                               VerticalAlignment="Center"
-                                               Margin="0,5,0,0"
-                                               HorizontalAlignment="Left"
-                                               ToolTip="If checked, outfits from this mod will be transferred along with NPC appearance when in Create and Patch mode."
-                                               Visibility="{Binding DataContext.CurrentPatchingMode, 
-                                                 ElementName=ModSettingsItemsControl, 
-                                                 Converter={StaticResource PatchingModeConverter}, 
-                                                 ConverterParameter=CreateAndPatch}"/>
 
-                                     
                                      <Button Grid.Row="7" Grid.Column="0"
                                              Content="Delete"
                                              Command="{Binding DeleteCommand}"
@@ -418,6 +426,14 @@
                                              Foreground="Red" FontWeight="Bold"
                                              ToolTip="Permanently delete this empty entry. Only visible if no paths or mugshots are assigned."
                                              Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                     
+                                     <Button Grid.Row="7" Grid.Column="0" 
+                                             Command="{Binding RefreshCommand}"
+                                             Margin="0,5,0,0" Padding="5,2"
+                                             VerticalAlignment="Center"
+                                             Content="Refresh"
+                                             ToolTip="Refresh this mod's data from its source folders."
+                                             Visibility="{Binding CanDelete, Converter={StaticResource BooleanNegationConverter}}"/>
                                  </Grid> 
                              </Border> 
                          </DataTemplate>
