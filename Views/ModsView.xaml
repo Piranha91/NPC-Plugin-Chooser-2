@@ -455,9 +455,11 @@
                      <Grid>
                           <TextBlock Text="{Binding SelectedModForMugshots.DisplayName, StringFormat='Mugshots for: {0}', TargetNullValue='Select a mod from the left panel'}"
                                      FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Left" TextTrimming="CharacterEllipsis"/>
-                          <TextBlock Text="Loading Mugshots..." Foreground="Gray" FontStyle="Italic"
-                                     VerticalAlignment="Center" HorizontalAlignment="Right"
-                                     Visibility="{Binding IsLoadingMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                          <Button Content="Cancel Mugshot Load"
+                                  Command="{Binding CancelMugshotLoadCommand}"
+                                  VerticalAlignment="Center" HorizontalAlignment="Right"
+                                  Padding="5,2"
+                                  Visibility="{Binding IsLoadingMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                      </Grid>
                  </Border>
 

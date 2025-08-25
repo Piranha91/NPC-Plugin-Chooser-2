@@ -125,6 +125,7 @@ public class VM_Mods : ReactiveObject
 
     // --- Commands ---
     public ReactiveCommand<VM_ModSetting, Unit> ShowMugshotsCommand { get; }
+    public ReactiveCommand<Unit, Unit> CancelMugshotLoadCommand { get; }
 
     // Expose for binding in VM_ModSetting commands
     public string ModsFolderSetting => _settings.ModsFolder;
@@ -174,7 +175,16 @@ public class VM_Mods : ReactiveObject
             ScrollableMessageBox.ShowError($"Error loading mugshots: {ex.Message}");
             IsLoadingMugshots = false;
         }).DisposeWith(_disposables);
-
+        
+        CancelMugshotLoadCommand = ReactiveCommand.Create(() =>
+        {
+            _mugshotLoadingCts?.Cancel();
+            IsLoadingMugshots = false; // Set UI state immediately for responsiveness
+        });
+        CancelMugshotLoadCommand.ThrownExceptions.Subscribe(ex =>
+        {
+            ScrollableMessageBox.ShowError($"Error cancelling mugshot load: {ex.Message}");
+        }).DisposeWith(_disposables);
 
         // --- NEW: Initialize Zoom Settings from _settings ---
         ModsViewZoomLevel =
@@ -695,6 +705,9 @@ public class VM_Mods : ReactiveObject
         }
         finally
         {
+            // This logic correctly handles loads being superseded by other loads.
+            // It does NOT set IsLoadingMugshots to false on cancellation, which is
+            // now handled by the CancelMugshotLoadCommand directly.
             await Application.Current.Dispatcher.InvokeAsync(() => {
                 if (!token.IsCancellationRequested) IsLoadingMugshots = false;
             });
