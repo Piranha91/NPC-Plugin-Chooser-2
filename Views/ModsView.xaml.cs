@@ -400,57 +400,77 @@ namespace NPC_Plugin_Chooser_2.Views
                 }
                 else // Packer scaling (Unlocked and Not Manually Zoomed)
                 {
-                    Debug.WriteLine("ModsView.RefreshMugshotImageSizes (Dispatcher): Applying PACKER scaling.");
-
-                    if (availableHeight > 0 && availableWidth > 0)
+                    try
                     {
-                        // ImagePacker.FitOriginalImagesToContainer expects ObservableCollection<IHasMugshotImage>
-                        // and will modify the ImageWidth/ImageHeight of the items within it.
-                        // Since imagesForPacker from ViewModel is already ObservableCollection<VM_ModsMenuMugshot>
-                        // and VM_ModsMenuMugshot implements IHasMugshotImage, we can cast.
-                        // However, the method signature is specific.
-                        // It's better if the ImagePacker can take IEnumerable<IHasMugshotImage>
-                        // or if we pass a new ObservableCollection as it expects.
-                        // For now, let's assume the packer method is updated or we make a temp collection.
+                        Debug.WriteLine("ModsView.RefreshMugshotImageSizes (Dispatcher): Applying PACKER scaling.");
 
-                        // Get the singleton ImagePacker instance from the service locator.
-                        var imagePacker = Locator.Current.GetService<ImagePacker>();
-                        if (imagePacker == null)
+                        if (availableHeight > 0 && availableWidth > 0)
                         {
-                            Debug.WriteLine("ModsView.RefreshMugshotImageSizes: ImagePacker service could not be resolved.");
-                            return;
+                            // ImagePacker.FitOriginalImagesToContainer expects ObservableCollection<IHasMugshotImage>
+                            // and will modify the ImageWidth/ImageHeight of the items within it.
+                            // Since imagesForPacker from ViewModel is already ObservableCollection<VM_ModsMenuMugshot>
+                            // and VM_ModsMenuMugshot implements IHasMugshotImage, we can cast.
+                            // However, the method signature is specific.
+                            // It's better if the ImagePacker can take IEnumerable<IHasMugshotImage>
+                            // or if we pass a new ObservableCollection as it expects.
+                            // For now, let's assume the packer method is updated or we make a temp collection.
+
+                            // Get the singleton ImagePacker instance from the service locator.
+                            var imagePacker = Locator.Current.GetService<ImagePacker>();
+                            if (imagePacker == null)
+                            {
+                                Debug.WriteLine(
+                                    "ModsView.RefreshMugshotImageSizes: ImagePacker service could not be resolved.");
+                                return;
+                            }
+
+                            // Get the cancellation token from the ViewModel
+                            var cancellationToken = ViewModel.GetCurrentMugshotLoadToken();
+
+                            var tempCollectionForPacker =
+                                new ObservableCollection<IHasMugshotImage>(imagesForPacker.Cast<IHasMugshotImage>());
+
+                            // Call the instance method on the retrieved service.
+                            double packerScaleFactor = imagePacker.FitOriginalImagesToContainer(
+                                tempCollectionForPacker,
+                                availableHeight,
+                                availableWidth,
+                                5, // xamlItemUniformMargin (from XAML Margin="5")
+                                ViewModel.NormalizeImageDimensions,
+                                ViewModel.MaxMugshotsToFit,
+                                cancellationToken
+                            );
+
+                            // After packer runs, items in tempCollectionForPacker have updated ImageWidth/Height.
+                            // We need to transfer these back if tempCollectionForPacker was a new collection of *new* VMs.
+                            // But if it's a collection of *references* to the original VMs, they are already updated.
+                            // The current ImagePacker modifies the items in the passed collection.
+                            // The Cast().ToList() then new ObservableCollection(list) creates new list with original references.
+
+                            Debug.WriteLine(
+                                $"ModsView.RefreshMugshotImageSizes (Dispatcher): Packer returned scaleFactor: {packerScaleFactor:F4}. Updating VM.ModsViewZoomLevel.");
+                            if (ViewModel != null) // Check ViewModel again as this is in a lambda
+                            {
+                                ViewModel.ModsViewZoomLevel = packerScaleFactor * 100.0;
+                            }
                         }
-
-                        var tempCollectionForPacker = new ObservableCollection<IHasMugshotImage>(imagesForPacker.Cast<IHasMugshotImage>());
-
-                        // Call the instance method on the retrieved service.
-                        double packerScaleFactor = imagePacker.FitOriginalImagesToContainer(
-                            tempCollectionForPacker,
-                            availableHeight,
-                            availableWidth,
-                            5, // xamlItemUniformMargin (from XAML Margin="5")
-                            ViewModel.NormalizeImageDimensions,
-                            ViewModel.MaxMugshotsToFit
-                        );
-
-                        // After packer runs, items in tempCollectionForPacker have updated ImageWidth/Height.
-                        // We need to transfer these back if tempCollectionForPacker was a new collection of *new* VMs.
-                        // But if it's a collection of *references* to the original VMs, they are already updated.
-                        // The current ImagePacker modifies the items in the passed collection.
-                        // The Cast().ToList() then new ObservableCollection(list) creates new list with original references.
-
-                        Debug.WriteLine($"ModsView.RefreshMugshotImageSizes (Dispatcher): Packer returned scaleFactor: {packerScaleFactor:F4}. Updating VM.ModsViewZoomLevel.");
-                        if (ViewModel != null) // Check ViewModel again as this is in a lambda
+                        else
                         {
-                             ViewModel.ModsViewZoomLevel = packerScaleFactor * 100.0;
+                            Debug.WriteLine(
+                                "ModsView.RefreshMugshotImageSizes (Dispatcher): Packer NOT called due to zero calculated available height/width.");
+                            // If packer isn't called, images might retain old sizes or need clearing.
+                            // Let's clear them to avoid stale display if container becomes too small.
+                            foreach (var img in imagesForPacker)
+                            {
+                                img.ImageWidth = 0;
+                                img.ImageHeight = 0;
+                            }
                         }
                     }
-                    else
+                    catch (OperationCanceledException)
                     {
-                        Debug.WriteLine("ModsView.RefreshMugshotImageSizes (Dispatcher): Packer NOT called due to zero calculated available height/width.");
-                        // If packer isn't called, images might retain old sizes or need clearing.
-                        // Let's clear them to avoid stale display if container becomes too small.
-                        foreach (var img in imagesForPacker) { img.ImageWidth = 0; img.ImageHeight = 0; }
+                        // This is expected when the user cancels. We just swallow the exception.
+                        Debug.WriteLine("ModsView.RefreshMugshotImageSizes: Image packing was cancelled by the user.");
                     }
                 }
                 Debug.WriteLine("ModsView.RefreshMugshotImageSizes (Dispatcher): EXIT.");

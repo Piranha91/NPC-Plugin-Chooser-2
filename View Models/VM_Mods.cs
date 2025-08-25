@@ -2558,7 +2558,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
     }
 
-    
+    public CancellationToken GetCurrentMugshotLoadToken()
+    {
+        return _mugshotLoadingCts?.Token ?? CancellationToken.None;
+    }
 
     public string GetStatusReport()
     {

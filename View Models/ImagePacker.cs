@@ -25,7 +25,8 @@ public class ImagePacker
         double availableHeight, double availableWidth,
         int xamlItemUniformMargin,
         bool normalizeAndCropImages = true,
-        int maxMugshotsToFit = 50)
+        int maxMugshotsToFit = 50,
+        CancellationToken token = default)
     {
         var visibleImages = imagesToPackCollection
             .Where(x => x.IsVisible && x.OriginalDipWidth > 0 && x.OriginalDipHeight > 0 &&
@@ -65,7 +66,7 @@ public class ImagePacker
             if (modePixelSize.IsEmpty || modePixelSize.Width == 0)
             {
                 return FitWithOriginalDimensions(imagesToPackCollection, visibleImages, availableHeight, availableWidth,
-                    xamlItemUniformMargin, maxMugshotsToFit);
+                    xamlItemUniformMargin, maxMugshotsToFit, token);
             }
 
             double modeDipWidth = modePixelSize.Width;
@@ -74,10 +75,12 @@ public class ImagePacker
                 .Repeat((modeDipWidth, modeDipHeight), Math.Min(visibleImages.Count, maxMugshotsToFit)).ToList();
 
             finalPackerScale = CalculatePackerScale(uniformBaseDimensions, availableHeight, availableWidth,
-                xamlItemUniformMargin);
+                xamlItemUniformMargin, token);
 
             foreach (var img in visibleImages)
             {
+                token.ThrowIfCancellationRequested();
+
                 if (img.OriginalPixelWidth != modePixelSize.Width || img.OriginalPixelHeight != modePixelSize.Height)
                 {
                     try
@@ -135,7 +138,7 @@ public class ImagePacker
         else
         {
             finalPackerScale = FitWithOriginalDimensions(imagesToPackCollection, visibleImages, availableHeight,
-                availableWidth, xamlItemUniformMargin, maxMugshotsToFit);
+                availableWidth, xamlItemUniformMargin, maxMugshotsToFit, token);
         }
 
         // --- MODIFICATION: Capture final size and fire completion event ---
@@ -157,15 +160,16 @@ public class ImagePacker
         ObservableCollection<IHasMugshotImage> fullCollection,
         List<IHasMugshotImage> visibleImages,
         double availableHeight, double availableWidth, int xamlItemUniformMargin,
-        int maxMugshotsToFit)
+        int maxMugshotsToFit, CancellationToken token = default)
     {
         var dimensionsToPack = visibleImages.Take(maxMugshotsToFit)
             .Select(img => (img.OriginalDipWidth, img.OriginalDipHeight)).ToList();
         double packerScale =
-            CalculatePackerScale(dimensionsToPack, availableHeight, availableWidth, xamlItemUniformMargin);
+            CalculatePackerScale(dimensionsToPack, availableHeight, availableWidth, xamlItemUniformMargin, token);
 
         foreach (var img in fullCollection)
         {
+            token.ThrowIfCancellationRequested();
             if (img.IsVisible)
             {
                 img.ImageWidth = img.OriginalDipWidth * packerScale;
@@ -182,7 +186,7 @@ public class ImagePacker
     }
 
     private double CalculatePackerScale(List<(double Width, double Height)> dimensions, double availableHeight,
-        double availableWidth, int xamlItemUniformMargin)
+        double availableWidth, int xamlItemUniformMargin, CancellationToken token = default)
     {
         double low = 0;
         double high = 10.0;
@@ -204,6 +208,7 @@ public class ImagePacker
 
         while (high - low > epsilon && iterations < maxIterations)
         {
+            token.ThrowIfCancellationRequested();
             double mid = low + (high - low) / 2;
             if (mid <= 0)
             {
@@ -211,7 +216,7 @@ public class ImagePacker
                 break;
             }
 
-            if (CanPackAll(dimensions, mid, availableWidth, availableHeight, xamlItemUniformMargin))
+            if (CanPackAll(dimensions, mid, availableWidth, availableHeight, xamlItemUniformMargin, token))
             {
                 low = mid;
             }
@@ -270,11 +275,12 @@ public class ImagePacker
     }
 
     private bool CanPackAll(List<(double Width, double Height)> baseContentSizes, double packerScale,
-        double containerWidth, double containerHeight, int xamlItemUniformMargin)
+        double containerWidth, double containerHeight, int xamlItemUniformMargin, CancellationToken token = default)
     {
         double currentX = 0, currentY = 0, rowMaxHeight = 0;
         foreach (var (w, h) in baseContentSizes)
         {
+            token.ThrowIfCancellationRequested();
             double itemW = (w * packerScale) + (2 * xamlItemUniformMargin);
             double itemH = (h * packerScale) + (2 * xamlItemUniformMargin);
             if (itemW > containerWidth || itemH > containerHeight) return false;
