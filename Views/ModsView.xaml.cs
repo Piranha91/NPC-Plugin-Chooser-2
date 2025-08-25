@@ -16,7 +16,9 @@ using System.Windows.Input;
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
-using System.Windows.Threading; 
+using System.Windows.Threading;
+using GongSolutions.Wpf.DragDrop;
+using DragDrop = System.Windows.DragDrop;
 
 namespace NPC_Plugin_Chooser_2.Views
 {
@@ -492,6 +494,20 @@ namespace NPC_Plugin_Chooser_2.Views
             textBox.CaretIndex = textBox.Text.Length;
             textBox.SelectAll();
             e.Handled = true;
+        }
+        
+        private void FolderPathsItemsControl_Loaded(object sender, RoutedEventArgs e)
+        {
+            // Cast the sender to the ItemsControl
+            if (sender is ItemsControl itemsControl)
+            {
+                // Get the DataContext, which is our VM_ModSetting instance
+                var viewModel = itemsControl.DataContext as IDropTarget;
+
+                // Programmatically set the DropHandler to be the ViewModel.
+                // This is the code-behind equivalent of gong:DragDrop.DropHandler="{Binding}"
+                GongSolutions.Wpf.DragDrop.DragDrop.SetDropHandler(itemsControl, viewModel);
+            }
         }
     }
     

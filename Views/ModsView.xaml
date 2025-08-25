@@ -5,6 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
              xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+             xmlns:gong="clr-namespace:GongSolutions.Wpf.DragDrop;assembly=GongSolutions.Wpf.DragDrop"
              xmlns:reactiveui="http://reactiveui.net"
              xmlns:System="clr-namespace:System;assembly=mscorlib"
              mc:Ignorable="d"
@@ -324,7 +325,11 @@
                                                   ToolTip="Add another data folder where the contents of this mod are located"/>
                                      </Grid>
 
-                                      <ItemsControl Grid.Row="3" Grid.Column="0" ItemsSource="{Binding CorrespondingFolderPaths}" Margin="10,0,0,0">
+                                      <ItemsControl Grid.Row="3" Grid.Column="0" ItemsSource="{Binding CorrespondingFolderPaths}" Margin="10,0,0,0"
+                                                    gong:DragDrop.IsDragSource="True"
+                                                    gong:DragDrop.IsDropTarget="True"
+                                                    x:Name="FolderPathsItemsControl"
+                                                    Loaded="FolderPathsItemsControl_Loaded">
                                          <ItemsControl.ItemTemplate>
                                              <DataTemplate>
                                                  <Grid Margin="0,2">

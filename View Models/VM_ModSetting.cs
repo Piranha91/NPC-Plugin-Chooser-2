@@ -13,6 +13,7 @@ using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using System.Linq;
 using System.Reactive.Disposables;
+using System.Windows;
 using System.Windows.Media;
 using DynamicData;
 using Mutagen.Bethesda;
@@ -23,6 +24,9 @@ using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views;
+using GongSolutions.Wpf.DragDrop;
+using DragDrop = GongSolutions.Wpf.DragDrop.DragDrop;
+using IDropTarget = GongSolutions.Wpf.DragDrop.IDropTarget;
 using LinkCacheConstructionMixIn = Mutagen.Bethesda.LinkCacheConstructionMixIn; // Assuming Models namespace
 
 namespace NPC_Plugin_Chooser_2.View_Models
@@ -45,7 +49,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
     }
 
     [DebuggerDisplay("{DisplayName}")]
-    public class VM_ModSetting : ReactiveObject, IDisposable
+    public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     {
         public void Dispose()
         {
@@ -1690,5 +1694,53 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 IsRefreshing = false; // Always hide the indicator when done
             }
         }
+        
+        #region Drag and Drop Logic
+        
+        void IDropTarget.DragOver(IDropInfo dropInfo)
+        {
+            // --- START DEBUGGING LOGIC ---
+
+            // Get the source UI element (where the drag started)
+            var sourceElement = dropInfo.DragInfo.VisualSource as FrameworkElement;
+
+            // Get the target UI element (what the mouse is currently over)
+            var targetElement = dropInfo.VisualTarget as FrameworkElement;
+    
+            // Get the ViewModel for each element from its DataContext
+            var sourceVm = sourceElement?.DataContext as VM_ModSetting;
+            var targetVm = targetElement?.DataContext as VM_ModSetting;
+
+            if (sourceVm != null && targetVm != null)
+            {
+                // Print the names to the debug output window in Visual Studio
+                Debug.WriteLine($"Source: {sourceVm.DisplayName} | Target: {targetVm.DisplayName}");
+            }
+
+            // --- END DEBUGGING LOGIC ---
+
+
+            // The actual drop condition is based on comparing the ViewModel instances
+            if (sourceVm != null && targetVm != null && sourceVm == targetVm)
+            {
+                // YES: The drop is on the original list. Allow it.
+                dropInfo.DropTargetAdorner = DropTargetAdorners.Insert;
+                dropInfo.Effects = System.Windows.DragDropEffects.Move;
+            }
+            else
+            {
+                // NO: The drop is on a DIFFERENT list. Forbid it.
+                dropInfo.Effects = System.Windows.DragDropEffects.None;
+            }
+        }
+        
+        void IDropTarget.Drop(IDropInfo dropInfo)
+        {
+            // The Gong library provides a helper to handle the collection move.
+            // It handles different collection types automatically.
+            DragDrop.DefaultDropHandler.Drop(dropInfo);
+        }
+
+        #endregion
     }
 }
