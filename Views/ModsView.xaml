@@ -299,10 +299,17 @@
                                              <ColumnDefinition Width="Auto"/>
                                              <ColumnDefinition Width="*"/>
                                              <ColumnDefinition Width="Auto"/>
+                                             <ColumnDefinition Width="Auto"/>
                                          </Grid.ColumnDefinitions>
                                          <TextBlock Grid.Column="0" Text="Mugshot Folder:" FontWeight="SemiBold" VerticalAlignment="Center" ToolTip="Folder where mugshots for this mod are located"/>
                                          <TextBlock Grid.Column="1" Text="{Binding MugShotFolderPath, TargetNullValue='(Not Set)'}" VerticalAlignment="Center" Margin="5,0" ToolTip="{Binding MugShotFolderPath}" TextTrimming="CharacterEllipsis"/>
                                          <Button Grid.Column="2" Content="Browse..." Command="{Binding BrowseMugshotFolderCommand}" Padding="5,1" VerticalAlignment="Center" ToolTip="Select the folder containing Mugshots for this mod"/>
+                                         <Button Grid.Column="3" Content="Unlink"
+                                                 Command="{Binding UnlinkMugshotDataCommand}"
+                                                 HorizontalAlignment="Left"
+                                                 Margin="5 0 0 0"
+                                                 ToolTip="Separates the assigned mugshot folder into its own entry, if its name differs from the primary mod data folder."
+                                                 Visibility="{Binding CanUnlinkMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                      </Grid>
 
                                      <Grid Grid.Row="2" Grid.Column="0" Margin="0,5,0,5">
@@ -416,14 +423,6 @@
                                              SelectedValue="{Binding OverrideRecordOverrideHandlingMode, Mode=TwoWay}"
                                              Margin="5 0 0 0"/>
                                      </StackPanel>
-                                     
-                                     <Button Grid.Row="6" Grid.Column="0"
-                                             Content="Unlink Mugshot Data"
-                                             Command="{Binding UnlinkMugshotDataCommand}"
-                                             HorizontalAlignment="Left"
-                                             Margin="0,10,0,0" Padding="5,2"
-                                             ToolTip="Separates the assigned mugshot folder into its own entry, if its name differs from the primary mod data folder."
-                                             Visibility="{Binding CanUnlinkMugshots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
                                      <Button Grid.Row="7" Grid.Column="0"
                                              Content="Delete"
