@@ -114,6 +114,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly BsaHandler _bsaHandler;
         private readonly PluginProvider _pluginProvider;
         private readonly RecordHandler _recordHandler;
+        
+        [Reactive] public bool IsRefreshing { get; set; } = false;
 
         // Flag indicating if this VM was created dynamically only from a Mugshot folder
         // and wasn't loaded from the persisted ModSettings.
@@ -314,15 +316,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                  .ToPropertyEx(this, x => x.HasModPathsAssigned)
                  .DisposeWith(_disposables);
              
-             // Keep corresponding CorrespondingModKeys up to date when folders are added or removed
-             this.WhenAnyValue(x => x.CorrespondingFolderPaths.Count).Select(_ => Unit.Default)
-                 .Skip(1) // Skip the initial value set in the constructor
-                 .Throttle(TimeSpan.FromMilliseconds(100))
-                 .ObserveOn(RxApp.MainThreadScheduler) 
-                 .Subscribe(_ =>
-                 {
-                     UpdateCorrespondingModKeys();
-                 })
+             // When folder paths are added or removed, trigger a full refresh of this mod setting.
+             this.WhenAnyValue(x => x.CorrespondingFolderPaths.Count)
+                 .Skip(1) // Skip the initial value set in the constructor to avoid a refresh on load.
+                 .Throttle(TimeSpan.FromMilliseconds(500), RxApp.MainThreadScheduler) // Throttle to prevent rapid firing if multiple changes occur.
+                 .Select(_ => Unit.Default)
+                 .InvokeCommand(this, x => x.RefreshCommand) // Invoke the existing RefreshCommand.
                  .DisposeWith(_disposables);
      
              // When MugShotFolderPath changes OR CorrespondingModKeys.Count changes,
@@ -574,8 +573,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                         // *** Notify parent VM AFTER path is added ***
                         _parentVm?.CheckForAndPerformMerge(this, addedPath, PathType.ModFolder, hadMugshotBefore, hadModPathsBefore);
-
-                        FindPluginsWithOverrides(_parentVm.GetPluginProvider());
+                        RefreshCommand.Execute().Subscribe();
                     }
                 }
             }
@@ -608,7 +606,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         // *** Notify parent VM AFTER path is changed ***
                         _parentVm?.CheckForAndPerformMerge(this, newPath, PathType.ModFolder, hadMugshotBefore, hadModPathsBefore);
                         
-                        FindPluginsWithOverrides(_parentVm.GetPluginProvider());
+                        RefreshCommand.Execute().Subscribe();
                     }
                     else if (index >= 0 && newPath.Equals(existingPath, StringComparison.OrdinalIgnoreCase)) { /* No change needed */ }
                     else if (index >= 0) // Path didn't change but new path already exists elsewhere
@@ -630,8 +628,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 CorrespondingFolderPaths.Remove(pathToRemove);
             }
-            
-            FindPluginsWithOverrides(_parentVm.GetPluginProvider());
         }
 
         public void UpdateCorrespondingModKeys(IEnumerable<ModKey>? explicitModKeys = null)
@@ -1674,16 +1670,24 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         private async Task RefreshAsync()
         {
-            if (_parentVm != null)
+            if (_parentVm == null)
             {
+                Debug.WriteLine($"Cannot refresh '{DisplayName}': Parent VM is null.");
+                return; // Exit if parent is not available
+            }
+
+            try
+            {
+                IsRefreshing = true; // Show the "Refreshing..." indicator
+        
                 // This is the key part: we ask the parent VM to perform the refresh.
                 // This keeps the logic that needs global context (like FaceGen caches)
                 // in the parent, which is a clean separation of concerns.
                 await _parentVm.RefreshSingleModSettingAsync(this);
             }
-            else
+            finally
             {
-                Debug.WriteLine($"Cannot refresh '{DisplayName}': Parent VM is null.");
+                IsRefreshing = false; // Always hide the indicator when done
             }
         }
     }

@@ -989,8 +989,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             RecalculateMugshotValidity(vmToRefresh);
 
             RequestNpcSelectionBarRefresh();
-
-            ScrollableMessageBox.Show($"Successfully refreshed '{vmToRefresh.DisplayName}'.", "Refresh Complete");
         }
         catch (Exception ex)
         {
