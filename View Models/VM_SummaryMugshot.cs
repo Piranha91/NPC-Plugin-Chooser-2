@@ -63,7 +63,6 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             string sourceNpcDisplayName,
             bool isGuest, bool isAmbiguous, bool hasIssue, string issueText, bool hasNoData, string noDataText, bool hasMugshot,
             Lazy<VM_MainWindow> lazyMainWindowVm,
-            VM_NpcSelectionBar npcsViewModel,
             VM_Mods modsViewModel)
         {
             _lazyMainWindowVm = lazyMainWindowVm;
@@ -82,32 +81,23 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             NoDataNotificationText = noDataText;
             HasMugshot = hasMugshot;
 
-            // Load image dimensions and source
-            if (!string.IsNullOrEmpty(ImagePath) && File.Exists(ImagePath))
+            // Get image dimensions without loading the full image data.
+            try
             {
-                try
-                {
-                    var (pixelWidth, pixelHeight, dipWidth, dipHeight) = ImagePacker.GetImageDimensions(ImagePath);
-                    OriginalPixelWidth = pixelWidth;
-                    OriginalPixelHeight = pixelHeight;
-                    OriginalDipWidth = dipWidth;
-                    OriginalDipHeight = dipHeight;
-                    OriginalDipDiagonal = Math.Sqrt(dipWidth * dipWidth + dipHeight * dipHeight);
-                    ImageWidth = OriginalDipWidth;
-                    ImageHeight = OriginalDipHeight;
-
-                    var bitmap = new BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.UriSource = new Uri(ImagePath, UriKind.Absolute);
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.EndInit();
-                    bitmap.Freeze();
-                    MugshotSource = bitmap;
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error loading image '{ImagePath}': {ex.Message}");
-                }
+                var (pixelWidth, pixelHeight, dipWidth, dipHeight) = ImagePacker.GetImageDimensions(ImagePath);
+                OriginalPixelWidth = pixelWidth;
+                OriginalPixelHeight = pixelHeight;
+                OriginalDipWidth = dipWidth;
+                OriginalDipHeight = dipHeight;
+                OriginalDipDiagonal = Math.Sqrt(dipWidth * dipWidth + dipHeight * dipHeight);
+                ImageWidth = OriginalDipWidth;
+                ImageHeight = OriginalDipHeight;
+            }
+            catch (Exception ex)
+            {
+                // This catch block correctly handles any errors by marking the mugshot as invalid.
+                Debug.WriteLine($"Error getting dimensions for image '{ImagePath}': {ex.Message}");
+                HasMugshot = false; // Fallback in case the placeholder file is missing/corrupt
             }
 
             // Command Implementations
@@ -140,6 +130,34 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                     });
                 }
             });
+        }
+        
+        public async Task LoadImageAsync()
+        {
+            if (MugshotSource != null || string.IsNullOrEmpty(ImagePath)) return; // Don't load if already loaded
+
+            try
+            {
+                // Load and decode on a background thread
+                var bitmap = await Task.Run(() =>
+                {
+                    var bmp = new BitmapImage();
+                    bmp.BeginInit();
+                    bmp.UriSource = new Uri(ImagePath, UriKind.Absolute);
+                    bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    bmp.EndInit();
+                    bmp.Freeze(); // Make it thread-safe to pass to the UI thread
+                    return bmp;
+                });
+
+                // Assign to the property on the UI thread.
+                // Because MugshotSource is [Reactive], the UI will update automatically.
+                MugshotSource = bitmap;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading image '{ImagePath}': {ex.Message}");
+            }
         }
 
         public void Dispose()

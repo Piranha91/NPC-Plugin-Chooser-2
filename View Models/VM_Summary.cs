@@ -17,7 +17,7 @@ using ReactiveUI.Fody.Helpers;
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
-    public class VM_Summary : ReactiveObject, IDisposable
+    public class VM_Summary : ReactiveObject, IDisposable, IActivatableViewModel
     {
         // Dependencies
         private readonly Settings _settings;
@@ -28,9 +28,14 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
         private readonly CompositeDisposable _disposables = new();
         
-        private List<VM_SummaryMugshot> _allMugshots = new();
+        private record SummaryNpcData(FormKey TargetNpcFormKey, string NpcDisplayName, string ModDisplayName, string SourceNpcDisplayName, bool IsGuest, string ImagePath, bool HasMugshot, bool IsAmbiguous, bool HasIssue, string IssueText, bool HasNoData, string NoDataText);
+        private List<SummaryNpcData> _allNpcData = new();
         private List<VM_SummaryListItem> _allListItems = new();
         private readonly ISubject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
+        
+        public ViewModelActivator Activator { get; } = new ViewModelActivator();
+        
+        public int MaxMugshotsToFit => _settings.MaxMugshotsToFit;
 
         // --- Top Row Properties ---
         [Reactive] public bool IsGalleryView { get; set; } = true;
@@ -157,19 +162,21 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             this.WhenAnyValue(x => x.CurrentPage, x => x.IsGalleryView, x => x.SelectedNpcGroup, x => x.MaxNpcsPerPage)
                 .Throttle(TimeSpan.FromMilliseconds(50))
                 .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(_ => UpdateDisplay());
+                .Subscribe(_ => UpdateDisplay())
+                .DisposeWith(_disposables);
 
             // Update page display text
             this.WhenAnyValue(x => x.CurrentPage, x => x.TotalPages)
                 .Subscribe(_ => this.RaisePropertyChanged(nameof(PageDisplay)));
-            
-            // Re-fetch data when selections change
-            _consistencyProvider.NpcSelectionChanged
-                .Throttle(TimeSpan.FromSeconds(1)) // Debounce rapid changes
-                .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(_ => InitializeData());
 
-            InitializeData();
+            // Load data only when the user switches to the corresponding menu
+            this.WhenActivated((CompositeDisposable disposables) =>
+            {
+                // InitializeData is now fast, as it does no image I/O
+                InitializeData(); 
+                // UpdateDisplay will create the VMs for the first page
+                UpdateDisplay();
+            });
         }
 
         private void InitializeData()
@@ -179,7 +186,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             
             var allSelections = _settings.SelectedAppearanceMods;
             
-            _allMugshots = new List<VM_SummaryMugshot>();
+            _allNpcData = new List<SummaryNpcData>();
             _allListItems = new List<VM_SummaryListItem>();
 
             string placeholderPath = Path.Combine(AppContext.BaseDirectory, @"Resources\No Mugshot.png");
@@ -216,31 +223,20 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                         issueText = notif.IssueMessage;
                     }
                 }
-
-                _allMugshots.Add(new VM_SummaryMugshot(imagePath, targetNpcKey, targetNpcName, modName, sourceNpcName, isGuest, isAmbiguous, hasIssue, issueText, hasNoData, noDataText, hasMugshot, _lazyMainWindowVm, _npcsViewModel, _modsViewModel));
+                
+                // Create and store the lightweight data object
+                var data = new SummaryNpcData(targetNpcKey, targetNpcName, modName, sourceNpcName, isGuest, imagePath, hasMugshot, isAmbiguous, hasIssue, issueText, hasNoData, noDataText);
+                _allNpcData.Add(data);
                 _allListItems.Add(new VM_SummaryListItem(targetNpcKey, targetNpcName, modName, sourceNpcName, isGuest));
             }
             
-            // Sort the lists once: NPCs with resolved names first, then alphabetically.
-            // This now checks IsInLoadOrder, which is a reliable flag for a resolved name.
-            _allMugshots = _allMugshots
-                .OrderBy(m => (npcViewModelMap.TryGetValue(m.TargetNpcFormKey, out var npcVM) && npcVM.IsInLoadOrder) ? 0 : 1)
-                .ThenBy(m => m.NpcDisplayName)
-                .ToList();
-
-            _allListItems = _allListItems
-                .OrderBy(i => (npcViewModelMap.TryGetValue(i.TargetNpcFormKey, out var npcVM) && npcVM.IsInLoadOrder) ? 0 : 1)
-                .ThenBy(i => i.NpcDisplayName)
-                .ToList();
-
-            UpdateDisplay();
+            _allNpcData = _allNpcData.OrderBy(d => (npcViewModelMap.TryGetValue(d.TargetNpcFormKey, out var npcVM) && npcVM.IsInLoadOrder) ? 0 : 1).ThenBy(d => d.NpcDisplayName).ToList();
+            _allListItems = _allListItems.OrderBy(i => (npcViewModelMap.TryGetValue(i.TargetNpcFormKey, out var npcVM) && npcVM.IsInLoadOrder) ? 0 : 1).ThenBy(i => i.NpcDisplayName).ToList();
         }
 
         private void UpdateDisplay()
         {
             DisplayedItems.Clear();
-
-            var filteredMugshots = GetFilteredMugshots();
             
             if (IsListView)
             {
@@ -251,30 +247,54 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             }
             else // Gallery View
             {
-                int totalItems = filteredMugshots.Count;
+                var filteredData = GetFilteredData();
+                int totalItems = filteredData.Count;
                 TotalPages = Math.Max(1, (int)Math.Ceiling((double)totalItems / MaxNpcsPerPage));
                 CurrentPage = Math.Min(CurrentPage, TotalPages);
 
-                var pagedItems = filteredMugshots
+                // Get just the data for the current page
+                var pagedData = filteredData
                     .Skip((CurrentPage - 1) * MaxNpcsPerPage)
-                    .Take(MaxNpcsPerPage);
+                    .Take(MaxNpcsPerPage)
+                    .ToList();
+            
+                // Create the heavy ViewModels ONLY for the visible page
+                var viewModelsForPage = pagedData.Select(data => new VM_SummaryMugshot(
+                    data.ImagePath, data.TargetNpcFormKey, data.NpcDisplayName, data.ModDisplayName, data.NpcDisplayName,
+                    data.IsGuest, data.IsAmbiguous, data.HasIssue, data.IssueText, data.HasNoData, data.NoDataText, 
+                    data.HasMugshot, _lazyMainWindowVm, _modsViewModel)).ToList();
 
-                foreach(var item in pagedItems) DisplayedItems.Add(item);
+                // Add them to the display collection
+                foreach(var vm in viewModelsForPage)
+                {
+                    DisplayedItems.Add(vm);
+                }
+            
+                // **THE FIX FOR ROLLING LOAD**
+                // Trigger the async loading for each new ViewModel.
+                // This is "fire-and-forget" - the UI will update as each image finishes loading.
+                Task.Run(async () =>
+                {
+                    foreach(var vm in viewModelsForPage)
+                    {
+                        await vm.LoadImageAsync();
+                    }
+                });
             }
 
             if (!SummaryViewIsZoomLocked) SummaryViewHasUserManuallyZoomed = false;
             _refreshImageSizesSubject.OnNext(Unit.Default);
         }
 
-        private List<VM_SummaryMugshot> GetFilteredMugshots()
+        private List<SummaryNpcData> GetFilteredData()
         {
             if (SelectedNpcGroup == "All NPCs" || string.IsNullOrEmpty(SelectedNpcGroup))
             {
-                return _allMugshots;
+                return _allNpcData;
             }
-            return _allMugshots.Where(m => _settings.NpcGroupAssignments.ContainsKey(m.TargetNpcFormKey) &&
-                                           _settings.NpcGroupAssignments[m.TargetNpcFormKey].Contains(SelectedNpcGroup))
-                               .ToList();
+            return _allNpcData.Where(d => _settings.NpcGroupAssignments.ContainsKey(d.TargetNpcFormKey) &&
+                                          _settings.NpcGroupAssignments[d.TargetNpcFormKey].Contains(SelectedNpcGroup))
+                .ToList();
         }
 
         private List<VM_SummaryListItem> GetFilteredListItems()
@@ -283,14 +303,14 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             {
                 return _allListItems;
             }
+    
             var targetKeysInGroup = _settings.NpcGroupAssignments
                 .Where(kvp => kvp.Value.Contains(SelectedNpcGroup))
                 .Select(kvp => kvp.Key)
                 .ToHashSet();
 
-            return _allListItems.Where(i => targetKeysInGroup.Contains(
-                _allMugshots.First(m => m.NpcDisplayName == i.NpcDisplayName).TargetNpcFormKey // This link is a bit weak; needs a key on the list item
-            )).ToList();
+            // The corrected, efficient line:
+            return _allListItems.Where(i => targetKeysInGroup.Contains(i.TargetNpcFormKey)).ToList();
         }
 
         public void Dispose()

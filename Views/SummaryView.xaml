@@ -42,7 +42,7 @@
                           PreviewMouseWheel="MugshotScrollViewer_PreviewMouseWheel"
                           SizeChanged="MugshotScrollViewer_SizeChanged"
                           Visibility="{Binding IsGalleryView, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <ItemsControl ItemsSource="{Binding DisplayedItems}">
+                <ItemsControl x:Name="SummaryItemsControl" ItemsSource="{Binding DisplayedItems}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel Orientation="Horizontal"
@@ -52,63 +52,58 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:VM_SummaryMugshot}">
                             <Border BorderThickness="2" BorderBrush="Gray" Margin="5" CornerRadius="2"
-                                    Width="{Binding ImageWidth}" Height="{Binding ImageHeight}">
-                                <Border.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="Show Full Image" Command="{Binding ToggleFullScreenCommand}"/>
-                                        <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/>
-                                        <MenuItem Header="Jump to Mod in List" Command="{Binding JumpToModCommand}"/>
-                                    </ContextMenu>
-                                </Border.ContextMenu>
+                                Width="{Binding ImageWidth}" Height="{Binding ImageHeight}">
+                            <Border.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Show Full Image" Command="{Binding ToggleFullScreenCommand}"/>
+                                    <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/>
+                                    <MenuItem Header="Jump to Mod in List" Command="{Binding JumpToModCommand}"/>
+                                </ContextMenu>
+                            </Border.ContextMenu>
 
-                                <Grid Background="WhiteSmoke">
-                                    <Image Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True">
-                                        <Image.Style>
-                                            <Style TargetType="Image">
-                                                <Setter Property="Opacity" Value="1.0" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding HasMugshot}" Value="False">
-                                                        <Setter Property="Opacity" Value="0.3"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Image.Style>
-                                    </Image>
-                                    
-                                    <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Background="#AA000000" Padding="3,1">
-                                        <StackPanel HorizontalAlignment="Center">
-                                            <TextBlock Text="{Binding NpcDisplayName}" Foreground="White" FontSize="10" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
-                                            <TextBlock Text="{Binding ModDisplayName}" Foreground="LightGray" FontSize="9" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" FontStyle="Italic"/>
-                                        </StackPanel>
-                                    </Border>
-                                    
-                                    <Grid HorizontalAlignment="Left" VerticalAlignment="Top" Margin="2" Width="16" Height="16"
-                                          Visibility="{Binding HasIssueNotification, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                          ToolTip="{Binding IssueNotificationText}">
-                                        <Viewbox Stretch="Uniform"><TextBlock Text="!" FontWeight="Bold" Foreground="Red"/></Viewbox>
-                                    </Grid>
-                                    <Grid HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2" Width="16" Height="16"
-                                          Visibility="{Binding HasNoData, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                          ToolTip="{Binding NoDataNotificationText}">
-                                        <Viewbox Stretch="Uniform"><Image Source="/NPC Plugin Chooser 2;component/Resources/No Associated Data.png" /></Viewbox>
-                                    </Grid>
-                                    <Grid HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0 0 0 20"
-                                          Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                          ToolTip="This NPC is defined in multiple source plugins."
-                                          Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
-                                          Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
-                                        <Viewbox Stretch="Uniform"><Image Source="/NPC Plugin Chooser 2;component/Resources/Multiple Plugins for NPC.png" /></Viewbox>
-                                    </Grid>
-                                    <Grid HorizontalAlignment="Right" VerticalAlignment="Top" Margin="2"
-                                          Visibility="{Binding IsGuestAppearance, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                          ToolTip="This is a guest appearance from another NPC."
-                                          Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
-                                          Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
-                                        <Viewbox Stretch="Uniform"><Image Source="/NPC Plugin Chooser 2;component/Resources/Guest Plugin.png"/></Viewbox>
-                                    </Grid>
+                            <Grid Background="WhiteSmoke">
+                                <Image x:Name="MugshotImage" 
+                                       Source="{Binding MugshotSource}" Stretch="UniformToFill" 
+                                       UseLayoutRounding="True" SnapsToDevicePixels="True">
+                                    <Image.Style>
+                                        <Style TargetType="Image">
+                                            <Setter Property="Opacity" Value="1.0" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasMugshot}" Value="False">
+                                                    <Setter Property="Opacity" Value="0.3"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Image.Style>
+                                </Image>
+                                
+                                <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" 
+                                        Background="#AA000000" Padding="3,1">
+                                    <StackPanel HorizontalAlignment="Center">
 
+                                        <TextBlock Text="{Binding NpcDisplayName}" 
+                                                   Foreground="White" FontSize="10" 
+                                                   HorizontalAlignment="Center"
+                                                   TextAlignment="Center"
+                                                   TextWrapping="Wrap"  
+                                                   Width="{Binding ElementName=MugshotImage, Path=ActualWidth}" />
+
+                                        <TextBlock Text="{Binding ModDisplayName}" 
+                                                   Foreground="LightGray" FontSize="9" 
+                                                   HorizontalAlignment="Center" FontStyle="Italic"
+                                                   TextAlignment="Center"
+                                                   TextWrapping="Wrap"
+                                                   Width="{Binding ElementName=MugshotImage, Path=ActualWidth}" />
+
+                                    </StackPanel>
+                                </Border>
+                                
+                                <Grid HorizontalAlignment="Left" VerticalAlignment="Top" Margin="2" Width="16" Height="16"
+                                      Visibility="{Binding HasIssueNotification, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                      ToolTip="{Binding IssueNotificationText}">
+                                    </Grid>
                                 </Grid>
-                            </Border>
+                        </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
