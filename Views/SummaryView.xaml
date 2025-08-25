@@ -12,8 +12,9 @@
              d:DesignHeight="600" d:DesignWidth="1000">
 
     <UserControl.Resources>
+        <local:EnumMatchToBooleanConverter x:Key="EnumMatchToBooleanConverter"/>
+        <local:EnumToVisibilityConverter x:Key="EnumToVisibilityConverter"/>
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
-        <local:PercentageSizingConverter x:Key="PercentageSizingConverter"/>
     </UserControl.Resources>
 
     <Grid>
@@ -23,13 +24,16 @@
         <Border Grid.Row="0" Background="#F0F0F0" BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="5">
             <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="View Mode:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                <RadioButton Content="Gallery" GroupName="ViewMode" IsChecked="{Binding IsGalleryView, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                <RadioButton Content="List" GroupName="ViewMode" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                <RadioButton Content="Gallery" GroupName="ViewMode" VerticalAlignment="Center" Margin="0,0,5,0"
+                             IsChecked="{Binding ViewMode, Converter={StaticResource EnumMatchToBooleanConverter}, ConverterParameter=Gallery}"/>
+            
+                <RadioButton Content="List" GroupName="ViewMode" VerticalAlignment="Center" Margin="0,0,15,0"
+                             IsChecked="{Binding ViewMode, Converter={StaticResource EnumMatchToBooleanConverter}, ConverterParameter=List}"/>
 
                 <TextBlock Text="NPC Group:" VerticalAlignment="Center" Margin="0,0,5,0"/>
                 <ComboBox MinWidth="150" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedNpcGroup, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,15,0"/>
 
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Visibility="{Binding IsGalleryView, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Visibility="{Binding ViewMode, Converter={StaticResource EnumMatchToBooleanConverter}, ConverterParameter=Gallery}">
                     <TextBlock Text="Max # NPCs per page:" VerticalAlignment="Center" Margin="0,0,5,0"/>
                     <TextBox Text="{Binding MaxNpcsPerPage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MinWidth="50" VerticalAlignment="Center"/>
                 </StackPanel>
@@ -41,7 +45,7 @@
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           PreviewMouseWheel="MugshotScrollViewer_PreviewMouseWheel"
                           SizeChanged="MugshotScrollViewer_SizeChanged"
-                          Visibility="{Binding IsGalleryView, Converter={StaticResource BooleanToVisibilityConverter}}">
+                          Visibility="{Binding ViewMode, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Gallery}">
                 <ItemsControl x:Name="SummaryItemsControl" ItemsSource="{Binding DisplayedItems}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -117,7 +121,7 @@
                       HeadersVisibility="Column"
                       SelectionMode="Extended"
                       SelectionUnit="FullRow"
-                      Visibility="{Binding IsListView, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      Visibility="{Binding ViewMode, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=List}">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="NPC" Binding="{Binding NpcDisplayName}" Width="2*"/>
                     <DataGridTextColumn Header="Selected Mod" Binding="{Binding SelectedModName}" Width="2*"/>
@@ -131,7 +135,7 @@
         <Border Grid.Row="2" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="5">
             <Grid>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center"
-                            Visibility="{Binding IsGalleryView, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            Visibility="{Binding ViewMode, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Gallery}">
                     <Button Content="&lt;" Command="{Binding PreviousPageCommand}" Width="25" Height="25" Margin="0,0,5,0" ToolTip="Previous Page"/>
                     <TextBlock Text="{Binding PageDisplay}" VerticalAlignment="Center" Margin="5,0"/>
                     <Button Content="&gt;" Command="{Binding NextPageCommand}" Width="25" Height="25" Margin="5,0,0,0" ToolTip="Next Page"/>

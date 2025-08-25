@@ -105,7 +105,7 @@ namespace NPC_Plugin_Chooser_2.Views
 
         private void RefreshMugshotImageSizes()
         {
-            if (ViewModel?.DisplayedItems == null || !ViewModel.IsGalleryView) return;
+            if (ViewModel?.DisplayedItems == null || ViewModel.ViewMode != VM_Summary.SummaryViewMode.Gallery) return;
 
             var imagesToProcess = ViewModel.DisplayedItems.OfType<IHasMugshotImage>().ToList();
             if (!imagesToProcess.Any()) return;

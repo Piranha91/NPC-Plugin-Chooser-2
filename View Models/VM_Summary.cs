@@ -9,6 +9,7 @@ using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using System.Windows.Forms;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
@@ -38,8 +39,13 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         public int MaxMugshotsToFit => _settings.MaxMugshotsToFit;
 
         // --- Top Row Properties ---
-        [Reactive] public bool IsGalleryView { get; set; } = true;
-        [ObservableAsProperty] public bool IsListView { get; }
+        public enum SummaryViewMode
+        {
+            Gallery,
+            List
+        }
+        [Reactive] public SummaryViewMode ViewMode { get; set; } = SummaryViewMode.Gallery;
+
         public ObservableCollection<string> AvailableNpcGroups { get; } = new();
         [Reactive] public string SelectedNpcGroup { get; set; }
         [Reactive] public int MaxNpcsPerPage { get; set; }
@@ -91,10 +97,6 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             // Populate NPC groups from the Npcs View Model
             AvailableNpcGroups = _npcsViewModel.AvailableNpcGroups;
             SelectedNpcGroup = AvailableNpcGroups.FirstOrDefault() ?? "All NPCs";
-
-            this.WhenAnyValue(x => x.IsGalleryView)
-                .Select(isGallery => !isGallery)
-                .ToPropertyEx(this, x => x.IsListView);
 
             // --- Pagination Commands ---
             var canGoNext = this.WhenAnyValue(x => x.CurrentPage, x => x.TotalPages, (c, t) => c < t);
@@ -159,7 +161,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 .DisposeWith(_disposables);
 
             // Trigger updates
-            this.WhenAnyValue(x => x.CurrentPage, x => x.IsGalleryView, x => x.SelectedNpcGroup, x => x.MaxNpcsPerPage)
+            this.WhenAnyValue(x => x.CurrentPage, x => x.ViewMode, x => x.SelectedNpcGroup, x => x.MaxNpcsPerPage)
                 .Throttle(TimeSpan.FromMilliseconds(50))
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(_ => UpdateDisplay())
@@ -174,6 +176,9 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             {
                 // InitializeData is now fast, as it does no image I/O
                 InitializeData(); 
+                
+                this.RaisePropertyChanged(nameof(ViewMode));
+                
                 // UpdateDisplay will create the VMs for the first page
                 UpdateDisplay();
             });
@@ -238,7 +243,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         {
             DisplayedItems.Clear();
             
-            if (IsListView)
+            if (ViewMode == SummaryViewMode.List)
             {
                 // List view shows all filtered items without pagination
                 var filteredListItems = GetFilteredListItems();
