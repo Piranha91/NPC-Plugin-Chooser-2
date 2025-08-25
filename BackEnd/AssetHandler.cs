@@ -353,8 +353,10 @@ public class AssetHandler : OptionalUIModule
     private (AssetSourceType, string SourcePath, string BsaPath) FindAssetSource(string relativePath, ModSetting modSetting)
     {
         // 1. Check loose files in the mod's folders
-        foreach (var dirPath in modSetting.CorrespondingFolderPaths)
+        // Iterate in reverse order so the last path "wins" if the same relative path is present in multiple mod folders
+        for (int i = modSetting.CorrespondingFolderPaths.Count - 1; i >= 0; i--)
         {
+            var dirPath = modSetting.CorrespondingFolderPaths[i];
             var candidatePath = Path.Combine(dirPath, relativePath);
             if (FileExists(candidatePath, modSetting.DisplayName, dirPath))
             {
