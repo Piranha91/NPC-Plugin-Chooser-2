@@ -936,10 +936,26 @@ public class Patcher : OptionalUIModule
                 {
                     AppendLog(
                         "Exceptions during head texture assignment: " + Environment.NewLine +
-                        string.Join(Environment.NewLine, skinExceptions), true, true);
+                        string.Join(Environment.NewLine, headExceptions), true, true);
                 }
 
                 mergedInRecords.AddRange(headRecords);
+
+                if (!targetNpc.Race.Equals(sourceNpc.Race))
+                {
+                    List<string> raceExceptions = new();
+                    var raceRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.Race, sourceNpc.Race,
+                        _environmentStateProvider.OutputMod, importSourceModKeys, sourceNpcContextModKey, appearanceModSetting.HandleInjectedRecords,
+                        currentModFolderPaths, ref raceExceptions);
+                    if (raceExceptions.Any())
+                    {
+                        AppendLog(
+                            "Exceptions during race assignment: " + Environment.NewLine +
+                            string.Join(Environment.NewLine, raceExceptions), true, true);
+                    }
+
+                    mergedInRecords.AddRange(raceRecords);
+                }
 
                 List<string> colorExceptions = new();
                 var hairColorRecords = _recordHandler.DuplicateInOrAddFormLink(targetNpc.HairColor, sourceNpc.HairColor,
@@ -970,7 +986,7 @@ public class Patcher : OptionalUIModule
                 {
                     AppendLog(
                         "Exceptions during head part assignment: " + Environment.NewLine +
-                        string.Join(Environment.NewLine, skinExceptions), true, true);
+                        string.Join(Environment.NewLine, headPartExceptions), true, true);
                 }
 
                 if (includeOutfit)
