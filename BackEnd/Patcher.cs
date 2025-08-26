@@ -607,10 +607,18 @@ public class Patcher : OptionalUIModule
                                                 _skyPatcherInterface.ToggleGender(npcFormKey, genderToSet.Value);
                                             }
 
+                                            if (ShouldChangeRace(winningNpcOverride, appearanceNpcRecord,
+                                                    out var raceToSet) && raceToSet != null)
+                                            {
+                                                _skyPatcherInterface.ApplyRace(npcFormKey, raceToSet.Value);
+                                            }
+
                                             if (ShouldChangeTraitsStatus(winningNpcOverride, patchNpc, out bool hasTraitsStatus))
                                             {
                                                 _skyPatcherInterface.ToggleTemplateTraitsStatus(npcFormKey, hasTraitsStatus);
                                             }
+
+                                            _skyPatcherInterface.SetOutfit(npcFormKey, appearanceNpcRecord.DefaultOutfit.FormKey);
                                         }
                                         else
                                         {
@@ -895,6 +903,11 @@ public class Patcher : OptionalUIModule
             }
         }
 
+        if (ShouldChangeRace(targetNpc, sourceNpc, out var raceToSet) && raceToSet != null)
+        {
+            targetNpc.Race.SetTo(raceToSet);
+        }
+
         if (ShouldChangeTraitsStatus(targetNpc, sourceNpc, out bool hasTraitsStatus))
         {
             SetTraitsFlag(targetNpc, hasTraitsStatus);
@@ -954,6 +967,11 @@ public class Patcher : OptionalUIModule
                             string.Join(Environment.NewLine, raceExceptions), true, true);
                     }
 
+                    if (useSkyPatcher)
+                    {
+                        _skyPatcherInterface.ApplyRace(skyPatcherOriginalFormKey, sourceNpc.Race.FormKey);
+                    }
+
                     mergedInRecords.AddRange(raceRecords);
                 }
 
@@ -1002,6 +1020,11 @@ public class Patcher : OptionalUIModule
                             string.Join(Environment.NewLine, outfitExceptions), true, true);
                     }
                     mergedInRecords.AddRange(outfitRecords);
+
+                    if (useSkyPatcher)
+                    {
+                        _skyPatcherInterface.SetOutfit(skyPatcherOriginalFormKey, targetNpc.DefaultOutfit.FormKey);
+                    }
                 }
 
                 AppendLog($"    Completed dependency processing for {npcIdentifier}.");
@@ -1040,6 +1063,17 @@ public class Patcher : OptionalUIModule
         }
 
         return mergedInRecords;
+    }
+
+    private bool ShouldChangeRace(INpcGetter targetNpc, INpcGetter appearanceNpc, out FormKey? changeTo)
+    {
+        changeTo = null;
+        if (!targetNpc.Race.Equals(appearanceNpc.Race))
+        {
+            changeTo = appearanceNpc.Race.FormKey;
+            return true;
+        }
+        return false;
     }
 
     private bool ShouldChangeGender(INpcGetter targetNpc, INpcGetter appearanceNpc, out Gender? changeTo)

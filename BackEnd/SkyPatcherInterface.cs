@@ -72,6 +72,7 @@ public class SkyPatcherInterface : OptionalUIModule
             ApplySkin(applyTo, appearanceTemplate.WornArmor.FormKey);
         }
         ApplyHeight(applyTo, appearanceTemplate.Height);
+        
     }
 
     public void ApplyFace(FormKey applyTo, FormKey faceTemplate) // This doesn't work if the face texture isn't baked into the facegen nif. Not useful for SynthEBD.
@@ -96,6 +97,18 @@ public class SkyPatcherInterface : OptionalUIModule
         string skin = FormatFormKeyForSkyPatcher(skinFk);
         
         npcContainer.ActionStrings.Add($"skin={skin}");
+    }
+    
+    public void ApplyRace(FormKey applyTo, FormKey raceFk)
+    {
+        if (applyTo.IsNull || raceFk.IsNull || !_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
+        {
+            return;
+        }
+        
+        string skin = FormatFormKeyForSkyPatcher(raceFk);
+        
+        npcContainer.ActionStrings.Add($"race={skin}");
     }
     
     public void ApplyHeight(FormKey applyTo, float heightFlt)
@@ -144,13 +157,13 @@ public class SkyPatcherInterface : OptionalUIModule
         }
     }
 
-    public void SetOutfit(FormKey applyTo, IOutfitGetter outfit)
+    public void SetOutfit(FormKey applyTo, FormKey outfitFk)
     {
         if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
         {
             return;
         }
-        string outfitStr = FormatFormKeyForSkyPatcher(outfit.FormKey);
+        string outfitStr = FormatFormKeyForSkyPatcher(outfitFk);
         npcContainer.ActionStrings.Add($"outfitDefault={outfitStr}");
     }
 
