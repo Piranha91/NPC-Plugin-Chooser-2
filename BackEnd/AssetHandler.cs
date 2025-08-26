@@ -229,7 +229,8 @@ public class AssetHandler : OptionalUIModule
     {
         // FIX: Create a composite key to uniquely identify an asset *within the context of its source mod*.
         // This prevents a failed lookup from one mod from blocking a successful lookup from another mod for the same relative path.
-        string cacheKey = $"{relativePath}|{modSetting.DisplayName}";
+        
+        string cacheKey = $"{(overrideDestinationRelativePath ?? relativePath)}|{modSetting.DisplayName}";
 
         return _processedAssetTasks.GetOrAdd(cacheKey, _ => Task.Run(async () =>
         {
