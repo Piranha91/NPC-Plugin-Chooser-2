@@ -601,24 +601,6 @@ public class Patcher : OptionalUIModule
                                         if (_settings.UseSkyPatcherMode)
                                         {
                                             patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(appearanceNpcRecord);
-                                            
-                                            if (ShouldChangeGender(winningNpcOverride, patchNpc, out var genderToSet) && genderToSet != null)
-                                            {
-                                                _skyPatcherInterface.ToggleGender(npcFormKey, genderToSet.Value);
-                                            }
-
-                                            if (ShouldChangeRace(winningNpcOverride, appearanceNpcRecord,
-                                                    out var raceToSet) && raceToSet != null)
-                                            {
-                                                _skyPatcherInterface.ApplyRace(npcFormKey, raceToSet.Value);
-                                            }
-
-                                            if (ShouldChangeTraitsStatus(winningNpcOverride, patchNpc, out bool hasTraitsStatus))
-                                            {
-                                                _skyPatcherInterface.ToggleTemplateTraitsStatus(npcFormKey, hasTraitsStatus);
-                                            }
-
-                                            _skyPatcherInterface.SetOutfit(npcFormKey, appearanceNpcRecord.DefaultOutfit.FormKey);
                                         }
                                         else
                                         {
@@ -644,6 +626,31 @@ public class Patcher : OptionalUIModule
                                             }
 
                                             _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
+                                        }
+
+                                        if (_settings.UseSkyPatcherMode)
+                                        {
+                                            // These calls should always be delayed until after the merge-in functionality
+                                            // Otherwise the referenced FormKeys will be the stale un-merged-in ones.
+                                            // Correspondingly, make sure to call the SkyPatcher functions on patchNpc, not appearanceNpcRecord
+
+                                            if (ShouldChangeGender(winningNpcOverride, patchNpc, out var genderToSet) && genderToSet != null)
+                                            {
+                                                _skyPatcherInterface.ToggleGender(npcFormKey, genderToSet.Value);
+                                            }
+
+                                            if (ShouldChangeRace(winningNpcOverride, patchNpc,
+                                                    out var raceToSet) && raceToSet != null)
+                                            {
+                                                _skyPatcherInterface.ApplyRace(npcFormKey, raceToSet.Value);
+                                            }
+
+                                            if (ShouldChangeTraitsStatus(winningNpcOverride, patchNpc, out bool hasTraitsStatus))
+                                            {
+                                                _skyPatcherInterface.ToggleTemplateTraitsStatus(npcFormKey, hasTraitsStatus);
+                                            }
+                                            
+                                            _skyPatcherInterface.SetOutfit(npcFormKey, patchNpc.DefaultOutfit.FormKey);
                                         }
 
                                         switch (recordOverrideHandlingMode)
@@ -704,7 +711,7 @@ public class Patcher : OptionalUIModule
 
                                 if (_settings.UseSkyPatcherMode)
                                 {
-                                    _skyPatcherInterface.ApplyViaSkyPatcher(npcFormKey, patchNpc);
+                                    _skyPatcherInterface.ApplyCoreAppearance(npcFormKey, patchNpc);
                                 }
                             }
                             else
@@ -969,7 +976,7 @@ public class Patcher : OptionalUIModule
 
                     if (useSkyPatcher)
                     {
-                        _skyPatcherInterface.ApplyRace(skyPatcherOriginalFormKey, sourceNpc.Race.FormKey);
+                        _skyPatcherInterface.ApplyRace(skyPatcherOriginalFormKey, targetNpc.Race.FormKey);
                     }
 
                     mergedInRecords.AddRange(raceRecords);

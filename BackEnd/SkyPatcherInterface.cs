@@ -64,7 +64,7 @@ public class SkyPatcherInterface : OptionalUIModule
         return _keySurrogateValOrriginal.TryGetValue(surrogateNpcFormKey, out originalNpcFormKey);
     }
 
-    public void ApplyViaSkyPatcher(FormKey applyTo, INpcGetter appearanceTemplate)
+    public void ApplyCoreAppearance(FormKey applyTo, INpcGetter appearanceTemplate)
     {
         ApplyFace(applyTo, appearanceTemplate.FormKey);
         if (!appearanceTemplate.WornArmor.IsNull)
