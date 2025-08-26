@@ -72,7 +72,7 @@ public class SkyPatcherInterface : OptionalUIModule
             ApplySkin(applyTo, appearanceTemplate.WornArmor.FormKey);
         }
         ApplyHeight(applyTo, appearanceTemplate.Height);
-        
+        ApplyWeight(applyTo, appearanceTemplate.Weight);
     }
 
     public void ApplyFace(FormKey applyTo, FormKey faceTemplate) // This doesn't work if the face texture isn't baked into the facegen nif. Not useful for SynthEBD.
@@ -121,6 +121,18 @@ public class SkyPatcherInterface : OptionalUIModule
         }
         
         npcContainer.ActionStrings.Add($"height={height}");
+    }
+    
+    public void ApplyWeight(FormKey applyTo, float weightFlt)
+    {
+        string weight = weightFlt.ToString();
+        
+        if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
+        {
+            return;
+        }
+        
+        npcContainer.ActionStrings.Add($"weight={weight}");
     }
 
     public void ToggleGender(FormKey applyTo, Gender gender)
