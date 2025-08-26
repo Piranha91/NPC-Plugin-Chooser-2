@@ -308,7 +308,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 
                 ValidationStartTime = DateTime.Now;
 
-                var validationReport = await _validator.ScreenSelectionsAsync(modSettingsMap, token);
+                var validationReport = await _validator.ScreenSelectionsAsync(modSettingsMap, SelectedNpcGroup, token);
                 FinalValidationTime = DateTime.Now - ValidationStartTime.Value;
 
                 bool continuePatching = true;

@@ -35,7 +35,7 @@ public class Validator : OptionalUIModule
     }
 
     public async Task<ValidationReport> ScreenSelectionsAsync(Dictionary<string, ModSetting> modSettingsMap,
-        CancellationToken ct)
+        string selectedNpcGroup, CancellationToken ct)
     {
         ContextualPerformanceTracer.Reset();
         AppendLog("\nStarting pre-run screening of NPC selections...", false, false);
@@ -50,7 +50,31 @@ public class Validator : OptionalUIModule
             return new ValidationReport(new List<string>());
         }
 
-        var selectionsList = selections.ToList();
+        IReadOnlyDictionary<FormKey, (string ModName, FormKey AppearanceNpcFormKey)> selectionsToScreen;
+        if (selectedNpcGroup != "<All NPCs>")
+        {
+            AppendLog($"Screening selections for group: '{selectedNpcGroup}'");
+            var npcsInGroup = _settings.NpcGroupAssignments
+                .Where(kvp => kvp.Value != null && kvp.Value.Contains(selectedNpcGroup, StringComparer.OrdinalIgnoreCase))
+                .Select(kvp => kvp.Key)
+                .ToHashSet();
+
+            selectionsToScreen = selections
+                .Where(kvp => npcsInGroup.Contains(kvp.Key))
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        
+            if (!selectionsToScreen.Any())
+            {
+                AppendLog($"No selections found for the group '{selectedNpcGroup}'.");
+                return new ValidationReport(new List<string>());
+            }
+        }
+        else
+        {
+            selectionsToScreen = selections;
+        }
+
+        var selectionsList = selectionsToScreen.ToList();
         int totalToScreen = selectionsList.Count;
         INpcGetter? winningNpcOverride = null;
         ModSetting? appearanceModSetting = null;
