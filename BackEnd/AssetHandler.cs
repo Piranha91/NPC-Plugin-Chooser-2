@@ -549,10 +549,11 @@ public class AssetHandler : OptionalUIModule
     private void GetAssetPathsReferencedByPlugin(INpcGetter npc, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> meshPaths,
         HashSet<string> texturePaths)
     {
-        /* Implementation remains the same */
+        var visitedHeadParts = new HashSet<FormKey>();
+        
         if (npc.HeadParts != null)
             foreach (var hpLink in npc.HeadParts)
-                GetHeadPartAssetPaths(hpLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths);
+                GetHeadPartAssetPaths(hpLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, visitedHeadParts);
         if (!npc.WornArmor.IsNull && _recordHandler.TryGetRecordFromMods(npc.WornArmor, correspondingModKeys, fallBackModFolderNames,
                 RecordLookupFallBack.Winner, out var wornArmorGetterGeneric) && wornArmorGetterGeneric != null)
         {
@@ -566,12 +567,19 @@ public class AssetHandler : OptionalUIModule
     }
 
     private void GetHeadPartAssetPaths(IFormLinkGetter<IHeadPartGetter> hpLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> texturePaths,
-        HashSet<string> meshPaths)
+        HashSet<string> meshPaths, HashSet<FormKey> visitedHeadParts)
     {
         /* Implementation remains the same */
         if (hpLink.IsNull || !_recordHandler.TryGetRecordFromMods(hpLink, correspondingModKeys, fallBackModFolderNames, RecordLookupFallBack.Winner, out var hpGetterGeneric)) return;
         var hpGetter = hpGetterGeneric as IHeadPartGetter;
         if (hpGetter is null) return;
+        
+        //  PREVENT CIRCULAR REFERENCES
+        // If we can't add the FormKey, it means we've already processed this HeadPart.
+        if (!visitedHeadParts.Add(hpGetter.FormKey))
+        {
+            return; // Break the recursive loop
+        }
         
         if (hpGetter.Model?.File != null) meshPaths.Add(hpGetter.Model.File);
         if (hpGetter.Parts != null)
@@ -581,7 +589,7 @@ public class AssetHandler : OptionalUIModule
         if (!hpGetter.TextureSet.IsNull) GetTextureSetPaths(hpGetter.TextureSet, correspondingModKeys, fallBackModFolderNames, texturePaths);
         if (hpGetter.ExtraParts != null)
             foreach (var extraPartLink in hpGetter.ExtraParts)
-                GetHeadPartAssetPaths(extraPartLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths);
+                GetHeadPartAssetPaths(extraPartLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, visitedHeadParts);
     }
 
     private void GetARMAAssetPaths(IFormLinkGetter<IArmorAddonGetter> aaLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> texturePaths,
