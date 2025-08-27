@@ -113,7 +113,7 @@ public class Validator : OptionalUIModule
                 }
             }
 
-            npcIdentifier = Auxilliary.GetNpcLogString(winningNpcOverride);
+            npcIdentifier = Auxilliary.GetLogString(winningNpcOverride, _settings.LocalizationLanguage);
             
             using (ContextualPerformanceTracer.Trace("Validator.CheckFaceSwap"))
             {
@@ -123,7 +123,7 @@ public class Validator : OptionalUIModule
                     if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(appearanceNpcFormKey,
                             out var appearanceNpcGetter) && appearanceNpcGetter != null)
                     {
-                        appearanceNpcIdenentifier = Auxilliary.GetNpcLogString(appearanceNpcGetter);
+                        appearanceNpcIdenentifier = Auxilliary.GetLogString(appearanceNpcGetter, _settings.LocalizationLanguage);
                     }
                     
                     var errorMsg =

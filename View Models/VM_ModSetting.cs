@@ -25,6 +25,7 @@ using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views;
 using GongSolutions.Wpf.DragDrop;
+using Mutagen.Bethesda.Strings;
 using DragDrop = GongSolutions.Wpf.DragDrop.DragDrop;
 using IDropTarget = GongSolutions.Wpf.DragDrop.IDropTarget;
 using LinkCacheConstructionMixIn = Mutagen.Bethesda.LinkCacheConstructionMixIn; // Assuming Models namespace
@@ -708,7 +709,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// </summary>
         public void RefreshNpcLists(HashSet<string> allFaceGenLooseFiles,
             Dictionary<string, HashSet<string>> allFaceGenBsaFiles,
-            HashSet<ISkyrimModGetter> plugins)
+            HashSet<ISkyrimModGetter> plugins,
+            Language? language)
         {
             NpcNames.Clear();
             NpcEditorIDs.Clear();
@@ -770,12 +772,13 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                     }
                                     
                                     if (!_aux.IsValidAppearanceRace(npcGetter.Race.FormKey, npcGetter,
+                                            language,
                                             out string rejectionMessage,
                                             sourcePluginRace:
                                             sourcePluginRace)) // if sourcePluginRace is null, falls back to searching the link cache
                                     {
                                         string message =
-                                            $"Discarded {Auxilliary.GetNpcLogString(npcGetter)} from {DisplayName} because {rejectionMessage}.";
+                                            $"Discarded {Auxilliary.GetLogString(npcGetter, language)} from {DisplayName} because {rejectionMessage}.";
                                         //Debug.WriteLine(message);
                                         rejectionMessages.Add(message);
                                         continue;
@@ -795,7 +798,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                             .Traits))
                                     {
                                         string message =
-                                            $"Discarded {Auxilliary.GetNpcLogString(npcGetter)} from {DisplayName} because it has no FaceGen and does not use a template.";
+                                            $"Discarded {Auxilliary.GetLogString(npcGetter, language)} from {DisplayName} because it has no FaceGen and does not use a template.";
                                         //Debug.WriteLine(message);
                                         rejectionMessages.Add(message);
                                         continue;
@@ -835,10 +838,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
                                         NpcFormKeys.Add(currentNpcKey);
                                         var npc = npcGetter;
                                         string displayName = string.Empty;
-                                        if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String))
+                                        
+                                        // plugins don't ship with translations. For the name, if localization is needed, resolve from the main load order
+                                        if (language != null &&
+                                            _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcGetter,
+                                                out var mainGetter)
+                                            && Auxilliary.TryGetName(npc, language, out string localizedName))
                                         {
-                                            NpcNames.Add(npc.Name.String);
-                                            displayName = npc.Name.String;
+                                            NpcNames.Add(localizedName);
+                                            displayName = localizedName;
+                                        }
+                                        
+                                        else if (Auxilliary.TryGetName(npc, language, out string name))
+                                        {
+                                            NpcNames.Add(name);
+                                            displayName = name;
                                         }
 
                                         if (!string.IsNullOrEmpty(npc.EditorID))
@@ -879,10 +893,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         {
                             var npc = sourceContext.Record;
                             string displayName = string.Empty;
-                            if (npc.Name is not null && !string.IsNullOrEmpty(npc.Name.String))
+                            if (Auxilliary.TryGetName(npc, language, out string name))
                             {
-                                NpcNames.Add(npc.Name.String);
-                                displayName = npc.Name.String;
+                                NpcNames.Add(name);
+                                displayName = name;
                             }
 
                             if (!string.IsNullOrEmpty(npc.EditorID))
@@ -1177,7 +1191,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// Checks that all records expected in master plugins actually exist in those plugins
         /// If one doesn't, the plugin is flagged as having injected records
         /// </summary>
-        public async Task<bool> CheckForInjectedRecords(Action<string>? showMessageAction)
+        public async Task<bool> CheckForInjectedRecords(Action<string>? showMessageAction, Language? language)
         {
             foreach (var modKey in CorrespondingModKeys)
             {
@@ -1227,7 +1241,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                             {
                                 IsPerformingBatchAction = true;
                                 HandleInjectedRecords = true;
-                                var injectionName = Auxilliary.GetLogString(record, true);
+                                var injectionName = Auxilliary.GetLogString(record, language, true);
                                 HandleInjectedOverridesToolTip =
                                     $"This plugin has been scanned and found to contain at least one injected record ({injectionName}). It is recommended to enable Injected Record Handling";
                                 IsPerformingBatchAction = false;

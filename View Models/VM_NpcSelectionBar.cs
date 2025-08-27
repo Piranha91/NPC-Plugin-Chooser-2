@@ -884,7 +884,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
                 else
                 {
-                    unmatched.Add(Auxilliary.GetNpcLogString(npcGetter, true));
+                    unmatched.Add(Auxilliary.GetLogString(npcGetter, _settings.LocalizationLanguage, true));
                 }
             }
             return (missing, unmatched);

@@ -28,7 +28,7 @@ namespace NPC_Plugin_Chooser_2
     {
         private SplashScreenWindow _splashScreenWindow;
         private IContainer _container;
-        public const string ProgramVersion = "2.0.4"; // Central version definition
+        public const string ProgramVersion = "2.0.5Preview"; // Central version definition
 
         // App constructor should be minimal
         public App()

@@ -13,6 +13,8 @@ using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Primitives;
+using Mutagen.Bethesda.Plugins.Aspects;
 using Mutagen.Bethesda.Strings;
 using ReactiveUI;
 
@@ -81,50 +83,68 @@ public class Auxilliary : IDisposable
         LoadRaceCache();
     }
 
-    public static string GetLogString(IMajorRecordGetter majorRecordGetter, bool fullString = false)
+    public static bool TryGetName(ITranslatedNamedGetter namedGetter, Language? language, out string name)
     {
-        if (majorRecordGetter.EditorID != null)
+        name = string.Empty;
+
+        if (namedGetter.Name == null)
         {
+            return false;
+        }
+
+        if (language != null && namedGetter.Name.TryLookup(language.Value, out var localizedName))
+        {
+            name = localizedName;
+            return true;
+        }
+        else if (namedGetter.Name.String != null)
+        {
+            name = namedGetter.Name.String;
+            return true;
+        }
+        return false;
+    }
+    
+    public static string GetLogString(IMajorRecordGetter majorRecordGetter, Language? language, bool fullString = false)
+    {
+        StringBuilder logBuilder = new();
+        if (majorRecordGetter is ITranslatedNamedGetter namedGetter)
+        {
+            if (namedGetter.Name != null && namedGetter.Name.String != null)
+            {
+                if (language != null && namedGetter.Name.TryLookup(language.Value, out var localizedName))
+                {
+                    logBuilder.Append(localizedName);
+                }
+                else
+                {
+                    logBuilder.Append(namedGetter.Name.String);
+                }
+            }
+
             if (fullString)
             {
-                return majorRecordGetter.EditorID + " | " + majorRecordGetter.FormKey.ToString();
-            }
-            else
-            {
-                return majorRecordGetter.EditorID;
+                logBuilder.Append(" | ");
             }
         }
-        else
+
+        if (logBuilder.Length == 0 || fullString)
         {
-            return majorRecordGetter.FormKey.ToString();
+            if (majorRecordGetter.EditorID != null)
+            {
+                logBuilder.Append(majorRecordGetter.EditorID + " | ");
+            }
+
+            if (logBuilder.Length == 0 || fullString)
+            {
+                logBuilder.Append(majorRecordGetter.FormKey.ToString());
+            }
         }
+        
+        return logBuilder.ToString();
     }
 
-    public static string GetNpcLogString(INpcGetter npcGetter, bool fullString = false, Language? language = null)
-    {
-        string logString = "";
-        if (npcGetter.Name != null && npcGetter.Name.String != null)
-        {
-            string npcName = npcGetter.Name.String;
-            if (language != null && npcGetter.Name.TryLookup(language.Value, out var localizedName))
-            {
-                npcName = localizedName;
-            }
-            
-            logString += npcName;
-            if (fullString)
-            {
-                logString += " | " + GetLogString(npcGetter, true);
-            }
-        }
-        else
-        {
-            logString += GetLogString(npcGetter, fullString);
-        }
-        return logString;
-    }
-
-    public bool IsValidAppearanceRace(FormKey raceFormKey, INpcGetter npcGetter, out string rejectionMessage, IRaceGetter? sourcePluginRace = null)
+    public bool IsValidAppearanceRace(FormKey raceFormKey, INpcGetter npcGetter, Language? language, out string rejectionMessage, IRaceGetter? sourcePluginRace = null)
     {
         bool isCached = false;
         bool isValid = true;
@@ -184,19 +204,19 @@ public class Auxilliary : IDisposable
                     if (raceGetter.Keywords == null)
                     {
                         raceEvaluation = RaceEvaluation.InvalidNullKeywords;
-                        identifier = GetLogString(raceGetter, true);
+                        identifier = GetLogString(raceGetter, language, true);
                     }
                     else if (!isTemplate && !raceGetter.Keywords.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim
                                  .Keyword
                                  .ActorTypeNPC))
                     {
                         raceEvaluation = RaceEvaluation.InvalidNotNpc;
-                        identifier = GetLogString(raceGetter, true);
+                        identifier = GetLogString(raceGetter, language, true);
                     }
                     else
                     {
                         raceEvaluation = RaceEvaluation.Valid;
-                        identifier = GetLogString(raceGetter, true);
+                        identifier = GetLogString(raceGetter, language, true);
                     }
 
                     // now cache the newly evaluated race

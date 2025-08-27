@@ -460,7 +460,7 @@ public class Patcher : OptionalUIModule
                                             if (mergeInExceptions.Any())
                                             {
                                                 AppendLog("Exceptions occurred during dependency merge-in of " +
-                                                          Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine +
+                                                          Auxilliary.GetLogString(patchNpc, _settings.LocalizationLanguage) + Environment.NewLine +
                                                           string.Join(Environment.NewLine, mergeInExceptions));
                                             }
 
@@ -532,9 +532,9 @@ public class Patcher : OptionalUIModule
                                                                 else
                                                                 {
                                                                     AppendLog(
-                                                                        Auxilliary.GetNpcLogString(patchNpc) +
+                                                                        Auxilliary.GetLogString(patchNpc, _settings.LocalizationLanguage) +
                                                                         ": Could not merge in winning override for " +
-                                                                        Auxilliary.GetLogString(winningGetter) + ": " +
+                                                                        Auxilliary.GetLogString(winningGetter, _settings.LocalizationLanguage) + ": " +
                                                                         exceptionString, true, true);
                                                                 }
                                                             }
@@ -563,7 +563,7 @@ public class Patcher : OptionalUIModule
                                                     if (mergeInExceptions.Any())
                                                     {
                                                         AppendLog("Exceptions occurred during dependency merge-in of " +
-                                                                  Auxilliary.GetNpcLogString(patchNpc) +
+                                                                  Auxilliary.GetLogString(patchNpc, _settings.LocalizationLanguage) +
                                                                   Environment.NewLine +
                                                                   string.Join(Environment.NewLine, mergeInExceptions));
                                                     }
@@ -621,7 +621,7 @@ public class Patcher : OptionalUIModule
                                             if (mergeInExceptions.Any())
                                             {
                                                 AppendLog("Exceptions occurred during dependency merge-in of " +
-                                                          Auxilliary.GetNpcLogString(patchNpc) + Environment.NewLine +
+                                                          Auxilliary.GetLogString(patchNpc, _settings.LocalizationLanguage) + Environment.NewLine +
                                                           string.Join(Environment.NewLine, mergeInExceptions));
                                             }
 

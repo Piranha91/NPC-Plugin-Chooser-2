@@ -514,7 +514,7 @@ public class VM_Mods : ReactiveObject
 
         var plugins =
             _pluginProvider.LoadPlugins(newVm.CorrespondingModKeys, newVm.CorrespondingFolderPaths.ToHashSet());
-        Task.Run(() => newVm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles, plugins));
+        Task.Run(() => newVm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage));
         _pluginProvider.UnloadPlugins(newVm.CorrespondingModKeys);
     }
 
@@ -615,7 +615,7 @@ public class VM_Mods : ReactiveObject
                         string npcDisplayName = 
                             selectedModSetting.NpcFormKeysToDisplayName.TryGetValue(npcFormKey, out var knownName) ? knownName
                             : (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter)
-                                ? npcGetter.Name?.String ?? npcGetter.EditorID ?? npcFormKey.ToString()
+                                ? Auxilliary.GetLogString(npcGetter, _settings.LocalizationLanguage)
                                 : "Unknown NPC (" + formKeyString + ")");
                         mugshotData.Add((imagePath, npcFormKey, npcDisplayName));
                         hasRealMugshots = true;
@@ -970,7 +970,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
             
             // 4b. Re-run the core analysis functions
-            vmToRefresh.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins);
+            vmToRefresh.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage);
             
             var analysisTasks = new List<Task>
             {
@@ -980,7 +980,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             if (!vmToRefresh.IsFaceGenOnlyEntry)
             {
-                analysisTasks.Add(vmToRefresh.CheckForInjectedRecords(null));
+                analysisTasks.Add(vmToRefresh.CheckForInjectedRecords(null, _settings.LocalizationLanguage));
             }
 
             await Task.WhenAll(analysisTasks);
@@ -1324,7 +1324,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             bool injectedFound =
                 await tempVmForAnalysis.CheckForInjectedRecords(splashReporter == null
                     ? null
-                    : splashReporter.ShowMessagesOnClose);
+                    : splashReporter.ShowMessagesOnClose, _settings.LocalizationLanguage);
 
             // Return a DTO with the data, not the VM itself
             return new NewVmCreationData(
@@ -1572,7 +1572,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                         using (ContextualPerformanceTracer.Trace("RefreshNpcLists"))
                         {
                             vm.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles,
-                                plugins);
+                                plugins, _settings.LocalizationLanguage);
                         }
 
                         if (vm.IsNewlyCreated)
@@ -2193,7 +2193,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             var plugins = _pluginProvider.LoadPlugins(winner.CorrespondingModKeys,
                 winner.CorrespondingFolderPaths.ToHashSet());
-            Task.Run(() => winner.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles, plugins));
+            Task.Run(() => winner.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage));
             _pluginProvider.UnloadPlugins(winner.CorrespondingModKeys);
 
             // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)
@@ -2500,7 +2500,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     break;
                 }
 
-                var newEntry = (npc.FormKey, Auxilliary.GetNpcLogString(npc, true));
+                var newEntry = (npc.FormKey, Auxilliary.GetLogString(npc, _settings.LocalizationLanguage, true));
                 templateChain.Add(newEntry);
 
                 if (npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
@@ -2508,7 +2508,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     if (npc.Template is null || npc.Template.IsNull)
                     {
                         errorMessages.Add(
-                            $"The appearance template for {Auxilliary.GetNpcLogString(npc)} in {sourcePlugin.ModKey.FileName} is blank despite it having a Traits template flag");
+                            $"The appearance template for {Auxilliary.GetLogString(npc, _settings.LocalizationLanguage)} in {sourcePlugin.ModKey.FileName} is blank despite it having a Traits template flag");
                         break;
                     }
                     else

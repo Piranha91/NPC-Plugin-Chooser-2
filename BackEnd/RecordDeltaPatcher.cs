@@ -8,8 +8,10 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using DynamicData;
-using Mutagen.Bethesda.Plugins; 
-using Noggog; // For Noggog.ExtendedList<>
+using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Strings;
+using Noggog;
+using NPC_Plugin_Chooser_2.Models; // For Noggog.ExtendedList<>
 
 namespace NPC_Plugin_Chooser_2.BackEnd
 {
@@ -35,6 +37,12 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         // Context fields for logging
         private IMajorRecordGetter? _currentRecordContext;
         private ModKey? _currentModKeyContext;
+        private readonly Settings _settings;
+
+        public RecordDeltaPatcher(Settings settings)
+        {
+            _settings = settings;
+        }
 
         /// <summary>
         /// Reinitializes the patcher by clearing any stored patched values.
@@ -142,7 +150,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             public override void Apply(MajorRecord destinationRecord, PropertyInfo destPropInfo, RecordDeltaPatcher patcher)
             {
                 var processedObjects = new HashSet<object>(ReferenceEqualityComparer.Instance); 
-                string logContext = $"[{Auxilliary.GetLogString(patcher._currentRecordContext, true)} | {patcher._currentModKeyContext}]";
+                string logContext = $"[{Auxilliary.GetLogString(patcher._currentRecordContext, patcher._settings.LocalizationLanguage, true)} | {patcher._currentModKeyContext}]";
 
                 if (NewValue == null) {
                     if (destPropInfo.CanWrite) destPropInfo.SetValue(destinationRecord, null);
@@ -274,7 +282,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             // Set context for this operation
             _currentRecordContext = recordContext;
             _currentModKeyContext = modKeyContext;
-            string logContext = $"[{Auxilliary.GetLogString(recordContext, true)} | {modKeyContext}]";
+            string logContext = $"[{Auxilliary.GetLogString(recordContext, _settings.LocalizationLanguage, true)} | {modKeyContext}]";
             
             if (source is null) throw new ArgumentNullException(nameof(source));
             if (target is null) throw new ArgumentNullException(nameof(target));
@@ -368,7 +376,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             // Set context for this operation
             _currentRecordContext = recordContext;
             _currentModKeyContext = modKeyContext;
-            string logContext = $"[{Auxilliary.GetLogString(recordContext, true)} | {modKeyContext}]";
+            string logContext = $"[{Auxilliary.GetLogString(recordContext, _settings.LocalizationLanguage, true)} | {modKeyContext}]";
             
             if (destination is null) throw new ArgumentNullException(nameof(destination)); 
             if (diffs is null) throw new ArgumentNullException(nameof(diffs));
@@ -439,7 +447,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         
         private void LogInternal(string message)
         {
-            string logContext = $"[{Auxilliary.GetLogString(_currentRecordContext, true)} | {_currentModKeyContext}]";
+            string logContext = $"[{Auxilliary.GetLogString(_currentRecordContext, _settings.LocalizationLanguage, true)} | {_currentModKeyContext}]";
             _internalLog.Add($"{logContext} {message}");
         }
 

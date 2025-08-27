@@ -130,7 +130,7 @@ public class UpdateHandler
             Parallel.ForEach(modsToScan, modVm =>
             {
                 // .Result is acceptable here as we are already inside a background thread via Task.Run
-                if (modVm.CheckForInjectedRecords(splashReporter == null ? null : splashReporter.ShowMessagesOnClose).Result)
+                if (modVm.CheckForInjectedRecords(splashReporter == null ? null : splashReporter.ShowMessagesOnClose, _settings.LocalizationLanguage).Result)
                 {
                     modsWithInjectedRecords.Add(modVm);
                 }

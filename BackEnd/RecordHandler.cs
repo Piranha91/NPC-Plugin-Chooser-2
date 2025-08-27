@@ -505,7 +505,7 @@ public class RecordHandler
                 }
                 else
                 {
-                    exceptionStrings.Add(Auxilliary.GetLogString(traversedModRecord) + ": " + exceptionString);
+                    exceptionStrings.Add(Auxilliary.GetLogString(traversedModRecord, _settings.LocalizationLanguage) + ": " + exceptionString);
                 }
             }
         }
