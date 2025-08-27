@@ -1,5 +1,6 @@
 ﻿using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
+using Mutagen.Bethesda.Strings;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -10,16 +11,12 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 public record NpcDisplayData
 {
     public required FormKey FormKey { get; init; }
+    public ITranslatedStringGetter? BaseName { get; init; }
     public string? Name { get; init; }
     public string? EditorID { get; init; }
     public bool IsTemplateUser { get; init; }
     public FormKey TemplateFormKey { get; init; }
     public bool IsInLoadOrder { get; init; }
-
-    /// <summary>
-    /// A helper property to consistently determine the best display name.
-    /// </summary>
-    public string DisplayName => Name ?? EditorID ?? FormKey.ToString();
 
     /// <summary>
     /// Creates an NpcDisplayData instance from a full INpcGetter record.
@@ -29,7 +26,7 @@ public record NpcDisplayData
         return new NpcDisplayData
         {
             FormKey = npcGetter.FormKey,
-            Name = npcGetter.Name?.String,
+            BaseName = npcGetter.Name,
             EditorID = npcGetter.EditorID,
             IsTemplateUser = npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits),
             TemplateFormKey = npcGetter.Template.FormKey,

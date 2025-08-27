@@ -197,6 +197,28 @@
                                  ToolTip="The maximum number of mugshots to fit on-screen when auto-sizing. A lower number results in larger images."/>
                     </StackPanel>
                     
+                    <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                        <CheckBox Content="Enable Localization"
+                                  IsChecked="{Binding IsLocalizationEnabled, Mode=TwoWay}"
+                                  VerticalAlignment="Center"/>
+
+                        <ComboBox ItemsSource="{Binding AvailableLanguages}"
+                                  SelectedItem="{Binding SelectedLocalizationLanguage, Mode=TwoWay}"
+                                  MinWidth="120"
+                                  Margin="10,0,0,0">
+                            <ComboBox.Style>
+                                <Style TargetType="ComboBox">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsLocalizationEnabled}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ComboBox.Style>
+                        </ComboBox>
+                    </StackPanel>
+                    
                     <CheckBox Content="Don't show me popup warnings for actions with potential side effects"
                               IsChecked="{Binding SuppressPopupWarnings, Mode=TwoWay}"
                               Margin="0,5,0,0"

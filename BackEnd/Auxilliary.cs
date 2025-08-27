@@ -13,6 +13,7 @@ using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using System.Security.Cryptography;
 using System.Text;
+using Mutagen.Bethesda.Strings;
 using ReactiveUI;
 
 #if NET8_0_OR_GREATER
@@ -99,12 +100,18 @@ public class Auxilliary : IDisposable
         }
     }
 
-    public static string GetNpcLogString(INpcGetter npcGetter, bool fullString = false)
+    public static string GetNpcLogString(INpcGetter npcGetter, bool fullString = false, Language? language = null)
     {
         string logString = "";
         if (npcGetter.Name != null && npcGetter.Name.String != null)
         {
-            logString += npcGetter.Name.String;
+            string npcName = npcGetter.Name.String;
+            if (language != null && npcGetter.Name.TryLookup(language.Value, out var localizedName))
+            {
+                npcName = localizedName;
+            }
+            
+            logString += npcName;
             if (fullString)
             {
                 logString += " | " + GetLogString(npcGetter, true);

@@ -1394,7 +1394,6 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     // Store lightweight data, discard the heavy getter.
                     var npcData = NpcDisplayData.FromGetter(npcGetter);
                     npcDisplayDataCache[npcFormKey] = npcData;
-                    splashReporter?.IncrementProgress(npcData.DisplayName);
                 }
                 else
                 {
@@ -1414,7 +1413,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             foreach (var kvp in npcDisplayDataCache)
             {
                 var npcVM = new VM_NpcsMenuSelection(kvp.Key, _environmentStateProvider, this, _auxilliary);
-                npcVM.UpdateWithData(kvp.Value);
+                npcVM.UpdateWithData(kvp.Value, _settings.LocalizationLanguage);
                 npcViewModelMap[kvp.Key] = npcVM;
                 splashReporter?.IncrementProgress(npcVM.DisplayName);
             }

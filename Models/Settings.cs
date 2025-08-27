@@ -1,7 +1,8 @@
 ﻿using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using System.Collections.Generic;
-using System.Windows; // Required for HashSet
+using System.Windows;
+using Mutagen.Bethesda.Strings; // Required for HashSet
 
 namespace NPC_Plugin_Chooser_2.Models;
 
@@ -49,6 +50,7 @@ public class Settings
     public int MaxMugshotsToFit { get; set; } = 50;
     public int MaxNpcsPerPageSummaryView { get; set; } = 100;
     public bool SuppressPopupWarnings { get; set; } = false;
+    public Language? LocalizationLanguage { get; set; } = null;
 
     // EasyNPC Interchangeability / Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); 

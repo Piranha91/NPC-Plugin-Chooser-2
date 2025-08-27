@@ -15,6 +15,7 @@ using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache.Internals.Implementations;
 using Mutagen.Bethesda.Plugins.Order;
 using Mutagen.Bethesda.Skyrim;
+using Mutagen.Bethesda.Strings;
 using Noggog; // For IsNullOrWhitespace
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
@@ -90,6 +91,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public int MaxMugshotsToFit { get; set; }
         [Reactive] public int MaxNpcsPerPageSummaryView { get; set; }
         [Reactive] public bool SuppressPopupWarnings { get; set; }
+        // --- NEW: Localization Settings ---
+        [Reactive] public bool IsLocalizationEnabled { get; set; }
+        [Reactive] public Language? SelectedLocalizationLanguage { get; set; }
+        public IEnumerable<Language> AvailableLanguages { get; } = Enum.GetValues(typeof(Language)).Cast<Language>();
+
         
         // For throttled saving
         private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
@@ -164,6 +170,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             NormalizeImageDimensions = _model.NormalizeImageDimensions;
             MaxMugshotsToFit = _model.MaxMugshotsToFit;
             SuppressPopupWarnings = _model.SuppressPopupWarnings;
+            IsLocalizationEnabled = _model.LocalizationLanguage.HasValue;
+            SelectedLocalizationLanguage = _model.LocalizationLanguage;
             
             ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
             ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
@@ -211,6 +219,35 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.SuppressPopupWarnings)
                 .Skip(1)
                 .Subscribe(b => _model.SuppressPopupWarnings = b)
+                .DisposeWith(_disposables);
+            
+            this.WhenAnyValue(x => x.IsLocalizationEnabled)
+                .Skip(1) // Skip initial value set from model
+                .Subscribe(enabled =>
+                {
+                    if (!enabled)
+                    {
+                        // If localization is disabled, clear the selected language
+                        SelectedLocalizationLanguage = null;
+                    }
+                    else if (SelectedLocalizationLanguage == null)
+                    {
+                        // If it's enabled and no language is selected, default to English
+                        SelectedLocalizationLanguage = Language.English;
+                    }
+                })
+                .DisposeWith(_disposables);
+
+            this.WhenAnyValue(x => x.SelectedLocalizationLanguage)
+                .Skip(1) // Skip initial value
+                .Subscribe(lang =>
+                {
+                    _model.LocalizationLanguage = lang;
+                    foreach (var entry in _lazyNpcSelectionBar.Value.AllNpcs)
+                    {
+                        entry.RefreshName(lang);
+                    }
+                })
                 .DisposeWith(_disposables);
             
             this.WhenAnyValue(x => x.SelectedRecordOverrideHandlingMode)

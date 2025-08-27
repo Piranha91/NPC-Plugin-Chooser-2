@@ -8,6 +8,7 @@ using Microsoft.Build.Tasks.Deployment.ManifestUtilities;
 using Microsoft.WindowsAPICodePack.Shell.PropertySystem;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
+using Mutagen.Bethesda.Strings;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models; // For Settings if needed indirectly
 using ReactiveUI;
@@ -21,6 +22,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
     {
         private readonly EnvironmentStateProvider _environmentStateProvider;
         private readonly VM_NpcSelectionBar _parentMenu;
+        private readonly Settings _settings;
         private readonly Auxilliary _aux;
 
         public NpcDisplayData? NpcData { get; set; } // Keep the original record (null if from mugshot only)
@@ -62,13 +64,36 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
         
-        public void UpdateWithData(NpcDisplayData npcData)
+        public void UpdateWithData(NpcDisplayData npcData, Language? language)
         {
             NpcData = npcData;
-            NpcName = npcData.Name ?? _defaultNpcName;
             NpcEditorId = npcData.EditorID ?? _defaultEditorID;
-            DisplayName = npcData.DisplayName;
             IsInLoadOrder = npcData.IsInLoadOrder;
+            
+            RefreshName(language);
+        }
+
+        public void RefreshName(Language? language)
+        {
+            bool hasName = false;
+            if (language != null && NpcData != null && NpcData?.BaseName != null && NpcData.BaseName.TryLookup(language.Value, out var localizedName))
+            {
+                NpcName = localizedName;
+                hasName = true;
+            }
+            else if (NpcData?.Name != null)
+            {
+                NpcName = NpcData.Name;
+                hasName = true;
+            }
+            else
+            {
+                NpcName = _defaultNpcName;
+            }
+            
+            DisplayName = hasName 
+                ? NpcName 
+                : (NpcData?.EditorID ?? NpcFormKeyString.ToString());
         }
     }
     
