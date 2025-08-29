@@ -26,6 +26,12 @@ public class Settings
     public PatchingMode PatchingMode { get; set; } = PatchingMode.CreateAndPatch; 
     public bool UseSkyPatcherMode { get; set; } = false;
     public bool AutoEslIfy { get; set; } = true;
+    // --- NEW: Split Output Settings ---
+    public bool SplitOutput { get; set; } = false;
+    public bool SplitOutputByGender { get; set; } = false;
+    public bool SplitOutputByRace { get; set; } = false;
+    public int? SplitOutputMaxNpcs { get; set; } = null; 
+
     
     // Default Overrideable Settings
 

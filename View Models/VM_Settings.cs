@@ -54,6 +54,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool AppendTimestampToOutputDirectory { get; set; }
         [Reactive] public bool UseSkyPatcherMode { get; set; }
         [Reactive] public bool AutoEslIfy { get; set; } = true;
+        [Reactive] public bool SplitOutput { get; set; }
+        [Reactive] public bool SplitOutputByGender { get; set; }
+        [Reactive] public bool SplitOutputByRace { get; set; }
+        [Reactive] public int? SplitOutputMaxNpcs { get; set; }
+        
         [Reactive] public PatchingMode SelectedPatchingMode { get; set; }
         public IEnumerable<PatchingMode> PatchingModes { get; } = Enum.GetValues(typeof(PatchingMode)).Cast<PatchingMode>();
         [Reactive] public RecordOverrideHandlingMode SelectedRecordOverrideHandlingMode { get; set; }
@@ -163,6 +168,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
             OutputDirectory = _model.OutputDirectory;
             UseSkyPatcherMode = _model.UseSkyPatcherMode;
             AutoEslIfy = _model.AutoEslIfy;
+            SplitOutput = _model.SplitOutput;
+            SplitOutputByGender = _model.SplitOutputByGender;
+            SplitOutputByRace = _model.SplitOutputByRace;
+            SplitOutputMaxNpcs = _model.SplitOutputMaxNpcs;
             AppendTimestampToOutputDirectory = _model.AppendTimestampToOutputDirectory;
             SelectedPatchingMode = _model.PatchingMode;
             SelectedRecordOverrideHandlingMode = _model.DefaultRecordOverrideHandlingMode;
@@ -304,6 +313,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .Skip(1)
                 .Subscribe(b => _model.AutoEslIfy = b)
                 .DisposeWith(_disposables);
+            
+            this.WhenAnyValue(x => x.SplitOutput).Skip(1).Subscribe(b => _model.SplitOutput = b).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.SplitOutputByGender).Skip(1).Subscribe(b => _model.SplitOutputByGender = b).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.SplitOutputByRace).Skip(1).Subscribe(b => _model.SplitOutputByRace = b).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.SplitOutputMaxNpcs).Skip(1).Subscribe(i => _model.SplitOutputMaxNpcs = i).DisposeWith(_disposables);
+
             
             // Consolidate all environment update logic into a single, throttled subscription.
             var gameEnvironmentChanged = Observable.Merge(

@@ -184,6 +184,31 @@
                               IsChecked="{Binding AutoEslIfy, Mode=TwoWay}"
                               Margin="0,5,0,0"
                               ToolTip="When writing the output plugin, checks if it can be ESLified and performs the ESLification proccess"/>
+                    
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
+                        <CheckBox Content="Split Output" IsChecked="{Binding SplitOutput, Mode=TwoWay}" VerticalAlignment="Center"
+                                  ToolTip="Splits the generated patch into multiple smaller plugins based on the criteria to the right."/>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SplitOutput}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            
+                            <TextBlock Text="by" VerticalAlignment="Center" Margin="0,0,10,0" FontStyle="Italic"/>
+                            <CheckBox Content="Gender" IsChecked="{Binding SplitOutputByGender, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <CheckBox Content="Race" IsChecked="{Binding SplitOutputByRace, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <TextBox Text="{Binding SplitOutputMaxNpcs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" Width="50" VerticalContentAlignment="Center"
+                                     ToolTip="Maximum number of NPCs to place in a single split plugin."/>
+                            <TextBlock Text="Max # NPCs" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
                 </StackPanel>
             </GroupBox>
             
