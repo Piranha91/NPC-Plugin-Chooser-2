@@ -329,7 +329,39 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 if (continuePatching)
                 {
                     PatchingStartTime = DateTime.Now;
-                    await _patcher.RunPatchingLogic(SelectedNpcGroup, false, token);
+                    
+                    var validSelections = _validator.GetScreeningCache().Where(kv => kv.Value.SelectionIsValid).ToList();
+                    
+                    // --- NEW: Splitting Logic ---
+                    if (_settings.SplitOutput && validSelections.Any())
+                    {
+                        AppendLog($"\nSplitting output based on user settings...", forceLog: true);
+                        var batches = CreatePatchingBatches(validSelections);
+                        AppendLog($"Created {batches.Count} patching batches.", forceLog: true);
+
+                        for (int i = 0; i < batches.Count; i++)
+                        {
+                            var batch = batches[i];
+                            token.ThrowIfCancellationRequested();
+
+                            string originalPluginName = Path.GetFileNameWithoutExtension(_environmentStateProvider.OutputPluginName);
+                            string newPluginName = string.IsNullOrWhiteSpace(batch.Suffix) ? originalPluginName : $"{originalPluginName}_{batch.Suffix}";
+                    
+                            AppendLog($"\n--- Processing Batch {i + 1}/{batches.Count}: {newPluginName} ({batch.Selections.Count} NPCs) ---", forceLog: true);
+
+                            // Update environment with the new output mod name for this batch run
+                            _environmentStateProvider.OutputMod = new SkyrimMod(ModKey.FromName(newPluginName, ModType.Plugin), _environmentStateProvider.SkyrimVersion);
+
+                            // Call patcher with just the NPCs for this specific batch
+                            await _patcher.RunPatchingLogic(batch.Selections, false, i == 0, token);
+                        }
+                    }
+                    else
+                    {
+                        // If not splitting, run the patcher once with all valid selections
+                        await _patcher.RunPatchingLogic(validSelections, false, true, token);
+                    }
+                    // --- END: Splitting Logic ---
                     
                     if (PatchingStartTime.HasValue && FinalValidationTime.HasValue)
                     {
@@ -509,6 +541,75 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     SelectedNpcGroup = ALL_NPCS_GROUP;
                 }
             });
+        }
+        
+        private record PatchingBatch(string Suffix, List<KeyValuePair<FormKey, ScreeningResult>> Selections);
+
+        /// <summary>
+        /// Creates virtual groups ("batches") of NPCs to be processed into separate plugin files.
+        /// </summary>
+        private List<PatchingBatch> CreatePatchingBatches(List<KeyValuePair<FormKey, ScreeningResult>> validSelections)
+        {
+            var batches = new List<PatchingBatch>();
+            if (!validSelections.Any()) return batches;
+
+            // Group selections by the chosen criteria (gender and/or race).
+            var groupedByCriteria = validSelections.GroupBy(kvp =>
+            {
+                var npc = kvp.Value.WinningNpcOverride;
+
+                string genderKey = _settings.SplitOutputByGender ? Auxilliary.GetGender(npc).ToString() : string.Empty;
+                string raceKey = string.Empty;
+                if (_settings.SplitOutputByRace)
+                {
+                    raceKey = npc.Race.TryResolve(_environmentStateProvider.LinkCache, out var raceRecord)
+                        ? (raceRecord.EditorID ?? "UnknownRace")
+                        : "UnknownRace";
+                }
+
+                // Sanitize raceKey to be filename-friendly
+                raceKey = Regex.Replace(raceKey, @"[^a-zA-Z0-9]", "");
+
+                return (Gender: genderKey, Race: raceKey);
+            });
+
+            int maxNpcsPerPlugin = _settings.SplitOutputMaxNpcs ?? int.MaxValue;
+
+            // Process each criteria group (e.g., all Male Nords).
+            foreach (var group in groupedByCriteria)
+            {
+                var npcsInGroup = group.ToList();
+                int totalInGroup = npcsInGroup.Count;
+                int currentOffset = 0;
+                int subBatchCounter = 1;
+
+                // Sub-divide the criteria group by the max number of NPCs.
+                while (currentOffset < totalInGroup)
+                {
+                    var chunk = npcsInGroup.Skip(currentOffset).Take(maxNpcsPerPlugin).ToList();
+
+                    var nameParts = new List<string>();
+                    if (_settings.SplitOutputByGender && !string.IsNullOrEmpty(group.Key.Gender))
+                        nameParts.Add(group.Key.Gender);
+                    if (_settings.SplitOutputByRace && !string.IsNullOrEmpty(group.Key.Race))
+                        nameParts.Add(group.Key.Race);
+
+                    // Only add a numeric suffix if the group was large enough to be split.
+                    if (totalInGroup > maxNpcsPerPlugin)
+                    {
+                        nameParts.Add(subBatchCounter.ToString());
+                    }
+
+                    string batchSuffix = string.Join("_", nameParts.Where(s => !string.IsNullOrEmpty(s)));
+
+                    batches.Add(new PatchingBatch(batchSuffix, chunk));
+
+                    currentOffset += maxNpcsPerPlugin;
+                    subBatchCounter++;
+                }
+            }
+
+            return batches;
         }
 
         private void ResetProgress()

@@ -72,7 +72,7 @@ public class Patcher : OptionalUIModule
         return _modSettingsMap;
     }
 
-    public async Task RunPatchingLogic(string SelectedNpcGroup, bool showFinalMessage, CancellationToken ct)
+    public async Task RunPatchingLogic(List<KeyValuePair<FormKey, ScreeningResult>> selectionsToProcess, bool showFinalMessage, bool isFirstIteration, CancellationToken ct)
     {
         ResetLog();
         UpdateProgress(0, 1, "Initializing...");
@@ -98,13 +98,14 @@ public class Patcher : OptionalUIModule
         {
             BuildModSettingsMap();
         }
-
-        var screeningCache = _validator.GetScreeningCache();
-        var selectionsToProcess = screeningCache.Where(kv => kv.Value.SelectionIsValid).ToList();
-
+        
         try
         {
-            _assetHandler.Initialize();
+            if (isFirstIteration)
+            {
+                _assetHandler.Initialize(); // asset handler should only be reinitialized once regardless of how many output plugins there are.
+            }
+
             _recordDeltaPatcher.Reinitialize(true);
 
             string baseOutputDirectory;
@@ -156,12 +157,11 @@ public class Patcher : OptionalUIModule
             _skyPatcherInterface.Reinitialize(
                 _currentRunOutputAssetPath); // reinitialize whether in SkyPatcher mode or not to avoid stale output 
 
-            _environmentStateProvider.OutputMod =
-                new SkyrimMod(ModKey.FromName(_environmentStateProvider.OutputPluginName, ModType.Plugin),
-                    _environmentStateProvider.SkyrimVersion);
-            AppendLog($"Initialized output mod: {_environmentStateProvider.OutputPluginName}");
+            // IMPORTANT: The OutputMod is now created and set by VM_Run before this method is called.
+            // We no longer create it here, we just use the one that's already set.
+            AppendLog($"Initialized output mod: {_environmentStateProvider.OutputMod.ModKey.FileName}");
 
-            if (_clearOutputDirectoryOnRun)
+            if (_clearOutputDirectoryOnRun && isFirstIteration)
             {
                 AppendLog("Clearing output asset directory...");
                 try
@@ -194,7 +194,6 @@ public class Patcher : OptionalUIModule
                 int totalToProcess = selectionsToProcess.Count;
                 int overallProgressCounter = 0;
                 int processedCount = 0;
-                int skippedCount = 0;
 
                 foreach (var npcGroup in groupedSelections)
                 {
@@ -249,20 +248,6 @@ public class Patcher : OptionalUIModule
                         bool shouldUpdateUI = (overallProgressCounter % 10 == 0) ||
                                               (overallProgressCounter == totalToProcess) ||
                                               (overallProgressCounter == 1);
-
-                        if (ShouldSkipNpc(winningNpcOverride, SelectedNpcGroup))
-                        {
-                            AppendLog($"  Skipping {npcIdentifier} (Group Filter)...");
-                            skippedCount++;
-                            if (shouldUpdateUI)
-                            {
-                                UpdateProgress(overallProgressCounter, totalToProcess,
-                                    $"Skipped: {npcIdentifier}");
-                                await Task.Yield();
-                            }
-
-                            continue;
-                        }
 
                         if (shouldUpdateUI)
                         {
@@ -751,7 +736,6 @@ public class Patcher : OptionalUIModule
                 if (processedCount > 0)
                 {
                     AppendLog($"\nProcessed {processedCount} NPC(s).", false, true);
-                    if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.", false, true);
 
                     AppendLog("Waiting for all background asset copying and extraction to finish...", false, true);
 
@@ -764,7 +748,7 @@ public class Patcher : OptionalUIModule
                     AppendLog("All file operations finished.", false, true);
 
                     string outputPluginPath = Path.Combine(_currentRunOutputAssetPath,
-                        _environmentStateProvider.OutputPluginFileName);
+                        _environmentStateProvider.OutputMod.ModKey.FileName);
                     AppendLog($"Attempting to save output mod to: {outputPluginPath}", false);
                     try
                     {
@@ -774,6 +758,7 @@ public class Patcher : OptionalUIModule
                         }
                         
                         _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath);
+                        
                         AppendLog($"Saved plugin: {outputPluginPath}.", false, true);
 
                         AppendLog("Writing NPC token file...", false, false);
@@ -808,7 +793,6 @@ public class Patcher : OptionalUIModule
                 else
                 {
                     AppendLog("\nNo NPC appearances processed or dependencies duplicated.", false, true);
-                    if (skippedCount > 0) AppendLog($"{skippedCount} NPC(s) were skipped.", false, true);
                     AppendLog("Output mod not saved as no changes were made.", false, true);
                 }
             }
@@ -1165,20 +1149,5 @@ public class Patcher : OptionalUIModule
         if (npc == null) return false;
         return !npc.Template.IsNull &&
                npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits);
-    }
-
-    private bool ShouldSkipNpc(INpcGetter npc, string selectedGroup)
-    {
-        if (selectedGroup == ALL_NPCS_GROUP) return false;
-
-        if (_settings.NpcGroupAssignments != null &&
-            _settings.NpcGroupAssignments.TryGetValue(npc.FormKey, out var assignedGroups) &&
-            assignedGroups != null &&
-            assignedGroups.Contains(selectedGroup, StringComparer.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return true;
     }
 }
