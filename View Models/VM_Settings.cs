@@ -53,6 +53,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string OutputDirectory { get; set; }
         [Reactive] public bool AppendTimestampToOutputDirectory { get; set; }
         [Reactive] public bool UseSkyPatcherMode { get; set; }
+        [Reactive] public bool AutoEslIfy { get; set; } = true;
         [Reactive] public PatchingMode SelectedPatchingMode { get; set; }
         public IEnumerable<PatchingMode> PatchingModes { get; } = Enum.GetValues(typeof(PatchingMode)).Cast<PatchingMode>();
         [Reactive] public RecordOverrideHandlingMode SelectedRecordOverrideHandlingMode { get; set; }
@@ -161,6 +162,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             MugshotsFolder = _model.MugshotsFolder;
             OutputDirectory = _model.OutputDirectory;
             UseSkyPatcherMode = _model.UseSkyPatcherMode;
+            AutoEslIfy = _model.AutoEslIfy;
             AppendTimestampToOutputDirectory = _model.AppendTimestampToOutputDirectory;
             SelectedPatchingMode = _model.PatchingMode;
             SelectedRecordOverrideHandlingMode = _model.DefaultRecordOverrideHandlingMode;
@@ -296,6 +298,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     // Persist the final state (whether confirmed true or set to false) to the model
                     _model.UseSkyPatcherMode = UseSkyPatcherMode;
                 })
+                .DisposeWith(_disposables);
+            
+            this.WhenAnyValue(x => x.AutoEslIfy)
+                .Skip(1)
+                .Subscribe(b => _model.AutoEslIfy = b)
                 .DisposeWith(_disposables);
             
             // Consolidate all environment update logic into a single, throttled subscription.
@@ -817,6 +824,7 @@ Options:
             sb.AppendLine("Output Name: " + TargetPluginName);
             sb.AppendLine("Default Override Handling: " + SelectedRecordOverrideHandlingMode);
             sb.AppendLine("SkyPatcher Mode: " + UseSkyPatcherMode);
+            sb.AppendLine("AutoEslIfy: " + AutoEslIfy);
             return sb.ToString();
         }
         

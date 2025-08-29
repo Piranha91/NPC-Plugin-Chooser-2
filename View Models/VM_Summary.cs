@@ -128,6 +128,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             this.WhenAnyValue(x => x.SummaryViewZoomLevel)
                 .Skip(1) // Don't fire on initial load
                 .Throttle(TimeSpan.FromMilliseconds(100))
+                .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(zoom =>
                 {
                     // Clamp the value to prevent invalid zoom levels

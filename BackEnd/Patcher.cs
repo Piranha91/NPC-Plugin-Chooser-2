@@ -5,6 +5,7 @@ using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Assets;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
+using Mutagen.Bethesda.Plugins.Utility;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
 using NPC_Plugin_Chooser_2.Models;
@@ -767,6 +768,11 @@ public class Patcher : OptionalUIModule
                     AppendLog($"Attempting to save output mod to: {outputPluginPath}", false);
                     try
                     {
+                        if (_settings.AutoEslIfy && _environmentStateProvider.OutputMod.CanBeSmallMaster)
+                        {
+                            ModCompaction.CompactToSmallMaster(_environmentStateProvider.OutputMod);
+                        }
+                        
                         _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath);
                         AppendLog($"Saved plugin: {outputPluginPath}.", false, true);
 

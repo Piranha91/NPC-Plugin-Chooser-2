@@ -25,6 +25,7 @@ public class Settings
     public string OutputPluginName { get; set; } = string.Empty;
     public PatchingMode PatchingMode { get; set; } = PatchingMode.CreateAndPatch; 
     public bool UseSkyPatcherMode { get; set; } = false;
+    public bool AutoEslIfy { get; set; } = true;
     
     // Default Overrideable Settings
 
