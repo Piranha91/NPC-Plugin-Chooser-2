@@ -20,6 +20,8 @@ public class JSONhandler<T>
         jsonSettings.Formatting = Formatting.Indented;
         jsonSettings.Converters.Add(new Newtonsoft.Json.Converters.StringEnumConverter()); // https://stackoverflow.com/questions/2441290/javascriptserializer-json-serialization-of-enum-as-string
 
+        jsonSettings.Converters.Add(new ModSettingConverter()); // For 2.0.5 upgrade to convert string MugShotFolderPath to List<string> MugShotFolderPaths
+        
         return jsonSettings;
     }
 

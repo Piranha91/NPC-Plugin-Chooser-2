@@ -16,6 +16,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks; // Added for Task
 using System.Windows;
 using System.Windows.Media;
+using DynamicData;
 using Microsoft.Build.Experimental.BuildCheck;
 using Mutagen.Bethesda.Archives; // For MessageBox
 using Mutagen.Bethesda.Plugins;
@@ -142,6 +143,11 @@ public class VM_Mods : ReactiveObject
     private readonly VM_ModSetting.FromModelFactory _modSettingFromModelFactory;
     private readonly VM_ModSetting.FromMugshotPathFactory _modSettingFromMugshotPathFactory;
     private readonly VM_ModSetting.FromModFolderFactory _modSettingFromModFolderFactory;
+    
+    // Helpers
+    private static readonly Regex MugshotNameRegex =
+        new(@"^(?<hex>[0-9A-F]{8})\.(png|jpg|jpeg|bmp)$",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // *** Updated Constructor Signature ***
     public VM_Mods(Settings settings, EnvironmentStateProvider environmentStateProvider,
@@ -597,26 +603,42 @@ public class VM_Mods : ReactiveObject
             var mugshotData = new List<(string ImagePath, FormKey NpcFormKey, string NpcDisplayName)>();
             bool hasRealMugshots = false;
 
-            if (selectedModSetting.HasValidMugshots && !string.IsNullOrWhiteSpace(selectedModSetting.MugShotFolderPath) && Directory.Exists(selectedModSetting.MugShotFolderPath))
+            var validFolders = (selectedModSetting.MugShotFolderPaths ?? Enumerable.Empty<string>())
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(Directory.Exists)
+                .ToList();
+
+            if (selectedModSetting.HasValidMugshots && validFolders.Count > 0)
             {
-                var imageFiles = Directory.EnumerateFiles(selectedModSetting.MugShotFolderPath, "*.*", SearchOption.AllDirectories)
-                    .Where(f => Regex.IsMatch(Path.GetFileName(f), @"^[0-9A-F]{8}\.(png|jpg|jpeg|bmp)$", RegexOptions.IgnoreCase));
+                var imageFiles = validFolders
+                    .SelectMany(folder => Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories))
+                    .Where(f => MugshotNameRegex.IsMatch(Path.GetFileName(f)));
 
                 foreach (var imagePath in imageFiles)
                 {
-                    if (token.IsCancellationRequested) return;
-                    string fileName = Path.GetFileName(imagePath);
-                    string hexPart = Path.GetFileNameWithoutExtension(fileName);
-                    string pluginName = new FileInfo(imagePath).Directory.Name;
-                    string formKeyString = $"{hexPart.Substring(Math.Max(0, hexPart.Length - 6))}:{pluginName}";
-                    
+                    if (token.IsCancellationRequested) break;
+
+                    var fileName = Path.GetFileName(imagePath);
+                    var match = MugshotNameRegex.Match(fileName);
+                    if (!match.Success) continue;
+
+                    var hexPart = match.Groups["hex"].Value;
+                    var pluginName = new DirectoryInfo(Path.GetDirectoryName(imagePath)!).Name;
+
+                    // last 6 hex characters + plugin name
+                    var tail6 = hexPart.Length >= 6 ? hexPart[^6..] : hexPart;
+                    var formKeyString = $"{tail6}:{pluginName}";
+
                     if (FormKey.TryFactory(formKeyString, out var npcFormKey))
                     {
-                        string npcDisplayName = 
+                        string npcDisplayName =
                             selectedModSetting.NpcFormKeysToDisplayName.TryGetValue(npcFormKey, out var knownName) ? knownName
                             : (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter)
                                 ? Auxilliary.GetLogString(npcGetter, _settings.LocalizationLanguage)
                                 : "Unknown NPC (" + formKeyString + ")");
+
                         mugshotData.Add((imagePath, npcFormKey, npcDisplayName));
                         hasRealMugshots = true;
                     }
@@ -830,7 +852,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     public void RecalculateMugshotValidity(VM_ModSetting modSetting)
     {
         modSetting.HasValidMugshots =
-            CheckMugshotValidity(modSetting.MugShotFolderPath); // Pass the VM_ModSetting itself
+            CheckMugshotValidity(modSetting.MugShotFolderPaths); // Pass the VM_ModSetting itself
         // If this was the selected mod, refresh the right panel
         if (SelectedModForMugshots == modSetting)
         {
@@ -839,29 +861,45 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
     }
 
-    private bool CheckMugshotValidity(string? mugshotFolderPath)
+    private bool CheckMugshotValidity(IEnumerable<string>? mugshotFolderPaths)
     {
+        if (mugshotFolderPaths is null) return false;
+
+        foreach (var raw in mugshotFolderPaths)
         {
-            if (string.IsNullOrWhiteSpace(mugshotFolderPath) || !Directory.Exists(mugshotFolderPath))
-            {
-                return false;
-            }
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+
+            var path = raw.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (!Directory.Exists(path)) continue;
 
             try
             {
-                // Check if it contains at least one valid image file directly or in a plugin subfolder
-                return Directory.EnumerateFiles(mugshotFolderPath, "*.*", SearchOption.AllDirectories)
-                    .Any(f => Regex.IsMatch(Path.GetFileName(f), @"^[0-9A-F]{8}\.(png|jpg|jpeg|bmp)$",
-                                  RegexOptions.IgnoreCase) &&
-                              new FileInfo(f).Directory?.Name?.Contains('.') ==
-                              true); // Basic check for plugin-like folder name
+                // Valid if ANY file matches 8-hex + image extension AND sits in a plugin-like folder
+                var anyValid = Directory.EnumerateFiles(path, "*.*", SearchOption.AllDirectories)
+                    .Any(f =>
+                    {
+                        var fileName = Path.GetFileName(f);
+                        if (!MugshotNameRegex.IsMatch(fileName)) return false;
+
+                        var parent = new FileInfo(f).Directory?.Name ?? string.Empty;
+
+                        // Prefer strict plugin-like names; keep your old lenient check as fallback
+                        return parent.EndsWith(".esp", StringComparison.OrdinalIgnoreCase)
+                               || parent.EndsWith(".esm", StringComparison.OrdinalIgnoreCase)
+                               || parent.EndsWith(".esl", StringComparison.OrdinalIgnoreCase)
+                               || parent.Contains('.'); // fallback to previous behavior
+                    });
+
+                if (anyValid) return true; // short-circuit: any folder passing makes the whole set valid
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error checking mugshot validity for path {mugshotFolderPath}: {ex.Message}");
-                return false;
+                Debug.WriteLine($"Error checking mugshot validity for path {path}: {ex.Message}");
+                // keep scanning other folders
             }
         }
+
+        return false;
     }
 
     public async Task PopulateModSettingsAsync(VM_SplashScreen? splashReporter)
@@ -1048,9 +1086,18 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             {
                 if (string.IsNullOrWhiteSpace(settingModel.DisplayName)) continue;
                 var vm = _modSettingFromModelFactory(settingModel, this);
-                if (!string.IsNullOrWhiteSpace(vm.MugShotFolderPath) && Directory.Exists(vm.MugShotFolderPath))
-                    claimedMugshotPaths.Add(vm.MugShotFolderPath);
-                else if (string.IsNullOrWhiteSpace(vm.MugShotFolderPath))
+
+                bool hasMugShots = false;
+                foreach (var mugShotFolderPath in vm.MugShotFolderPaths)
+                {
+                    if (!string.IsNullOrWhiteSpace(mugShotFolderPath) && Directory.Exists(mugShotFolderPath))
+                    {
+                        claimedMugshotPaths.Add(mugShotFolderPath);
+                        hasMugShots = true;
+                    }
+                }
+
+                if (!hasMugShots)
                 {
                     if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder) &&
                         Directory.Exists(_settings.MugshotsFolder))
@@ -1058,7 +1105,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                         string potentialPathByName = Path.Combine(_settings.MugshotsFolder, vm.DisplayName);
                         if (Directory.Exists(potentialPathByName) && !claimedMugshotPaths.Contains(potentialPathByName))
                         {
-                            vm.MugShotFolderPath = potentialPathByName;
+                            vm.MugShotFolderPaths.Add(potentialPathByName);
                             claimedMugshotPaths.Add(potentialPathByName);
                         }
                     }
@@ -1295,7 +1342,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
                     if (Directory.Exists(potentialMugshotPath) && !claimedMugshotPaths.Contains(potentialMugshotPath))
                     {
-                        newVm.MugShotFolderPath = potentialMugshotPath;
+                        newVm.MugShotFolderPaths.Add(potentialMugshotPath);
                         claimedMugshotPaths.Add(potentialMugshotPath);
                     }
 
@@ -1434,7 +1481,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
             if (Directory.Exists(potentialMugshotPath) && !claimedMugshotPaths.Contains(potentialMugshotPath))
             {
-                newVm.MugShotFolderPath = potentialMugshotPath;
+                newVm.MugShotFolderPaths.Add(potentialMugshotPath);
                 claimedMugshotPaths.Add(potentialMugshotPath);
             }
 
@@ -2154,7 +2201,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 pathMatches = true;
             }
             else if (pathType == PathType.MugshotFolder &&
-                     addedOrSetPath.Equals(vm.MugShotFolderPath, StringComparison.OrdinalIgnoreCase))
+                     vm.MugShotFolderPaths.Contains(addedOrSetPath, StringComparer.OrdinalIgnoreCase))
             {
                 pathMatches = true;
             }
@@ -2182,8 +2229,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             bool sourceHadOnlyThisModPath = sourceVm.CorrespondingFolderPaths.Count == 1 &&
                                             sourceVm.CorrespondingFolderPaths.Contains(addedOrSetPath,
                                                 StringComparer.OrdinalIgnoreCase);
-            bool sourceHadNoMugshots =
-                string.IsNullOrWhiteSpace(sourceVm.MugShotFolderPath); // Check current state is okay here
+            bool sourceHadNoMugshots = !sourceVm.MugShotFolderPaths.Any();
 
             if (hadMugshotPathBefore && !hadModPathsBefore && sourceHadOnlyThisModPath && sourceHadNoMugshots)
             {
@@ -2196,9 +2242,9 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // User set the Mugshot Folder path on 'modifiedVm'
             // Conditions:
             // 1. 'modifiedVm' previously ONLY had mod paths (hadMugshotPathBefore=false, hadModPathsBefore=true)
-            // 2. 'sourceVm' previously ONLY had this specific mugshot path and NO mod paths
+            // 2. 'sourceVm' previously had this specific mugshot path and NO mod paths
             bool sourceHadOnlyThisMugshot =
-                addedOrSetPath.Equals(sourceVm.MugShotFolderPath, StringComparison.OrdinalIgnoreCase) &&
+                sourceVm.MugShotFolderPaths.Contains(addedOrSetPath, StringComparer.OrdinalIgnoreCase) &&
                 !sourceVm.HasModPathsAssigned; // Check current state is okay
             bool sourceHadNoModPaths = !sourceVm.HasModPathsAssigned; // Redundant check, but clear
 
@@ -2220,7 +2266,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // Mugshot Path (only if winner doesn't have one)
             if (!winner.HasMugshotPathAssigned && loser.HasMugshotPathAssigned)
             {
-                winner.MugShotFolderPath = loser.MugShotFolderPath;
+                foreach (var path in loser.MugShotFolderPaths)
+                {
+                    winner.MugShotFolderPaths.Add(path);
+                }
             }
 
             // Mod Folder Paths (add paths from loser not already in winner)

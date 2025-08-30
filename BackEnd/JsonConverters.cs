@@ -5,6 +5,10 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Mutagen.Bethesda.Plugins;
+using Models;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System.Collections.Generic;
 
 public class FormKeyTypeConverter : TypeConverter
 {
@@ -50,6 +54,52 @@ public class FormKeyTypeConverter : TypeConverter
             return FormKey.Factory(formattedKey);
         }
         return base.ConvertFrom(context, culture, value);
+    }
+}
+
+public class ModSettingConverter : JsonConverter
+{
+    public override bool CanConvert(Type objectType)
+    {
+        return objectType == typeof(ModSetting);
+    }
+
+    public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+    {
+        // Load the JSON for the ModSetting into a temporary object
+        JObject jo = JObject.Load(reader);
+
+        // Create the final ModSetting object that we will populate
+        ModSetting modSetting = new ModSetting();
+        
+        // Use the default serializer to populate all matching properties automatically
+        serializer.Populate(jo.CreateReader(), modSetting);
+
+        // **Here's the migration logic**
+        // Check if the old "MugShotFolderPath" property exists and is a string
+        if (jo.TryGetValue("MugShotFolderPath", StringComparison.OrdinalIgnoreCase, out JToken oldPathToken) && oldPathToken.Type == JTokenType.String)
+        {
+            string oldPath = oldPathToken.Value<string>();
+
+            // If the new list is empty and the old path has a value,
+            // create the list and add the old path to it.
+            if ((modSetting.MugShotFolderPaths == null || modSetting.MugShotFolderPaths.Count == 0) && !string.IsNullOrEmpty(oldPath))
+            {
+                modSetting.MugShotFolderPaths = new List<string> { oldPath };
+            }
+        }
+        
+        return modSetting;
+    }
+
+    // We make this converter read-only.
+    // When writing the JSON back to the file, we want the default serializer to handle it,
+    // ensuring only the new "MugShotFolderPaths" property is saved.
+    public override bool CanWrite => false;
+
+    public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+    {
+        throw new NotImplementedException("This converter is read-only and should not be used for writing JSON.");
     }
 }
 

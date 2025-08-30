@@ -1844,18 +1844,26 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     // Helper method to look up image paths for any NPC
     private string? GetImagePathForNpc(VM_ModSetting modSetting, FormKey npcFormKey, Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData)
     {
-        if (modSetting == null) return null;
-        
-        if (!string.IsNullOrWhiteSpace(modSetting.MugShotFolderPath) && Directory.Exists(modSetting.MugShotFolderPath) && mugshotData.TryGetValue(npcFormKey, out var availableMugshotsForNpc))
+        if (modSetting == null || !modSetting.MugShotFolderPaths.Any()) return null;
+
+        if (mugshotData.TryGetValue(npcFormKey, out var availableMugshotsForNpc))
         {
-            string mugshotDirNameForThisSetting = Path.GetFileName(modSetting.MugShotFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            var specificMugshotInfo = availableMugshotsForNpc.FirstOrDefault(m => m.ModName.Equals(mugshotDirNameForThisSetting, StringComparison.OrdinalIgnoreCase));
-            if (specificMugshotInfo != default && !string.IsNullOrWhiteSpace(specificMugshotInfo.ImagePath) && File.Exists(specificMugshotInfo.ImagePath))
+            // Iterate through all assigned mugshot paths for the mod setting.
+            foreach (var path in modSetting.MugShotFolderPaths)
             {
-                return specificMugshotInfo.ImagePath;
+                if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) continue;
+
+                // The existing logic matches based on the directory's name.
+                string mugshotDirName = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                var mugshotInfo = availableMugshotsForNpc.FirstOrDefault(m => m.ModName.Equals(mugshotDirName, StringComparison.OrdinalIgnoreCase));
+
+                if (mugshotInfo != default && !string.IsNullOrWhiteSpace(mugshotInfo.ImagePath) && File.Exists(mugshotInfo.ImagePath))
+                {
+                    return mugshotInfo.ImagePath; // Return the first valid path found.
+                }
             }
         }
-        return null;
+        return null; // No matching mugshot found in any of the specified folders.
     }
     
     public string? GetMugshotPathForNpc(string modName, FormKey npcFormKey)
