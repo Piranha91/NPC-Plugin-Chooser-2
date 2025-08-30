@@ -76,14 +76,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public void RefreshName(Language? language)
         {
             bool hasName = false;
-            if (language != null && NpcData != null && NpcData?.BaseName != null && NpcData.BaseName.TryLookup(language.Value, out var localizedName))
+            if (language != null && NpcData != null && NpcData?.Name != null && NpcData.Name.TryLookup(language.Value, out var localizedName))
             {
                 NpcName = localizedName;
                 hasName = true;
             }
-            else if (NpcData?.Name != null)
+            else if (NpcData?.Name != null && NpcData.Name.String != null)
             {
-                NpcName = NpcData.Name;
+                NpcName = NpcData.Name.String;
                 hasName = true;
             }
             else

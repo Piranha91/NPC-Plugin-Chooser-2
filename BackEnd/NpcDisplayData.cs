@@ -11,8 +11,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 public record NpcDisplayData
 {
     public required FormKey FormKey { get; init; }
-    public ITranslatedStringGetter? BaseName { get; init; }
-    public string? Name { get; init; }
+    public ITranslatedStringGetter? Name { get; init; }
     public string? EditorID { get; init; }
     public bool IsTemplateUser { get; init; }
     public FormKey TemplateFormKey { get; init; }
@@ -26,7 +25,7 @@ public record NpcDisplayData
         return new NpcDisplayData
         {
             FormKey = npcGetter.FormKey,
-            BaseName = npcGetter.Name,
+            Name = npcGetter.Name,
             EditorID = npcGetter.EditorID,
             IsTemplateUser = npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits),
             TemplateFormKey = npcGetter.Template.FormKey,
