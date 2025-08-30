@@ -558,6 +558,19 @@
                                           <ContextMenu>
                                                <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/>
                                                <MenuItem Header="View Full Screen (Ctrl+RClick)" Command="{Binding ToggleFullScreenCommand}"/>
+                                               <Separator />
+                                               <MenuItem Command="{Binding AddToFavoritesCommand}">
+                                                   <MenuItem.Style>
+                                                       <Style TargetType="MenuItem">
+                                                           <Setter Property="Header" Value="Add to Favorites"/>
+                                                           <Style.Triggers>
+                                                               <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                                                                   <Setter Property="Header" Value="Remove from Favorites"/>
+                                                               </DataTrigger>
+                                                           </Style.Triggers>
+                                                       </Style>
+                                                   </MenuItem.Style>
+                                               </MenuItem>
                                                <MenuItem Header="Select Source Plugin"
                                                          Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                          ItemsSource="{Binding AvailableSourcePlugins}">

@@ -34,6 +34,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         public double OriginalDipDiagonal { get; set; }
         public bool IsVisible { get; set; } = true;
         [Reactive] public ImageSource? MugshotSource { get; set; }
+        [Reactive] public bool IsSelected { get; set; } // for use by Favorites menu
 
         // Display Properties
         public FormKey TargetNpcFormKey { get; }

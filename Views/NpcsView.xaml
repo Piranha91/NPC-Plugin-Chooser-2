@@ -96,6 +96,7 @@
                 <CheckBox Content="Show Unloaded NPCs" Margin="15,2,5,2" IsChecked="{Binding ShowUnloadedNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that are not part of your current load order (e.g., from mugshots or inactive mods)."/>
                 <CheckBox Content="Show Hidden Mods" Margin="5,2" IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Toggle visibility of hidden appearance mods"/>
                 <CheckBox Content="Show NPC Descriptions" Margin="5,2,15,2" IsChecked="{Binding ShowNpcDescriptions, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If checked, shows descriptions for selected base game NPCs from online sources."/>
+                <Button Content="Favs" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center" Command="{Binding ShowFavoritesCommand}" ToolTip="Add an appearance from your list of favorite faces."/>
 
                 <Button Content="Get Choices from Load Order" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
                         Command="{Binding ImportChoicesFromLoadOrderCommand}" ToolTip="Automatically select appearance mods for NPCs based on your current load order and loose file overrides."/>
@@ -233,6 +234,10 @@
                                                     </Style>
                                                 </MenuItem.ItemContainerStyle>
                                             </MenuItem>
+                                            <Separator/>
+                                            <MenuItem Header="Add Face from Favorites"
+                                                      Command="{Binding Path=DataContext.AddFavoriteFaceToNpcCommand, Source={StaticResource DataContextProxy}}"
+                                                      CommandParameter="{Binding}"/>
                                         </ContextMenu>
                                     </Border.ContextMenu>
                                      <TextBlock Text="{Binding DisplayName}" />
@@ -487,6 +492,18 @@
                                                      <Style.Triggers>
                                                          <DataTrigger Binding="{Binding IsGuestAppearance}" Value="True">
                                                              <Setter Property="Visibility" Value="Visible"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </MenuItem.Style>
+                                         </MenuItem>
+                                         <MenuItem Command="{Binding AddToFavoritesCommand}">
+                                             <MenuItem.Style>
+                                                 <Style TargetType="MenuItem">
+                                                     <Setter Property="Header" Value="Add to Favorites"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                                                             <Setter Property="Header" Value="Remove from Favorites"/>
                                                          </DataTrigger>
                                                      </Style.Triggers>
                                                  </Style>

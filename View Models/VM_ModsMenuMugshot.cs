@@ -16,7 +16,8 @@ using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using NPC_Plugin_Chooser_2.BackEnd; // For Debug.WriteLine
+using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.Models; // For Debug.WriteLine
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
@@ -26,6 +27,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly VM_Mods _parentVMMaster; 
         private readonly VM_ModSetting _parentVMModSetting; 
         private readonly NpcConsistencyProvider _consistencyProvider;
+        private readonly Settings _settings;
         private readonly CompositeDisposable _disposables = new();
 
         public string ImagePath { get; set; } 
@@ -54,11 +56,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public bool IsAmbiguousSource { get; } 
         public ObservableCollection<ModKey> AvailableSourcePlugins { get; } = new();
         [Reactive] public ModKey? CurrentSourcePlugin { get; set; } 
+        
+        [Reactive] public bool IsFavorite { get; set; }
 
         public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
         public ReactiveCommand<Unit, Unit> JumpToNpcCommand { get; }
         public ReactiveCommand<ModKey, Unit> SetNpcSourcePluginCommand { get; }
         public ReactiveCommand<Unit, Unit> SelectSameSourcePluginWherePossibleCommand { get; }
+        public ReactiveCommand<Unit, Unit> AddToFavoritesCommand { get; }
 
         // Static path for placeholder, consistent with VM_Mods
         private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
@@ -73,15 +78,19 @@ namespace NPC_Plugin_Chooser_2.View_Models
             List<ModKey> availableSourcePlugins,   
             ModKey? currentSourcePlugin,            
             VM_ModSetting parentVMModSetting,
-            NpcConsistencyProvider consistencyProvider)       
+            NpcConsistencyProvider consistencyProvider,
+            Settings settings)       
         {
             _parentVMMaster = parentVMMaster;
             _parentVMModSetting = parentVMModSetting; 
             _consistencyProvider = consistencyProvider;
+            _settings = settings;
             ImagePath = imagePath; // Store the given path (could be real or placeholder)
             NpcFormKey = npcFormKey;
             NpcDisplayName = npcDisplayName;
             IsVisible = true; 
+            
+            IsFavorite = _settings.FavoriteFaces.Contains((this.NpcFormKey, _parentVMModSetting.DisplayName));
 
             // START MODIFIED SECTION
             // Set initial selection state based on the consistency provider
@@ -184,10 +193,14 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 },
                 this.WhenAnyValue(x => x.IsAmbiguousSource, x => x.CurrentSourcePlugin,
                     (ambiguous, source) => ambiguous && source.HasValue));
+            
+            AddToFavoritesCommand = ReactiveCommand.Create(ToggleFavorite);
 
             ToggleFullScreenCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error showing image: {ex.Message}"));
             JumpToNpcCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error jumping to NPC: {ex.Message}"));
             SetNpcSourcePluginCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting NPC source plugin: {ex.Message}"));
+            
+            AddToFavoritesCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error updating favorites: {ex.Message}")).DisposeWith(_disposables);
         }
 
         private void ToggleFullScreen()
@@ -211,6 +224,23 @@ namespace NPC_Plugin_Chooser_2.View_Models
             else
             {
                 ScrollableMessageBox.ShowWarning($"Mugshot image (or placeholder) not found or path is invalid:\n{ImagePath}");
+            }
+        }
+        
+        private void ToggleFavorite()
+        {
+            var favoriteTuple = (this.NpcFormKey, _parentVMModSetting.DisplayName);
+            if (IsFavorite)
+            {
+                _settings.FavoriteFaces.Remove(favoriteTuple);
+                IsFavorite = false;
+                Debug.WriteLine($"Removed {favoriteTuple} from favorites.");
+            }
+            else
+            {
+                _settings.FavoriteFaces.Add(favoriteTuple);
+                IsFavorite = true;
+                Debug.WriteLine($"Added {favoriteTuple} to favorites.");
             }
         }
 

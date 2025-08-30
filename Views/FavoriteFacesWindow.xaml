@@ -1,0 +1,103 @@
+﻿<reactiveui:ReactiveWindow x:Class="NPC_Plugin_Chooser_2.Views.FavoriteFacesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
+        xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+        xmlns:reactiveui="http://reactiveui.net"
+        mc:Ignorable="d"
+        x:TypeArguments="vm:VM_FavoriteFaces"
+        Title="Favorite Faces" Height="600" Width="800" WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </Window.Resources>
+
+    <Grid Margin="5">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" x:Name="MugshotScrollViewer"
+                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      SizeChanged="MugshotScrollViewer_SizeChanged"
+                      PreviewMouseWheel="MugshotScrollViewer_PreviewMouseWheel">
+            <ItemsControl x:Name="FavoritesItemsControl" ItemsSource="{Binding FavoriteMugshots}"
+                          ScrollViewer.CanContentScroll="True">
+                <ItemsControl.ItemContainerStyle>
+                    <Style TargetType="ContentPresenter">
+                        <EventSetter Event="MouseLeftButtonUp" Handler="Mugshot_MouseLeftButtonUp"/>
+                    </Style>
+                </ItemsControl.ItemContainerStyle>
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:VM_SummaryMugshot}">
+                        <Border BorderThickness="2" Margin="5" CornerRadius="2"
+                                Width="{Binding ImageWidth}" Height="{Binding ImageHeight}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="BorderBrush" Value="Gray"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                            <Setter Property="BorderBrush" Value="LimeGreen"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <Grid Background="WhiteSmoke">
+                                <Image Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True"/>
+                                <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Background="#AA000000" Padding="3,1">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <TextBlock Text="{Binding NpcDisplayName}" Foreground="White" FontSize="10" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding ModDisplayName}" Foreground="LightGray" FontSize="9" HorizontalAlignment="Center" FontStyle="Italic" TextAlignment="Center" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+        
+        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="5">
+            <Grid>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                    <Button Command="{Binding ZoomOutCommand}" Content="-" Width="25" Height="25" Margin="2,0" ToolTip="Zoom Out (Ctrl+Scroll Wheel)"/>
+                    <TextBox Width="60" Height="25" Margin="2,0" TextAlignment="Center" VerticalContentAlignment="Center"
+                             Text="{Binding ZoomLevel, StringFormat='F2', Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             PreviewMouseWheel="ZoomPercentageTextBox_PreviewMouseWheel"
+                             ToolTip="Current Zoom Level. Editable."/>
+                    <TextBlock Text="%" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <Button Command="{Binding ZoomInCommand}" Content="+" Width="25" Height="25" Margin="2,0" ToolTip="Zoom In (Ctrl+Scroll Wheel)"/>
+                    <CheckBox Content="Lock Zoom" IsChecked="{Binding IsZoomLocked, Mode=TwoWay}" Margin="10,0,5,0" VerticalAlignment="Center"/>
+                    <Button Content="Reset Zoom" Command="{Binding ResetZoomCommand}" Margin="5,0,0,0" Padding="5,2"/>
+                </StackPanel>
+                
+                <Button Content="Remove from Favorites" 
+                        Command="{Binding RemoveFromFavoritesCommand}" 
+                        HorizontalAlignment="Center" 
+                        Foreground="Red" 
+                        FontWeight="SemiBold"
+                        ToolTip="Remove the selected face from your favorites."/>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <StackPanel Orientation="Horizontal" Visibility="{Binding IsApplyMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Button Content="Apply" Command="{Binding ApplyCommand}" MinWidth="80" Margin="5,0"/>
+                        <Button Content="Make Available" Command="{Binding MakeAvailableCommand}" MinWidth="80" Margin="5,0" ToolTip="Makes this appearance available as a 'guest' for the target NPC without selecting it."/>
+                        <Button Content="Cancel" Command="{Binding CancelCommand}" MinWidth="80" Margin="5,0" IsCancel="True"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Visibility="{Binding IsShareMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Button Content="Share with NPC" Command="{Binding ShareWithNpcCommand}" MinWidth="100" Margin="5,0"/>
+                        <Button Content="Close" Command="{Binding CloseCommand}" MinWidth="80" Margin="5,0" IsCancel="True"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</reactiveui:ReactiveWindow>

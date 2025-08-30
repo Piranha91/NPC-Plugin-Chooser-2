@@ -746,7 +746,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     var availableModKeys = modSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var keys) ? keys : new List<ModKey>();
     var currentSource = modSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var source) ? (ModKey?)source : availableModKeys.FirstOrDefault();
     
-    var vm = new VM_ModsMenuMugshot(imagePath, npcFormKey, npcDisplayName, this, isAmbiguous, availableModKeys, currentSource, modSetting, _consistencyProvider);
+    var vm = new VM_ModsMenuMugshot(imagePath, npcFormKey, npcDisplayName, this, isAmbiguous, availableModKeys, currentSource, modSetting, _consistencyProvider, _settings);
     return vm;
 }
 

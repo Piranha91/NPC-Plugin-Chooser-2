@@ -167,6 +167,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     // --- End Import/Export Commands ---
     
     public ReactiveCommand<object, Unit> SetNpcOutfitOverrideCommand { get; }
+    public ReactiveCommand<Unit, Unit> ShowFavoritesCommand { get; }
+    public ReactiveCommand<VM_NpcsMenuSelection, Unit> AddFavoriteFaceToNpcCommand { get; }
 
     // --- Constructor ---
     public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider,
@@ -602,6 +604,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error clearing choices: {ex.Message}", "Clear Error"))
             .DisposeWith(_disposables);
         // --- End Import/Export Setup ---
+        
+        ShowFavoritesCommand = ReactiveCommand.Create(ShowFavoritesWindowForSharing);
+        ShowFavoritesCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening favorites: {ex.Message}"));
+
+        AddFavoriteFaceToNpcCommand = ReactiveCommand.Create<VM_NpcsMenuSelection>(ShowFavoritesWindowForApplying);
+        AddFavoriteFaceToNpcCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening favorites: {ex.Message}"));
 
 
         if (CurrentNpcAppearanceMods != null && CurrentNpcAppearanceMods.Any())
@@ -611,6 +619,29 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     }
 
     // --- Methods ---
+    
+    private void ShowFavoritesWindowForSharing()
+    {
+        var vm = new VM_FavoriteFaces(_settings, _consistencyProvider, this, _lazyModsVm.Value, _lazyMainWindowVm, VM_FavoriteFaces.FavoriteFacesMode.Share, null);
+        var window = new FavoriteFacesWindow { DataContext = vm, ViewModel = vm };
+    
+        // Find the currently active window to set as the owner.
+        window.Owner = Application.Current.Windows.OfType<Window>().SingleOrDefault(x => x.IsActive);
+    
+        window.ShowDialog();
+    }
+
+    private void ShowFavoritesWindowForApplying(VM_NpcsMenuSelection targetNpc)
+    {
+        if (targetNpc == null) return;
+        var vm = new VM_FavoriteFaces(_settings, _consistencyProvider, this, _lazyModsVm.Value, _lazyMainWindowVm, VM_FavoriteFaces.FavoriteFacesMode.Apply, targetNpc);
+        var window = new FavoriteFacesWindow { DataContext = vm, ViewModel = vm };
+    
+        // Find the currently active window to set as the owner.
+        window.Owner = Application.Current.Windows.OfType<Window>().SingleOrDefault(x => x.IsActive);
+    
+        window.ShowDialog();
+    }
 
     // --- NEW: Command Execution Methods ---
     private void ExecuteCompareSelected()

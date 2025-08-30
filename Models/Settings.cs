@@ -53,6 +53,7 @@ public class Settings
     public Dictionary<FormKey, HashSet<string>> NpcGroupAssignments { get; set; } = new();
     public Dictionary<FormKey, OutfitOverride> NpcOutfitOverrides { get; set; } = new();
     public HashSet<ModKey> ImportFromLoadOrderExclusions { get; set; } = new();
+    public HashSet<(FormKey NpcFormKey, string ModName)> FavoriteFaces { get; set; } = new();
     public bool NormalizeImageDimensions { get; set; } = false;
     public int MaxMugshotsToFit { get; set; } = 50;
     public int MaxNpcsPerPageSummaryView { get; set; } = 100;
