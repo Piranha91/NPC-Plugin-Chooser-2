@@ -903,15 +903,15 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // Handle exceptions from the analysis phase
             foreach (var ex in aggEx.Flatten().InnerExceptions)
             {
-                Debug.WriteLine($"Async NPC list refresh error (outer): {ex.Message}");
+                Debug.WriteLine($"Async NPC list refresh error (outer): {ExceptionLogger.GetExceptionStack(ex)}");
                 Application.Current.Dispatcher.Invoke(() =>
-                    warnings.Add($"Async NPC list refresh error: {ex.Message}"));
+                    warnings.Add($"Async NPC list refresh error: {ExceptionLogger.GetExceptionStack(ex)}"));
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error in PopulateModSettingsAsync after WhenAll: {ex.Message}");
-            Application.Current.Dispatcher.Invoke(() => warnings.Add($"Unexpected error: {ex.Message}"));
+            Debug.WriteLine($"Error in PopulateModSettingsAsync after WhenAll: {ExceptionLogger.GetExceptionStack(ex)}");
+            Application.Current.Dispatcher.Invoke(() => warnings.Add($"Unexpected error: {ExceptionLogger.GetExceptionStack(ex)}"));
         }
         finally
         {
@@ -984,6 +984,21 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
 
             await Task.WhenAll(analysisTasks);
+            
+            var environmentEditorIdMap = _environmentStateProvider.LoadOrder.PriorityOrder.Npc().WinningOverrides()
+                .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
+                .ToDictionary(npc => npc.EditorID!, npc => npc.FormKey, StringComparer.OrdinalIgnoreCase);
+            
+            var modEditorIdMap = plugins.SelectMany(x => x.Npcs)
+                .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
+                .DistinctBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(npc => npc.EditorID!, npc => npc.FormKey, StringComparer.OrdinalIgnoreCase);
+        
+            var guests = await vmToRefresh.GetSkyPatcherImportsAsync(environmentEditorIdMap, modEditorIdMap);
+            foreach (var (target, source, modDisplayName, npcDisplayName) in guests)
+            {
+                AddGuestAppearanceToSettings(target, source, modDisplayName, npcDisplayName);
+            }
 
             // 5. Update UI-dependent properties
             RecalculateMugshotValidity(vmToRefresh);
@@ -1518,6 +1533,13 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     {
         var maxParallelism = Environment.ProcessorCount;
         var semaphore = new SemaphoreSlim(maxParallelism);
+        
+        // --- NEW: Setup for SkyPatcher import ---
+        var environmentEditorIdMap = _environmentStateProvider.LoadOrder.PriorityOrder.Npc().WinningOverrides()
+            .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
+            .ToDictionary(npc => npc.EditorID!, npc => npc.FormKey, StringComparer.OrdinalIgnoreCase);
+
+        var allSkyPatcherGuests = new ConcurrentBag<(FormKey Target, FormKey Source, string ModDisplayName, string SourceNpcDisplayName)>();
 
         var allVMs = _allModSettingsInternal.ToList(); // Create a copy to iterate over
         var vmsToAnalyze = new List<VM_ModSetting>();
@@ -1575,11 +1597,27 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                                 plugins, _settings.LocalizationLanguage);
                         }
 
-                        if (vm.IsNewlyCreated)
+                        if (!vm.IsMugshotOnlyEntry)
                         {
-                            using (ContextualPerformanceTracer.Trace("FindPluginsWithOverrides"))
+                            if (vm.IsNewlyCreated)
                             {
-                                await vm.FindPluginsWithOverrides(_pluginProvider);
+                                using (ContextualPerformanceTracer.Trace("FindPluginsWithOverrides"))
+                                {
+                                    await vm.FindPluginsWithOverrides(_pluginProvider);
+                                }
+                            }
+
+                            // --- NEW: Parse SkyPatcher files while plugins are loaded ---
+                            // Make sure to profile this and gate behind IsNewlyCreated if necessary.
+                            var modEditorIdMap = plugins.SelectMany(x => x.Npcs)
+                                .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
+                                .DistinctBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
+                                .ToDictionary(npc => npc.EditorID!, npc => npc.FormKey, StringComparer.OrdinalIgnoreCase);
+
+                            var guests = await vm.GetSkyPatcherImportsAsync(environmentEditorIdMap, modEditorIdMap);
+                            foreach (var guest in guests)
+                            {
+                                allSkyPatcherGuests.Add(guest);
                             }
                         }
                     }
@@ -1601,6 +1639,28 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }).ToList();
 
         await Task.WhenAll(refreshTasks);
+        
+        // --- Resolve and apply the collected SkyPatcher data after all analysis is done ---
+        if (!allSkyPatcherGuests.IsEmpty)
+        {
+            await ResolveAndApplySkyPatcherGuests(allSkyPatcherGuests.ToList());
+        }
+    }
+    
+    // This NEW helper method contains the logic to resolve and save guest appearances.
+    // It is called only once by AnalyzeModSettingsAsync.
+    private async Task ResolveAndApplySkyPatcherGuests(IReadOnlyCollection<(FormKey TargetNpc, FormKey SourceNpc, string ModDisplayName, string SourceNpcDisplayName)> guests)
+    {
+        Debug.WriteLine($"Resolving {guests.Count} discovered SkyPatcher guest appearances...");
+        int addedCount = 0;
+        foreach (var (targetNpcKey, sourceNpcKey, modDisplayName, npcDisplayName) in guests)
+        {
+            if (AddGuestAppearanceToSettings(targetNpcKey, sourceNpcKey, modDisplayName, npcDisplayName))
+            {
+                addedCount++;
+            }
+        }
+        Debug.WriteLine($"Finished processing SkyPatcher imports. Added {addedCount} new guest appearances.");
     }
 
     private async Task FinalizeAndApplySettingsOnUI(List<string> warnings)
@@ -1954,6 +2014,18 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         System.Diagnostics.Debug.WriteLine(
             $"ApplyFilters: Displaying {ModSettingsList.Count} of {_allModSettingsInternal.Count} items.");
+    }
+
+    // Add this helper to centralize the logic for adding a guest to settings.
+    private bool AddGuestAppearanceToSettings(FormKey targetNpcKey, FormKey guestNpcKey, string guestModName, string guestDisplayStr)
+    {
+        if (!_settings.GuestAppearances.TryGetValue(targetNpcKey, out var guestSet))
+        {
+            guestSet = new HashSet<(string, FormKey, string)>();
+            _settings.GuestAppearances[targetNpcKey] = guestSet;
+        }
+        // The tuple now matches the required (string ModName, FormKey NpcFormKey, string NpcDisplayName) format.
+        return guestSet.Add((guestModName, guestNpcKey, guestDisplayStr));
     }
 
     public bool TryGetWinningNpc(FormKey fk, out INpcGetter? npcGetter)

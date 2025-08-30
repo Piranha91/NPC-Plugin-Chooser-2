@@ -1709,6 +1709,80 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
         
+        public async Task<List<(FormKey TargetNpc, FormKey SourceNpc, string ModDisplayName, string SourceNpcDisplayName)>> GetSkyPatcherImportsAsync(IReadOnlyDictionary<string, FormKey> environmentEditorIdMap,
+            IReadOnlyDictionary<string, FormKey> modEditorIdMap)
+        {
+            var guestAppearances = new List<(FormKey TargetNpc, FormKey SourceNpc, string ModDisplayName, string SourceNpcDisplayName)>();
+            var iniFiles = new List<string>();
+
+            foreach (var modPath in CorrespondingFolderPaths)
+            {
+                var skyPatcherNpcDir = Path.Combine(modPath, "SKSE", "Plugins", "SkyPatcher", "npc");
+                if (Directory.Exists(skyPatcherNpcDir))
+                {
+                    iniFiles.AddRange(Directory.EnumerateFiles(skyPatcherNpcDir, "*.ini", SearchOption.AllDirectories));
+                }
+            }
+
+            if (!iniFiles.Any()) return guestAppearances;
+
+            foreach (var iniFile in iniFiles)
+            {
+                var lines = await File.ReadAllLinesAsync(iniFile);
+                foreach (var line in lines)
+                {
+                    var trimmedLine = line.Trim();
+                    if (!trimmedLine.StartsWith("filterByNpcs=", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    var parts = trimmedLine.Split(':');
+                    if (parts.Length < 2) continue;
+
+                    var targetNpcStr = parts[0].Substring("filterByNpcs=".Length);
+                    if (!TryParseSkyPatcherNpc(targetNpcStr, environmentEditorIdMap, out var targetNpcKey)) continue;
+
+                    var visualStyleAction = parts.FirstOrDefault(p => p.StartsWith("copyVisualStyle=", StringComparison.OrdinalIgnoreCase));
+                    if (visualStyleAction == null) continue;
+                    
+                    var sourceNpcStr = visualStyleAction.Substring("copyVisualStyle=".Length);
+                    if (!TryParseSkyPatcherNpc(sourceNpcStr, modEditorIdMap, out var sourceNpcKey)) continue;
+                    
+                    if (!NpcFormKeysToDisplayName.TryGetValue(sourceNpcKey, out var npcDisplayName))
+                    {
+                        npcDisplayName = "No Name";
+                    }
+                    
+                    guestAppearances.Add((targetNpcKey, sourceNpcKey, DisplayName, npcDisplayName));
+                }
+            }
+
+            return guestAppearances;
+        }
+
+        private bool TryParseSkyPatcherNpc(string npcStr, IReadOnlyDictionary<string, FormKey> editorIdMap, out FormKey formKey)
+        {
+            formKey = FormKey.Null;
+            if (string.IsNullOrWhiteSpace(npcStr)) return false;
+
+            var parts = npcStr.Split('|');
+            if (parts.Length == 2)
+            {
+                // Format: Skyrim.esm|132AB
+                var modName = parts[0];
+                var idHex = parts[1];
+                if (ModKey.TryFromFileName(modName, out var modKey) && uint.TryParse(idHex, System.Globalization.NumberStyles.HexNumber, null, out var id))
+                {
+                    formKey = new FormKey(modKey, id);
+                    return true;
+                }
+            }
+            else if (parts.Length == 1 && !string.IsNullOrWhiteSpace(parts[0]))
+            {
+                // Format: EditorID
+                return editorIdMap.TryGetValue(parts[0], out formKey);
+            }
+            return false;
+        }
+        
         #region Drag and Drop Logic
         
         void IDropTarget.DragOver(IDropInfo dropInfo)
