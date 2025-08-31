@@ -40,6 +40,11 @@
          <ObjectDataProvider x:Key="SelectionStateFilterTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
              <ObjectDataProvider.MethodParameters> <x:Type TypeName="vm:SelectionStateFilterType"/> </ObjectDataProvider.MethodParameters>
          </ObjectDataProvider>
+        <ObjectDataProvider x:Key="GuestStatusFilterTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="vm:GuestStatusFilterType"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
 
         <DataTemplate x:Key="AppearanceModDragAdorner" DataType="{x:Type vm:VM_NpcsMenuMugshot}">
             <Border BorderThickness="1" BorderBrush="DimGray" Background="LightGoldenrodYellow"
@@ -92,8 +97,8 @@
                     <Button x:Name="RemoveVisibleNpcsButton" Content="Rem Vis" Margin="2,0" Padding="3,1" VerticalAlignment="Center" Command="{Binding RemoveAllVisibleNpcsFromGroupCommand}" ToolTip="Remove all NPCs currently visible in the list below from the specified group"/>
                 </StackPanel>
 
-                <CheckBox Content="Show Single Single-Option NPCs" Margin="15,2,5,2" IsChecked="{Binding ShowSingleOptionNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that only have one available appearance."/>
-                <CheckBox Content="Show Unloaded NPCs" Margin="15,2,5,2" IsChecked="{Binding ShowUnloadedNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that are not part of your current load order (e.g., from mugshots or inactive mods)."/>
+                <CheckBox Content="Show Single Single-Option NPCs" Margin="10,2,5,2" IsChecked="{Binding ShowSingleOptionNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that only have one available appearance."/>
+                <CheckBox Content="Show Unloaded NPCs" Margin="5,2,5,2" IsChecked="{Binding ShowUnloadedNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that are not part of your current load order (e.g., from mugshots or inactive mods)."/>
                 <CheckBox Content="Show Hidden Mods" Margin="5,2" IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Toggle visibility of hidden appearance mods"/>
                 <CheckBox Content="Show NPC Descriptions" Margin="5,2,15,2" IsChecked="{Binding ShowNpcDescriptions, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If checked, shows descriptions for selected base game NPCs from online sources."/>
                 <Button Content="Favs" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center" Command="{Binding ShowFavoritesCommand}" ToolTip="Add an appearance from your list of favorite faces."/>
@@ -141,10 +146,27 @@
                            </ComboBox>
                            <Grid Grid.Column="1">
                                <TextBox VerticalAlignment="Center" Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 1">
-                                    <TextBox.Style><Style TargetType="TextBox"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding IsSelectionStateSearch1}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger><DataTrigger Binding="{Binding IsGroupSearch1}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBox.Style>
+                                    <TextBox.Style>
+                                        <Style TargetType="TextBox">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSelectionStateSearch1}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger><DataTrigger Binding="{Binding IsGroupSearch1}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsGuestStatusSearch1}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBox.Style>
                                </TextBox>
                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}" SelectedItem="{Binding SelectedStateFilter1, Mode=TwoWay}" ToolTip="Filter by selection state" Visibility="{Binding IsSelectionStateSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                               </ComboBox>
+                               <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource GuestStatusFilterTypeEnumValues}}" SelectedItem="{Binding SelectedGuestStatusFilter1, Mode=TwoWay}" ToolTip="Filter by guest status" Visibility="{Binding IsGuestStatusSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                   <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                                </ComboBox>
                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter1, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch1, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                            </Grid>
@@ -157,10 +179,28 @@
                             </ComboBox>
                             <Grid Grid.Column="1">
                                 <TextBox VerticalAlignment="Center" Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 2">
-                                    <TextBox.Style><Style TargetType="TextBox"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding IsSelectionStateSearch2}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger><DataTrigger Binding="{Binding IsGroupSearch2}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBox.Style>
+                                    <TextBox.Style>
+                                        <Style TargetType="TextBox">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSelectionStateSearch2}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsGroupSearch2}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsGuestStatusSearch2}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBox.Style>
                                 </TextBox>
                                 <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}" SelectedItem="{Binding SelectedStateFilter2, Mode=TwoWay}" ToolTip="Filter by selection state" Visibility="{Binding IsSelectionStateSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
                                      <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource GuestStatusFilterTypeEnumValues}}" SelectedItem="{Binding SelectedGuestStatusFilter2, Mode=TwoWay}" ToolTip="Filter by guest status" Visibility="{Binding IsGuestStatusSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                                 </ComboBox>
                                 <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter2, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch2, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                            </Grid>
@@ -173,11 +213,29 @@
                              </ComboBox>
                               <Grid Grid.Column="1">
                                  <TextBox VerticalAlignment="Center" Text="{Binding SearchText3, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 3">
-                                     <TextBox.Style><Style TargetType="TextBox"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding IsSelectionStateSearch3}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger><DataTrigger Binding="{Binding IsGroupSearch3}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBox.Style>
+                                     <TextBox.Style>
+                                         <Style TargetType="TextBox">
+                                             <Setter Property="Visibility" Value="Visible"/>
+                                             <Style.Triggers>
+                                                 <DataTrigger Binding="{Binding IsSelectionStateSearch3}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                 </DataTrigger>
+                                                 <DataTrigger Binding="{Binding IsGroupSearch3}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                                 <DataTrigger Binding="{Binding IsGuestStatusSearch3}" Value="True">
+                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                 </DataTrigger>
+                                             </Style.Triggers>
+                                         </Style>
+                                     </TextBox.Style>
                                  </TextBox>
                                  <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource SelectionStateFilterTypeEnumValues}}" SelectedItem="{Binding SelectedStateFilter3, Mode=TwoWay}" ToolTip="Filter by selection state" Visibility="{Binding IsSelectionStateSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
                                       <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                                  </ComboBox>
+                                  <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource GuestStatusFilterTypeEnumValues}}" SelectedItem="{Binding SelectedGuestStatusFilter3, Mode=TwoWay}" ToolTip="Filter by guest status" Visibility="{Binding IsGuestStatusSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                      <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                                  </ComboBox>
                                  <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter3, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch3, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                              </Grid>
                          </Grid>

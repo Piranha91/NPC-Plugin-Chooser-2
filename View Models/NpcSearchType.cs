@@ -25,8 +25,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         [Description("Selection State")]
         SelectionState,
-
-        // *** NEW: Group Filter ***
+        
+        [Description("Guest Status")]
+        GuestStatus,
+        
         [Description("Group")]
         Group
     }
