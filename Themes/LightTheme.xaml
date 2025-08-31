@@ -8,6 +8,8 @@
     <SolidColorBrush x:Key="TextBoxBackground" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="ButtonBackground" Color="#DDDDDD"/>
     <SolidColorBrush x:Key="ButtonHoverBackground" Color="#555555"/>
+    <SolidColorBrush x:Key="DisabledButtonBackground" Color="#EFEFEF"/>
+    <SolidColorBrush x:Key="DisabledForeground" Color="#999999"/>
     <SolidColorBrush x:Key="ToggleButtonBackground" Color="#DDDDDD"/>
     
     <Style TargetType="Control">
@@ -32,6 +34,28 @@
         <Setter Property="Background" Value="{StaticResource ButtonBackground}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="ButtonBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource ButtonHoverBackground}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource DisabledButtonBackground}"/>
+                            <Setter Property="Foreground" Value="{StaticResource DisabledForeground}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="CheckBox">

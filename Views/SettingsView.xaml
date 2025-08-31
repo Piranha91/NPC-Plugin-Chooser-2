@@ -72,7 +72,7 @@
                             </Run.Style>
                         </Run>
                         <Run Text=" - "/>
-                        <Run FontSize="10" Foreground="Black">
+                        <Run FontSize="10">
                             <Run.Text>
                                 <MultiBinding StringFormat="{}{0} Plugins in Load Order ({1} Active)">
                                     <Binding Path="NumPluginsInEnvironment" Mode="OneWay" />
