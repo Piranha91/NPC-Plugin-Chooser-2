@@ -559,7 +559,7 @@
                                                <Separator />
                                                <MenuItem Command="{Binding AddToFavoritesCommand}">
                                                    <MenuItem.Style>
-                                                       <Style TargetType="MenuItem">
+                                                       <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                            <Setter Property="Header" Value="Add to Favorites"/>
                                                            <Style.Triggers>
                                                                <DataTrigger Binding="{Binding IsFavorite}" Value="True">
@@ -573,7 +573,7 @@
                                                          Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                          ItemsSource="{Binding AvailableSourcePlugins}">
                                                    <MenuItem.ItemContainerStyle>
-                                                       <Style TargetType="MenuItem">
+                                                       <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                            <Setter Property="Header" Value="{Binding Converter={StaticResource ModKeyToStringConverter}}"/>
                                                            <Setter Property="Command" Value="{Binding DataContext.SetNpcSourcePluginCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
                                                            <Setter Property="CommandParameter" Value="{Binding}"/>

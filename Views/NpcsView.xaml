@@ -147,7 +147,7 @@
                            <Grid Grid.Column="1">
                                <TextBox VerticalAlignment="Center" Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 1">
                                     <TextBox.Style>
-                                        <Style TargetType="TextBox">
+                                        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
                                             <Setter Property="Visibility" Value="Visible"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSelectionStateSearch1}" Value="True">
@@ -180,7 +180,7 @@
                             <Grid Grid.Column="1">
                                 <TextBox VerticalAlignment="Center" Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 2">
                                     <TextBox.Style>
-                                        <Style TargetType="TextBox">
+                                        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
                                             <Setter Property="Visibility" Value="Visible"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSelectionStateSearch2}" Value="True">
@@ -214,7 +214,7 @@
                               <Grid Grid.Column="1">
                                  <TextBox VerticalAlignment="Center" Text="{Binding SearchText3, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 3">
                                      <TextBox.Style>
-                                         <Style TargetType="TextBox">
+                                         <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
                                              <Setter Property="Visibility" Value="Visible"/>
                                              <Style.Triggers>
                                                  <DataTrigger Binding="{Binding IsSelectionStateSearch3}" Value="True">
@@ -262,7 +262,7 @@
                                             <MenuItem Header="Include Outfits"
                                                       ItemsSource="{Binding Source={StaticResource OutfitOverrideEnumValues}}">
                                                 <MenuItem.ItemContainerStyle>
-                                                    <Style TargetType="MenuItem">
+                                                    <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                         <Setter Property="Header" Value="{Binding Converter={StaticResource EnumDescConverter}}"/>
                                                         <Setter Property="IsCheckable" Value="True"/>
         
@@ -502,7 +502,7 @@
                                                     Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                     ItemsSource="{Binding AvailableSourcePlugins}">
                                             <MenuItem.ItemContainerStyle>
-                                                <Style TargetType="MenuItem">
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                     <Setter Property="Header" Value="{Binding Converter={StaticResource ModKeyToStringConverter}}"/>
                                                     <Setter Property="Command" Value="{Binding DataContext.SetNpcSourcePluginCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
                                                     <Setter Property="CommandParameter" Value="{Binding}"/>
@@ -529,7 +529,7 @@
                                          <MenuItem Command="{Binding ShareWithNpcCommand}"
                                                    ToolTip="Make this appearance available for another NPC.">
                                              <MenuItem.Style>
-                                                 <Style TargetType="MenuItem">
+                                                 <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                      <Setter Property="Header" Value="Share with NPC"/>
                                                      <Setter Property="Visibility" Value="Visible"/>
                                                      <Style.Triggers>
@@ -544,7 +544,7 @@
                                          <MenuItem Command="{Binding UnshareFromNpcCommand}"
                                                    ToolTip="Remove this guest appearance from the current NPC.">
                                              <MenuItem.Style>
-                                                 <Style TargetType="MenuItem">
+                                                 <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                      <Setter Property="Header" Value="Unshare from this NPC"/>
                                                      <Setter Property="Visibility" Value="Collapsed"/>
                                                      <Style.Triggers>
@@ -557,7 +557,7 @@
                                          </MenuItem>
                                          <MenuItem Command="{Binding AddToFavoritesCommand}">
                                              <MenuItem.Style>
-                                                 <Style TargetType="MenuItem">
+                                                 <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                      <Setter Property="Header" Value="Add to Favorites"/>
                                                      <Style.Triggers>
                                                          <DataTrigger Binding="{Binding IsFavorite}" Value="True">
