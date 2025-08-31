@@ -163,7 +163,6 @@
                                      <Style TargetType="Border">
                                          <Setter Property="BorderBrush" Value="DarkGray"/>
                                          <Setter Property="ToolTip" Value="Status: Incomplete (Requires Mugshot Path and/or Mod Data Path assignment)."/>
-                                         <Setter Property="Background" Value="White"/>
                                          <Style.Triggers>
                                              <MultiDataTrigger>
                                                  <MultiDataTrigger.Conditions>
@@ -190,7 +189,6 @@
                                                  <Setter Property="ToolTip" Value="Status: Partial (Has Mugshot path, but no Mod Data path(s) assigned)."/>
                                              </MultiDataTrigger>
                                               <DataTrigger Binding="{Binding IsMugshotOnlyEntry}" Value="True">
-                                                  <Setter Property="Background" Value="#FFF8F8F8"/>
                                                    <Setter Property="ToolTip">
                                                         <Setter.Value>
                                                              <MultiBinding Converter="{StaticResource ModStatusToolTipMultiConverter}"> 
@@ -480,7 +478,7 @@
                 <!-- ============================ VIRTUALIZATION FIX END ============================ -->
             </Grid>
 
-            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="LightGray" x:Name="ColumnSplitter"/>
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" x:Name="ColumnSplitter"/>
 
             <Grid Grid.Column="2">
                  <Grid.RowDefinitions>
@@ -519,7 +517,7 @@
                                          PreviewMouseRightButtonDown="MugshotItem_PreviewMouseRightButtonDown"
                                          ToolTip="{Binding NpcDisplayName}">
                                      <!-- This Grid is the reference for the icon's percentage sizing -->
-                                     <Grid Background="WhiteSmoke">
+                                     <Grid>
                                         <Image Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True">
                                             <Image.Style>
                                                 <Style TargetType="Image">
@@ -532,7 +530,7 @@
                                                 </Style>
                                             </Image.Style>
                                         </Image>
-                                        <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Background="#AA000000" Padding="3,1">
+                                        <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Padding="3,1">
                                             <TextBlock Text="{Binding NpcDisplayName}" Foreground="White" FontSize="10"
                                                         TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
                                         </Border>

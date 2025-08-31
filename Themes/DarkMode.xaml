@@ -51,10 +51,59 @@
     <Style TargetType="GroupBox">
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
     </Style>
-
+    
     <Style TargetType="ComboBox">
-        <Setter Property="Background" Value="{StaticResource ButtonBackground}"/>
+        <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>
+        <Setter Property="Background" Value="{StaticResource TextBoxBackground}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" Focusable="false" ClickMode="Press" Background="Transparent" BorderThickness="0"/>
+                    
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" IsHitTestVisible="False"/>
+                        <ContentPresenter Margin="8,0,25,0" Content="{TemplateBinding SelectionBoxItem}" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                        <Path Fill="{StaticResource PrimaryForeground}" Stretch="Uniform" Width="8" Height="8" Margin="0,0,8,0" HorizontalAlignment="Right" Data="F1 M 0,0 L 2.5,2.5 L 5,0 Z" IsHitTestVisible="False"/>
+                    
+                        <Popup Name="PART_Popup" Placement="Bottom" IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}" AllowsTransparency="True" Focusable="False">
+                            <Grid MinWidth="{TemplateBinding ActualWidth}" MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                <Border Background="{StaticResource PrimaryBackground}" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}"/>
+                                <ScrollViewer>
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                </ScrollViewer>
+                            </Grid>
+                        </Popup>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    
+    <Style TargetType="ComboBoxItem">
+        <Setter Property="Background" Value="{StaticResource PrimaryBackground}"/>
+        <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>
+
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="Border"
+                            Padding="2"
+                            Background="{TemplateBinding Background}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Border" Property="Background" Value="{StaticResource ButtonHoverBackground}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Border" Property="Background" Value="{StaticResource ButtonHoverBackground}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="ListBox">
