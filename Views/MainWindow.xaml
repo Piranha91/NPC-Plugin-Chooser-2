@@ -14,9 +14,11 @@
                            Background="{DynamicResource PrimaryBackground}">
     
     <Window.Resources>
-        <Style x:Key="TabToggleButtonStyle"
-               TargetType="RadioButton"
-               BasedOn="{StaticResource {x:Type RadioButton}}">
+        <Style x:Key="TabToggleButtonStyle" TargetType="RadioButton">
+            <Setter Property="Background" Value="{DynamicResource ToggleButtonBackground}"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
@@ -26,13 +28,15 @@
                                 BorderThickness="1,1,1,0"
                                 CornerRadius="3,3,0,0"
                                 Padding="10,4">
-                            <ContentPresenter HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"/>
+                            <TextBlock Text="{TemplateBinding Content}"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Border" Property="Background" Value="White"/>
-                                <Setter TargetName="Border" Property="TextElement.Foreground" Value="Black"/>
+                                <Setter Property="Foreground" Value="Black"/>
                                 <Setter TargetName="Border" Property="Panel.ZIndex" Value="1"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
