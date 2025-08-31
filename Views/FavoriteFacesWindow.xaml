@@ -8,6 +8,7 @@
         xmlns:reactiveui="http://reactiveui.net"
         mc:Ignorable="d"
         x:TypeArguments="vm:VM_FavoriteFaces"
+        Style="{DynamicResource ThemedWindowStyle}"
         Title="Favorite Faces" Height="600" Width="800" WindowStartupLocation="CenterOwner">
     <Window.Resources>
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>

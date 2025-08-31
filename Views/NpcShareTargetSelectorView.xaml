@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
         mc:Ignorable="d"
+        Style="{DynamicResource ThemedWindowStyle}"
         Title="Select Target NPC to Share Appearance With" Height="450" Width="400" WindowStartupLocation="CenterOwner"
         d:DataContext="{d:DesignInstance Type=vm:VM_NpcShareTargetSelector}">
     <DockPanel Margin="10">

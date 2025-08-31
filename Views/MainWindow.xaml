@@ -11,7 +11,7 @@
                            x:TypeArguments="vm:VM_MainWindow"
                            d:DataContext="{d:DesignInstance Type=vm:VM_MainWindow}"
                            Title="NPC Plugin Chooser" Height="700" Width="1000"
-                           Background="{DynamicResource PrimaryBackground}">
+                           Style="{DynamicResource ThemedWindowStyle}">
     
     <Window.Resources>
         <Style x:Key="TabToggleButtonStyle" TargetType="RadioButton">

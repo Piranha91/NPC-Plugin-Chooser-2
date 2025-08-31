@@ -16,8 +16,8 @@
         <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>
     </Style>
 
-    <Style TargetType="Window">
-        <Setter Property="Background" Value="{StaticResource PrimaryBackground}"/>
+    <Style x:Key="ThemedWindowStyle" TargetType="Window">
+        <Setter Property="Background" Value="{DynamicResource PrimaryBackground}"/>
     </Style>
     
     <Style TargetType="TextBlock">
