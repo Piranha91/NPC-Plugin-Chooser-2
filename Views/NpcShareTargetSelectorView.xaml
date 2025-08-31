@@ -4,10 +4,17 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+        xmlns:themes="clr-namespace:NPC_Plugin_Chooser_2.Themes"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         mc:Ignorable="d"
         Style="{DynamicResource ThemedWindowStyle}"
         Title="Select Target NPC to Share Appearance With" Height="450" Width="400" WindowStartupLocation="CenterOwner"
         d:DataContext="{d:DesignInstance Type=vm:VM_NpcShareTargetSelector}">
+    
+    <i:Interaction.Behaviors>
+        <themes:TitleBarThemingBehavior />
+    </i:Interaction.Behaviors>
+    
     <DockPanel Margin="10">
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
             <Button Content="Share and Select" Margin="5" IsDefault="True" Command="{Binding ShareAndSelectCommand}" CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"/>

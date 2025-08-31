@@ -6,12 +6,18 @@
                            xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
                            xmlns:local="clr-namespace:NPC_Plugin_Chooser_2.Views"
                            xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+                           xmlns:themes="clr-namespace:NPC_Plugin_Chooser_2.Themes"
+                           xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
                            xmlns:reactiveui="http://reactiveui.net"
                            mc:Ignorable="d"
                            x:TypeArguments="vm:VM_MainWindow"
                            d:DataContext="{d:DesignInstance Type=vm:VM_MainWindow}"
                            Title="NPC Plugin Chooser" Height="700" Width="1000"
                            Style="{DynamicResource ThemedWindowStyle}">
+    
+    <i:Interaction.Behaviors>
+        <themes:TitleBarThemingBehavior />
+    </i:Interaction.Behaviors>
     
     <Window.Resources>
         <Style x:Key="TabToggleButtonStyle" TargetType="RadioButton">

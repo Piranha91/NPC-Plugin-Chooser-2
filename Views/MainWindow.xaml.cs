@@ -33,9 +33,6 @@ namespace NPC_Plugin_Chooser_2.Views
                     MessageBoxImage.Error);
                 return;
             }
-            // Handle initial title bar theme when the window handle is ready
-            this.SourceInitialized += (s, e) => ApplyTitleBarTheme(_appSettings.IsDarkMode);
-
             
             _appSettings = Locator.Current.GetService<Settings>(); // Resolve settings instance
             
@@ -129,16 +126,6 @@ namespace NPC_Plugin_Chooser_2.Views
                 // If VM_Settings.SaveAllSettings() is robust and called on App.Exit,
                 // you just need to ensure _appSettings instance is updated before that.
             });
-        }
-        
-        private void ApplyTitleBarTheme(bool isDark)
-        {
-            // This requires a window handle, so we check if it's available
-            var handle = new WindowInteropHelper(this).Handle;
-            if (handle != IntPtr.Zero)
-            {
-                DwmHelper.UseImmersiveDarkMode(handle, isDark);
-            }
         }
         
         private void ApplyWindowSettings()
