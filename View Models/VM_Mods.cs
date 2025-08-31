@@ -1722,7 +1722,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 }
                 else
                 {
-                    vm.MergeInLabelColor = new(System.Windows.Media.Colors.Black);
+                    vm.MergeInLabelColor = null;
                 }
 
                 RecalculateMugshotValidity(vm);

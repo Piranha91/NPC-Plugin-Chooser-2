@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Windows.Media;
@@ -54,6 +54,11 @@ public class UpdateHandler
         if (settingsVersion < "2.0.4")
         {
             UpdateTo2_0_4_Initial();
+        }
+
+        if (settingsVersion < "2.0.5")
+        {
+            UpdateTo2_0_5_Initial();
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -142,6 +147,21 @@ public class UpdateHandler
         foreach (var modVm in modsWithInjectedRecords)
         {
             modVm.HandleInjectedRecordsLabelColor = new SolidColorBrush(Colors.MediumPurple);
+        }
+    }
+
+    private void UpdateTo2_0_5_Initial()
+    {
+        foreach (var modSetting in _settings.ModSettings)
+        {
+            if (modSetting.MergeInLabelColor != null && modSetting.MergeInLabelColor.Color.Equals(Colors.Black))
+            {
+                modSetting.MergeInLabelColor = null;
+            }
+            if (modSetting.HandleInjectedRecordsLabelColor != null && modSetting.HandleInjectedRecordsLabelColor.Color.Equals(Colors.Black))
+            {
+                modSetting.HandleInjectedRecordsLabelColor = null;
+            }
         }
     }
 }

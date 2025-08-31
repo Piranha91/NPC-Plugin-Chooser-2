@@ -1,4 +1,4 @@
-﻿<reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.ModsView"
+<reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.ModsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -384,8 +384,18 @@
                                          <TextBlock Text="Merge Dependencies" 
                                                     VerticalAlignment="Center" 
                                                     ToolTip="{Binding MergeInToolTip}"
-                                                    Foreground="{Binding MergeInLabelColor}"
-                                                    Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                             <TextBlock.Style>
+                                                 <Style TargetType="TextBlock">
+                                                     <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding MergeInLabelColor, Converter={StaticResource IsNotNullConverter}}" Value="True">
+                                                             <Setter Property="Foreground" Value="{Binding MergeInLabelColor}"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </TextBlock.Style>
+                                         </TextBlock>
                                          <CheckBox
                                              IsChecked="{Binding MergeInDependencyRecords}"
                                              VerticalAlignment="Center"
@@ -413,8 +423,18 @@
                                                     VerticalAlignment="Center" 
                                                     Margin="10 0 0 0"
                                                     ToolTip="{Binding HandleInjectedOverridesToolTip}"
-                                                    Foreground="{Binding HandleInjectedRecordsLabelColor}"
-                                                    Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                             <TextBlock.Style>
+                                                 <Style TargetType="TextBlock">
+                                                     <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding HandleInjectedRecordsLabelColor, Converter={StaticResource IsNotNullConverter}}" Value="True">
+                                                             <Setter Property="Foreground" Value="{Binding HandleInjectedRecordsLabelColor}"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </TextBlock.Style>
+                                         </TextBlock>
                                          <CheckBox
                                              IsChecked="{Binding HandleInjectedRecords}"
                                              VerticalAlignment="Center" 
