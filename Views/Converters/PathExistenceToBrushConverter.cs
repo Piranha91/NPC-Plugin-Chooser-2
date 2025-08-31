@@ -1,15 +1,15 @@
 ﻿using System;
 using System.Globalization;
-using System.IO; // Required for Directory.Exists
-using System.Windows; // Required for SystemColors
+using System.IO;
+using System.Windows;
 using System.Windows.Data;
-using System.Windows.Media; // Required for Brushes
+using System.Windows.Media;
 
-namespace NPC_Plugin_Chooser_2.Views // Or your Converters namespace
+namespace NPC_Plugin_Chooser_2.Views
 {
     /// <summary>
     /// Converts a string path to a Brush based on whether the directory exists.
-    /// Returns Red if the directory does not exist, otherwise returns the system default text brush.
+    /// Returns Red if the directory does not exist; otherwise, it finds the correct brush from the theme.
     /// </summary>
     [ValueConversion(typeof(string), typeof(Brush))]
     public class PathExistenceToBrushConverter : IValueConverter
@@ -18,19 +18,18 @@ namespace NPC_Plugin_Chooser_2.Views // Or your Converters namespace
         {
             string? path = value as string;
 
-            // If the path is null, empty, whitespace, or doesn't exist on disk, return Red.
             if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
             {
                 return Brushes.Red;
             }
 
-            // If the path exists, return the default system text brush.
-            return SystemColors.ControlTextBrush;
+            // If the path exists, actively find the correct Foreground brush from the application's
+            // currently loaded theme resources. This is more robust than relying on style inheritance.
+            return Application.Current.TryFindResource("PrimaryForeground") as Brush;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            // Converting back is not supported for this converter.
             throw new NotImplementedException();
         }
     }
