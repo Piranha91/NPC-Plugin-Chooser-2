@@ -1,4 +1,4 @@
-<!-- NpcsView.xaml -->
+﻿<!-- NpcsView.xaml -->
 <reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.NpcsView"
              x:Name="NpcsViewRoot"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -75,7 +75,7 @@
             <MenuItem Header="Unhide all but selected"
                       Command="{Binding Path=DataContext.UnhideAllButSelectedCommand, Source={StaticResource DataContextProxy}}" />
         </ContextMenu>
-
+    
     </UserControl.Resources>
 
     <Grid>
@@ -262,7 +262,7 @@
                                             <MenuItem Header="Include Outfits"
                                                       ItemsSource="{Binding Source={StaticResource OutfitOverrideEnumValues}}">
                                                 <MenuItem.ItemContainerStyle>
-                                                    <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                    <Style TargetType="MenuItem">
                                                         <Setter Property="Header" Value="{Binding Converter={StaticResource EnumDescConverter}}"/>
                                                         <Setter Property="IsCheckable" Value="True"/>
         
@@ -502,7 +502,7 @@
                                                     Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                     ItemsSource="{Binding AvailableSourcePlugins}">
                                             <MenuItem.ItemContainerStyle>
-                                                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                <Style TargetType="MenuItem">
                                                     <Setter Property="Header" Value="{Binding Converter={StaticResource ModKeyToStringConverter}}"/>
                                                     <Setter Property="Command" Value="{Binding DataContext.SetNpcSourcePluginCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
                                                     <Setter Property="CommandParameter" Value="{Binding}"/>
@@ -529,7 +529,7 @@
                                          <MenuItem Command="{Binding ShareWithNpcCommand}"
                                                    ToolTip="Make this appearance available for another NPC.">
                                              <MenuItem.Style>
-                                                 <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                 <Style TargetType="MenuItem">
                                                      <Setter Property="Header" Value="Share with NPC"/>
                                                      <Setter Property="Visibility" Value="Visible"/>
                                                      <Style.Triggers>
@@ -544,7 +544,7 @@
                                          <MenuItem Command="{Binding UnshareFromNpcCommand}"
                                                    ToolTip="Remove this guest appearance from the current NPC.">
                                              <MenuItem.Style>
-                                                 <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                 <Style TargetType="MenuItem">
                                                      <Setter Property="Header" Value="Unshare from this NPC"/>
                                                      <Setter Property="Visibility" Value="Collapsed"/>
                                                      <Style.Triggers>
@@ -557,7 +557,7 @@
                                          </MenuItem>
                                          <MenuItem Command="{Binding AddToFavoritesCommand}">
                                              <MenuItem.Style>
-                                                 <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                 <Style TargetType="MenuItem">
                                                      <Setter Property="Header" Value="Add to Favorites"/>
                                                      <Style.Triggers>
                                                          <DataTrigger Binding="{Binding IsFavorite}" Value="True">
@@ -604,9 +604,9 @@
                         <Style TargetType="Border">
                             <Setter Property="Visibility" Value="Visible"/>
                             <Style.Triggers>
-                                 <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Null}"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
-                                 <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Static System:String.Empty}"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
-                                 <DataTrigger Binding="{Binding ShowNpcDescriptions}" Value="False"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
+                                <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Null}"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
+                                <DataTrigger Binding="{Binding CurrentNpcDescription}" Value="{x:Static System:String.Empty}"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
+                                <DataTrigger Binding="{Binding ShowNpcDescriptions}" Value="False"> <Setter Property="Visibility" Value="Collapsed"/> </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Border.Style>

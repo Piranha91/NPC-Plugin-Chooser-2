@@ -1,4 +1,4 @@
-<reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.ModsView"
+﻿<reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.ModsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -103,7 +103,7 @@
                                      IsEnabled="{Binding IsLoadingNpcData, Converter={StaticResource BooleanNegationConverter}}"
                                      ToolTip="Enter NPC search term (active after initial load)"/>
                         </StackPanel>
-                        <TextBlock Text="Loading NPC data..." Foreground="Gray" FontStyle="Italic"
+                        <TextBlock Text="Loading NPC data..." FontStyle="Italic"
                                    Margin="15,0,0,0" VerticalAlignment="Center"
                                    Visibility="{Binding IsLoadingNpcData, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     </WrapPanel>
@@ -584,7 +584,7 @@
                                                <Separator />
                                                <MenuItem Command="{Binding AddToFavoritesCommand}">
                                                    <MenuItem.Style>
-                                                       <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                       <Style TargetType="MenuItem">
                                                            <Setter Property="Header" Value="Add to Favorites"/>
                                                            <Style.Triggers>
                                                                <DataTrigger Binding="{Binding IsFavorite}" Value="True">
@@ -598,7 +598,7 @@
                                                          Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                          ItemsSource="{Binding AvailableSourcePlugins}">
                                                    <MenuItem.ItemContainerStyle>
-                                                       <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                       <Style TargetType="MenuItem">
                                                            <Setter Property="Header" Value="{Binding Converter={StaticResource ModKeyToStringConverter}}"/>
                                                            <Setter Property="Command" Value="{Binding DataContext.SetNpcSourcePluginCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
                                                            <Setter Property="CommandParameter" Value="{Binding}"/>
