@@ -468,10 +468,15 @@
 
                                          <ComboBox
                                              ItemsSource="{Binding RecordOverrideHandlingModes}"
-                                             DisplayMemberPath="Value"
                                              SelectedValuePath="Key"
                                              SelectedValue="{Binding OverrideRecordOverrideHandlingMode, Mode=TwoWay}"
-                                             Margin="5 0 0 0"/>
+                                             Margin="5 0 0 0">
+                                             <ComboBox.ItemTemplate>
+                                                 <DataTemplate>
+                                                     <TextBlock Text="{Binding Value}"/>
+                                                 </DataTemplate>
+                                             </ComboBox.ItemTemplate>
+                                         </ComboBox>
                                      </StackPanel>
 
                                      <Button Grid.Row="8" Grid.Column="0"
