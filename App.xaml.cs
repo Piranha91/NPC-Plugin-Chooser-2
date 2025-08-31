@@ -20,6 +20,7 @@ using System.Net.Http;
 using Autofac.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using System.Threading.Tasks;
+using NPC_Plugin_Chooser_2.Themes;
 using IContainer = Autofac.IContainer; // Added for Task
 
 namespace NPC_Plugin_Chooser_2
@@ -120,6 +121,7 @@ namespace NPC_Plugin_Chooser_2
 
             splashVM.UpdateProgress(15, "Loading settings model...");
             var settingsModel = VM_Settings.LoadSettings(); // Use the static method from your Settings model
+            ThemeManager.ApplyTheme(settingsModel.IsDarkMode);
             // Run the update handler to migrate settings before they are used by the application.
             splashVM.UpdateProgress(16, "Checking for setting updates...");
             var updateHandler = new UpdateHandler(settingsModel);

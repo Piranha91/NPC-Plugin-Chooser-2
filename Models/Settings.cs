@@ -59,6 +59,7 @@ public class Settings
     public int MaxNpcsPerPageSummaryView { get; set; } = 100;
     public bool SuppressPopupWarnings { get; set; } = false;
     public Language? LocalizationLanguage { get; set; } = null;
+    public bool IsDarkMode { get; set; } = false;
 
     // EasyNPC Interchangeability / Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); 

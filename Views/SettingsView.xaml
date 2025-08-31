@@ -252,6 +252,10 @@
                               IsChecked="{Binding SuppressPopupWarnings, Mode=TwoWay}"
                               Margin="0,5,0,0"
                               ToolTip="If checked, confirmation dialogs for potentially risky settings will be suppressed. Only check this if you're sure you understand what you're doing."/>
+                    
+                    <CheckBox Content="Enable Dark Mode"
+                              IsChecked="{Binding IsDarkMode, Mode=TwoWay}"
+                              Margin="0,5,0,0" />
                 </StackPanel>
             </GroupBox>
 

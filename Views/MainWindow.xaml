@@ -10,17 +10,16 @@
                            mc:Ignorable="d"
                            x:TypeArguments="vm:VM_MainWindow"
                            d:DataContext="{d:DesignInstance Type=vm:VM_MainWindow}"
-                           Title="NPC Plugin Chooser" Height="700" Width="1000">
+                           Title="NPC Plugin Chooser" Height="700" Width="1000"
+                           Background="{DynamicResource PrimaryBackground}">
     
     <Window.Resources>
-        <!-- this is your one true “tab” style -->
         <Style x:Key="TabToggleButtonStyle"
-               TargetType="ToggleButton">
-      
-            <!-- Tab‐shaped chrome -->
+               TargetType="RadioButton"
+               BasedOn="{StaticResource {x:Type RadioButton}}">
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="ToggleButton">
+                    <ControlTemplate TargetType="RadioButton">
                         <Border x:Name="Border"
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
@@ -31,12 +30,11 @@
                                               VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <!-- Checked = selected tab -->
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Border" Property="Background" Value="White"/>
+                                <Setter TargetName="Border" Property="TextElement.Foreground" Value="Black"/>
                                 <Setter TargetName="Border" Property="Panel.ZIndex" Value="1"/>
                             </Trigger>
-                            <!-- Disabled = grey it out -->
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.5"/>
                             </Trigger>
@@ -44,10 +42,6 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-
-            <!-- Default look for un-checked -->
-            <Setter Property="Background" Value="LightGray"/>
-            <Setter Property="BorderBrush" Value="DarkGray"/>
         </Style>
     </Window.Resources>
     
@@ -59,8 +53,7 @@
 
         <!-- Tab Navigation -->
         <StackPanel Grid.Row="0"
-                    Orientation="Horizontal"
-                    Background="LightGray">
+                    Orientation="Horizontal">
         
           <RadioButton x:Name="NpcsRadioButton"
                        Style="{StaticResource TabToggleButtonStyle}"

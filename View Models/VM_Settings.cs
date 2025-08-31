@@ -20,6 +20,7 @@ using Noggog; // For IsNullOrWhitespace
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views;
+using NPC_Plugin_Chooser_2.Themes;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 
@@ -95,7 +96,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         // --- New: Properties for display settings
         [Reactive] public bool NormalizeImageDimensions { get; set; }
         [Reactive] public int MaxMugshotsToFit { get; set; }
-        [Reactive] public int MaxNpcsPerPageSummaryView { get; set; }
+        [Reactive] public bool IsDarkMode { get; set; }
         [Reactive] public bool SuppressPopupWarnings { get; set; }
         // --- NEW: Localization Settings ---
         [Reactive] public bool IsLocalizationEnabled { get; set; }
@@ -183,6 +184,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             SuppressPopupWarnings = _model.SuppressPopupWarnings;
             IsLocalizationEnabled = _model.LocalizationLanguage.HasValue;
             SelectedLocalizationLanguage = _model.LocalizationLanguage;
+            IsDarkMode = _model.IsDarkMode;
             
             ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
             ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
@@ -246,6 +248,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         // If it's enabled and no language is selected, default to English
                         SelectedLocalizationLanguage = Language.English;
                     }
+                })
+                .DisposeWith(_disposables);
+            
+            this.WhenAnyValue(x => x.IsDarkMode)
+                .Skip(1) // Skip initial value set from model
+                .Subscribe(isDark =>
+                {
+                    _model.IsDarkMode = isDark;
+                    ThemeManager.ApplyTheme(isDark);
                 })
                 .DisposeWith(_disposables);
 
