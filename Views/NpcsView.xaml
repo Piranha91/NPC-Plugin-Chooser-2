@@ -1,4 +1,4 @@
-﻿<!-- NpcsView.xaml -->
+<!-- NpcsView.xaml -->
 <reactiveui:ReactiveUserControl x:Class="NPC_Plugin_Chooser_2.Views.NpcsView"
              x:Name="NpcsViewRoot"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -598,7 +598,7 @@
                     <ColumnDefinition Width="*"/> <!-- Description Area -->
                     <ColumnDefinition Width="Auto"/> <!-- Zoom Controls -->
                 </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Background="#FAFAD2" Padding="0" VerticalAlignment="Center"
+                <Border Grid.Column="0" Background="{DynamicResource PrimaryBackground}" Padding="0" VerticalAlignment="Center"
                         Visibility="{Binding ShowNpcDescriptions, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <Border.Style>
                         <Style TargetType="Border">
@@ -610,12 +610,13 @@
                             </Style.Triggers>
                         </Style>
                     </Border.Style>
-                     <Grid MinHeight="25">
-                         <ScrollViewer MaxHeight="40" VerticalScrollBarVisibility="Auto">
-                             <TextBlock Text="{Binding CurrentNpcDescription}" TextWrapping="Wrap"/>
-                         </ScrollViewer>
-                         <TextBlock Text="Loading description..." FontStyle="Italic" Foreground="Gray" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                    Visibility="{Binding IsLoadingDescription, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    <Grid MinHeight="25">
+                        <ScrollViewer MaxHeight="40" VerticalScrollBarVisibility="Auto">
+                            <TextBlock Text="{Binding CurrentNpcDescription}" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource PrimaryForeground}"/>
+                        </ScrollViewer>
+                        <TextBlock Text="Loading description..." FontStyle="Italic" Foreground="Gray" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="{Binding IsLoadingDescription, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     </Grid>
                 </Border>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
