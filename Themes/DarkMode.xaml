@@ -11,7 +11,8 @@
     <SolidColorBrush x:Key="DisabledButtonBackground" Color="#2D2D30"/>
     <SolidColorBrush x:Key="DisabledForeground" Color="#707070"/>
     <SolidColorBrush x:Key="ToggleButtonBackground" Color="#3F3F46"/>
-
+    <SolidColorBrush x:Key="HighlightAlteredText" Color="MediumPurple"/>
+    
     <Style TargetType="Control">
         <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>
     </Style>

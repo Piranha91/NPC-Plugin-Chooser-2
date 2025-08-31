@@ -389,8 +389,8 @@
                                                  <Style TargetType="TextBlock">
                                                      <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
                                                      <Style.Triggers>
-                                                         <DataTrigger Binding="{Binding MergeInLabelColor, Converter={StaticResource IsNotNullConverter}}" Value="True">
-                                                             <Setter Property="Foreground" Value="{Binding MergeInLabelColor}"/>
+                                                         <DataTrigger Binding="{Binding HasAlteredMergeLogic}" Value="True">
+                                                             <Setter Property="Foreground" Value="{DynamicResource HighlightAlteredText}"/>
                                                          </DataTrigger>
                                                      </Style.Triggers>
                                                  </Style>
@@ -428,8 +428,8 @@
                                                  <Style TargetType="TextBlock">
                                                      <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
                                                      <Style.Triggers>
-                                                         <DataTrigger Binding="{Binding HandleInjectedRecordsLabelColor, Converter={StaticResource IsNotNullConverter}}" Value="True">
-                                                             <Setter Property="Foreground" Value="{Binding HandleInjectedRecordsLabelColor}"/>
+                                                         <DataTrigger Binding="{Binding HasAlteredHandleInjectedRecordsLogic}" Value="True">
+                                                             <Setter Property="Foreground" Value="{DynamicResource HighlightAlteredText}"/>
                                                          </DataTrigger>
                                                      </Style.Triggers>
                                                  </Style>

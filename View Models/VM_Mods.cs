@@ -1321,7 +1321,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     {
                         newVm.MergeInDependencyRecords = false;
                         newVm.MergeInToolTip = newData.MergeInTooltip;
-                        newVm.MergeInLabelColor = new(Colors.Purple);
                         newVm.HasAlteredMergeLogic = true; // keeps the text color from being overwritten
                     }
                     if (newData.FoundInjectedRecords)
@@ -1329,7 +1328,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                         newVm.IsPerformingBatchAction = true; // suppress warning popup that would appear if user changes the setting manually
                         newVm.HandleInjectedRecords = true;
                         newVm.HandleInjectedOverridesToolTip = newData.InjectedTooltip;
-                        newVm.HandleInjectedRecordsLabelColor = new(Colors.Purple);
                         newVm.IsPerformingBatchAction = false;
                     }
                     if (newData.IsFaceGenOnly)
@@ -1716,15 +1714,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             foreach (var vm in _allModSettingsInternal)
             {
-                if (vm.HasAlteredMergeLogic)
-                {
-                    vm.MergeInLabelColor = new(System.Windows.Media.Colors.Purple);
-                }
-                else
-                {
-                    vm.MergeInLabelColor = null;
-                }
-
                 RecalculateMugshotValidity(vm);
             }
 

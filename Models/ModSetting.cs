@@ -23,12 +23,15 @@ public class ModSetting
     public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
 
     public bool MergeInDependencyRecords { get; set; } = true;
+    public bool HasAlteredMergeLogic { get; set; } = false; 
     public bool HandleInjectedRecords { get; set; } = false;
+    public bool HasAlteredHandleInjectedRecordsLogic { get; set; } = false;
+    
     [JsonIgnore]
     public static string DefaultRecordInjectionToolTip =
         "If checked, the patcher will search for and merge in records that are injected. This can potentially make patching take longer.";
     public string HandleInjectedOverridesToolTip { get; set; } = DefaultRecordInjectionToolTip;
-    public SolidColorBrush? HandleInjectedRecordsLabelColor { get; set; } = null;
+
     [JsonIgnore] 
     public static string DefaultMergeInTooltip =
         "If checked, all records needed by the mod will be merged into the output." +
@@ -37,12 +40,12 @@ public class ModSetting
         Environment.NewLine + "Do not merge in records from plugins that are going to be kept in your load order.";
     
     public string MergeInToolTip { get; set; } = DefaultMergeInTooltip;
-    public SolidColorBrush? MergeInLabelColor { get; set; } = new (Colors.Black);
+
     public RecordOverrideHandlingMode? ModRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
 
     public HashSet<ModKey> PluginsWithOverrideRecords { get; set; } = new();
     public bool IncludeOutfits { get; set; } = false;
-    public bool HasAlteredMergeLogic { get; set; } = false; 
+
     public Dictionary<FormKey, (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)> 
         NpcFormKeysToNotifications
     {

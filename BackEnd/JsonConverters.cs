@@ -89,6 +89,19 @@ public class ModSettingConverter : JsonConverter
             }
         }
         
+        // Migrate MergeInLabelColor to HasAlteredMergeLogic
+        // If the old color property exists and is not null, it implies the logic was altered.
+        if (jo.TryGetValue("MergeInLabelColor", StringComparison.OrdinalIgnoreCase, out JToken mergeColorToken) && mergeColorToken.Type != JTokenType.Null)
+        {
+            modSetting.HasAlteredMergeLogic = true;
+        }
+
+        // Migrate HandleInjectedRecordsLabelColor to HasAlteredHandleInjectedRecordsLogic
+        if (jo.TryGetValue("HandleInjectedRecordsLabelColor", StringComparison.OrdinalIgnoreCase, out JToken injectedColorToken) && injectedColorToken.Type != JTokenType.Null)
+        {
+            modSetting.HasAlteredHandleInjectedRecordsLogic = true;
+        }
+        
         return modSetting;
     }
 

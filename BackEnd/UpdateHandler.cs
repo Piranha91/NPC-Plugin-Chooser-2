@@ -56,11 +56,6 @@ public class UpdateHandler
             UpdateTo2_0_4_Initial();
         }
 
-        if (settingsVersion < "2.0.5")
-        {
-            UpdateTo2_0_5_Initial();
-        }
-
         Debug.WriteLine("Settings update process complete.");
     }
     
@@ -146,22 +141,7 @@ public class UpdateHandler
         // 2. Perform the UI update on the UI thread after all parallel work is complete
         foreach (var modVm in modsWithInjectedRecords)
         {
-            modVm.HandleInjectedRecordsLabelColor = new SolidColorBrush(Colors.MediumPurple);
-        }
-    }
-
-    private void UpdateTo2_0_5_Initial()
-    {
-        foreach (var modSetting in _settings.ModSettings)
-        {
-            if (modSetting.MergeInLabelColor != null && modSetting.MergeInLabelColor.Color.Equals(Colors.Black))
-            {
-                modSetting.MergeInLabelColor = null;
-            }
-            if (modSetting.HandleInjectedRecordsLabelColor != null && modSetting.HandleInjectedRecordsLabelColor.Color.Equals(Colors.Black))
-            {
-                modSetting.HandleInjectedRecordsLabelColor = null;
-            }
+            modVm.HasAlteredHandleInjectedRecordsLogic = true;
         }
     }
 }
