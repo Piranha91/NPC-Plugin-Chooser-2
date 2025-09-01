@@ -555,10 +555,11 @@
                                                 </Style>
                                             </Image.Style>
                                         </Image>
-                                        <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Padding="3,1">
-                                            <TextBlock Text="{Binding NpcDisplayName}" Foreground="White" FontSize="10"
+                                         <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Padding="3,1"
+                                                 Background="{DynamicResource MugshotCaptionBackground}">
+                                             <TextBlock Text="{Binding NpcDisplayName}" Foreground="{DynamicResource MugshotCaptionForeground}" FontSize="10"
                                                         TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
-                                        </Border>
+                                         </Border>
 
                                         <!-- ============================ NEW ICON CODE START ============================ -->
                                         <!-- This Grid contains the icon, positioned in the bottom right corner. -->

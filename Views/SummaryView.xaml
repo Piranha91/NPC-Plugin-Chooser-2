@@ -82,18 +82,20 @@
                                 </Image>
                                 
                                 <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" 
-                                        Background="#AA000000" Padding="3,1">
+                                        Background="{DynamicResource MugshotCaptionBackground}" Padding="3,1">
                                     <StackPanel HorizontalAlignment="Center">
 
                                         <TextBlock Text="{Binding NpcDisplayName}" 
-                                                   Foreground="White" FontSize="10" 
+                                                   Foreground="{DynamicResource MugshotCaptionForeground}" 
+                                                   FontSize="10" 
                                                    HorizontalAlignment="Center"
                                                    TextAlignment="Center"
                                                    TextWrapping="Wrap"  
                                                    Width="{Binding ElementName=MugshotImage, Path=ActualWidth}" />
 
                                         <TextBlock Text="{Binding ModDisplayName}" 
-                                                   Foreground="LightGray" FontSize="9" 
+                                                   Foreground="{DynamicResource MugshotCaptionSecondaryForeground}"
+                                                   FontSize="9" 
                                                    HorizontalAlignment="Center" FontStyle="Italic"
                                                    TextAlignment="Center"
                                                    TextWrapping="Wrap"

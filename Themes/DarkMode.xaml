@@ -13,6 +13,9 @@
     <SolidColorBrush x:Key="DisabledForeground" Color="#707070"/>
     <SolidColorBrush x:Key="ToggleButtonBackground" Color="#3F3F46"/>
     <SolidColorBrush x:Key="HighlightAlteredText" Color="MediumPurple"/>
+    <SolidColorBrush x:Key="MugshotCaptionBackground" Color="#AA000000"/>
+    <SolidColorBrush x:Key="MugshotCaptionForeground" Color="#F1F1F1"/>
+    <SolidColorBrush x:Key="MugshotCaptionSecondaryForeground" Color="#AAAAAA"/>
     
     <Style TargetType="Control">
         <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>
