@@ -571,7 +571,9 @@ public class VM_Mods : ReactiveObject
         _npcSelectionBar?.RefreshCurrentNpcAppearanceSources();
     }
     
-    private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
+    // In VM_Mods.cs
+
+private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
 {
     _mugshotLoadingCts?.Cancel();
     _mugshotLoadingCts = new CancellationTokenSource();
@@ -599,7 +601,7 @@ public class VM_Mods : ReactiveObject
     {
         try
         {
-            // Phase 1: Gather all data first. This is fast and happens for both algorithms.
+            // --- Phase 1: Cancellable Data Gathering ---
             var mugshotData = new List<(string ImagePath, FormKey NpcFormKey, string NpcDisplayName)>();
             bool hasRealMugshots = false;
 
@@ -612,6 +614,7 @@ public class VM_Mods : ReactiveObject
 
             if (selectedModSetting.HasValidMugshots && validFolders.Count > 0)
             {
+                // This part handles real images...
                 var imageFiles = validFolders
                     .SelectMany(folder => Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories))
                     .Where(f => MugshotNameRegex.IsMatch(Path.GetFileName(f)));
@@ -619,15 +622,13 @@ public class VM_Mods : ReactiveObject
                 foreach (var imagePath in imageFiles)
                 {
                     if (token.IsCancellationRequested) break;
-
+                    // ... (rest of image parsing logic remains the same) ...
                     var fileName = Path.GetFileName(imagePath);
                     var match = MugshotNameRegex.Match(fileName);
                     if (!match.Success) continue;
 
                     var hexPart = match.Groups["hex"].Value;
                     var pluginName = new DirectoryInfo(Path.GetDirectoryName(imagePath)!).Name;
-
-                    // last 6 hex characters + plugin name
                     var tail6 = hexPart.Length >= 6 ? hexPart[^6..] : hexPart;
                     var formKeyString = $"{tail6}:{pluginName}";
 
@@ -645,77 +646,98 @@ public class VM_Mods : ReactiveObject
                 }
             }
 
-            if (!hasRealMugshots) // Fallback to placeholders
+            if (token.IsCancellationRequested) return;
+
+            if (!hasRealMugshots) // Fallback to placeholders (now cancellable)
             {
-                mugshotData.AddRange(selectedModSetting.NpcFormKeysToDisplayName
-                    .Select(kvp => (FullPlaceholderPath, kvp.Key, kvp.Value)));
+                foreach (var kvp in selectedModSetting.NpcFormKeysToDisplayName)
+                {
+                    if (token.IsCancellationRequested) break;
+                    mugshotData.Add((FullPlaceholderPath, kvp.Key, kvp.Value));
+                }
             }
 
-            if (!mugshotData.Any()) {
-                 await Application.Current.Dispatcher.InvokeAsync(() => IsLoadingMugshots = false);
+            if (token.IsCancellationRequested || !mugshotData.Any())
+            {
+                 await Application.Current.Dispatcher.InvokeAsync(() => IsLoadingMugshots = false, System.Windows.Threading.DispatcherPriority.Normal, token);
                  return;
             }
 
+            // --- Phase 2: UI Population with Correct Sizing ---
             int maxToFit = _settings.MaxMugshotsToFit;
 
-            // **DECISION POINT: Choose algorithm based on mugshot count**
-            if (mugshotData.Count <= maxToFit)
+            // Sort all data once by name before processing
+            var sortedMugshotData = mugshotData.OrderBy(d => d.NpcDisplayName).ToList();
+
+            if (sortedMugshotData.Count <= maxToFit)
             {
-                // --- ALGORITHM 1: Small Mod (Load all, then sort and display) ---
-                var vms = mugshotData
+                // ALGORITHM 1: Small Mod - Load all at once, then resize.
+                var vms = sortedMugshotData
                     .Select(data => CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName))
-                    .OrderBy(vm => vm.NpcDisplayName)
                     .ToList();
 
                 await Application.Current.Dispatcher.InvokeAsync(() => {
                     if (token.IsCancellationRequested) return;
                     foreach (var vm in vms) CurrentModNpcMugshots.Add(vm);
                     _refreshMugshotSizesSubject.OnNext(Unit.Default); // Resize the entire batch
-                });
+                }, System.Windows.Threading.DispatcherPriority.Normal, token);
             }
             else
             {
-                // --- ALGORITHM 2: Large Mod (Progressive load and resize) ---
-                var firstChunkData = mugshotData.Take(maxToFit).ToList();
-                var firstChunkVMs = new List<VM_ModsMenuMugshot>();
-                foreach (var data in firstChunkData)
-                {
-                    if (token.IsCancellationRequested) return;
-                    firstChunkVMs.Add(CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName));
-                }
-
-                // --- MODIFICATION START: Replace Task.Delay with guaranteed Dispatcher sequencing ---
-                double definitiveWidth = 0;
-                double definitiveHeight = 0;
-
-                // --- MODIFICATION: Replace Task.Delay with robust awaitable task ---
+                // ALGORITHM 2: Large Mod - Two-phase loading to prevent layout issues.
+                
+                // 2a: Sizing Phase
+                var firstChunkData = sortedMugshotData.Take(maxToFit).ToList();
+                var firstChunkVMs = firstChunkData.Select(data => CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName)).ToList();
+                
                 _packingCompletionSource = new TaskCompletionSource<PackingResult>();
 
+                // Add the first batch to the UI and trigger the resize calculation
                 await Application.Current.Dispatcher.InvokeAsync(() => {
                     if (token.IsCancellationRequested) return;
                     foreach (var vm in firstChunkVMs) CurrentModNpcMugshots.Add(vm);
                     _refreshMugshotSizesSubject.OnNext(Unit.Default);
-                });
+                }, System.Windows.Threading.DispatcherPriority.Normal, token);
 
-                // Asynchronously wait for the OnImagePackingCompleted event handler to fire.
+                // Asynchronously wait for the UI to report back with the definitive calculated size
                 PackingResult result = await _packingCompletionSource.Task;
                 if (token.IsCancellationRequested) return;
-                
-                var remainingData = mugshotData.Skip(maxToFit).ToList();
+
+                // 2b: Population Phase
+                var remainingData = sortedMugshotData.Skip(maxToFit);
+                const int batchSize = 100;
+                var batchVms = new List<VM_ModsMenuMugshot>(batchSize);
+
                 foreach (var data in remainingData)
                 {
-                    if (token.IsCancellationRequested) return;
+                    if (token.IsCancellationRequested) break;
+
                     var vm = CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName);
 
-                    // Apply the definitive size received from the packer's completion event.
+                    // CRITICAL: Apply the definitive size BEFORE adding to the UI
                     if (result.DefinitiveWidth > 0 && result.DefinitiveHeight > 0)
                     {
                         vm.ImageWidth = result.DefinitiveWidth;
                         vm.ImageHeight = result.DefinitiveHeight;
                     }
-                        
+                    
+                    batchVms.Add(vm);
+
+                    if (batchVms.Count >= batchSize)
+                    {
+                        await Application.Current.Dispatcher.InvokeAsync(() => {
+                            if (!token.IsCancellationRequested) foreach(var item in batchVms) CurrentModNpcMugshots.Add(item);
+                        }, System.Windows.Threading.DispatcherPriority.Normal, token);
+                        batchVms.Clear();
+                        await Task.Yield(); // Allow UI to remain responsive
+                    }
+                }
+                
+                // Add the final batch
+                if (batchVms.Any() && !token.IsCancellationRequested)
+                {
                     await Application.Current.Dispatcher.InvokeAsync(() => {
-                        if (!token.IsCancellationRequested) CurrentModNpcMugshots.Add(vm);
+                        foreach(var item in batchVms) CurrentModNpcMugshots.Add(item);
                     }, System.Windows.Threading.DispatcherPriority.Normal, token);
                 }
             }
@@ -727,9 +749,6 @@ public class VM_Mods : ReactiveObject
         }
         finally
         {
-            // This logic correctly handles loads being superseded by other loads.
-            // It does NOT set IsLoadingMugshots to false on cancellation, which is
-            // now handled by the CancelMugshotLoadCommand directly.
             await Application.Current.Dispatcher.InvokeAsync(() => {
                 if (!token.IsCancellationRequested) IsLoadingMugshots = false;
             });
