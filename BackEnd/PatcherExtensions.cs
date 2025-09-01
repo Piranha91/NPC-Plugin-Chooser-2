@@ -210,10 +210,12 @@ public static class PatcherExtensions
         modToDuplicateInto.RemapLinks(mapping);
     }
 
-    public static IEnumerable<IModListingGetter<ISkyrimModGetter>> TrimPluginAndDependents(
-        this IEnumerable<IModListingGetter<ISkyrimModGetter>> loadOrder, ModKey modKey)
+    public static IEnumerable<IModListingGetter<ISkyrimModGetter>> TrimDependentPlugins(
+        this IEnumerable<IModListingGetter<ISkyrimModGetter>> loadOrder)
     {
-        List<ModKey> mastersToRemove = new() { modKey };
+        List<ModKey> mastersToRemove = loadOrder.Where(x => x.Mod?.ModHeader.Description != null && 
+                                                            x.Mod.ModHeader.Description.Equals(Patcher.PluginDescriptionSignature))
+            .Select(x => x.ModKey).ToList();
 
         List<IModListingGetter<ISkyrimModGetter>> trimmedLoadOrder = new();
         foreach (var listing in loadOrder)

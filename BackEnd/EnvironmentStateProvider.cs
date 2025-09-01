@@ -114,7 +114,7 @@ public class EnvironmentStateProvider : ReactiveObject
             _environment = builder
                 .TransformModListings(x =>
                     x.OnlyEnabledAndExisting()
-                        .TrimPluginAndDependents(OutputMod.ModKey))
+                        .TrimDependentPlugins())
                     .WithOutputMod(OutputMod)
                 .Build();
 
