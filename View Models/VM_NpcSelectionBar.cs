@@ -2021,7 +2021,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             if (SelectedNpc != null && SelectedNpc.NpcFormKey.Equals(targetNpcKey))
             {
-                RefreshAppearanceSources();
+                RefreshCurrentNpcAppearanceSources();
             }
         }
     }
@@ -2065,13 +2065,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 // This will cause the unshared mugshot to disappear.
                 if (SelectedNpc != null && SelectedNpc.NpcFormKey.Equals(targetNpcKey))
                 {
-                    RefreshAppearanceSources();
+                    RefreshCurrentNpcAppearanceSources();
                 }
             }
         }
     }
 
-    public void RefreshAppearanceSources()
+    public void RefreshCurrentNpcAppearanceSources()
     {
         Debug.WriteLine("VM_NpcSelectionBar: Refreshing appearance sources after drop...");
         var currentNpc = this.SelectedNpc;

@@ -515,12 +515,12 @@ public class VM_Mods : ReactiveObject
         // Asynchronously refresh its NPC lists if it might have mod data (though unlink usually makes it mugshot-only)
         // For a new mugshot-only entry, RefreshNpcLists won't find much, but it's harmless.
 
-        (var allFaceGenLooseFiles, var allFaceGenBsaFiles) =
-            CacheFaceGenPathsOnLoad();
+        var faceGenCache = CacheFaceGenPathsOnLoadAsync(new[] { newVm }, null)
+            .GetAwaiter().GetResult();
 
         var plugins =
             _pluginProvider.LoadPlugins(newVm.CorrespondingModKeys, newVm.CorrespondingFolderPaths.ToHashSet());
-        Task.Run(() => newVm.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage));
+        Task.Run(() => newVm.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage));
         _pluginProvider.UnloadPlugins(newVm.CorrespondingModKeys);
     }
 
@@ -564,11 +564,11 @@ public class VM_Mods : ReactiveObject
     /// <summary>
     /// Requests the VM_NpcSelectionBar to refresh its current NPC's appearance sources.
     /// </summary>
-    public void RequestNpcSelectionBarRefresh()
+    public void RequestNpcSelectionBarRefreshView()
     {
         // This relies on VM_NpcSelectionBar being accessible, e.g., if injected or via a message bus.
         // Assuming _npcSelectionBar is the injected instance.
-        _npcSelectionBar?.RefreshAppearanceSources();
+        _npcSelectionBar?.RefreshCurrentNpcAppearanceSources();
     }
     
     private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
@@ -905,6 +905,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     public async Task PopulateModSettingsAsync(VM_SplashScreen? splashReporter)
     {
         _aux.ReinitializeModDependentProperties();
+        
+        // Phase 0: Cache FaceGen
+        splashReporter?.UpdateStep("Pre-caching asset file paths...");
+        var faceGenCache = await CacheFaceGenPathsOnLoadAsync(_allModSettingsInternal, splashReporter);
+        
         // Phase 1: Initialize and load data from disk
         var (tempList, loadedDisplayNames, claimedMugshotPaths, warnings) = InitializePopulation(splashReporter);
 
@@ -913,7 +918,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         var vmsFromMugshotsOnly =
             ScanForMugshotOnlyMods(loadedDisplayNames, claimedMugshotPaths, warnings, splashReporter);
 
-        await ScanForModsInModFolderAsync(tempList, vmsFromMugshotsOnly, loadedDisplayNames, claimedMugshotPaths,
+        await ScanForModsInModFolderAsync(tempList, vmsFromMugshotsOnly, loadedDisplayNames, faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, claimedMugshotPaths,
             splashReporter, warnings);
 
         // Phase 2: Consolidate and sort the gathered data
@@ -923,8 +928,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         _allModSettingsInternal.AddRange(SortVMs(tempList));
 
         // Phase 3: Perform heavy analysis on the consolidated data
-        splashReporter?.UpdateStep("Pre-caching asset file paths...");
-        var faceGenCache = await CacheFaceGenPathsOnLoadAsync(_allModSettingsInternal, splashReporter);
 
         try
         {
@@ -975,6 +978,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         try
         {
+            var originalContainedNpcs = vmToRefresh.NpcFormKeysToDisplayName.Keys.ToHashSet();
             // 4a. Re-evaluate the mod's fundamental type (Appearance vs. Non-Appearance)
             if (vmToRefresh.CorrespondingModKeys.Any())
             {
@@ -1004,6 +1008,24 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     // Remove the VM from the list and exit.
                     RemoveModSetting(vmToRefresh);
                     return; // Stop further processing for this mod.
+                }
+            }
+            
+            if (vmToRefresh.IsFaceGenOnlyEntry)
+            {
+                var scanResult = FaceGenScanner.CreateFaceGenScanResultFromCache(vmToRefresh,
+                    faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles);
+
+                vmToRefresh.FaceGenOnlyNpcFormKeys.Clear();
+                foreach (var (pluginName, npcIds) in scanResult.FaceGenFiles)
+                {
+                    foreach (var id in npcIds.Where(id => id.Length == 8))
+                    {
+                        if (FormKey.TryFactory($"{id.Substring(2, 6)}:{pluginName}", out var formKey))
+                        {
+                            vmToRefresh.FaceGenOnlyNpcFormKeys.Add(formKey);
+                        }
+                    }
                 }
             }
             
@@ -1040,8 +1062,31 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             // 5. Update UI-dependent properties
             RecalculateMugshotValidity(vmToRefresh);
+            
+            // 6. Update NPC selection Bar
+            var toUpdate = _npcSelectionBar.AllNpcs.Where(npc =>
+                vmToRefresh.NpcFormKeysToDisplayName.Keys.Contains(npc.NpcFormKey)).ToList();
+            foreach (var npc in toUpdate)
+            {
+                if (!npc.AppearanceMods.Contains(vmToRefresh))
+                {
+                    npc.AppearanceMods.Add(vmToRefresh);
+                }
+            }
+            
+            var removedNpcs = originalContainedNpcs.Where(formKey => !vmToRefresh.NpcFormKeysToDisplayName.Keys.Contains(formKey)).ToList();
+            var toRemove = _npcSelectionBar.AllNpcs.Where(npc =>
+                removedNpcs.Contains(npc.NpcFormKey)).ToList();
 
-            RequestNpcSelectionBarRefresh();
+            foreach (var npc in toRemove)
+            {
+                if (npc.AppearanceMods.Contains(vmToRefresh))
+                {
+                    npc.AppearanceMods.Remove(vmToRefresh);
+                }
+            }
+
+            RequestNpcSelectionBarRefreshView();
         }
         catch (Exception ex)
         {
@@ -1204,6 +1249,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
     private async Task ScanForModsInModFolderAsync(List<VM_ModSetting> tempList,
         List<VM_ModSetting> vmsFromMugshotsOnly, HashSet<string> loadedDisplayNames,
+        Dictionary<string, HashSet<string>> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles,
         HashSet<string> claimedMugshotPaths, VM_SplashScreen? splashReporter, List<string> warnings)
     {
         if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder)) return;
@@ -1259,7 +1305,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             {
                 // This helper is called to create a new VM if warranted.
                 var newVmResult =
-                    await ProcessNewModFolderForParallelScanAsync(modFolderPath, modKeysInFolder, claimedMugshotPaths, splashReporter);
+                    await ProcessNewModFolderForParallelScanAsync(modFolderPath, modKeysInFolder, claimedMugshotPaths,
+                        allFaceGenLooseFiles, allFaceGenBsaFiles, splashReporter);
                 if (newVmResult != null)
                 {
                     scanResults.Add(newVmResult);
@@ -1360,19 +1407,19 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// instead of directly modifying collections, making it safe for parallel execution.
     /// </summary>
     private async Task<ModFolderScanResult?> ProcessNewModFolderForParallelScanAsync(string modFolderPath,
-        List<ModKey> modKeysInFolder, ICollection<string> claimedMugshotPaths, VM_SplashScreen? splashReporter)
+        List<ModKey> modKeysInFolder, ICollection<string> claimedMugshotPaths, Dictionary<string, HashSet<string>> allFaceGenLooseFiles, 
+        Dictionary<string, HashSet<string>> allFaceGenBsaFiles, VM_SplashScreen? splashReporter)
     {
-        var scanResult = await FaceGenScanner.CollectFaceGenFilesAsync(modFolderPath, _bsaHandler, modKeysInFolder,
-            _environmentStateProvider.SkyrimVersion.ToGameRelease());
+        // This VM will be discarded and never touches the UI.
+        var tempVmForAnalysis = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
+        tempVmForAnalysis.IsNewlyCreated = true;
+        
+        var scanResult = FaceGenScanner.CreateFaceGenScanResultFromCache(tempVmForAnalysis, allFaceGenLooseFiles, allFaceGenBsaFiles);
 
         if (!scanResult.AnyFilesFound)
         {
             return new CacheNonAppearanceResult(modFolderPath, "No FaceGen Files Found");
         }
-
-        // This VM will be discarded and never touches the UI.
-        var tempVmForAnalysis = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
-        tempVmForAnalysis.IsNewlyCreated = true;
 
         _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
 
@@ -1450,72 +1497,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
     }
 
-    private async Task ProcessNewModFolderAsync(string modFolderPath, List<ModKey> modKeysInFolder,
-        List<VM_ModSetting> tempList, HashSet<string> loadedDisplayNames, HashSet<string> claimedMugshotPaths, VM_SplashScreen? splashReporter)
-    {
-        FaceGenScanResult scanResult;
-        using (ContextualPerformanceTracer.Trace("PopulateMods.CollectFaceGenFilesAsync"))
-        {
-            scanResult = await FaceGenScanner.CollectFaceGenFilesAsync(modFolderPath, _bsaHandler, modKeysInFolder,
-                _environmentStateProvider.SkyrimVersion.ToGameRelease());
-        }
-
-        if (!scanResult.AnyFilesFound)
-        {
-            _settings.CachedNonAppearanceMods.Add(modFolderPath, "No FaceGen Files Found");
-            return;
-        }
-
-        var newVm = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
-        newVm.IsNewlyCreated = true;
-
-        using (ContextualPerformanceTracer.Trace("PopulateMods.LoadPlugins"))
-        {
-            _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
-        }
-
-        if (modKeysInFolder.Any() && await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath }))
-        {
-            string potentialMugshotPath = Path.Combine(_settings.MugshotsFolder, newVm.DisplayName);
-            if (Directory.Exists(potentialMugshotPath) && !claimedMugshotPaths.Contains(potentialMugshotPath))
-            {
-                newVm.MugShotFolderPaths.Add(potentialMugshotPath);
-                claimedMugshotPaths.Add(potentialMugshotPath);
-            }
-
-            tempList.Add(newVm);
-            loadedDisplayNames.Add(newVm.DisplayName);
-        }
-        else if (modKeysInFolder.Any())
-        {
-            _settings.CachedNonAppearanceMods.Add(modFolderPath,
-                "Does not provide new NPCs or modify any NPCs currently in load order");
-        }
-        else // FaceGen only
-        {
-            newVm.IsFaceGenOnlyEntry = true;
-            foreach (var (pluginName, npcIds) in scanResult.FaceGenFiles)
-            {
-                newVm.CorrespondingModKeys.Add(ModKey.FromFileName(pluginName));
-                foreach (var id in npcIds.Where(id => id.Length == 8))
-                {
-                    if (FormKey.TryFactory($"{id.Substring(2, 6)}:{pluginName}", out var formKey))
-                    {
-                        newVm.FaceGenOnlyNpcFormKeys.Add(formKey);
-                    }
-                }
-            }
-
-            tempList.Add(newVm);
-            loadedDisplayNames.Add(newVm.DisplayName);
-        }
-
-        using (ContextualPerformanceTracer.Trace("PopulateMods.CheckMergeInSuitability"))
-        {
-            newVm.CheckMergeInSuitability(splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
-        }
-    }
-
     private void FinalizeModList(List<VM_ModSetting> tempList, List<VM_ModSetting> vmsFromMugshotsOnly)
     {
         foreach (var mugshotVm in vmsFromMugshotsOnly)
@@ -1574,7 +1555,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     }
 
     private async Task AnalyzeModSettingsAsync(VM_SplashScreen? splashReporter,
-        (HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles) faceGenCache)
+        (Dictionary<string,HashSet<string>> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles) faceGenCache)
     {
         var maxParallelism = Environment.ProcessorCount;
         var semaphore = new SemaphoreSlim(maxParallelism);
@@ -1727,113 +1708,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         });
     }
 
-    private (HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles)
-        CacheFaceGenPathsOnLoad()
-    {
-        // Cache 1: All loose FaceGen files from all mod directories.
-        Debug.WriteLine("Caching loose FaceGen file paths...");
-        var allUniqueModPaths = _allModSettingsInternal
-            .SelectMany(vm => vm.CorrespondingFolderPaths)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var allFaceGenLooseFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var modPath in allUniqueModPaths)
-        {
-            if (!Directory.Exists(modPath)) continue;
-
-            // Search for .nif (meshes) and .dds (textures) in the expected FaceGen locations
-            var texturesPath = Path.Combine(modPath, "Textures");
-            var meshesPath = Path.Combine(modPath, "Meshes");
-
-            if (Directory.Exists(texturesPath))
-            {
-                foreach (var file in Directory.EnumerateFiles(texturesPath, "*.dds", SearchOption.AllDirectories))
-                {
-                    // Store the relative path, normalized
-                    allFaceGenLooseFiles.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
-                }
-            }
-
-            if (Directory.Exists(meshesPath))
-            {
-                foreach (var file in Directory.EnumerateFiles(meshesPath, "*.nif", SearchOption.AllDirectories))
-                {
-                    allFaceGenLooseFiles.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
-                }
-            }
-        }
-
-        Debug.WriteLine($"Cached {allFaceGenLooseFiles.Count} loose file paths.");
-
-
-        // Cache 2: All FaceGen files within all relevant BSAs, grouped by the ModSetting VM.
-        Debug.WriteLine("Caching FaceGen file paths from BSAs...");
-        var allFaceGenBsaFiles = new Dictionary<string, HashSet<string>>(); // key is ModSetting Display Name
-        var internalBsaDirCache =
-            new Dictionary<string, HashSet<string>>(); // key is BSA path. For interal use here
-
-        foreach (var vm in _allModSettingsInternal)
-        {
-            var bsaFilePathsForVm = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            var pathsToSearch = new HashSet<string>(vm.CorrespondingFolderPaths);
-            if (vm.DisplayName == VM_Mods.BaseGameModSettingName ||
-                vm.DisplayName == VM_Mods.CreationClubModsettingName)
-            {
-                pathsToSearch.Add(_environmentStateProvider.DataFolderPath);
-            }
-
-            var bsaDict = _bsaHandler.GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, pathsToSearch,
-                _settings.SkyrimRelease.ToGameRelease());
-
-            foreach (var modKey in vm.CorrespondingModKeys)
-            {
-                var bsaPathsForPlugin = bsaDict[modKey];
-                var bsaReadersForPlugin = _bsaHandler.OpenBsaArchiveReaders(bsaPathsForPlugin,
-                    _settings.SkyrimRelease.ToGameRelease(), false);
-
-                foreach (var entry in bsaReadersForPlugin)
-                {
-                    if (internalBsaDirCache.TryGetValue(entry.Key, out var faceGenFilesInArchive))
-                    {
-                        bsaFilePathsForVm.UnionWith(faceGenFilesInArchive);
-                    }
-                    else
-                    {
-                        // Iterate all file records in the BSA ONCE and store them
-                        var reader = entry.Value;
-                        if (reader.Files.Any())
-                        {
-                            HashSet<string> faceGenFilesInThisArchive = new();
-                            foreach (var fileRecord in reader.Files)
-                            {
-                                string path = fileRecord.Path.ToLowerInvariant().Replace('\\', '/');
-                                if (path.StartsWith("meshes/actors/character/facegendata/") ||
-                                    path.StartsWith("textures/actors/character/facegendata/"))
-                                {
-                                    bsaFilePathsForVm.Add(path);
-                                    faceGenFilesInThisArchive.Add(path);
-                                }
-                            }
-
-                            internalBsaDirCache.Add(entry.Key, faceGenFilesInThisArchive);
-                        }
-                    }
-                }
-            }
-
-            // Store the collected BSA file paths against a unique key for the vm (e.g., DisplayName)
-            allFaceGenBsaFiles[vm.DisplayName] = bsaFilePathsForVm;
-        }
-
-        Debug.WriteLine($"Cached BSA file paths for {allFaceGenBsaFiles.Count} mod settings.");
-
-// -        -- END OF NEW PRE-CACHING LOGIC ---
-        return (allFaceGenLooseFiles, allFaceGenBsaFiles);
-    }
-
-    private async Task<(HashSet<string> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles)>
+    private async Task<(Dictionary<string, HashSet<string>> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles)>
         CacheFaceGenPathsOnLoadAsync(IEnumerable<VM_ModSetting> vmsToProcess, VM_SplashScreen? splashReporter)
     {
         var vmsToProcessList = vmsToProcess.ToList();
@@ -1844,17 +1719,22 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var allFaceGenLooseFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var allFaceGenLooseFiles = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var modPath in allUniqueModPaths)
         {
             if (!Directory.Exists(modPath)) continue;
+
+            // Create a new set for this specific mod path
+            var looseFilesInMod = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var texturesPath = Path.Combine(modPath, "Textures");
             if (Directory.Exists(texturesPath))
             {
                 foreach (var file in Directory.EnumerateFiles(texturesPath, "*.dds", SearchOption.AllDirectories))
                 {
-                    allFaceGenLooseFiles.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
+                    // Add the relative path to this mod's specific set
+                    looseFilesInMod.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
                 }
             }
 
@@ -1863,12 +1743,19 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             {
                 foreach (var file in Directory.EnumerateFiles(meshesPath, "*.nif", SearchOption.AllDirectories))
                 {
-                    allFaceGenLooseFiles.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
+                    // Add the relative path to this mod's specific set
+                    looseFilesInMod.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
                 }
+            }
+        
+            // Add this mod's specific set to the main dictionary
+            if(looseFilesInMod.Any())
+            {
+                allFaceGenLooseFiles[modPath] = looseFilesInMod;
             }
         }
 
-        Debug.WriteLine($"Cached {allFaceGenLooseFiles.Count} loose file paths.");
+        Debug.WriteLine($"Cached loose file paths for {allFaceGenLooseFiles.Count} mod folders.");
 
         // --- Part 2: Asynchronously cache BSA files with progress reporting ---
         splashReporter?.UpdateStep("Pre-caching BSA file paths...");
@@ -2298,12 +2185,12 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             // Refresh NPC lists for the winner as its sources may have changed/**/
 
-            (var allFaceGenLooseFiles, var allFaceGenBsaFiles) =
-                CacheFaceGenPathsOnLoad();
+            var faceGenCache = CacheFaceGenPathsOnLoadAsync(new[] { winner }, null)
+                .GetAwaiter().GetResult();
 
             var plugins = _pluginProvider.LoadPlugins(winner.CorrespondingModKeys,
                 winner.CorrespondingFolderPaths.ToHashSet());
-            Task.Run(() => winner.RefreshNpcLists(allFaceGenLooseFiles, allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage));
+            Task.Run(() => winner.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage));
             _pluginProvider.UnloadPlugins(winner.CorrespondingModKeys);
 
             // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)
@@ -2347,7 +2234,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             // 5. Refresh UI
             ApplyFilters(); // Refreshes the Mods view
-            _npcSelectionBar.RefreshAppearanceSources();
+            _npcSelectionBar.RefreshCurrentNpcAppearanceSources();
         }
     }
 

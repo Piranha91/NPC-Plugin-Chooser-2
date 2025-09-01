@@ -713,7 +713,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         $"Association complete. [{placeholderTargetModSetting.DisplayName}] will now use mugshots from [{mugshotSourceModSetting.DisplayName}].");
                 }
 
-                _vmNpcSelectionBar?.RefreshAppearanceSources();
+                _vmNpcSelectionBar?.RefreshCurrentNpcAppearanceSources();
             }
         }
     }

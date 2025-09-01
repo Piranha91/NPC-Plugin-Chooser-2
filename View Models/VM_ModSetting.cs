@@ -810,7 +810,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// and populates the NPC lists (NpcNames, NpcEditorIDs, NpcFormKeys, NpcFormKeysToDisplayName).
         /// Should typically be run asynchronously during initial load or after significant changes.
         /// </summary>
-        public void RefreshNpcLists(HashSet<string> allFaceGenLooseFiles,
+        public void RefreshNpcLists(Dictionary<string, HashSet<string>> allFaceGenLooseFiles,
             Dictionary<string, HashSet<string>> allFaceGenBsaFiles,
             HashSet<ISkyrimModGetter> plugins,
             Language? language)
@@ -1171,18 +1171,24 @@ namespace NPC_Plugin_Chooser_2.View_Models
         /// <summary>
         /// Checks if FaceGen for the given FormKey exists using pre-cached sets of file paths.
         /// </summary>
-        public bool FaceGenExists(FormKey formKey, HashSet<string> looseFileCache, HashSet<string> bsaFileCache)
+        public bool FaceGenExists(FormKey formKey, Dictionary<string, HashSet<string>> looseFileCache, HashSet<string> bsaFileCache)
         {
             var faceGenRelPaths = Auxilliary.GetFaceGenSubPathStrings(formKey);
-
-            // Normalize paths for consistent lookups. Use forward slashes and lowercase.
+    
+            // Normalize paths for consistent lookups.
             string faceGenMeshRelPath = Path.Combine("Meshes", faceGenRelPaths.MeshPath).Replace('\\', '/').ToLowerInvariant();
             string faceGenTexRelPath = Path.Combine("Textures", faceGenRelPaths.TexturePath).Replace('\\', '/').ToLowerInvariant();
 
-            // The check is now a near-instantaneous HashSet lookup.
-            if (looseFileCache.Contains(faceGenMeshRelPath) || looseFileCache.Contains(faceGenTexRelPath))
+            // NEW: Check loose files within the scope of THIS mod setting's folders
+            foreach(var modFolderPath in this.CorrespondingFolderPaths)
             {
-                return true;
+                if (looseFileCache.TryGetValue(modFolderPath, out var looseFilesInThisMod))
+                {
+                    if (looseFilesInThisMod.Contains(faceGenMeshRelPath) || looseFilesInThisMod.Contains(faceGenTexRelPath))
+                    {
+                        return true;
+                    }
+                }
             }
 
             if (bsaFileCache.Contains(faceGenMeshRelPath) || bsaFileCache.Contains(faceGenTexRelPath))
@@ -1624,7 +1630,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
                 // Also notify the NpcSelectionBar to refresh its view, in case this
                 // command was initiated from the NpcsView.
-                _parentVm.RequestNpcSelectionBarRefresh();
+                _parentVm.RequestNpcSelectionBarRefreshView();
             }
         }
         
@@ -1687,7 +1693,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             _parentVm.RecalculateMugshotValidity(this);
 
             // 5. Notify selection bar to refresh appearance sources for current NPC if necessary
-            _parentVm.RequestNpcSelectionBarRefresh();
+            _parentVm.RequestNpcSelectionBarRefreshView();
         }
         
         // Method executed by DeleteCommand ***
