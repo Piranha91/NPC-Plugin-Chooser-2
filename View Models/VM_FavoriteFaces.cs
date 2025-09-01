@@ -174,6 +174,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private void ApplyFavorite()
         {
             if (SelectedMugshot == null || _targetNpcForApply == null) return;
+            _npcsViewModel.AddGuestAppearance(_targetNpcForApply.NpcFormKey, SelectedMugshot.ModDisplayName, SelectedMugshot.TargetNpcFormKey, SelectedMugshot.SourceNpcDisplayName);
             _consistencyProvider.SetSelectedMod(_targetNpcForApply.NpcFormKey, SelectedMugshot.ModDisplayName, SelectedMugshot.TargetNpcFormKey);
             RequestClose?.Invoke();
         }
