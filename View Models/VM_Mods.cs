@@ -2443,7 +2443,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         return _overridesCache;
     }
 
-    public void UpdateTemplates(FormKey npcFormKey, VM_ModSetting modSettingVM)
+    public bool UpdateTemplates(FormKey npcFormKey, VM_ModSetting modSettingVM)
     {
         int maxCycleCount = 50; // this should be way overkill
         List<(FormKey formKey, string displayName)> templateChain = new();
@@ -2460,11 +2460,15 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
 
         int cycleCount = 0;
-        ISkyrimModGetter sourcePlugin;
+        ISkyrimModGetter? sourcePlugin = null;
+        INpcGetter? currentNpcGetter = null;
+        List<FormKey> fromLinkCacheOnly = new(); // don't try to set the appearance mod for these NPCs
         while (cycleCount < maxCycleCount)
         {
             var availablePlugins = modSettingVM.AvailablePluginsForNpcs.TryGetValue(npcFormKey);
-            if (availablePlugins is not null && availablePlugins.Any())
+            // note: availablePlugins might be null if the given template doesn't come with FaceGen, causing the modSetting to reject it as an appearance mod.
+            // Fall back to the link cache in this case
+            if (availablePlugins != null && availablePlugins.Any() || (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out currentNpcGetter) && currentNpcGetter != null))
             {
                 if (availablePlugins.Count == 1)
                 {
@@ -2499,37 +2503,55 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     break;
                 }
             }
+            else if (_environmentStateProvider.LinkCache.TryResolve<ILeveledNpcGetter>(npcFormKey,
+                         out var leveledNpcGetter))
+            {
+                var newEntry = (leveledNpcGetter.FormKey, Auxilliary.GetLogString(leveledNpcGetter, _settings.LocalizationLanguage, true));
+                templateChain.Add(newEntry);
+                
+                ScrollableMessageBox.ShowWarning("This NPC appearance uses a template whose template chain ends with a Leveled NPC. Therefore, you cannot select a unique appearance for it." 
+                                                 + Environment.NewLine + $"Template Chain: {string.Join(" -> ", templateChain.Select(x => x.displayName))}");
+                return false;
+            }
+            else if (currentNpcGetter != null)
+            {
+                fromLinkCacheOnly.Add(currentNpcGetter.FormKey);
+            }
             else
             {
-                errorMessages.Add(
+                 errorMessages.Add(
                     $"Could not find any available plugins for {npcFormKey} within {modSettingVM.DisplayName}");
                 break;
             }
 
-            if (sourcePlugin != null)
+            if (sourcePlugin != null || currentNpcGetter != null)
             {
-                var npc = sourcePlugin.Npcs.Where(x => x.FormKey.Equals(npcFormKey)).FirstOrDefault();
-                if (npc is null)
+                if (sourcePlugin != null)
+                {
+                    currentNpcGetter =  sourcePlugin.Npcs.Where(x => x.FormKey.Equals(npcFormKey)).FirstOrDefault();   
+                }
+                
+                if (currentNpcGetter is null)
                 {
                     errorMessages.Add(
                         $"Could not find {npcFormKey} in {sourcePlugin.ModKey.FileName} even though analysis indicates it should be there");
                     break;
                 }
 
-                var newEntry = (npc.FormKey, Auxilliary.GetLogString(npc, _settings.LocalizationLanguage, true));
+                var newEntry = (currentNpcGetter.FormKey, Auxilliary.GetLogString(currentNpcGetter, _settings.LocalizationLanguage, true));
                 templateChain.Add(newEntry);
 
-                if (npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
+                if (currentNpcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
                 {
-                    if (npc.Template is null || npc.Template.IsNull)
+                    if (currentNpcGetter.Template is null || currentNpcGetter.Template.IsNull)
                     {
                         errorMessages.Add(
-                            $"The appearance template for {Auxilliary.GetLogString(npc, _settings.LocalizationLanguage)} in {sourcePlugin.ModKey.FileName} is blank despite it having a Traits template flag");
+                            $"The appearance template for {Auxilliary.GetLogString(currentNpcGetter, _settings.LocalizationLanguage)} in {sourcePlugin.ModKey.FileName} is blank despite it having a Traits template flag");
                         break;
                     }
                     else
                     {
-                        npcFormKey = npc.Template.FormKey; // repeat for the next template
+                        npcFormKey = currentNpcGetter.Template.FormKey; // repeat for the next template
                     }
                 }
                 else
@@ -2566,10 +2588,17 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                         continue;
                     } // the current mugshot has already been set by the caller
 
+                    if (fromLinkCacheOnly.Contains(entry.formKey))
+                    {
+                        continue;
+                    } // don't set the appearance for templates without FaceGen.
+
                     _consistencyProvider.SetSelectedMod(entry.formKey, modSettingVM.DisplayName, entry.formKey);
                 }
             }
         }
+
+        return true;
     }
 
     public CancellationToken GetCurrentMugshotLoadToken()

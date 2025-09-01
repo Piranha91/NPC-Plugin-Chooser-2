@@ -988,7 +988,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     foreach (var currentNpcKey in FaceGenOnlyNpcFormKeys)
                     {
                         NpcFormKeys.Add(currentNpcKey);
-                        var sourcePlugin = currentNpcKey.ModKey;
                         var contexts =
                             _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(currentNpcKey);
                         var sourceContext = contexts.LastOrDefault();

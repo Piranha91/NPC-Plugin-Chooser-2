@@ -314,6 +314,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
             else
             {
+                var previousSelection = _consistencyProvider.GetSelectedMod(_targetNpcFormKey);
+                
                 System.Diagnostics.Debug.WriteLine($"Selecting mod '{ModName}' for NPC '{_targetNpcFormKey}'");
                 _consistencyProvider.SetSelectedMod(_targetNpcFormKey, ModName, SourceNpcFormKey);
                 
@@ -321,7 +323,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     if (AssociatedModSetting != null && _lazyMods.IsValueCreated)
                     {
-                        _lazyMods.Value.UpdateTemplates(_targetNpcFormKey, AssociatedModSetting);
+                        if (!_lazyMods.Value.UpdateTemplates(_targetNpcFormKey, AssociatedModSetting))
+                        {
+                            if (previousSelection.ModName != null)
+                            {
+                                _consistencyProvider.SetSelectedMod(_targetNpcFormKey, previousSelection.ModName,
+                                    previousSelection.SourceNpcFormKey);
+                            }
+                            else
+                            {
+                                _consistencyProvider.ClearSelectedMod(_targetNpcFormKey);
+                            }
+                        }
                     }
                     else // fall back to simple analzyer
                     {
