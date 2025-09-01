@@ -26,29 +26,32 @@
                      VirtualizingStackPanel.VirtualizationMode="Recycling"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl.ItemTemplate>
-                         <DataTemplate DataType="{x:Type vm:VM_SelectableMod}">
-                             <Border Margin="0,1,0,1" Padding="3,2" CornerRadius="2" Background="#F9F9F9" BorderBrush="#E0E0E0" BorderThickness="1">
+                        <DataTemplate DataType="{x:Type vm:VM_SelectableMod}">
+                            <Border Margin="0,1,0,1" Padding="3,2" CornerRadius="2"
+                                    Background="{DynamicResource PrimaryBackground}"
+                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    BorderThickness="1">
                                 <StackPanel Orientation="Horizontal">
-                                   <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                               VerticalAlignment="Center"
                                               Margin="0,0,5,0"/>
-                                   <TextBlock Text="{Binding DisplayText}"
+                                    <TextBlock Text="{Binding DisplayText}"
                                                VerticalAlignment="Center"
-                                       ToolTip="{Binding DisplayText}">
+                                               ToolTip="{Binding DisplayText}">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
-                                                <Setter Property="Foreground" Value="Black"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
                                                 <Style.Triggers>
-                                                   <DataTrigger Binding="{Binding IsMissingFromEnvironment}" Value="True">
-                                                       <Setter Property="Foreground" Value="Red"/>
+                                                    <DataTrigger Binding="{Binding IsMissingFromEnvironment}" Value="True">
+                                                        <Setter Property="Foreground" Value="Red"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </TextBlock.Style>
                                     </TextBlock>
-                                 </StackPanel>
-                             </Border>
-                       </DataTemplate>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
                     </ItemsControl.ItemTemplate>
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
