@@ -1504,6 +1504,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             // Add all created VMs to the final list
             AllNpcs.AddRange(npcViewModelMap.Values);
+            
+            // Update group display string for each NPC on initial load
+            foreach (var npcVM in AllNpcs)
+            {
+                _settings.NpcGroupAssignments.TryGetValue(npcVM.NpcFormKey, out var groups);
+                npcVM.UpdateGroupDisplay(groups);
+            }
 
             // Remove any NPCs that ultimately have no appearance sources
             for (int i = AllNpcs.Count - 1; i >= 0; i--)
@@ -2263,6 +2270,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             Debug.WriteLine($"Added NPC {npcKey} to group '{groupName}'");
             UpdateAvailableNpcGroups();
+            SelectedNpc.UpdateGroupDisplay(groups);
             ApplyFilter(false);
         }
         else
@@ -2284,6 +2292,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             if (groups.Remove(groupName))
             {
                 Debug.WriteLine($"Removed NPC {npcKey} from group '{groupName}'");
+                SelectedNpc.UpdateGroupDisplay(groups);
                 if (!groups.Any())
                 {
                     _settings.NpcGroupAssignments.Remove(npcKey);
@@ -2365,6 +2374,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 addedCount++;
                 groupListChanged = true;
+                npc.UpdateGroupDisplay(groups);
             }
         }
 
@@ -2414,6 +2424,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 if (groups.Remove(groupName))
                 {
                     removedCount++;
+                    npc.UpdateGroupDisplay(groups);
                     groupListMayNeedUpdate = true;
                     if (!groups.Any())
                     {

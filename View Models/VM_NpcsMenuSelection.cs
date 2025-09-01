@@ -39,6 +39,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public string FormIdString { get; }
         private bool _pluginFound = false;
         public bool IsInLoadOrder { get; set; }
+        [Reactive] public string NpcGroupsDisplay { get; set; } = "Groups: None";
 
         // This property reflects the centrally stored selection
         [Reactive] public string? SelectedAppearanceModName { get; set; }
@@ -71,6 +72,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
             IsInLoadOrder = npcData.IsInLoadOrder;
             
             RefreshName(language);
+        }
+        
+        public void UpdateGroupDisplay(HashSet<string>? groups)
+        {
+            if (groups != null && groups.Any())
+            {
+                NpcGroupsDisplay = $"Groups: {string.Join(", ", groups.OrderBy(g => g))}";
+            }
+            else
+            {
+                NpcGroupsDisplay = "Groups: None";
+            }
         }
 
         public void RefreshName(Language? language)

@@ -257,7 +257,14 @@
                              <DataTemplate>
                                  <Border>
                                      <Border.ToolTip>
-                                         <ToolTip> <StackPanel> <TextBlock Text="{Binding NpcName}" /> <TextBlock Text="{Binding NpcEditorId}" /> <TextBlock Text="{Binding NpcFormKeyString}" /> </StackPanel> </ToolTip>
+                                         <ToolTip>
+                                              <StackPanel>
+                                                   <TextBlock Text="{Binding NpcName}" /> 
+                                                   <TextBlock Text="{Binding NpcEditorId}" /> 
+                                                   <TextBlock Text="{Binding NpcFormKeyString}" />
+                                                   <TextBlock Text="{Binding NpcGroupsDisplay}" />
+                                              </StackPanel>
+                                         </ToolTip>
                                      </Border.ToolTip>
                                      <Border.ContextMenu>
                                         <ContextMenu>
