@@ -15,6 +15,7 @@
         <local:EnumMatchToBooleanConverter x:Key="EnumMatchToBooleanConverter"/>
         <local:EnumToVisibilityConverter x:Key="EnumToVisibilityConverter"/>
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <local:WidthPercentageConverter x:Key="WidthPercentageConverter"/> 
     </UserControl.Resources>
 
     <Grid>
@@ -93,13 +94,13 @@
                                                    TextWrapping="Wrap"  
                                                    Width="{Binding ElementName=MugshotImage, Path=ActualWidth}" />
 
-                                        <TextBlock Text="{Binding ModDisplayName}" 
-                                                   Foreground="{DynamicResource MugshotCaptionSecondaryForeground}"
-                                                   FontSize="9" 
-                                                   HorizontalAlignment="Center" FontStyle="Italic"
-                                                   TextAlignment="Center"
-                                                   TextWrapping="Wrap"
-                                                   Width="{Binding ElementName=MugshotImage, Path=ActualWidth}" />
+                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                                                 Width="{Binding ElementName=MugshotImage, Path=ActualWidth, Converter={StaticResource WidthPercentageConverter}, ConverterParameter=90}">
+                                            <TextBlock Text="{Binding ModDisplayName}" 
+                                                       Foreground="{DynamicResource MugshotCaptionSecondaryForeground}" FontSize="9" 
+                                                       HorizontalAlignment="Center" FontStyle="Italic"
+                                                       TextAlignment="Center"
+                                                       TextWrapping="NoWrap" /> </Viewbox>
 
                                     </StackPanel>
                                 </Border>
