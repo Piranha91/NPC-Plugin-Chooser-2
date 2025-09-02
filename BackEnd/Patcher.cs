@@ -655,6 +655,31 @@ public class Patcher : OptionalUIModule
                                                 }
 
                                                 _aux.CollectShallowAssetLinks(dependencyContexts, assetLinks);
+                                                
+                                                if (mergeInDependencyRecords)
+                                                {
+                                                    List<string> mergeInExceptions = new();
+                                                    var importSourceModKeys = appearanceModSetting.CorrespondingModKeys
+                                                        .Distinct().Where(k => k != patchNpc.FormKey.ModKey)
+                                                        .ToHashSet();
+                                                    var additionalMergedRecords =
+                                                        _recordHandler.DuplicateFromOnlyReferencedGetters(
+                                                            _environmentStateProvider.OutputMod, dependencyContexts.Select(x => x.Record).ToHashSet(),
+                                                            importSourceModKeys, appearanceModKey.Value, true,
+                                                            appearanceModSetting.HandleInjectedRecords,
+                                                            currentModFolderPaths,
+                                                            ref mergeInExceptions);
+                                                    if (mergeInExceptions.Any())
+                                                    {
+                                                        AppendLog("Exceptions occurred during dependency merge-in of " +
+                                                                  Auxilliary.GetLogString(patchNpc, _settings.LocalizationLanguage) +
+                                                                  Environment.NewLine +
+                                                                  string.Join(Environment.NewLine, mergeInExceptions));
+                                                    }
+
+                                                    _aux.CollectShallowAssetLinks(additionalMergedRecords, assetLinks);
+                                                }
+                                                
                                                 break;
                                             case RecordOverrideHandlingMode.IncludeAsNew:
                                                 List<string> overrideExceptionStrings = new();
