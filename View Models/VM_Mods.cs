@@ -1702,6 +1702,36 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
     }
     
+    public async Task<bool> RescanSingleModFolderAsync(string modFolderPath)
+    {
+        if (string.IsNullOrWhiteSpace(modFolderPath) || !Directory.Exists(modFolderPath))
+        {
+            return false;
+        }
+
+        string modFolderName = Path.GetFileName(modFolderPath);
+        if (_allModSettingsInternal.Any(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase)))
+        {
+            ScrollableMessageBox.ShowWarning($"An appearance mod named '{modFolderName}' already exists. Cannot re-import from cached list.", "Mod Already Exists");
+            return false;
+        }
+
+        var modKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, new List<string>(), false);
+        var newVm = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
+        newVm.IsNewlyCreated = true;
+
+        _allModSettingsInternal.Add(newVm);
+        SortVMsInPlace();
+        
+        await RefreshSingleModSettingAsync(newVm);
+
+        bool wasSuccessfullyImported = _allModSettingsInternal.Contains(newVm);
+        
+        ApplyFilters();
+
+        return wasSuccessfullyImported;
+    }
+    
     // This NEW helper method contains the logic to resolve and save guest appearances.
     // It is called only once by AnalyzeModSettingsAsync.
     private async Task ResolveAndApplySkyPatcherGuests(IReadOnlyCollection<(FormKey TargetNpc, FormKey SourceNpc, string ModDisplayName, string SourceNpcDisplayName)> guests)

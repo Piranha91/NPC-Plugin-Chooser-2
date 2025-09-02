@@ -119,6 +119,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public ReactiveCommand<Unit, Unit> ExportEasyNpcCommand { get; } // New
         public ReactiveCommand<bool, Unit> UpdateEasyNpcProfileCommand { get; } // Takes bool parameter
         public ReactiveCommand<string, Unit> RemoveCachedModCommand { get; }
+        public ReactiveCommand<string, Unit> RescanCachedModCommand { get; }
 
         public VM_Settings(
             EnvironmentStateProvider environmentStateProvider,
@@ -217,6 +218,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     FilteredNonAppearanceMods.Remove(itemToRemove);
                 }
             });
+            RescanCachedModCommand = ReactiveCommand.CreateFromTask<string>(RescanCachedModAsync);
+            RescanCachedModCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Failed to re-scan mod: {ex.Message}"));
+
 
             // Property subscriptions (as before, ensure .Skip(1) where appropriate if values are set above)
             // These update the model or _environmentStateProvider's direct properties
@@ -836,6 +840,37 @@ Options:
             foreach (var item in itemsToDisplay)
             {
                 FilteredNonAppearanceMods.Add(item);
+            }
+        }
+        
+        private async Task RescanCachedModAsync(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            {
+                ScrollableMessageBox.ShowWarning($"The path '{path}' no longer exists and cannot be scanned.", "Path Not Found");
+                return;
+            }
+
+            var modsVM = _lazyModListVM.Value;
+
+            bool wasReimported = await modsVM.RescanSingleModFolderAsync(path);
+
+            if (wasReimported)
+            {
+                _model.CachedNonAppearanceMods.Remove(path);
+
+                var itemToRemove = CachedNonAppearanceMods.FirstOrDefault(kvp => kvp.Key == path);
+                if (!itemToRemove.Equals(default(KeyValuePair<string, string>)))
+                {
+                    CachedNonAppearanceMods.Remove(itemToRemove);
+                    // Filtered list will update automatically due to subscription
+                }
+
+                ScrollableMessageBox.Show($"Successfully re-imported '{Path.GetFileName(path)}' as an appearance mod. You can now find it in the Mods menu.", "Re-Scan Successful");
+            }
+            else
+            {
+                ScrollableMessageBox.Show($"The mod at '{Path.GetFileName(path)}' is still not recognized as an appearance mod.", "Re-Scan Complete");
             }
         }
 
