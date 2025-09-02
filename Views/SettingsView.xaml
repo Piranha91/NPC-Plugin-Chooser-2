@@ -236,7 +236,7 @@
                                   MinWidth="120"
                                   Margin="10,0,0,0">
                             <ComboBox.Style>
-                                <Style TargetType="ComboBox">
+                                <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
                                     <Setter Property="Visibility" Value="Collapsed" />
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsLocalizationEnabled}" Value="True">
