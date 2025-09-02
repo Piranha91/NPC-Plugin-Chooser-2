@@ -2424,30 +2424,41 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             if (settingsBackup.TryGetValue(vm.DisplayName, out var backup))
             {
-                // Restore mugshot folders that don't already exist
-                foreach (var path in backup.MugShotFolderPaths)
+                try
                 {
-                    if (!vm.MugShotFolderPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+                    // Suppress confirmation pop-ups during restoration
+                    vm.IsPerformingBatchAction = true;
+
+                    // Restore mugshot folders that don't already exist
+                    foreach (var path in backup.MugShotFolderPaths)
                     {
-                        vm.MugShotFolderPaths.Add(path);
+                        if (!vm.MugShotFolderPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+                        {
+                            vm.MugShotFolderPaths.Add(path);
+                        }
+                    }
+
+                    // Restore settings
+                    vm.OverrideRecordOverrideHandlingMode = backup.OverrideRecordOverrideHandlingMode;
+                    vm.IncludeOutfits = backup.IncludeOutfits;
+
+                    // Only restore merge/injected settings if they were manually altered by the user before
+                    if (backup.HasAlteredMergeLogic)
+                    {
+                        vm.MergeInDependencyRecords = backup.MergeInDependencyRecords;
+                        vm.HasAlteredMergeLogic = true;
+                    }
+
+                    if (backup.HasAlteredHandleInjectedRecordsLogic)
+                    {
+                        vm.HandleInjectedRecords = backup.HandleInjectedRecords;
+                        vm.HasAlteredHandleInjectedRecordsLogic = true;
                     }
                 }
-
-                // Restore settings
-                vm.OverrideRecordOverrideHandlingMode = backup.OverrideRecordOverrideHandlingMode;
-                vm.IncludeOutfits = backup.IncludeOutfits;
-
-                // Only restore merge/injected settings if they were manually altered by the user before
-                if (backup.HasAlteredMergeLogic)
+                finally
                 {
-                    vm.MergeInDependencyRecords = backup.MergeInDependencyRecords;
-                    vm.HasAlteredMergeLogic = true;
-                }
-
-                if (backup.HasAlteredHandleInjectedRecordsLogic)
-                {
-                    vm.HandleInjectedRecords = backup.HandleInjectedRecords;
-                    vm.HasAlteredHandleInjectedRecordsLogic = true;
+                    // Ensure the flag is always reset
+                    vm.IsPerformingBatchAction = false;
                 }
             }
         }
