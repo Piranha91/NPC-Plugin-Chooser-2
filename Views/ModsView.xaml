@@ -683,10 +683,13 @@
                 <!-- NEW: Batch Actions Panel -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="10,0,0,0">
                     <TextBlock Text="Batch Actions:" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <Button Content="Include" Command="{Binding BatchIncludeOutfitsCommand}" Margin="5,0" Padding="5,2" ToolTip="Enable 'Include Outfits' for ALL mods."/>
+    
+                    <Button Content="Refresh All" Command="{Binding RefreshAllModsCommand}" Margin="5,0" Padding="5,2" ToolTip="Completely re-scans all mod folders and rebuilds the mod list."/>
+
+                    <Button Content="Include" Command="{Binding BatchIncludeOutfitsCommand}" Margin="15,0,5,0" Padding="5,2" ToolTip="Enable 'Include Outfits' for ALL mods."/>
                     <Button Content="Exclude" Command="{Binding BatchExcludeOutfitsCommand}" Padding="5,2" ToolTip="Disable 'Include Outfits' for ALL mods."/>
                     <TextBlock Text="Outfits" VerticalAlignment="Center" Margin="5,0,0,0"/>
-                    
+
                     <Button Content="Enable" Command="{Binding BatchEnableInjectedRecordsCommand}" Margin="10,0" Padding="5,2" ToolTip="Enable 'Search for Injected Records' for ALL mods."/>
                     <Button Content="Disable" Command="{Binding BatchDisableInjectedRecordsCommand}" Padding="5,2" ToolTip="Disable 'Search for Injected Records' for ALL mods."/>
                     <TextBlock Text="Injected Record Search" VerticalAlignment="Center" Margin="5,0,0,0"/>

@@ -43,7 +43,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             _selectedMods = new Dictionary<FormKey, (string, FormKey)>(_settingsModel.SelectedAppearanceMods ?? new());
         }
 
-        public void SetSelectedMod(FormKey npcFormKey, string selectedMod, FormKey sourceNpcFormKey)
+        public void SetSelectedMod(FormKey npcFormKey, string selectedMod, FormKey sourceNpcFormKey, bool suppressSaveRequest = false)
         {
             if (string.IsNullOrEmpty(selectedMod)) return;
 
@@ -61,7 +61,10 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             {
                 _npcSelectionChanged.OnNext(new NpcSelectionChangedEventArgs(npcFormKey, selectedMod,
                     sourceNpcFormKey));
-                _lazyVmSettings.Value?.RequestThrottledSave();
+                if (!suppressSaveRequest)
+                {
+                    _lazyVmSettings.Value?.RequestThrottledSave();
+                }
             }
         }
 
@@ -116,6 +119,17 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         public bool DoesNpcHaveSelection(FormKey npcFormKey)
         {
             return _selectedMods.ContainsKey(npcFormKey);
+        }
+        
+        public void RestoreSelections(Dictionary<FormKey, (string ModName, FormKey NpcFormKey)> selectionBackup)
+        {
+            ClearAllSelections(); // Clear current state before restoring
+            foreach (var selection in selectionBackup)
+            {
+                // Use the version that suppresses individual save requests
+                SetSelectedMod(selection.Key, selection.Value.ModName, selection.Value.NpcFormKey, suppressSaveRequest: true);
+            }
+            _lazyVmSettings.Value?.RequestThrottledSave(); // Request a single save at the end
         }
     }
 }

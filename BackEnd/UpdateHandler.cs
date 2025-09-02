@@ -95,6 +95,11 @@ public class UpdateHandler
         {
             await UpdateTo2_0_4_Final(modsVm, splashReporter);
         }
+        
+        if (settingsVersion < "2.0.5")
+        {
+            await UpdateTo2_0_5_Final(modsVm, splashReporter);
+        }
 
         Debug.WriteLine("Settings update process complete.");
     }
@@ -143,5 +148,11 @@ public class UpdateHandler
         {
             modVm.HasAlteredHandleInjectedRecordsLogic = true;
         }
+    }
+    
+    private async Task UpdateTo2_0_5_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
+    {
+        // Call the public refresh coordinator, passing the existing splash screen reporter
+        await modsVm.RefreshAllModSettingsAsync(splashReporter);
     }
 }

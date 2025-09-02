@@ -90,7 +90,19 @@ public class VM_Mods : ReactiveObject
     private readonly Subject<Unit> _refreshMugshotSizesSubject = new Subject<Unit>();
     public IObservable<Unit> RefreshMugshotSizesObservable => _refreshMugshotSizesSubject.AsObservable();
     
+    // Record for Refresh All Mods
+    private record ModSettingsBackup(
+        List<string> MugShotFolderPaths,
+        bool MergeInDependencyRecords,
+        bool HasAlteredMergeLogic,
+        bool IncludeOutfits,
+        bool HandleInjectedRecords,
+        bool HasAlteredHandleInjectedRecordsLogic,
+        RecordOverrideHandlingMode? OverrideRecordOverrideHandlingMode
+    );
+    
     // --- Batch Action Controls ---
+    public ReactiveCommand<Unit, Unit> RefreshAllModsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchIncludeOutfitsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchExcludeOutfitsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchEnableInjectedRecordsCommand { get; }
@@ -174,6 +186,9 @@ public class VM_Mods : ReactiveObject
         _imagePacker = imagePacker;
         
         _imagePacker.PackingCompleted += OnImagePackingCompleted;
+        
+        RefreshAllModsCommand = ReactiveCommand.CreateFromTask(() => RefreshAllModSettingsAsync(null));
+        RefreshAllModsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing all mods: {ex.Message}")).DisposeWith(_disposables);
 
         ShowMugshotsCommand = ReactiveCommand.CreateFromTask<VM_ModSetting>(ShowMugshotsAsync);
         ShowMugshotsCommand.ThrownExceptions.Subscribe(ex =>
@@ -2355,6 +2370,113 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             _npcSelectionBar.RefreshCurrentNpcAppearanceSources();
         }
     }
+    
+    public async Task RefreshAllModSettingsAsync(VM_SplashScreen? splashReporter)
+{
+    bool createdSplashReporter = false;
+    if (splashReporter == null)
+    {
+        splashReporter = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, keepTopMost: false);
+        createdSplashReporter = true;
+    }
+
+    try
+    {
+        splashReporter.UpdateStep("Backing up current settings...");
+        await Task.Delay(100); // give UI time to update
+
+        // a) Backup selections from the consistency provider
+        var selectionBackup = new Dictionary<FormKey, (string ModName, FormKey NpcFormKey)>(_settings.SelectedAppearanceMods);
+
+        // b) Backup specific mod settings
+        var settingsBackup = _allModSettingsInternal.ToDictionary(
+            vm => vm.DisplayName,
+            vm => new ModSettingsBackup(
+                new List<string>(vm.MugShotFolderPaths),
+                vm.MergeInDependencyRecords,
+                vm.HasAlteredMergeLogic,
+                vm.IncludeOutfits,
+                vm.HandleInjectedRecords,
+                vm.HasAlteredHandleInjectedRecordsLogic,
+                vm.OverrideRecordOverrideHandlingMode
+            )
+        );
+
+        splashReporter.UpdateStep("Clearing existing mod data...");
+        await Task.Delay(100);
+
+        // c) Clear internal lists to generate a blank slate
+        _consistencyProvider.ClearAllSelections();
+        _allModSettingsInternal.Clear();
+        ModSettingsList.Clear();
+        SelectedModForMugshots = null;
+        CurrentModNpcMugshots.Clear();
+        _settings.ModSettings.Clear(); // Clear from the persistent model
+
+        // d) Repopulate all mods from scratch
+        await PopulateModSettingsAsync(splashReporter);
+
+        splashReporter.UpdateStep("Restoring user settings...");
+        await Task.Delay(100);
+
+        // e) Restore settings for each mod that still exists
+        foreach (var vm in _allModSettingsInternal)
+        {
+            if (settingsBackup.TryGetValue(vm.DisplayName, out var backup))
+            {
+                // Restore mugshot folders that don't already exist
+                foreach (var path in backup.MugShotFolderPaths)
+                {
+                    if (!vm.MugShotFolderPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+                    {
+                        vm.MugShotFolderPaths.Add(path);
+                    }
+                }
+
+                // Restore settings
+                vm.OverrideRecordOverrideHandlingMode = backup.OverrideRecordOverrideHandlingMode;
+                vm.IncludeOutfits = backup.IncludeOutfits;
+
+                // Only restore merge/injected settings if they were manually altered by the user before
+                if (backup.HasAlteredMergeLogic)
+                {
+                    vm.MergeInDependencyRecords = backup.MergeInDependencyRecords;
+                    vm.HasAlteredMergeLogic = true;
+                }
+
+                if (backup.HasAlteredHandleInjectedRecordsLogic)
+                {
+                    vm.HandleInjectedRecords = backup.HandleInjectedRecords;
+                    vm.HasAlteredHandleInjectedRecordsLogic = true;
+                }
+            }
+        }
+        
+        splashReporter.UpdateStep("Restoring NPC selections...");
+        await Task.Delay(100);
+
+        // Restore the backed-up NPC appearance selections
+        _consistencyProvider.RestoreSelections(selectionBackup);
+
+        // Rebuild the main NPC list based on the newly refreshed mod data
+        splashReporter.UpdateStep("Rebuilding NPC list...");
+        await _npcSelectionBar.InitializeAsync(splashReporter);
+
+        splashReporter.UpdateStep("Refresh complete.");
+        await Task.Delay(500); // let user see the final message
+    }
+    catch(Exception ex)
+    {
+        ScrollableMessageBox.ShowError($"An unexpected error occurred during the refresh process:\n\n{ex.Message}");
+    }
+    finally
+    {
+        if (createdSplashReporter)
+        {
+            await splashReporter.CloseSplashScreenAsync();
+        }
+    }
+}
 
     public void SignalScrollToMod(VM_ModSetting? modSetting)
     {
