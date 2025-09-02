@@ -1767,24 +1767,47 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         });
     }
 
-    private async Task<(Dictionary<string, HashSet<string>> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles)>
-        CacheFaceGenPathsOnLoadAsync(IEnumerable<VM_ModSetting> vmsToProcess, VM_SplashScreen? splashReporter)
+    // Located in NPC_Plugin_Chooser_2.View_Models/VM_Mods.cs
+    private async Task<(Dictionary<string, HashSet<string>> allFaceGenLooseFiles, Dictionary<string, HashSet<string>>
+            allFaceGenBsaFiles)>
+        CacheFaceGenPathsOnLoadAsync(IEnumerable<VM_ModSetting>? vmsToProcess, VM_SplashScreen? splashReporter)
     {
-        var vmsToProcessList = vmsToProcess.ToList();
-        // --- Part 1: Cache loose files (this is a fast operation) ---
+        var vmsToProcessList = vmsToProcess?.ToList();
+
+        // --- Part 1: Cache loose files ---
         Debug.WriteLine("Caching loose FaceGen file paths...");
-        var allUniqueModPaths = vmsToProcessList
-            .SelectMany(vm => vm.CorrespondingFolderPaths)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        List<string> allPathsToScanForLooseFiles;
+        if (vmsToProcessList != null && vmsToProcessList.Any())
+        {
+            // Scenario 1: Specific VMs are provided. Scan only their folders.
+            allPathsToScanForLooseFiles = vmsToProcessList
+                .SelectMany(vm => vm.CorrespondingFolderPaths)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        else
+        {
+            // Scenario 2: No specific VMs provided. Scan all subdirectories in the main Mods folder.
+            allPathsToScanForLooseFiles = new List<string>();
+            if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
+            {
+                try
+                {
+                    allPathsToScanForLooseFiles.AddRange(Directory.EnumerateDirectories(_settings.ModsFolder));
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error enumerating ModsFolder for loose FaceGen caching: {ex.Message}");
+                }
+            }
+        }
 
         var allFaceGenLooseFiles = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var modPath in allUniqueModPaths)
+        foreach (var modPath in allPathsToScanForLooseFiles)
         {
             if (!Directory.Exists(modPath)) continue;
 
-            // Create a new set for this specific mod path
             var looseFilesInMod = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var texturesPath = Path.Combine(modPath, "Textures");
@@ -1792,7 +1815,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             {
                 foreach (var file in Directory.EnumerateFiles(texturesPath, "*.dds", SearchOption.AllDirectories))
                 {
-                    // Add the relative path to this mod's specific set
                     looseFilesInMod.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
                 }
             }
@@ -1802,13 +1824,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             {
                 foreach (var file in Directory.EnumerateFiles(meshesPath, "*.nif", SearchOption.AllDirectories))
                 {
-                    // Add the relative path to this mod's specific set
                     looseFilesInMod.Add(Path.GetRelativePath(modPath, file).Replace('\\', '/'));
                 }
             }
-        
-            // Add this mod's specific set to the main dictionary
-            if(looseFilesInMod.Any())
+
+            if (looseFilesInMod.Any())
             {
                 allFaceGenLooseFiles[modPath] = looseFilesInMod;
             }
@@ -1824,18 +1844,63 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             var localVmBsaPathsCache = new Dictionary<string, Dictionary<ModKey, HashSet<string>>>();
             var localAllRelevantBsaPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var totalVmCount = vmsToProcessList.Count;
+
+            List<VM_ModSetting> vmsToIterate;
+            if (vmsToProcessList != null && vmsToProcessList.Any())
+            {
+                // Scenario 1: Specific VMs were provided.
+                vmsToIterate = vmsToProcessList;
+            }
+            else
+            {
+                // Scenario 2: Full scan. Create temporary VMs for every mod folder to discover their plugins and associated BSAs.
+                var tempVmsForFullScan = new List<VM_ModSetting>();
+                if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
+                {
+                    foreach (var modDir in Directory.EnumerateDirectories(_settings.ModsFolder))
+                    {
+                        var modKeys = _aux.GetModKeysInDirectory(modDir, new(), false);
+                        tempVmsForFullScan.Add(_modSettingFromModFolderFactory(modDir, modKeys, this));
+                    }
+                }
+
+                // Also include Base Game and Creation Club in a full scan.
+                var baseGameModKeys = _environmentStateProvider.BaseGamePlugins ?? new();
+                if (baseGameModKeys.Any())
+                {
+                    var baseMod = new ModSetting()
+                    {
+                        DisplayName = BaseGameModSettingName, CorrespondingModKeys = baseGameModKeys.ToList(),
+                        IsAutoGenerated = true
+                    };
+                    tempVmsForFullScan.Add(_modSettingFromModelFactory(baseMod, this));
+                }
+
+                var creationClubModKeys = _environmentStateProvider.CreationClubPlugins ?? new();
+                if (creationClubModKeys.Any())
+                {
+                    var ccMod = new ModSetting()
+                    {
+                        DisplayName = CreationClubModsettingName, CorrespondingModKeys = creationClubModKeys.ToList(),
+                        IsAutoGenerated = true
+                    };
+                    tempVmsForFullScan.Add(_modSettingFromModelFactory(ccMod, this));
+                }
+
+                vmsToIterate = tempVmsForFullScan;
+            }
+
+            var totalVmCount = vmsToIterate.Count;
             var processedVmCount = 0;
 
-            foreach (var vm in vmsToProcessList)
+            foreach (var vm in vmsToIterate)
             {
                 var pathsToSearch = new HashSet<string>(vm.CorrespondingFolderPaths);
-                if (vm.DisplayName is BaseGameModSettingName or CreationClubModsettingName)
+                if (vm.IsAutoGenerated)
                 {
                     pathsToSearch.Add(_environmentStateProvider.DataFolderPath);
                 }
 
-                // This is the expensive, blocking call.
                 var bsaDictForVm = _bsaHandler.GetBsaPathsForPluginsInDirs(vm.CorrespondingModKeys, pathsToSearch,
                     _settings.SkyrimRelease.ToGameRelease());
 
@@ -1846,7 +1911,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     localAllRelevantBsaPaths.Add(bsaPath);
                 }
 
-                // Report progress after each item in the loop is processed.
                 processedVmCount++;
                 var progress = totalVmCount > 0 ? (double)processedVmCount / totalVmCount * 100.0 : 100.0;
                 Application.Current.Dispatcher.Invoke(() =>
@@ -1859,7 +1923,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         });
         Debug.WriteLine($"Found {allRelevantBsaPaths.Count} unique BSAs to process.");
 
-        // b) Process each unique BSA, reporting progress.
         splashReporter?.UpdateStep("Caching asset contents...");
         var bsaContentCache = new ConcurrentDictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         var processingTasks = allRelevantBsaPaths.Select(bsaPath => Task.Run(() =>
@@ -1891,18 +1954,15 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         // --- Part 3: Assemble the final dictionary for each VM using the caches ---
         var allFaceGenBsaFiles = new Dictionary<string, HashSet<string>>();
-        foreach (var vm in vmsToProcessList)
+        foreach (var vmDisplayName in vmBsaPathsCache.Keys)
         {
             var bsaFilePathsForVm = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // Retrieve the pre-computed BSA dictionary from the cache instead of recalculating.
-            if (vmBsaPathsCache.TryGetValue(vm.DisplayName, out var bsaDict))
+            if (vmBsaPathsCache.TryGetValue(vmDisplayName, out var bsaDict))
             {
-                // Get all unique BSA paths for this specific VM from the cached result.
                 var uniqueBsaPathsForVm = bsaDict.Values.SelectMany(paths => paths)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-                // Look up the pre-cached content for each BSA and add it to the VM's set.
                 foreach (var bsaPath in uniqueBsaPathsForVm)
                 {
                     if (bsaContentCache.TryGetValue(bsaPath, out var cachedContent))
@@ -1912,8 +1972,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 }
             }
 
-            // Store the collected BSA file paths against the VM's DisplayName.
-            allFaceGenBsaFiles[vm.DisplayName] = bsaFilePathsForVm;
+            allFaceGenBsaFiles[vmDisplayName] = bsaFilePathsForVm;
         }
 
         Debug.WriteLine($"Assembled BSA file paths for {allFaceGenBsaFiles.Count} mod settings from cache.");
