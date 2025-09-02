@@ -529,28 +529,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-// Internal version also needs to respect this order if it's ever called independently
-// in a way that could lead to this state.
-        private async Task InitializeAsyncInternal(VM_SplashScreen? splashReporter)
-        {
-            _environmentStateProvider.UpdateEnvironment();
-
-            // **NEW ORDER: Populate mods first**
-            await _lazyModListVM.Value.PopulateModSettingsAsync(null); 
-            await _lazyNpcSelectionBar.Value.InitializeAsync(null);
-    
-            this.RaisePropertyChanged(nameof(EnvironmentStatus));
-            this.RaisePropertyChanged(nameof(EnvironmentErrorText));
-            this.RaisePropertyChanged(nameof(AvailablePluginsForExclusion));
-            if (EnvironmentStatus == EnvironmentStateProvider.EnvironmentStatus.Valid && AvailablePluginsForExclusion != null)
-            {
-                ExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.EasyNpcDefaultPluginExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
-                ImportFromLoadOrderExclusionSelectorViewModel.LoadFromModel(AvailablePluginsForExclusion, _model.ImportFromLoadOrderExclusions, _environmentStateProvider.LoadOrder.ListedOrder.Select(x => x.ModKey).ToList());
-            }
-
-            RefreshNonAppearanceMods();
-        }
-
         public static Settings LoadSettings()
         {
             string settingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Settings.json");
