@@ -1066,12 +1066,17 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             
             var environmentEditorIdMap = _environmentStateProvider.LoadOrder.PriorityOrder.Npc().WinningOverrides()
                 .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
-                .ToDictionary(npc => npc.EditorID!, npc => npc.FormKey, StringComparer.OrdinalIgnoreCase);
+                .GroupBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, 
+                    g => g.Select(npc => npc.FormKey).ToHashSet(), 
+                    StringComparer.OrdinalIgnoreCase);
             
             var modEditorIdMap = plugins.SelectMany(x => x.Npcs)
                 .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
-                .DistinctBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(npc => npc.EditorID!, npc => npc.FormKey, StringComparer.OrdinalIgnoreCase);
+                .GroupBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, 
+                    g => g.Select(npc => npc.FormKey).ToHashSet(), 
+                    StringComparer.OrdinalIgnoreCase);
         
             var guests = await vmToRefresh.GetSkyPatcherImportsAsync(environmentEditorIdMap, modEditorIdMap);
             foreach (var (target, source, modDisplayName, npcDisplayName) in guests)
@@ -1582,8 +1587,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         // --- NEW: Setup for SkyPatcher import ---
         var environmentEditorIdMap = _environmentStateProvider.LoadOrder.PriorityOrder.Npc().WinningOverrides()
             .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
-            .DistinctBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(npc => npc.EditorID!, npc => npc.FormKey, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, 
+                g => g.Select(npc => npc.FormKey).ToHashSet(), 
+                StringComparer.OrdinalIgnoreCase);
 
         var allSkyPatcherGuests = new ConcurrentBag<(FormKey Target, FormKey Source, string ModDisplayName, string SourceNpcDisplayName)>();
 
@@ -1657,8 +1664,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                             // Make sure to profile this and gate behind IsNewlyCreated if necessary.
                             var modEditorIdMap = plugins.SelectMany(x => x.Npcs)
                                 .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
-                                .DistinctBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
-                                .ToDictionary(npc => npc.EditorID!, npc => npc.FormKey, StringComparer.OrdinalIgnoreCase);
+                                .GroupBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
+                                .ToDictionary(g => g.Key, 
+                                    g => g.Select(npc => npc.FormKey).ToHashSet(), 
+                                    StringComparer.OrdinalIgnoreCase);
 
                             var guests = await vm.GetSkyPatcherImportsAsync(environmentEditorIdMap, modEditorIdMap);
                             foreach (var guest in guests)
