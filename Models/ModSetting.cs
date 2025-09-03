@@ -11,6 +11,7 @@ public class ModSetting
 {
     public string DisplayName { get; set; } = string.Empty;
     public List<ModKey> CorrespondingModKeys { get; set; } = new();
+    public HashSet<ModKey> ResourceOnlyModKeys { get; set; } = new();
     public List<string> CorrespondingFolderPaths { get; set; } = new(); // first should be the base mod, and others are overrides where the program should find conflict winning data if it exists
     public List<string> MugShotFolderPaths { get; set; } = new();
     public bool IsFaceGenOnlyEntry { get; set; } = false;
