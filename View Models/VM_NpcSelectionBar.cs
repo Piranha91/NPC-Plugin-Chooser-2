@@ -108,14 +108,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     
     // Guest Status Visibility & Selection
     
-    [ObservableAsProperty] public bool IsGuestStatusSearch1 { get; }
-    [Reactive] public GuestStatusFilterType SelectedGuestStatusFilter1 { get; set; } = GuestStatusFilterType.GuestAvailable;
-    [ObservableAsProperty] public bool IsGuestStatusSearch2 { get; }
-    [Reactive] public GuestStatusFilterType SelectedGuestStatusFilter2 { get; set; } = GuestStatusFilterType.GuestAvailable;
-    [ObservableAsProperty] public bool IsGuestStatusSearch3 { get; }
-    [Reactive] public GuestStatusFilterType SelectedGuestStatusFilter3 { get; set; } = GuestStatusFilterType.GuestAvailable;
+    [ObservableAsProperty] public bool IsShareStatusSearch1 { get; }
+    [Reactive] public ShareStatusFilterType SelectedShareStatusFilter1 { get; set; } = ShareStatusFilterType.Any;
+    [ObservableAsProperty] public bool IsShareStatusSearch2 { get; }
+    [Reactive] public ShareStatusFilterType SelectedShareStatusFilter2 { get; set; } = ShareStatusFilterType.Any;
+    [ObservableAsProperty] public bool IsShareStatusSearch3 { get; }
+    [Reactive] public ShareStatusFilterType SelectedShareStatusFilter3 { get; set; } = ShareStatusFilterType.Any;
     
-    public Array AvailableGuestStatusFilters => Enum.GetValues(typeof(GuestStatusFilterType));
 
     [Reactive] public bool IsSearchAndLogic { get; set; } = true;
     public Array AvailableSearchTypes => Enum.GetValues(typeof(NpcSearchType));
@@ -309,8 +308,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .Select(type => type == NpcSearchType.Group)
             .ToPropertyEx(this, x => x.IsGroupSearch1);
         this.WhenAnyValue(x => x.SearchType1)
-            .Select(type => type == NpcSearchType.GuestStatus)
-            .ToPropertyEx(this, x => x.IsGuestStatusSearch1);
+            .Select(type => type == NpcSearchType.ShareStatus)
+            .ToPropertyEx(this, x => x.IsShareStatusSearch1);
 
         this.WhenAnyValue(x => x.SearchType2)
             .Select(type => type == NpcSearchType.SelectionState)
@@ -319,8 +318,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .Select(type => type == NpcSearchType.Group)
             .ToPropertyEx(this, x => x.IsGroupSearch2);
         this.WhenAnyValue(x => x.SearchType2)
-            .Select(type => type == NpcSearchType.GuestStatus)
-            .ToPropertyEx(this, x => x.IsGuestStatusSearch2);
+            .Select(type => type == NpcSearchType.ShareStatus)
+            .ToPropertyEx(this, x => x.IsShareStatusSearch2);
 
         this.WhenAnyValue(x => x.SearchType3)
             .Select(type => type == NpcSearchType.SelectionState)
@@ -329,14 +328,14 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .Select(type => type == NpcSearchType.Group)
             .ToPropertyEx(this, x => x.IsGroupSearch3);
         this.WhenAnyValue(x => x.SearchType3)
-            .Select(type => type == NpcSearchType.GuestStatus)
-            .ToPropertyEx(this, x => x.IsGuestStatusSearch3);
+            .Select(type => type == NpcSearchType.ShareStatus)
+            .ToPropertyEx(this, x => x.IsShareStatusSearch3);
 
         this.WhenAnyValue(x => x.SearchType1)
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.GuestStatus) SearchText1 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus) SearchText1 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter1 = null;
             })
             .DisposeWith(_disposables);
@@ -344,7 +343,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.GuestStatus) SearchText2 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus) SearchText2 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter2 = null;
             })
             .DisposeWith(_disposables);
@@ -352,7 +351,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.GuestStatus) SearchText3 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus) SearchText3 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter3 = null;
             })
             .DisposeWith(_disposables);
@@ -380,13 +379,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .DisposeWith(_disposables);
 
         var filter1Changes = this.WhenAnyValue(
-            x => x.SearchText1, x => x.SearchType1, x => x.SelectedStateFilter1, x => x.SelectedGroupFilter1, x => x.SelectedGuestStatusFilter1
+            x => x.SearchText1, x => x.SearchType1, x => x.SelectedStateFilter1, x => x.SelectedGroupFilter1, x => x.SelectedShareStatusFilter1
         ).Select(_ => Unit.Default);
         var filter2Changes = this.WhenAnyValue(
-            x => x.SearchText2, x => x.SearchType2, x => x.SelectedStateFilter2, x => x.SelectedGroupFilter2, x => x.SelectedGuestStatusFilter2
+            x => x.SearchText2, x => x.SearchType2, x => x.SelectedStateFilter2, x => x.SelectedGroupFilter2, x => x.SelectedShareStatusFilter2
         ).Select(_ => Unit.Default);
         var filter3Changes = this.WhenAnyValue(
-            x => x.SearchText3, x => x.SearchType3, x => x.SelectedStateFilter3, x => x.SelectedGroupFilter3, x => x.SelectedGuestStatusFilter3
+            x => x.SearchText3, x => x.SearchType3, x => x.SelectedStateFilter3, x => x.SelectedGroupFilter3, x => x.SelectedShareStatusFilter3
         ).Select(_ => Unit.Default);
         var logicChanges = this.WhenAnyValue(
             x => x.IsSearchAndLogic
@@ -1576,15 +1575,39 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         
         // Preserve the currently selected NPC
         var npcToPreserve = SelectedNpc;
+        
+        // cache share status if necessary
+
+        HashSet<FormKey> allShareSources = new();
+        HashSet<FormKey> allSelectedShareSources = new();
+
+        if (SearchType1 == NpcSearchType.ShareStatus || SearchType2 == NpcSearchType.ShareStatus ||
+            SearchType3 == NpcSearchType.ShareStatus)
+        {
+            allShareSources.UnionWith(
+                _settings.GuestAppearances.Values.SelectMany(guestSet => guestSet.Select(g => g.Item2))
+            );
+
+            foreach (var (targetNpc, guestSet) in _settings.GuestAppearances)
+            {
+                foreach (var (modName, sourceNpc, _) in guestSet)
+                {
+                    if (_consistencyProvider.IsModSelected(targetNpc, modName, sourceNpc))
+                    {
+                        allSelectedShareSources.Add(sourceNpc);
+                    }
+                }
+            }
+        }
 
         // --- Your existing predicate building logic ---
         if (SearchType1 == NpcSearchType.SelectionState)
         {
             predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter1));
         }
-        else if (SearchType1 == NpcSearchType.GuestStatus) // NEW
+        else if (SearchType1 == NpcSearchType.ShareStatus) // NEW
         {
-            predicates.Add(npc => CheckGuestStatus(npc, SelectedGuestStatusFilter1));
+            predicates.Add(npc => CheckShareStatus(npc, SelectedShareStatusFilter1, allShareSources, allSelectedShareSources));
         }
         else if (SearchType1 == NpcSearchType.Group)
         {
@@ -1601,9 +1624,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter2));
         }
-        else if (SearchType2 == NpcSearchType.GuestStatus) // NEW
+        else if (SearchType2 == NpcSearchType.ShareStatus) // NEW
         {
-            predicates.Add(npc => CheckGuestStatus(npc, SelectedGuestStatusFilter2));
+            predicates.Add(npc => CheckShareStatus(npc, SelectedShareStatusFilter2, allShareSources, allSelectedShareSources));
         }
         else if (SearchType2 == NpcSearchType.Group)
         {
@@ -1620,9 +1643,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter3));
         }
-        else if (SearchType3 == NpcSearchType.GuestStatus) // NEW
+        else if (SearchType3 == NpcSearchType.ShareStatus) // NEW
         {
-            predicates.Add(npc => CheckGuestStatus(npc, SelectedGuestStatusFilter3));
+            predicates.Add(npc => CheckShareStatus(npc, SelectedShareStatusFilter3, allShareSources, allSelectedShareSources));
         }
         else if (SearchType3 == NpcSearchType.Group)
         {
@@ -1725,34 +1748,49 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                       groups.Contains(selectedGroup);
     }
     
-    private bool CheckGuestStatus(VM_NpcsMenuSelection npcMenu, GuestStatusFilterType filterType)
+    private bool CheckShareStatus(
+        VM_NpcsMenuSelection npcMenu, 
+        ShareStatusFilterType filterType,
+        HashSet<FormKey> allShareSources,
+        HashSet<FormKey> allSelectedShareSources)
     {
+        // Check if the NPC is a guest at all (i.e., has shared appearances available).
+        bool isGuest = _settings.GuestAppearances.ContainsKey(npcMenu.NpcFormKey);
+
+        // Check if the NPC's currently selected appearance is a guest appearance.
+        var selection = _consistencyProvider.GetSelectedMod(npcMenu.NpcFormKey);
+        bool isGuestSelected = isGuest && selection.ModName != null && !selection.SourceNpcFormKey.Equals(npcMenu.NpcFormKey);
+
         switch (filterType)
         {
-            case GuestStatusFilterType.GuestAvailable:
-                // An NPC has a guest appearance if it is a key in the GuestAppearances dictionary
-                // and its associated list of guests is not empty.
-                return _settings.GuestAppearances.TryGetValue(npcMenu.NpcFormKey, out var guestSet) && guestSet.Any();
+            case ShareStatusFilterType.Any:
+                // An NPC is involved in sharing if it's a guest OR a source.
+                return isGuest || allShareSources.Contains(npcMenu.NpcFormKey);
 
-            case GuestStatusFilterType.GuestSelected:
-                // A guest is selected if a selection has been made...
-                var selection = _consistencyProvider.GetSelectedMod(npcMenu.NpcFormKey);
-                if (string.IsNullOrEmpty(selection.ModName))
-                {
-                    return false; // No selection, so it cannot be a guest.
-                }
-                
-                // ...and the source of that appearance is a different NPC.
-                return !selection.SourceNpcFormKey.Equals(npcMenu.NpcFormKey);
+            case ShareStatusFilterType.GuestAvailable:
+                // The NPC has guest appearances available but does NOT have one selected.
+                return isGuest && !isGuestSelected;
+
+            case ShareStatusFilterType.GuestSelected:
+                // The NPC has a guest appearance currently selected.
+                return isGuestSelected;
+
+            case ShareStatusFilterType.Shared:
+                // The NPC provides an appearance to at least one other NPC.
+                return allShareSources.Contains(npcMenu.NpcFormKey);
+
+            case ShareStatusFilterType.SharedAndSelected:
+                // The NPC is a share source AND at least one guest has it selected.
+                return allSelectedShareSources.Contains(npcMenu.NpcFormKey);
 
             default:
-                return false;
+                return true;
         }
     }
 
     private Func<VM_NpcsMenuSelection, bool>? BuildTextPredicate(NpcSearchType type, string searchText)
     {
-        if (type == NpcSearchType.SelectionState || type == NpcSearchType.Group || type == NpcSearchType.GuestStatus ||
+        if (type == NpcSearchType.SelectionState || type == NpcSearchType.Group || type == NpcSearchType.ShareStatus ||
             string.IsNullOrWhiteSpace(searchText))
         {
             return null;
@@ -2580,12 +2618,18 @@ public enum SelectionStateFilterType
     Made
 }
 
-public enum GuestStatusFilterType
+public enum ShareStatusFilterType
 {
+    [Description("Any")]
+    Any,
     [Description("Guest Available")]
     GuestAvailable,
     [Description("Guest Selected")]
-    GuestSelected
+    GuestSelected,
+    [Description("Shared")]
+    Shared,
+    [Description("Shared & Selected")]
+    SharedAndSelected
 }
 
 public class ShareAppearanceRequest

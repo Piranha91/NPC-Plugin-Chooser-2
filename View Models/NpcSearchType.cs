@@ -26,8 +26,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Description("Selection State")]
         SelectionState,
         
-        [Description("Guest Status")]
-        GuestStatus,
+        [Description("Shared/Guest Appearance")]
+        ShareStatus,
         
         [Description("Group")]
         Group
