@@ -449,6 +449,41 @@
                                              <Image Source="/NPC Plugin Chooser 2;component/Resources/Guest Plugin.png"/>
                                          </Viewbox>
                                      </Grid>
+                                     
+                                     <Grid HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0 0 0 10"
+                                           ToolTip="{Binding ShareSourceTooltipText}"
+                                           Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                           Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+                                         <Grid.Style>
+                                             <Style TargetType="Grid">
+                                                 <Setter Property="Visibility" Value="Collapsed" />
+                                                 <Style.Triggers>
+                                                     <MultiDataTrigger>
+                                                         <MultiDataTrigger.Conditions>
+                                                             <Condition Binding="{Binding IsShareSource}" Value="True" />
+                                                             <Condition Binding="{Binding IsGuestAppearance}" Value="False" />
+                                                         </MultiDataTrigger.Conditions>
+                                                         <Setter Property="Visibility" Value="Visible" />
+                                                     </MultiDataTrigger>
+                                                 </Style.Triggers>
+                                             </Style>
+                                         </Grid.Style>
+
+                                         <Viewbox Stretch="Uniform">
+                                             <Image>
+                                                 <Image.Style>
+                                                     <Style TargetType="Image">
+                                                         <Setter Property="Source" Value="/NPC Plugin Chooser 2;component/Resources/SourcePlugin.png"/>
+                                                         <Style.Triggers>
+                                                             <DataTrigger Binding="{Binding IsSelectedByGuest}" Value="True">
+                                                                 <Setter Property="Source" Value="/NPC Plugin Chooser 2;component/Resources/SelectedSourcePlugin.png"/>
+                                                             </DataTrigger>
+                                                         </Style.Triggers>
+                                                     </Style>
+                                                 </Image.Style>
+                                             </Image>
+                                         </Viewbox>
+                                     </Grid>
 
                                      <CheckBox x:Name="CompareCheckBox" 
                                                IsChecked="{Binding IsCheckedForCompare, Mode=TwoWay}"

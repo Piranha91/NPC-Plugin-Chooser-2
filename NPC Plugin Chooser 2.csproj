@@ -76,6 +76,10 @@
       <Resource Include="Resources\Replace Selected Mod.png" />
       <None Remove="Resources\Guest Plugin.png" />
       <Resource Include="Resources\Guest Plugin.png" />
+      <None Remove="Resources\SourcePlugin.png" />
+      <Resource Include="Resources\SourcePlugin.png" />
+      <None Remove="Resources\SelectedSourcePlugin.png" />
+      <Resource Include="Resources\SelectedSourcePlugin.png" />
     </ItemGroup>
 
 </Project>

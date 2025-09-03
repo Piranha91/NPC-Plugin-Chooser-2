@@ -70,6 +70,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public string TargetDisplayName { get; }
         public string OriginalTargetName { get; set; }
         [Reactive] public bool IsFavorite { get; set; }
+        [Reactive] public bool IsShareSource { get; private set; }
+        [Reactive] public bool IsSelectedByGuest { get; private set; }
+        [Reactive] public string ShareSourceTooltipText { get; private set; } = string.Empty;
         
 
         // --- NEW IHasMugshotImage properties ---
@@ -303,6 +306,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 .DisposeWith(Disposables);
 
             SetBorderAndTooltip(IsSelected);
+            
+            InitializeShareSourceListener();
         }
 
         private void SelectThisMod()
@@ -532,6 +537,86 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 IsFavorite = true;
                 Debug.WriteLine($"Added {favoriteTuple} to favorites.");
             }
+        }
+
+        private void InitializeShareSourceListener()
+        {
+            if (_settings.GuestAppearances == null || !_settings.GuestAppearances.Any())
+            {
+                IsShareSource = false;
+                return;
+            }
+
+            var reverseGuestLookup = new Dictionary<(FormKey, string), List<FormKey>>();
+            foreach (var entry in _settings.GuestAppearances)
+            {
+                var targetNpcKey = entry.Key;
+                foreach (var (modName, sourceNpcKey, _) in entry.Value)
+                {
+                    var sourceTuple = (sourceNpcKey, modName);
+                    if (!reverseGuestLookup.TryGetValue(sourceTuple, out var targets))
+                    {
+                        targets = new List<FormKey>();
+                        reverseGuestLookup[sourceTuple] = targets;
+                    }
+
+                    targets.Add(targetNpcKey);
+                }
+            }
+
+            var thisAppearanceKey = (this.SourceNpcFormKey, this.ModName);
+            if (reverseGuestLookup.TryGetValue(thisAppearanceKey, out var guestTargetKeys))
+            {
+                IsShareSource = true;
+
+                _consistencyProvider.NpcSelectionChanged
+                    .Where(args => guestTargetKeys.Contains(args.NpcFormKey))
+                    .Throttle(TimeSpan.FromMilliseconds(50))
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(_ => UpdateShareSourceStatusAndTooltip(guestTargetKeys))
+                    .DisposeWith(Disposables);
+
+                UpdateShareSourceStatusAndTooltip(guestTargetKeys);
+            }
+        }
+
+        private void UpdateShareSourceStatusAndTooltip(List<FormKey> guestTargetKeys)
+        {
+            var selectedGuests = new List<string>();
+            var unselectedGuests = new List<string>();
+
+            var npcNameMap = _vmNpcSelectionBar.AllNpcs.ToDictionary(n => n.NpcFormKey, n => n.DisplayName);
+
+            foreach (var guestNpcKey in guestTargetKeys)
+            {
+                bool isSelectedForGuest =
+                    _consistencyProvider.IsModSelected(guestNpcKey, this.ModName, this.SourceNpcFormKey);
+                string guestNpcName = npcNameMap.TryGetValue(guestNpcKey, out var name) ? name : guestNpcKey.ToString();
+
+                if (isSelectedForGuest)
+                {
+                    selectedGuests.Add(guestNpcName);
+                }
+                else
+                {
+                    unselectedGuests.Add(guestNpcName);
+                }
+            }
+
+            IsSelectedByGuest = selectedGuests.Any();
+
+            var sb = new System.Text.StringBuilder();
+            if (unselectedGuests.Any())
+            {
+                sb.AppendLine("Shared with: " + string.Join(", ", unselectedGuests.OrderBy(n => n)));
+            }
+
+            if (selectedGuests.Any())
+            {
+                sb.AppendLine("Selected for: " + string.Join(", ", selectedGuests.OrderBy(n => n)));
+            }
+
+            ShareSourceTooltipText = sb.ToString().Trim();
         }
 
         public void Dispose()
