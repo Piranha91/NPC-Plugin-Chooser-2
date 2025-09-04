@@ -102,6 +102,7 @@ public class VM_Mods : ReactiveObject
     );
     
     // --- Batch Action Controls ---
+    [Reactive] public bool ShouldRescanNonAppearanceMods { get; set; } = false;
     public ReactiveCommand<Unit, Unit> RefreshAllModsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchIncludeOutfitsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchExcludeOutfitsCommand { get; }
@@ -2544,6 +2545,14 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     vm.OverrideRecordOverrideHandlingMode
                 )
             );
+            
+            if (ShouldRescanNonAppearanceMods)
+            {
+                splashReporter.UpdateStep("Clearing non-appearance mod cache...");
+                await Task.Delay(100);
+                _settings.CachedNonAppearanceMods.Clear();
+                ShouldRescanNonAppearanceMods = false; // Reset after use
+            }
 
             splashReporter.UpdateStep("Clearing existing mod data...");
             await Task.Delay(100);

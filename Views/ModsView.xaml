@@ -689,7 +689,12 @@
                     <TextBlock Text="Batch Actions:" FontWeight="SemiBold" VerticalAlignment="Center"/>
     
                     <Button Content="Refresh All" Command="{Binding RefreshAllModsCommand}" Margin="5,0" Padding="5,2" ToolTip="Completely re-scans all mod folders and rebuilds the mod list."/>
-
+                    <CheckBox Content="Rescan Non-Appearance Mods"
+                              IsChecked="{Binding ShouldRescanNonAppearanceMods, Mode=TwoWay}"
+                              VerticalAlignment="Center"
+                              Margin="5,0"
+                              ToolTip="If checked, the 'Refresh All' action will also clear the cache of non-appearance mods and attempt to re-import them."/>
+                    
                     <Button Content="Include" Command="{Binding BatchIncludeOutfitsCommand}" Margin="15,0,5,0" Padding="5,2" ToolTip="Enable 'Include Outfits' for ALL mods."/>
                     <Button Content="Exclude" Command="{Binding BatchExcludeOutfitsCommand}" Padding="5,2" ToolTip="Disable 'Include Outfits' for ALL mods."/>
                     <TextBlock Text="Outfits" VerticalAlignment="Center" Margin="5,0,0,0"/>
