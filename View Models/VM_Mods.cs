@@ -1551,8 +1551,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             return new NewVmCreationData(
                 modFolderPath,
                 tempVmForAnalysis.CorrespondingModKeys.ToList(), // Use updated list
-                IsFaceGenOnly: false,
-                FaceGenFormKeys: new HashSet<FormKey>(),
+                IsFaceGenOnly: true,
+                FaceGenFormKeys: faceGenKeys,
                 ShouldDisableMergeIn: !tempVmForAnalysis.MergeInDependencyRecords,
                 MergeInTooltip: tempVmForAnalysis.MergeInToolTip,
                 FoundInjectedRecords: false,
