@@ -255,7 +255,7 @@
                                              <Button.ToolTip>
                                                  <MultiBinding Converter="{StaticResource ModSettingLinkButtonTooltipConverter}">
                                                      <Binding Path="HasValidMugshots"/>
-                                                     <Binding Path="NpcFormKeys.Count"/>
+                                                     <Binding Path="NpcCount"/>
                                                  </MultiBinding>
                                              </Button.ToolTip>
                                              <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="14"/>

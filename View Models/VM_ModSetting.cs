@@ -112,7 +112,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         // Stores FormKeys of NPCs found in multiple plugins within this setting (Error State)
         public HashSet<FormKey> AmbiguousNpcFormKeys { get; private set; } = new();
-        
+        [Reactive] public int NpcCount { get; private set; }
         public ModStateSnapshot? LastKnownState { get; set; } // hang on to DTO for serialization
         
         private readonly SkyrimRelease _skyrimRelease;
@@ -1180,6 +1180,8 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     Debug.WriteLine($"Could not write rejection log file for {this.DisplayName}: {ex.Message}");
                 }
             }
+
+            NpcCount = NpcFormKeys.Count;
         }
 
         /// <summary>
