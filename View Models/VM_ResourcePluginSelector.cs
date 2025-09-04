@@ -3,67 +3,73 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
+using System.Reactive.Disposables;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.Views;
 using ReactiveUI;
 
-namespace NPC_Plugin_Chooser_2.View_Models
+namespace NPC_Plugin_Chooser_2.View_Models;
+
+public class VM_ResourcePluginSelector : ReactiveObject, IDisposable
 {
-    public class VM_ResourcePluginSelector : ReactiveObject
+    // --- Event for closing ---
+    public event Action RequestClose = delegate { };
+
+    // --- Properties ---
+    public ObservableCollection<VM_SelectableMod> SelectablePlugins { get; }
+    public bool HasChanged { get; private set; } = false;
+
+    // --- Commands ---
+    public ReactiveCommand<Unit, Unit> OKCommand { get; }
+    public ReactiveCommand<Unit, Unit> CancelCommand { get; }
+
+    // --- Private Fields ---
+    private readonly HashSet<ModKey> _initialSelection;
+    private readonly CompositeDisposable _disposables = new();
+
+    // --- Constructor ---
+    public VM_ResourcePluginSelector(IEnumerable<ModKey> allModKeys, HashSet<ModKey> currentlySelectedResourceModKeys)
     {
-        // --- Event for closing ---
-        public event Action RequestClose = delegate { };
+        _initialSelection = new HashSet<ModKey>(currentlySelectedResourceModKeys);
 
-        // --- Properties ---
-        public ObservableCollection<VM_SelectableMod> SelectablePlugins { get; }
-        public bool HasChanged { get; private set; } = false;
+        SelectablePlugins = new ObservableCollection<VM_SelectableMod>(
+            allModKeys.Select(modKey => new VM_SelectableMod(modKey, _initialSelection.Contains(modKey)))
+                .OrderBy(vm => vm.DisplayText)
+        );
 
-        // --- Commands ---
-        public ReactiveCommand<Unit, Unit> OKCommand { get; }
-        public ReactiveCommand<Unit, Unit> CancelCommand { get; }
+        OKCommand = ReactiveCommand.Create(ExecuteOk).DisposeWith(_disposables);
+        CancelCommand = ReactiveCommand.Create(ExecuteCancel).DisposeWith(_disposables);
+    }
 
-        // --- Private Fields ---
-        private readonly HashSet<ModKey> _initialSelection;
+    public HashSet<ModKey> GetSelectedModKeys()
+    {
+        return new HashSet<ModKey>(
+            SelectablePlugins.Where(vm => vm.IsSelected)
+                .Select(vm => vm.ModKey)
+        );
+    }
 
-        // --- Constructor ---
-        public VM_ResourcePluginSelector(IEnumerable<ModKey> allModKeys, HashSet<ModKey> currentlySelectedResourceModKeys)
+    // --- Command Implementations ---
+
+    private void ExecuteOk()
+    {
+        var finalSelection = GetSelectedModKeys();
+        if (!_initialSelection.SetEquals(finalSelection))
         {
-            _initialSelection = new HashSet<ModKey>(currentlySelectedResourceModKeys);
-
-            SelectablePlugins = new ObservableCollection<VM_SelectableMod>(
-                allModKeys.Select(modKey => new VM_SelectableMod(modKey, _initialSelection.Contains(modKey)))
-                          .OrderBy(vm => vm.DisplayText)
-            );
-
-            OKCommand = ReactiveCommand.Create(ExecuteOk);
-            CancelCommand = ReactiveCommand.Create(ExecuteCancel);
+            HasChanged = true;
         }
 
-        public HashSet<ModKey> GetSelectedModKeys()
-        {
-            return new HashSet<ModKey>(
-                SelectablePlugins.Where(vm => vm.IsSelected)
-                                 .Select(vm => vm.ModKey)
-            );
-        }
+        RequestClose?.Invoke();
+    }
 
-        // --- Command Implementations ---
+    private void ExecuteCancel()
+    {
+        HasChanged = false; // Ensure no changes are processed
+        RequestClose?.Invoke();
+    }
 
-        private void ExecuteOk()
-        {
-            var finalSelection = GetSelectedModKeys();
-            if (!_initialSelection.SetEquals(finalSelection))
-            {
-                HasChanged = true;
-            }
-            RequestClose?.Invoke();
-        }
-
-        private void ExecuteCancel()
-        {
-            HasChanged = false; // Ensure no changes are processed
-            RequestClose?.Invoke();
-        }
+    public void Dispose()
+    {
+        _disposables.Dispose();
     }
 }
-

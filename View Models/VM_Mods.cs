@@ -1,5 +1,4 @@
-﻿// View Models/VM_Mods.cs
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -188,10 +187,10 @@ public class VM_Mods : ReactiveObject
         
         _imagePacker.PackingCompleted += OnImagePackingCompleted;
         
-        RefreshAllModsCommand = ReactiveCommand.CreateFromTask(() => RefreshAllModSettingsAsync(null));
+        RefreshAllModsCommand = ReactiveCommand.CreateFromTask(() => RefreshAllModSettingsAsync(null)).DisposeWith(_disposables);
         RefreshAllModsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing all mods: {ex.Message}")).DisposeWith(_disposables);
 
-        ShowMugshotsCommand = ReactiveCommand.CreateFromTask<VM_ModSetting>(ShowMugshotsAsync);
+        ShowMugshotsCommand = ReactiveCommand.CreateFromTask<VM_ModSetting>(ShowMugshotsAsync).DisposeWith(_disposables);
         ShowMugshotsCommand.ThrownExceptions.Subscribe(ex =>
         {
             ScrollableMessageBox.ShowError($"Error loading mugshots: {ex.Message}");
@@ -202,7 +201,7 @@ public class VM_Mods : ReactiveObject
         {
             _mugshotLoadingCts?.Cancel();
             IsLoadingMugshots = false; // Set UI state immediately for responsiveness
-        });
+        }).DisposeWith(_disposables);
         CancelMugshotLoadCommand.ThrownExceptions.Subscribe(ex =>
         {
             ScrollableMessageBox.ShowError($"Error cancelling mugshot load: {ex.Message}");
@@ -222,13 +221,13 @@ public class VM_Mods : ReactiveObject
             Debug.WriteLine("VM_Mods: ZoomInModsCommand executed.");
             ModsViewHasUserManuallyZoomed = true;
             ModsViewZoomLevel = Math.Min(_maxZoomPercentage, ModsViewZoomLevel + _zoomStepPercentage);
-        });
+        }).DisposeWith(_disposables);
         ZoomOutModsCommand = ReactiveCommand.Create(() =>
         {
             Debug.WriteLine("VM_Mods: ZoomOutModsCommand executed.");
             ModsViewHasUserManuallyZoomed = true;
             ModsViewZoomLevel = Math.Max(_minZoomPercentage, ModsViewZoomLevel - _zoomStepPercentage);
-        });
+        }).DisposeWith(_disposables);
         ResetZoomModsCommand = ReactiveCommand.Create(() =>
         {
             Debug.WriteLine("VM_Mods: ResetZoomModsCommand executed.");
@@ -240,7 +239,7 @@ public class VM_Mods : ReactiveObject
             // isn't guaranteed to be updated first.
             // This subject will trigger RefreshMugshotImageSizes in the view.
             _refreshMugshotSizesSubject.OnNext(Unit.Default);
-        });
+        }).DisposeWith(_disposables);
         // ... (exception handlers for commands) ...
         ZoomInModsCommand.ThrownExceptions
             .Subscribe(ex => Debug.WriteLine($"Error ZoomInModsCommand: {ex.Message}")).DisposeWith(_disposables);
@@ -301,7 +300,7 @@ public class VM_Mods : ReactiveObject
                         $"VM_Mods: Updated CurrentSourcePlugin for {changedKeys.Count} displayed mugshots after global source set.");
                 }
             }
-        }, canSetGlobalSource); // canSetGlobalSource is the WhenAnyValue observable
+        }, canSetGlobalSource).DisposeWith(_disposables); // canSetGlobalSource is the WhenAnyValue observable
 
         SetGlobalSourcePluginCommand.ThrownExceptions.Subscribe(ex =>
         {
@@ -447,7 +446,7 @@ public class VM_Mods : ReactiveObject
                 modSetting.IncludeOutfits = true;
                 modSetting.IsPerformingBatchAction = false;
             }
-        });
+        }).DisposeWith(_disposables);
 
         BatchExcludeOutfitsCommand = ReactiveCommand.Create(() =>
         {
@@ -457,7 +456,7 @@ public class VM_Mods : ReactiveObject
                 modSetting.IncludeOutfits = false;
                 modSetting.IsPerformingBatchAction = false;
             }
-        });
+        }).DisposeWith(_disposables);
         
         BatchEnableInjectedRecordsCommand = ReactiveCommand.Create(() =>
         {
@@ -477,7 +476,7 @@ public class VM_Mods : ReactiveObject
                     modSetting.IsPerformingBatchAction = false;
                 }
             }
-        });
+        }).DisposeWith(_disposables);
 
         BatchDisableInjectedRecordsCommand = ReactiveCommand.Create(() =>
         {
@@ -487,7 +486,7 @@ public class VM_Mods : ReactiveObject
                 modSetting.HandleInjectedRecords = false;
                 modSetting.IsPerformingBatchAction = false;
             }
-        });
+        }).DisposeWith(_disposables);
         
         BatchIncludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error including outfits: {ex.Message}")).DisposeWith(_disposables);
         BatchExcludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error excluding outfits: {ex.Message}")).DisposeWith(_disposables);

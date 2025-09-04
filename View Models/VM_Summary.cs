@@ -92,7 +92,8 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             MaxNpcsPerPage = _settings.MaxNpcsPerPageSummaryView;
             this.WhenAnyValue(x => x.MaxNpcsPerPage)
                 .Throttle(TimeSpan.FromMilliseconds(500))
-                .Subscribe(val => _settings.MaxNpcsPerPageSummaryView = val);
+                .Subscribe(val => _settings.MaxNpcsPerPageSummaryView = val)
+                .DisposeWith(_disposables);
 
             // Populate NPC groups from the Npcs View Model
             AvailableNpcGroups = _npcsViewModel.AvailableNpcGroups;
@@ -100,9 +101,9 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 
             // --- Pagination Commands ---
             var canGoNext = this.WhenAnyValue(x => x.CurrentPage, x => x.TotalPages, (c, t) => c < t);
-            NextPageCommand = ReactiveCommand.Create(() => { CurrentPage++; }, canGoNext);
+            NextPageCommand = ReactiveCommand.Create(() => { CurrentPage++; }, canGoNext).DisposeWith(_disposables);;
             var canGoPrev = this.WhenAnyValue(x => x.CurrentPage, c => c > 1);
-            PreviousPageCommand = ReactiveCommand.Create(() => { CurrentPage--; }, canGoPrev);
+            PreviousPageCommand = ReactiveCommand.Create(() => { CurrentPage--; }, canGoPrev).DisposeWith(_disposables);;
 
             // --- Zoom Commands & Properties ---
             SummaryViewZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, _settings.SummaryViewZoomLevel));
@@ -112,18 +113,18 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             {
                 SummaryViewHasUserManuallyZoomed = true;
                 SummaryViewZoomLevel = Math.Min(_maxZoomPercentage, SummaryViewZoomLevel + _zoomStepPercentage);
-            });
+            }).DisposeWith(_disposables);;
             ZoomOutSummaryCommand = ReactiveCommand.Create(() =>
             {
                 SummaryViewHasUserManuallyZoomed = true;
                 SummaryViewZoomLevel = Math.Max(_minZoomPercentage, SummaryViewZoomLevel - _zoomStepPercentage);
-            });
+            }).DisposeWith(_disposables);;
             ResetZoomSummaryCommand = ReactiveCommand.Create(() =>
             {
                 SummaryViewIsZoomLocked = false;
                 SummaryViewHasUserManuallyZoomed = false;
                 _refreshImageSizesSubject.OnNext(Unit.Default);
-            });
+            }).DisposeWith(_disposables);;
 
             this.WhenAnyValue(x => x.SummaryViewZoomLevel)
                 .Skip(1) // Don't fire on initial load
@@ -170,7 +171,8 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 
             // Update page display text
             this.WhenAnyValue(x => x.CurrentPage, x => x.TotalPages)
-                .Subscribe(_ => this.RaisePropertyChanged(nameof(PageDisplay)));
+                .Subscribe(_ => this.RaisePropertyChanged(nameof(PageDisplay)))
+                .DisposeWith(_disposables);
 
             // Load data only when the user switches to the corresponding menu
             this.WhenActivated((CompositeDisposable disposables) =>

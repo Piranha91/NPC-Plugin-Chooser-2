@@ -1,5 +1,4 @@
-﻿// [VM_NpcSelectionBar.cs] - Full Code After Modifications
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -22,6 +21,7 @@ using System.Runtime.InteropServices;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
+using Noggog;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views; 
@@ -64,7 +64,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private HashSet<string> _hiddenModNames = new();
     private Dictionary<FormKey, HashSet<string>> _hiddenModsPerNpc = new();
     private Dictionary<FormKey, List<(string ModName, string ImagePath)>> _mugshotData = new();
-    private readonly ISubject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
+    private readonly Subject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
 
     private readonly BehaviorSubject<VM_NpcsMenuSelection?> _requestScrollToNpcSubject =
         new BehaviorSubject<VM_NpcsMenuSelection?>(null);
@@ -221,20 +221,20 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             Debug.WriteLine("VM_NpcSelectionBar: ZoomInNpcsCommand executed.");
             NpcsViewHasUserManuallyZoomed = true;
             NpcsViewZoomLevel = Math.Min(_maxZoomPercentage, NpcsViewZoomLevel + _zoomStepPercentage);
-        });
+        }).DisposeWith(_disposables);
         ZoomOutNpcsCommand = ReactiveCommand.Create(() =>
         {
             Debug.WriteLine("VM_NpcSelectionBar: ZoomOutNpcsCommand executed.");
             NpcsViewHasUserManuallyZoomed = true;
             NpcsViewZoomLevel = Math.Max(_minZoomPercentage, NpcsViewZoomLevel - _zoomStepPercentage);
-        });
+        }).DisposeWith(_disposables);
         ResetZoomNpcsCommand = ReactiveCommand.Create(() =>
         {
             Debug.WriteLine("VM_NpcSelectionBar: ResetZoomNpcsCommand executed.");
             NpcsViewIsZoomLocked = false;
             NpcsViewHasUserManuallyZoomed = false;
             _refreshImageSizesSubject.OnNext(Unit.Default);
-        });
+        }).DisposeWith(_disposables);
         
         SetNpcOutfitOverrideCommand = ReactiveCommand.Create<object>(param =>
         {
@@ -245,12 +245,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 SetNpcOutfitOverride(npcVM.NpcFormKey, newOverride);
             }
-        });
+        }).DisposeWith(_disposables);
 
         ZoomInNpcsCommand.ThrownExceptions
-            .Subscribe(ex => Debug.WriteLine($"Error ZoomInNpcsCommand: {ex.Message}")).DisposeWith(_disposables);
+            .Subscribe(ex => Debug.WriteLine($"Error ZoomInNpcsCommand: {ex.Message}")).DisposeWith(_disposables).DisposeWith(_disposables);
         ZoomOutNpcsCommand.ThrownExceptions
-            .Subscribe(ex => Debug.WriteLine($"Error ZoomOutNpcsCommand: {ex.Message}")).DisposeWith(_disposables);
+            .Subscribe(ex => Debug.WriteLine($"Error ZoomOutNpcsCommand: {ex.Message}")).DisposeWith(_disposables).DisposeWith(_disposables);
         ResetZoomNpcsCommand.ThrownExceptions
             .Subscribe(ex => Debug.WriteLine($"Error ResetZoomNpcsCommand: {ex.Message}"))
             .DisposeWith(_disposables);
@@ -275,7 +275,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 ? CreateMugShotViewModels(selectedNpc, _mugshotData)
                 : new ObservableCollection<VM_NpcsMenuMugshot>())
             .ObserveOn(RxApp.MainThreadScheduler)
-            .ToPropertyEx(this, x => x.CurrentNpcAppearanceMods);
+            .ToPropertyEx(this, x => x.CurrentNpcAppearanceMods)
+            .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.CurrentNpcAppearanceMods)
             // Add a 50ms throttle. This gives the UI thread a moment to complete the
@@ -307,33 +308,33 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         this.WhenAnyValue(x => x.SearchType1)
             .Select(type => type == NpcSearchType.SelectionState)
-            .ToPropertyEx(this, x => x.IsSelectionStateSearch1);
+            .ToPropertyEx(this, x => x.IsSelectionStateSearch1).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SearchType1)
             .Select(type => type == NpcSearchType.Group)
-            .ToPropertyEx(this, x => x.IsGroupSearch1);
+            .ToPropertyEx(this, x => x.IsGroupSearch1).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SearchType1)
             .Select(type => type == NpcSearchType.ShareStatus)
-            .ToPropertyEx(this, x => x.IsShareStatusSearch1);
+            .ToPropertyEx(this, x => x.IsShareStatusSearch1).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SearchType2)
             .Select(type => type == NpcSearchType.SelectionState)
-            .ToPropertyEx(this, x => x.IsSelectionStateSearch2);
+            .ToPropertyEx(this, x => x.IsSelectionStateSearch2).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SearchType2)
             .Select(type => type == NpcSearchType.Group)
-            .ToPropertyEx(this, x => x.IsGroupSearch2);
+            .ToPropertyEx(this, x => x.IsGroupSearch2).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SearchType2)
             .Select(type => type == NpcSearchType.ShareStatus)
-            .ToPropertyEx(this, x => x.IsShareStatusSearch2);
+            .ToPropertyEx(this, x => x.IsShareStatusSearch2).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SearchType3)
             .Select(type => type == NpcSearchType.SelectionState)
-            .ToPropertyEx(this, x => x.IsSelectionStateSearch3);
+            .ToPropertyEx(this, x => x.IsSelectionStateSearch3).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SearchType3)
             .Select(type => type == NpcSearchType.Group)
-            .ToPropertyEx(this, x => x.IsGroupSearch3);
+            .ToPropertyEx(this, x => x.IsGroupSearch3).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SearchType3)
             .Select(type => type == NpcSearchType.ShareStatus)
-            .ToPropertyEx(this, x => x.IsShareStatusSearch3);
+            .ToPropertyEx(this, x => x.IsShareStatusSearch3).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SearchType1)
             .ObserveOn(RxApp.MainThreadScheduler)
@@ -582,37 +583,37 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         var canExecuteHideUnhideActions = atLeastOneSelected; // Reuse the observable
 
-        HideAllButSelectedCommand = ReactiveCommand.Create(ExecuteHideAllButSelected, canExecuteHideUnhideActions);
+        HideAllButSelectedCommand = ReactiveCommand.Create(ExecuteHideAllButSelected, canExecuteHideUnhideActions).DisposeWith(_disposables);
         HideAllButSelectedCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error hiding unselected: {ex.Message}"))
             .DisposeWith(_disposables);
-        HideAllSelectedCommand = ReactiveCommand.Create(ExecuteHideAllSelected, canExecuteHideUnhideActions);
+        HideAllSelectedCommand = ReactiveCommand.Create(ExecuteHideAllSelected, canExecuteHideUnhideActions).DisposeWith(_disposables);
         HideAllSelectedCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error hiding selected: {ex.Message}"))
             .DisposeWith(_disposables);
-        UnhideAllSelectedCommand = ReactiveCommand.Create(ExecuteUnhideAllSelected, canExecuteHideUnhideActions);
+        UnhideAllSelectedCommand = ReactiveCommand.Create(ExecuteUnhideAllSelected, canExecuteHideUnhideActions).DisposeWith(_disposables);
         UnhideAllSelectedCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error unhiding selected: {ex.Message}"))
             .DisposeWith(_disposables);
         UnhideAllButSelectedCommand =
-            ReactiveCommand.Create(ExecuteUnhideAllButSelected, canExecuteHideUnhideActions);
+            ReactiveCommand.Create(ExecuteUnhideAllButSelected, canExecuteHideUnhideActions).DisposeWith(_disposables);
         UnhideAllButSelectedCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error unhiding unselected: {ex.Message}"))
             .DisposeWith(_disposables);
 
         var canDeselectAll = this.WhenAnyValue(x => x.CheckedMugshotCount)
             .Select(count => count >= 1);
-        DeselectAllCommand = ReactiveCommand.Create(ExecuteDeselectAll, canDeselectAll);
+        DeselectAllCommand = ReactiveCommand.Create(ExecuteDeselectAll, canDeselectAll).DisposeWith(_disposables);
         DeselectAllCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error deselecting all: {ex.Message}"))
             .DisposeWith(_disposables);
         // --- End NEW Setup ---
 
         // --- NEW: Import/Export Command Setup ---
-        ImportChoicesFromLoadOrderCommand = ReactiveCommand.CreateFromTask(ImportChoicesFromLoadOrderAsync);
-        ExportChoicesCommand = ReactiveCommand.CreateFromTask(ExportChoicesAsync);
-        ImportChoicesCommand = ReactiveCommand.CreateFromTask(ImportChoicesAsync);
-        ClearChoicesCommand = ReactiveCommand.Create(ClearChoices);
+        ImportChoicesFromLoadOrderCommand = ReactiveCommand.CreateFromTask(ImportChoicesFromLoadOrderAsync).DisposeWith(_disposables);
+        ExportChoicesCommand = ReactiveCommand.CreateFromTask(ExportChoicesAsync).DisposeWith(_disposables);
+        ImportChoicesCommand = ReactiveCommand.CreateFromTask(ImportChoicesAsync).DisposeWith(_disposables);
+        ClearChoicesCommand = ReactiveCommand.Create(ClearChoices).DisposeWith(_disposables);
 
         ImportChoicesFromLoadOrderCommand.ThrownExceptions
             .Subscribe(ex =>
@@ -632,17 +633,20 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .DisposeWith(_disposables);
         // --- End Import/Export Setup ---
         
-        ShowFavoritesCommand = ReactiveCommand.Create(ShowFavoritesWindowForSharing);
-        ShowFavoritesCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening favorites: {ex.Message}"));
+        ShowFavoritesCommand = ReactiveCommand.Create(ShowFavoritesWindowForSharing).DisposeWith(_disposables);
+        ShowFavoritesCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening favorites: {ex.Message}")).DisposeWith(_disposables);
 
-        AddFavoriteFaceToNpcCommand = ReactiveCommand.Create<VM_NpcsMenuSelection>(ShowFavoritesWindowForApplying);
-        AddFavoriteFaceToNpcCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening favorites: {ex.Message}"));
+        AddFavoriteFaceToNpcCommand = ReactiveCommand.Create<VM_NpcsMenuSelection>(ShowFavoritesWindowForApplying).DisposeWith(_disposables);
+        AddFavoriteFaceToNpcCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening favorites: {ex.Message}")).DisposeWith(_disposables);
 
 
         if (CurrentNpcAppearanceMods != null && CurrentNpcAppearanceMods.Any())
         {
             _refreshImageSizesSubject.OnNext(Unit.Default);
         }
+        
+        _refreshImageSizesSubject.DisposeWith(_disposables);
+        _requestScrollToNpcSubject.DisposeWith(_disposables);
     }
 
     // --- Methods ---

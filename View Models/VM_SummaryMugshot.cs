@@ -111,12 +111,12 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                     fullScreenView.DataContext = fullScreenVM;
                     fullScreenView.ShowDialog();
                 }
-            }, this.WhenAnyValue(x => x.HasMugshot));
+            }, this.WhenAnyValue(x => x.HasMugshot)).DisposeWith(_disposables);
 
             JumpToNpcCommand = ReactiveCommand.Create(() =>
             {
                 modsViewModel.NavigateToNpc(TargetNpcFormKey);
-            });
+            }).DisposeWith(_disposables);
 
             JumpToModCommand = ReactiveCommand.Create(() =>
             {
@@ -130,7 +130,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                         modsViewModel.ShowMugshotsCommand.Execute(targetMod).Subscribe();
                     });
                 }
-            });
+            }).DisposeWith(_disposables);
         }
         
         public async Task LoadImageAsync()
