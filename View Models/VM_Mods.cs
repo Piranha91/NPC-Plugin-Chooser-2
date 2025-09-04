@@ -1006,6 +1006,18 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         // 2. Update the mod keys based on current folder contents
         vmToRefresh.UpdateCorrespondingModKeys();
         
+        // Find and add any missing masters before proceeding with analysis. ***
+        if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
+        {
+            var allModDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
+            var warnings = new ConcurrentBag<string>(); // Warnings will be logged to debug output.
+            FindAndAddMissingMasters(vmToRefresh, allModDirectories, warnings);
+            if (warnings.Any())
+            {
+                Debug.WriteLine($"Warnings during master discovery for '{vmToRefresh.DisplayName}':\n{string.Join("\n", warnings)}");
+            }
+        }
+        
         // 3. Load the necessary plugins for this mod
         var modFolderPathsForVm = vmToRefresh.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var plugins = _pluginProvider.LoadPlugins(vmToRefresh.CorrespondingModKeys, modFolderPathsForVm);
@@ -1281,7 +1293,9 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         bool ShouldDisableMergeIn, // Result from CheckMergeInSuitability
         string MergeInTooltip,     // Result from CheckMergeInSuitability
         bool FoundInjectedRecords, // Result from CheckForInjectedRecords
-        string InjectedTooltip     // Result from CheckForInjectedRecords
+        string InjectedTooltip,     // Result from CheckForInjectedRecords
+        List<string> AllFolderPaths, // The final list of all paths
+        HashSet<ModKey> ResourceOnlyKeys // The final set of resource keys
     ) : ModFolderScanResult;
 
     #endregion
@@ -1345,7 +1359,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 // This helper is called to create a new VM if warranted.
                 var newVmResult =
                     await ProcessNewModFolderForParallelScanAsync(modFolderPath, modKeysInFolder, claimedMugshotPaths,
-                        allFaceGenLooseFiles, allFaceGenBsaFiles, splashReporter);
+                        allFaceGenLooseFiles, allFaceGenBsaFiles, splashReporter, modDirectories);
                 if (newVmResult != null)
                 {
                     scanResults.Add(newVmResult);
@@ -1400,6 +1414,16 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 case NewVmCreationData newData:
                     // This code now runs on the UI thread. It's safe to create the VM here.
                     var newVm = _modSettingFromModFolderFactory(newData.ModFolderPath, newData.ModKeys, this);
+                    var additionalDirs = 
+                        newData.AllFolderPaths
+                            .Where(path => !newVm.CorrespondingFolderPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+                            .Distinct(StringComparer.OrdinalIgnoreCase);
+                    ListExt.AddRange(newVm.CorrespondingFolderPaths, additionalDirs);
+                    var additionalModKeys = newData.ModKeys
+                        .Where(mk => !newVm.CorrespondingModKeys.Contains(mk))
+                        .Distinct();
+                    ListExt.AddRange(newVm.CorrespondingModKeys, additionalModKeys);
+                    newVm.ResourceOnlyModKeys = newData.ResourceOnlyKeys;
                     newVm.IsNewlyCreated = true;
 
                     // Apply the pre-calculated analysis results from the DTO
@@ -1447,7 +1471,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// </summary>
     private async Task<ModFolderScanResult?> ProcessNewModFolderForParallelScanAsync(string modFolderPath,
         List<ModKey> modKeysInFolder, ICollection<string> claimedMugshotPaths, Dictionary<string, HashSet<string>> allFaceGenLooseFiles, 
-        Dictionary<string, HashSet<string>> allFaceGenBsaFiles, VM_SplashScreen? splashReporter)
+        Dictionary<string, HashSet<string>> allFaceGenBsaFiles, VM_SplashScreen? splashReporter,
+        IReadOnlyCollection<string> allModDirectories)
     {
         // This VM will be discarded and never touches the UI.
         var tempVmForAnalysis = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
@@ -1461,6 +1486,19 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
 
         _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
+        
+        // *** CALL THE NEW MASTER DISCOVERY LOGIC ***
+        var warnings = new ConcurrentBag<string>();
+        FindAndAddMissingMasters(tempVmForAnalysis, allModDirectories, warnings);
+        if (splashReporter != null && !warnings.IsEmpty)
+        {
+            foreach (var warning in warnings)
+            {
+                splashReporter.ShowMessagesOnClose(warning);
+            }
+        }
+    
+        // Now, tempVmForAnalysis has been updated with any discovered dependency folders and resource plugins.
 
         if (modKeysInFolder.Any() && await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath }))
         {
@@ -1475,13 +1513,15 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // Return a DTO with the data, not the VM itself
             return new NewVmCreationData(
                 modFolderPath,
-                modKeysInFolder,
+                tempVmForAnalysis.CorrespondingModKeys.ToList(), // Use updated list
                 IsFaceGenOnly: false,
                 FaceGenFormKeys: new HashSet<FormKey>(),
                 ShouldDisableMergeIn: !tempVmForAnalysis.MergeInDependencyRecords,
                 MergeInTooltip: tempVmForAnalysis.MergeInToolTip,
                 FoundInjectedRecords: injectedFound,
-                InjectedTooltip: tempVmForAnalysis.HandleInjectedOverridesToolTip
+                InjectedTooltip: tempVmForAnalysis.HandleInjectedOverridesToolTip,
+                AllFolderPaths: tempVmForAnalysis.CorrespondingFolderPaths.ToList(), // Use updated list
+                ResourceOnlyKeys: new HashSet<ModKey>(tempVmForAnalysis.ResourceOnlyModKeys) // Use updated set
             );
         }
         else if (modKeysInFolder.Any())
@@ -1509,13 +1549,15 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // Return a DTO for a FaceGen-only mod
             return new NewVmCreationData(
                 modFolderPath,
-                modKeysInFolder,
-                IsFaceGenOnly: true,
-                FaceGenFormKeys: faceGenKeys,
+                tempVmForAnalysis.CorrespondingModKeys.ToList(), // Use updated list
+                IsFaceGenOnly: false,
+                FaceGenFormKeys: new HashSet<FormKey>(),
                 ShouldDisableMergeIn: !tempVmForAnalysis.MergeInDependencyRecords,
                 MergeInTooltip: tempVmForAnalysis.MergeInToolTip,
-                FoundInjectedRecords: false, // No plugin to check
-                InjectedTooltip: ModSetting.DefaultRecordInjectionToolTip
+                FoundInjectedRecords: false,
+                InjectedTooltip: tempVmForAnalysis.HandleInjectedOverridesToolTip,
+                AllFolderPaths: tempVmForAnalysis.CorrespondingFolderPaths.ToList(), // Use updated list
+                ResourceOnlyKeys: new HashSet<ModKey>(tempVmForAnalysis.ResourceOnlyModKeys) // Use updated set
             );
         }
     }
@@ -1992,6 +2034,106 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         Debug.WriteLine($"Assembled BSA file paths for {allFaceGenBsaFiles.Count} mod settings from cache.");
         return (allFaceGenLooseFiles, allFaceGenBsaFiles);
+    }
+
+    /// <summary>
+    /// Scans the masters of a VM's plugins. If any masters are not in the load order or already part of the VM,
+    /// it searches all other mod directories to find them, adding the best candidate folder as a resource.
+    /// </summary>
+    private void FindAndAddMissingMasters(
+        VM_ModSetting vm,
+        IReadOnlyCollection<string> allModDirectories,
+        ConcurrentBag<string> warnings)
+    {
+        var loadOrderKeys = _environmentStateProvider.LoadOrderModKeys.ToHashSet();
+        // Start with the plugins we know about before this process began.
+        var knownPluginKeysInVm = new HashSet<ModKey>(vm.CorrespondingModKeys);
+        var currentFoldersInVm = vm.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var missingMastersToFind = new HashSet<ModKey>();
+
+        // Step 1: Find all missing masters from the VM's current set of plugins.
+        var plugins = _pluginProvider.LoadPlugins(vm.CorrespondingModKeys, currentFoldersInVm);
+        foreach (var plugin in plugins)
+        {
+            foreach (var masterRef in plugin.ModHeader.MasterReferences)
+            {
+                var masterKey = masterRef.Master;
+                if (!loadOrderKeys.Contains(masterKey) && !knownPluginKeysInVm.Contains(masterKey))
+                {
+                    missingMastersToFind.Add(masterKey);
+                }
+            }
+        }
+
+        if (!missingMastersToFind.Any())
+        {
+            return; // Nothing to do
+        }
+
+        // Step 2: Find potential source folders for the missing masters.
+        var foldersToSearch = allModDirectories.Where(d => !currentFoldersInVm.Contains(d)).ToList();
+        var newResourceFoldersToAdd = new Dictionary<string, List<ModKey>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var master in missingMastersToFind)
+        {
+            var candidates = new List<(string Path, DateTime LastWrite)>();
+            foreach (var folder in foldersToSearch)
+            {
+                string pluginPath = Path.Combine(folder, master.FileName.String);
+                if (File.Exists(pluginPath))
+                {
+                    candidates.Add((folder, File.GetLastWriteTimeUtc(pluginPath)));
+                }
+            }
+
+            if (candidates.Any())
+            {
+                var winner = candidates.OrderByDescending(c => c.LastWrite).First();
+                if (candidates.Count > 1)
+                {
+                    var sources = string.Join(", ", candidates.Select(c => Path.GetFileName(c.Path)));
+                    warnings.Add(
+                        $"Found multiple sources for master '{master.FileName}' needed by '{vm.DisplayName}': [{sources}]. Choosing the newest version from '{Path.GetFileName(winner.Path)}'.");
+                }
+
+                // If we haven't already decided to add this folder, add it now.
+                if (!newResourceFoldersToAdd.ContainsKey(winner.Path))
+                {
+                    var pluginsInWinnerFolder = _aux.GetModKeysInDirectory(winner.Path, new List<string>(), false);
+                    newResourceFoldersToAdd[winner.Path] = pluginsInWinnerFolder;
+                }
+            }
+            else
+            {
+                Debug.WriteLine(
+                    $"Could not find a local source for missing master '{master.FileName}' for mod '{vm.DisplayName}'.");
+            }
+        }
+
+        // Step 3: Apply the newly discovered folders and plugins to the VM.
+        if (newResourceFoldersToAdd.Any())
+        {
+            vm.IsPerformingBatchAction = true; // prevent popups
+            foreach (var (folderPath, pluginsInFolder) in newResourceFoldersToAdd)
+            {
+                if (!vm.CorrespondingFolderPaths.Contains(folderPath, StringComparer.OrdinalIgnoreCase))
+                {
+                    vm.CorrespondingFolderPaths.Add(folderPath);
+                }
+
+                foreach (var pluginKey in pluginsInFolder)
+                {
+                    vm.ResourceOnlyModKeys.Add(pluginKey);
+                    if (!vm.CorrespondingModKeys.Contains(pluginKey))
+                    {
+                        vm.CorrespondingModKeys.Add(pluginKey);
+                    }
+                }
+            }
+
+            vm.IsPerformingBatchAction = false;
+        }
     }
 
     // Filtering Logic (Left Panel)
