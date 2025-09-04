@@ -2196,6 +2196,51 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         Debug.WriteLine(
             $"Finished processing. Set '{targetModName}' as the selected appearance for {applicableNpcs.Count} NPC(s).");
     }
+    
+    public void SelectVisibleFromMod(VM_NpcsMenuMugshot referenceMod, bool onlyAvailable)
+    {
+        if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName))
+        {
+            Debug.WriteLine("SelectVisibleFromMod: referenceMod or its ModName is null/empty.");
+            return;
+        }
+
+        string targetModName = referenceMod.ModName;
+
+        // The query now uses the 'onlyAvailable' parameter to filter NPCs
+        var applicableNpcs = FilteredNpcs
+            .Where(npc => npc != null &&
+                          IsModAnAppearanceSourceForNpc(npc, referenceMod) &&
+                          (!onlyAvailable || !_consistencyProvider.DoesNpcHaveSelection(npc.NpcFormKey)))
+            .ToList();
+
+        if (!applicableNpcs.Any())
+        {
+            string message = onlyAvailable
+                ? $"The mod '{targetModName}' is not an available appearance source for any of the currently visible NPCs."
+                : $"The mod '{targetModName}' is not a valid appearance source for any of the currently visible NPCs.";
+            ScrollableMessageBox.Show(message, "No Applicable NPCs");
+            return;
+        }
+
+        // The confirmation message is now customized based on the action
+        string confirmationMessage = onlyAvailable
+            ? $"This will set the appearance for {applicableNpcs.Count} visible and unassigned NPC(s) to '{targetModName}'.\n\nAre you sure you want to proceed?"
+            : $"This will set the appearance for {applicableNpcs.Count} visible NPC(s) to '{targetModName}', overwriting any existing selections.\n\nAre you sure you want to proceed?";
+
+        if (!ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Bulk Selection"))
+        {
+            return;
+        }
+
+        foreach (var npcVM in applicableNpcs)
+        {
+            _consistencyProvider.SetSelectedMod(npcVM.NpcFormKey, targetModName, npcVM.NpcFormKey);
+        }
+
+        Debug.WriteLine(
+            $"Finished processing. Set '{targetModName}' as the selected appearance for {applicableNpcs.Count} visible NPC(s). (onlyAvailable={onlyAvailable})");
+    }
 
     private bool IsModAnAppearanceSourceForNpc(VM_NpcsMenuSelection npcSelectionVm, VM_NpcsMenuMugshot referenceMod)
     {
