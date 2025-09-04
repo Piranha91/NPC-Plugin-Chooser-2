@@ -209,7 +209,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             // AvailablePluginsForNpcs should be re-calculated on load.
             // IsMugshotOnlyEntry is set to false via chaining
             IsFaceGenOnlyEntry = model.IsFaceGenOnlyEntry;
-            FaceGenOnlyNpcFormKeys = new(FaceGenOnlyNpcFormKeys);
+            FaceGenOnlyNpcFormKeys = new(model.FaceGenOnlyNpcFormKeys);
 
             MergeInDependencyRecordsVisible = DisplayName != VM_Mods.BaseGameModSettingName &&
                                               DisplayName != VM_Mods.CreationClubModsettingName;
