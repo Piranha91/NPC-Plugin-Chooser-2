@@ -942,7 +942,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         
         // Phase 0: Cache FaceGen
         splashReporter?.UpdateStep("Pre-caching asset file paths...");
-        var faceGenCache = await CacheFaceGenPathsOnLoadAsync(_allModSettingsInternal, splashReporter);
+        var faceGenCache = await CacheFaceGenPathsOnLoadAsync(null, splashReporter); // pass null to force full scan of mods folder
         
         // Phase 1: Initialize and load data from disk
         var (tempList, loadedDisplayNames, claimedMugshotPaths, warnings) = InitializePopulation(splashReporter);
@@ -1376,6 +1376,16 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         try
         {
             await Task.WhenAll(processingTasks);
+        }
+        catch (AggregateException aex) // Catch the specific AggregateException
+        {
+            // Flatten the exception tree and log every single error that occurred.
+            var flattenedExceptions = aex.Flatten();
+            foreach (var innerEx in flattenedExceptions.InnerExceptions)
+            {
+                warnings.Add(
+                    $"An error occurred during parallel mod scanning: {Environment.NewLine}{ExceptionLogger.GetExceptionStack(innerEx)}");
+            }
         }
         catch (Exception ex)
         {
@@ -1823,8 +1833,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
         });
     }
-
-    // Located in NPC_Plugin_Chooser_2.View_Models/VM_Mods.cs
+    
     private async Task<(Dictionary<string, HashSet<string>> allFaceGenLooseFiles, Dictionary<string, HashSet<string>>
             allFaceGenBsaFiles)>
         CacheFaceGenPathsOnLoadAsync(IEnumerable<VM_ModSetting>? vmsToProcess, VM_SplashScreen? splashReporter)
