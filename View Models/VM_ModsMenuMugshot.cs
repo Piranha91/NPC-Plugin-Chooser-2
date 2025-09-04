@@ -33,6 +33,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         public string ImagePath { get; set; } 
         public FormKey NpcFormKey { get; }
         public string NpcDisplayName { get; }
+        public string ToolTipText => $"{NpcDisplayName} ({NpcFormKey})";
 
         [Reactive] public double ImageWidth { get; set; } 
         [Reactive] public double ImageHeight { get; set; } 

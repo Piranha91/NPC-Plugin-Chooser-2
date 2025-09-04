@@ -544,7 +544,7 @@
                                  <Border BorderThickness="2" BorderBrush="{Binding BorderColor}" Margin="5" CornerRadius="2"
                                          Width="{Binding ImageWidth}" Height="{Binding ImageHeight}"
                                          PreviewMouseRightButtonDown="MugshotItem_PreviewMouseRightButtonDown"
-                                         ToolTip="{Binding NpcDisplayName}">
+                                         ToolTip="{Binding ToolTipText}">
                                      <!-- This Grid is the reference for the icon's percentage sizing -->
                                      <Grid>
                                         <Image Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True">
