@@ -45,6 +45,11 @@
                 <x:Type TypeName="vm:ShareStatusFilterType"/>
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
+        <ObjectDataProvider x:Key="NpcSortPropertyEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="vm:NpcSortProperty"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
 
         <DataTemplate x:Key="AppearanceModDragAdorner" DataType="{x:Type vm:VM_NpcsMenuMugshot}">
             <Border BorderThickness="1" BorderBrush="DimGray" Background="LightGoldenrodYellow"
@@ -248,6 +253,16 @@
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                             <RadioButton Content="AND (Match All)" GroupName="SearchLogic" VerticalAlignment="Center" Margin="0,0,10,0" IsChecked="{Binding IsSearchAndLogic, Mode=TwoWay}" ToolTip="Results must match all active search terms"/>
                             <RadioButton Content="OR (Match Any)" GroupName="SearchLogic" VerticalAlignment="Center" ToolTip="Results must match at least one active search term"/>
+                        </StackPanel>
+                        
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0">
+                            <TextBlock Text="Sort By:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <ComboBox ItemsSource="{Binding Source={StaticResource NpcSortPropertyEnumValues}}"
+                                      SelectedItem="{Binding SelectedSortProperty, Mode=TwoWay}"
+                                      MinWidth="80" VerticalAlignment="Center" Margin="0,0,10,0"
+                                      ToolTip="Change the sort order of the NPC list."/>
+                            <CheckBox Content="Reverse" IsChecked="{Binding IsSortReversed, Mode=TwoWay}" 
+                                      VerticalAlignment="Center" ToolTip="Reverse the current sort order."/>
                         </StackPanel>
                     </StackPanel>
                 </Border>

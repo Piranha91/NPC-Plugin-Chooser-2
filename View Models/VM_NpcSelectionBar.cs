@@ -71,6 +71,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
     public IObservable<VM_NpcsMenuSelection?> RequestScrollToNpcObservable =>
         _requestScrollToNpcSubject.AsObservable();
+    
+    [Reactive] public NpcSortProperty SelectedSortProperty { get; set; } = NpcSortProperty.FormID;
+    [Reactive] public bool IsSortReversed { get; set; } = false;
+    public Array AvailableSortProperties => Enum.GetValues(typeof(NpcSortProperty));
 
     // --- Search Properties ---
     [Reactive] public string SearchText1 { get; set; } = string.Empty;
@@ -390,8 +394,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         var logicChanges = this.WhenAnyValue(
             x => x.IsSearchAndLogic
         ).Select(_ => Unit.Default);
+        
+        var sortChanges = this.WhenAnyValue(
+            x => x.SelectedSortProperty, x => x.IsSortReversed
+        ).Select(_ => Unit.Default);
 
-        Observable.Merge(filter1Changes, filter2Changes, filter3Changes, logicChanges)
+        Observable.Merge(filter1Changes, filter2Changes, filter3Changes, logicChanges, sortChanges)
             .Throttle(TimeSpan.FromMilliseconds(100), RxApp.MainThreadScheduler)
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => ApplyFilter(false))
@@ -1690,8 +1698,44 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             }
         }
         
-        //results.Sort((a, b) => StrCmpLogicalW(a.FormIdString, b.FormIdString));
-        results.SortByFormId();
+        results.Sort((a, b) =>
+        {
+            int comparison = 0;
+            switch (SelectedSortProperty)
+            {
+                case NpcSortProperty.Name:
+                    // Natural sort for names with numbers (e.g., "Bandit 2" vs "Bandit 10")
+                    comparison = StrCmpLogicalW(a.NpcName, b.NpcName);
+                    break;
+                case NpcSortProperty.EditorID:
+                    comparison = StrCmpLogicalW(a.NpcEditorId, b.NpcEditorId);
+                    break;
+                case NpcSortProperty.FormKey:
+                    comparison = a.NpcFormKey.ModKey.Name.CompareTo(b.NpcFormKey.ModKey);
+                    if (comparison == 0)
+                        comparison = a.NpcFormKey.ID.CompareTo(b.NpcFormKey.ID);
+                    break;
+                case NpcSortProperty.FormID:
+                default:
+                    // This logic preserves the original FormID sort behavior
+                    bool aInLoadOrder = !string.IsNullOrEmpty(a.FormIdString);
+                    bool bInLoadOrder = !string.IsNullOrEmpty(b.FormIdString);
+
+                    if (aInLoadOrder && !bInLoadOrder) comparison = -1;
+                    else if (!aInLoadOrder && bInLoadOrder) comparison = 1;
+                    else if (aInLoadOrder) // both in LO
+                        comparison = string.Compare(a.FormIdString, b.FormIdString, StringComparison.Ordinal);
+                    else // both not in LO
+                    {
+                        comparison = string.Compare(a.NpcFormKey.ModKey.FileName, b.NpcFormKey.ModKey.FileName, StringComparison.OrdinalIgnoreCase);
+                        if (comparison == 0)
+                            comparison = string.Compare(a.NpcFormKey.IDString(), b.NpcFormKey.IDString(), StringComparison.OrdinalIgnoreCase);
+                    }
+                    break;
+            }
+            // Apply reversal if the checkbox is ticked
+            return IsSortReversed ? -comparison : comparison;
+        });
 
         FilteredNpcs.Clear();
         foreach (var npc in results)
@@ -2712,4 +2756,12 @@ public class UnshareAppearanceRequest
     {
         MugshotToUnshare = mugshotToUnshare;
     }
+}
+
+public enum NpcSortProperty
+{
+    FormID,
+    Name,
+    EditorID,
+    FormKey
 }
