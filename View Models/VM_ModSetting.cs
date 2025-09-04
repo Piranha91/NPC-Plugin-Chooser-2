@@ -566,6 +566,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 NpcFormKeysToDisplayName = this.NpcFormKeysToDisplayName,
                 AmbiguousNpcFormKeys = this.AmbiguousNpcFormKeys,
                 IsFaceGenOnlyEntry = IsFaceGenOnlyEntry,
+                FaceGenOnlyNpcFormKeys = FaceGenOnlyNpcFormKeys,
                 MergeInDependencyRecords = MergeInDependencyRecords,
                 IncludeOutfits = IncludeOutfits,
                 MergeInToolTip = MergeInToolTip,
