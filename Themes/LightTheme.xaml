@@ -162,7 +162,7 @@
     </Style>
     
     <Style TargetType="ToolTip">
-        <Setter Property="Background" Value="#FFFBFAD3"/>
+        <Setter Property="Background" Value="{StaticResource SecondaryBackground}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>
         <Setter Property="BorderThickness" Value="1"/>
