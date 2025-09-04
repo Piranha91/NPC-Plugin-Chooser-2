@@ -2179,7 +2179,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         // Add a confirmation dialog for this potentially large-scale change.
-        var confirmationMessage = $"This will set the appearance for {applicableNpcs.Count} NPC(s) to '{targetModName}'.\n\nThis applies the version of the appearance native to each NPC. Are you sure you want to proceed?";
+        var confirmationMessage = $"This will set the appearance for {applicableNpcs.Count} NPC(s) to '{targetModName}'.\n\nAre you sure you want to proceed?";
         if (!ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Bulk Selection"))
         {
             return;

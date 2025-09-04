@@ -491,10 +491,11 @@
                                                  Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}">
                                          <Button Content="Set Resource Plugins"
                                                  Command="{Binding SetResourcePluginsCommand}"
-                                                 Margin="5,0,0,0" Padding="5,2"
+                                                 Padding="5,2"
                                                  ToolTip="Select plugins within this mod to be treated as resource files, ignoring their NPCs."/>
     
                                          <Button Command="{Binding RefreshCommand}"
+                                                 Margin="5,0,0,0" 
                                                  Padding="5,2"
                                                  Content="Refresh"
                                                  ToolTip="Refresh this mod's data from its source folders."/>
