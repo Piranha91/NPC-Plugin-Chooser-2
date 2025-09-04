@@ -1380,6 +1380,25 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         public List<VM_ModSetting> AppearanceMods { get; init; } = new();
     }
     
+    public void RefreshAllNpcDisplayNames()
+    {
+        // Step 1: Handle expensive FormID calculation only if the user has checked the box.
+        if (_settings.ShowNpcFormIdInList)
+        {
+            // This iterates only through NPCs for whom the calculation hasn't been done yet.
+            foreach (var npc in AllNpcs.Where(n => string.IsNullOrWhiteSpace(n.FormIdString)))
+            {
+                npc.FormIdString = _auxilliary.FormKeyToFormIDString(npc.NpcFormKey);
+            }
+        }
+
+        // Step 2: Update the display name for every NPC using the latest settings.
+        foreach (var npc in AllNpcs)
+        {
+            npc.UpdateDisplayName();
+        }
+    }
+    
     public async Task InitializeAsync(VM_SplashScreen? splashReporter)
     {
         // 1. UI-thread cleanup (unchanged)
@@ -1462,8 +1481,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             // Create VMs for NPCs that were successfully resolved
             foreach (var kvp in npcDisplayDataCache)
             {
-                var npcVM = new VM_NpcsMenuSelection(kvp.Key, _environmentStateProvider, this, _auxilliary);
-                npcVM.UpdateWithData(kvp.Value, _settings.LocalizationLanguage);
+                var npcVM = new VM_NpcsMenuSelection(kvp.Key, _environmentStateProvider, this, _auxilliary, _settings);
+                npcVM.UpdateWithData(kvp.Value);
                 npcViewModelMap[kvp.Key] = npcVM;
                 splashReporter?.IncrementProgress(npcVM.DisplayName);
             }
@@ -1474,7 +1493,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 if (!npcViewModelMap.ContainsKey(mugshotKey))
                 {
-                    var npcVM = new VM_NpcsMenuSelection(mugshotKey, _environmentStateProvider, this, _auxilliary);
+                    var npcVM = new VM_NpcsMenuSelection(mugshotKey, _environmentStateProvider, this, _auxilliary, _settings);
                     npcVM.IsInLoadOrder = false;
                     npcViewModelMap[mugshotKey] = npcVM;
                     splashReporter?.IncrementProgress(npcVM.DisplayName);
@@ -1521,7 +1540,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
             }
         }
-
+        RefreshAllNpcDisplayNames();
         await Application.Current.Dispatcher.InvokeAsync(() => ApplyFilter(initializing: true));
 
         // 6. Restore selection (unchanged)

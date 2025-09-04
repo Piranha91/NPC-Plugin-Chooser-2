@@ -102,7 +102,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public bool IsLocalizationEnabled { get; set; }
         [Reactive] public Language? SelectedLocalizationLanguage { get; set; }
         public IEnumerable<Language> AvailableLanguages { get; } = Enum.GetValues(typeof(Language)).Cast<Language>();
-
+        // --- NPC Display ---
+        [Reactive] public bool ShowNpcNameInList { get; set; } = true;
+        [Reactive] public bool ShowNpcEditorIdInList { get; set; }
+        [Reactive] public bool ShowNpcFormKeyInList { get; set; }
+        [Reactive] public bool ShowNpcFormIdInList { get; set; }
+        [Reactive] public string NpcListSeparator { get; set; } =  " | ";
         
         // For throttled saving
         private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
@@ -186,6 +191,11 @@ namespace NPC_Plugin_Chooser_2.View_Models
             IsLocalizationEnabled = _model.LocalizationLanguage.HasValue;
             SelectedLocalizationLanguage = _model.LocalizationLanguage;
             IsDarkMode = _model.IsDarkMode;
+            ShowNpcNameInList = _model.ShowNpcNameInList;
+            ShowNpcEditorIdInList = _model.ShowNpcEditorIdInList;
+            ShowNpcFormKeyInList = _model.ShowNpcFormKeyInList;
+            ShowNpcFormIdInList = _model.ShowNpcFormIdInList;
+            NpcListSeparator = _model.NpcListSeparator;
             
             ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
             ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
@@ -232,6 +242,48 @@ namespace NPC_Plugin_Chooser_2.View_Models
             this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.BatFilePreCommands).Skip(1).Subscribe(s => _model.BatFilePreCommands = s).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.BatFilePostCommands).Skip(1).Subscribe(s => _model.BatFilePostCommands = s).DisposeWith(_disposables);
+            // Subscribe to property changes to update the model
+    this.WhenAnyValue(x => x.ShowNpcNameInList).Skip(1).Subscribe(b => _model.ShowNpcNameInList = b).DisposeWith(_disposables);
+    this.WhenAnyValue(x => x.ShowNpcEditorIdInList).Skip(1).Subscribe(b => _model.ShowNpcEditorIdInList = b).DisposeWith(_disposables);
+    this.WhenAnyValue(x => x.ShowNpcFormKeyInList).Skip(1).Subscribe(b => _model.ShowNpcFormKeyInList = b).DisposeWith(_disposables);
+    this.WhenAnyValue(x => x.ShowNpcFormIdInList).Skip(1).Subscribe(b => _model.ShowNpcFormIdInList = b).DisposeWith(_disposables);
+    this.WhenAnyValue(x => x.NpcListSeparator).Skip(1).Subscribe(s => _model.NpcListSeparator = s).DisposeWith(_disposables);
+    
+    // Combine all display setting changes into a single observable to trigger updates
+    var npcDisplaySettingsChanged = Observable.Merge(
+        this.WhenAnyValue(x => x.ShowNpcNameInList).Select(_ => Unit.Default),
+        this.WhenAnyValue(x => x.ShowNpcEditorIdInList).Select(_ => Unit.Default),
+        this.WhenAnyValue(x => x.ShowNpcFormKeyInList).Select(_ => Unit.Default),
+        this.WhenAnyValue(x => x.ShowNpcFormIdInList).Select(_ => Unit.Default),
+        this.WhenAnyValue(x => x.NpcListSeparator).Select(_ => Unit.Default)
+    );
+
+    npcDisplaySettingsChanged
+        .Skip(5) // Skip the initial values set during construction
+        .Throttle(TimeSpan.FromMilliseconds(200), RxApp.MainThreadScheduler)
+        .Subscribe(_ =>
+        {
+            // If the NPC view has been created, tell it to refresh its display names
+            if (_lazyNpcSelectionBar.IsValueCreated)
+            {
+                _lazyNpcSelectionBar.Value.RefreshAllNpcDisplayNames();
+            }
+        })
+        .DisposeWith(_disposables);
+        
+    // Also, update the language change subscription to use the new refresh mechanism
+    this.WhenAnyValue(x => x.SelectedLocalizationLanguage)
+        .Skip(1) // Skip initial value
+        .Subscribe(lang =>
+        {
+            _model.LocalizationLanguage = lang;
+            if (_lazyNpcSelectionBar.IsValueCreated)
+            {
+                // This now calls the central refresh method
+                _lazyNpcSelectionBar.Value.RefreshAllNpcDisplayNames();
+            }
+        })
+        .DisposeWith(_disposables);
             
             this.WhenAnyValue(x => x.SuppressPopupWarnings)
                 .Skip(1)
@@ -261,18 +313,6 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 {
                     _model.IsDarkMode = isDark;
                     ThemeManager.ApplyTheme(isDark);
-                })
-                .DisposeWith(_disposables);
-
-            this.WhenAnyValue(x => x.SelectedLocalizationLanguage)
-                .Skip(1) // Skip initial value
-                .Subscribe(lang =>
-                {
-                    _model.LocalizationLanguage = lang;
-                    foreach (var entry in _lazyNpcSelectionBar.Value.AllNpcs)
-                    {
-                        entry.RefreshName(lang);
-                    }
                 })
                 .DisposeWith(_disposables);
             

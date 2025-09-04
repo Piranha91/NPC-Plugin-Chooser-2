@@ -27,7 +27,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
         public NpcDisplayData? NpcData { get; set; } // Keep the original record (null if from mugshot only)
         public FormKey NpcFormKey { get; }
- 
+
         private static string _defaultDisplayName = "Unnamed NPC";
         [Reactive] public string DisplayName { get; set; } = _defaultDisplayName;
         private static string _defaultNpcName = "No Name Assigned";
@@ -36,7 +36,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public string NpcEditorId { get; set; } = _defaultEditorID;
         private static string _defaultFormKeyString = "No FormKey";
         public string NpcFormKeyString { get; } = _defaultFormKeyString;
-        public string FormIdString { get; }
+        [Reactive] public string FormIdString { get; set; }
         private bool _pluginFound = false;
         public bool IsInLoadOrder { get; set; }
         [Reactive] public string NpcGroupsDisplay { get; set; } = "Groups: None";
@@ -46,13 +46,15 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Reactive] public ObservableCollection<VM_ModSetting> AppearanceMods { get; set; } = new();
 
         // Alternative constructor for NPCs found *only* via mugshots
-        public VM_NpcsMenuSelection(FormKey npcFormKey, EnvironmentStateProvider environmentStateProvider, VM_NpcSelectionBar parentMenu, Auxilliary aux)
+        public VM_NpcsMenuSelection(FormKey npcFormKey, EnvironmentStateProvider environmentStateProvider,
+            VM_NpcSelectionBar parentMenu, Auxilliary aux, Settings settings)
         {
             using (ContextualPerformanceTracer.Trace("NpcMenuEntry.MainConstructor"))
             {
                 _environmentStateProvider = environmentStateProvider;
                 _parentMenu = parentMenu;
                 _aux = aux;
+                _settings = settings;
                 NpcFormKey = npcFormKey;
                 NpcFormKeyString = npcFormKey.ToString();
                 DisplayName = npcFormKey.ToString();
@@ -64,16 +66,16 @@ namespace NPC_Plugin_Chooser_2.View_Models
                 FormIdString = _aux.FormKeyToFormIDString(NpcFormKey);
             }
         }
-        
-        public void UpdateWithData(NpcDisplayData npcData, Language? language)
+
+        public void UpdateWithData(NpcDisplayData npcData)
         {
             NpcData = npcData;
             NpcEditorId = npcData.EditorID ?? _defaultEditorID;
             IsInLoadOrder = npcData.IsInLoadOrder;
-            
-            RefreshName(language);
+
+            UpdateDisplayName();
         }
-        
+
         public void UpdateGroupDisplay(HashSet<string>? groups)
         {
             if (groups != null && groups.Any())
@@ -86,15 +88,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
             }
         }
 
-        public void RefreshName(Language? language)
+        public void UpdateDisplayName()
         {
+            var language = _settings.LocalizationLanguage;
+            // Determine base name from localization settings
             bool hasName = false;
-            if (language != null && NpcData != null && NpcData?.Name != null && NpcData.Name.TryLookup(language.Value, out var localizedName))
+            if (language.HasValue && NpcData?.Name != null &&
+                NpcData.Name.TryLookup(language.Value, out var localizedName))
             {
                 NpcName = localizedName;
                 hasName = true;
             }
-            else if (NpcData?.Name != null && NpcData.Name.String != null)
+            else if (NpcData?.Name?.String != null)
             {
                 NpcName = NpcData.Name.String;
                 hasName = true;
@@ -103,13 +108,43 @@ namespace NPC_Plugin_Chooser_2.View_Models
             {
                 NpcName = _defaultNpcName;
             }
-            
-            DisplayName = hasName 
-                ? NpcName 
-                : (NpcData?.EditorID ?? NpcFormKeyString.ToString());
+
+            // Build the display string from parts based on settings
+            var parts = new List<string>();
+            var separator = $" {_settings.NpcListSeparator} ";
+
+            if (_settings.ShowNpcNameInList)
+            {
+                parts.Add(hasName ? NpcName : (NpcEditorId != _defaultEditorID ? NpcEditorId : NpcFormKeyString));
+            }
+
+            if (_settings.ShowNpcEditorIdInList && NpcEditorId != _defaultEditorID)
+            {
+                parts.Add(NpcEditorId);
+            }
+
+            if (_settings.ShowNpcFormKeyInList)
+            {
+                parts.Add(NpcFormKeyString);
+            }
+
+            if (_settings.ShowNpcFormIdInList && !string.IsNullOrWhiteSpace(FormIdString))
+            {
+                parts.Add(FormIdString);
+            }
+
+            if (parts.Any())
+            {
+                // Use Distinct() to avoid showing the same identifier twice (e.g., if Name and EditorID are the same)
+                DisplayName = string.Join(separator, parts.Distinct());
+            }
+            else // Fallback in case all are unchecked
+            {
+                DisplayName = hasName ? NpcName : (NpcEditorId != _defaultEditorID ? NpcEditorId : NpcFormKeyString);
+            }
         }
     }
-    
+
     public static class NpcListExtensions
     {
         /// <summary>

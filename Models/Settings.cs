@@ -60,6 +60,13 @@ public class Settings
     public bool SuppressPopupWarnings { get; set; } = false;
     public Language? LocalizationLanguage { get; set; } = null;
     public bool IsDarkMode { get; set; } = false;
+    
+    // --- NPC Display ---
+    public bool ShowNpcNameInList { get; set; } = true;
+    public bool ShowNpcEditorIdInList { get; set; }
+    public bool ShowNpcFormKeyInList { get; set; }
+    public bool ShowNpcFormIdInList { get; set; }
+    public string NpcListSeparator { get; set; } = " | ";
 
     // EasyNPC Interchangeability / Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); 

@@ -266,6 +266,7 @@
                                                    <TextBlock Text="{Binding NpcName}" /> 
                                                    <TextBlock Text="{Binding NpcEditorId}" /> 
                                                    <TextBlock Text="{Binding NpcFormKeyString}" />
+                                                   <TextBlock Text="{Binding FormIdString}" />
                                                    <TextBlock Text="{Binding NpcGroupsDisplay}" />
                                               </StackPanel>
                                          </ToolTip>
