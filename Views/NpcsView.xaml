@@ -543,7 +543,7 @@
                                          <MenuItem Header="Select All From This Mod" Command="{Binding SelectAllFromThisModCommand}" />
                                          <MenuItem Header="Select Available From This Mod" Command="{Binding SelectAvailableFromThisModCommand}" />
                                          <MenuItem Header="Select Visible From This Mod" Command="{Binding SelectVisibleFromThisModCommand}" />
-                                         <MenuItem Header="Select Visible &amp; Available" Command="{Binding SelectVisibleAndAvailableFromThisModCommand}" />
+                                         <MenuItem Header="Select Visible &amp; Available From This Mod" Command="{Binding SelectVisibleAndAvailableFromThisModCommand}" />
                                          <MenuItem Header="Hide All From This Mod" Command="{Binding HideAllFromThisModCommand}" />
                                          <MenuItem Header="Unhide All From This Mod" Command="{Binding UnhideAllFromThisModCommand}" />
                                          <Separator />
