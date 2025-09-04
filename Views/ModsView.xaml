@@ -661,65 +661,59 @@
                   </TextBlock>
             </Grid>
         </Grid>
-
-
-        <!-- NEW Zoom Control Row -->
+        
+        <!-- Bottom Control Row -->
         <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="5">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center"
-                            Visibility="{Binding ShowSourcePluginControls, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <!-- Existing Source Plugin controls here... -->
-                    <TextBlock Text="Source Plugin for Ambiguous NPCs:" VerticalAlignment="Center" Margin="10,0,5,0"
-                           ToolTip="Select a plugin to be the default source for NPCs found in multiple plugins within this mod setting."/>
-                    <ComboBox ItemsSource="{Binding AvailableSourcePluginsForSelectedMod}" 
-                          SelectedItem="{Binding SelectedSourcePluginForDisambiguation, Mode=TwoWay}"
-                          DisplayMemberPath="FileName"
-                          MinWidth="150" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                    <Button Content="Set as Source Plugin" Command="{Binding SetGlobalSourcePluginCommand}" 
-                        Padding="5,2" VerticalAlignment="Center"
-                        ToolTip="Set the selected plugin as the primary source for all NPCs in this mod setting that are found in multiple plugins."/>
-                </StackPanel>
+            <DockPanel LastChildFill="True">
 
-                <!-- NEW: Batch Actions Panel -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="10,0,0,0">
-                    <TextBlock Text="Batch Actions:" FontWeight="SemiBold" VerticalAlignment="Center"/>
-    
-                    <Button Content="Refresh All" Command="{Binding RefreshAllModsCommand}" Margin="5,0" Padding="5,2" ToolTip="Completely re-scans all mod folders and rebuilds the mod list."/>
-                    <CheckBox Content="Rescan Non-Appearance Mods"
-                              IsChecked="{Binding ShouldRescanNonAppearanceMods, Mode=TwoWay}"
-                              VerticalAlignment="Center"
-                              Margin="5,0"
-                              ToolTip="If checked, the 'Refresh All' action will also clear the cache of non-appearance mods and attempt to re-import them."/>
-                    
-                    <Button Content="Include" Command="{Binding BatchIncludeOutfitsCommand}" Margin="15,0,5,0" Padding="5,2" ToolTip="Enable 'Include Outfits' for ALL mods."/>
-                    <Button Content="Exclude" Command="{Binding BatchExcludeOutfitsCommand}" Padding="5,2" ToolTip="Disable 'Include Outfits' for ALL mods."/>
-                    <TextBlock Text="Outfits" VerticalAlignment="Center" Margin="5,0,0,0"/>
-
-                    <Button Content="Enable" Command="{Binding BatchEnableInjectedRecordsCommand}" Margin="10,0" Padding="5,2" ToolTip="Enable 'Search for Injected Records' for ALL mods."/>
-                    <Button Content="Disable" Command="{Binding BatchDisableInjectedRecordsCommand}" Padding="5,2" ToolTip="Disable 'Search for Injected Records' for ALL mods."/>
-                    <TextBlock Text="Injected Record Search" VerticalAlignment="Center" Margin="5,0,0,0"/>
-                </StackPanel>
-                
-                <!-- Existing Zoom controls -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,2,0,2">
                     <Button x:Name="ZoomOutButtonMods" Content="-" Width="25" Height="25" Margin="2,0" ToolTip="Zoom Out (Ctrl+Scroll Wheel)"/>
                     <TextBox x:Name="ZoomPercentageTextBoxMods" Width="60" Height="25" Margin="2,0" TextAlignment="Center" VerticalContentAlignment="Center"
-                         Text="{Binding ModsViewZoomLevel, StringFormat='F2', Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         PreviewMouseWheel="ZoomPercentageTextBoxMods_PreviewMouseWheel"
-                         ToolTip="Current Zoom Level. Editable. Ctrl+Scroll Wheel in image area or Scroll Wheel here to adjust."/>
+                             Text="{Binding ModsViewZoomLevel, StringFormat='F2', Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             PreviewMouseWheel="ZoomPercentageTextBoxMods_PreviewMouseWheel"
+                             ToolTip="Current Zoom Level. Editable. Ctrl+Scroll Wheel in image area or Scroll Wheel here to adjust."/>
                     <TextBlock Text="%" VerticalAlignment="Center" Margin="0,0,5,0"/>
                     <Button x:Name="ZoomInButtonMods" Content="+" Width="25" Height="25" Margin="2,0" ToolTip="Zoom In (Ctrl+Scroll Wheel)"/>
                     <CheckBox x:Name="LockZoomCheckBoxMods" Content="Lock Zoom" Margin="10,0,5,0" VerticalAlignment="Center" ToolTip="Lock the current zoom level. If unchecked, zoom adjusts to fit images."/>
                     <Button x:Name="ResetZoomModsButton" Content="Reset Zoom" Margin="5,0,0,0" Padding="5,2"
-                        Command="{Binding ResetZoomModsCommand}"
-                        ToolTip="Reset zoom to automatically fit images."/>
+                            Command="{Binding ResetZoomModsCommand}"
+                            ToolTip="Reset zoom to automatically fit images."/>
                 </StackPanel>
-            </Grid>
+
+                <WrapPanel VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,2,10,2">
+                        <TextBlock Text="Batch Actions:" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            
+                        <Button Content="Refresh All" Command="{Binding RefreshAllModsCommand}" Margin="5,0" Padding="5,2" ToolTip="Completely re-scans all mod folders and rebuilds the mod list."/>
+                        <CheckBox Content="Rescan Non-Appearance Mods"
+                                  IsChecked="{Binding ShouldRescanNonAppearanceMods, Mode=TwoWay}"
+                                  VerticalAlignment="Center"
+                                  Margin="5,0"
+                                  ToolTip="If checked, the 'Refresh All' action will also clear the cache of non-appearance mods and attempt to re-import them."/>
+                        
+                        <Button Content="Include" Command="{Binding BatchIncludeOutfitsCommand}" Margin="15,0,5,0" Padding="5,2" ToolTip="Enable 'Include Outfits' for ALL mods."/>
+                        <Button Content="Exclude" Command="{Binding BatchExcludeOutfitsCommand}" Padding="5,2" ToolTip="Disable 'Include Outfits' for ALL mods."/>
+                        <TextBlock Text="Outfits" VerticalAlignment="Center" Margin="5,0,0,0"/>
+
+                        <Button Content="Enable" Command="{Binding BatchEnableInjectedRecordsCommand}" Margin="10,0" Padding="5,2" ToolTip="Enable 'Search for Injected Records' for ALL mods."/>
+                        <Button Content="Disable" Command="{Binding BatchDisableInjectedRecordsCommand}" Padding="5,2" ToolTip="Disable 'Search for Injected Records' for ALL mods."/>
+                        <TextBlock Text="Injected Record Search" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                    </StackPanel>
+                    
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,10,2"
+                                Visibility="{Binding ShowSourcePluginControls, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <TextBlock Text="Source Plugin for Ambiguous NPCs:" VerticalAlignment="Center" Margin="10,0,5,0"
+                           ToolTip="Select a plugin to be the default source for NPCs found in multiple plugins within this mod setting."/>
+                        <ComboBox ItemsSource="{Binding AvailableSourcePluginsForSelectedMod}" 
+                              SelectedItem="{Binding SelectedSourcePluginForDisambiguation, Mode=TwoWay}"
+                              DisplayMemberPath="FileName"
+                              MinWidth="150" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                        <Button Content="Set as Source Plugin" Command="{Binding SetGlobalSourcePluginCommand}" 
+                            Padding="5,2" VerticalAlignment="Center"
+                            ToolTip="Set the selected plugin as the primary source for all NPCs in this mod setting that are found in multiple plugins."/>
+                    </StackPanel>
+                </WrapPanel>
+            </DockPanel>
         </Border>
     </Grid>
 </reactiveui:ReactiveUserControl>
