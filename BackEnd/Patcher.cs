@@ -230,6 +230,7 @@ public class Patcher : OptionalUIModule
                     });
 
                     _recordDeltaPatcher.Reinitialize(false);
+                    HashSet<FormKey> searchedOverrideFormKeysForGroup = new HashSet<FormKey>();
 
                     var npcsInGroup = npcGroup.ToList();
                     for (int i = 0; i < npcsInGroup.Count; i++)
@@ -459,10 +460,12 @@ public class Patcher : OptionalUIModule
                                             case RecordOverrideHandlingMode.Ignore:
                                                 break;
                                             case RecordOverrideHandlingMode.Include:
-                                                var dependencyContexts =
+                                                AppendLog($"Searching for Overrides for {npcIdentifier}", false, true);
+                                                var dependencyContexts = await Task.Run(() =>
                                                     _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
                                                         appearanceModSetting.CorrespondingModKeys,
-                                                        currentModFolderPaths);
+                                                        searchedOverrideFormKeysForGroup,
+                                                        currentModFolderPaths));
                                                 List<MajorRecord> deltaPatchedRecords = new();
                                                 foreach (var ctx in dependencyContexts)
                                                 {
@@ -645,10 +648,12 @@ public class Patcher : OptionalUIModule
                                             case RecordOverrideHandlingMode.Ignore:
                                                 break;
                                             case RecordOverrideHandlingMode.Include:
-                                                var dependencyContexts =
+                                                AppendLog($"Searching for Overrides for {npcIdentifier}", false, true);
+                                                var dependencyContexts = await Task.Run(() =>
                                                     _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
                                                         appearanceModSetting.CorrespondingModKeys,
-                                                        currentModFolderPaths);
+                                                        searchedOverrideFormKeysForGroup,
+                                                        currentModFolderPaths));
                                                 foreach (var ctx in dependencyContexts)
                                                 {
                                                     ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);

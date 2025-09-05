@@ -271,7 +271,7 @@ public class RecordHandler
 
     #region Collect Overrides of Existing Records
     public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
-        DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys, HashSet<string> fallBackModFolderNames)
+        DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys, HashSet<string> fallBackModFolderNames)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DeepGetOverriddenDependencyRecords");
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
@@ -282,13 +282,13 @@ public class RecordHandler
         HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyContexts = new();
         foreach (var link in containedFormLinks)
         {
-            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, 2, 0);
+            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, 2, 0, searchedFormKeys);
         }
-        return dependencyContexts.Distinct().ToHashSet();;
+        return dependencyContexts.ToHashSet();;
     }
     
     private void CollectOverriddenDependencyRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
-        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey>? searchedFormKeys = null)
+        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey> searchedFormKeys)
     {
         if (formLinkGetter.IsNull)
         {
