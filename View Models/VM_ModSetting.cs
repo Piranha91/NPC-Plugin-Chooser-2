@@ -98,6 +98,9 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                     new KeyValuePair<RecordOverrideHandlingMode?, string>(e, e.ToString())
                 ));
 
+    [Reactive] public int MaxNestedIntervalDepth { get; set; } = 2;
+    [Reactive] public bool IsMaxNestedIntervalDepthVisible { get; set; }
+
     public HashSet<string> NpcNames { get; set; } = new();
     public HashSet<string> NpcEditorIDs { get; set; } = new();
     public HashSet<FormKey> NpcFormKeys { get; set; } = new();
@@ -127,6 +130,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     private readonly BsaHandler _bsaHandler;
     private readonly PluginProvider _pluginProvider;
     private readonly RecordHandler _recordHandler;
+    private readonly Lazy<VM_Settings> _lazySettingsVm;
 
     [Reactive] public bool IsRefreshing { get; set; } = false;
 
@@ -200,8 +204,8 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// Called by FromModelFactory.
     /// </summary>
     public VM_ModSetting(Models.ModSetting model, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler,
-        PluginProvider pluginProvider, RecordHandler recordHandler)
-        : this(model.DisplayName, parentVm, aux, bsaHandler, pluginProvider, recordHandler, isMugshotOnly: false,
+        PluginProvider pluginProvider, RecordHandler recordHandler, Lazy<VM_Settings> lazySettingsVm)
+        : this(model.DisplayName, parentVm, aux, bsaHandler, pluginProvider, recordHandler, lazySettingsVm, isMugshotOnly: false,
             correspondingFolderPaths: model.CorrespondingFolderPaths,
             correspondingModKeys: model.CorrespondingModKeys)
     {
@@ -220,6 +224,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         HasAlteredHandleInjectedRecordsLogic = model.HasAlteredHandleInjectedRecordsLogic;
         HandleInjectedOverridesToolTip = model.HandleInjectedOverridesToolTip;
         OverrideRecordOverrideHandlingMode = model.ModRecordOverrideHandlingMode;
+        MaxNestedIntervalDepth = model.MaxNestedIntervalDepth;
         // AvailablePluginsForNpcs should be re-calculated on load.
         // IsMugshotOnlyEntry is set to false via chaining
         IsFaceGenOnlyEntry = model.IsFaceGenOnlyEntry;
@@ -245,8 +250,8 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// Called by FromMugshotPathFactory.
     /// </summary>
     public VM_ModSetting(string displayName, string mugshotPath, VM_Mods parentVm, Auxilliary aux,
-        BsaHandler bsaHandler, PluginProvider pluginProvider, RecordHandler recordHandler)
-        : this(displayName, parentVm, aux, bsaHandler, pluginProvider, recordHandler, isMugshotOnly: true)
+        BsaHandler bsaHandler, PluginProvider pluginProvider, RecordHandler recordHandler, Lazy<VM_Settings> lazySettingsVm)
+        : this(displayName, parentVm, aux, bsaHandler, pluginProvider, recordHandler, lazySettingsVm, isMugshotOnly: true)
     {
         MugShotFolderPaths = new() { mugshotPath };
     }
@@ -256,9 +261,9 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// Called by FromModFolderFactory.
     /// </summary>
     public VM_ModSetting(string modFolderPath, IEnumerable<ModKey>? plugins, VM_Mods parentVm, Auxilliary aux,
-        BsaHandler bsaHandler, PluginProvider pluginProvider, RecordHandler recordHandler)
+        BsaHandler bsaHandler, PluginProvider pluginProvider, RecordHandler recordHandler, Lazy<VM_Settings> lazySettingsVm)
         : this(Path.GetFileName(modFolderPath) ?? "Invalid Path",
-            parentVm, aux, bsaHandler, pluginProvider, recordHandler,
+            parentVm, aux, bsaHandler, pluginProvider, recordHandler, lazySettingsVm,
             isMugshotOnly: false,
             correspondingFolderPaths: new List<string>() { modFolderPath },
             correspondingModKeys: plugins ?? aux.GetModKeysInDirectory(modFolderPath, new List<string>(), false))
@@ -272,7 +277,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// but current setup chains to it.
     /// </summary>
     private VM_ModSetting(string displayName, VM_Mods parentVm, Auxilliary aux, BsaHandler bsaHandler,
-        PluginProvider pluginProvider, RecordHandler recordHandler, bool isMugshotOnly,
+        PluginProvider pluginProvider, RecordHandler recordHandler, Lazy<VM_Settings> lazySettingsVm, bool isMugshotOnly,
         IEnumerable<string>? correspondingFolderPaths = null, IEnumerable<ModKey>? correspondingModKeys = null)
     {
         _parentVm = parentVm;
@@ -284,6 +289,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         _bsaHandler = bsaHandler;
         _pluginProvider = pluginProvider;
         _recordHandler = recordHandler;
+        _lazySettingsVm = lazySettingsVm;
 
         // Initialize NpcPluginDisambiguation if not loaded from model (chained constructors handle this)
         if (NpcPluginDisambiguation ==
@@ -569,13 +575,16 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                 }
             })
             .DisposeWith(_disposables);
+        
+        this.WhenAnyValue(x => x.OverrideRecordOverrideHandlingMode)
+            .Subscribe(_ => UpdateIsMaxNestedIntervalDepthVisible())
+            .DisposeWith(_disposables);
 
-        // Optionally, trigger RefreshNpcLists when ModKey or Paths change?
-        // Could be intensive. Let's assume it's done during initial load for now.
-        // this.WhenAnyValue(x => x.CorrespondingModKeys.Count, x => x.CorrespondingFolderPaths.Count) // Check counts
-        //    .Throttle(TimeSpan.FromSeconds(1)) // Avoid rapid calls
-        //    .ObserveOn(TaskPoolScheduler.Default) // Run on background thread
-        //    .Subscribe(_ => RefreshNpcLists());
+        _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedRecordOverrideHandlingMode)
+            .Subscribe(_ => UpdateIsMaxNestedIntervalDepthVisible())
+            .DisposeWith(_disposables);
+
+        UpdateIsMaxNestedIntervalDepthVisible();
     }
 
     public ModSetting SaveToModel()
@@ -604,6 +613,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             HasAlteredHandleInjectedRecordsLogic = HasAlteredHandleInjectedRecordsLogic,
             HandleInjectedOverridesToolTip = HandleInjectedOverridesToolTip,
             ModRecordOverrideHandlingMode = OverrideRecordOverrideHandlingMode,
+            MaxNestedIntervalDepth = MaxNestedIntervalDepth,
             IsAutoGenerated = IsAutoGenerated,
             PluginsWithOverrideRecords = _pluginsWithOverrideRecords,
 
@@ -1790,7 +1800,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             // It will be mugshot-only by definition because it has no CorrespondingFolderPaths/CorrespondingModKeys initially
             var newMugshotOnlyVm = new VM_ModSetting(displayName: mugshotEntry.Key, mugshotPath: mugshotEntry.Value,
                 parentVm: _parentVm, aux: _aux, bsaHandler: _bsaHandler, pluginProvider: _pluginProvider,
-                recordHandler: _recordHandler);
+                recordHandler: _recordHandler, lazySettingsVm: _lazySettingsVm);
             // Ensure IsMugshotOnlyEntry is correctly set based on its initial state
             newMugshotOnlyVm.IsMugshotOnlyEntry = true;
             // It won't have NPC lists immediately, that will be populated if/when VM_Mods calls RefreshNpcLists on all.
@@ -2118,6 +2128,12 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         }
 
         _pluginProvider.UnloadPlugins(CorrespondingModKeys);
+    }
+    
+    private void UpdateIsMaxNestedIntervalDepthVisible()
+    {
+        var effectiveMode = OverrideRecordOverrideHandlingMode ?? _lazySettingsVm.Value.SelectedRecordOverrideHandlingMode;
+        IsMaxNestedIntervalDepthVisible = effectiveMode != RecordOverrideHandlingMode.Ignore;
     }
 
     #region Drag and Drop Logic

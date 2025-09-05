@@ -465,7 +465,8 @@ public class Patcher : OptionalUIModule
                                                     _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
                                                         appearanceModSetting.CorrespondingModKeys,
                                                         searchedOverrideFormKeysForGroup,
-                                                        currentModFolderPaths));
+                                                        currentModFolderPaths,
+                                                        appearanceModSetting.MaxNestedIntervalDepth));
                                                 List<MajorRecord> deltaPatchedRecords = new();
                                                 foreach (var ctx in dependencyContexts)
                                                 {
@@ -653,7 +654,8 @@ public class Patcher : OptionalUIModule
                                                     _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
                                                         appearanceModSetting.CorrespondingModKeys,
                                                         searchedOverrideFormKeysForGroup,
-                                                        currentModFolderPaths));
+                                                        currentModFolderPaths,
+                                                        appearanceModSetting.MaxNestedIntervalDepth));
                                                 foreach (var ctx in dependencyContexts)
                                                 {
                                                     ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);

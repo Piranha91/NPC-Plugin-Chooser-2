@@ -43,6 +43,7 @@ public class ModSetting
     public string MergeInToolTip { get; set; } = DefaultMergeInTooltip;
 
     public RecordOverrideHandlingMode? ModRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
+    public int MaxNestedIntervalDepth { get; set; } = 2;
 
     public HashSet<ModKey> PluginsWithOverrideRecords { get; set; } = new();
     public bool IncludeOutfits { get; set; } = false;

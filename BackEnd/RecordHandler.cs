@@ -271,7 +271,7 @@ public class RecordHandler
 
     #region Collect Overrides of Existing Records
     public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
-        DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys, HashSet<string> fallBackModFolderNames)
+        DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys, HashSet<string> fallBackModFolderNames, int maxNestedIntervalDepth)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DeepGetOverriddenDependencyRecords");
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
@@ -282,7 +282,7 @@ public class RecordHandler
         HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyContexts = new();
         foreach (var link in containedFormLinks)
         {
-            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, 2, 0, searchedFormKeys);
+            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, maxNestedIntervalDepth, 0, searchedFormKeys);
         }
         return dependencyContexts.ToHashSet();;
     }

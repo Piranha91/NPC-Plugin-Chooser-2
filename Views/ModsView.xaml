@@ -214,6 +214,7 @@
                                          <RowDefinition Height="Auto"/> 
                                          <RowDefinition Height="Auto"/> 
                                          <RowDefinition Height="Auto"/> 
+                                         <RowDefinition Height="Auto"/> 
                                      </Grid.RowDefinitions>
                                      <Grid.ColumnDefinitions>
                                          <ColumnDefinition Width="*"/>
@@ -476,8 +477,31 @@
                                              </ComboBox.ItemTemplate>
                                          </ComboBox>
                                      </StackPanel>
+                                     
+                                     <StackPanel Grid.Row="8" Orientation="Horizontal" Visibility="{Binding IsMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                         <TextBlock Text="Max Nested Search Layers"
+                                                    VerticalAlignment="Center">
+                                             <TextBlock.ToolTip>
+                                                 <ToolTip>
+                                                     <TextBlock TextWrapping="Wrap" Width="300">
+                                                         Controls how many layers deep the patcher will search for overridden records between finding relevant records.
+                                                         <LineBreak/><LineBreak/>
+                                                         Higher values may find more obscure overrides but will significantly increase patching time.
+                                                         <LineBreak/><LineBreak/>
+                                                         Leave blank to use the default. Set to 0 to only check direct dependencies.
+                                                     </TextBlock>
+                                                 </ToolTip>
+                                             </TextBlock.ToolTip>
+                                         </TextBlock>
 
-                                     <Button Grid.Row="8" Grid.Column="0"
+                                         <TextBox Text="{Binding MaxNestedIntervalDepth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"
+                                                  MinWidth="40"
+                                                  VerticalAlignment="Center"
+                                                  Margin="5 0 0 0"
+                                                  ToolTip="Default is 2. Leave blank to use default."/>
+                                     </StackPanel>
+
+                                     <Button Grid.Row="9" Grid.Column="0"
                                              Content="Delete"
                                              Command="{Binding DeleteCommand}"
                                              HorizontalAlignment="Right"
@@ -486,7 +510,7 @@
                                              ToolTip="Permanently delete this empty entry. Only visible if no paths or mugshots are assigned."
                                              Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                      
-                                     <StackPanel Grid.Row="8" Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left" 
+                                     <StackPanel Grid.Row="9" Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left" 
                                                  Margin="0,5,0,0"
                                                  Visibility="{Binding CanDelete, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}">
                                          <Button Content="Set Resource Plugins"
