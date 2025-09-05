@@ -271,7 +271,7 @@ public class RecordHandler
 
     #region Collect Overrides of Existing Records
     public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
-        DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys, HashSet<string> fallBackModFolderNames, int maxNestedIntervalDepth)
+        DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys, HashSet<string> fallBackModFolderNames, int maxNestedIntervalDepth, CancellationToken ct)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DeepGetOverriddenDependencyRecords");
         var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
@@ -282,14 +282,16 @@ public class RecordHandler
         HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyContexts = new();
         foreach (var link in containedFormLinks)
         {
-            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, maxNestedIntervalDepth, 0, searchedFormKeys);
+            ct.ThrowIfCancellationRequested();
+            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, maxNestedIntervalDepth, 0, searchedFormKeys, ct);
         }
         return dependencyContexts.ToHashSet();;
     }
     
     private void CollectOverriddenDependencyRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
-        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey> searchedFormKeys)
+        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey> searchedFormKeys, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         if (formLinkGetter.IsNull)
         {
             return;
@@ -346,7 +348,7 @@ public class RecordHandler
             var sublinks = modRecord.EnumerateFormLinks();
             foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)).ToArray())
             {
-                CollectOverriddenDependencyRecords(subLink, relevantContextKeys, collectedRecords, maxNestedIntervalDepth, currentDepth, searchedFormKeys);
+                CollectOverriddenDependencyRecords(subLink, relevantContextKeys, collectedRecords, maxNestedIntervalDepth, currentDepth, searchedFormKeys, ct);
             }
         }
     }
@@ -356,7 +358,7 @@ public class RecordHandler
     #region Merge In Overrides of Existing Records
 
     public HashSet<IMajorRecord> // return is For Caller's Information only; duplication and remapping happens internally
-        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, int maxNestedIntervalDepth, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings)
+        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, int maxNestedIntervalDepth, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, CancellationToken ct)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateInOverrideRecords");
         HashSet<IMajorRecord> mergedInRecords = new();
@@ -369,7 +371,8 @@ public class RecordHandler
         Dictionary<FormKey, FormKey> remappedOverrideMap = new();
         foreach (var link in containedFormLinks)
         {
-            TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedOverrideMap, mergedInRecords, maxNestedIntervalDepth, 0, ref exceptionStrings);
+            ct.ThrowIfCancellationRequested();
+            TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedOverrideMap, mergedInRecords, maxNestedIntervalDepth, 0, ref exceptionStrings, searchedFormKeys, ct);
         }
         
         foreach (var newRecord in mergedInRecords.And(rootRecord).ToArray())
@@ -392,8 +395,9 @@ public class RecordHandler
     private bool TraverseAndDuplicateInOverrideRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
         ISkyrimMod outputMod,
         Dictionary<FormKey, FormKey> remappedSubLinks, HashSet<IMajorRecord> mergedInRecords,
-        int maxNestedIntervalDepth, int currentDepth, ref List<string> exceptionStrings, HashSet<FormKey>? searchedFormKeys = null)
+        int maxNestedIntervalDepth, int currentDepth, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         if (formLinkGetter.IsNull)
         {
             return false;
@@ -401,11 +405,6 @@ public class RecordHandler
 
         currentDepth++;
         if (currentDepth > maxNestedIntervalDepth) {return false;}
-        
-        if (searchedFormKeys == null)
-        {
-            searchedFormKeys = new HashSet<FormKey>();
-        }
         
         searchedFormKeys.Add(formLinkGetter.FormKey);
 
@@ -486,7 +485,7 @@ public class RecordHandler
                     continue;
                 }
                 
-                bool subRecordsAreOverrides = TraverseAndDuplicateInOverrideRecords(subLink, relevantContextKeys, outputMod, remappedSubLinks, mergedInRecords, maxNestedIntervalDepth, currentDepth, ref exceptionStrings, searchedFormKeys);
+                bool subRecordsAreOverrides = TraverseAndDuplicateInOverrideRecords(subLink, relevantContextKeys, outputMod, remappedSubLinks, mergedInRecords, maxNestedIntervalDepth, currentDepth, ref exceptionStrings, searchedFormKeys, ct);
                 if (subRecordsAreOverrides)
                 {
                     parentRecordShouldBeMergedIn = true; // merge in this record (even if it's not itself contained in the source mod) because this record's subrecords have been merged in.

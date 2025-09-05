@@ -466,7 +466,8 @@ public class Patcher : OptionalUIModule
                                                         appearanceModSetting.CorrespondingModKeys,
                                                         searchedOverrideFormKeysForGroup,
                                                         currentModFolderPaths,
-                                                        appearanceModSetting.MaxNestedIntervalDepth));
+                                                        appearanceModSetting.MaxNestedIntervalDepth,
+                                                        ct));
                                                 List<MajorRecord> deltaPatchedRecords = new();
                                                 foreach (var ctx in dependencyContexts)
                                                 {
@@ -573,7 +574,9 @@ public class Patcher : OptionalUIModule
                                                     appearanceModSetting.HandleInjectedRecords,
                                                     appearanceModSetting.MaxNestedIntervalDepth,
                                                     currentModFolderPaths,
-                                                    ref overrideExceptionStrings);
+                                                    ref overrideExceptionStrings,
+                                                    searchedOverrideFormKeysForGroup,
+                                                    ct);
                                                 if (overrideExceptionStrings.Any())
                                                 {
                                                     AppendLog(
@@ -656,7 +659,8 @@ public class Patcher : OptionalUIModule
                                                         appearanceModSetting.CorrespondingModKeys,
                                                         searchedOverrideFormKeysForGroup,
                                                         currentModFolderPaths,
-                                                        appearanceModSetting.MaxNestedIntervalDepth));
+                                                        appearanceModSetting.MaxNestedIntervalDepth,
+                                                        ct));
                                                 foreach (var ctx in dependencyContexts)
                                                 {
                                                     ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
@@ -698,7 +702,9 @@ public class Patcher : OptionalUIModule
                                                     appearanceModSetting.HandleInjectedRecords,
                                                     appearanceModSetting.MaxNestedIntervalDepth,
                                                     currentModFolderPaths,
-                                                    ref overrideExceptionStrings);
+                                                    ref overrideExceptionStrings,
+                                                    searchedOverrideFormKeysForGroup,
+                                                    ct);
                                                 if (overrideExceptionStrings.Any())
                                                 {
                                                     AppendLog(
