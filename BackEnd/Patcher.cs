@@ -571,6 +571,7 @@ public class Patcher : OptionalUIModule
                                                     appearanceModSetting.CorrespondingModKeys,
                                                     appearanceModKey.Value, patchNpc.FormKey.ModKey,
                                                     appearanceModSetting.HandleInjectedRecords,
+                                                    appearanceModSetting.MaxNestedIntervalDepth,
                                                     currentModFolderPaths,
                                                     ref overrideExceptionStrings);
                                                 if (overrideExceptionStrings.Any())
@@ -695,6 +696,7 @@ public class Patcher : OptionalUIModule
                                                     appearanceModSetting.CorrespondingModKeys,
                                                     appearanceModKey.Value, patchNpc.FormKey.ModKey,
                                                     appearanceModSetting.HandleInjectedRecords,
+                                                    appearanceModSetting.MaxNestedIntervalDepth,
                                                     currentModFolderPaths,
                                                     ref overrideExceptionStrings);
                                                 if (overrideExceptionStrings.Any())

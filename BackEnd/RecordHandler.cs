@@ -356,7 +356,7 @@ public class RecordHandler
     #region Merge In Overrides of Existing Records
 
     public HashSet<IMajorRecord> // return is For Caller's Information only; duplication and remapping happens internally
-        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings)
+        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, int maxNestedIntervalDepth, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateInOverrideRecords");
         HashSet<IMajorRecord> mergedInRecords = new();
@@ -369,7 +369,7 @@ public class RecordHandler
         Dictionary<FormKey, FormKey> remappedOverrideMap = new();
         foreach (var link in containedFormLinks)
         {
-            TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedOverrideMap, mergedInRecords,2, 0, ref exceptionStrings);
+            TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedOverrideMap, mergedInRecords, maxNestedIntervalDepth, 0, ref exceptionStrings);
         }
         
         foreach (var newRecord in mergedInRecords.And(rootRecord).ToArray())
