@@ -19,6 +19,7 @@
 
     <UserControl.Resources>
         <local:BooleanToBrushConverter x:Key="BooleanToBrushConverter"/>
+        <local:EnumMatchToBooleanConverter x:Key="EnumMatchToBooleanConverter"/>
         <local:IsNotNullConverter x:Key="IsNotNullConverter"/>
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         <local:EnumDescriptionConverter x:Key="EnumDescConverter"/>
@@ -251,8 +252,12 @@
                              </Grid>
                          </Grid>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <RadioButton Content="AND (Match All)" GroupName="SearchLogic" VerticalAlignment="Center" Margin="0,0,10,0" IsChecked="{Binding IsSearchAndLogic, Mode=TwoWay}" ToolTip="Results must match all active search terms"/>
-                            <RadioButton Content="OR (Match Any)" GroupName="SearchLogic" VerticalAlignment="Center" ToolTip="Results must match at least one active search term"/>
+                            <RadioButton Content="AND (Match All)" GroupName="SearchLogic" VerticalAlignment="Center" Margin="0,0,10,0" 
+                                         ToolTip="Results must match all active search terms"
+                                         IsChecked="{Binding CurrentSearchLogic, Mode=TwoWay, Converter={StaticResource EnumMatchToBooleanConverter}, ConverterParameter={x:Static vm:SearchLogic.AND}}"/>
+                            <RadioButton Content="OR (Match Any)" GroupName="SearchLogic" VerticalAlignment="Center" 
+                                         ToolTip="Results must match at least one active search term"
+                                         IsChecked="{Binding CurrentSearchLogic, Mode=TwoWay, Converter={StaticResource EnumMatchToBooleanConverter}, ConverterParameter={x:Static vm:SearchLogic.OR}}"/>
                         </StackPanel>
                         
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0">

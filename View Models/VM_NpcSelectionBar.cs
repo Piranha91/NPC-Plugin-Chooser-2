@@ -120,7 +120,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     [Reactive] public ShareStatusFilterType SelectedShareStatusFilter3 { get; set; } = ShareStatusFilterType.Any;
     
 
-    [Reactive] public bool IsSearchAndLogic { get; set; } = true;
+    [Reactive] public SearchLogic CurrentSearchLogic { get; set; } = SearchLogic.AND;
     public Array AvailableSearchTypes => Enum.GetValues(typeof(NpcSearchType));
     // --- End Search Properties ---
 
@@ -393,7 +393,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             x => x.SearchText3, x => x.SearchType3, x => x.SelectedStateFilter3, x => x.SelectedGroupFilter3, x => x.SelectedShareStatusFilter3
         ).Select(_ => Unit.Default);
         var logicChanges = this.WhenAnyValue(
-            x => x.IsSearchAndLogic
+            x => x.CurrentSearchLogic
         ).Select(_ => Unit.Default);
         
         var sortChanges = this.WhenAnyValue(
@@ -1692,7 +1692,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         if (predicates.Any())
         {
-            if (IsSearchAndLogic)
+            if (CurrentSearchLogic == SearchLogic.AND)
             {
                 results = results.Where(npc => predicates.All(p => p(npc))).ToList();
             }
@@ -2720,6 +2720,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             }
         }
     }
+}
+
+public enum SearchLogic
+{
+    AND,
+    OR
 }
 
 public enum SelectionStateFilterType
