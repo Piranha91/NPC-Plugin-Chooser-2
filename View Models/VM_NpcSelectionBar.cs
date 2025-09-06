@@ -1715,7 +1715,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     comparison = StrCmpLogicalW(a.NpcEditorId, b.NpcEditorId);
                     break;
                 case NpcSortProperty.FormKey:
-                    comparison = a.NpcFormKey.ModKey.Name.CompareTo(b.NpcFormKey.ModKey);
+                    comparison = a.NpcFormKey.ModKey.Name.CompareTo(b.NpcFormKey.ModKey.Name);
                     if (comparison == 0)
                         comparison = a.NpcFormKey.ID.CompareTo(b.NpcFormKey.ID);
                     break;
