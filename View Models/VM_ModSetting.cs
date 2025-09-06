@@ -466,16 +466,16 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             .DisposeWith(_disposables);
 
         // --- Command Initializations ---
-        AddFolderPathCommand = ReactiveCommand.Create(AddFolderPath).DisposeWith(_disposables);
-        BrowseFolderPathCommand = ReactiveCommand.Create<string>(BrowseFolderPath).DisposeWith(_disposables);
+        AddFolderPathCommand = ReactiveCommand.CreateFromTask(AddFolderPathAsync).DisposeWith(_disposables);
+        BrowseFolderPathCommand = ReactiveCommand.CreateFromTask<string>(BrowseFolderPathAsync).DisposeWith(_disposables);
         RemoveFolderPathCommand = ReactiveCommand.Create<string>(RemoveFolderPath).DisposeWith(_disposables);
-        AddMugshotFolderPathCommand = ReactiveCommand.Create(AddMugshotFolderPath).DisposeWith(_disposables);
+        AddMugshotFolderPathCommand = ReactiveCommand.CreateFromTask(AddMugshotFolderPathAsync).DisposeWith(_disposables);
         BrowseMugshotFolderPathCommand =
-            ReactiveCommand.Create<string>(BrowseMugshotFolderPath).DisposeWith(_disposables);
+            ReactiveCommand.CreateFromTask<string>(BrowseMugshotFolderPathAsync).DisposeWith(_disposables);
         RemoveMugshotFolderPathCommand =
             ReactiveCommand.Create<string>(RemoveMugshotFolderPath).DisposeWith(_disposables);
         UnlinkMugshotDataCommand = ReactiveCommand
-            .Create(UnlinkMugshotData, this.WhenAnyValue(x => x.CanUnlinkMugshots)).DisposeWith(_disposables);
+            .CreateFromTask(UnlinkMugshotDataAsync, this.WhenAnyValue(x => x.CanUnlinkMugshots)).DisposeWith(_disposables);
         UnlinkMugshotDataCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error unlinking mugshot data: {ex.Message}"))
             .DisposeWith(_disposables);
@@ -625,7 +625,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
     // --- Command Implementations ---
 
-    private void AddFolderPath()
+    private async Task AddFolderPathAsync()
     {
         using (var dialog = new FolderBrowserDialog())
         {
@@ -653,15 +653,14 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                     AutoSetResourcePlugins(addedPath);
 
                     // *** Notify parent VM AFTER path is added ***
-                    _parentVm?.CheckForAndPerformMerge(this, addedPath, PathType.ModFolder, hadMugshotBefore,
+                    await _parentVm.CheckForAndPerformMergeAsync(this, addedPath, PathType.ModFolder, hadMugshotBefore,
                         hadModPathsBefore);
-                    RefreshCommand.Execute().Subscribe();
                 }
             }
         }
     }
 
-    private void BrowseFolderPath(string existingPath)
+    private async Task BrowseFolderPathAsync(string existingPath)
     {
         using (var dialog = new FolderBrowserDialog())
         {
@@ -692,10 +691,8 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                     AutoSetResourcePlugins(newPath);
 
                     // *** Notify parent VM AFTER path is changed ***
-                    _parentVm?.CheckForAndPerformMerge(this, newPath, PathType.ModFolder, hadMugshotBefore,
+                    await _parentVm.CheckForAndPerformMergeAsync(this, newPath, PathType.ModFolder, hadMugshotBefore,
                         hadModPathsBefore);
-
-                    RefreshCommand.Execute().Subscribe();
                 }
                 else if (index >= 0 && newPath.Equals(existingPath, StringComparison.OrdinalIgnoreCase))
                 {
@@ -722,6 +719,8 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         {
             CorrespondingFolderPaths.Remove(pathToRemove);
         }
+        
+        RefreshCommand.Execute().Subscribe();
     }
 
     private static bool HasAnyAssignedPath(IReadOnlyCollection<string>? paths) =>
@@ -796,7 +795,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         CorrespondingModKeys.AddRange(correspondingModKeys);
     }
 
-    private void AddMugshotFolderPath()
+    private async Task AddMugshotFolderPathAsync()
     {
         var selectedMugshotPath = SelectMugshotFolderPath(null);
         if (selectedMugshotPath != null)
@@ -808,12 +807,12 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             MugShotFolderPaths.Add(selectedMugshotPath); // Modify the property
 
             // *** Notify parent VM AFTER path is set ***
-            _parentVm?.CheckForAndPerformMerge(this, selectedMugshotPath, PathType.MugshotFolder, hadMugshotBefore,
+            await _parentVm.CheckForAndPerformMergeAsync(this, selectedMugshotPath, PathType.MugshotFolder, hadMugshotBefore,
                 hadModPathsBefore);
         }
     }
 
-    private void BrowseMugshotFolderPath(string currentPath)
+    private async Task BrowseMugshotFolderPathAsync(string currentPath)
     {
         var selectedMugshotPath = SelectMugshotFolderPath(null);
         if (selectedMugshotPath != null)
@@ -825,7 +824,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             MugShotFolderPaths.Replace(currentPath, selectedMugshotPath); // Modify the property
 
             // *** Notify parent VM AFTER path is set ***
-            _parentVm?.CheckForAndPerformMerge(this, selectedMugshotPath, PathType.MugshotFolder, hadMugshotBefore,
+            await _parentVm.CheckForAndPerformMergeAsync(this, selectedMugshotPath, PathType.MugshotFolder, hadMugshotBefore,
                 hadModPathsBefore);
         }
     }
@@ -836,6 +835,8 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         {
             MugShotFolderPaths.Remove(pathToRemove);
         }
+        
+        RefreshCommand.Execute().Subscribe(); 
     }
 
     private string? SelectMugshotFolderPath(string? existingPath)
@@ -1759,7 +1760,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         }
     }
 
-    private void UnlinkMugshotData()
+    private async Task UnlinkMugshotDataAsync()
     {
         if (!CanUnlinkMugshots) return; // Should be caught by CanExecute, but defensive check
 
@@ -1807,7 +1808,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             // Or, if it's purely for mugshots, NPC lists aren't relevant for *its* data.
 
             // 2. Add the new VM to VM_Mods and refresh
-            _parentVm.AddAndRefreshModSetting(newMugshotOnlyVm); // Parent VM handles adding and refreshing its lists
+            await _parentVm.AddAndRefreshModSettingAsync(newMugshotOnlyVm);
         }
 
         // 3. Modify the current VM (this instance) to be "Data-Only" regarding this mugshot path

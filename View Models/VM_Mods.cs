@@ -506,7 +506,7 @@ public class VM_Mods : ReactiveObject
     /// Adds a new VM_ModSetting (typically created by Unlink operation) to the internal list
     /// and refreshes dependent UI.
     /// </summary>
-    public void AddAndRefreshModSetting(VM_ModSetting newVm)
+    public async Task AddAndRefreshModSettingAsync(VM_ModSetting newVm)
     {
         if (newVm == null || _allModSettingsInternal.Any(vm =>
                 vm.DisplayName.Equals(newVm.DisplayName, StringComparison.OrdinalIgnoreCase)))
@@ -530,12 +530,11 @@ public class VM_Mods : ReactiveObject
         // Asynchronously refresh its NPC lists if it might have mod data (though unlink usually makes it mugshot-only)
         // For a new mugshot-only entry, RefreshNpcLists won't find much, but it's harmless.
 
-        var faceGenCache = CacheFaceGenPathsOnLoadAsync(new[] { newVm }, null)
-            .GetAwaiter().GetResult();
+        var faceGenCache = await CacheFaceGenPathsOnLoadAsync(new[] { newVm }, null);
 
         var plugins =
             _pluginProvider.LoadPlugins(newVm.CorrespondingModKeys, newVm.CorrespondingFolderPaths.ToHashSet());
-        Task.Run(() => newVm.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage));
+        await Task.Run(() => newVm.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage));
         _pluginProvider.UnloadPlugins(newVm.CorrespondingModKeys);
     }
 
@@ -2342,7 +2341,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// <param name="pathType">Indicates whether a ModFolder or MugshotFolder was changed.</param>
     /// <param name="hadMugshotPathBefore">Did modifiedVm have a mugshot path BEFORE this change?</param>
     /// <param name="hadModPathsBefore">Did modifiedVm have mod paths BEFORE this change?</param>
-    public void CheckForAndPerformMerge(VM_ModSetting modifiedVm, string addedOrSetPath, PathType pathType,
+    public async Task CheckForAndPerformMergeAsync(VM_ModSetting modifiedVm, string addedOrSetPath, PathType pathType,
         bool hadMugshotPathBefore, bool hadModPathsBefore)
     {
         if (modifiedVm == null || string.IsNullOrEmpty(addedOrSetPath)) return;
@@ -2469,8 +2468,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             // Refresh NPC lists for the winner as its sources may have changed/**/
 
-            var faceGenCache = CacheFaceGenPathsOnLoadAsync(new[] { winner }, null)
-                .GetAwaiter().GetResult();
+            var faceGenCache = await CacheFaceGenPathsOnLoadAsync(new[] { winner }, null);
 
             var plugins = _pluginProvider.LoadPlugins(winner.CorrespondingModKeys,
                 winner.CorrespondingFolderPaths.ToHashSet());
