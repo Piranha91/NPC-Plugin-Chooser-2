@@ -1134,7 +1134,24 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                         _consistencyProvider.ClearAllSelections();
                         foreach (var kvp in report.ValidSelections)
                         {
-                            _consistencyProvider.SetSelectedMod(kvp.Key, kvp.Value.ModName, kvp.Value.NpcFormKey);
+                            var targetNpcKey = kvp.Key;
+                            var sourceNpcKey = kvp.Value.NpcFormKey;
+                            var modName = kvp.Value.ModName;
+
+                            // Apply the selection
+                            _consistencyProvider.SetSelectedMod(targetNpcKey, modName, sourceNpcKey);
+
+                            // If it's a shared ("guest") appearance, we must ensure it's
+                            // added to the GuestAppearances list so the UI can see it.
+                            if (targetNpcKey != sourceNpcKey)
+                            {
+                                // Find the source NPC's display name to add to the guest entry.
+                                var sourceNpcVm = AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(sourceNpcKey));
+                                // Use the found name, or fall back to the FormKey string if not found.
+                                var sourceNpcDisplayName = sourceNpcVm?.DisplayName ?? sourceNpcKey.ToString(); 
+
+                                AddGuestAppearance(targetNpcKey, modName, sourceNpcKey, sourceNpcDisplayName);
+                            }
                         }
                         ScrollableMessageBox.Show($"Import complete. {report.ValidSelections.Count} choices have been applied.", "Import Successful");
                     }
