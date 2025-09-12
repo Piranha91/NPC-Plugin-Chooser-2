@@ -936,6 +936,18 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     missing.Add($"{npc.DisplayName} ({npc.NpcFormKeyString})");
                     continue;
                 }
+                
+                // NEW: Skip creatures (bears, spiders, etc.) by checking for a valid appearance race.
+                if (!_auxilliary.IsValidAppearanceRace(npcGetter.Race.FormKey, npcGetter, _settings.LocalizationLanguage, out _))
+                {
+                    continue;
+                }
+
+                // NEW: Skip NPCs that fully inherit their appearance from a template via the "Traits" flag.
+                if (npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
+                {
+                    continue;
+                }
 
                 var winningMod = FindWinningModForNpc(npcGetter);
 
@@ -946,6 +958,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
                 else
                 {
+                    if (npcGetter.Configuration.Flags.HasFlag(NpcConfiguration.Flag.IsCharGenFacePreset))
+                    {
+                        continue; // don't log missing chargen presets (but still try to look for them if a mod provides them, 
+                        // so don't perform this check until after calling FindWinningModForNpc()
+                    }
+                    
                     unmatched.Add(Auxilliary.GetLogString(npcGetter, _settings.LocalizationLanguage, true));
                 }
             }
