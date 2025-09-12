@@ -793,9 +793,9 @@ public class Patcher : OptionalUIModule
                     AppendLog($"Attempting to save output mod to: {outputPluginPath}", false);
                     try
                     {
-                        if (_settings.AutoEslIfy && _environmentStateProvider.OutputMod.CanBeSmallMaster)
+                        if (_settings.AutoEslIfy)
                         {
-                            ModCompaction.CompactToSmallMaster(_environmentStateProvider.OutputMod);
+                            ModCompaction.CompactToWithFallback(_environmentStateProvider.OutputMod, MasterStyle.Small);
                         }
 
                         _environmentStateProvider.OutputMod.ModHeader.Description = PluginDescriptionSignature;
