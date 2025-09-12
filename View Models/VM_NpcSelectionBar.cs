@@ -978,7 +978,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         // ResolveAllContexts returns plugins in load order, so the last one is the winner.
         var contexts = _environmentStateProvider.LinkCache.ResolveAllContexts<INpc, INpcGetter>(npcGetter.FormKey);
 
-        foreach (var context in contexts.Reverse()) // Iterate backwards from the winning plugin.
+        foreach (var context in contexts.ToArray()) // Iterate backwards from the winning plugin.
         {
             if (_settings.ImportFromLoadOrderExclusions.Contains(context.ModKey))
             {
