@@ -164,6 +164,24 @@
                     <Border Margin="15,5,0,5" Padding="10" BorderBrush="Gray" BorderThickness="1" CornerRadius="3"
                             Visibility="{Binding UsePortraitCreatorFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <StackPanel>
+                            <Label Content="Max Parallel Portrait Renders" FontWeight="Bold" Margin="0,20,0,0"/>
+                            <TextBlock TextWrapping="Wrap" Margin="0,0,0,5" Opacity="0.8">
+                                Controls how many CPU-intensive portrait generation processes can run at once. Lower values reduce system load during image generation.
+                            </TextBlock>
+                            <StackPanel Orientation="Horizontal">
+                                <Slider Value="{Binding MaxParallelPortraitRenders}" 
+                                        Minimum="1" 
+                                        Maximum="16" 
+                                        IsSnapToTickEnabled="True" 
+                                        TickFrequency="1" 
+                                        Width="250"/>
+                                <TextBlock Text="{Binding MaxParallelPortraitRenders}" 
+                                           Margin="10,0,0,0" 
+                                           VerticalAlignment="Center"
+                                           MinWidth="20"
+                                           FontWeight="Bold"/>
+                            </StackPanel>
+
                             <TextBlock Text="Camera Position:" Margin="0,0,0,2"/>
                             <ComboBox ItemsSource="{Binding CameraModes}" SelectedItem="{Binding SelectedCameraMode, Mode=TwoWay}" Margin="0,0,0,10"/>
 

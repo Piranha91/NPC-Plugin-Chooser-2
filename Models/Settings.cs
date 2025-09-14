@@ -99,6 +99,9 @@ public class Settings
     public bool UsePortraitCreatorFallback { get; set; } = true;
     
     // -- Portrait Creator Parameters --
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+    [DefaultValue(4)]
+    public int MaxParallelPortraitRenders { get; set; } = 4;    
     public PortraitCameraMode SelectedCameraMode { get; set; } = PortraitCameraMode.Relative;
     // These should match the defaults or CLI options in your C++ app
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(0.20f)]

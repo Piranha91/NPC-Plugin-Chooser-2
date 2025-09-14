@@ -53,6 +53,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool UseFaceFinderFallback { get; set; }
     [Reactive] public bool IsApiKeySet { get; private set; }
     [Reactive] public bool UsePortraitCreatorFallback { get; set; }
+    [Reactive] public int MaxParallelPortraitRenders { get; set; }
 
     // --- NEW: Portrait Creator Camera Properties ---
     [Reactive] public PortraitCameraMode SelectedCameraMode { get; set; }
@@ -218,6 +219,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         
         UseFaceFinderFallback = _model.UseFaceFinderFallback;
         UsePortraitCreatorFallback = _model.UsePortraitCreatorFallback;
+        MaxParallelPortraitRenders = _model.MaxParallelPortraitRenders;
 
         // --- NEW: Portrait Creator Initialization ---
         SelectedCameraMode = _model.SelectedCameraMode;
@@ -310,6 +312,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => _model.UseFaceFinderFallback = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.UsePortraitCreatorFallback).Skip(1)
             .Subscribe(b => _model.UsePortraitCreatorFallback = b).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.MaxParallelPortraitRenders).Skip(1)
+            .Subscribe(value => _model.MaxParallelPortraitRenders = value);
         this.WhenAnyValue(x => x.SelectedCameraMode).Skip(1)
             .Subscribe(mode => _model.SelectedCameraMode = mode).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.CamX).Skip(1).Subscribe(f => _model.CamX = f).DisposeWith(_disposables);
