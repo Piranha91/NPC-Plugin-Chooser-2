@@ -1,6 +1,8 @@
 ﻿using System.Collections.Concurrent;
 using System.IO;
 using Mutagen.Bethesda.Plugins;
+using Hjg.Pngcs;
+using Hjg.Pngcs.Chunks;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -114,13 +116,29 @@ public class PortraitCreator
     public bool NeedsRegeneration(string pngPath)
     {
         if (!File.Exists(pngPath)) return true;
-/*
+
         try
         {
-            // NOTE: This requires a library capable of reading PNG tEXt chunks.
-            // For this example, we'll assume a utility class "PngMetadataReader" exists.
-            var metadataJson = PngMetadataReader.ReadTextChunk(pngPath, "Parameters");
-            if (string.IsNullOrWhiteSpace(metadataJson)) return true; // No metadata, regenerate
+            // --- REAL IMPLEMENTATION using Hjg.Pngcs ---
+            string? metadataJson = null;
+            using (var fs = File.OpenRead(pngPath))
+            {
+                var pngr = new PngReader(fs);
+                // Make sure text/ancillary chunks are collected
+                pngr.ChunkLoadBehaviour = ChunkLoadBehaviour.LOAD_CHUNK_ALWAYS;
+                // Advance through the file without reading pixel rows
+                pngr.ReadSkippingAllRows();
+                // Now the tEXt/iTXt/zTXt are available
+                metadataJson = pngr.GetMetadata()?.GetTxtForKey("Parameters");
+                pngr.End(); // optional here; stream is disposed by using{}
+            }
+            // --- END REAL IMPLEMENTATION ---
+
+            if (string.IsNullOrWhiteSpace(metadataJson))
+            {
+                Debug.WriteLine($"No 'Parameters' metadata found in {pngPath}. Must be a manually-created mugshot.");
+                return false;
+            }
 
             using var doc = JsonDocument.Parse(metadataJson);
             var root = doc.RootElement;
@@ -131,14 +149,14 @@ public class PortraitCreator
             var resX = root.GetProperty("resolution_x").GetInt32();
             var resY = root.GetProperty("resolution_y").GetInt32();
 
-            // Compare saved metadata with current settings
-            if (version != CurrentVersion ||
+            if (IsOlderVersion(version, _executableVersion) ||
                 Math.Abs(topOffset - _settings.HeadTopOffset) > 0.001f ||
                 Math.Abs(bottomOffset - _settings.HeadBottomOffset) > 0.001f ||
                 resX != _settings.ImageXRes ||
                 resY != _settings.ImageYRes)
             {
-                return true; // Parameters have changed, regenerate
+                Debug.WriteLine($"Metadata mismatch for {pngPath}. Regenerating.");
+                return true;
             }
         }
         catch (Exception ex)
@@ -146,8 +164,17 @@ public class PortraitCreator
             Debug.WriteLine($"Could not parse metadata for {pngPath}. Regenerating. Error: {ex.Message}");
             return true;
         }
-*/
-        return false; // Everything matches, no regeneration needed
+
+        return false;
+    }
+
+    private static bool IsOlderVersion(string? pngVersion, string exeVersion)
+    {
+        if (string.IsNullOrWhiteSpace(pngVersion)) return false; // treat missing current to avoid overwriting non-autogen mugshots
+        // System.Version handles a.b.c cleanly
+        if (!Version.TryParse(pngVersion.Trim(), out var vPng)) return true;
+        if (!Version.TryParse(exeVersion.Trim(), out var vExe)) return true;
+        return vPng.CompareTo(vExe) < 0;
     }
 
     /// <summary>

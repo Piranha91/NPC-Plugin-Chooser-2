@@ -346,6 +346,14 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     public async Task LoadRealImageAsync()
     {
         // This method contains the full fallback logic, running in the background.
+
+        bool hasRealMugshot = ImagePath != VM_Mods.FullPlaceholderPath;
+
+        if (hasRealMugshot && !_portraitCreator.NeedsRegeneration(ImagePath))
+        {
+            return;
+        }
+        
         try
         {
             IsLoading = true;

@@ -793,11 +793,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         token
     );
     
-    if (imagePath == FullPlaceholderPath)
-    {
-        // Fire-and-forget the async task. It will update the image property when it's done. Do not await.
-        vm.LoadRealImageAsync();
-    }
+    // Fire-and-forget the async task. It will update the image property when it's done. Do not await.
+    vm.LoadRealImageAsync();
     
     return vm;
 }
