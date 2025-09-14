@@ -1,8 +1,10 @@
 ﻿using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Windows;
-using Mutagen.Bethesda.Strings; // Required for HashSet
+using Mutagen.Bethesda.Strings;
+using Newtonsoft.Json; // Required for HashSet
 
 namespace NPC_Plugin_Chooser_2.Models;
 
@@ -87,6 +89,36 @@ public class Settings
 
     // Last Selected NPC ***
     public FormKey LastSelectedNpcFormKey { get; set; } // Will be FormKey.Null if none or invalid
+    
+    // --- Mugshot Fallback Settings ---
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(true)]
+    public bool UseFaceFinderFallback { get; set; } = true;
+    public string FaceFinderApiKey { get; set; } = string.Empty; // User must provide this
+
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(true)]
+    public bool UsePortraitCreatorFallback { get; set; } = true;
+    
+    // -- Portrait Creator Parameters --
+    public PortraitCameraMode SelectedCameraMode { get; set; } = PortraitCameraMode.Relative;
+    // These should match the defaults or CLI options in your C++ app
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(0.20f)]
+    public float HeadTopOffset { get; set; } = 0.20f;
+
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(-0.05f)]
+    public float HeadBottomOffset { get; set; } = -0.05f;
+    
+    // Fixed camera position properties
+    public float CamX { get; set; } = 0.0f;
+    public float CamY { get; set; } = 0.0f;
+    public float CamZ { get; set; } = 0.0f;
+    public float CamPitch { get; set; } = 0.0f;
+    public float CamYaw { get; set; } = 0.0f;
+    
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(750)]
+    public int ImageXRes { get; set; } = 750;
+    
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(750)]
+    public int ImageYRes { get; set; } = 750;
     
     // --- Window State Properties ---
     public double MainWindowTop { get; set; } = 100; // Default a reasonable position

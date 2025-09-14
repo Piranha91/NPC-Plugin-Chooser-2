@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel; 
 using System.Linq; 
 using System.Diagnostics;
+using System.Net.Http;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Windows.Media;
@@ -23,10 +24,25 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 [DebuggerDisplay("{NpcDisplayName}")]
 public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 {
+    public delegate VM_ModsMenuMugshot Factory(
+        string imagePath,
+        FormKey npcFormKey,
+        string npcDisplayName,
+        VM_Mods parentVMMaster,
+        bool isAmbiguousSource,
+        List<ModKey> availableSourcePlugins,
+        ModKey? currentSourcePlugin,
+        VM_ModSetting parentVMModSetting,
+        CancellationToken cancellationToken
+    );
+    
     private readonly VM_Mods _parentVMMaster;
     private readonly VM_ModSetting _parentVMModSetting;
     private readonly NpcConsistencyProvider _consistencyProvider;
     private readonly Settings _settings;
+    private readonly FaceFinderClient _faceFinderClient;
+    private readonly PortraitCreator _portraitCreator;
+    private readonly CancellationToken _cancellationToken;
     private readonly CompositeDisposable _disposables = new();
 
     public string ImagePath { get; set; }
@@ -72,7 +88,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         Path.Combine(AppContext.BaseDirectory, PlaceholderResourceRelativePath);
 
     public VM_ModsMenuMugshot(
-        string imagePath, // This can be a real image path OR FullPlaceholderPath
+        string imagePath,
         FormKey npcFormKey,
         string npcDisplayName,
         VM_Mods parentVMMaster,
@@ -80,14 +96,24 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         List<ModKey> availableSourcePlugins,
         ModKey? currentSourcePlugin,
         VM_ModSetting parentVMModSetting,
+        CancellationToken cancellationToken,
+        // --- Auto-resolved by Autofac ---
         NpcConsistencyProvider consistencyProvider,
-        Settings settings)
+        Settings settings,
+        FaceFinderClient faceFinderClient,
+        PortraitCreator portraitCreator
+    )
     {
         _parentVMMaster = parentVMMaster;
         _parentVMModSetting = parentVMModSetting;
         _consistencyProvider = consistencyProvider;
         _settings = settings;
+        _faceFinderClient = faceFinderClient;
+        _portraitCreator = portraitCreator;
+        _cancellationToken = cancellationToken;
+        
         ImagePath = imagePath; // Store the given path (could be real or placeholder)
+        
         NpcFormKey = npcFormKey;
         NpcDisplayName = npcDisplayName;
         IsVisible = true;
@@ -312,6 +338,98 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             }
         }
         // No need to call anything on _parentVMMaster (VM_Mods) to refresh the whole panel.
+    }
+    
+    public async Task LoadRealImageAsync()
+    {
+        // This method contains the full fallback logic, running in the background.
+        try
+        {
+            if (_cancellationToken.IsCancellationRequested) return;
+            // --- 1. Check local Mugshots folder ---
+
+            var expectedFileName = $"{NpcFormKey.ID:X8}.png";
+            
+            var savePath = Path.Combine(_settings.MugshotsFolder,
+                _parentVMModSetting.DisplayName,
+                NpcFormKey.ModKey.ToString(),
+                expectedFileName
+                );
+
+            // --- 2. Fallback to FaceFinder API ---
+            if (_settings.UseFaceFinderFallback)
+            {
+                var imageUrl = await _faceFinderClient.GetFaceImageUrlAsync(NpcFormKey, _settings.FaceFinderApiKey);
+                bool downloadSuccessful = false;
+                if (!string.IsNullOrWhiteSpace(imageUrl))
+                {
+                    try
+                    {
+                        using var client = new HttpClient();
+                        var imageData = await client.GetByteArrayAsync(imageUrl);
+                        Directory.CreateDirectory(Path.GetDirectoryName(savePath));
+                        await File.WriteAllBytesAsync(savePath, imageData);
+                        Debug.WriteLine($"Downloaded mugshot for {NpcFormKey} from FaceFinder.");
+                        downloadSuccessful = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Failed to download from FaceFinder for {NpcFormKey}: {ex.Message}");
+                    }
+                }
+                if (downloadSuccessful)
+                {
+                    SetImageSource(savePath, isPlaceholder: false);
+
+                    return;
+                }
+            }
+
+            // --- 3. Fallback to NPC Portrait Creator ---
+            if (_settings.UsePortraitCreatorFallback && _portraitCreator.NeedsRegeneration(savePath))
+            {
+                bool generationSuccessful = false;
+                string nifPath = _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting.CorrespondingFolderPaths); 
+                if (!string.IsNullOrWhiteSpace(nifPath))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(savePath));
+                    if (await _portraitCreator.GeneratePortraitAsync(nifPath, savePath))
+                    {
+                        Debug.WriteLine($"Generated mugshot for {NpcFormKey}.");
+                        generationSuccessful = true;
+                    }
+                }
+
+                if (generationSuccessful)
+                {
+                    SetImageSource(savePath, isPlaceholder: false);
+                    return;
+                }
+            }
+        }
+
+        catch (TaskCanceledException) { /* Swallow cancellation */ }
+
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error loading real image for {NpcFormKey}: {ex.Message}");
+        }
+    }
+
+    private void SetImageSource(string path, bool isPlaceholder)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+        // This is the key to updating the UI from a background thread.
+        // We create and freeze the BitmapImage, which makes it thread-safe.
+        var bitmap = new BitmapImage();
+        bitmap.BeginInit();
+        bitmap.UriSource = new Uri(path, UriKind.Absolute);
+        bitmap.CacheOption = BitmapCacheOption.OnLoad; // Releases the file lock
+        bitmap.EndInit();
+        bitmap.Freeze(); // IMPORTANT: Makes the image cross-thread accessible
+        this.MugshotSource = bitmap;
+        this.ImagePath = path;
+        this.HasMugshot = !isPlaceholder;
     }
 
     public void Dispose()

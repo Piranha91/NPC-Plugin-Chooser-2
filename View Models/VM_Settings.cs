@@ -7,6 +7,7 @@ using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Win32;
@@ -46,6 +47,25 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public string ModsFolder { get; set; }
     [Reactive] public string MugshotsFolder { get; set; }
     [Reactive] public SkyrimRelease SkyrimRelease { get; set; }
+    
+    // --- NEW: Mugshot Fallback Properties ---
+    public bool IsFaceFinderAvailable { get; }
+    [Reactive] public bool UseFaceFinderFallback { get; set; }
+    [Reactive] public bool IsApiKeySet { get; private set; }
+    [Reactive] public bool UsePortraitCreatorFallback { get; set; }
+
+    // --- NEW: Portrait Creator Camera Properties ---
+    [Reactive] public PortraitCameraMode SelectedCameraMode { get; set; }
+    public IEnumerable<PortraitCameraMode> CameraModes { get; } = Enum.GetValues(typeof(PortraitCameraMode)).Cast<PortraitCameraMode>();
+    [Reactive] public float CamX { get; set; }
+    [Reactive] public float CamY { get; set; }
+    [Reactive] public float CamZ { get; set; }
+    [Reactive] public float CamPitch { get; set; }
+    [Reactive] public float CamYaw { get; set; }
+    [Reactive] public float HeadTopOffset { get; set; }
+    [Reactive] public float HeadBottomOffset { get; set; }
+    [Reactive] public int ImageXRes { get; set; }
+    [Reactive] public int ImageYRes { get; set; }
 
     [Reactive] public string SkyrimGamePath { get; set; }
 
@@ -146,6 +166,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         EasyNpcTranslator easyNpcTranslator)
     {
         _model = settingsModel;
+        
+        IsApiKeySet = !string.IsNullOrWhiteSpace(_model.FaceFinderApiKey);
 
         _environmentStateProvider = environmentStateProvider;
         _environmentStateProvider.OnEnvironmentUpdated
@@ -184,6 +206,30 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         // Initialize other VM properties from the model
         ModsFolder = _model.ModsFolder;
         MugshotsFolder = _model.MugshotsFolder;
+        
+        // --- NEW: Mugshot Fallback Initialization ---
+        // --- TEMPORARY FOR DEBUGGING
+        IsFaceFinderAvailable = File.Exists("FaceFinderTest.txt");
+        if (!IsFaceFinderAvailable)
+        {
+            _model.UseFaceFinderFallback = false; // Force disable if feature is not available
+        }
+        // --- END TEMPORARY FOR DEBUGGING
+        
+        UseFaceFinderFallback = _model.UseFaceFinderFallback;
+        UsePortraitCreatorFallback = _model.UsePortraitCreatorFallback;
+
+        // --- NEW: Portrait Creator Initialization ---
+        SelectedCameraMode = _model.SelectedCameraMode;
+        CamX = _model.CamX;
+        CamY = _model.CamY;
+        CamZ = _model.CamZ;
+        CamPitch = _model.CamPitch;
+        CamYaw = _model.CamYaw;
+        HeadTopOffset = _model.HeadTopOffset;
+        HeadBottomOffset = _model.HeadBottomOffset;
+        ImageXRes = _model.ImageXRes;
+        ImageYRes = _model.ImageYRes;
         OutputDirectory = _model.OutputDirectory;
         UseSkyPatcherMode = _model.UseSkyPatcherMode;
         AutoEslIfy = _model.AutoEslIfy;
@@ -259,6 +305,23 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MugshotsFolder).Skip(1).Subscribe(s => _model.MugshotsFolder = s)
             .DisposeWith(_disposables);
+        // --- NEW: Subscriptions for Mugshot Settings ---
+        this.WhenAnyValue(x => x.UseFaceFinderFallback).Skip(1)
+            .Subscribe(b => _model.UseFaceFinderFallback = b).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.UsePortraitCreatorFallback).Skip(1)
+            .Subscribe(b => _model.UsePortraitCreatorFallback = b).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedCameraMode).Skip(1)
+            .Subscribe(mode => _model.SelectedCameraMode = mode).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.CamX).Skip(1).Subscribe(f => _model.CamX = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.CamY).Skip(1).Subscribe(f => _model.CamY = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.CamZ).Skip(1).Subscribe(f => _model.CamZ = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.CamPitch).Skip(1).Subscribe(f => _model.CamPitch = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.CamYaw).Skip(1).Subscribe(f => _model.CamYaw = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.HeadTopOffset).Skip(1).Subscribe(f => _model.HeadTopOffset = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.HeadBottomOffset).Skip(1).Subscribe(f => _model.HeadBottomOffset = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.ImageXRes).Skip(1).Subscribe(i => _model.ImageXRes = i).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.ImageYRes).Skip(1).Subscribe(i => _model.ImageYRes = i).DisposeWith(_disposables);
+        
         this.WhenAnyValue(x => x.OutputDirectory).Skip(1).Subscribe(s => _model.OutputDirectory = s)
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AppendTimestampToOutputDirectory).Skip(1)
@@ -842,6 +905,37 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
         // Final fallback if neither preferred nor specific fallback exists
         return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    }
+    
+    public void UpdateApiKey(string plainTextKey)
+    {
+        // If the user clears the box, clear the setting.
+        if (string.IsNullOrWhiteSpace(plainTextKey))
+        {
+            _model.FaceFinderApiKey = string.Empty;
+            IsApiKeySet = false;
+            return;
+        }
+
+        try
+        {
+            byte[] apiBytes = Encoding.UTF8.GetBytes(plainTextKey);
+
+            // Encrypt the key using the current user's credentials.
+            byte[] encryptedBytes = ProtectedData.Protect(
+                apiBytes,
+                null, // Optional additional entropy
+                DataProtectionScope.CurrentUser);
+
+            // Store the encrypted, Base64-encoded string in the settings model.
+            _model.FaceFinderApiKey = Convert.ToBase64String(encryptedBytes);
+            IsApiKeySet = true;
+        }
+        catch (CryptographicException ex)
+        {
+            ScrollableMessageBox.ShowError($"Could not secure the API key: {ExceptionLogger.GetExceptionStack(ex)}");
+            IsApiKeySet = false;
+        }
     }
 
 

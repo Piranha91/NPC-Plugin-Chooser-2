@@ -2,6 +2,8 @@
 using ReactiveUI;
 using Splat;
 using System.Reactive.Disposables;
+using System.Windows;
+using System.Windows.Controls;
 
 namespace NPC_Plugin_Chooser_2.Views
 {
@@ -45,5 +47,14 @@ namespace NPC_Plugin_Chooser_2.Views
             });
         }
         
+        // This event handler is the secure way to get the password from the UI
+        // and pass it to the ViewModel without ever storing it in a bindable property.
+        private void ApiKeyPasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            if (this.ViewModel is VM_Settings vm)
+            {
+                vm.UpdateApiKey(((PasswordBox)sender).Password);
+            }
+        }
     }
 }

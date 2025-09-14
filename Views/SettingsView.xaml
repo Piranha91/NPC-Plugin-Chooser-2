@@ -17,6 +17,7 @@
              d:DesignHeight="800" d:DesignWidth="800"> <!-- Increased height for more controls -->
     <UserControl.Resources>
         <local:FullPathToFolderNameConverter x:Key="FullPathToFolderNameConverter"/>
+        <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         <ObjectDataProvider x:Key="SkyrimReleaseEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="bsky:SkyrimRelease"/>
@@ -95,9 +96,8 @@
             </GroupBox>
 
             <!-- Section 2: Mod Environment -->
-            <GroupBox Header="Mod Environment" Margin="0,0,0,10" Padding="5">
+           <GroupBox Header="Mod Environment" Margin="0,0,0,10" Padding="5">
                 <StackPanel>
-                    <!-- Mods Folder -->
                     <TextBlock Text="Mods Folder (e.g., MO2 Mods Path):" Margin="0,0,0,2"/>
                     <Grid Margin="0,0,0,2">
                         <Grid.ColumnDefinitions>
@@ -107,9 +107,13 @@
                         <TextBox Grid.Column="0" Text="{Binding ModsFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
                         <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectModsFolderCommand}"/>
                     </Grid>
-                    <TextBlock Text="Specify the root folder where your mods are installed (used for Mod linking)." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+                    <TextBlock Text="Specify the root folder where your mods are installed (used for Mod linking)."
+                               FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+                </StackPanel>
+            </GroupBox>
 
-                    <!-- Mugshots Folder -->
+            <GroupBox Header="Mugshot Settings" Margin="0,0,0,10" Padding="5">
+                <StackPanel>
                     <TextBlock Text="Mugshots Folder:" Margin="0,0,0,2"/>
                     <Grid Margin="0,0,0,2">
                         <Grid.ColumnDefinitions>
@@ -119,7 +123,98 @@
                         <TextBox Grid.Column="0" Text="{Binding MugshotsFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
                         <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectMugshotsFolderCommand}"/>
                     </Grid>
-                    <TextBlock Text="Folder containing subfolders for each mod's NPC preview images." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+                    <TextBlock Text="Folder containing subfolders for each mod's NPC preview images."
+                               FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+                    
+                    <StackPanel Visibility="{Binding IsFaceFinderAvailable, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <CheckBox Content="Use FaceFinder API for missing mugshots (Requires API Key)"
+                                  IsChecked="{Binding UseFaceFinderFallback, Mode=TwoWay}"
+                                  Margin="0,0,0,5"/>
+                        
+                        <Label Content="FaceFinder API Key" FontWeight="Bold" Margin="0,10,0,0"/>
+                        <TextBlock TextWrapping="Wrap" Margin="0,0,0,5" 
+                                   Visibility="{Binding UseFaceFinderFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            Paste your API key below. The key is encrypted and stored locally using your Windows user account credentials.
+                        </TextBlock>
+                        <Grid Visibility="{Binding UseFaceFinderFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                
+                            <PasswordBox x:Name="ApiKeyPasswordBox"
+                                         Grid.Column="0"
+                                         PasswordChanged="ApiKeyPasswordBox_PasswordChanged"
+                                         VerticalContentAlignment="Center"
+                                         ToolTip="Paste your API key here. It will be stored securely."/>
+
+                            <TextBlock Grid.Column="1" 
+                                       Text="✓ Key is set" 
+                                       Foreground="Green" 
+                                       Margin="10,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Visibility="{Binding IsApiKeySet, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                        </Grid>
+                    </StackPanel>
+                    
+                    <CheckBox Content="Auto-Generate missing mugshots using NPC Portrait Creator"
+                              IsChecked="{Binding UsePortraitCreatorFallback, Mode=TwoWay}"
+                              Margin="0,5,0,0"/>
+
+                    <Border Margin="15,5,0,5" Padding="10" BorderBrush="Gray" BorderThickness="1" CornerRadius="3"
+                            Visibility="{Binding UsePortraitCreatorFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <TextBlock Text="Camera Position:" Margin="0,0,0,2"/>
+                            <ComboBox ItemsSource="{Binding CameraModes}" SelectedItem="{Binding SelectedCameraMode, Mode=TwoWay}" Margin="0,0,0,10"/>
+
+                            <StackPanel>
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedCameraMode}" Value="Relative">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <TextBlock Text="Head Top Offset (%):" Margin="0,0,0,2"/>
+                                <TextBox Text="{Binding HeadTopOffset, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBlock Text="Head Bottom Offset (%):" Margin="0,0,0,2"/>
+                                <TextBox Text="{Binding HeadBottomOffset, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                            </StackPanel>
+
+                            <StackPanel>
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedCameraMode}" Value="Fixed">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <TextBlock Text="Camera X:" Margin="0,0,0,2"/>
+                                <TextBox Text="{Binding CamX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBlock Text="Camera Y:" Margin="0,0,0,2"/>
+                                <TextBox Text="{Binding CamY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBlock Text="Camera Z:" Margin="0,0,0,2"/>
+                                <TextBox Text="{Binding CamZ, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBlock Text="Camera Pitch:" Margin="0,0,0,2"/>
+                                <TextBox Text="{Binding CamPitch, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBlock Text="Camera Yaw:" Margin="0,0,0,2"/>
+                                <TextBox Text="{Binding CamYaw, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                            </StackPanel>
+
+                            <TextBlock Text="Output Resolution:" Margin="0,10,0,2"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox Text="{Binding ImageXRes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+                                <TextBlock Text=" x " VerticalAlignment="Center" Margin="5,0"/>
+                                <TextBox Text="{Binding ImageYRes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </GroupBox>
 

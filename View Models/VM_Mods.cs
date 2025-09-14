@@ -131,7 +131,7 @@ public class VM_Mods : ReactiveObject
     // --- Placeholder Image Configuration --- 
     private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
 
-    private static readonly string FullPlaceholderPath =
+    public static readonly string FullPlaceholderPath =
         Path.Combine(AppContext.BaseDirectory, PlaceholderResourceRelativePath);
 
     private static readonly bool PlaceholderExists = File.Exists(FullPlaceholderPath);
@@ -155,6 +155,7 @@ public class VM_Mods : ReactiveObject
     private readonly VM_ModSetting.FromModelFactory _modSettingFromModelFactory;
     private readonly VM_ModSetting.FromMugshotPathFactory _modSettingFromMugshotPathFactory;
     private readonly VM_ModSetting.FromModFolderFactory _modSettingFromModFolderFactory;
+    private readonly VM_ModsMenuMugshot.Factory _mugshotFactory;
     
     // Helpers
     private static readonly Regex MugshotNameRegex =
@@ -169,7 +170,7 @@ public class VM_Mods : ReactiveObject
         VM_ModSetting.FromModelFactory modSettingFromModelFactory,
         VM_ModSetting.FromMugshotPathFactory modSettingFromMugshotPathFactory,
         VM_ModSetting.FromModFolderFactory modSettingFromModFolderFactory,
-        ImagePacker imagePacker)
+        ImagePacker imagePacker, VM_ModsMenuMugshot.Factory mugshotFactory)
     {
         _settings = settings;
         _environmentStateProvider = environmentStateProvider;
@@ -184,6 +185,7 @@ public class VM_Mods : ReactiveObject
         _modSettingFromMugshotPathFactory = modSettingFromMugshotPathFactory;
         _modSettingFromModFolderFactory = modSettingFromModFolderFactory;
         _imagePacker = imagePacker;
+        _mugshotFactory = mugshotFactory;
         
         _imagePacker.PackingCompleted += OnImagePackingCompleted;
         
@@ -687,7 +689,7 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
             {
                 // ALGORITHM 1: Small Mod - Load all at once, then resize.
                 var vms = sortedMugshotData
-                    .Select(data => CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName))
+                    .Select(data => CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName, token))
                     .ToList();
 
                 await Application.Current.Dispatcher.InvokeAsync(() => {
@@ -702,7 +704,7 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
                 
                 // 2a: Sizing Phase
                 var firstChunkData = sortedMugshotData.Take(maxToFit).ToList();
-                var firstChunkVMs = firstChunkData.Select(data => CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName)).ToList();
+                var firstChunkVMs = firstChunkData.Select(data => CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName, token)).ToList();
                 
                 _packingCompletionSource = new TaskCompletionSource<PackingResult>();
 
@@ -726,7 +728,7 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
                 {
                     if (token.IsCancellationRequested) break;
 
-                    var vm = CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName);
+                    var vm = CreateMugshotVmFromData(selectedModSetting, data.ImagePath, data.NpcFormKey, data.NpcDisplayName, token);
 
                     // CRITICAL: Apply the definitive size BEFORE adding to the UI
                     if (result.DefinitiveWidth > 0 && result.DefinitiveHeight > 0)
@@ -773,13 +775,30 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
 }
 
 // Helper method used by both algorithms
-private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, string imagePath, FormKey npcFormKey, string npcDisplayName)
+private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, string imagePath, FormKey npcFormKey, string npcDisplayName, CancellationToken token)
 {
     bool isAmbiguous = modSetting.AmbiguousNpcFormKeys.Contains(npcFormKey);
     var availableModKeys = modSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var keys) ? keys : new List<ModKey>();
     var currentSource = modSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var source) ? (ModKey?)source : availableModKeys.FirstOrDefault();
     
-    var vm = new VM_ModsMenuMugshot(imagePath, npcFormKey, npcDisplayName, this, isAmbiguous, availableModKeys, currentSource, modSetting, _consistencyProvider, _settings);
+    var vm = _mugshotFactory(
+        imagePath, 
+        npcFormKey, 
+        npcDisplayName, 
+        this, 
+        isAmbiguous, 
+        availableModKeys, 
+        currentSource, 
+        modSetting,
+        token
+    );
+    
+    if (imagePath == FullPlaceholderPath)
+    {
+        // Fire-and-forget the async task. It will update the image property when it's done. Do not await.
+        vm.LoadRealImageAsync();
+    }
+    
     return vm;
 }
 
