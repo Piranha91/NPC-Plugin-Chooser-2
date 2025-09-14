@@ -74,6 +74,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     [Reactive] public ModKey? CurrentSourcePlugin { get; set; }
 
     [Reactive] public bool IsFavorite { get; set; }
+    
+    [Reactive] public bool IsLoading { get; private set; }
+    [Reactive] public double LoadingIconRadiusModifier { get; set; } = 0.2;
 
     public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
     public ReactiveCommand<Unit, Unit> JumpToNpcCommand { get; }
@@ -345,6 +348,8 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         // This method contains the full fallback logic, running in the background.
         try
         {
+            IsLoading = true;
+            
             if (_cancellationToken.IsCancellationRequested) return;
             // --- 1. Check local Mugshots folder ---
 
@@ -413,6 +418,11 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         catch (Exception ex)
         {
             Debug.WriteLine($"Error loading real image for {NpcFormKey}: {ex.Message}");
+        }
+        
+        finally
+        {
+            IsLoading = false; // Signal that loading has finished
         }
     }
 

@@ -15,6 +15,7 @@
              Loaded="ModsView_Loaded">
 
     <UserControl.Resources>
+        <local:OrbitalRadiusConverter x:Key="OrbitalRadiusConverter"/>
         <local:BooleanNegationConverter x:Key="BooleanNegationConverter"/>
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         <local:IsNotNullConverter x:Key="IsNotNullConverter"/>
@@ -566,94 +567,135 @@
                          </ItemsControl.ItemsPanel>
                          <ItemsControl.ItemTemplate>
                              <DataTemplate DataType="{x:Type vm:VM_ModsMenuMugshot}">
-                                 <Border BorderThickness="2" BorderBrush="{Binding BorderColor}" Margin="5" CornerRadius="2"
-                                         Width="{Binding ImageWidth}" Height="{Binding ImageHeight}"
-                                         PreviewMouseRightButtonDown="MugshotItem_PreviewMouseRightButtonDown"
-                                         ToolTip="{Binding ToolTipText}">
-                                     <!-- This Grid is the reference for the icon's percentage sizing -->
-                                     <Grid>
-                                        <Image Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True">
-                                            <Image.Style>
-                                                <Style TargetType="Image">
-                                                    <Setter Property="Opacity" Value="1.0" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding HasMugshot}" Value="False">
-                                                            <Setter Property="Opacity" Value="0.3"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Image.Style>
-                                        </Image>
-                                         <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Padding="3,1"
-                                                 Background="{DynamicResource MugshotCaptionBackground}">
-                                             <TextBlock Text="{Binding NpcDisplayName}" Foreground="{DynamicResource MugshotCaptionForeground}" FontSize="10"
-                                                        TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
-                                         </Border>
+    <Border BorderThickness="2" BorderBrush="{Binding BorderColor}" Margin="5" CornerRadius="2"
+            Width="{Binding ImageWidth}" Height="{Binding ImageHeight}"
+            PreviewMouseRightButtonDown="MugshotItem_PreviewMouseRightButtonDown"
+            ToolTip="{Binding ToolTipText}">
+        
+        <Grid>
+            <Image Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                <Image.Style>
+                    <Style TargetType="Image">
+                        <Setter Property="Opacity" Value="1.0" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasMogshot}" Value="False">
+                                <Setter Property="Opacity" Value="0.3"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Image.Style>
+            </Image>
+            
+            <Image x:Name="LoadingDragonImage"
+                   Source="/NPC Plugin Chooser 2;component/Resources/RedDragon.png"
+                   Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   RenderTransformOrigin="0.5,0.5"
+                   Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='50'}"
+                   Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+                
+                <Image.Style>
+                    <Style TargetType="Image">
+                        <Setter Property="RenderTransform">
+                            <Setter.Value>
+                                <TransformGroup>
+                                    <TranslateTransform Y="0" /> <RotateTransform Angle="0" />
+                                </TransformGroup>
+                            </Setter.Value>
+                        </Setter>
 
-                                        <!-- ============================ NEW ICON CODE START ============================ -->
-                                        <!-- This Grid contains the icon, positioned in the bottom right corner. -->
-                                        <!-- Its visibility is tied to the IsAmbiguousSource property. -->
-                                        <Grid HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0 0 0 10"
-                                              Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                              ToolTip="This NPC is defined in multiple source plugins. Right-click to select the correct source."
-                                              Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
-                                              Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
-                                            
-                                            <!-- Viewbox ensures the icon image scales cleanly within the container Grid -->
-                                            <Viewbox Stretch="Uniform">
-                                                <Image Source="/NPC Plugin Chooser 2;component/Resources/Multiple Plugins for NPC.png" />
-                                            </Viewbox>
-                                        </Grid>
-                                        <!-- ============================= NEW ICON CODE END ============================= -->
-                                        
-                                     </Grid>
-                                     <Border.ContextMenu>
-                                          <ContextMenu>
-                                               <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/>
-                                               <MenuItem Header="View Full Screen (Ctrl+RClick)" Command="{Binding ToggleFullScreenCommand}"/>
-                                               <Separator />
-                                               <MenuItem Command="{Binding AddToFavoritesCommand}">
-                                                   <MenuItem.Style>
-                                                       <Style TargetType="MenuItem">
-                                                           <Setter Property="Header" Value="Add to Favorites"/>
-                                                           <Style.Triggers>
-                                                               <DataTrigger Binding="{Binding IsFavorite}" Value="True">
-                                                                   <Setter Property="Header" Value="Remove from Favorites"/>
-                                                               </DataTrigger>
-                                                           </Style.Triggers>
-                                                       </Style>
-                                                   </MenuItem.Style>
-                                               </MenuItem>
-                                               <MenuItem Header="Select Source Plugin"
-                                                         Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                                         ItemsSource="{Binding AvailableSourcePlugins}">
-                                                   <MenuItem.ItemContainerStyle>
-                                                       <Style TargetType="MenuItem">
-                                                           <Setter Property="Header" Value="{Binding Converter={StaticResource ModKeyToStringConverter}}"/>
-                                                           <Setter Property="Command" Value="{Binding DataContext.SetNpcSourcePluginCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                                                           <Setter Property="CommandParameter" Value="{Binding}"/>
-                                                           <Setter Property="IsCheckable" Value="True"/>
-                                                           <Setter Property="IsChecked">
-                                                               <Setter.Value>
-                                                                   <MultiBinding Converter="{StaticResource AreModKeysEqualMultiConverter}">
-                                                                       <!-- AreModKeysEqualMultiConverter checks if the current menu item's ModKey (value[0])
-                                                                            equals the VM_ModsMenuMugshot's CurrentSourcePlugin (value[1]) -->
-                                                                       <Binding Path="."/> <!-- The ModKey for this MenuItem -->
-                                                                       <Binding Path="DataContext.CurrentSourcePlugin" RelativeSource="{RelativeSource AncestorType=ContextMenu}"/>
-                                                                   </MultiBinding>
-                                                               </Setter.Value>
-                                                           </Setter>
-                                                       </Style>
-                                                   </MenuItem.ItemContainerStyle>
-                                               </MenuItem>
-                                               <MenuItem Header="Select Same Source Plugin Where Possible"
-                                                         Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                                         Command="{Binding SelectSameSourcePluginWherePossibleCommand}"
-                                                         ToolTip="For all other ambiguous NPCs in this mod, sets their source to this source plugin if it contains the NPC."/>
-                                          </ContextMenu>
-                                     </Border.ContextMenu>
-                                 </Border>
-                             </DataTemplate>
+                        <Setter Property="local:DynamicRadiusBehavior.ImageWidth" Value="{Binding ImageWidth}" />
+                        <Setter Property="local:DynamicRadiusBehavior.ImageHeight" Value="{Binding ImageHeight}" />
+                        <Setter Property="local:DynamicRadiusBehavior.RadiusMultiplier" Value="0.25" />
+
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                <DataTrigger.EnterActions>
+                                    <BeginStoryboard x:Name="OrbitDragon_BeginStoryboard">
+                                        <Storyboard>
+                                            <DoubleAnimation
+                                                Storyboard.TargetProperty="RenderTransform.Children[1].Angle"
+                                                From="0" To="360" Duration="0:0:3"
+                                                RepeatBehavior="Forever" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </DataTrigger.EnterActions>
+                                <DataTrigger.ExitActions>
+                                    <StopStoryboard BeginStoryboardName="OrbitDragon_BeginStoryboard"/>
+                                </DataTrigger.ExitActions>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Image.Style>
+            </Image>
+            
+            <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Padding="3,1"
+                    Background="{DynamicResource MugshotCaptionBackground}">
+                <TextBlock Text="{Binding NpcDisplayName}" Foreground="{DynamicResource MugshotCaptionForeground}" FontSize="10"
+                           TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
+            </Border>
+
+            <Grid HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0 0 0 10"
+                  Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
+                  ToolTip="This NPC is defined in multiple source plugins. Right-click to select the correct source."
+                  Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                  Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+                <Viewbox Stretch="Uniform">
+                    <Image Source="/NPC Plugin Chooser 2;component/Resources/Multiple Plugins for NPC.png" />
+                </Viewbox>
+            </Grid>
+                                
+        </Grid>
+        
+        <Border.ContextMenu>
+                                                      <ContextMenu> 
+                                               <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/> 
+                                               <MenuItem Header="View Full Screen (Ctrl+RClick)" Command="{Binding ToggleFullScreenCommand}"/> 
+                                               <Separator /> 
+                                               <MenuItem Command="{Binding AddToFavoritesCommand}"> 
+                                                   <MenuItem.Style> 
+                                                       <Style TargetType="MenuItem"> 
+                                                           <Setter Property="Header" Value="Add to Favorites"/> 
+                                                           <Style.Triggers> 
+                                                               <DataTrigger Binding="{Binding IsFavorite}" Value="True"> 
+                                                                   <Setter Property="Header" Value="Remove from Favorites"/> 
+                                                               </DataTrigger> 
+                                                           </Style.Triggers> 
+                                                       </Style> 
+                                                   </MenuItem.Style> 
+                                               </MenuItem> 
+                                               <MenuItem Header="Select Source Plugin" 
+                                                         Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}" 
+                                                         ItemsSource="{Binding AvailableSourcePlugins}"> 
+                                                   <MenuItem.ItemContainerStyle> 
+                                                       <Style TargetType="MenuItem"> 
+                                                           <Setter Property="Header" Value="{Binding Converter={StaticResource ModKeyToStringConverter}}"/> 
+                                                           <Setter Property="Command" Value="{Binding DataContext.SetNpcSourcePluginCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/> 
+                                                           <Setter Property="CommandParameter" Value="{Binding}"/> 
+                                                           <Setter Property="IsCheckable" Value="True"/> 
+                                                           <Setter Property="IsChecked"> 
+                                                               <Setter.Value> 
+                                                                   <MultiBinding Converter="{StaticResource AreModKeysEqualMultiConverter}"> 
+                                                                       <!-- AreModKeysEqualMultiConverter checks if the current menu item's ModKey (value[0]) 
+                                                                            equals the VM_ModsMenuMugshot's CurrentSourcePlugin (value[1]) --> 
+                                                                       <Binding Path="."/> <!-- The ModKey for this MenuItem --> 
+                                                                       <Binding Path="DataContext.CurrentSourcePlugin" RelativeSource="{RelativeSource AncestorType=ContextMenu}"/> 
+                                                                   </MultiBinding> 
+                                                               </Setter.Value> 
+                                                           </Setter> 
+                                                       </Style> 
+                                                   </MenuItem.ItemContainerStyle> 
+                                               </MenuItem> 
+                                               <MenuItem Header="Select Same Source Plugin Where Possible" 
+                                                         Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}" 
+                                                         Command="{Binding SelectSameSourcePluginWherePossibleCommand}" 
+                                                         ToolTip="For all other ambiguous NPCs in this mod, sets their source to this source plugin if it contains the NPC."/> 
+                                          </ContextMenu> 
+
+        </Border.ContextMenu>
+    </Border>
+</DataTemplate>
                          </ItemsControl.ItemTemplate>
                      </ItemsControl>
                  </ScrollViewer>
