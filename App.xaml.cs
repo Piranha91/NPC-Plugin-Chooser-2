@@ -199,6 +199,8 @@ namespace NPC_Plugin_Chooser_2
             }
 
             await settingsViewModel.InitializeAsync(splashVM); // Pass splashVM implicitly if injected, or explicitly if needed
+            var portraitCreator = container.Resolve<PortraitCreator>();
+            await portraitCreator.InitializeAsync();
             
             var modsViewModel = container.Resolve<VM_Mods>();
             await updateHandler.FinalCheckForUpdatesAndPatch(modsViewModel, splashVM);

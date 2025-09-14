@@ -14,7 +14,7 @@ public class PortraitCreator
 {
     private readonly Settings _settings;
     private readonly string _executablePath;
-    private const string CurrentVersion = "1.0.0"; // Should match your C++ Version.h
+    private string _executableVersion = "0.0.0"; // Default if query fails
     private readonly SemaphoreSlim _renderSemaphore;
     private static readonly ConcurrentDictionary<(string, string), Task<bool>> _renderTasks = new();
 
@@ -26,6 +26,47 @@ public class PortraitCreator
         // Initialize the semaphore with the value from settings.
         _renderSemaphore =
             new SemaphoreSlim(_settings.MaxParallelPortraitRenders, _settings.MaxParallelPortraitRenders);
+    }
+    
+    /// <summary>
+    /// Asynchronously queries the C++ executable for its version number.
+    /// This should be called once during application startup.
+    /// </summary>
+    public async Task InitializeAsync()
+    {
+        if (!File.Exists(_executablePath))
+        {
+            Debug.WriteLine($"[NPC Creator ERROR]: Executable not found at '{_executablePath}' for version check.");
+            return;
+        }
+
+        var startInfo = new ProcessStartInfo(_executablePath, "--version")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+        };
+
+        using var process = Process.Start(startInfo);
+        if (process == null)
+        {
+            Debug.WriteLine("[NPC Creator ERROR]: Failed to start process for version check.");
+            return;
+        }
+            
+        // Read the single line of output from the process.
+        string version = await process.StandardOutput.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(version))
+        {
+            _executableVersion = version.Trim();
+            Debug.WriteLine($"[NPC Creator]: Detected version {_executableVersion}");
+        }
+        else
+        {
+            Debug.WriteLine("[NPC Creator ERROR]: Failed to get version from executable.");
+        }
     }
 
     /// <summary>
