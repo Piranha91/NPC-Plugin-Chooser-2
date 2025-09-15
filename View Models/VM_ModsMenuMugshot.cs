@@ -363,11 +363,11 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 
             var expectedFileName = $"{NpcFormKey.ID:X8}.png";
             
-            var savePath = Path.Combine(_settings.MugshotsFolder,
-                _parentVMModSetting.DisplayName,
+            var saveFolder = Path.Combine(_settings.MugshotsFolder,
+                _parentVMModSetting.DisplayName);
+            var savePath = Path.Combine(saveFolder,
                 NpcFormKey.ModKey.ToString(),
-                expectedFileName
-                );
+                expectedFileName);
 
             // --- 2. Fallback to FaceFinder API ---
             if (_settings.UseFaceFinderFallback)
@@ -393,7 +393,11 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 if (downloadSuccessful)
                 {
                     SetImageSource(savePath, isPlaceholder: false);
-
+                    _parentVMModSetting.HasValidMugshots = true;
+                    if (!_parentVMModSetting.MugShotFolderPaths.Contains(saveFolder))
+                    {
+                        _parentVMModSetting.MugShotFolderPaths.Add(saveFolder);
+                    }
                     return;
                 }
             }
@@ -416,6 +420,11 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 if (generationSuccessful)
                 {
                     SetImageSource(savePath, isPlaceholder: false);
+                    _parentVMModSetting.HasValidMugshots = true;
+                    if (!_parentVMModSetting.MugShotFolderPaths.Contains(saveFolder))
+                    {
+                        _parentVMModSetting.MugShotFolderPaths.Add(saveFolder);
+                    }
                     return;
                 }
             }
