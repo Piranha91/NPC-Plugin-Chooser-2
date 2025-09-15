@@ -181,6 +181,16 @@
                                            MinWidth="20"
                                            FontWeight="Bold"/>
                             </StackPanel>
+                            
+                            <TextBlock Text="Auto-Update Deprecated Mugshots:" Margin="0,0,0,0" 
+                                       ToolTip="If mugshot was made with a version of NPC Portrait Creator older than the current version, regenerate it"/>
+                            <CheckBox IsChecked="{Binding AutoUpdateOldMugshots, Mode=TwoWay}"
+                                      Margin="5,0,0,0"/>
+                            
+                            <TextBlock Text="Auto-Update Stale Mugshots:" Margin="0,0,0,0"
+                                       ToolTip="If mugshot was made with different camera parameters than current, regenerate it"/>
+                            <CheckBox IsChecked="{Binding AutoUpdateStaleMugshots, Mode=TwoWay}"
+                                      Margin="5,0,0,0"/>
 
                             <TextBlock Text="Camera Position:" Margin="0,0,0,2"/>
                             <ComboBox ItemsSource="{Binding CameraModes}" SelectedItem="{Binding SelectedCameraMode, Mode=TwoWay}" Margin="0,0,0,10"/>

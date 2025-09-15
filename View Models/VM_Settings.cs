@@ -56,6 +56,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public int MaxParallelPortraitRenders { get; set; }
 
     // --- NEW: Portrait Creator Camera Properties ---
+    [Reactive] public bool AutoUpdateOldMugshots { get; set; }
+    [Reactive] public bool AutoUpdateStaleMugshots { get; set; }
     [Reactive] public PortraitCameraMode SelectedCameraMode { get; set; }
     public IEnumerable<PortraitCameraMode> CameraModes { get; } = Enum.GetValues(typeof(PortraitCameraMode)).Cast<PortraitCameraMode>();
     [Reactive] public float CamX { get; set; }
@@ -222,6 +224,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         MaxParallelPortraitRenders = _model.MaxParallelPortraitRenders;
 
         // --- NEW: Portrait Creator Initialization ---
+        AutoUpdateOldMugshots = _model.AutoUpdateOldMugshots;
+        AutoUpdateStaleMugshots = _model.AutoUpdateStaleMugshots;
         SelectedCameraMode = _model.SelectedCameraMode;
         CamX = _model.CamX;
         CamY = _model.CamY;
@@ -314,6 +318,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => _model.UsePortraitCreatorFallback = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MaxParallelPortraitRenders).Skip(1)
             .Subscribe(value => _model.MaxParallelPortraitRenders = value);
+        this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
+            .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
+            .Subscribe(b => _model.AutoUpdateStaleMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedCameraMode).Skip(1)
             .Subscribe(mode => _model.SelectedCameraMode = mode).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.CamX).Skip(1).Subscribe(f => _model.CamX = f).DisposeWith(_disposables);

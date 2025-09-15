@@ -102,6 +102,12 @@ public class Settings
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
     [DefaultValue(4)]
     public int MaxParallelPortraitRenders { get; set; } = 4;    
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+    [DefaultValue(true)]
+    public bool AutoUpdateOldMugshots { get; set; } = true;
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+    [DefaultValue(true)]
+    public bool AutoUpdateStaleMugshots { get; set; } = true;
     public PortraitCameraMode SelectedCameraMode { get; set; } = PortraitCameraMode.Relative;
     // These should match the defaults or CLI options in your C++ app
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(0.20f)]

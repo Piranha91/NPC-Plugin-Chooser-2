@@ -143,17 +143,75 @@ public class PortraitCreator
             using var doc = JsonDocument.Parse(metadataJson);
             var root = doc.RootElement;
 
-            var version = root.GetProperty("program_version").GetString();
-            var topOffset = root.GetProperty("mugshot_offsets").GetProperty("top").GetSingle();
-            var bottomOffset = root.GetProperty("mugshot_offsets").GetProperty("bottom").GetSingle();
-            var resX = root.GetProperty("resolution_x").GetInt32();
-            var resY = root.GetProperty("resolution_y").GetInt32();
+            string? version = root.GetProperty("program_version").GetString();
 
-            if (IsOlderVersion(version, _executableVersion) ||
-                Math.Abs(topOffset - _settings.HeadTopOffset) > 0.001f ||
-                Math.Abs(bottomOffset - _settings.HeadBottomOffset) > 0.001f ||
+            float topOffset    = root.GetProperty("mugshot_offsets").GetProperty("top").GetSingle();
+            float bottomOffset = root.GetProperty("mugshot_offsets").GetProperty("bottom").GetSingle();
+
+            int resX = root.GetProperty("resolution_x").GetInt32();
+            int resY = root.GetProperty("resolution_y").GetInt32();
+
+            // --- NEW: read camera (if present) and compare with current settings ---
+            const float EPS = 1e-3f;
+
+            bool hasCamera = root.TryGetProperty("camera", out var camEl);
+
+            // Safe float getter (works even if the JSON value is double)
+            static bool TryGetFloat(JsonElement parent, string name, out float value)
+            {
+                value = 0f;
+                if (!parent.TryGetProperty(name, out var el)) return false;
+                if (el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out var d))
+                {
+                    value = (float)d;
+                    return true;
+                }
+                return false;
+            }
+
+            bool cameraMismatch = false;
+            if (hasCamera)
+            {
+                bool okYaw   = TryGetFloat(camEl, "yaw",   out float mYaw);
+                bool okPitch = TryGetFloat(camEl, "pitch", out float mPitch);
+                bool okX     = TryGetFloat(camEl, "pos_x", out float mX);
+                bool okY     = TryGetFloat(camEl, "pos_y", out float mY);
+                bool okZ     = TryGetFloat(camEl, "pos_z", out float mZ);
+
+                // If any camera field is missing, treat as stale to be safe.
+                if (!(okYaw && okPitch && okX && okY && okZ))
+                {
+                    cameraMismatch = true;
+                }
+                else
+                {
+                    // Compare against your current camera settings/state.
+                    // Replace these with your actual variables if they differ.
+                    cameraMismatch =
+                        Math.Abs(mYaw   - _settings.CamYaw)   > EPS ||
+                        Math.Abs(mPitch - _settings.CamPitch) > EPS ||
+                        Math.Abs(mX     - _settings.CamX)  > EPS ||
+                        Math.Abs(mY     - _settings.CamY)  > EPS ||
+                        Math.Abs(mZ     - _settings.CamZ)  > EPS;
+                }
+            }
+            else
+            {
+                // If the old PNGs don’t have camera info, you can decide policy:
+                // treat as stale so they get regenerated when AutoUpdateStaleMugshots is on
+                cameraMismatch = true;
+            }
+
+            bool isDeprecated = _settings.AutoUpdateOldMugshots && IsOlderVersion(version, _executableVersion);
+            bool isStale =
+                Math.Abs(topOffset - _settings.HeadTopOffset) > EPS ||
+                Math.Abs(bottomOffset - _settings.HeadBottomOffset) > EPS ||
                 resX != _settings.ImageXRes ||
-                resY != _settings.ImageYRes)
+                resY != _settings.ImageYRes ||
+                cameraMismatch;
+
+            if ((_settings.AutoUpdateOldMugshots && isDeprecated) ||
+                (_settings.AutoUpdateStaleMugshots && isStale))
             {
                 Debug.WriteLine($"Metadata mismatch for {pngPath}. Regenerating.");
                 return true;
