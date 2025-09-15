@@ -2343,6 +2343,85 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         Debug.WriteLine(
             $"Finished processing. Set '{targetModName}' as the selected appearance for {applicableNpcs.Count} visible NPC(s). (onlyAvailable={onlyAvailable})");
     }
+    
+    public void UnselectAllFromMod(VM_NpcsMenuMugshot referenceMod)
+    {
+        if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName))
+        {
+            Debug.WriteLine("UnselectAllFromMod: referenceMod or its ModName is null/empty.");
+            return;
+        }
+
+        string targetModName = referenceMod.ModName;
+
+        // Find all NPCs that currently have this mod selected.
+        var npcsToUnselect = _settings.SelectedAppearanceMods
+            .Where(kvp => kvp.Value.ModName.Equals(targetModName, StringComparison.OrdinalIgnoreCase))
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        if (!npcsToUnselect.Any())
+        {
+            ScrollableMessageBox.Show($"No NPCs currently have '{targetModName}' selected.", "No Action Taken");
+            return;
+        }
+
+        // Display the confirmation dialog with the required warning message.
+        string confirmationMessage = $"{npcsToUnselect.Count} NPC selections will be cleared, and will no longer have an appearance selected. Are you sure you want to proceed?";
+        if (!ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Bulk Unselection", MessageBoxImage.Warning))
+        {
+            return;
+        }
+
+        // If confirmed, clear the selection for each applicable NPC.
+        foreach (var npcKey in npcsToUnselect)
+        {
+            _consistencyProvider.ClearSelectedMod(npcKey);
+        }
+
+        Debug.WriteLine($"Finished processing. Cleared '{targetModName}' as the selected appearance for {npcsToUnselect.Count} NPC(s).");
+    }
+    
+    public void UnselectVisibleFromMod(VM_NpcsMenuMugshot referenceMod)
+    {
+        if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName))
+        {
+            Debug.WriteLine("UnselectVisibleFromMod: referenceMod or its ModName is null/empty.");
+            return;
+        }
+
+        string targetModName = referenceMod.ModName;
+
+        // Find all VISIBLE NPCs that currently have this mod selected.
+        var npcsToUnselect = FilteredNpcs
+            .Where(npc => {
+                var selection = _consistencyProvider.GetSelectedMod(npc.NpcFormKey);
+                return selection.ModName != null && selection.ModName.Equals(targetModName, StringComparison.OrdinalIgnoreCase);
+            })
+            .Select(npc => npc.NpcFormKey)
+            .ToList();
+
+        if (!npcsToUnselect.Any())
+        {
+            ScrollableMessageBox.Show($"No currently visible NPCs have '{targetModName}' selected.", "No Action Taken");
+            return;
+        }
+
+        // Display the confirmation dialog for visible NPCs.
+        string confirmationMessage = $"{npcsToUnselect.Count} visible NPC selections will be cleared, and will no longer have an appearance selected. Are you sure you want to proceed?";
+        if (!ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Visible Unselection", MessageBoxImage.Warning))
+        {
+            return;
+        }
+
+        // If confirmed, clear the selection for each applicable NPC.
+        foreach (var npcKey in npcsToUnselect)
+        {
+            _consistencyProvider.ClearSelectedMod(npcKey);
+        }
+
+        Debug.WriteLine($"Finished processing. Cleared '{targetModName}' as the selected appearance for {npcsToUnselect.Count} visible NPC(s).");
+    }
 
     private bool IsModAnAppearanceSourceForNpc(VM_NpcsMenuSelection npcSelectionVm, VM_NpcsMenuMugshot referenceMod)
     {

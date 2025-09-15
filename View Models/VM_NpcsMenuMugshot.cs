@@ -93,6 +93,8 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     public ReactiveCommand<Unit, Unit> SelectAvailableFromThisModCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectVisibleFromThisModCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectVisibleAndAvailableFromThisModCommand { get; }
+    public ReactiveCommand<Unit, Unit> UnselectAllFromThisModCommand { get; } 
+    public ReactiveCommand<Unit, Unit> UnselectVisibleFromThisModCommand { get; }
     public ReactiveCommand<Unit, Unit> HideAllFromThisModCommand { get; }
     public ReactiveCommand<Unit, Unit> UnhideAllFromThisModCommand { get; }
     public ReactiveCommand<Unit, Unit> JumpToModCommand { get; }
@@ -268,6 +270,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             .Create(() => _vmNpcSelectionBar.SelectVisibleFromMod(this, false)).DisposeWith(Disposables);
         SelectVisibleAndAvailableFromThisModCommand = ReactiveCommand
             .Create(() => _vmNpcSelectionBar.SelectVisibleFromMod(this, true)).DisposeWith(Disposables);
+        UnselectAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnselectAllFromMod(this))
+            .DisposeWith(Disposables);
+        UnselectVisibleFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnselectVisibleFromMod(this))
+            .DisposeWith(Disposables);
         HideAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.HideAllFromMod(this))
             .DisposeWith(Disposables);
         UnhideAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnhideAllFromMod(this))
@@ -319,6 +325,12 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             .DisposeWith(Disposables);
         SelectVisibleAndAvailableFromThisModCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting visible and available from mod: {ex.Message}"))
+            .DisposeWith(Disposables);
+        UnselectAllFromThisModCommand.ThrownExceptions
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error unselecting all from mod: {ex.Message}"))
+            .DisposeWith(Disposables);
+        UnselectVisibleFromThisModCommand.ThrownExceptions
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error unselecting visible from mod: {ex.Message}"))
             .DisposeWith(Disposables);
         HideAllFromThisModCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.Show($"Error hiding all from mod: {ex.Message}"))
