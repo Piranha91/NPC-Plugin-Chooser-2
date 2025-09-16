@@ -348,8 +348,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         // This method contains the full fallback logic, running in the background.
 
         bool hasRealMugshot = ImagePath != VM_Mods.FullPlaceholderPath;
+        string nifPath = _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting.CorrespondingFolderPaths); 
 
-        if (hasRealMugshot && !_portraitCreator.NeedsRegeneration(ImagePath))
+        if (hasRealMugshot && !_portraitCreator.NeedsRegeneration(ImagePath, nifPath))
         {
             return;
         }
@@ -390,41 +391,53 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                         Debug.WriteLine($"Failed to download from FaceFinder for {NpcFormKey}: {ex.Message}");
                     }
                 }
-                if (downloadSuccessful)
+                if (downloadSuccessful) // Or if (generationSuccessful) for the second block
                 {
+                    // This is safe because it freezes the bitmap before assigning it
                     SetImageSource(savePath, isPlaceholder: false);
-                    _parentVMModSetting.HasValidMugshots = true;
-                    if (!_parentVMModSetting.MugShotFolderPaths.Contains(saveFolder))
+
+                    // Dispatch the property and collection changes to the UI thread
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
-                        _parentVMModSetting.MugShotFolderPaths.Add(saveFolder);
-                    }
+                        _parentVMModSetting.HasValidMugshots = true;
+                        if (!_parentVMModSetting.MugShotFolderPaths.Contains(saveFolder))
+                        {
+                            _parentVMModSetting.MugShotFolderPaths.Add(saveFolder);
+                        }
+                    });
                     return;
                 }
             }
 
             // --- 3. Fallback to NPC Portrait Creator ---
-            if (_settings.UsePortraitCreatorFallback && _portraitCreator.NeedsRegeneration(savePath))
+            if (_settings.UsePortraitCreatorFallback && _portraitCreator.NeedsRegeneration(savePath, nifPath))
             {
                 bool generationSuccessful = false;
-                string nifPath = _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting.CorrespondingFolderPaths); 
+                
                 if (!string.IsNullOrWhiteSpace(nifPath))
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(savePath));
-                    if (await _portraitCreator.GeneratePortraitAsync(nifPath, savePath))
+                    if (await _portraitCreator.GeneratePortraitAsync(nifPath, _parentVMModSetting.CorrespondingFolderPaths, savePath))
                     {
                         Debug.WriteLine($"Generated mugshot for {NpcFormKey}.");
                         generationSuccessful = true;
                     }
                 }
 
-                if (generationSuccessful)
+                if (generationSuccessful) // Or if (generationSuccessful) for the second block
                 {
+                    // This is safe because it freezes the bitmap before assigning it
                     SetImageSource(savePath, isPlaceholder: false);
-                    _parentVMModSetting.HasValidMugshots = true;
-                    if (!_parentVMModSetting.MugShotFolderPaths.Contains(saveFolder))
+
+                    // Dispatch the property and collection changes to the UI thread
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
-                        _parentVMModSetting.MugShotFolderPaths.Add(saveFolder);
-                    }
+                        _parentVMModSetting.HasValidMugshots = true;
+                        if (!_parentVMModSetting.MugShotFolderPaths.Contains(saveFolder))
+                        {
+                            _parentVMModSetting.MugShotFolderPaths.Add(saveFolder);
+                        }
+                    });
                     return;
                 }
             }

@@ -1,4 +1,6 @@
-﻿namespace NPC_Plugin_Chooser_2.BackEnd;
+﻿using System.Windows.Media;
+
+namespace NPC_Plugin_Chooser_2.BackEnd;
 
 using System;
 using System.ComponentModel;
@@ -113,6 +115,20 @@ public class ModSettingConverter : JsonConverter
     public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
     {
         throw new NotImplementedException("This converter is read-only and should not be used for writing JSON.");
+    }
+}
+
+public class ColorJsonConverter : JsonConverter<Color>
+{
+    public override void WriteJson(JsonWriter writer, Color value, JsonSerializer serializer)
+    {
+        writer.WriteValue(value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    public override Color ReadJson(JsonReader reader, Type objectType, Color existingValue, bool hasExistingValue, JsonSerializer serializer)
+    {
+        var colorString = (string)reader.Value;
+        return (Color)ColorConverter.ConvertFromString(colorString);
     }
 }
 

@@ -162,37 +162,45 @@
                               Margin="0,5,0,0"/>
 
                     <Border Margin="15,5,0,5" Padding="10" BorderBrush="Gray" BorderThickness="1" CornerRadius="3"
-                            Visibility="{Binding UsePortraitCreatorFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        Visibility="{Binding UsePortraitCreatorFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <StackPanel>
-                            <Label Content="Max Parallel Portrait Renders" FontWeight="Bold" Margin="0,20,0,0"/>
+                            <TextBlock Text="Max Parallel Portrait Renders" FontWeight="Bold" Margin="0,5,0,0"/>
                             <TextBlock TextWrapping="Wrap" Margin="0,0,0,5" Opacity="0.8">
-                                Controls how many CPU-intensive portrait generation processes can run at once. Lower values reduce system load during image generation.
+                                Controls how many CPU-intensive portrait generation processes can run at once.
+                                Lower values reduce system load during image generation.
                             </TextBlock>
-                            <StackPanel Orientation="Horizontal">
-                                <Slider Value="{Binding MaxParallelPortraitRenders}" 
-                                        Minimum="1" 
-                                        Maximum="16" 
-                                        IsSnapToTickEnabled="True" 
-                                        TickFrequency="1" 
-                                        Width="250"/>
-                                <TextBlock Text="{Binding MaxParallelPortraitRenders}" 
-                                           Margin="10,0,0,0" 
-                                           VerticalAlignment="Center"
-                                           MinWidth="20"
-                                           FontWeight="Bold"/>
+                            <TextBox Text="{Binding MaxParallelPortraitRenders}" 
+                                     Width="60" HorizontalAlignment="Left"
+                                     PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                     DataObject.Pasting="IntegerTextBox_Pasting" />
+
+                            <TextBlock Text="Mugshot Background Color" FontWeight="Bold" Margin="0,15,0,0"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,5">
+                                <Border BorderBrush="Black" BorderThickness="1" Width="100" Height="25"
+                                        Background="{Binding MugshotBackgroundColor}" CornerRadius="2"/>
+                                <Button Content="Change..." Margin="10,0,0,0"
+                                        Command="{Binding SelectBackgroundColorCommand}" VerticalAlignment="Center"/>
                             </StackPanel>
                             
-                            <TextBlock Text="Auto-Update Deprecated Mugshots:" Margin="0,0,0,0" 
-                                       ToolTip="If mugshot was made with a version of NPC Portrait Creator older than the current version, regenerate it"/>
-                            <CheckBox IsChecked="{Binding AutoUpdateOldMugshots, Mode=TwoWay}"
-                                      Margin="5,0,0,0"/>
+                            <TextBlock Text="Lighting Profile (JSON)" FontWeight="Bold" Margin="0,10,0,0"/>
+                            <TextBox Text="{Binding DefaultLightingJsonString, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="200"
+                                     VerticalScrollBarVisibility="Auto" FontFamily="Consolas">
+                                <TextBox.Style>
+                                    <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsLightingJsonValid}" Value="True">
+                                                <Setter Property="BorderBrush" Value="Green"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsLightingJsonValid}" Value="False">
+                                                <Setter Property="BorderBrush" Value="Red"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBox.Style>
+                            </TextBox>
                             
-                            <TextBlock Text="Auto-Update Stale Mugshots:" Margin="0,0,0,0"
-                                       ToolTip="If mugshot was made with different camera parameters than current, regenerate it"/>
-                            <CheckBox IsChecked="{Binding AutoUpdateStaleMugshots, Mode=TwoWay}"
-                                      Margin="5,0,0,0"/>
-
-                            <TextBlock Text="Camera Position:" Margin="0,0,0,2"/>
+                            <TextBlock Text="Camera Position:" Margin="0,15,0,2"/>
                             <ComboBox ItemsSource="{Binding CameraModes}" SelectedItem="{Binding SelectedCameraMode, Mode=TwoWay}" Margin="0,0,0,10"/>
 
                             <StackPanel>
@@ -207,9 +215,13 @@
                                     </Style>
                                 </StackPanel.Style>
                                 <TextBlock Text="Head Top Offset (%):" Margin="0,0,0,2"/>
-                                <TextBox Text="{Binding HeadTopOffset, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBox Text="{Binding HeadTopOffset, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"/>
                                 <TextBlock Text="Head Bottom Offset (%):" Margin="0,0,0,2"/>
-                                <TextBox Text="{Binding HeadBottomOffset, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBox Text="{Binding HeadBottomOffset, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"/>
                             </StackPanel>
 
                             <StackPanel>
@@ -224,22 +236,36 @@
                                     </Style>
                                 </StackPanel.Style>
                                 <TextBlock Text="Camera X:" Margin="0,0,0,2"/>
-                                <TextBox Text="{Binding CamX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBox Text="{Binding CamX, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"/>
                                 <TextBlock Text="Camera Y:" Margin="0,0,0,2"/>
-                                <TextBox Text="{Binding CamY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBox Text="{Binding CamY, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"/>
                                 <TextBlock Text="Camera Z:" Margin="0,0,0,2"/>
-                                <TextBox Text="{Binding CamZ, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBox Text="{Binding CamZ, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"/>
                                 <TextBlock Text="Camera Pitch:" Margin="0,0,0,2"/>
-                                <TextBox Text="{Binding CamPitch, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBox Text="{Binding CamPitch, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"/>
                                 <TextBlock Text="Camera Yaw:" Margin="0,0,0,2"/>
-                                <TextBox Text="{Binding CamYaw, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"/>
+                                <TextBox Text="{Binding CamYaw, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,5"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"/>
                             </StackPanel>
 
                             <TextBlock Text="Output Resolution:" Margin="0,10,0,2"/>
                             <StackPanel Orientation="Horizontal">
-                                <TextBox Text="{Binding ImageXRes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+                                <TextBox Text="{Binding ImageXRes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
                                 <TextBlock Text=" x " VerticalAlignment="Center" Margin="5,0"/>
-                                <TextBox Text="{Binding ImageYRes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+                                <TextBox Text="{Binding ImageYRes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>

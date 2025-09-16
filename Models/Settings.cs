@@ -3,8 +3,10 @@ using Mutagen.Bethesda.Skyrim;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Media;
 using Mutagen.Bethesda.Strings;
-using Newtonsoft.Json; // Required for HashSet
+using Newtonsoft.Json;
+using NPC_Plugin_Chooser_2.BackEnd; // Required for HashSet
 
 namespace NPC_Plugin_Chooser_2.Models;
 
@@ -110,6 +112,32 @@ public class Settings
     public bool AutoUpdateStaleMugshots { get; set; } = true;
     public PortraitCameraMode SelectedCameraMode { get; set; } = PortraitCameraMode.Relative;
     // These should match the defaults or CLI options in your C++ app
+    public string DefaultLightingJsonString { get; set; } = @"
+{
+	""lights"": [
+		{
+			""type"": ""ambient"",
+			""color"": [ 0.3, 0.25, 0.2 ],
+			""intensity"": 1.0
+		},
+		{
+			""type"": ""directional"",
+			""direction"": [ 0.5, 0.4, 1.0 ],
+			""color"": [ 1.0, 0.85, 0.7 ],
+			""intensity"": 1.1
+		},
+		{
+			""type"": ""directional"",
+			""direction"": [ -0.6, 0.2, 0.5 ],
+			""color"": [ 0.8, 0.7, 0.6 ],
+			""intensity"": 0.25
+		}
+	]
+}";
+    [JsonConverter(typeof(ColorJsonConverter))] // Apply the converter
+    public Color MugshotBackgroundColor { get; set; } = Color.FromRgb(227, 239, 251);
+
+    
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(0.20f)]
     public float HeadTopOffset { get; set; } = 0.20f;
 

@@ -10,6 +10,7 @@ using System.Reactive.Subjects;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Media;
 using Microsoft.Win32;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using Mutagen.Bethesda.Plugins;
@@ -17,6 +18,7 @@ using Mutagen.Bethesda.Plugins.Cache.Internals.Implementations;
 using Mutagen.Bethesda.Plugins.Order;
 using Mutagen.Bethesda.Skyrim;
 using Mutagen.Bethesda.Strings;
+using Newtonsoft.Json;
 using Noggog; // For IsNullOrWhitespace
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
@@ -54,6 +56,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool IsApiKeySet { get; private set; }
     [Reactive] public bool UsePortraitCreatorFallback { get; set; }
     [Reactive] public int MaxParallelPortraitRenders { get; set; }
+    [Reactive] public SolidColorBrush MugshotBackgroundColor { get; set; }
+    [Reactive] public string DefaultLightingJsonString { get; set; }
+    [ObservableAsProperty] public bool IsLightingJsonValid { get; }
 
     // --- NEW: Portrait Creator Camera Properties ---
     [Reactive] public bool AutoUpdateOldMugshots { get; set; }
@@ -157,6 +162,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public ReactiveCommand<bool, Unit> UpdateEasyNpcProfileCommand { get; } // Takes bool parameter
     public ReactiveCommand<string, Unit> RemoveCachedModCommand { get; }
     public ReactiveCommand<string, Unit> RescanCachedModCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectBackgroundColorCommand { get; }
 
     public VM_Settings(
         EnvironmentStateProvider environmentStateProvider,
@@ -226,6 +232,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         // --- NEW: Portrait Creator Initialization ---
         AutoUpdateOldMugshots = _model.AutoUpdateOldMugshots;
         AutoUpdateStaleMugshots = _model.AutoUpdateStaleMugshots;
+        MugshotBackgroundColor = new SolidColorBrush(_model.MugshotBackgroundColor);
+        if (MugshotBackgroundColor.CanFreeze) MugshotBackgroundColor.Freeze(); // Good practice
+        DefaultLightingJsonString = _model.DefaultLightingJsonString;
         SelectedCameraMode = _model.SelectedCameraMode;
         CamX = _model.CamX;
         CamY = _model.CamY;
@@ -303,6 +312,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         RescanCachedModCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Failed to re-scan mod: {ex.Message}"))
             .DisposeWith(_disposables);
+        SelectBackgroundColorCommand = ReactiveCommand.Create(SelectBackgroundColor).DisposeWith(_disposables);
 
 
         // Property subscriptions (as before, ensure .Skip(1) where appropriate if values are set above)
@@ -611,6 +621,18 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
             _disposables.Add(d);
         });
+        
+        this.WhenAnyValue(x => x.MugshotBackgroundColor).Skip(1)
+            .Subscribe(brush => _model.MugshotBackgroundColor = brush.Color)
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.DefaultLightingJsonString).Skip(1)
+            .Subscribe(json => _model.DefaultLightingJsonString = json).DisposeWith(_disposables);
+
+        // --- NEW: JSON validation logic ---
+        this.WhenAnyValue(x => x.DefaultLightingJsonString)
+            .Select(IsValidJson)
+            .ToPropertyEx(this, x => x.IsLightingJsonValid)
+            .DisposeWith(_disposables);
     }
 
     // New method for heavy initialization, called from App.xaml.cs
@@ -992,13 +1014,37 @@ Options:
         ScrollableMessageBox.Show(helpText, "Override Handling Mode Information");
     }
 
+// --- NEW: Method to launch the color picker dialog ---
+    private void SelectBackgroundColor()
+    {
+        // Note: This requires adding a reference to System.Windows.Forms.dll in your project
+        var dialog = new System.Windows.Forms.ColorDialog();
+        
+        // Set initial color from the view model
+        var initialColor = MugshotBackgroundColor.Color;
+        dialog.Color = System.Drawing.Color.FromArgb(initialColor.A, initialColor.R, initialColor.G, initialColor.B);
 
+        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            var newColor = dialog.Color;
+            MugshotBackgroundColor = new SolidColorBrush(Color.FromArgb(newColor.A, newColor.R, newColor.G, newColor.B));
+        }
+    }
 
-
-
-
-
-
+    // --- NEW: Helper to validate JSON string ---
+    private bool IsValidJson(string? str)
+    {
+        if (string.IsNullOrWhiteSpace(str)) return false;
+        try
+        {
+            JsonConvert.DeserializeObject(str);
+            return true;
+        }
+        catch (JsonReaderException)
+        {
+            return false;
+        }
+    }
     private void RefreshNonAppearanceMods()
     {
         CachedNonAppearanceMods = new ObservableCollection<KeyValuePair<string, string>>(

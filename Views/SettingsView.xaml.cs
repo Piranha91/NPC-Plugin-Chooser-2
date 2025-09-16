@@ -2,8 +2,10 @@
 using ReactiveUI;
 using Splat;
 using System.Reactive.Disposables;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace NPC_Plugin_Chooser_2.Views
 {
@@ -55,6 +57,60 @@ namespace NPC_Plugin_Chooser_2.Views
             {
                 vm.UpdateApiKey(((PasswordBox)sender).Password);
             }
+        }
+        
+        // Allows only integer values
+        private void IntegerTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        {
+            e.Handled = !IsTextAllowed(e.Text, @"^[0-9]+$"); // Regex for one or more digits
+        }
+
+        // Allows floating point values (digits and a single decimal point)
+        private void FloatTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        {
+            var textBox = sender as TextBox;
+            // Allow digits, and allow a single '.' if it doesn't already exist in the text.
+            bool isDecimalAllowed = e.Text == "." && textBox != null && !textBox.Text.Contains('.');
+            e.Handled = !IsTextAllowed(e.Text, @"^[0-9]+$") && !isDecimalAllowed;
+        }
+
+        // Pasting validation (blocks paste if content is invalid for the respective type)
+        private void IntegerTextBox_Pasting(object sender, DataObjectPastingEventArgs e)
+        {
+            if (e.DataObject.GetDataPresent(typeof(string)))
+            {
+                string text = (string)e.DataObject.GetData(typeof(string));
+                if (!IsTextAllowed(text, @"^[0-9]+$"))
+                {
+                    e.CancelCommand();
+                }
+            }
+            else
+            {
+                e.CancelCommand();
+            }
+        }
+    
+        private void FloatTextBox_Pasting(object sender, DataObjectPastingEventArgs e)
+        {
+            if (e.DataObject.GetDataPresent(typeof(string)))
+            {
+                string text = (string)e.DataObject.GetData(typeof(string));
+                // Simple float validation: allows one optional decimal point
+                if (!IsTextAllowed(text, @"^[0-9]*\.?[0-9]*$"))
+                {
+                    e.CancelCommand();
+                }
+            }
+            else
+            {
+                e.CancelCommand();
+            }
+        }
+
+        private static bool IsTextAllowed(string text, string allowedRegex)
+        {
+            return Regex.IsMatch(text, allowedRegex);
         }
     }
 }

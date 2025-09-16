@@ -1,8 +1,11 @@
 ﻿using System.Collections.Concurrent;
+using System.Globalization;
 using System.IO;
 using Mutagen.Bethesda.Plugins;
 using Hjg.Pngcs;
 using Hjg.Pngcs.Chunks;
+using System.Security.Cryptography;
+using Newtonsoft.Json.Linq;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -15,14 +18,16 @@ using NPC_Plugin_Chooser_2.Models; // For Settings
 public class PortraitCreator
 {
     private readonly Settings _settings;
+    private readonly EnvironmentStateProvider _environmentProvider;
     private readonly string _executablePath;
     private string _executableVersion = "0.0.0"; // Default if query fails
     private readonly SemaphoreSlim _renderSemaphore;
     private static readonly ConcurrentDictionary<(string, string), Task<bool>> _renderTasks = new();
 
-    public PortraitCreator(Settings settings)
+    public PortraitCreator(Settings settings, EnvironmentStateProvider environmentProvider)
     {
         _settings = settings;
+        _environmentProvider = environmentProvider;
         _executablePath = Path.Combine(AppContext.BaseDirectory, "NPC Portrait Creator", "NPCPortraitCreator.exe");
 
         // Initialize the semaphore with the value from settings.
@@ -112,27 +117,22 @@ public class PortraitCreator
         return winningPath;
     }
 
-    // Checks if an existing auto-generated mugshot is outdated.
-    public bool NeedsRegeneration(string pngPath)
+    // Checks if an existing auto-generated mugshot is outdated.s
+    public bool NeedsRegeneration(string pngPath, string nifPath)
     {
         if (!File.Exists(pngPath)) return true;
 
         try
         {
-            // --- REAL IMPLEMENTATION using Hjg.Pngcs ---
             string? metadataJson = null;
             using (var fs = File.OpenRead(pngPath))
             {
                 var pngr = new PngReader(fs);
-                // Make sure text/ancillary chunks are collected
                 pngr.ChunkLoadBehaviour = ChunkLoadBehaviour.LOAD_CHUNK_ALWAYS;
-                // Advance through the file without reading pixel rows
                 pngr.ReadSkippingAllRows();
-                // Now the tEXt/iTXt/zTXt are available
                 metadataJson = pngr.GetMetadata()?.GetTxtForKey("Parameters");
-                pngr.End(); // optional here; stream is disposed by using{}
+                pngr.End();
             }
-            // --- END REAL IMPLEMENTATION ---
 
             if (string.IsNullOrWhiteSpace(metadataJson))
             {
@@ -144,18 +144,15 @@ public class PortraitCreator
             var root = doc.RootElement;
 
             string? version = root.GetProperty("program_version").GetString();
-
-            float topOffset    = root.GetProperty("mugshot_offsets").GetProperty("top").GetSingle();
+            float topOffset = root.GetProperty("mugshot_offsets").GetProperty("top").GetSingle();
             float bottomOffset = root.GetProperty("mugshot_offsets").GetProperty("bottom").GetSingle();
-
             int resX = root.GetProperty("resolution_x").GetInt32();
             int resY = root.GetProperty("resolution_y").GetInt32();
 
-            // --- NEW: read camera (if present) and compare with current settings ---
+            // --- Camera Mismatch Logic ---
             const float EPS = 1e-3f;
-
             bool hasCamera = root.TryGetProperty("camera", out var camEl);
-
+            
             // Safe float getter (works even if the JSON value is double)
             static bool TryGetFloat(JsonElement parent, string name, out float value)
             {
@@ -168,7 +165,7 @@ public class PortraitCreator
                 }
                 return false;
             }
-
+            
             bool cameraMismatch = false;
             if (hasCamera)
             {
@@ -202,8 +199,59 @@ public class PortraitCreator
                 cameraMismatch = true;
             }
 
+            // Compare NIF hash
+            bool hashMismatch = false;
+            if (root.TryGetProperty("nif_sha256", out var hashEl) && hashEl.ValueKind == JsonValueKind.String)
+            {
+                string metadataHash = hashEl.GetString() ?? "";
+                if (!string.IsNullOrWhiteSpace(nifPath) && File.Exists(nifPath))
+                {
+                    string currentNifHash = CalculateSha256(nifPath);
+                    if (!metadataHash.Equals(currentNifHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        hashMismatch = true;
+                    }
+                }
+            }
+            else { hashMismatch = true; } // If old PNG has no hash, treat as stale.
+
+            // Compare background color
+            bool bgColorMismatch = false;
+            if (root.TryGetProperty("background_color", out var bgEl) && bgEl.ValueKind == JsonValueKind.Array && bgEl.GetArrayLength() == 3)
+            {
+                var currentColor = _settings.MugshotBackgroundColor;
+                if (Math.Abs(bgEl[0].GetSingle() - currentColor.R / 255.0f) > EPS ||
+                    Math.Abs(bgEl[1].GetSingle() - currentColor.G / 255.0f) > EPS ||
+                    Math.Abs(bgEl[2].GetSingle() - currentColor.B / 255.0f) > EPS)
+                {
+                    bgColorMismatch = true;
+                }
+            }
+            else { bgColorMismatch = true; } // If old PNG lacks color info, treat as stale.
+
+            // Compare lighting configuration (whitespace-agnostic)
+            bool lightingMismatch = false;
+            if (root.TryGetProperty("lighting_profile", out var lightingEl))
+            {
+                try
+                {
+                    JToken metaLighting = JToken.Parse(lightingEl.GetRawText());
+                    JToken currentLighting = JToken.Parse(_settings.DefaultLightingJsonString);
+
+                    if (!JToken.DeepEquals(metaLighting, currentLighting))
+                    {
+                        lightingMismatch = true;
+                    }
+                }
+                catch { lightingMismatch = true; } // If parsing fails for either, treat as stale.
+            }
+            else { lightingMismatch = true; } // If old PNG lacks lighting info, treat as stale.
+
             bool isDeprecated = _settings.AutoUpdateOldMugshots && IsOlderVersion(version, _executableVersion);
             bool isStale =
+                hashMismatch ||
+                bgColorMismatch ||
+                lightingMismatch ||
                 Math.Abs(topOffset - _settings.HeadTopOffset) > EPS ||
                 Math.Abs(bottomOffset - _settings.HeadBottomOffset) > EPS ||
                 resX != _settings.ImageXRes ||
@@ -239,26 +287,40 @@ public class PortraitCreator
     /// Queues a request to generate a portrait. This method is thread-safe and
     /// prevents duplicate render jobs for the same input/output pair.
     /// </summary>
-    public Task<bool> GeneratePortraitAsync(string nifPath, string outputPath)
+    public Task<bool> GeneratePortraitAsync(string nifPath, IEnumerable<string> dataFolderPaths, string outputPath)
     {
         var renderKey = (nifPath, outputPath);
 
-        // GetOrAdd ensures that for a given NIF/output pair, the render process
-        // is only ever created and queued once. Subsequent calls will await the same task.
-        return _renderTasks.GetOrAdd(renderKey, key => ProcessRenderRequestAsync(key.Item1, key.Item2));
+        return _renderTasks.GetOrAdd(renderKey, key =>
+        {
+            // 1. Create the task to process the render request.
+            var renderTask = ProcessRenderRequestAsync(key.Item1, dataFolderPaths, key.Item2);
+
+            // 2. Attach a continuation. This tells the task to perform an action
+            //    (removing itself from the dictionary) as soon as it's finished,
+            //    regardless of whether it succeeded, failed, or was canceled.
+            //    This allows re-render requests for mugshots with stale metadata
+            renderTask.ContinueWith(
+                _ => _renderTasks.TryRemove(key, out _),
+                TaskScheduler.Default // Use a background thread for the removal
+            );
+
+            // 3. Return the original task to the caller.
+            return renderTask;
+        });
     }
 
     /// <summary>
     /// Waits for an available render slot and then executes the portrait creator process.
     /// </summary>
-    private async Task<bool> ProcessRenderRequestAsync(string nifPath, string outputPath)
+    private async Task<bool> ProcessRenderRequestAsync(string nifPath, IEnumerable<string> dataFolderPaths, string outputPath)
     {
         // Wait until a slot in the semaphore is free.
         await _renderSemaphore.WaitAsync();
         try
         {
             // Once a slot is acquired, run the actual process.
-            return await RunProcessInternalAsync(nifPath, outputPath);
+            return await RunProcessInternalAsync(nifPath, dataFolderPaths, outputPath);
         }
         finally
         {
@@ -270,7 +332,7 @@ public class PortraitCreator
     /// <summary>
     /// Contains the core logic for launching and monitoring the external executable.
     /// </summary>
-    private async Task<bool> RunProcessInternalAsync(string nifPath, string outputPath)
+    private async Task<bool> RunProcessInternalAsync(string nifPath, IEnumerable<string> dataFolderPaths, string outputPath)
     {
         if (!File.Exists(_executablePath))
         {
@@ -278,14 +340,46 @@ public class PortraitCreator
             return false;
         }
 
+        var gameDataDirectory = _environmentProvider.DataFolderPath;
+
         bool redirectOutput = true; 
 
         var args = new StringBuilder();
         args.Append("--headless ");
         args.Append($"-f \"{nifPath}\" ");
         args.Append($"-o \"{outputPath}\" ");
+        
+        // --- Add Game and Mod Data Paths ---
+        // The base game "Data" folder (lowest priority)
+        if (!string.IsNullOrWhiteSpace(gameDataDirectory))
+        {
+            args.Append($"--gamedata \"{gameDataDirectory}\" ");
+        }
+        // Each individual mod folder (higher priority)
+        foreach (var dataFolder in dataFolderPaths.Where(p => !string.IsNullOrWhiteSpace(p)))
+        {
+            args.Append($"--data \"{dataFolder}\" ");
+        }
+        
+        // --- Add Image and Scene Settings ---
         args.Append($"--imgX {_settings.ImageXRes} ");
         args.Append($"--imgY {_settings.ImageYRes} ");
+
+        // Format the background color from 0-255 bytes to 0.0-1.0 floats.
+        // Use InvariantCulture to ensure '.' is used as the decimal separator, regardless of system locale.
+        var color = _settings.MugshotBackgroundColor;
+        string bgColorString = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2}", 
+            color.R / 255.0f, color.G / 255.0f, color.B / 255.0f);
+        args.Append($"--bgcolor \"{bgColorString}\" ");
+
+        // Pass the lighting profile as a direct JSON string.
+        if (!string.IsNullOrWhiteSpace(_settings.DefaultLightingJsonString))
+        {
+            // It's crucial to escape the quotes within the JSON string itself so that the
+            // command line parser correctly interprets the entire JSON block as a single argument value.
+            string escapedJson = _settings.DefaultLightingJsonString.Replace("\"", "\\\"");
+            args.Append($"--lighting-json \"{escapedJson}\" ");
+        }
 
         // NEW: Logic to select which camera parameters to use
         bool useFixedCamera = _settings.SelectedCameraMode == PortraitCameraMode.Fixed &&
@@ -354,5 +448,13 @@ public class PortraitCreator
         }
             
         return process.ExitCode == 0;
+    }
+    
+    private static string CalculateSha256(string filePath)
+    {
+        using var sha256 = SHA256.Create();
+        using var stream = File.OpenRead(filePath);
+        byte[] hash = sha256.ComputeHash(stream);
+        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
     }
 }
