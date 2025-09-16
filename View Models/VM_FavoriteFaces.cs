@@ -47,6 +47,7 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
     // UI Properties
     public ObservableCollection<VM_SummaryMugshot> FavoriteMugshots { get; } = new();
     [Reactive] public VM_SummaryMugshot? SelectedMugshot { get; set; }
+    [Reactive] public VM_NpcsMenuSelection? CurrentTargetNpc { get; private set; }
 
     // Zoom Control Properties
     [Reactive] public double ZoomLevel { get; set; }
@@ -90,6 +91,17 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
         _lazyMainWindowVm = lazyMainWindowVm;
         Mode = mode;
         _targetNpcForApply = targetNpcForApply;
+        
+        if (Mode == FavoriteFacesMode.Apply)
+        {
+            CurrentTargetNpc = _targetNpcForApply;
+        }
+        else // Share Mode
+        {
+            _npcsViewModel.WhenAnyValue(x => x.SelectedNpc)
+                .BindTo(this, x => x.CurrentTargetNpc)
+                .DisposeWith(_disposables);
+        }
 
         var canExecuteWithSelection = this.WhenAnyValue(x => x.SelectedMugshot)
             .Select(mugshot => mugshot != null);
@@ -182,20 +194,39 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
 
     private void ApplyFavorite()
     {
-        if (SelectedMugshot == null || _targetNpcForApply == null) return;
-        _npcsViewModel.AddGuestAppearance(_targetNpcForApply.NpcFormKey, SelectedMugshot.ModDisplayName,
+        if (SelectedMugshot == null) return;
+        if (CurrentTargetNpc == null)
+        {
+            ScrollableMessageBox.ShowWarning("Please select an NPC in the main window to apply this face to.", "No NPC Selected");
+            return;
+        }
+        _npcsViewModel.AddGuestAppearance(CurrentTargetNpc.NpcFormKey, SelectedMugshot.ModDisplayName,
             SelectedMugshot.TargetNpcFormKey, SelectedMugshot.SourceNpcDisplayName);
-        _consistencyProvider.SetSelectedMod(_targetNpcForApply.NpcFormKey, SelectedMugshot.ModDisplayName,
+        _consistencyProvider.SetSelectedMod(CurrentTargetNpc.NpcFormKey, SelectedMugshot.ModDisplayName,
             SelectedMugshot.TargetNpcFormKey);
-        RequestClose?.Invoke();
+    
+        if (IsApplyMode)
+        {
+            RequestClose?.Invoke();
+        }
     }
 
     private void MakeFavoriteAvailable()
     {
-        if (SelectedMugshot == null || _targetNpcForApply == null) return;
-        _npcsViewModel.AddGuestAppearance(_targetNpcForApply.NpcFormKey, SelectedMugshot.ModDisplayName,
+        if (SelectedMugshot == null) return;
+        if (CurrentTargetNpc == null)
+        {
+            ScrollableMessageBox.ShowWarning("Please select an NPC in the main window to make this face available to.", "No NPC Selected");
+            return;
+        }
+    
+        _npcsViewModel.AddGuestAppearance(CurrentTargetNpc.NpcFormKey, SelectedMugshot.ModDisplayName,
             SelectedMugshot.TargetNpcFormKey, SelectedMugshot.SourceNpcDisplayName);
-        RequestClose?.Invoke();
+    
+        if (IsApplyMode)
+        {
+            RequestClose?.Invoke();
+        }
     }
 
     private void ShareFavoriteWithNpc()

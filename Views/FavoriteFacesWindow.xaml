@@ -98,10 +98,10 @@
                         ToolTip="Remove the selected face from your favorites."/>
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <StackPanel Orientation="Horizontal" Visibility="{Binding IsApplyMode, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <Button Content="Apply" Command="{Binding ApplyCommand}" MinWidth="80" Margin="5,0"/>
+                    <StackPanel Orientation="Horizontal"> <Button Content="Apply" Command="{Binding ApplyCommand}" MinWidth="80" Margin="5,0"/>
                         <Button Content="Make Available" Command="{Binding MakeAvailableCommand}" MinWidth="80" Margin="5,0" ToolTip="Makes this appearance available as a 'guest' for the target NPC without selecting it."/>
-                        <Button Content="Cancel" Command="{Binding CancelCommand}" MinWidth="80" Margin="5,0" IsCancel="True"/>
+                        <Button Content="Cancel" Command="{Binding CancelCommand}" MinWidth="80" Margin="5,0" IsCancel="True"
+                                Visibility="{Binding IsApplyMode, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     </StackPanel>
 
                     <StackPanel Orientation="Horizontal" Visibility="{Binding IsShareMode, Converter={StaticResource BooleanToVisibilityConverter}}">

@@ -655,11 +655,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     {
         var vm = new VM_FavoriteFaces(_settings, _consistencyProvider, this, _lazyModsVm.Value, _lazyMainWindowVm, VM_FavoriteFaces.FavoriteFacesMode.Share, null);
         var window = new FavoriteFacesWindow { DataContext = vm, ViewModel = vm };
-    
+
         // Find the currently active window to set as the owner.
         window.Owner = Application.Current.Windows.OfType<Window>().SingleOrDefault(x => x.IsActive);
-    
-        window.ShowDialog();
+
+        window.Show();
     }
 
     private void ShowFavoritesWindowForApplying(VM_NpcsMenuSelection targetNpc)
