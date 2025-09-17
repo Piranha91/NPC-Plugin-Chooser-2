@@ -327,7 +327,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         this.WhenAnyValue(x => x.UsePortraitCreatorFallback).Skip(1)
             .Subscribe(b => _model.UsePortraitCreatorFallback = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MaxParallelPortraitRenders).Skip(1)
-            .Subscribe(value => _model.MaxParallelPortraitRenders = value);
+            .Subscribe(value => _model.MaxParallelPortraitRenders = value).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
