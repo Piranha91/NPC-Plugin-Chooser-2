@@ -2814,6 +2814,38 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             Debug.WriteLine($"Set outfit override for NPC {npcFormKey} to {newOverride}.");
         }
     }
+    
+    public void UpdateMugshotCache(FormKey npcFormKey, string modName, string imagePath)
+    {
+        if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
+        {
+            return;
+        }
+
+        var mugshotInfo = (ModName: modName, ImagePath: imagePath);
+
+        // Update the internal cache dictionary
+        if (_mugshotData.TryGetValue(npcFormKey, out var list))
+        {
+            // Remove any existing entry for this mod to avoid duplicates, then add the new one.
+            list.RemoveAll(i => i.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase));
+            list.Add(mugshotInfo);
+        }
+        else
+        {
+            // If no list exists for this NPC, create one.
+            _mugshotData[npcFormKey] = new List<(string ModName, string ImagePath)> { mugshotInfo };
+        }
+
+        Debug.WriteLine($"Mugshot cache updated for {npcFormKey} with mod '{modName}'.");
+
+        // CRITICAL: If the currently selected NPC is the one whose mugshot was just updated,
+        // we need to refresh the view to show the new image.
+        if (SelectedNpc != null && SelectedNpc.NpcFormKey.Equals(npcFormKey))
+        {
+            RefreshCurrentNpcAppearanceSources();
+        }
+    }
 
     // --- Disposal ---
     public void Dispose()

@@ -40,6 +40,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     private readonly VM_ModSetting _parentVMModSetting;
     private readonly NpcConsistencyProvider _consistencyProvider;
     private readonly Settings _settings;
+    private readonly VM_NpcSelectionBar _npcSelectionBar;
     private readonly FaceFinderClient _faceFinderClient;
     private readonly PortraitCreator _portraitCreator;
     private readonly CancellationToken _cancellationToken;
@@ -103,6 +104,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         // --- Auto-resolved by Autofac ---
         NpcConsistencyProvider consistencyProvider,
         Settings settings,
+        VM_NpcSelectionBar npcSelectionBar,
         FaceFinderClient faceFinderClient,
         PortraitCreator portraitCreator
     )
@@ -111,6 +113,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         _parentVMModSetting = parentVMModSetting;
         _consistencyProvider = consistencyProvider;
         _settings = settings;
+        _npcSelectionBar = npcSelectionBar;
         _faceFinderClient = faceFinderClient;
         _portraitCreator = portraitCreator;
         _cancellationToken = cancellationToken;
@@ -428,6 +431,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 {
                     // This is safe because it freezes the bitmap before assigning it
                     SetImageSource(savePath, isPlaceholder: false);
+                    _npcSelectionBar.UpdateMugshotCache(this.NpcFormKey, _parentVMModSetting.DisplayName, savePath);
 
                     // Dispatch the property and collection changes to the UI thread
                     await Application.Current.Dispatcher.InvokeAsync(() =>
