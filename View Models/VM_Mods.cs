@@ -103,6 +103,9 @@ public class VM_Mods : ReactiveObject
     // --- Batch Action Controls ---
     [Reactive] public bool ShouldRescanNonAppearanceMods { get; set; } = false;
     public ReactiveCommand<Unit, Unit> RefreshAllModsCommand { get; }
+    public ReactiveCommand<Unit, Unit> BatchEnableMergeInCommand { get; }
+    public ReactiveCommand<Unit, Unit> BatchForceEnableMergeInCommand { get; }
+    public ReactiveCommand<Unit, Unit> BatchDisableMergeInCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchIncludeOutfitsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchExcludeOutfitsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchEnableInjectedRecordsCommand { get; }
@@ -490,10 +493,47 @@ public class VM_Mods : ReactiveObject
             }
         }).DisposeWith(_disposables);
         
+        BatchEnableMergeInCommand = ReactiveCommand.Create(() =>
+        {
+            foreach (var modSetting in _allModSettingsInternal)
+            {
+                if (!modSetting.HasAlteredMergeLogic)
+                {
+                    modSetting.MergeInDependencyRecords = true;
+                }
+            }
+        }).DisposeWith(_disposables);
+
+        BatchForceEnableMergeInCommand = ReactiveCommand.Create(() =>
+        {
+            const string message = "WARNING: Forcing 'Merge Dependencies' ON for all mods is not recommended.\n\n" +
+                                   "This feature is intended for mods you plan to disable after patching. Merging in large mods that remain in your load order can cause patcher freezes and is unnecessary.\n\n" +
+                                   "Are you sure you want to enable this for all mods, including those automatically flagged as non-appearance mods?";
+
+            if (ScrollableMessageBox.Confirm(message, "Confirm Force Enable Merge-in"))
+            {
+                foreach (var modSetting in _allModSettingsInternal)
+                {
+                    modSetting.MergeInDependencyRecords = true;
+                }
+            }
+        }).DisposeWith(_disposables);
+
+        BatchDisableMergeInCommand = ReactiveCommand.Create(() =>
+        {
+            foreach (var modSetting in _allModSettingsInternal)
+            {
+                modSetting.MergeInDependencyRecords = false;
+            }
+        }).DisposeWith(_disposables);
+        
         BatchIncludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error including outfits: {ex.Message}")).DisposeWith(_disposables);
         BatchExcludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error excluding outfits: {ex.Message}")).DisposeWith(_disposables);
         BatchEnableInjectedRecordsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling injected record handling: {ex.Message}")).DisposeWith(_disposables);
         BatchDisableInjectedRecordsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disalbing injected record handling: {ex.Message}")).DisposeWith(_disposables);
+        BatchEnableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling merge-in: {ex.Message}")).DisposeWith(_disposables);
+        BatchForceEnableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error force-enabling merge-in: {ex.Message}")).DisposeWith(_disposables);
+        BatchDisableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disabling merge-in: {ex.Message}")).DisposeWith(_disposables);
         
         ApplyFilters(); // Apply initial filter
     }

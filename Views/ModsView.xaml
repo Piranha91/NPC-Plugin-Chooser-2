@@ -764,6 +764,11 @@
                         <Button Content="Enable" Command="{Binding BatchEnableInjectedRecordsCommand}" Margin="10,0" Padding="5,2" ToolTip="Enable 'Search for Injected Records' for ALL mods."/>
                         <Button Content="Disable" Command="{Binding BatchDisableInjectedRecordsCommand}" Padding="5,2" ToolTip="Disable 'Search for Injected Records' for ALL mods."/>
                         <TextBlock Text="Injected Record Search" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                        
+                        <Button Content="On" Command="{Binding BatchEnableMergeInCommand}" Margin="15,0,5,0" Padding="5,2" ToolTip="Enable 'Merge Dependencies' for all mods not flagged as non-appearance."/>
+                        <Button Content="Force" Command="{Binding BatchForceEnableMergeInCommand}" Padding="5,2" ToolTip="Enable 'Merge Dependencies' for ALL mods (use with caution)."/>
+                        <Button Content="Off" Command="{Binding BatchDisableMergeInCommand}" Margin="5,0" Padding="5,2" ToolTip="Disable 'Merge Dependencies' for ALL mods."/>
+                        <TextBlock Text="Merge-in" VerticalAlignment="Center" Margin="5,0,0,0"/>
                     </StackPanel>
                     
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,10,2"
