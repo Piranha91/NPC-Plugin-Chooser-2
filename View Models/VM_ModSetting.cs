@@ -78,6 +78,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     [Reactive] public bool MergeInDependencyRecords { get; set; } = true;
     [Reactive] public bool MergeInDependencyRecordsVisible { get; set; } = true;
     [Reactive] public bool IncludeOutfits { get; set; } = false;
+    [Reactive] public bool CopyAssets { get; set; } = true;
 
     [Reactive] public string MergeInToolTip { get; set; } = ModSetting.DefaultMergeInTooltip;
     [Reactive] public bool HasAlteredMergeLogic { get; set; } = false;
@@ -219,6 +220,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         MergeInDependencyRecords = model.MergeInDependencyRecords;
         HasAlteredHandleInjectedRecordsLogic = model.HasAlteredHandleInjectedRecordsLogic;
         IncludeOutfits = model.IncludeOutfits;
+        CopyAssets = model.CopyAssets;
         MergeInToolTip = model.MergeInToolTip;
         HandleInjectedRecords = model.HandleInjectedRecords;
         HasAlteredHandleInjectedRecordsLogic = model.HasAlteredHandleInjectedRecordsLogic;
@@ -464,6 +466,28 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             )
             .ToPropertyEx(this, x => x.CanDelete)
             .DisposeWith(_disposables);
+        
+        this.WhenAnyValue(x => x.CopyAssets)
+            .Skip(1) // Skip initial value
+            .Where(isChecked => !isChecked) // Only trigger when unchecked
+            .Subscribe(_ =>
+            {
+                if (!_isLoadingFromModel && !IsPerformingBatchAction && !_parentVm.SuppressPopupWarnings)
+                {
+                    const string message =
+                        "Disabling asset copying means only FaceGen files (.nif/.dds) will be transferred.\n\n" +
+                        "It becomes your responsibility to ensure that all other required assets (meshes, textures for armor, hair, eyes, etc.) are still available, though you can disable or hide the source mod plugins.\n\n" +
+                        "Are you sure you want to disable asset copying for this mod?";
+
+                    if (!ScrollableMessageBox.Confirm(message, "Confirm Disable Asset Copying"))
+                    {
+                        // Revert if user cancels
+                        Observable.Timer(TimeSpan.FromMilliseconds(1), RxApp.MainThreadScheduler)
+                            .Subscribe(__ => { CopyAssets = true; });
+                    }
+                }
+            })
+            .DisposeWith(_disposables);
 
         // --- Command Initializations ---
         AddFolderPathCommand = ReactiveCommand.CreateFromTask(AddFolderPathAsync).DisposeWith(_disposables);
@@ -607,6 +631,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             FaceGenOnlyNpcFormKeys = FaceGenOnlyNpcFormKeys,
             MergeInDependencyRecords = MergeInDependencyRecords,
             IncludeOutfits = IncludeOutfits,
+            CopyAssets = CopyAssets,
             MergeInToolTip = MergeInToolTip,
             HasAlteredMergeLogic = HasAlteredMergeLogic,
             HandleInjectedRecords = HandleInjectedRecords,

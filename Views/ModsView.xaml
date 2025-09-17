@@ -380,68 +380,73 @@
                                          </ItemsControl.ItemTemplate>
                                      </ItemsControl>
                                      
-                                     <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
-                                         <TextBlock Text="Merge Dependencies" 
-                                                    VerticalAlignment="Center" 
-                                                    ToolTip="{Binding MergeInToolTip}"
-                                                    Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                             <TextBlock.Style>
-                                                 <Style TargetType="TextBlock">
-                                                     <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
-                                                     <Style.Triggers>
-                                                         <DataTrigger Binding="{Binding HasAlteredMergeLogic}" Value="True">
-                                                             <Setter Property="Foreground" Value="{DynamicResource HighlightAlteredText}"/>
-                                                         </DataTrigger>
-                                                     </Style.Triggers>
-                                                 </Style>
-                                             </TextBlock.Style>
-                                         </TextBlock>
-                                         <CheckBox
-                                             IsChecked="{Binding MergeInDependencyRecords}"
-                                             VerticalAlignment="Center"
-                                             Margin="5 0 0 0"
-                                             ToolTip="{Binding MergeInDependencyRecords}"
-                                             Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                         
-                                         <TextBlock Text="Include Outfits" 
-                                                    VerticalAlignment="Center" 
-                                                    Margin="10 0 0 0"
-                                                    ToolTip="If checked, outfits from this mod will be transferred along with NPC appearance when in Create and Patch mode."
-                                                    Visibility="{Binding DataContext.CurrentPatchingMode}"/>
-                                         
-                                         <CheckBox IsChecked="{Binding IncludeOutfits, Mode=TwoWay}"
-                                                   VerticalAlignment="Center"
-                                                   Margin="5 0 0 0"
-                                                   HorizontalAlignment="Left"
-                                                   ToolTip="If checked, outfits from this mod will be transferred along with NPC appearance when in Create and Patch mode."
-                                                   Visibility="{Binding DataContext.CurrentPatchingMode, 
-                                                 ElementName=ModSettingsItemsControl, 
-                                                 Converter={StaticResource PatchingModeConverter}, 
-                                                 ConverterParameter=CreateAndPatch}"/>
-                                         
-                                         <TextBlock Text="Handle Injected Records" 
-                                                    VerticalAlignment="Center" 
-                                                    Margin="10 0 0 0"
-                                                    ToolTip="{Binding HandleInjectedOverridesToolTip}"
-                                                    Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                             <TextBlock.Style>
-                                                 <Style TargetType="TextBlock">
-                                                     <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
-                                                     <Style.Triggers>
-                                                         <DataTrigger Binding="{Binding HasAlteredHandleInjectedRecordsLogic}" Value="True">
-                                                             <Setter Property="Foreground" Value="{DynamicResource HighlightAlteredText}"/>
-                                                         </DataTrigger>
-                                                     </Style.Triggers>
-                                                 </Style>
-                                             </TextBlock.Style>
-                                         </TextBlock>
-                                         <CheckBox
-                                             IsChecked="{Binding HandleInjectedRecords}"
-                                             VerticalAlignment="Center" 
-                                             Margin="5 0 0 0"
-                                             ToolTip="If checked, the patcher will search for and merge in records that are injected. This can potentially make patching take longer."
-                                             Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                     </StackPanel>
+                                     <WrapPanel Grid.Row="6" Grid.Column="0" Margin="0,5,0,0">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+                                            <TextBlock Text="Merge Dependencies" 
+                                                        VerticalAlignment="Center" 
+                                                        ToolTip="{Binding MergeInToolTip}"
+                                                        Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasAlteredMergeLogic}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource HighlightAlteredText}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <CheckBox IsChecked="{Binding MergeInDependencyRecords}"
+                                                        VerticalAlignment="Center"
+                                                        Margin="5 0 0 0"
+                                                        ToolTip="{Binding MergeInToolTip}"
+                                                        Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+                                            <TextBlock Text="Copy Assets"
+                                                        VerticalAlignment="Center"
+                                                        ToolTip="If checked, all assets required for the NPC's appearance (meshes, textures, etc.) will be copied to the output folder. If unchecked, only FaceGen files will be copied."/>
+                                            <CheckBox IsChecked="{Binding CopyAssets, Mode=TwoWay}"
+                                                        VerticalAlignment="Center"
+                                                        Margin="5 0 0 0"
+                                                        ToolTip="If checked, all assets required for the NPC's appearance (meshes, textures, etc.) will be copied to the output folder. If unchecked, only FaceGen files will be copied."/>
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0" Visibility="{Binding DataContext.CurrentPatchingMode, ElementName=ModSettingsItemsControl, Converter={StaticResource PatchingModeConverter}, ConverterParameter=CreateAndPatch}">
+                                            <TextBlock Text="Include Outfits" 
+                                                        VerticalAlignment="Center" 
+                                                        ToolTip="If checked, outfits from this mod will be transferred along with NPC appearance when in Create and Patch mode."/>
+                                            <CheckBox IsChecked="{Binding IncludeOutfits, Mode=TwoWay}"
+                                                        VerticalAlignment="Center"
+                                                        Margin="5 0 0 0"
+                                                        ToolTip="If checked, outfits from this mod will be transferred along with NPC appearance when in Create and Patch mode."/>
+                                        </StackPanel>
+                                        
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+                                            <TextBlock Text="Handle Injected Records" 
+                                                        VerticalAlignment="Center" 
+                                                        ToolTip="{Binding HandleInjectedOverridesToolTip}"
+                                                        Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasAlteredHandleInjectedRecordsLogic}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource HighlightAlteredText}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <CheckBox IsChecked="{Binding HandleInjectedRecords}"
+                                                        VerticalAlignment="Center" 
+                                                        Margin="5 0 0 0"
+                                                        ToolTip="If checked, the patcher will search for and merge in records that are injected. This can potentially make patching take longer."
+                                                        Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        </StackPanel>
+                                    </WrapPanel>
                                      
                                      <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
                                          <TextBlock Text="Record Override Handling Mode" VerticalAlignment="Center">
@@ -769,6 +774,10 @@
                         <Button Content="Force" Command="{Binding BatchForceEnableMergeInCommand}" Padding="5,2" ToolTip="Enable 'Merge Dependencies' for ALL mods (use with caution)."/>
                         <Button Content="Off" Command="{Binding BatchDisableMergeInCommand}" Margin="5,0" Padding="5,2" ToolTip="Disable 'Merge Dependencies' for ALL mods."/>
                         <TextBlock Text="Merge-in" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                        
+                        <Button Content="Enable" Command="{Binding BatchEnableCopyAssetsCommand}" Margin="15,0,5,0" Padding="5,2" ToolTip="Enable 'Copy Assets' for ALL mods."/>
+                        <Button Content="Disable" Command="{Binding BatchDisableCopyAssetsCommand}" Padding="5,2" ToolTip="Disable 'Copy Assets' for ALL mods."/>
+                        <TextBlock Text="Asset Copying" VerticalAlignment="Center" Margin="5,0,0,0"/>
                     </StackPanel>
                     
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,10,2"

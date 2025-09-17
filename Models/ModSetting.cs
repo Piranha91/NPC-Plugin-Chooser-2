@@ -47,6 +47,7 @@ public class ModSetting
 
     public HashSet<ModKey> PluginsWithOverrideRecords { get; set; } = new();
     public bool IncludeOutfits { get; set; } = false;
+    public bool CopyAssets { get; set; } = true;
 
     public Dictionary<FormKey, (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)> 
         NpcFormKeysToNotifications

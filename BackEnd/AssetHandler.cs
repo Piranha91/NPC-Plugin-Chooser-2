@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Security.Policy;
@@ -21,8 +21,7 @@ public class AssetHandler : OptionalUIModule
     private readonly RecordHandler _recordHandler;
     private readonly Lazy<VM_Run> _runVM;
     private readonly SkyPatcherInterface _skyPatcherInterface;
-
-    private bool _copyExtraAssets = true;
+    
     private bool _copyExtraTexturesInNifs = true;
     private bool _getMissingExtraAssetsFromAvailableWinners = true;
     private bool _suppressAllMissingFileWarnings = false;
@@ -451,7 +450,7 @@ public class AssetHandler : OptionalUIModule
         }
         
         // 2. Non-FaceGen Assets (Only if CopyExtraAssets is true)
-        if (_copyExtraAssets)
+        if (appearanceModSetting.CopyAssets)
         {
             GetAssetPathsReferencedByPlugin(appearanceNpcRecord, appearanceModSetting.CorrespondingModKeys, appearanceModSetting.CorrespondingFolderPaths.ToHashSet(), meshToCopyRelativePaths, textureToCopyRelativePaths);
             AddCorrespondingNumericalNifPaths(meshToCopyRelativePaths, new HashSet<string>());
@@ -477,6 +476,12 @@ public class AssetHandler : OptionalUIModule
     public async Task ScheduleCopyAssetLinkFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting, string outputBasePath)
     {
         using var _ = ContextualPerformanceTracer.Trace("AssetHandler.ScheduleCopyAssetLinkFiles");
+
+        if (!appearanceModSetting.CopyAssets)
+        {
+            return;
+        }
+        
         var assetRelPaths =
             assetLinks
                 .Select(x => x.GivenPath)

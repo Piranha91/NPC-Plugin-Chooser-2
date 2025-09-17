@@ -110,6 +110,8 @@ public class VM_Mods : ReactiveObject
     public ReactiveCommand<Unit, Unit> BatchExcludeOutfitsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchEnableInjectedRecordsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchDisableInjectedRecordsCommand { get; }
+    public ReactiveCommand<Unit, Unit> BatchEnableCopyAssetsCommand { get; }
+    public ReactiveCommand<Unit, Unit> BatchDisableCopyAssetsCommand { get; }
 
     // --- NEW: Zoom Control Properties & Commands for ModsView ---
     [Reactive] public double ModsViewZoomLevel { get; set; }
@@ -527,6 +529,34 @@ public class VM_Mods : ReactiveObject
             }
         }).DisposeWith(_disposables);
         
+        BatchEnableCopyAssetsCommand = ReactiveCommand.Create(() =>
+        {
+            foreach (var modSetting in _allModSettingsInternal)
+            {
+                modSetting.IsPerformingBatchAction = true;
+                modSetting.CopyAssets = true;
+                modSetting.IsPerformingBatchAction = false;
+            }
+        }).DisposeWith(_disposables);
+        
+        BatchDisableCopyAssetsCommand = ReactiveCommand.Create(() =>
+        {
+            const string message =
+                "Disabling asset copying for ALL mods means only FaceGen files (.nif/.dds) will be transferred for every NPC.\n\n" +
+                "It becomes your responsibility to ensure that all other required assets (meshes, textures for armor, hair, eyes, etc.) are still available, though you can disable or hide the source mod plugins.\n\n" +
+                "Are you sure you want to disable asset copying for all mods?";
+
+            if (ScrollableMessageBox.Confirm(message, "Confirm Disable All Asset Copying"))
+            {
+                foreach (var modSetting in _allModSettingsInternal)
+                {
+                    modSetting.IsPerformingBatchAction = true;
+                    modSetting.CopyAssets = false;
+                    modSetting.IsPerformingBatchAction = false;
+                }
+            }
+        }).DisposeWith(_disposables);
+        
         BatchIncludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error including outfits: {ex.Message}")).DisposeWith(_disposables);
         BatchExcludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error excluding outfits: {ex.Message}")).DisposeWith(_disposables);
         BatchEnableInjectedRecordsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling injected record handling: {ex.Message}")).DisposeWith(_disposables);
@@ -534,6 +564,8 @@ public class VM_Mods : ReactiveObject
         BatchEnableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling merge-in: {ex.Message}")).DisposeWith(_disposables);
         BatchForceEnableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error force-enabling merge-in: {ex.Message}")).DisposeWith(_disposables);
         BatchDisableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disabling merge-in: {ex.Message}")).DisposeWith(_disposables);
+        BatchEnableCopyAssetsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling asset copying: {ex.Message}")).DisposeWith(_disposables);
+        BatchDisableCopyAssetsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disabling asset copying: {ex.Message}")).DisposeWith(_disposables);
         
         ApplyFilters(); // Apply initial filter
     }
