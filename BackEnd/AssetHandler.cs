@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Security.Policy;
@@ -65,6 +65,7 @@ public class AssetHandler : OptionalUIModule
     public void Initialize()
     {
         _potentialCopyFailures.Clear();
+        _processedAssetTasks.Clear();
         LoadAuxiliaryFiles();
     }
     
