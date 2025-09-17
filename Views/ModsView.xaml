@@ -572,7 +572,7 @@
             PreviewMouseRightButtonDown="MugshotItem_PreviewMouseRightButtonDown"
             ToolTip="{Binding ToolTipText}">
         
-        <Grid>
+        <Grid Background="Black">
             <Image Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True">
                 <Image.Style>
                     <Style TargetType="Image">

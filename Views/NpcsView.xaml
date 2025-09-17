@@ -377,7 +377,7 @@
                                          <i:InvokeCommandAction Command="{Binding SelectCommand}" />
                                      </i:EventTrigger>
                                  </i:Interaction.Triggers>
-                                 <Grid Background="LightGray"> <!-- This Grid is the reference for CheckBox width -->
+                                 <Grid Background="Black"> <!-- This Grid is the reference for CheckBox width -->
                                      <Image Source="{Binding MugshotSource}" Stretch="UniformToFill" ToolTip="{Binding ToolTipString}"
                                             PreviewMouseRightButtonDown="Image_PreviewMouseRightButtonDown">
                                          <Image.Style>
