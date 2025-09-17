@@ -1510,15 +1510,22 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 case NewVmCreationData newData:
                     // This code now runs on the UI thread. It's safe to create the VM here.
                     var newVm = _modSettingFromModFolderFactory(newData.ModFolderPath, newData.ModKeys, this);
-                    var additionalDirs = 
-                        newData.AllFolderPaths
-                            .Where(path => !newVm.CorrespondingFolderPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
-                            .Distinct(StringComparer.OrdinalIgnoreCase);
-                    ListExt.AddRange(newVm.CorrespondingFolderPaths, additionalDirs);
-                    var additionalModKeys = newData.ModKeys
-                        .Where(mk => !newVm.CorrespondingModKeys.Contains(mk))
-                        .Distinct();
-                    ListExt.AddRange(newVm.CorrespondingModKeys, additionalModKeys);
+                    
+                    // Replace the folder and key lists with the correctly ordered ones from the analysis.
+                    // This preserves the dependency priority (dependencies first, main mod folder last).
+                    newVm.CorrespondingFolderPaths.Clear();
+                    foreach (var path in newData.AllFolderPaths)
+                    {
+                        newVm.CorrespondingFolderPaths.Add(path);
+                    }
+
+                    newVm.CorrespondingModKeys.Clear();
+                    foreach (var modKey in newData.ModKeys)
+                    {
+                        newVm.CorrespondingModKeys.Add(modKey);
+                    }
+
+                    
                     newVm.ResourceOnlyModKeys = newData.ResourceOnlyKeys;
                     newVm.IsNewlyCreated = true;
 
@@ -2214,7 +2221,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             {
                 if (!vm.CorrespondingFolderPaths.Contains(folderPath, StringComparer.OrdinalIgnoreCase))
                 {
-                    vm.CorrespondingFolderPaths.Add(folderPath);
+                    vm.CorrespondingFolderPaths.Insert(0, folderPath);
                 }
 
                 foreach (var pluginKey in pluginsInFolder)
@@ -2222,7 +2229,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     vm.ResourceOnlyModKeys.Add(pluginKey);
                     if (!vm.CorrespondingModKeys.Contains(pluginKey))
                     {
-                        vm.CorrespondingModKeys.Add(pluginKey);
+                        vm.CorrespondingModKeys.Insert(0, pluginKey);
                     }
                 }
             }
