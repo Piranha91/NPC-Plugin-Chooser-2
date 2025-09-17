@@ -462,10 +462,15 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         // This is the key to updating the UI from a background thread.
         // We create and freeze the BitmapImage, which makes it thread-safe.
         var bitmap = new BitmapImage();
-        bitmap.BeginInit();
-        bitmap.UriSource = new Uri(path, UriKind.Absolute);
-        bitmap.CacheOption = BitmapCacheOption.OnLoad; // Releases the file lock
-        bitmap.EndInit();
+        // Load the image via a FileStream to bypass WPF's URI caching.
+        // This ensures that if the file is overwritten on disk, we load the new version.
+        using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read))
+        {
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad; // needed to release the file lock after loading
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+        }
         bitmap.Freeze(); // IMPORTANT: Makes the image cross-thread accessible
         this.MugshotSource = bitmap;
         this.ImagePath = path;
