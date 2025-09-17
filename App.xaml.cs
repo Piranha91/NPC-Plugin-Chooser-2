@@ -211,10 +211,13 @@ namespace NPC_Plugin_Chooser_2
         
         private void OnApplicationExit(object sender, ExitEventArgs e)
         {
-            // ## ADD THESE TWO LINES ##
             // Resolve the VM_Settings instance from the container
             var settingsViewModel = _container.Resolve<VM_Settings>();
             settingsViewModel.SaveSettings(); // Call the save method
+            
+            // Save the Portrait Creator output log
+            var portraitCreator = _container.Resolve<PortraitCreator>();
+            portraitCreator.SaveOutputLog();
 
             // Your existing disposal logic
             var pluginProvider = _container.Resolve<PluginProvider>();

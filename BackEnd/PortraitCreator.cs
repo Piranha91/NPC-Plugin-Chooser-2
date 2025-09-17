@@ -23,6 +23,9 @@ public class PortraitCreator
     private string _executableVersion = "0.0.0"; // Default if query fails
     private readonly SemaphoreSlim _renderSemaphore;
     private static readonly ConcurrentDictionary<(string, string), Task<bool>> _renderTasks = new();
+    
+    private static readonly ConcurrentQueue<string> _outputBuffer = new ConcurrentQueue<string>();
+    private const int MaxBufferedRuns = 2;
 
     public PortraitCreator(Settings settings, EnvironmentStateProvider environmentProvider)
     {
@@ -118,6 +121,8 @@ public class PortraitCreator
     }
 
     // Checks if an existing auto-generated mugshot is outdated.s
+    // In PortraitCreator.cs
+
     public bool NeedsRegeneration(string pngPath, string nifPath)
     {
         if (!File.Exists(pngPath)) return true;
@@ -136,71 +141,25 @@ public class PortraitCreator
 
             if (string.IsNullOrWhiteSpace(metadataJson))
             {
-                Debug.WriteLine($"No 'Parameters' metadata found in {pngPath}. Must be a manually-created mugshot.");
+                // Not an auto-generated image, so don't regenerate it.
                 return false;
             }
 
             using var doc = JsonDocument.Parse(metadataJson);
             var root = doc.RootElement;
-
-            string? version = root.GetProperty("program_version").GetString();
-            float topOffset = root.GetProperty("mugshot_offsets").GetProperty("top").GetSingle();
-            float bottomOffset = root.GetProperty("mugshot_offsets").GetProperty("bottom").GetSingle();
-            int resX = root.GetProperty("resolution_x").GetInt32();
-            int resY = root.GetProperty("resolution_y").GetInt32();
-
-            // --- Camera Mismatch Logic ---
             const float EPS = 1e-3f;
-            bool hasCamera = root.TryGetProperty("camera", out var camEl);
-            
-            // Safe float getter (works even if the JSON value is double)
-            static bool TryGetFloat(JsonElement parent, string name, out float value)
-            {
-                value = 0f;
-                if (!parent.TryGetProperty(name, out var el)) return false;
-                if (el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out var d))
-                {
-                    value = (float)d;
-                    return true;
-                }
-                return false;
-            }
-            
-            bool cameraMismatch = false;
-            if (hasCamera)
-            {
-                bool okYaw   = TryGetFloat(camEl, "yaw",   out float mYaw);
-                bool okPitch = TryGetFloat(camEl, "pitch", out float mPitch);
-                bool okX     = TryGetFloat(camEl, "pos_x", out float mX);
-                bool okY     = TryGetFloat(camEl, "pos_y", out float mY);
-                bool okZ     = TryGetFloat(camEl, "pos_z", out float mZ);
+            bool needsRegen = false;
 
-                // If any camera field is missing, treat as stale to be safe.
-                if (!(okYaw && okPitch && okX && okY && okZ))
-                {
-                    cameraMismatch = true;
-                }
-                else
-                {
-                    // Compare against your current camera settings/state.
-                    // Replace these with your actual variables if they differ.
-                    cameraMismatch =
-                        Math.Abs(mYaw   - _settings.CamYaw)   > EPS ||
-                        Math.Abs(mPitch - _settings.CamPitch) > EPS ||
-                        Math.Abs(mX     - _settings.CamX)  > EPS ||
-                        Math.Abs(mY     - _settings.CamY)  > EPS ||
-                        Math.Abs(mZ     - _settings.CamZ)  > EPS;
-                }
-            }
-            else
+            // 1. Check Program Version
+            string? pngVersion = root.GetProperty("program_version").GetString();
+            if (_settings.AutoUpdateOldMugshots && IsOlderVersion(pngVersion, _executableVersion))
             {
-                // If the old PNGs don’t have camera info, you can decide policy:
-                // treat as stale so they get regenerated when AutoUpdateStaleMugshots is on
-                cameraMismatch = true;
+                Debug.WriteLine(
+                    $"[Regen Trigger] Version mismatch. PNG: '{pngVersion}', Current: '{_executableVersion}'");
+                needsRegen = true;
             }
 
-            // Compare NIF hash
-            bool hashMismatch = false;
+            // 2. Check NIF Hash
             if (root.TryGetProperty("nif_sha256", out var hashEl) && hashEl.ValueKind == JsonValueKind.String)
             {
                 string metadataHash = hashEl.GetString() ?? "";
@@ -209,66 +168,185 @@ public class PortraitCreator
                     string currentNifHash = CalculateSha256(nifPath);
                     if (!metadataHash.Equals(currentNifHash, StringComparison.OrdinalIgnoreCase))
                     {
-                        hashMismatch = true;
+                        Debug.WriteLine(
+                            $"[Regen Trigger] NIF hash mismatch. PNG: '{metadataHash}', Current: '{currentNifHash}'");
+                        needsRegen = true;
                     }
                 }
             }
-            else { hashMismatch = true; } // If old PNG has no hash, treat as stale.
+            else
+            {
+                Debug.WriteLine("[Regen Trigger] NIF hash missing from PNG metadata.");
+                needsRegen = true;
+            }
 
-            // Compare background color
-            bool bgColorMismatch = false;
-            if (root.TryGetProperty("background_color", out var bgEl) && bgEl.ValueKind == JsonValueKind.Array && bgEl.GetArrayLength() == 3)
+            // 3. Check Background Color
+            if (root.TryGetProperty("background_color", out var bgEl) && bgEl.ValueKind == JsonValueKind.Array &&
+                bgEl.GetArrayLength() == 3)
             {
                 var currentColor = _settings.MugshotBackgroundColor;
-                if (Math.Abs(bgEl[0].GetSingle() - currentColor.R / 255.0f) > EPS ||
-                    Math.Abs(bgEl[1].GetSingle() - currentColor.G / 255.0f) > EPS ||
-                    Math.Abs(bgEl[2].GetSingle() - currentColor.B / 255.0f) > EPS)
+                var pngColor = (R: bgEl[0].GetSingle(), G: bgEl[1].GetSingle(), B: bgEl[2].GetSingle());
+                var currColorFloat = (R: currentColor.R / 255.0f, G: currentColor.G / 255.0f,
+                    B: currentColor.B / 255.0f);
+
+                if (Math.Abs(pngColor.R - currColorFloat.R) > EPS ||
+                    Math.Abs(pngColor.G - currColorFloat.G) > EPS ||
+                    Math.Abs(pngColor.B - currColorFloat.B) > EPS)
                 {
-                    bgColorMismatch = true;
+                    Debug.WriteLine(
+                        $"[Regen Trigger] Background color mismatch. PNG: ({pngColor.R:F3}, {pngColor.G:F3}, {pngColor.B:F3}), Current: ({currColorFloat.R:F3}, {currColorFloat.G:F3}, {currColorFloat.B:F3})");
+                    needsRegen = true;
                 }
             }
-            else { bgColorMismatch = true; } // If old PNG lacks color info, treat as stale.
+            else
+            {
+                Debug.WriteLine("[Regen Trigger] Background color missing from PNG metadata.");
+                needsRegen = true;
+            }
 
-            // Compare lighting configuration (whitespace-agnostic)
-            bool lightingMismatch = false;
+            // 4. Check Lighting Profile
             if (root.TryGetProperty("lighting_profile", out var lightingEl))
             {
                 try
                 {
                     JToken metaLighting = JToken.Parse(lightingEl.GetRawText());
                     JToken currentLighting = JToken.Parse(_settings.DefaultLightingJsonString);
-
                     if (!JToken.DeepEquals(metaLighting, currentLighting))
                     {
-                        lightingMismatch = true;
+                        // Convert JSON tokens to compact strings for easy comparison in the debug output
+                        string pngJson = metaLighting.ToString(Newtonsoft.Json.Formatting.None);
+                        string currentJson = currentLighting.ToString(Newtonsoft.Json.Formatting.None);
+
+                        Debug.WriteLine($"[Regen Trigger] Lighting profile mismatch.\n  PNG:     {pngJson}\n  Current: {currentJson}");
+                        needsRegen = true;
                     }
                 }
-                catch { lightingMismatch = true; } // If parsing fails for either, treat as stale.
+                catch
+                {
+                    Debug.WriteLine("[Regen Trigger] Failed to parse lighting JSON from PNG metadata.");
+                    needsRegen = true;
+                }
             }
-            else { lightingMismatch = true; } // If old PNG lacks lighting info, treat as stale.
-
-            bool isDeprecated = _settings.AutoUpdateOldMugshots && IsOlderVersion(version, _executableVersion);
-            bool isStale =
-                hashMismatch ||
-                bgColorMismatch ||
-                lightingMismatch ||
-                Math.Abs(topOffset - _settings.HeadTopOffset) > EPS ||
-                Math.Abs(bottomOffset - _settings.HeadBottomOffset) > EPS ||
-                resX != _settings.ImageXRes ||
-                resY != _settings.ImageYRes ||
-                cameraMismatch;
-
-            if ((_settings.AutoUpdateOldMugshots && isDeprecated) ||
-                (_settings.AutoUpdateStaleMugshots && isStale))
+            else
             {
-                Debug.WriteLine($"Metadata mismatch for {pngPath}. Regenerating.");
+                Debug.WriteLine("[Regen Trigger] Lighting profile missing from PNG metadata.");
+                needsRegen = true;
+            }
+
+            // 5. Check Camera Mode and Parameters
+            bool hasCamera = root.TryGetProperty("camera", out var camEl);
+            bool hasOffsets = root.TryGetProperty("mugshot_offsets", out var offsetEl);
+
+            if (_settings.SelectedCameraMode == PortraitCameraMode.Fixed)
+            {
+                if (!hasCamera)
+                {
+                    Debug.WriteLine("[Regen Trigger] Camera data missing from PNG, but current mode is Fixed.");
+                    needsRegen = true;
+                }
+                else
+                {
+                    // Check fixed camera parameters
+                    camEl.TryGetProperty("yaw", out var mYawEl);
+                    camEl.TryGetProperty("pitch", out var mPitchEl);
+                    camEl.TryGetProperty("pos_x", out var mXEl);
+                    camEl.TryGetProperty("pos_y", out var mYEl);
+                    camEl.TryGetProperty("pos_z", out var mZEl);
+
+                    float mYaw = mYawEl.GetSingle(),
+                        mPitch = mPitchEl.GetSingle(),
+                        mX = mXEl.GetSingle(),
+                        mY = mYEl.GetSingle(),
+                        mZ = mZEl.GetSingle();
+
+                    if (Math.Abs(mYaw - _settings.CamYaw) > EPS)
+                    {
+                        Debug.WriteLine(
+                            $"[Regen Trigger] Camera Yaw mismatch. PNG: {mYaw}, Current: {_settings.CamYaw}");
+                        needsRegen = true;
+                    }
+
+                    if (Math.Abs(mPitch - _settings.CamPitch) > EPS)
+                    {
+                        Debug.WriteLine(
+                            $"[Regen Trigger] Camera Pitch mismatch. PNG: {mPitch}, Current: {_settings.CamPitch}");
+                        needsRegen = true;
+                    }
+
+                    if (Math.Abs(mX - _settings.CamX) > EPS)
+                    {
+                        Debug.WriteLine($"[Regen Trigger] Camera X mismatch. PNG: {mX}, Current: {_settings.CamX}");
+                        needsRegen = true;
+                    }
+
+                    if (Math.Abs(mY - _settings.CamY) > EPS)
+                    {
+                        Debug.WriteLine($"[Regen Trigger] Camera Y mismatch. PNG: {mY}, Current: {_settings.CamY}");
+                        needsRegen = true;
+                    }
+
+                    if (Math.Abs(mZ - _settings.CamZ) > EPS)
+                    {
+                        Debug.WriteLine($"[Regen Trigger] Camera Z mismatch. PNG: {mZ}, Current: {_settings.CamZ}");
+                        needsRegen = true;
+                    }
+                }
+            }
+            else // Relative Mode
+            {
+                if (!hasOffsets)
+                {
+                    Debug.WriteLine("[Regen Trigger] Head offsets missing from PNG, but current mode is Relative.");
+                    needsRegen = true;
+                }
+                else
+                {
+                    // Check relative camera offsets
+                    float topOffset = offsetEl.GetProperty("top").GetSingle();
+                    float bottomOffset = offsetEl.GetProperty("bottom").GetSingle();
+
+                    if (Math.Abs(topOffset - _settings.HeadTopOffset) > EPS)
+                    {
+                        Debug.WriteLine(
+                            $"[Regen Trigger] Head Top Offset mismatch. PNG: {topOffset}, Current: {_settings.HeadTopOffset}");
+                        needsRegen = true;
+                    }
+
+                    if (Math.Abs(bottomOffset - _settings.HeadBottomOffset) > EPS)
+                    {
+                        Debug.WriteLine(
+                            $"[Regen Trigger] Head Bottom Offset mismatch. PNG: {bottomOffset}, Current: {_settings.HeadBottomOffset}");
+                        needsRegen = true;
+                    }
+                }
+            }
+
+            // 6. Check Resolution
+            int resX = root.GetProperty("resolution_x").GetInt32();
+            int resY = root.GetProperty("resolution_y").GetInt32();
+            if (resX != _settings.ImageXRes)
+            {
+                Debug.WriteLine($"[Regen Trigger] X Resolution mismatch. PNG: {resX}, Current: {_settings.ImageXRes}");
+                needsRegen = true;
+            }
+
+            if (resY != _settings.ImageYRes)
+            {
+                Debug.WriteLine($"[Regen Trigger] Y Resolution mismatch. PNG: {resY}, Current: {_settings.ImageYRes}");
+                needsRegen = true;
+            }
+
+            // Final decision
+            if (needsRegen && _settings.AutoUpdateStaleMugshots)
+            {
+                Debug.WriteLine($"-> Regenerating '{Path.GetFileName(pngPath)}' due to stale metadata.");
                 return true;
             }
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Could not parse metadata for {pngPath}. Regenerating. Error: {ex.Message}");
-            return true;
+            return true; // Regenerate if metadata is corrupt or unreadable
         }
 
         return false;
@@ -414,6 +492,9 @@ public class PortraitCreator
             startInfo.RedirectStandardOutput = true;
             startInfo.RedirectStandardError = true;
         }
+        
+        var processOutput = new StringBuilder();
+        processOutput.AppendLine($"--- Log for process started at {DateTime.Now:O} with args: {args.ToString()}");
 
         using var process = new Process { StartInfo = startInfo };
 
@@ -422,12 +503,20 @@ public class PortraitCreator
             // Capture standard output
             process.OutputDataReceived += (sender, e) => 
             {
-                if (e.Data != null) Debug.WriteLine($"[NPC Creator]: {e.Data}");
+                if (e.Data != null)
+                {
+                    Debug.WriteLine($"[NPC Creator]: {e.Data}");
+                    processOutput.AppendLine($"[OUT] {e.Data}"); // ## MODIFY THIS LINE ##
+                }
             };
             // Capture standard error
             process.ErrorDataReceived += (sender, e) => 
             {
-                if (e.Data != null) Debug.WriteLine($"[NPC Creator ERROR]: {e.Data}");
+                if (e.Data != null)
+                {
+                    Debug.WriteLine($"[NPC Creator ERROR]: {e.Data}");
+                    processOutput.AppendLine($"[ERR] {e.Data}"); // ## MODIFY THIS LINE ##
+                }
             };
         }
 
@@ -446,6 +535,13 @@ public class PortraitCreator
         {
             Debug.WriteLine($"[NPC Creator ERROR]: Process exited with code {process.ExitCode}.");
         }
+        
+        processOutput.AppendLine($"--- Process exited with code {process.ExitCode} ---");
+        _outputBuffer.Enqueue(processOutput.ToString());
+        while (_outputBuffer.Count > MaxBufferedRuns)
+        {
+            _outputBuffer.TryDequeue(out _);
+        }
             
         return process.ExitCode == 0;
     }
@@ -456,5 +552,40 @@ public class PortraitCreator
         using var stream = File.OpenRead(filePath);
         byte[] hash = sha256.ComputeHash(stream);
         return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+    }
+    
+    public void SaveOutputLog()
+    {
+        if (_outputBuffer.IsEmpty)
+        {
+            return;
+        }
+
+        try
+        {
+            string? executableDir = Path.GetDirectoryName(_executablePath);
+            if (executableDir == null || !Directory.Exists(executableDir))
+            {
+                Debug.WriteLine("[NPC Creator ERROR]: Cannot save output log, executable directory not found.");
+                return;
+            }
+
+            string logPath = Path.Combine(executableDir, "NPCPortraitCreatorOutput.txt");
+            var logContent = new StringBuilder();
+            logContent.AppendLine($"Log saved at {DateTime.Now:O}");
+            logContent.AppendLine("=====================================================");
+
+            while (_outputBuffer.TryDequeue(out var runOutput))
+            {
+                logContent.AppendLine(runOutput);
+                logContent.AppendLine("-----------------------------------------------------");
+            }
+
+            File.WriteAllText(logPath, logContent.ToString());
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[NPC Creator ERROR]: Failed to write output log. {ex.Message}");
+        }
     }
 }
