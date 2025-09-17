@@ -617,10 +617,11 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
     {
         try
         {
-            // --- Phase 1: Cancellable Data Gathering ---
+            // --- REVISED Phase 1: Cancellable Data Gathering ---
             var mugshotData = new List<(string ImagePath, FormKey NpcFormKey, string NpcDisplayName)>();
-            bool hasRealMugshots = false;
 
+            // 1. Pre-scan and cache all existing mugshot file paths for this mod into a lookup dictionary.
+            var existingMugshots = new Dictionary<FormKey, string>();
             var validFolders = (selectedModSetting.MugShotFolderPaths ?? Enumerable.Empty<string>())
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .Select(p => p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
@@ -628,9 +629,8 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
                 .Where(Directory.Exists)
                 .ToList();
 
-            if (selectedModSetting.HasValidMugshots && validFolders.Count > 0)
+            if (validFolders.Any())
             {
-                // This part handles real images...
                 var imageFiles = validFolders
                     .SelectMany(folder => Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories))
                     .Where(f => MugshotNameRegex.IsMatch(Path.GetFileName(f)));
@@ -638,7 +638,6 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
                 foreach (var imagePath in imageFiles)
                 {
                     if (token.IsCancellationRequested) break;
-                    // ... (rest of image parsing logic remains the same) ...
                     var fileName = Path.GetFileName(imagePath);
                     var match = MugshotNameRegex.Match(fileName);
                     if (!match.Success) continue;
@@ -648,28 +647,28 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
                     var tail6 = hexPart.Length >= 6 ? hexPart[^6..] : hexPart;
                     var formKeyString = $"{tail6}:{pluginName}";
 
-                    if (FormKey.TryFactory(formKeyString, out var npcFormKey))
+                    if (FormKey.TryFactory(formKeyString, out var npcFormKey) && !existingMugshots.ContainsKey(npcFormKey))
                     {
-                        string npcDisplayName =
-                            selectedModSetting.NpcFormKeysToDisplayName.TryGetValue(npcFormKey, out var knownName) ? knownName
-                            : (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter)
-                                ? Auxilliary.GetLogString(npcGetter, _settings.LocalizationLanguage)
-                                : "Unknown NPC (" + formKeyString + ")");
-
-                        mugshotData.Add((imagePath, npcFormKey, npcDisplayName));
-                        hasRealMugshots = true;
+                        existingMugshots[npcFormKey] = imagePath;
                     }
                 }
             }
-
             if (token.IsCancellationRequested) return;
 
-            if (!hasRealMugshots) // Fallback to placeholders (now cancellable)
+            // 2. Iterate through ALL NPCs that belong to this mod.
+            foreach (var (npcFormKey, npcDisplayName) in selectedModSetting.NpcFormKeysToDisplayName)
             {
-                foreach (var kvp in selectedModSetting.NpcFormKeysToDisplayName)
+                if (token.IsCancellationRequested) break;
+
+                // 3. For each NPC, use its real image path if it exists in our lookup, otherwise use the placeholder.
+                //    This ensures every NPC gets an entry.
+                if (existingMugshots.TryGetValue(npcFormKey, out var imagePath))
                 {
-                    if (token.IsCancellationRequested) break;
-                    mugshotData.Add((FullPlaceholderPath, kvp.Key, kvp.Value));
+                    mugshotData.Add((imagePath, npcFormKey, npcDisplayName));
+                }
+                else
+                {
+                    mugshotData.Add((FullPlaceholderPath, npcFormKey, npcDisplayName));
                 }
             }
 
