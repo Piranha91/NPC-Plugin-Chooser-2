@@ -390,6 +390,50 @@
                                              </Style>
                                          </Image.Style>
                                      </Image>
+                                     
+                                     <Image x:Name="LoadingDragonImage"
+                                        Source="/NPC Plugin Chooser 2;component/Resources/RedDragon.png"
+                                        Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        RenderTransformOrigin="0.5,0.5"
+                                        Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='50'}"
+                                        Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+                                    <Image.Style>
+                                        <Style TargetType="Image">
+                                            <Setter Property="RenderTransform">
+                                                <Setter.Value>
+                                                    <TransformGroup>
+                                                        <TranslateTransform Y="0" />
+                                                        <RotateTransform Angle="0" />
+                                                    </TransformGroup>
+                                                </Setter.Value>
+                                            </Setter>
+
+                                            <Setter Property="local:DynamicRadiusBehavior.ImageWidth" Value="{Binding ImageWidth}" />
+                                            <Setter Property="local:DynamicRadiusBehavior.ImageHeight" Value="{Binding ImageHeight}" />
+                                            <Setter Property="local:DynamicRadiusBehavior.RadiusMultiplier" Value="0.25" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                                    <DataTrigger.EnterActions>
+                                                        <BeginStoryboard x:Name="OrbitDragon_BeginStoryboard">
+                                                            <Storyboard>
+                                                                <DoubleAnimation
+                                                                    Storyboard.TargetProperty="RenderTransform.Children[1].Angle"
+                                                                    From="0" To="360" Duration="0:0:3"
+                                                                    RepeatBehavior="Forever" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </DataTrigger.EnterActions>
+                                                    <DataTrigger.ExitActions>
+                                                        <StopStoryboard BeginStoryboardName="OrbitDragon_BeginStoryboard"/>
+                                                    </DataTrigger.ExitActions>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Image.Style>
+                                </Image>
+                                     
                                      <TextBlock Text="{Binding ModName}" VerticalAlignment="Bottom" HorizontalAlignment="Center"
                                                 Background="{DynamicResource MugshotCaptionBackground}" 
                                                 Foreground="{DynamicResource MugshotCaptionForeground}" 
