@@ -74,6 +74,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     [Reactive] public bool IsShareSource { get; private set; }
     [Reactive] public bool IsSelectedByGuest { get; private set; }
     [Reactive] public string ShareSourceTooltipText { get; private set; } = string.Empty;
+    
+    public bool CanOpenModFolder => AssociatedModSetting != null && AssociatedModSetting.CorrespondingFolderPaths.Any();
+    public bool CanOpenMugshotFolder => HasMugshot;
+    public string MugshotFolderPath => HasMugshot && !string.IsNullOrEmpty(ImagePath) ? Path.GetDirectoryName(ImagePath) : string.Empty;
 
 
     // --- NEW IHasMugshotImage properties ---
@@ -108,6 +112,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     public ReactiveCommand<Unit, Unit> ShareWithNpcCommand { get; }
     public ReactiveCommand<Unit, Unit> UnshareFromNpcCommand { get; }
     public ReactiveCommand<Unit, Unit> AddToFavoritesCommand { get; }
+    public ReactiveCommand<string, Unit> OpenFolderCommand { get; }
 
 
     // --- Placeholder Image Configuration --- 
@@ -317,7 +322,9 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         AddToFavoritesCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error updating favorites: {ex.Message}"))
             .DisposeWith(Disposables);
-
+        
+        OpenFolderCommand = ReactiveCommand.Create<string>(Auxilliary.OpenFolder).DisposeWith(Disposables);
+        
         SelectCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting mod: {ex.Message}"))
             .DisposeWith(Disposables);
@@ -356,6 +363,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         JumpToModCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.Show($"Error jumping to mod: {ex.Message}"))
             .DisposeWith(Disposables);
+        OpenFolderCommand.ThrownExceptions
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening folder: {ex.Message}"))
+            .DisposeWith(Disposables);
+
 
         _consistencyProvider.NpcSelectionChanged
             .Where(args => args.NpcFormKey == _targetNpcFormKey)

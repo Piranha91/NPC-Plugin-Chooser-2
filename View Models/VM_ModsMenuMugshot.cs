@@ -78,12 +78,18 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     
     [Reactive] public bool IsLoading { get; private set; }
     [Reactive] public double LoadingIconRadiusModifier { get; set; } = 0.2;
+    
+    public VM_ModSetting ParentVMModSetting => _parentVMModSetting;
+    public bool CanOpenModFolder => _parentVMModSetting.CorrespondingFolderPaths.Any();
+    public bool CanOpenMugshotFolder => HasMugshot;
+    public string MugshotFolderPath => HasMugshot && !string.IsNullOrEmpty(ImagePath) ? Path.GetDirectoryName(ImagePath) : string.Empty;
 
     public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
     public ReactiveCommand<Unit, Unit> JumpToNpcCommand { get; }
     public ReactiveCommand<ModKey, Unit> SetNpcSourcePluginCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectSameSourcePluginWherePossibleCommand { get; }
     public ReactiveCommand<Unit, Unit> AddToFavoritesCommand { get; }
+    public ReactiveCommand<string, Unit> OpenFolderCommand { get; }
 
     // Static path for placeholder, consistent with VM_Mods
     private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
@@ -241,6 +247,8 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 (ambiguous, source) => ambiguous && source.HasValue)).DisposeWith(_disposables);
 
         AddToFavoritesCommand = ReactiveCommand.Create(ToggleFavorite).DisposeWith(_disposables);
+        
+        OpenFolderCommand = ReactiveCommand.Create<string>(Auxilliary.OpenFolder).DisposeWith(_disposables);
 
         ToggleFullScreenCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error showing image: {ex.Message}"))
@@ -254,6 +262,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 
         AddToFavoritesCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error updating favorites: {ex.Message}"))
+            .DisposeWith(_disposables);
+        OpenFolderCommand.ThrownExceptions
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening folder: {ex.Message}"))
             .DisposeWith(_disposables);
     }
 

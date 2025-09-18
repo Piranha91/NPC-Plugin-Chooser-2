@@ -16,6 +16,7 @@ using System.Text;
 using Microsoft.Extensions.Primitives;
 using Mutagen.Bethesda.Plugins.Aspects;
 using Mutagen.Bethesda.Strings;
+using NPC_Plugin_Chooser_2.Views;
 using ReactiveUI;
 
 #if NET8_0_OR_GREATER
@@ -810,6 +811,25 @@ public class Auxilliary : IDisposable
         }
 
         return canGuaranteeRegularization;
+    }
+    
+    public static void OpenFolder(string folderPath)
+    {
+        if (!string.IsNullOrEmpty(folderPath) && Directory.Exists(folderPath))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(folderPath) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                ScrollableMessageBox.ShowError($"Could not open folder '{folderPath}':\n{ex.Message}", "Error");
+            }
+        }
+        else
+        {
+            ScrollableMessageBox.ShowWarning($"The folder path '{folderPath}' could not be found.", "Path Not Found");
+        }
     }
 
 

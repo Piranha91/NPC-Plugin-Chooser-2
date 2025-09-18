@@ -29,6 +29,8 @@
         <local:AreModKeysEqualMultiConverter x:Key="AreModKeysEqualMultiConverter"/>
         <local:TupleConverter x:Key="TupleConverter"/>
         <local:OutfitOverrideStateConverter x:Key="OutfitOverrideStateConverter"/>
+        <local:IsGreaterThanOneConverter x:Key="IsGreaterThanOneConverter"/>
+        <local:PathToFolderNameConverter x:Key="PathToFolderNameConverter"/>
         <ObjectDataProvider x:Key="OutfitOverrideEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="models:OutfitOverride"/>
@@ -687,6 +689,36 @@
                                                  </Style>
                                              </MenuItem.Style>
                                          </MenuItem>
+                                         <Separator/>
+                                         <MenuItem Header="Open Mod Folder" 
+                                                   ItemsSource="{Binding AssociatedModSetting.CorrespondingFolderPaths}"
+                                                   Command="{Binding OpenFolderCommand}"
+                                                   CommandParameter="{Binding AssociatedModSetting.CorrespondingFolderPaths[0]}"
+                                                   Visibility="{Binding CanOpenModFolder, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                             <MenuItem.Style>
+                                                 <Style TargetType="MenuItem">
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding AssociatedModSetting.CorrespondingFolderPaths.Count}" Value="1">
+                                                             <Setter Property="ItemsSource" Value="{x:Null}"/>
+                                                         </DataTrigger>
+                                                         <DataTrigger Binding="{Binding AssociatedModSetting.CorrespondingFolderPaths.Count, Converter={StaticResource IsGreaterThanOneConverter}}" Value="True">
+                                                             <Setter Property="Command" Value="{x:Null}"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </MenuItem.Style>
+                                             <MenuItem.ItemContainerStyle>
+                                                 <Style TargetType="MenuItem">
+                                                     <Setter Property="Header" Value="{Binding Converter={StaticResource PathToFolderNameConverter}}"/>
+                                                     <Setter Property="Command" Value="{Binding DataContext.OpenFolderCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                                     <Setter Property="CommandParameter" Value="{Binding}"/>
+                                                 </Style>
+                                             </MenuItem.ItemContainerStyle>
+                                         </MenuItem>
+                                         <MenuItem Header="Open Mugshot Folder" 
+                                                   Command="{Binding OpenFolderCommand}"
+                                                   CommandParameter="{Binding MugshotFolderPath}"
+                                                   Visibility="{Binding CanOpenMugshotFolder, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                      </ContextMenu>
                                  </Border.ContextMenu>
                              </Border>
