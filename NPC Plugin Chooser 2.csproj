@@ -41,16 +41,32 @@
 
     <ItemGroup>
       <None Remove="Resources\No Mugshot.png" />
-      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Debug\glfw3.dll">
+      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\glfw3.dll">
         <Link>NPC Portrait Creator\glfw3.dll</Link>
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
-      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Debug\libbsarch.dll">
+      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\libbsarch.dll">
         <Link>NPC Portrait Creator\libbsarch.dll</Link>
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
-      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Debug\NPCPortraitCreator.exe">
+      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\libcrypto-3-x64.dll">
+        <Link>NPC Portrait Creator\libcrypto-3-x64.dll</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\lighting.json">
+        <Link>NPC Portrait Creator\lighting.json</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\NPCPortraitCreator.exe">
         <Link>NPC Portrait Creator\NPCPortraitCreator.exe</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\shaders\basic.frag">
+        <Link>NPC Portrait Creator\shaders\basic.frag</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\shaders\basic.vert">
+        <Link>NPC Portrait Creator\shaders\basic.vert</Link>
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
       <Content Include="..\..\NPC Portrait Creator\shaders\basic.frag">
