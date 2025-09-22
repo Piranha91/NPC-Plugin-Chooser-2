@@ -271,9 +271,21 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SelectedNpc)
-            .Select(selectedNpc => selectedNpc != null
-                ? CreateMugShotViewModels(selectedNpc, _mugshotData)
-                : new ObservableCollection<VM_NpcsMenuMugshot>())
+            // **MODIFICATION**: Make this subscription async to allow for awaiting
+            .SelectMany(async selectedNpc =>
+            {
+                var mugshotVMs = selectedNpc != null
+                    ? CreateMugShotViewModels(selectedNpc, _mugshotData)
+                    : new ObservableCollection<VM_NpcsMenuMugshot>();
+
+                if (mugshotVMs.Any())
+                {
+                    // Wait for all the new VMs to finish their initial image/dimension loading.
+                    await Task.WhenAll(mugshotVMs.Select(vm => vm.IsReady));
+                }
+            
+                return mugshotVMs;
+            })
             .ObserveOn(RxApp.MainThreadScheduler)
             .ToPropertyEx(this, x => x.CurrentNpcAppearanceMods)
             .DisposeWith(_disposables);
