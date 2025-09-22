@@ -391,7 +391,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 if (_settings.CacheFaceFinderImages && File.Exists(savePath))
                 {
                     bool isStale =
-                        await _faceFinderClient.IsCacheStaleAsync(savePath, NpcFormKey, _settings.FaceFinderApiKey);
+                        await _faceFinderClient.IsCacheStaleAsync(savePath, NpcFormKey, _parentVMModSetting.DisplayName, _settings.FaceFinderApiKey);
                     if (!isStale)
                     {
                         Debug.WriteLine($"Using cached mugshot for {NpcFormKey} from FaceFinder.");
@@ -403,7 +403,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                     }
                 }
 
-                var faceData = await _faceFinderClient.GetFaceDataAsync(NpcFormKey, _settings.FaceFinderApiKey);
+                var faceData = await _faceFinderClient.GetFaceDataAsync(NpcFormKey, _parentVMModSetting.DisplayName, _settings.FaceFinderApiKey);
                 bool downloadSuccessful = false;
                 if (faceData != null && !string.IsNullOrWhiteSpace(faceData.ImageUrl))
                 {

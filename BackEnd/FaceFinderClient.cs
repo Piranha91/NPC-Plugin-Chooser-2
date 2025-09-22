@@ -5,6 +5,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Globalization;
+using System.Net;
 using Newtonsoft.Json;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
@@ -33,7 +34,7 @@ public class FaceFinderClient
         public DateTime UpdatedAt { get; set; }
     }
 
-    public async Task<FaceFinderResult?> GetFaceDataAsync(FormKey npcFormKey, string encryptedApiKey)
+    public async Task<FaceFinderResult?> GetFaceDataAsync(FormKey npcFormKey, string modNameToFind, string encryptedApiKey)
     {
         if (string.IsNullOrWhiteSpace(encryptedApiKey)) return null;
 
@@ -50,7 +51,11 @@ public class FaceFinderClient
             return null;
         }
         
-        var requestUri = $"/api/public/npc/faces/search?formKey={npcFormKey.ID:X8}:{npcFormKey.ModKey.FileName}";
+        var formKeyValue = $"{npcFormKey.ID:X8}:{npcFormKey.ModKey.FileName}";
+        var encodedFormKey = WebUtility.UrlEncode(formKeyValue);
+        var encodedModName = WebUtility.UrlEncode(modNameToFind); // Also encode the mod name
+        var requestUri = $"/api/public/npc/faces/search?formKey={encodedFormKey}&search={encodedModName}";
+        
         var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
         request.Headers.Add("X-API-Key", plainTextApiKey);
 
@@ -85,7 +90,7 @@ public class FaceFinderClient
         }
     }
 
-    public async Task<bool> IsCacheStaleAsync(string imagePath, FormKey npcFormKey, string encryptedApiKey)
+    public async Task<bool> IsCacheStaleAsync(string imagePath, FormKey npcFormKey, string modNameToFind, string encryptedApiKey)
     {
         var metadataPath = imagePath + MetadataFileExtension;
         if (!File.Exists(metadataPath)) return true; // No metadata means it's stale/invalid
@@ -97,7 +102,7 @@ public class FaceFinderClient
 
             if (metadata == null || metadata.Source != "FaceFinder") return true; // Not our file
 
-            var latestData = await GetFaceDataAsync(npcFormKey, encryptedApiKey);
+            var latestData = await GetFaceDataAsync(npcFormKey, modNameToFind, encryptedApiKey);
             if (latestData == null) return false; // API failed, can't check, assume not stale
 
             return latestData.UpdatedAt > metadata.UpdatedAt; // Stale if server version is newer
