@@ -96,6 +96,8 @@ public class Settings
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(false)]
     public bool UseFaceFinderFallback { get; set; } = false;
     public string FaceFinderApiKey { get; set; } = string.Empty; // User must provide this
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(true)]
+    public bool CacheFaceFinderImages { get; set; } = true;
 
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(false)]
     public bool UsePortraitCreatorFallback { get; set; } = false;

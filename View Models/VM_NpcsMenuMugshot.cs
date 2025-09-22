@@ -754,18 +754,38 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         // --- 1. Fallback to FaceFinder API ---
         if (_settings.UseFaceFinderFallback)
         {
-            var imageUrl = await _faceFinderClient.GetFaceImageUrlAsync(SourceNpcFormKey, _settings.FaceFinderApiKey);
+            // Check cache first if enabled
+            if (_settings.CacheFaceFinderImages && File.Exists(savePath))
+            {
+                bool isStale = await _faceFinderClient.IsCacheStaleAsync(savePath, SourceNpcFormKey, _settings.FaceFinderApiKey);
+                if (!isStale)
+                {
+                    Debug.WriteLine($"Using cached mugshot for {SourceNpcFormKey} from FaceFinder.");
+                    SetImageSource(savePath);
+                    _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, savePath);
+                    await Application.Current.Dispatcher.InvokeAsync(() => AssociatedModSetting.HasValidMugshots = true);
+                    return; // Exit early, cached image is valid
+                }
+            }
+
+            var faceData = await _faceFinderClient.GetFaceDataAsync(SourceNpcFormKey, _settings.FaceFinderApiKey);
             bool downloadSuccessful = false;
-            if (!string.IsNullOrWhiteSpace(imageUrl))
+            if (faceData != null && !string.IsNullOrWhiteSpace(faceData.ImageUrl))
             {
                 try
                 {
                     using var client = new HttpClient();
-                    var imageData = await client.GetByteArrayAsync(imageUrl, token);
+                    var imageData = await client.GetByteArrayAsync(faceData.ImageUrl, token);
                     Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
                     await File.WriteAllBytesAsync(savePath, imageData, token);
                     Debug.WriteLine($"Downloaded mugshot for {SourceNpcFormKey} from FaceFinder.");
                     downloadSuccessful = true;
+
+                    // Write metadata if caching is enabled
+                    if (_settings.CacheFaceFinderImages)
+                    {
+                        await _faceFinderClient.WriteMetadataAsync(savePath, faceData);
+                    }
                 }
                 catch (Exception ex)
                 {

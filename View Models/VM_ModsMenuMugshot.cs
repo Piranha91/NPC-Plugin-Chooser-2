@@ -387,36 +387,59 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             // --- 2. Fallback to FaceFinder API ---
             if (_settings.UseFaceFinderFallback)
             {
-                var imageUrl = await _faceFinderClient.GetFaceImageUrlAsync(NpcFormKey, _settings.FaceFinderApiKey);
+                // Check cache first if enabled
+                if (_settings.CacheFaceFinderImages && File.Exists(savePath))
+                {
+                    bool isStale =
+                        await _faceFinderClient.IsCacheStaleAsync(savePath, NpcFormKey, _settings.FaceFinderApiKey);
+                    if (!isStale)
+                    {
+                        Debug.WriteLine($"Using cached mugshot for {NpcFormKey} from FaceFinder.");
+                        SetImageSource(savePath, isPlaceholder: false);
+                        _npcSelectionBar.UpdateMugshotCache(this.NpcFormKey, _parentVMModSetting.DisplayName, savePath);
+                        await Application.Current.Dispatcher.InvokeAsync(() =>
+                            _parentVMModSetting.HasValidMugshots = true);
+                        return; // Exit early
+                    }
+                }
+
+                var faceData = await _faceFinderClient.GetFaceDataAsync(NpcFormKey, _settings.FaceFinderApiKey);
                 bool downloadSuccessful = false;
-                if (!string.IsNullOrWhiteSpace(imageUrl))
+                if (faceData != null && !string.IsNullOrWhiteSpace(faceData.ImageUrl))
                 {
                     try
                     {
                         using var client = new HttpClient();
-                        var imageData = await client.GetByteArrayAsync(imageUrl);
-                        Directory.CreateDirectory(Path.GetDirectoryName(savePath));
+                        var imageData = await client.GetByteArrayAsync(faceData.ImageUrl);
+                        Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
                         await File.WriteAllBytesAsync(savePath, imageData);
                         Debug.WriteLine($"Downloaded mugshot for {NpcFormKey} from FaceFinder.");
                         downloadSuccessful = true;
+
+                        // Write metadata if caching is enabled
+                        if (_settings.CacheFaceFinderImages)
+                        {
+                            await _faceFinderClient.WriteMetadataAsync(savePath, faceData);
+                        }
                     }
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"Failed to download from FaceFinder for {NpcFormKey}: {ex.Message}");
                     }
                 }
-                if (downloadSuccessful) // Or if (generationSuccessful) for the second block
-                {
-                    // This is safe because it freezes the bitmap before assigning it
-                    SetImageSource(savePath, isPlaceholder: false);
 
-                    // Dispatch the property and collection changes to the UI thread
+                if (downloadSuccessful)
+                {
+                    SetImageSource(savePath, isPlaceholder: false);
+                    _npcSelectionBar.UpdateMugshotCache(this.NpcFormKey, _parentVMModSetting.DisplayName, savePath);
                     await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         _parentVMModSetting.HasValidMugshots = true;
-                        if (!_parentVMModSetting.MugShotFolderPaths.Contains(saveFolder))
+                        if (!_parentVMModSetting.MugShotFolderPaths.Contains(
+                                Path.GetDirectoryName(Path.GetDirectoryName(savePath))))
                         {
-                            _parentVMModSetting.MugShotFolderPaths.Add(saveFolder);
+                            _parentVMModSetting.MugShotFolderPaths.Add(
+                                Path.GetDirectoryName(Path.GetDirectoryName(savePath))!);
                         }
                     });
                     return;

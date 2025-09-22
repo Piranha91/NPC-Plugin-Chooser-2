@@ -1,68 +1,127 @@
-﻿using System.Diagnostics;
+﻿// Path: NPC_Plugin_Chooser_2/BackEnd/FaceFinderClient.cs
+
+using System.Diagnostics;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Globalization;
+using Newtonsoft.Json;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text.Json;
 using System.Threading.Tasks;
 using Mutagen.Bethesda.Plugins;
+
+// Represents the data returned from a successful API call
+public class FaceFinderResult
+{
+    public string? ImageUrl { get; init; }
+    public DateTime UpdatedAt { get; init; }
+}
 
 public class FaceFinderClient
 {
     private static readonly HttpClient _httpClient = new();
     private const string ApiBaseUrl = "https://npcfacefinder.com/";
+    private const string MetadataFileExtension = ".ffmeta.json";
 
-    public async Task<string?> GetFaceImageUrlAsync(FormKey npcFormKey, string encryptedApiKey)
+    // Internal class for serializing metadata to a sidecar file
+    private class FaceFinderMetadata
+    {
+        public string Source { get; set; } = "FaceFinder";
+        public DateTime UpdatedAt { get; set; }
+    }
+
+    public async Task<FaceFinderResult?> GetFaceDataAsync(FormKey npcFormKey, string encryptedApiKey)
     {
         if (string.IsNullOrWhiteSpace(encryptedApiKey)) return null;
 
         string plainTextApiKey;
         try
         {
-            // 1. Decode the Base64 string to get the encrypted byte array.
             byte[] encryptedBytes = Convert.FromBase64String(encryptedApiKey);
-
-            // 2. Decrypt the data. This will only work for the user who encrypted it on the same machine.
-            byte[] apiBytes = ProtectedData.Unprotect(
-                encryptedBytes,
-                null, // Optional entropy must match what was used for protection
-                DataProtectionScope.CurrentUser);
-            
+            byte[] apiBytes = ProtectedData.Unprotect(encryptedBytes, null, DataProtectionScope.CurrentUser);
             plainTextApiKey = Encoding.UTF8.GetString(apiBytes);
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Failed to decrypt FaceFinder API key: {ex.Message}");
-            return null; // Don't proceed if decryption fails.
+            return null;
         }
         
-        // 3. Use the decrypted key for the request.
-        var requestUri = $"/api/public/npc/faces/search?formKey={npcFormKey.ID:X6}:{npcFormKey.ModKey.FileName}";
+        var requestUri = $"/api/public/npc/faces/search?formKey={npcFormKey.ID:X8}:{npcFormKey.ModKey.FileName}";
         var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
         request.Headers.Add("X-API-Key", plainTextApiKey);
 
         try
         {
             var response = await _httpClient.SendAsync(request);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode) return null;
 
             var content = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(content);
+            
+            // Using Newtonsoft.Json to easily parse the structure
+            var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
+            var firstResult = results?.FirstOrDefault();
 
-            var firstResult = doc.RootElement.EnumerateArray().FirstOrDefault();
-            if (firstResult.TryGetProperty("images", out var images) && images.TryGetProperty("full", out var fullImage))
+            if (firstResult == null) return null;
+
+            string? imageUrl = firstResult.images?.full;
+            string? updatedAtStr = firstResult.updated_at;
+
+            if (string.IsNullOrWhiteSpace(imageUrl) || string.IsNullOrWhiteSpace(updatedAtStr) ||
+                !DateTime.TryParse(updatedAtStr, null, DateTimeStyles.RoundtripKind, out var updatedAt))
             {
-                return fullImage.GetString();
+                return null;
             }
+
+            return new FaceFinderResult { ImageUrl = imageUrl, UpdatedAt = updatedAt };
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"FaceFinder API error for {npcFormKey}: {ex.Message}");
             return null;
         }
-        return null;
+    }
+
+    public async Task<bool> IsCacheStaleAsync(string imagePath, FormKey npcFormKey, string encryptedApiKey)
+    {
+        var metadataPath = imagePath + MetadataFileExtension;
+        if (!File.Exists(metadataPath)) return true; // No metadata means it's stale/invalid
+
+        try
+        {
+            var metadataJson = await File.ReadAllTextAsync(metadataPath);
+            var metadata = JsonConvert.DeserializeObject<FaceFinderMetadata>(metadataJson);
+
+            if (metadata == null || metadata.Source != "FaceFinder") return true; // Not our file
+
+            var latestData = await GetFaceDataAsync(npcFormKey, encryptedApiKey);
+            if (latestData == null) return false; // API failed, can't check, assume not stale
+
+            return latestData.UpdatedAt > metadata.UpdatedAt; // Stale if server version is newer
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error checking cache staleness for {imagePath}: {ex.Message}");
+            return true; // Treat errors as stale to force a re-download
+        }
+    }
+
+    public async Task WriteMetadataAsync(string imagePath, FaceFinderResult result)
+    {
+        var metadataPath = imagePath + MetadataFileExtension;
+        var metadata = new FaceFinderMetadata { UpdatedAt = result.UpdatedAt };
+        
+        try
+        {
+            var metadataJson = JsonConvert.SerializeObject(metadata, Formatting.Indented);
+            await File.WriteAllTextAsync(metadataPath, metadataJson);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to write FaceFinder metadata for {imagePath}: {ex.Message}");
+        }
     }
 }

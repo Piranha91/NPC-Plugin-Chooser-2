@@ -54,6 +54,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public bool IsFaceFinderAvailable { get; }
     [Reactive] public bool UseFaceFinderFallback { get; set; }
     [Reactive] public bool IsApiKeySet { get; private set; }
+    [Reactive] public bool CacheFaceFinderImages { get; set; } 
     [Reactive] public bool UsePortraitCreatorFallback { get; set; }
     [Reactive] public int MaxParallelPortraitRenders { get; set; }
     [Reactive] public SolidColorBrush MugshotBackgroundColor { get; set; }
@@ -226,6 +227,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         // --- END TEMPORARY FOR DEBUGGING
         
         UseFaceFinderFallback = _model.UseFaceFinderFallback;
+        CacheFaceFinderImages = _model.CacheFaceFinderImages;
         UsePortraitCreatorFallback = _model.UsePortraitCreatorFallback;
         MaxParallelPortraitRenders = _model.MaxParallelPortraitRenders;
 
@@ -324,6 +326,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         // --- NEW: Subscriptions for Mugshot Settings ---
         this.WhenAnyValue(x => x.UseFaceFinderFallback).Skip(1)
             .Subscribe(b => _model.UseFaceFinderFallback = b).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.CacheFaceFinderImages).Skip(1) 
+            .Subscribe(b => _model.CacheFaceFinderImages = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.UsePortraitCreatorFallback).Skip(1)
             .Subscribe(b => _model.UsePortraitCreatorFallback = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MaxParallelPortraitRenders).Skip(1)

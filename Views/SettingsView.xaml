@@ -155,6 +155,12 @@
                                        VerticalAlignment="Center"
                                        Visibility="{Binding IsApiKeySet, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                         </Grid>
+                        
+                        <CheckBox Content="Cache downloaded images locally"
+                                  IsChecked="{Binding CacheFaceFinderImages, Mode=TwoWay}"
+                                  Margin="0,10,0,0"
+                                  ToolTip="If checked, images downloaded from FaceFinder are saved and checked for updates. If unchecked, images are downloaded fresh every time."
+                                  Visibility="{Binding UseFaceFinderFallback, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     </StackPanel>
                     
                     <CheckBox Content="Auto-Generate missing mugshots using NPC Portrait Creator"
