@@ -2838,13 +2838,6 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         Debug.WriteLine($"Mugshot cache updated for {npcFormKey} with mod '{modName}'.");
-
-        // CRITICAL: If the currently selected NPC is the one whose mugshot was just updated,
-        // we need to refresh the view to show the new image.
-        if (SelectedNpc != null && SelectedNpc.NpcFormKey.Equals(npcFormKey))
-        {
-            RefreshCurrentNpcAppearanceSources();
-        }
     }
 
     // --- Disposal ---
