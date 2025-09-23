@@ -16,6 +16,8 @@
     <SolidColorBrush x:Key="MugshotCaptionBackground" Color="#AAF0F0F0"/>
     <SolidColorBrush x:Key="MugshotCaptionForeground" Color="#000000"/>
     <SolidColorBrush x:Key="MugshotCaptionSecondaryForeground" Color="#555555"/>
+    <SolidColorBrush x:Key="LinkManualColor" Color="{Binding Source={StaticResource HighlightAlteredText}, Path=Color}"/>
+    <SolidColorBrush x:Key="LinkUsedColor" Color="{Binding Source={StaticResource DisabledForeground}, Path=Color}"/>
     
     <Style TargetType="Control">
         <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>

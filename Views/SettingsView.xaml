@@ -161,6 +161,13 @@
                                   Margin="0,10,0,0"
                                   ToolTip="If checked, images downloaded from FaceFinder are saved and checked for updates. If unchecked, images are downloaded fresh every time."
                                   Visibility="{Binding UseFaceFinderFallback, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                        
+                        <Button Content="Link Mod Names to FaceFinder"
+                                Command="{Binding OpenModLinkerCommand}"
+                                ToolTip="Manually link local mod names to their corresponding entry on the FaceFinder server."
+                                Margin="0,10,0,0"
+                                HorizontalAlignment="Left"
+                                Visibility="{Binding UseFaceFinderFallback, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     </StackPanel>
                     
                     <CheckBox Content="Auto-Generate missing mugshots using NPC Portrait Creator"

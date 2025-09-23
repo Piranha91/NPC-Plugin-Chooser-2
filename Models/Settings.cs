@@ -98,6 +98,7 @@ public class Settings
     public string FaceFinderApiKey { get; set; } = string.Empty; // User must provide this
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(true)]
     public bool CacheFaceFinderImages { get; set; } = true;
+    public Dictionary<string, List<string>> FaceFinderModNameMappings { get; set; } = new();
 
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(false)]
     public bool UsePortraitCreatorFallback { get; set; } = false;

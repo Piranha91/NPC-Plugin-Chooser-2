@@ -7,6 +7,7 @@ using System.Text;
 using System.Globalization;
 using System.Net;
 using Newtonsoft.Json;
+using NPC_Plugin_Chooser_2.Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -23,15 +24,66 @@ public class FaceFinderResult
 
 public class FaceFinderClient
 {
+    private readonly Settings _settings;
     private static readonly HttpClient _httpClient = new();
     private const string ApiBaseUrl = "https://npcfacefinder.com/";
     private const string MetadataFileExtension = ".ffmeta.json";
+    
+    public FaceFinderClient(Settings settings)
+    {
+        _settings = settings;
+    }
 
     // Internal class for serializing metadata to a sidecar file
     private class FaceFinderMetadata
     {
         public string Source { get; set; } = "FaceFinder";
         public DateTime UpdatedAt { get; set; }
+    }
+    
+    public async Task<List<string>> GetAllModNamesAsync(string encryptedApiKey)
+    {
+        var allModNames = new List<string>();
+        if (string.IsNullOrWhiteSpace(encryptedApiKey)) return allModNames;
+
+        string plainTextApiKey;
+        try
+        {
+            byte[] encryptedBytes = Convert.FromBase64String(encryptedApiKey);
+            byte[] apiBytes = ProtectedData.Unprotect(encryptedBytes, null, DataProtectionScope.CurrentUser);
+            plainTextApiKey = Encoding.UTF8.GetString(apiBytes);
+        }
+        catch (Exception ex) {
+            Debug.WriteLine($"Failed to decrypt FaceFinder API key for mod list: {ex.Message}");
+            return allModNames;
+        }
+
+        int currentPage = 1;
+        while (true)
+        {
+            var requestUri = $"/api/public/mods/search?page={currentPage}";
+            var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
+            request.Headers.Add("X-API-Key", plainTextApiKey);
+
+            try
+            {
+                var response = await _httpClient.SendAsync(request);
+                if (!response.IsSuccessStatusCode) break;
+
+                var content = await response.Content.ReadAsStringAsync();
+                var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
+
+                if (results == null || !results.Any()) break; // No more pages
+
+                allModNames.AddRange(results.Select(r => (string)r.name));
+                currentPage++;
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"FaceFinder API error getting mod list on page {currentPage}: {ex.Message}");
+                break;
+            }
+        }
+        return allModNames.OrderBy(name => name).ToList();
     }
 
     public async Task<FaceFinderResult?> GetFaceDataAsync(FormKey npcFormKey, string modNameToFind, string encryptedApiKey)
@@ -51,9 +103,16 @@ public class FaceFinderClient
             return null;
         }
         
+        string faceFinderModName = modNameToFind;
+        if (_settings.FaceFinderModNameMappings.TryGetValue(modNameToFind, out var mappedNames) && mappedNames.LastOrDefault() is { } lastMappedName)
+        {
+            faceFinderModName = lastMappedName;
+            Debug.WriteLine($"Remapped local mod '{modNameToFind}' to FaceFinder mod '{faceFinderModName}'");
+        }
+        
         var formKeyValue = $"{npcFormKey.ID:X8}:{npcFormKey.ModKey.FileName}";
         var encodedFormKey = WebUtility.UrlEncode(formKeyValue);
-        var encodedModName = WebUtility.UrlEncode(modNameToFind); // Also encode the mod name
+        var encodedModName = WebUtility.UrlEncode(faceFinderModName); 
         var requestUri = $"/api/public/npc/faces/search?formKey={encodedFormKey}&search={encodedModName}";
         
         var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
@@ -112,8 +171,14 @@ public class FaceFinderClient
                 // The metadata is invalid or from another source. Treat as a manual file.
                 return false;
             }
+            
+            string faceFinderModName = modNameToFind;
+            if (_settings.FaceFinderModNameMappings.TryGetValue(modNameToFind, out var mappedNames) && mappedNames.LastOrDefault() is { } lastMappedName)
+            {
+                faceFinderModName = lastMappedName;
+            }
 
-            var latestData = await GetFaceDataAsync(npcFormKey, modNameToFind, encryptedApiKey);
+            var latestData = await GetFaceDataAsync(npcFormKey, faceFinderModName, encryptedApiKey);
             if (latestData == null)
             {
                 // If the API fails, we can't check for an update.

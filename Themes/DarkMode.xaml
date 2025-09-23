@@ -17,6 +17,9 @@
     <SolidColorBrush x:Key="MugshotCaptionForeground" Color="#F1F1F1"/>
     <SolidColorBrush x:Key="MugshotCaptionSecondaryForeground" Color="#AAAAAA"/>
     <SolidColorBrush x:Key="ScrollBarThumbBackground" Color="#686868"/>
+    <SolidColorBrush x:Key="LinkAutoColor" Color="LightGreen"/>
+    <SolidColorBrush x:Key="LinkManualColor" Color="{Binding Source={StaticResource HighlightAlteredText}, Path=Color}"/>
+    <SolidColorBrush x:Key="LinkUsedColor" Color="{Binding Source={StaticResource DisabledForeground}, Path=Color}"/>
     
     <Style TargetType="Control">
         <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>

@@ -1,0 +1,137 @@
+﻿<Window x:Class="NPC_Plugin_Chooser_2.Views.ModFaceFinderLinkerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+        xmlns:dd="urn:gong-wpf-dragdrop"
+        xmlns:views="clr-namespace:NPC_Plugin_Chooser_2.Views"
+        xmlns:themes="clr-namespace:NPC_Plugin_Chooser_2.Themes"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        mc:Ignorable="d"
+        Title="Link Local Mods to FaceFinder" Height="600" Width="800"
+     
+   d:DataContext="{d:DesignInstance vm:VM_ModFaceFinderLinker}"
+        Style="{StaticResource ThemedWindowStyle}">
+    
+    <Window.Resources>
+        <views:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </Window.Resources>
+    
+    <i:Interaction.Behaviors>
+        <themes:TitleBarThemingBehavior />
+    </i:Interaction.Behaviors>
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+      
+  </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,10">
+            Drag a mod from the FaceFinder list (left) and drop it onto your corresponding local mod (right) to create a link.
+This tells the program to use the mugshots from the selected FaceFinder entry for your local mod.
+</TextBlock>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+           <GroupBox Grid.Column="0" Header="FaceFinder Mods" Margin="0,0,5,0">
+                <ListBox ItemsSource="{Binding 
+FaceFinderMods}"
+                         dd:DragDrop.IsDragSource="True">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Name}" 
+ToolTip="{Binding TooltipText}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                              
+          <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsLinked}" 
+Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource LinkUsedColor}"/>
+                                            </DataTrigger>
+     
+                                   </Style.Triggers>
+                                    </Style>
+                             
+   </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+         
+   </GroupBox>
+
+            <GroupBox Grid.Column="1" Header="Your Local Mods" Margin="5,0,0,0">
+                <ListBox ItemsSource="{Binding LocalMods}"
+                         dd:DragDrop.IsDropTarget="True"
+                         dd:DragDrop.DropHandler="{Binding}">
+            
+        <ListBox.ItemTemplate>
+    <DataTemplate>
+        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3" Margin="2" Padding="5"
+                ToolTip="{Binding TooltipText}">
+            <StackPanel>
+                <TextBlock Text="{Binding LocalName}" FontWeight="Bold" Foreground="{DynamicResource PrimaryForeground}"/>
+
+                <ItemsControl ItemsSource="{Binding Links}" Margin="15,2,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="{Binding FaceFinderName}" FontStyle="Italic" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding State}" Value="Automatic">
+                                                    <Setter Property="Foreground" Value="{DynamicResource LinkAutoColor}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Manual">
+                                                    <Setter Property="Foreground" Value="{DynamicResource LinkManualColor}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <Button Grid.Column="1" Content="x"
+                                        Command="{Binding DataContext.UnlinkCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}"
+                                        FontWeight="Bold" Foreground="Red" Cursor="Hand" Padding="5,0" Margin="10,0,0,0"
+                                        VerticalAlignment="Center">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+    </DataTemplate>
+</ListBox.ItemTemplate>
+                </ListBox>
+            </GroupBox>
+        </Grid>
+        
+        <ProgressBar IsIndeterminate="True" VerticalAlignment="Center"
+                     Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+ 
+   </Grid>
+</Window>

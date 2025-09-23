@@ -163,6 +163,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public ReactiveCommand<bool, Unit> UpdateEasyNpcProfileCommand { get; } // Takes bool parameter
     public ReactiveCommand<string, Unit> RemoveCachedModCommand { get; }
     public ReactiveCommand<string, Unit> RescanCachedModCommand { get; }
+    public ReactiveCommand<Unit, Unit> OpenModLinkerCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectBackgroundColorCommand { get; }
 
     public VM_Settings(
@@ -314,6 +315,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         RescanCachedModCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Failed to re-scan mod: {ex.Message}"))
             .DisposeWith(_disposables);
+        OpenModLinkerCommand = ReactiveCommand.Create(OpenModLinkerWindow);
         SelectBackgroundColorCommand = ReactiveCommand.Create(SelectBackgroundColor).DisposeWith(_disposables);
 
 
@@ -974,6 +976,16 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             ScrollableMessageBox.ShowError($"Could not secure the API key: {ExceptionLogger.GetExceptionStack(ex)}");
             IsApiKeySet = false;
         }
+    }
+    
+    private void OpenModLinkerWindow()
+    {
+        var linkerViewModel = new VM_ModFaceFinderLinker(_model, new FaceFinderClient(_model), _lazyModListVM.Value);
+        var linkerView = new ModFaceFinderLinkerWindow
+        {
+            DataContext = linkerViewModel
+        };
+        linkerView.ShowDialog();
     }
 
 
