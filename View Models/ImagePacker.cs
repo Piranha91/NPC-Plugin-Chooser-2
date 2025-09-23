@@ -31,8 +31,7 @@ public class ImagePacker
         CancellationToken token = default)
     {
         var visibleImages = imagesToPackCollection
-            .Where(x => x.IsVisible && x.OriginalDipWidth > 0 && x.OriginalDipHeight > 0 &&
-                        !string.IsNullOrEmpty(x.ImagePath) && File.Exists(x.ImagePath))
+            .Where(x => x.IsVisible && x.OriginalDipWidth > 0 && x.OriginalDipHeight > 0)
             .ToList();
 
         if (!visibleImages.Any())
