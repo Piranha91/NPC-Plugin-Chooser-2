@@ -28,7 +28,7 @@
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,10">
-            Drag a mod from the FaceFinder list (left) and drop it onto your corresponding local mod (right) to create a link. This tells the program to use the mugshots from the selected FaceFinder entry for your local mod.
+            Drag a mod from the FaceFinder list (left) and drop it onto your corresponding local mod (right) to create a link.
         </TextBlock>
 
         <Grid Grid.Row="1">
