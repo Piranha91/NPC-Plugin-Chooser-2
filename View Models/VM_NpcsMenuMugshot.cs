@@ -942,22 +942,34 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
         if (sourceItem == null || sourceItem == this) return;
 
+        // --- NEW: Allow linking a FaceFinder-only mugshot to a local mod ---
+        bool sourceIsFaceFinderOnly = sourceItem.AssociatedModSetting == null && sourceItem.HasMugshot;
+        bool targetIsLocalMod = this.AssociatedModSetting != null;
+        bool sourceIsLocalMod = sourceItem.AssociatedModSetting != null;
+        bool targetIsFaceFinderOnly = this.AssociatedModSetting == null && this.HasMugshot;
+
+        if ((sourceIsFaceFinderOnly && targetIsLocalMod) || (targetIsFaceFinderOnly && sourceIsLocalMod))
+        {
+            dropInfo.DropTargetAdorner = DropTargetAdorners.Highlight;
+            dropInfo.Effects = DragDropEffects.Move;
+            return;
+        }
+        
+        // --- Existing Logic for other D&D scenarios ---
         bool sourceIsRealMugshotVm = sourceItem.HasMugshot;
         bool targetIsRealMugshotVm = this.HasMugshot;
-
-        // NEW: Allow dropping a real mugshot onto another real mugshot.
+        
         if (sourceIsRealMugshotVm && targetIsRealMugshotVm)
         {
             dropInfo.DropTargetAdorner = DropTargetAdorners.Highlight;
-            dropInfo.Effects = DragDropEffects.Move; // Using Move effect to signify an action
+            dropInfo.Effects = DragDropEffects.Move;
             return;
         }
 
-        // Original case: Allow dropping between a real mugshot and a placeholder.
         if (!((sourceIsRealMugshotVm && !targetIsRealMugshotVm) ||
               (!sourceIsRealMugshotVm && targetIsRealMugshotVm)))
         {
-            return; // Not a valid pair (e.g., two placeholders)
+            return;
         }
 
         var mugshotVmApp = sourceIsRealMugshotVm ? sourceItem : this;
@@ -980,10 +992,45 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         }
     }
 
+
     void IDropTarget.Drop(IDropInfo dropInfo)
     {
         var sourceItem = dropInfo.Data as VM_NpcsMenuMugshot;
         if (sourceItem == null || sourceItem == this) return;
+        
+        // --- NEW: Handle linking a FaceFinder-only mugshot to a local mod ---
+        var faceFinderVm = sourceItem.AssociatedModSetting == null && sourceItem.HasMugshot ? sourceItem : (this.AssociatedModSetting == null && this.HasMugshot ? this : null);
+        var localVm = sourceItem.AssociatedModSetting != null ? sourceItem : (this.AssociatedModSetting != null ? this : null);
+
+        var sb = new StringBuilder();
+        string imagePath = @"Resources\Dragon Drop.png";
+        
+        if (faceFinderVm != null && localVm != null && localVm.AssociatedModSetting != null)
+        {
+            var serverModName = faceFinderVm.ModName;
+            var localModName = localVm.AssociatedModSetting.DisplayName;
+
+            if (serverModName.Equals(localModName, StringComparison.OrdinalIgnoreCase)) return;
+            
+            sb.AppendLine($"Link the server mod '{serverModName}' to your local mod '{localModName}'?");
+            sb.AppendLine($"\nFuture searches for '{localModName}' will use the server name to find mugshots.");
+
+            if (ScrollableMessageBox.Confirm(sb.ToString(), "Confirm FaceFinder Link", displayImagePath: imagePath))
+            {
+                if (!_settings.FaceFinderModNameMappings.TryGetValue(localModName, out var mappings))
+                {
+                    mappings = new List<string>();
+                    _settings.FaceFinderModNameMappings[localModName] = mappings;
+                }
+                if (!mappings.Contains(serverModName, StringComparer.OrdinalIgnoreCase))
+                {
+                    mappings.Add(serverModName);
+                    Debug.WriteLine($"Linked server mod '{serverModName}' to local mod '{localModName}'.");
+                    _vmNpcSelectionBar?.RefreshCurrentNpcAppearanceSources();
+                }
+            }
+            return; // Exit after handling this case
+        }
 
         bool sourceIsRealMugshotVm = sourceItem.HasMugshot;
         bool targetIsRealMugshotVm = this.HasMugshot;
@@ -1021,7 +1068,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             return;
         }
 
-        var sb = new StringBuilder();
+        sb = new StringBuilder();
         sb.AppendLine(
             $"Are you sure you want to associate the Mugshots from [{mugshotSourceModSetting.DisplayName}] with the Mod Folder(s) from [{placeholderTargetModSetting.DisplayName}]?");
         bool mugshotProviderHasGameDataFolders = mugshotSourceModSetting.CorrespondingFolderPaths.Any();
@@ -1037,8 +1084,6 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 $"\n[{placeholderTargetModSetting.DisplayName}] will take over the mugshots from [{mugshotSourceModSetting.DisplayName}].");
             sb.AppendLine($"The separate entry for [{mugshotSourceModSetting.DisplayName}] will be removed.");
         }
-
-        string imagePath = @"Resources\Dragon Drop.png";
 
         if (ScrollableMessageBox.Confirm(
                 message: sb.ToString(),
