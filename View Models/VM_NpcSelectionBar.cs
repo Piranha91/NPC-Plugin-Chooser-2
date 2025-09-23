@@ -51,6 +51,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private readonly NpcConsistencyProvider _consistencyProvider;
     private readonly NpcDescriptionProvider _descriptionProvider;
     private readonly Auxilliary _auxilliary;
+    private readonly FaceFinderClient _faceFinderClient;
     private readonly CompositeDisposable _disposables = new();
     private readonly Lazy<VM_Mods> _lazyModsVm;
     private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
@@ -190,6 +191,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         Auxilliary auxilliary,
         NpcConsistencyProvider consistencyProvider,
         NpcDescriptionProvider descriptionProvider,
+        FaceFinderClient faceFinderClient,
         Lazy<VM_Mods> lazyModsVm,
         Lazy<VM_MainWindow> lazyMainWindowVm,
         AppearanceModFactory appearanceModFactory,
@@ -200,6 +202,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         _auxilliary = auxilliary;
         _consistencyProvider = consistencyProvider;
         _descriptionProvider = descriptionProvider;
+        _faceFinderClient = faceFinderClient;
         _lazyModsVm = lazyModsVm;
         _lazyMainWindowVm = lazyMainWindowVm;
         _appearanceModFactory = appearanceModFactory;
@@ -275,7 +278,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .SelectMany(async selectedNpc =>
             {
                 var mugshotVMs = selectedNpc != null
-                    ? CreateMugShotViewModels(selectedNpc, _mugshotData)
+                    ? await CreateMugShotViewModelsAsync(selectedNpc, _mugshotData)
                     : new ObservableCollection<VM_NpcsMenuMugshot>();
 
                 if (mugshotVMs.Any())
@@ -1939,7 +1942,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
     }
     
-    private ObservableCollection<VM_NpcsMenuMugshot> CreateMugShotViewModels(VM_NpcsMenuSelection selectionVm,
+    private async Task<ObservableCollection<VM_NpcsMenuMugshot>> CreateMugShotViewModelsAsync(VM_NpcsMenuSelection selectionVm,
         Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData)
     {
         if (selectionVm == null) return new ObservableCollection<VM_NpcsMenuMugshot>();
@@ -2031,6 +2034,60 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 if (_lazyModsVm.Value.AllModSettings.Any(m => m.DisplayName.Equals(mugshotInfo.ModName, StringComparison.OrdinalIgnoreCase)))
                 {
                     CreateVmIfNotExists(mugshotInfo.ModName, targetNpcFormKey);
+                }
+            }
+        }
+        
+        // --- NEW: Source 4: FaceFinder fallback ---
+        if (_settings.UseFaceFinderFallback && !string.IsNullOrWhiteSpace(_settings.FaceFinderApiKey))
+        {
+            // --- NEW: Create a reverse lookup for efficient checking ---
+            var serverToLocalMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var mapping in _settings.FaceFinderModNameMappings) //
+            {
+                var localName = mapping.Key;
+                foreach (var serverName in mapping.Value)
+                {
+                    if (!serverToLocalMap.TryGetValue(serverName, out var localNames))
+                    {
+                        localNames = new List<string>();
+                        serverToLocalMap[serverName] = localNames;
+                    }
+                    localNames.Add(localName);
+                }
+            }
+
+            var faceFinderResults = await _faceFinderClient.GetAllFaceDataForNpcAsync(targetNpcFormKey, _settings.FaceFinderApiKey);
+
+            foreach (var serverResult in faceFinderResults)
+            {
+                bool alreadyExists = false;
+                var serverModName = serverResult.ModName;
+                var vmKey = (serverModName, targetNpcFormKey);
+
+                // Check 1: Does a VM with the exact server name already exist?
+                if (finalModVMs.ContainsKey(vmKey))
+                {
+                    alreadyExists = true;
+                }
+                // Check 2: If not, is this server name mapped to any local mods that already exist?
+                else if (serverToLocalMap.TryGetValue(serverModName, out var linkedLocalNames))
+                {
+                    foreach (var localName in linkedLocalNames)
+                    {
+                        if (finalModVMs.ContainsKey((localName, targetNpcFormKey)))
+                        {
+                            alreadyExists = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // Only create the new VM if no existing local version (direct or linked) was found.
+                if (!alreadyExists)
+                {
+                    CreateVmIfNotExists(serverModName, targetNpcFormKey);
+                    Debug.WriteLine($"Discovered new unlinked appearance for {selectionVm.DisplayName} from '{serverModName}' via FaceFinder.");
                 }
             }
         }

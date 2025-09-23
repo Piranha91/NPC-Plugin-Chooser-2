@@ -22,6 +22,13 @@ public class FaceFinderResult
     public DateTime UpdatedAt { get; init; }
 }
 
+public class FaceFinderNpcResult
+{
+    public required string ModName { get; init; }
+    public required string ImageUrl { get; init; }
+    public DateTime UpdatedAt { get; init; }
+}
+
 public class FaceFinderClient
 {
     private readonly Settings _settings;
@@ -212,5 +219,66 @@ public class FaceFinderClient
         {
             Debug.WriteLine($"Failed to write FaceFinder metadata for {imagePath}: {ex.Message}");
         }
+    }
+    
+    public async Task<List<FaceFinderNpcResult>> GetAllFaceDataForNpcAsync(FormKey npcFormKey, string encryptedApiKey)
+    {
+        var allFaces = new List<FaceFinderNpcResult>();
+        if (string.IsNullOrWhiteSpace(encryptedApiKey)) return allFaces;
+
+        string plainTextApiKey;
+        try
+        {
+            byte[] encryptedBytes = Convert.FromBase64String(encryptedApiKey);
+            byte[] apiBytes = ProtectedData.Unprotect(encryptedBytes, null, DataProtectionScope.CurrentUser);
+            plainTextApiKey = Encoding.UTF8.GetString(apiBytes);
+        }
+        catch (Exception ex) {
+            Debug.WriteLine($"Failed to decrypt FaceFinder API key for NPC face list: {ex.Message}");
+            return allFaces;
+        }
+
+        var formKeyValue = $"{npcFormKey.ID:X8}:{npcFormKey.ModKey.FileName}";
+        var encodedFormKey = WebUtility.UrlEncode(formKeyValue);
+        int currentPage = 1;
+
+        while (true)
+        {
+            var requestUri = $"/api/public/npc/faces/search?formKey={encodedFormKey}&page={currentPage}";
+            var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
+            request.Headers.Add("X-API-Key", plainTextApiKey);
+
+            try
+            {
+                var response = await _httpClient.SendAsync(request);
+                if (!response.IsSuccessStatusCode) break;
+
+                var content = await response.Content.ReadAsStringAsync();
+                var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
+
+                if (results == null || !results.Any()) break; // No more pages.
+
+                foreach (var result in results)
+                {
+                    string? modName = result.mod?.name;
+                    string? imageUrl = result.images?.full;
+                    string? updatedAtStr = result.updated_at;
+
+                    if (string.IsNullOrWhiteSpace(modName) || string.IsNullOrWhiteSpace(imageUrl) || string.IsNullOrWhiteSpace(updatedAtStr) ||
+                        !DateTime.TryParse(updatedAtStr, null, DateTimeStyles.RoundtripKind, out var updatedAt))
+                    {
+                        continue;
+                    }
+
+                    allFaces.Add(new FaceFinderNpcResult { ModName = modName, ImageUrl = imageUrl, UpdatedAt = updatedAt });
+                }
+                currentPage++;
+            }
+            catch (Exception ex) {
+                Debug.WriteLine($"FaceFinder API error getting face list for {npcFormKey} on page {currentPage}: {ex.Message}");
+                break;
+            }
+        }
+        return allFaces;
     }
 }
