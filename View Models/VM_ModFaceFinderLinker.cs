@@ -153,13 +153,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private async Task LoadDataAsync()
         {
             IsLoading = true;
-            
+    
             var ffModsTask = _faceFinderClient.GetAllModNamesAsync(_settings.FaceFinderApiKey);
             var localMods = _vmMods.AllModSettings.Select(s => s.DisplayName).OrderBy(s => s).ToList();
             var ffMods = await ffModsTask;
-            
-            var manualMappings = new Dictionary<string, List<string>>(_settings.FaceFinderModNameMappings);
-            
+    
+            // CHANGED: Use a case-insensitive string comparer for the dictionary.
+            var manualMappings = new Dictionary<string, List<string>>(_settings.FaceFinderModNameMappings, StringComparer.OrdinalIgnoreCase);
+    
+            // ADDED: Create a case-insensitive HashSet for efficient 'Contains' checks.
+            var ffModsSet = new HashSet<string>(ffMods, StringComparer.OrdinalIgnoreCase);
+    
             var localModVms = new List<VM_LocalModItem>();
             foreach (var mod in localMods)
             {
@@ -171,16 +175,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
                         localModVm.Links.Add(new LinkInfo(linkedName, LinkState.Manual, localModVm));
                     }
                 }
-                
-                if (ffMods.Contains(mod) && !localModVm.Links.Any(l => l.FaceFinderName == mod))
+        
+                // CHANGED: Use the new HashSet and a case-insensitive equality check.
+                if (ffModsSet.Contains(mod) && !localModVm.Links.Any(l => l.FaceFinderName.Equals(mod, StringComparison.OrdinalIgnoreCase)))
                 {
                     localModVm.Links.Add(new LinkInfo(mod, LinkState.Automatic, localModVm));
                 }
                 localModVms.Add(localModVm);
             }
             _localMods.AddRange(localModVms);
-            
-            var allLinkedFfMods = new HashSet<string>(_localMods.Items.SelectMany(m => m.Links).Select(l => l.FaceFinderName));
+    
+            // CHANGED: Use a case-insensitive string comparer for the final link check.
+            var allLinkedFfMods = new HashSet<string>(_localMods.Items.SelectMany(m => m.Links).Select(l => l.FaceFinderName), StringComparer.OrdinalIgnoreCase);
             var ffModVms = ffMods.Select(mod => new VM_FaceFinderModItem(mod) { IsLinked = allLinkedFfMods.Contains(mod) }).ToList();
             _faceFinderMods.AddRange(ffModVms);
 
