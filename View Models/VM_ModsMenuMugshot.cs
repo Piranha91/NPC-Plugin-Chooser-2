@@ -17,7 +17,8 @@ using System.Reactive.Linq;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using NPC_Plugin_Chooser_2.BackEnd;
-using NPC_Plugin_Chooser_2.Models; // For Debug.WriteLine
+using NPC_Plugin_Chooser_2.Models;
+using SixLabors.ImageSharp; // For Debug.WriteLine
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
@@ -357,140 +358,126 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         // No need to call anything on _parentVMMaster (VM_Mods) to refresh the whole panel.
     }
     
+    private async Task HandleSuccessfulDownload(byte[] imageData, FaceFinderResult faceData, string baseSavePath, string saveFolder)
+    {
+        string finalImagePath;
+        if (_settings.CacheFaceFinderImages)
+        {
+            var format = Image.DetectFormat(imageData);
+            var extension = format?.FileExtensions.FirstOrDefault() ?? "png";
+            finalImagePath = $"{baseSavePath}.{extension}";
+
+            Directory.CreateDirectory(Path.GetDirectoryName(finalImagePath)!);
+            await File.WriteAllBytesAsync(finalImagePath, imageData);
+            await _faceFinderClient.WriteMetadataAsync(finalImagePath, faceData);
+        
+            SetImageSource(finalImagePath, isPlaceholder: false);
+            Debug.WriteLine($"Downloaded and cached mugshot for {NpcFormKey} as .{extension}");
+        }
+        else
+        {
+            finalImagePath = "in-memory";
+            SetImageSourceFromMemory(imageData);
+            Debug.WriteLine($"Downloaded mugshot for {NpcFormKey} into memory (no cache).");
+        }
+    
+        await UpdateUIAfterSuccess(finalImagePath, saveFolder);
+    }
+
+    private async Task UpdateUIAfterSuccess(string imagePath, string saveFolder)
+    {
+        _npcSelectionBar.UpdateMugshotCache(this.NpcFormKey, _parentVMModSetting.DisplayName, imagePath);
+
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            _parentVMModSetting.HasValidMugshots = true;
+            if (!_parentVMModSetting.MugShotFolderPaths.Contains(saveFolder))
+            {
+                _parentVMModSetting.MugShotFolderPaths.Add(saveFolder);
+            }
+        });
+    }
+
     public async Task LoadRealImageAsync()
     {
-        // This method contains the full fallback logic, running in the background.
-
-        bool hasRealMugshot = ImagePath != VM_Mods.FullPlaceholderPath;
-        string nifPath = _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting.CorrespondingFolderPaths); 
-
-        if (hasRealMugshot && !_portraitCreator.NeedsRegeneration(ImagePath, nifPath))
-        {
-            return;
-        }
-        
         try
         {
             IsLoading = true;
-            
             if (_cancellationToken.IsCancellationRequested) return;
-            // --- 1. Check local Mugshots folder ---
 
-            var expectedFileName = $"{NpcFormKey.ID:X8}.png";
-            
-            var saveFolder = Path.Combine(_settings.MugshotsFolder,
-                _parentVMModSetting.DisplayName);
-            var savePath = Path.Combine(saveFolder,
-                NpcFormKey.ModKey.ToString(),
-                expectedFileName);
+            // 1. SETUP: Define paths and find any existing local file
+            var saveFolder = Path.Combine(_settings.MugshotsFolder, _parentVMModSetting.DisplayName);
+            var baseSavePath = Path.Combine(saveFolder, NpcFormKey.ModKey.ToString(), $"{NpcFormKey.ID:X8}");
+            var existingCachedFile = Auxilliary.FindExistingCachedImage(baseSavePath);
+            string nifPath = _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting.CorrespondingFolderPaths);
 
-            // --- 2. Fallback to FaceFinder API ---
+            // 2. CHECK LOCAL: See if the existing file is valid and up-to-date
+            if (existingCachedFile != null)
+            {
+                bool needsRegen = _settings.UsePortraitCreatorFallback && _portraitCreator.NeedsRegeneration(existingCachedFile, nifPath);
+                bool isStale = _settings.UseFaceFinderFallback &&
+                               await _faceFinderClient.IsCacheStaleAsync(existingCachedFile, NpcFormKey,
+                                   _parentVMModSetting.DisplayName, _settings.FaceFinderApiKey);
+
+                if (!needsRegen && !isStale)
+                {
+                    Debug.WriteLine($"Using valid cached mugshot: {Path.GetFileName(existingCachedFile)}");
+                    if (ImagePath != existingCachedFile)
+                    {
+                        SetImageSource(existingCachedFile, isPlaceholder: false);
+                    }
+
+                    return; // HAPPY PATH: Valid local file found, exit early.
+                }
+            }
+
+            // 3. FALLBACK 1: Try FaceFinder API
             if (_settings.UseFaceFinderFallback)
             {
-                // Check cache first if enabled
-                if (_settings.CacheFaceFinderImages && File.Exists(savePath))
-                {
-                    bool isStale =
-                        await _faceFinderClient.IsCacheStaleAsync(savePath, NpcFormKey, _parentVMModSetting.DisplayName, _settings.FaceFinderApiKey);
-                    if (!isStale)
-                    {
-                        Debug.WriteLine($"Using cached mugshot for {NpcFormKey} from FaceFinder.");
-                        SetImageSource(savePath, isPlaceholder: false);
-                        _npcSelectionBar.UpdateMugshotCache(this.NpcFormKey, _parentVMModSetting.DisplayName, savePath);
-                        await Application.Current.Dispatcher.InvokeAsync(() =>
-                            _parentVMModSetting.HasValidMugshots = true);
-                        return; // Exit early
-                    }
-                }
-
-                var faceData = await _faceFinderClient.GetFaceDataAsync(NpcFormKey, _parentVMModSetting.DisplayName, _settings.FaceFinderApiKey);
-                bool downloadSuccessful = false;
+                var faceData = await _faceFinderClient.GetFaceDataAsync(NpcFormKey, _parentVMModSetting.DisplayName,
+                    _settings.FaceFinderApiKey);
                 if (faceData != null && !string.IsNullOrWhiteSpace(faceData.ImageUrl))
                 {
                     try
                     {
                         using var client = new HttpClient();
-                        var imageData = await client.GetByteArrayAsync(faceData.ImageUrl);
-                        Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
-                        await File.WriteAllBytesAsync(savePath, imageData);
-                        Debug.WriteLine($"Downloaded mugshot for {NpcFormKey} from FaceFinder.");
-                        downloadSuccessful = true;
-
-                        // Write metadata if caching is enabled
-                        if (_settings.CacheFaceFinderImages)
-                        {
-                            await _faceFinderClient.WriteMetadataAsync(savePath, faceData);
-                        }
+                        var imageData = await client.GetByteArrayAsync(faceData.ImageUrl, _cancellationToken);
+                        await HandleSuccessfulDownload(imageData, faceData, baseSavePath, saveFolder);
+                        return; // SUCCESS: Image downloaded, exit.
                     }
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"Failed to download from FaceFinder for {NpcFormKey}: {ex.Message}");
                     }
                 }
-
-                if (downloadSuccessful)
-                {
-                    SetImageSource(savePath, isPlaceholder: false);
-                    _npcSelectionBar.UpdateMugshotCache(this.NpcFormKey, _parentVMModSetting.DisplayName, savePath);
-                    await Application.Current.Dispatcher.InvokeAsync(() =>
-                    {
-                        _parentVMModSetting.HasValidMugshots = true;
-                        if (!_parentVMModSetting.MugShotFolderPaths.Contains(
-                                Path.GetDirectoryName(Path.GetDirectoryName(savePath))))
-                        {
-                            _parentVMModSetting.MugShotFolderPaths.Add(
-                                Path.GetDirectoryName(Path.GetDirectoryName(savePath))!);
-                        }
-                    });
-                    return;
-                }
             }
 
-            // --- 3. Fallback to NPC Portrait Creator ---
-            if (_settings.UsePortraitCreatorFallback && _portraitCreator.NeedsRegeneration(savePath, nifPath))
+            // 4. FALLBACK 2: Try NPC Portrait Creator
+            var pngSavePath = $"{baseSavePath}.png"; // Generator creates PNGs
+            if (_settings.UsePortraitCreatorFallback && !string.IsNullOrWhiteSpace(nifPath))
             {
-                bool generationSuccessful = false;
-                
-                if (!string.IsNullOrWhiteSpace(nifPath))
+                Directory.CreateDirectory(Path.GetDirectoryName(pngSavePath)!);
+                if (await _portraitCreator.GeneratePortraitAsync(nifPath, _parentVMModSetting.CorrespondingFolderPaths,
+                        pngSavePath))
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(savePath));
-                    if (await _portraitCreator.GeneratePortraitAsync(nifPath, _parentVMModSetting.CorrespondingFolderPaths, savePath))
-                    {
-                        Debug.WriteLine($"Generated mugshot for {NpcFormKey}.");
-                        generationSuccessful = true;
-                    }
-                }
-
-                if (generationSuccessful) // Or if (generationSuccessful) for the second block
-                {
-                    // This is safe because it freezes the bitmap before assigning it
-                    SetImageSource(savePath, isPlaceholder: false);
-                    _npcSelectionBar.UpdateMugshotCache(this.NpcFormKey, _parentVMModSetting.DisplayName, savePath);
-
-                    // Dispatch the property and collection changes to the UI thread
-                    await Application.Current.Dispatcher.InvokeAsync(() =>
-                    {
-                        _parentVMModSetting.HasValidMugshots = true;
-                        if (!_parentVMModSetting.MugShotFolderPaths.Contains(saveFolder))
-                        {
-                            _parentVMModSetting.MugShotFolderPaths.Add(saveFolder);
-                        }
-                    });
-                    return;
+                    Debug.WriteLine($"Generated mugshot for {NpcFormKey}.");
+                    SetImageSource(pngSavePath, isPlaceholder: false);
+                    await UpdateUIAfterSuccess(pngSavePath, saveFolder);
+                    return; // SUCCESS: Image generated, exit.
                 }
             }
         }
-
-        catch (TaskCanceledException) { /* Swallow cancellation */ }
-
+        catch (TaskCanceledException)
+        {
+            /* Swallow cancellation */
+        }
         catch (Exception ex)
         {
             Debug.WriteLine($"Error loading real image for {NpcFormKey}: {ex.Message}");
         }
-        
         finally
         {
-            IsLoading = false; // Signal that loading has finished
+            IsLoading = false;
         }
     }
 
@@ -513,6 +500,32 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         this.MugshotSource = bitmap;
         this.ImagePath = path;
         this.HasMugshot = !isPlaceholder;
+    }
+    
+    private void SetImageSourceFromMemory(byte[] imageData)
+    {
+        if (imageData == null || imageData.Length == 0) return;
+
+        var bitmap = new BitmapImage();
+        using (var stream = new MemoryStream(imageData))
+        {
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+        }
+        bitmap.Freeze();
+
+        this.MugshotSource = bitmap;
+        this.ImagePath = "in-memory";
+        this.HasMugshot = true; // A real image was loaded
+
+        var info = Image.Identify(imageData);
+        OriginalPixelWidth = info.Width;
+        OriginalPixelHeight = info.Height;
+        OriginalDipWidth = info.Width;
+        OriginalDipHeight = info.Height;
+        OriginalDipDiagonal = Math.Sqrt(OriginalDipWidth * OriginalDipWidth + OriginalDipHeight * OriginalDipHeight);
     }
 
     public void Dispose()

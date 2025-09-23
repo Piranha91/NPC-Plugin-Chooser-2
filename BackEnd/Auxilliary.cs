@@ -831,6 +831,21 @@ public class Auxilliary : IDisposable
             ScrollableMessageBox.ShowWarning($"The folder path '{folderPath}' could not be found.", "Path Not Found");
         }
     }
+    
+    public static string? FindExistingCachedImage(string baseFilePath)
+    {
+        // Check for the most common formats in order of likelihood.
+        var extensionsToTry = new[] { ".webp", ".png", ".jpg", ".jpeg" };
+        foreach (var ext in extensionsToTry)
+        {
+            var fullPath = baseFilePath + ext;
+            if (File.Exists(fullPath))
+            {
+                return fullPath;
+            }
+        }
+        return null;
+    }
 
 
     public static bool TryDuplicateGenericRecordAsNew(IMajorRecordGetter recordGetter, ISkyrimMod outputMod, out dynamic? duplicateRecord, out string exceptionString)

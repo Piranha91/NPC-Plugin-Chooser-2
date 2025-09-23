@@ -93,24 +93,43 @@ public class FaceFinderClient
     public async Task<bool> IsCacheStaleAsync(string imagePath, FormKey npcFormKey, string modNameToFind, string encryptedApiKey)
     {
         var metadataPath = imagePath + MetadataFileExtension;
-        if (!File.Exists(metadataPath)) return true; // No metadata means it's stale/invalid
 
+        if (!File.Exists(metadataPath))
+        {
+            // CASE 1: Image exists but metadata is missing.
+            // This is a manually downloaded image. It is NOT stale and must be preserved.
+            return false;
+        }
+
+        // CASE 3: Both image and metadata exist. Check for updates from the API.
         try
         {
             var metadataJson = await File.ReadAllTextAsync(metadataPath);
             var metadata = JsonConvert.DeserializeObject<FaceFinderMetadata>(metadataJson);
 
-            if (metadata == null || metadata.Source != "FaceFinder") return true; // Not our file
+            if (metadata == null || metadata.Source != "FaceFinder")
+            {
+                // The metadata is invalid or from another source. Treat as a manual file.
+                return false;
+            }
 
             var latestData = await GetFaceDataAsync(npcFormKey, modNameToFind, encryptedApiKey);
-            if (latestData == null) return false; // API failed, can't check, assume not stale
+            if (latestData == null)
+            {
+                // If the API fails, we can't check for an update.
+                // Assume the cached version is fine to avoid overwriting it.
+                return false;
+            }
 
-            return latestData.UpdatedAt > metadata.UpdatedAt; // Stale if server version is newer
+            // Return true (stale) only if the server has a more recent version.
+            return latestData.UpdatedAt > metadata.UpdatedAt;
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Error checking cache staleness for {imagePath}: {ex.Message}");
-            return true; // Treat errors as stale to force a re-download
+            // If there's an error reading the metadata, it might be corrupt.
+            // Returning true allows the system to try and re-download a valid copy.
+            return true;
         }
     }
 

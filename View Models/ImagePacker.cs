@@ -1,13 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Windows.Media.Imaging;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Processing;
+using Image = SixLabors.ImageSharp.Image;
+using Size = SixLabors.ImageSharp.Size;
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
@@ -84,54 +87,38 @@ public class ImagePacker
                 {
                     try
                     {
-                        Image? originalImage = null;
-                        MemoryStream? memoryStream = null;
+                        // Use ImageSharp for all processing
+                        using var image = LoadImageFromSource(img);
+                        
+                        if (image == null) continue;
 
-                        // **FIX:** Use the in-memory BitmapSource if it exists, otherwise load from file.
-                        if (img.MugshotSource is BitmapSource bmpSource)
+                        // CenterCropAndResize is now an ImageSharp operation
+                        image.Mutate(x => x.Resize(new ResizeOptions
                         {
-                            memoryStream = new MemoryStream();
-                            var encoder = new PngBitmapEncoder();
-                            encoder.Frames.Add(BitmapFrame.Create(bmpSource));
-                            encoder.Save(memoryStream);
-                            memoryStream.Position = 0;
-                            originalImage = Image.FromStream(memoryStream);
-                        }
-                        else
-                        {
-                            originalImage = Image.FromFile(img.ImagePath);
-                        }
+                            Mode = ResizeMode.Crop,
+                            Size = new Size(modePixelSize.Width, modePixelSize.Height)
+                        }));
 
-                        using (originalImage)
-                        using (memoryStream) // Ensures the memory stream is also disposed
-                        {
-                            using Bitmap normalizedBitmap = CenterCropAndResize(originalImage, modePixelSize.Width,
-                                modePixelSize.Height);
-
-                            img.MugshotSource = BitmapToImageSource(normalizedBitmap);
-                            img.OriginalPixelWidth = modePixelSize.Width;
-                            img.OriginalPixelHeight = modePixelSize.Height;
-
-                            double hRes = originalImage.HorizontalResolution > 1
-                                ? originalImage.HorizontalResolution
-                                : 96.0;
-                            double vRes = originalImage.VerticalResolution > 1
-                                ? originalImage.VerticalResolution
-                                : 96.0;
-                            img.OriginalDipWidth = modePixelSize.Width * (96.0 / hRes);
-                            img.OriginalDipHeight = modePixelSize.Height * (96.0 / vRes);
-                            img.OriginalDipDiagonal = Math.Sqrt(img.OriginalDipWidth * img.OriginalDipWidth +
-                                                                img.OriginalDipHeight * img.OriginalDipHeight);
-                        }
+                        // Convert the processed ImageSharp image back to a WPF BitmapSource
+                        img.MugshotSource = ImageToImageSource(image);
+                        img.OriginalPixelWidth = modePixelSize.Width;
+                        img.OriginalPixelHeight = modePixelSize.Height;
+                        
+                        // With ImageSharp, DPI is not a primary concern. We assume screen DPI (96)
+                        // where 1 pixel = 1 DIP (Device Independent Pixel).
+                        img.OriginalDipWidth = modePixelSize.Width;
+                        img.OriginalDipHeight = modePixelSize.Height;
+                        img.OriginalDipDiagonal = Math.Sqrt(img.OriginalDipWidth * img.OriginalDipWidth +
+                                                            img.OriginalDipHeight * img.OriginalDipHeight);
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"[ImagePacker] ERROR normalizing image {img.ImagePath}: {ex.Message}");
+                        Debug.WriteLine($"[ImagePacker] ERROR normalizing image {img.ImagePath} with ImageSharp: {ex.Message}");
                     }
                 }
 
-                img.ImageWidth = modeDipWidth * finalPackerScale;
-                img.ImageHeight = modeDipHeight * finalPackerScale;
+                img.ImageWidth = modePixelSize.Width * finalPackerScale;
+                img.ImageHeight = modePixelSize.Height * finalPackerScale;
             }
         }
         else
@@ -244,33 +231,37 @@ public class ImagePacker
         return bitmapImage;
     }
 
-    private Bitmap CenterCropAndResize(Image original, int targetWidth, int targetHeight)
+    // --- NEW HELPER: Loads an image into ImageSharp from either a file or an existing WPF BitmapSource ---
+    private Image? LoadImageFromSource(IHasMugshotImage img)
     {
-        var result = new Bitmap(targetWidth, targetHeight);
-        result.SetResolution(original.HorizontalResolution, original.VerticalResolution);
-        using var g = Graphics.FromImage(result);
-        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-
-        float srcAspect = (float)original.Width / original.Height;
-        float dstAspect = (float)targetWidth / targetHeight;
-        RectangleF srcRect;
-
-        if (srcAspect > dstAspect)
+        if (img.MugshotSource is BitmapSource bmpSource)
         {
-            float newWidth = original.Height * dstAspect;
-            float xOffset = (original.Width - newWidth) / 2f;
-            srcRect = new RectangleF(xOffset, 0, newWidth, original.Height);
+            using var memoryStream = new MemoryStream();
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bmpSource));
+            encoder.Save(memoryStream);
+            memoryStream.Position = 0;
+            return Image.Load(memoryStream);
         }
-        else
-        {
-            float newHeight = original.Width / dstAspect;
-            float yOffset = (original.Height - newHeight) / 2f;
-            srcRect = new RectangleF(0, yOffset, original.Width, newHeight);
-        }
+        
+        return File.Exists(img.ImagePath) ? Image.Load(img.ImagePath) : null;
+    }
+    
+    // --- REFACTORED: Converts an ImageSharp Image to a WPF BitmapSource ---
+    private BitmapSource ImageToImageSource(Image image)
+    {
+        using var memory = new MemoryStream();
+        // Save the image to the stream in PNG format
+        image.Save(memory, new PngEncoder());
+        memory.Position = 0;
 
-        var dstRect = new RectangleF(0, 0, targetWidth, targetHeight);
-        g.DrawImage(original, dstRect, srcRect, GraphicsUnit.Pixel);
-        return result;
+        var bitmapImage = new BitmapImage();
+        bitmapImage.BeginInit();
+        bitmapImage.StreamSource = memory;
+        bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+        bitmapImage.EndInit();
+        bitmapImage.Freeze(); // Crucial for multi-threading in WPF
+        return bitmapImage;
     }
 
     private bool CanPackAll(List<(double Width, double Height)> baseContentSizes, double packerScale,
@@ -298,25 +289,31 @@ public class ImagePacker
         return true;
     }
 
-    public static (int PixelWidth, int PixelHeight, double DipWidth, double DipHeight) GetImageDimensions(
-        string imagePath)
+    // --- REFACTORED: Uses Image.Identify for better performance ---
+    public static (int PixelWidth, int PixelHeight, double DipWidth, double DipHeight) GetImageDimensions(string imagePath)
     {
-        if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath)) return (0, 0, 0, 0);
+        if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath) || new FileInfo(imagePath).Length == 0)
+        {
+            return (0, 0, 0, 0);
+        }
+            
         try
         {
-            using var stream = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var img = Image.FromStream(stream, useEmbeddedColorManagement: false, validateImageData: false);
-            int pixelWidth = img.Width;
-            int pixelHeight = img.Height;
-            double hRes = img.HorizontalResolution > 1 ? img.HorizontalResolution : 96.0;
-            double vRes = img.VerticalResolution > 1 ? img.VerticalResolution : 96.0;
-            double dipWidth = pixelWidth * (96.0 / hRes);
-            double dipHeight = pixelHeight * (96.0 / vRes);
+            // Image.Identify is extremely fast as it only reads metadata, not pixel data.
+            var info = Image.Identify(imagePath);
+            
+            int pixelWidth = info.Width;
+            int pixelHeight = info.Height;
+            
+            // In a modern UI context like WPF, we can treat 1 pixel as 1 DIP.
+            double dipWidth = pixelWidth;
+            double dipHeight = pixelHeight;
+            
             return (pixelWidth, pixelHeight, dipWidth, dipHeight);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error in GetImageDimensions for {imagePath}: {ex.Message}");
+            Debug.WriteLine($"Error in GetImageDimensions (ImageSharp) for {imagePath}: {ex.Message}");
             return (0, 0, 0, 0);
         }
     }

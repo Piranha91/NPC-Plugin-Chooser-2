@@ -27,6 +27,7 @@
       <PackageReference Include="niflysharp" Version="1.3.0" />
       <PackageReference Include="ReactiveUI.Fody" Version="19.5.41" />
       <PackageReference Include="ReactiveUI.WPF" Version="20.2.45" />
+      <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
       <PackageReference Include="Splat.Autofac" Version="15.3.1" />
       <PackageReference Include="System.IO.Hashing" Version="9.0.6" />
     </ItemGroup>
@@ -66,14 +67,6 @@
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
       <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\shaders\basic.vert">
-        <Link>NPC Portrait Creator\shaders\basic.vert</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </Content>
-      <Content Include="..\..\NPC Portrait Creator\shaders\basic.frag">
-        <Link>NPC Portrait Creator\shaders\basic.frag</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </Content>
-      <Content Include="..\..\NPC Portrait Creator\shaders\basic.vert">
         <Link>NPC Portrait Creator\shaders\basic.vert</Link>
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
