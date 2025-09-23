@@ -744,7 +744,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             if (_settings.UseFaceFinderFallback)
             {
                 // Define base path for saving cached images
-                var saveFolder = Path.Combine(_settings.MugshotsFolder, this.ModName); // Use this.ModName as it might not be in a mod setting
+                var baseCacheFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
+                    ? "FaceFinder Cache"
+                    : _settings.MugshotsFolder;
+                var saveFolder = Path.Combine(baseCacheFolder, this.ModName);
                 var baseSavePath = Path.Combine(saveFolder, SourceNpcFormKey.ModKey.ToString(), $"{SourceNpcFormKey.ID:X8}");
     
                 // Check cache first

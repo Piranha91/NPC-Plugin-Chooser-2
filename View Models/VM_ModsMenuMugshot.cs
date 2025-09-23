@@ -406,8 +406,15 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             if (_cancellationToken.IsCancellationRequested) return;
 
             // 1. SETUP: Define paths and find any existing local file
-            var saveFolder = Path.Combine(_settings.MugshotsFolder, _parentVMModSetting.DisplayName);
+            // Snippet from LoadRealImageAsync in VM_ModsMenuMugshot.cs
+
+            // 1. SETUP: Define paths and find any existing local file
+            var baseCacheFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
+                ? "FaceFinder Cache"
+                : _settings.MugshotsFolder;
+            var saveFolder = Path.Combine(baseCacheFolder, _parentVMModSetting.DisplayName);
             var baseSavePath = Path.Combine(saveFolder, NpcFormKey.ModKey.ToString(), $"{NpcFormKey.ID:X8}");
+            
             var existingCachedFile = Auxilliary.FindExistingCachedImage(baseSavePath);
             string nifPath = _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting.CorrespondingFolderPaths);
 
