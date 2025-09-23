@@ -11,10 +11,13 @@ using NPC_Plugin_Chooser_2.Models;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using System.Collections.Generic;
+using DynamicData;
+using DynamicData.Binding;
 
 namespace NPC_Plugin_Chooser_2.View_Models
 {
     public enum LinkState { None, Automatic, Manual }
+    public enum FilterMode { All, Linked, Unlinked }
 
     public class VM_FaceFinderModItem : ReactiveObject
     {
@@ -85,10 +88,22 @@ namespace NPC_Plugin_Chooser_2.View_Models
         private readonly VM_Mods _vmMods;
 
         [Reactive] public bool IsLoading { get; private set; }
-        public ObservableCollection<VM_FaceFinderModItem> FaceFinderMods { get; } = new();
-        public ObservableCollection<VM_LocalModItem> LocalMods { get; } = new();
+        private readonly SourceList<VM_FaceFinderModItem> _faceFinderMods = new();
+        private readonly ReadOnlyObservableCollection<VM_FaceFinderModItem> _filteredFaceFinderMods;
+        public ReadOnlyObservableCollection<VM_FaceFinderModItem> FilteredFaceFinderMods => _filteredFaceFinderMods;
+
+        private readonly SourceList<VM_LocalModItem> _localMods = new();
+        private readonly ReadOnlyObservableCollection<VM_LocalModItem> _filteredLocalMods;
+        public ReadOnlyObservableCollection<VM_LocalModItem> FilteredLocalMods => _filteredLocalMods;
 
         public ReactiveCommand<LinkInfo, Unit> UnlinkCommand { get; }
+        
+        // Filter Properties
+        [Reactive] public string FaceFinderSearchText { get; set; } = string.Empty;
+        [Reactive] public FilterMode SelectedFaceFinderFilter { get; set; } = FilterMode.All;
+        [Reactive] public string LocalModsSearchText { get; set; } = string.Empty;
+        [Reactive] public FilterMode SelectedLocalModsFilter { get; set; } = FilterMode.All;
+        public IEnumerable<FilterMode> FilterModes => Enum.GetValues(typeof(FilterMode)).Cast<FilterMode>();
 
         public VM_ModFaceFinderLinker(Settings settings, FaceFinderClient faceFinderClient, VM_Mods vmMods)
         {
@@ -98,6 +113,40 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             UnlinkCommand = ReactiveCommand.Create<LinkInfo>(Unlink);
             
+            // --- FaceFinder Filter Pipeline ---
+            var ffSearchFilter = this.WhenAnyValue(x => x.FaceFinderSearchText)
+                .Select(text => new Func<VM_FaceFinderModItem, bool>(item => 
+                    string.IsNullOrWhiteSpace(text) || item.Name.Contains(text, StringComparison.OrdinalIgnoreCase)));
+
+            var ffLinkFilter = this.WhenAnyValue(x => x.SelectedFaceFinderFilter)
+                .Select(mode => new Func<VM_FaceFinderModItem, bool>(item => 
+                    mode == FilterMode.All || (mode == FilterMode.Linked && item.IsLinked) || (mode == FilterMode.Unlinked && !item.IsLinked)));
+    
+            _faceFinderMods.Connect()
+                .AutoRefresh(item => item.IsLinked) // Re-apply filter when IsLinked changes
+                .Filter(ffSearchFilter)
+                .Filter(ffLinkFilter)
+                .Sort(SortExpressionComparer<VM_FaceFinderModItem>.Ascending(item => item.Name))
+                .Bind(out _filteredFaceFinderMods)
+                .Subscribe();
+
+            // --- Local Mods Filter Pipeline ---
+            var localSearchFilter = this.WhenAnyValue(x => x.LocalModsSearchText)
+                .Select(text => new Func<VM_LocalModItem, bool>(item => 
+                    string.IsNullOrWhiteSpace(text) || item.LocalName.Contains(text, StringComparison.OrdinalIgnoreCase)));
+
+            var localLinkFilter = this.WhenAnyValue(x => x.SelectedLocalModsFilter)
+                .Select(mode => new Func<VM_LocalModItem, bool>(item =>
+                    mode == FilterMode.All || (mode == FilterMode.Linked && item.IsCurrentlyLinked) || (mode == FilterMode.Unlinked && !item.IsCurrentlyLinked)));
+
+            _localMods.Connect()
+                .AutoRefresh(item => item.IsCurrentlyLinked) // Re-apply filter when IsCurrentlyLinked changes
+                .Filter(localSearchFilter)
+                .Filter(localLinkFilter)
+                .Sort(SortExpressionComparer<VM_LocalModItem>.Ascending(item => item.LocalName))
+                .Bind(out _filteredLocalMods)
+                .Subscribe();
+
             _ = LoadDataAsync();
         }
 
@@ -111,6 +160,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
             
             var manualMappings = new Dictionary<string, List<string>>(_settings.FaceFinderModNameMappings);
             
+            var localModVms = new List<VM_LocalModItem>();
             foreach (var mod in localMods)
             {
                 var localModVm = new VM_LocalModItem(mod);
@@ -122,19 +172,18 @@ namespace NPC_Plugin_Chooser_2.View_Models
                     }
                 }
                 
-                // Add auto-link if the name matches and it's not already manually linked to itself
                 if (ffMods.Contains(mod) && !localModVm.Links.Any(l => l.FaceFinderName == mod))
                 {
                     localModVm.Links.Add(new LinkInfo(mod, LinkState.Automatic, localModVm));
                 }
-                LocalMods.Add(localModVm);
+                localModVms.Add(localModVm);
             }
+            _localMods.AddRange(localModVms);
             
-            var allLinkedFfMods = new HashSet<string>(LocalMods.SelectMany(m => m.Links).Select(l => l.FaceFinderName));
-            foreach (var mod in ffMods)
-            {
-                FaceFinderMods.Add(new VM_FaceFinderModItem(mod) { IsLinked = allLinkedFfMods.Contains(mod) });
-            }
+            var allLinkedFfMods = new HashSet<string>(_localMods.Items.SelectMany(m => m.Links).Select(l => l.FaceFinderName));
+            var ffModVms = ffMods.Select(mod => new VM_FaceFinderModItem(mod) { IsLinked = allLinkedFfMods.Contains(mod) }).ToList();
+            _faceFinderMods.AddRange(ffModVms);
+
             UpdateAllFaceFinderTooltips();
 
             IsLoading = false;
@@ -159,7 +208,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
 
             localMod.Links.Remove(linkToUnlink);
 
-            bool ffModExists = FaceFinderMods.Any(f => f.Name == localMod.LocalName);
+            bool ffModExists = _faceFinderMods.Items.Any(f => f.Name == localMod.LocalName);
             if (ffModExists && localMod.LocalName == ffName && !localMod.Links.Any(l => l.FaceFinderName == ffName))
             {
                 localMod.Links.Add(new LinkInfo(ffName, LinkState.Automatic, localMod));
@@ -173,21 +222,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             if (string.IsNullOrWhiteSpace(ffModName)) return;
             
-            var ffModVm = FaceFinderMods.FirstOrDefault(f => f.Name == ffModName);
+            var ffModVm = _faceFinderMods.Items.FirstOrDefault(f => f.Name == ffModName);
             if (ffModVm != null)
             {
-                ffModVm.IsLinked = LocalMods.Any(local => local.Links.Any(link => link.FaceFinderName == ffModName));
+                ffModVm.IsLinked = _localMods.Items.Any(local => local.Links.Any(link => link.FaceFinderName == ffModName));
             }
         }
 
         private void UpdateAllFaceFinderTooltips()
         {
-            var links = LocalMods
+            var links = _localMods.Items
                 .SelectMany(local => local.Links.Select(link => new { local.LocalName, link.FaceFinderName }))
                 .GroupBy(x => x.FaceFinderName)
                 .ToDictionary(g => g.Key, g => string.Join(", ", g.Select(i => i.LocalName).Distinct()));
             
-            foreach (var ffMod in FaceFinderMods)
+            foreach (var ffMod in _faceFinderMods.Items)
             {
                 if (ffMod.IsLinked && links.TryGetValue(ffMod.Name, out var linkedTo))
                 {
