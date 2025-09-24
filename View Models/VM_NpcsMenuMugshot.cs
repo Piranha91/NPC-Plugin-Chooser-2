@@ -745,7 +745,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             {
                 // Define base path for saving cached images
                 var baseCacheFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
-                    ? "FaceFinder Cache"
+                    ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FaceFinder Cache")
                     : _settings.MugshotsFolder;
                 var saveFolder = Path.Combine(baseCacheFolder, this.ModName);
                 var baseSavePath = Path.Combine(saveFolder, SourceNpcFormKey.ModKey.ToString(), $"{SourceNpcFormKey.ID:X8}");
@@ -800,13 +800,16 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                     Debug.WriteLine($"Cannot generate mugshot locally for {ModName}; AssociatedModSetting not found.");
                     return;
                 }
+                
+                var baseAutoGenFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
+                    ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoGen Mugshots")
+                    : _settings.MugshotsFolder;
+                var saveFolder = Path.Combine(baseAutoGenFolder, this.ModName);
+                var savePath = Path.Combine(saveFolder, SourceNpcFormKey.ModKey.ToString(), $"{SourceNpcFormKey.ID:X8}.png");
     
                 string nifPath = _portraitCreator.FindNpcNifPath(this.SourceNpcFormKey, AssociatedModSetting.CorrespondingFolderPaths);
                 if (!string.IsNullOrWhiteSpace(nifPath))
                 {
-                    var saveFolder = Path.Combine(_settings.MugshotsFolder, AssociatedModSetting.DisplayName);
-                    var savePath = Path.Combine(saveFolder, SourceNpcFormKey.ModKey.ToString(), $"{SourceNpcFormKey.ID:X8}.png");
-                    
                     Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
                     if (await _portraitCreator.GeneratePortraitAsync(nifPath, AssociatedModSetting.CorrespondingFolderPaths, savePath))
                     {

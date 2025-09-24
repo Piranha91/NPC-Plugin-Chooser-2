@@ -410,7 +410,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 
             // 1. SETUP: Define paths and find any existing local file
             var baseCacheFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
-                ? "FaceFinder Cache"
+                ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FaceFinder Cache")
                 : _settings.MugshotsFolder;
             var saveFolder = Path.Combine(baseCacheFolder, _parentVMModSetting.DisplayName);
             var baseSavePath = Path.Combine(saveFolder, NpcFormKey.ModKey.ToString(), $"{NpcFormKey.ID:X8}");
@@ -460,7 +460,13 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             }
 
             // 4. FALLBACK 2: Try NPC Portrait Creator
-            var pngSavePath = $"{baseSavePath}.png"; // Generator creates PNGs
+            
+            var baseAutoGenFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
+                ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoGen Mugshots")
+                : _settings.MugshotsFolder;
+            saveFolder = Path.Combine(baseAutoGenFolder, ParentVMModSetting.DisplayName);
+            var pngSavePath = Path.Combine(saveFolder, NpcFormKey.ModKey.ToString(), $"{NpcFormKey.ID:X8}.png");
+
             if (_settings.UsePortraitCreatorFallback && !string.IsNullOrWhiteSpace(nifPath))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(pngSavePath)!);
