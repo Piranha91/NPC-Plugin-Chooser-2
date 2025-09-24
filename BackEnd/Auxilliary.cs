@@ -832,6 +832,32 @@ public class Auxilliary : IDisposable
         }
     }
     
+    /// <summary>
+    /// Opens the given URL in the default web browser.
+    /// </summary>
+    /// <param name="url">The URL to open.</param>
+    public static void OpenUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            Debug.WriteLine("OpenUrl called with a null or empty URL.");
+            return;
+        }
+
+        try
+        {
+            // UseShellExecute = true is crucial for opening URLs in the default browser.
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            // Log the error and re-throw it so the ReactiveCommand's exception
+            // handler can catch it and display a user-friendly message.
+            Debug.WriteLine($"Error opening URL '{url}': {ex.Message}");
+            throw;
+        }
+    }
+    
     public static string? FindExistingCachedImage(string baseFilePath)
     {
         // Check for the most common formats in order of likelihood.

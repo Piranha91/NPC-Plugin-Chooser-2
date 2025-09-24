@@ -83,6 +83,9 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     public bool CanOpenModFolder => AssociatedModSetting != null && AssociatedModSetting.CorrespondingFolderPaths.Any();
     public bool CanOpenMugshotFolder => HasMugshot;
     public string MugshotFolderPath => HasMugshot && !string.IsNullOrEmpty(ImagePath) ? Path.GetDirectoryName(ImagePath) : string.Empty;
+    public ObservableCollection<ModPageInfo> ModPageUrls { get; } = new();
+    [ObservableAsProperty] public bool CanVisitModPage { get; }
+    [ObservableAsProperty] public bool HasSingleModPage { get; }
 
 
     // --- NEW IHasMugshotImage properties ---
@@ -118,6 +121,8 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     public ReactiveCommand<Unit, Unit> UnshareFromNpcCommand { get; }
     public ReactiveCommand<Unit, Unit> AddToFavoritesCommand { get; }
     public ReactiveCommand<string, Unit> OpenFolderCommand { get; }
+    public ReactiveCommand<string, Unit> VisitModPageCommand { get; }
+
 
 
     // --- Placeholder Image Configuration --- 
@@ -127,6 +132,8 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         Path.Combine(AppContext.BaseDirectory, PlaceholderResourceRelativePath);
 
     private static readonly bool PlaceholderExists = File.Exists(FullPlaceholderPath);
+    
+    public record ModPageInfo(string DisplayName, string Url);
 
     public VM_NpcsMenuMugshot(
         string modName,
@@ -224,8 +231,37 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             .Subscribe(isSelected => SetBorderAndTooltip(isSelected))
             .DisposeWith(Disposables);
 
+        this.WhenAnyValue(x => x.ModPageUrls.Count)
+            .Select(count => count > 0)
+            .ToPropertyEx(this, x => x.CanVisitModPage)
+            .DisposeWith(Disposables);
+
+        this.WhenAnyValue(x => x.ModPageUrls.Count)
+            .Select(count => count == 1)
+            .ToPropertyEx(this, x => x.HasSingleModPage)
+            .DisposeWith(Disposables);
+        
+        if (AssociatedModSetting != null)
+        {
+            foreach (var modPath in AssociatedModSetting.CorrespondingFolderPaths)
+            {
+                var metaPath = Path.Combine(modPath, "meta.ini");
+                if (File.Exists(metaPath))
+                {
+                    var (gameName, modId) = ParseMetaIni(metaPath);
+                    if (!string.IsNullOrWhiteSpace(gameName) && !string.IsNullOrWhiteSpace(modId))
+                    {
+                        var url = $"https://www.nexusmods.com/{gameName}/mods/{modId}";
+                        var folderName = Path.GetFileName(modPath.TrimEnd(Path.DirectorySeparatorChar));
+                        ModPageUrls.Add(new ModPageInfo(folderName, url));
+                    }
+                }
+            }
+        }
+        
         CanJumpToMod = _vmNpcSelectionBar.CanJumpToMod(modName);
         IsSelected = _consistencyProvider.IsModSelected(_targetNpcFormKey, ModName, SourceNpcFormKey);
+        
         SelectCommand = ReactiveCommand.Create(SelectThisMod).DisposeWith(Disposables);
         var canToggleFullScreen =
             this.WhenAnyValue(x => x.ImagePath, path => !string.IsNullOrEmpty(path) && File.Exists(path));
@@ -277,6 +313,8 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         
         OpenFolderCommand = ReactiveCommand.Create<string>(Auxilliary.OpenFolder).DisposeWith(Disposables);
         
+        VisitModPageCommand = ReactiveCommand.Create<string>(Auxilliary.OpenUrl);
+        
         SelectCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting mod: {ex.Message}"))
             .DisposeWith(Disposables);
@@ -318,6 +356,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         OpenFolderCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening folder: {ex.Message}"))
             .DisposeWith(Disposables);
+        VisitModPageCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Could not open URL: {ex.Message}"));
 
 
         _consistencyProvider.NpcSelectionChanged
@@ -408,6 +447,38 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         {
             _readyCompletionSource.TrySetResult(true);
         }
+    }
+    
+    private (string? gameName, string? modId) ParseMetaIni(string filePath)
+    {
+        string? gameName = null;
+        string? modId = null;
+        try
+        {
+            var lines = File.ReadAllLines(filePath);
+            foreach (var line in lines)
+            {
+                if (line.StartsWith("gameName=", StringComparison.OrdinalIgnoreCase))
+                {
+                    gameName = line.Split('=').Last().Trim();
+                    // Add special case for SkyrimSE
+                    if (gameName.Equals("SkyrimSE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        gameName = "skyrimspecialedition";
+                    }
+                }
+                else if (line.StartsWith("modid=", StringComparison.OrdinalIgnoreCase))
+                {
+                    modId = line.Split('=').Last().Trim();
+                }
+                if (gameName != null && modId != null) break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error parsing {filePath}: {ex.Message}");
+        }
+        return (gameName, modId);
     }
 
     private void SelectThisMod()
@@ -754,6 +825,12 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 var existingCachedFile = Auxilliary.FindExistingCachedImage(baseSavePath);
                 if (_settings.CacheFaceFinderImages && existingCachedFile != null)
                 {
+                    var metadata = await _faceFinderClient.ReadMetadataAsync(existingCachedFile);
+                    if (metadata?.ExternalUrl != null && ModPageUrls.All(p => p.Url != metadata.ExternalUrl))
+                    {
+                        ModPageUrls.Add(new ModPageInfo("FaceFinder", metadata.ExternalUrl));
+                    }
+                    
                     bool isStale = await _faceFinderClient.IsCacheStaleAsync(existingCachedFile, SourceNpcFormKey, ModName, _settings.FaceFinderApiKey);
                     if (!isStale)
                     {
@@ -787,6 +864,13 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                     }
     
                     _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, this.ImagePath);
+                    
+                    // Add the URL from the API response if it exists
+                    if (!string.IsNullOrWhiteSpace(faceData.ExternalUrl) && ModPageUrls.All(p => p.Url != faceData.ExternalUrl))
+                    {
+                        ModPageUrls.Add(new ModPageInfo("FaceFinder", faceData.ExternalUrl));
+                    }
+                    
                     return; // Download successful, we're done.
                 }
             }

@@ -20,6 +20,7 @@ public class FaceFinderResult
 {
     public string? ImageUrl { get; init; }
     public DateTime UpdatedAt { get; init; }
+    public string? ExternalUrl { get; init; }
 }
 
 public class FaceFinderNpcResult
@@ -42,10 +43,11 @@ public class FaceFinderClient
     }
 
     // Internal class for serializing metadata to a sidecar file
-    private class FaceFinderMetadata
+    public class FaceFinderMetadata
     {
         public string Source { get; set; } = "FaceFinder";
         public DateTime UpdatedAt { get; set; }
+        public string? ExternalUrl { get; init; }
     }
     
     public async Task<List<string>> GetAllModNamesAsync(string encryptedApiKey)
@@ -140,6 +142,7 @@ public class FaceFinderClient
 
             string? imageUrl = firstResult.images?.full;
             string? updatedAtStr = firstResult.updated_at;
+            string? externalUrl = firstResult.mod?.external_url;
 
             if (string.IsNullOrWhiteSpace(imageUrl) || string.IsNullOrWhiteSpace(updatedAtStr) ||
                 !DateTime.TryParse(updatedAtStr, null, DateTimeStyles.RoundtripKind, out var updatedAt))
@@ -147,7 +150,7 @@ public class FaceFinderClient
                 return null;
             }
 
-            return new FaceFinderResult { ImageUrl = imageUrl, UpdatedAt = updatedAt };
+            return new FaceFinderResult { ImageUrl = imageUrl, UpdatedAt = updatedAt, ExternalUrl = externalUrl };
         }
         catch (Exception ex)
         {
@@ -208,7 +211,7 @@ public class FaceFinderClient
     public async Task WriteMetadataAsync(string imagePath, FaceFinderResult result)
     {
         var metadataPath = imagePath + MetadataFileExtension;
-        var metadata = new FaceFinderMetadata { UpdatedAt = result.UpdatedAt };
+        var metadata = new FaceFinderMetadata { UpdatedAt = result.UpdatedAt, ExternalUrl = result.ExternalUrl };
         
         try
         {
@@ -218,6 +221,23 @@ public class FaceFinderClient
         catch (Exception ex)
         {
             Debug.WriteLine($"Failed to write FaceFinder metadata for {imagePath}: {ex.Message}");
+        }
+    }
+    
+    public async Task<FaceFinderMetadata?> ReadMetadataAsync(string imagePath)
+    {
+        var metadataPath = imagePath + MetadataFileExtension;
+        if (!File.Exists(metadataPath)) return null;
+
+        try
+        {
+            var metadataJson = await File.ReadAllTextAsync(metadataPath);
+            return JsonConvert.DeserializeObject<FaceFinderMetadata>(metadataJson);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error reading metadata file {metadataPath}: {ex.Message}");
+            return null;
         }
     }
     

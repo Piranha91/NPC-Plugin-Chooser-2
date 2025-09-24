@@ -719,6 +719,28 @@
                                                    Command="{Binding OpenFolderCommand}"
                                                    CommandParameter="{Binding MugshotFolderPath}"
                                                    Visibility="{Binding CanOpenMugshotFolder, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         <MenuItem Header="Visit Mod Page"
+                                                   DisplayMemberPath="DisplayName"  Visibility="{Binding CanVisitModPage, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                             <MenuItem.Style>
+                                                 <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                     <Setter Property="Command" Value="{Binding VisitModPageCommand}"/>
+                                                     <Setter Property="CommandParameter" Value="{Binding ModPageUrls[0].Url}"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding HasSingleModPage}" Value="False">
+                                                             <Setter Property="Command" Value="{x:Null}"/>
+                                                             <Setter Property="CommandParameter" Value="{x:Null}"/>
+                                                             <Setter Property="ItemsSource" Value="{Binding ModPageUrls}"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </MenuItem.Style>
+                                             <MenuItem.ItemContainerStyle>
+                                                 <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                     <Setter Property="Command" Value="{Binding DataContext.VisitModPageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                                     <Setter Property="CommandParameter" Value="{Binding Url}"/>
+                                                 </Style>
+                                             </MenuItem.ItemContainerStyle>
+                                         </MenuItem>
                                      </ContextMenu>
                                  </Border.ContextMenu>
                              </Border>
