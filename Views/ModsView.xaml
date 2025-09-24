@@ -657,12 +657,12 @@
                                     
                                     <Border.ContextMenu>
                                         <ContextMenu> 
-                                               <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/> 
+                                               <MenuItem  Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/> 
                                                <MenuItem Header="View Full Screen (Ctrl+RClick)" Command="{Binding ToggleFullScreenCommand}"/> 
                                                <Separator /> 
                                                <MenuItem Command="{Binding AddToFavoritesCommand}"> 
                                                    <MenuItem.Style> 
-                                                       <Style TargetType="MenuItem"> 
+                                                       <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}"> 
                                                            <Setter Property="Header" Value="Add to Favorites"/> 
                                                            <Style.Triggers> 
                                                                <DataTrigger Binding="{Binding IsFavorite}" Value="True"> 
@@ -676,7 +676,7 @@
                                                          Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}" 
                                                          ItemsSource="{Binding AvailableSourcePlugins}"> 
                                                    <MenuItem.ItemContainerStyle> 
-                                                       <Style TargetType="MenuItem"> 
+                                                       <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}"> 
                                                            <Setter Property="Header" Value="{Binding Converter={StaticResource ModKeyToStringConverter}}"/> 
                                                            <Setter Property="Command" Value="{Binding DataContext.SetNpcSourcePluginCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/> 
                                                            <Setter Property="CommandParameter" Value="{Binding}"/> 
@@ -705,7 +705,7 @@
                                                   CommandParameter="{Binding ParentVMModSetting.CorrespondingFolderPaths[0]}"
                                                   Visibility="{Binding CanOpenModFolder, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <MenuItem.Style>
-                                                <Style TargetType="MenuItem">
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding ParentVMModSetting.CorrespondingFolderPaths.Count}" Value="1">
                                                             <Setter Property="ItemsSource" Value="{x:Null}"/>
@@ -717,7 +717,7 @@
                                                 </Style>
                                             </MenuItem.Style>
                                             <MenuItem.ItemContainerStyle>
-                                                <Style TargetType="MenuItem">
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                     <Setter Property="Header" Value="{Binding Converter={StaticResource PathToFolderNameConverter}}"/>
                                                     <Setter Property="Command" Value="{Binding DataContext.OpenFolderCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
                                                     <Setter Property="CommandParameter" Value="{Binding}"/>
