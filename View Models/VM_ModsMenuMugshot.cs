@@ -36,7 +36,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         VM_ModSetting parentVMModSetting,
         CancellationToken cancellationToken
     );
-    
+
     private readonly VM_Mods _parentVMMaster;
     private readonly VM_ModSetting _parentVMModSetting;
     private readonly NpcConsistencyProvider _consistencyProvider;
@@ -76,14 +76,21 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     [Reactive] public ModKey? CurrentSourcePlugin { get; set; }
 
     [Reactive] public bool IsFavorite { get; set; }
-    
+
     [Reactive] public bool IsLoading { get; private set; }
     [Reactive] public double LoadingIconRadiusModifier { get; set; } = 0.2;
-    
+
     public VM_ModSetting ParentVMModSetting => _parentVMModSetting;
     public bool CanOpenModFolder => _parentVMModSetting.CorrespondingFolderPaths.Any();
     public bool CanOpenMugshotFolder => HasMugshot;
-    public string MugshotFolderPath => HasMugshot && !string.IsNullOrEmpty(ImagePath) ? Path.GetDirectoryName(ImagePath) : string.Empty;
+
+    public string MugshotFolderPath => HasMugshot && !string.IsNullOrEmpty(ImagePath)
+        ? Path.GetDirectoryName(ImagePath)
+        : string.Empty;
+
+    public ObservableCollection<ModPageInfo> ModPageUrls { get; } = new();
+    [ObservableAsProperty] public bool CanVisitModPage { get; }
+    [ObservableAsProperty] public bool HasSingleModPage { get; }
 
     public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
     public ReactiveCommand<Unit, Unit> JumpToNpcCommand { get; }
@@ -91,12 +98,15 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     public ReactiveCommand<Unit, Unit> SelectSameSourcePluginWherePossibleCommand { get; }
     public ReactiveCommand<Unit, Unit> AddToFavoritesCommand { get; }
     public ReactiveCommand<string, Unit> OpenFolderCommand { get; }
+    public ReactiveCommand<string, Unit> VisitModPageCommand { get; }
 
     // Static path for placeholder, consistent with VM_Mods
     private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
 
     private static readonly string FullPlaceholderPath =
         Path.Combine(AppContext.BaseDirectory, PlaceholderResourceRelativePath);
+
+    public record ModPageInfo(string DisplayName, string Url);
 
     public VM_ModsMenuMugshot(
         string imagePath,
@@ -124,9 +134,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         _faceFinderClient = faceFinderClient;
         _portraitCreator = portraitCreator;
         _cancellationToken = cancellationToken;
-        
+
         ImagePath = imagePath; // Store the given path (could be real or placeholder)
-        
+
         NpcFormKey = npcFormKey;
         NpcDisplayName = npcDisplayName;
         IsVisible = true;
@@ -226,6 +236,33 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             ImagePath = string.Empty;
         }
 
+        this.WhenAnyValue(x => x.ModPageUrls.Count)
+            .Select(count => count > 0)
+            .ToPropertyEx(this, x => x.CanVisitModPage)
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.ModPageUrls.Count)
+            .Select(count => count == 1)
+            .ToPropertyEx(this, x => x.HasSingleModPage)
+            .DisposeWith(_disposables);
+
+        // --- NEW: Parse meta.ini files ---
+        foreach (var modPath in _parentVMModSetting.CorrespondingFolderPaths)
+        {
+            var metaPath = Path.Combine(modPath, "meta.ini");
+            if (File.Exists(metaPath))
+            {
+                var (gameName, modId) = ParseMetaIni(metaPath);
+                if (!string.IsNullOrWhiteSpace(gameName) && !string.IsNullOrWhiteSpace(modId))
+                {
+                    var url = $"https://www.nexusmods.com/{gameName}/mods/{modId}";
+                    var folderName = Path.GetFileName(modPath.TrimEnd(Path.DirectorySeparatorChar));
+                    ModPageUrls.Add(new ModPageInfo(folderName, url));
+                }
+            }
+        }
+
+
         // ToggleFullScreenCommand can now operate on the placeholder too.
         var canToggleFullScreen =
             this.WhenAnyValue(x => x.ImagePath, path => !string.IsNullOrEmpty(path) && File.Exists(path));
@@ -248,8 +285,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 (ambiguous, source) => ambiguous && source.HasValue)).DisposeWith(_disposables);
 
         AddToFavoritesCommand = ReactiveCommand.Create(ToggleFavorite).DisposeWith(_disposables);
-        
+
         OpenFolderCommand = ReactiveCommand.Create<string>(Auxilliary.OpenFolder).DisposeWith(_disposables);
+        VisitModPageCommand = ReactiveCommand.Create<string>(Auxilliary.OpenUrl);
 
         ToggleFullScreenCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error showing image: {ex.Message}"))
@@ -266,6 +304,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             .DisposeWith(_disposables);
         OpenFolderCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening folder: {ex.Message}"))
+            .DisposeWith(_disposables);
+        VisitModPageCommand.ThrownExceptions
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Could not open URL: {ex.Message}"))
             .DisposeWith(_disposables);
     }
 
@@ -357,8 +398,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         }
         // No need to call anything on _parentVMMaster (VM_Mods) to refresh the whole panel.
     }
-    
-    private async Task HandleSuccessfulDownload(byte[] imageData, FaceFinderResult faceData, string baseSavePath, string saveFolder)
+
+    private async Task HandleSuccessfulDownload(byte[] imageData, FaceFinderResult faceData, string baseSavePath,
+        string saveFolder)
     {
         string finalImagePath;
         if (_settings.CacheFaceFinderImages)
@@ -370,7 +412,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             Directory.CreateDirectory(Path.GetDirectoryName(finalImagePath)!);
             await File.WriteAllBytesAsync(finalImagePath, imageData);
             await _faceFinderClient.WriteMetadataAsync(finalImagePath, faceData);
-        
+
             SetImageSource(finalImagePath, isPlaceholder: false);
             Debug.WriteLine($"Downloaded and cached mugshot for {NpcFormKey} as .{extension}");
         }
@@ -380,8 +422,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             SetImageSourceFromMemory(imageData);
             Debug.WriteLine($"Downloaded mugshot for {NpcFormKey} into memory (no cache).");
         }
-    
-        await UpdateUIAfterSuccess(finalImagePath, saveFolder, _settings.CacheFaceFinderImages); // don't set the mugshot folder if image wasn't cached
+
+        await UpdateUIAfterSuccess(finalImagePath, saveFolder,
+            _settings.CacheFaceFinderImages); // don't set the mugshot folder if image wasn't cached
     }
 
     private async Task UpdateUIAfterSuccess(string imagePath, string saveFolder, bool addToMugshotFolders)
@@ -414,14 +457,21 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 : _settings.MugshotsFolder;
             var saveFolder = Path.Combine(baseCacheFolder, _parentVMModSetting.DisplayName);
             var baseSavePath = Path.Combine(saveFolder, NpcFormKey.ModKey.ToString(), $"{NpcFormKey.ID:X8}");
-            
+
             var existingCachedFile = Auxilliary.FindExistingCachedImage(baseSavePath);
             string nifPath = _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting.CorrespondingFolderPaths);
 
             // 2. CHECK LOCAL: See if the existing file is valid and up-to-date
             if (existingCachedFile != null)
             {
-                bool needsRegen = _settings.UsePortraitCreatorFallback && _portraitCreator.NeedsRegeneration(existingCachedFile, nifPath);
+                var metadata = await _faceFinderClient.ReadMetadataAsync(existingCachedFile);
+                if (metadata?.ExternalUrl != null && ModPageUrls.All(p => p.Url != metadata.ExternalUrl))
+                {
+                    ModPageUrls.Add(new ModPageInfo("FaceFinder", metadata.ExternalUrl));
+                }
+
+                bool needsRegen = _settings.UsePortraitCreatorFallback &&
+                                  _portraitCreator.NeedsRegeneration(existingCachedFile, nifPath);
                 bool isStale = _settings.UseFaceFinderFallback &&
                                await _faceFinderClient.IsCacheStaleAsync(existingCachedFile, NpcFormKey,
                                    _parentVMModSetting.DisplayName, _settings.FaceFinderApiKey);
@@ -447,6 +497,12 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 {
                     try
                     {
+                        if (!string.IsNullOrWhiteSpace(faceData.ExternalUrl) &&
+                            ModPageUrls.All(p => p.Url != faceData.ExternalUrl))
+                        {
+                            ModPageUrls.Add(new ModPageInfo("FaceFinder", faceData.ExternalUrl));
+                        }
+
                         using var client = new HttpClient();
                         var imageData = await client.GetByteArrayAsync(faceData.ImageUrl, _cancellationToken);
                         await HandleSuccessfulDownload(imageData, faceData, baseSavePath, saveFolder);
@@ -460,7 +516,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             }
 
             // 4. FALLBACK 2: Try NPC Portrait Creator
-            
+
             var baseAutoGenFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
                 ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoGen Mugshots")
                 : _settings.MugshotsFolder;
@@ -509,12 +565,13 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             bitmap.StreamSource = stream;
             bitmap.EndInit();
         }
+
         bitmap.Freeze(); // IMPORTANT: Makes the image cross-thread accessible
         this.MugshotSource = bitmap;
         this.ImagePath = path;
         this.HasMugshot = !isPlaceholder;
     }
-    
+
     private void SetImageSourceFromMemory(byte[] imageData)
     {
         if (imageData == null || imageData.Length == 0) return;
@@ -527,6 +584,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             bitmap.StreamSource = stream;
             bitmap.EndInit();
         }
+
         bitmap.Freeze();
 
         this.MugshotSource = bitmap;
@@ -539,6 +597,40 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         OriginalDipWidth = info.Width;
         OriginalDipHeight = info.Height;
         OriginalDipDiagonal = Math.Sqrt(OriginalDipWidth * OriginalDipWidth + OriginalDipHeight * OriginalDipHeight);
+    }
+
+    private (string? gameName, string? modId) ParseMetaIni(string filePath)
+    {
+        string? gameName = null;
+        string? modId = null;
+        try
+        {
+            var lines = File.ReadAllLines(filePath);
+            foreach (var line in lines)
+            {
+                if (line.StartsWith("gameName=", StringComparison.OrdinalIgnoreCase))
+                {
+                    gameName = line.Split('=').Last().Trim();
+                    // Add special case for SkyrimSE
+                    if (gameName.Equals("SkyrimSE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        gameName = "skyrimspecialedition";
+                    }
+                }
+                else if (line.StartsWith("modid=", StringComparison.OrdinalIgnoreCase))
+                {
+                    modId = line.Split('=').Last().Trim();
+                }
+
+                if (gameName != null && modId != null) break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error parsing {filePath}: {ex.Message}");
+        }
+
+        return (gameName, modId);
     }
 
     public void Dispose()

@@ -356,7 +356,8 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         OpenFolderCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening folder: {ex.Message}"))
             .DisposeWith(Disposables);
-        VisitModPageCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Could not open URL: {ex.Message}"));
+        VisitModPageCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Could not open URL: {ex.Message}"))
+            .DisposeWith(Disposables);
 
 
         _consistencyProvider.NpcSelectionChanged
