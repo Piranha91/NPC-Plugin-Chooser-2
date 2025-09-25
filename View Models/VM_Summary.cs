@@ -23,13 +23,16 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         // Dependencies
         private readonly Settings _settings;
         private readonly NpcConsistencyProvider _consistencyProvider;
+        private readonly PortraitCreator _portraitCreator;
+        private readonly FaceFinderClient _faceFinderClient;
         private readonly EnvironmentStateProvider _environmentStateProvider;
         private readonly VM_NpcSelectionBar _npcsViewModel;
         private readonly VM_Mods _modsViewModel;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
+        private readonly SummaryMugshotFactory _summaryMugshotFactory;
         private readonly CompositeDisposable _disposables = new();
         
-        private record SummaryNpcData(FormKey TargetNpcFormKey, string NpcDisplayName, string ModDisplayName, string SourceNpcDisplayName, bool IsGuest, string ImagePath, bool HasMugshot, bool IsAmbiguous, bool HasIssue, string IssueText, bool HasNoData, string NoDataText);
+        private record SummaryNpcData(FormKey TargetNpcFormKey, FormKey SourceNpcFormKey, string NpcDisplayName, string ModDisplayName, string SourceNpcDisplayName, bool IsGuest, string ImagePath, bool HasMugshot, bool IsAmbiguous, bool HasIssue, string IssueText, bool HasNoData, string NoDataText);
         private List<SummaryNpcData> _allNpcData = new();
         private List<VM_SummaryListItem> _allListItems = new();
         private readonly ISubject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
@@ -73,21 +76,38 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         public ReactiveCommand<Unit, Unit> ZoomInSummaryCommand { get; }
         public ReactiveCommand<Unit, Unit> ZoomOutSummaryCommand { get; }
         public ReactiveCommand<Unit, Unit> ResetZoomSummaryCommand { get; }
+        
+        public delegate VM_SummaryMugshot SummaryMugshotFactory(
+            string imagePath,
+            FormKey targetNpcFormKey,
+            FormKey sourceNpcFormKey,
+            string npcDisplayName,
+            string modDisplayName,
+            string sourceNpcDisplayName,
+            bool isGuest, bool isAmbiguous, bool hasIssue, string issueText, bool hasNoData, string noDataText, bool hasMugshot,
+            VM_ModSetting? associatedModSetting
+        );
 
         public VM_Summary(
             Settings settings,
             NpcConsistencyProvider consistencyProvider,
             EnvironmentStateProvider environmentStateProvider,
+            FaceFinderClient faceFinderClient,
+            PortraitCreator portraitCreator,
             VM_NpcSelectionBar npcsViewModel,
             VM_Mods modsViewModel,
-            Lazy<VM_MainWindow> lazyMainWindowVm)
+            Lazy<VM_MainWindow> lazyMainWindowVm,
+            SummaryMugshotFactory summaryMugshotFactory)
         {
             _settings = settings;
             _consistencyProvider = consistencyProvider;
             _environmentStateProvider = environmentStateProvider;
+            _faceFinderClient = faceFinderClient;
+            _portraitCreator = portraitCreator;
             _npcsViewModel = npcsViewModel;
             _modsViewModel = modsViewModel;
             _lazyMainWindowVm = lazyMainWindowVm;
+            _summaryMugshotFactory = summaryMugshotFactory;
 
             MaxNpcsPerPage = _settings.MaxNpcsPerPageSummaryView;
             this.WhenAnyValue(x => x.MaxNpcsPerPage)
@@ -233,7 +253,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 }
                 
                 // Create and store the lightweight data object
-                var data = new SummaryNpcData(targetNpcKey, targetNpcName, modName, sourceNpcName, isGuest, imagePath, hasMugshot, isAmbiguous, hasIssue, issueText, hasNoData, noDataText);
+                var data = new SummaryNpcData(targetNpcKey, sourceNpcKey, targetNpcName, modName, sourceNpcName, isGuest, imagePath, hasMugshot, isAmbiguous, hasIssue, issueText, hasNoData, noDataText);
                 _allNpcData.Add(data);
                 _allListItems.Add(new VM_SummaryListItem(targetNpcKey, targetNpcName, modName, sourceNpcName, isGuest));
             }
@@ -267,10 +287,19 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                     .ToList();
             
                 // Create the heavy ViewModels ONLY for the visible page
-                var viewModelsForPage = pagedData.Select(data => new VM_SummaryMugshot(
-                    data.ImagePath, data.TargetNpcFormKey, data.NpcDisplayName, data.ModDisplayName, data.NpcDisplayName,
-                    data.IsGuest, data.IsAmbiguous, data.HasIssue, data.IssueText, data.HasNoData, data.NoDataText, 
-                    data.HasMugshot, _lazyMainWindowVm, _modsViewModel)).ToList();
+                var viewModelsForPage = pagedData.Select(data =>
+                {
+                    var modSetting = _modsViewModel.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(data.ModDisplayName, StringComparison.OrdinalIgnoreCase));
+            
+                    // Call the factory with only the runtime parameters.
+                    // Autofac will automatically inject the singleton dependencies.
+                    return _summaryMugshotFactory(
+                        data.ImagePath, data.TargetNpcFormKey, data.SourceNpcFormKey, data.NpcDisplayName, data.ModDisplayName, data.SourceNpcDisplayName,
+                        data.IsGuest, data.IsAmbiguous, data.HasIssue, data.IssueText, data.HasNoData, data.NoDataText, 
+                        data.HasMugshot, modSetting);
+
+                }).ToList();
+
 
                 // Add them to the display collection
                 foreach(var vm in viewModelsForPage)
@@ -278,14 +307,11 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                     DisplayedItems.Add(vm);
                 }
             
-                // **THE FIX FOR ROLLING LOAD**
-                // Trigger the async loading for each new ViewModel.
-                // This is "fire-and-forget" - the UI will update as each image finishes loading.
                 Task.Run(async () =>
                 {
                     foreach(var vm in viewModelsForPage)
                     {
-                        await vm.LoadImageAsync();
+                        await vm.LoadAndGenerateImageAsync();
                     }
                 });
             }

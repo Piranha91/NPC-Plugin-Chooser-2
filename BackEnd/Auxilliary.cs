@@ -858,6 +858,38 @@ public class Auxilliary : IDisposable
         }
     }
     
+    public static (string? gameName, string? modId) ParseMetaIni(string filePath)
+    {
+        string? gameName = null;
+        string? modId = null;
+        try
+        {
+            var lines = File.ReadAllLines(filePath);
+            foreach (var line in lines)
+            {
+                if (line.StartsWith("gameName=", StringComparison.OrdinalIgnoreCase))
+                {
+                    gameName = line.Split('=').Last().Trim();
+                    // Add special case for SkyrimSE
+                    if (gameName.Equals("SkyrimSE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        gameName = "skyrimspecialedition";
+                    }
+                }
+                else if (line.StartsWith("modid=", StringComparison.OrdinalIgnoreCase))
+                {
+                    modId = line.Split('=').Last().Trim();
+                }
+                if (gameName != null && modId != null) break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error parsing {filePath}: {ex.Message}");
+        }
+        return (gameName, modId);
+    }
+    
     public static string? FindExistingCachedImage(string baseFilePath)
     {
         // Check for the most common formats in order of likelihood.

@@ -152,9 +152,11 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<VM_Run>().AsSelf().SingleInstance();
             builder.RegisterType<VM_Mods>().AsSelf().SingleInstance();  
             builder.RegisterType<VM_Summary>().AsSelf().SingleInstance();
+            builder.RegisterType<VM_FavoriteFaces>().AsSelf();
             builder.RegisterType<VM_FullScreenImage>().AsSelf();
             builder.RegisterType<VM_ModsMenuMugshot>().AsSelf();
             builder.RegisterType<VM_NpcsMenuMugshot>().AsSelf();
+            builder.RegisterType<VM_SummaryMugshot >().AsSelf();
             builder.RegisterType<VM_MultiImageDisplay>().AsSelf(); 
             builder.RegisterType<VM_ModSetting>().AsSelf();
             builder.RegisterType<VM_ModFaceFinderLinker>().AsSelf(); 

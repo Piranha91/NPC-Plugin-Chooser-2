@@ -57,60 +57,80 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:VM_SummaryMugshot}">
                             <Border BorderThickness="2" BorderBrush="Gray" Margin="5" CornerRadius="2"
-                                Width="{Binding ImageWidth}" Height="{Binding ImageHeight}">
-                            <Border.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="Show Full Image" Command="{Binding ToggleFullScreenCommand}"/>
-                                    <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/>
-                                    <MenuItem Header="Jump to Mod in List" Command="{Binding JumpToModCommand}"/>
-                                </ContextMenu>
-                            </Border.ContextMenu>
+                                    Width="{Binding ImageWidth}" Height="{Binding ImageHeight}">
+                                <Border.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Show Full Image" Command="{Binding ToggleFullScreenCommand}"/>
+                                        <MenuItem Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/>
+                                        <MenuItem Header="Jump to Mod in List" Command="{Binding JumpToModCommand}"/>
+                                        <MenuItem Header="Visit Mod Page"
+                                                  DisplayMemberPath="DisplayName"
+                                                  Visibility="{Binding CanVisitModPage, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <MenuItem.Style>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                    <Setter Property="Command" Value="{Binding VisitModPageCommand}"/>
+                                                    <Setter Property="CommandParameter" Value="{Binding ModPageUrls[0].Url}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasSingleModPage}" Value="False">
+                                                            <Setter Property="Command" Value="{x:Null}"/>
+                                                            <Setter Property="CommandParameter" Value="{x:Null}"/>
+                                                            <Setter Property="ItemsSource" Value="{Binding ModPageUrls}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </MenuItem.Style>
+                                            <MenuItem.ItemContainerStyle>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                    <Setter Property="Command" Value="{Binding DataContext.VisitModPageCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                                    <Setter Property="CommandParameter" Value="{Binding Url}"/>
+                                                </Style>
+                                            </MenuItem.ItemContainerStyle>
+                                        </MenuItem>
+                                    </ContextMenu>
+                                </Border.ContextMenu>
 
-                            <Grid Background="WhiteSmoke">
-                                <Image x:Name="MugshotImage" 
-                                       Source="{Binding MugshotSource}" Stretch="UniformToFill" 
-                                       UseLayoutRounding="True" SnapsToDevicePixels="True">
-                                    <Image.Style>
-                                        <Style TargetType="Image">
-                                            <Setter Property="Opacity" Value="1.0" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding HasMugshot}" Value="False">
-                                                    <Setter Property="Opacity" Value="0.3"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Image.Style>
-                                </Image>
-                                
-                                <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" 
-                                        Background="{DynamicResource MugshotCaptionBackground}" Padding="3,1">
-                                    <StackPanel HorizontalAlignment="Center">
-
-                                        <TextBlock Text="{Binding NpcDisplayName}" 
-                                                   Foreground="{DynamicResource MugshotCaptionForeground}" 
-                                                   FontSize="10" 
-                                                   HorizontalAlignment="Center"
-                                                   TextAlignment="Center"
-                                                   TextWrapping="Wrap"  
-                                                   Width="{Binding ElementName=MugshotImage, Path=ActualWidth}" />
-
-                                        <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
-                                                 Width="{Binding ElementName=MugshotImage, Path=ActualWidth, Converter={StaticResource WidthPercentageConverter}, ConverterParameter=90}">
-                                            <TextBlock Text="{Binding ModDisplayName}" 
-                                                       Foreground="{DynamicResource MugshotCaptionSecondaryForeground}" FontSize="9" 
-                                                       HorizontalAlignment="Center" FontStyle="Italic"
-                                                       TextAlignment="Center"
-                                                       TextWrapping="NoWrap" /> </Viewbox>
-
-                                    </StackPanel>
-                                </Border>
-                                
-                                <Grid HorizontalAlignment="Left" VerticalAlignment="Top" Margin="2" Width="16" Height="16"
-                                      Visibility="{Binding HasIssueNotification, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                      ToolTip="{Binding IssueNotificationText}">
+                                <Grid Background="WhiteSmoke">
+                                    <Image x:Name="MugshotImage" 
+                                           Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                                        </Image>
+                                    
+                                    <Image Source="/NPC Plugin Chooser 2;component/Resources/RedDragon.png"
+                                           Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           RenderTransformOrigin="0.5,0.5"
+                                           Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource WidthPercentageConverter}, ConverterParameter='50'}"
+                                           Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+                                        <Image.Style>
+                                            <Style TargetType="Image">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                                        <DataTrigger.EnterActions>
+                                                            <BeginStoryboard Name="OrbitDragon_BeginStoryboard">
+                                                                <Storyboard>
+                                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].Angle" From="0" To="360" Duration="0:0:3" RepeatBehavior="Forever" />
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </DataTrigger.EnterActions>
+                                                        <DataTrigger.ExitActions>
+                                                            <StopStoryboard BeginStoryboardName="OrbitDragon_BeginStoryboard"/>
+                                                        </DataTrigger.ExitActions>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                                <Setter Property="RenderTransform">
+                                                    <Setter.Value>
+                                                        <TransformGroup>
+                                                            <TranslateTransform/>
+                                                            <RotateTransform/>
+                                                        </TransformGroup>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </Image.Style>
+                                    </Image>
+                                    
                                     </Grid>
-                                </Grid>
-                        </Border>
+                            </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>

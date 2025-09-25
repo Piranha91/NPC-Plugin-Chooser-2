@@ -56,7 +56,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private readonly CompositeDisposable _disposables = new();
     private readonly Lazy<VM_Mods> _lazyModsVm;
     private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
+    private readonly VM_FavoriteFaces _favoriteFacesVm;
     private readonly AppearanceModFactory _appearanceModFactory;
+    private readonly VM_FavoriteFaces.Factory _favoriteFacesFactory;
     private readonly VM_ModSetting.FromModelFactory _modSettingFromModelFactory;
     
     [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
@@ -197,6 +199,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         Lazy<VM_Mods> lazyModsVm,
         Lazy<VM_MainWindow> lazyMainWindowVm,
         AppearanceModFactory appearanceModFactory,
+        VM_FavoriteFaces.Factory favoriteFacesFactory,
         VM_ModSetting.FromModelFactory modSettingFromModelFactory)
     {
         _environmentStateProvider = environmentStateProvider;
@@ -209,6 +212,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         _lazyModsVm = lazyModsVm;
         _lazyMainWindowVm = lazyMainWindowVm;
         _appearanceModFactory = appearanceModFactory;
+        _favoriteFacesFactory = favoriteFacesFactory;
         _modSettingFromModelFactory = modSettingFromModelFactory;
 
         _hiddenModNames = _settings.HiddenModNames ?? new(StringComparer.OrdinalIgnoreCase);
@@ -670,7 +674,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     
     private void ShowFavoritesWindowForSharing()
     {
-        var vm = new VM_FavoriteFaces(_settings, _consistencyProvider, this, _lazyModsVm.Value, _lazyMainWindowVm, VM_FavoriteFaces.FavoriteFacesMode.Share, null);
+        var vm = _favoriteFacesFactory(VM_FavoriteFaces.FavoriteFacesMode.Share, null);
         var window = new FavoriteFacesWindow { DataContext = vm, ViewModel = vm };
 
         // Find the currently active window to set as the owner.
@@ -682,7 +686,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private void ShowFavoritesWindowForApplying(VM_NpcsMenuSelection targetNpc)
     {
         if (targetNpc == null) return;
-        var vm = new VM_FavoriteFaces(_settings, _consistencyProvider, this, _lazyModsVm.Value, _lazyMainWindowVm, VM_FavoriteFaces.FavoriteFacesMode.Apply, targetNpc);
+        var vm = _favoriteFacesFactory(VM_FavoriteFaces.FavoriteFacesMode.Apply, targetNpc);
         var window = new FavoriteFacesWindow { DataContext = vm, ViewModel = vm };
     
         // Find the currently active window to set as the owner.

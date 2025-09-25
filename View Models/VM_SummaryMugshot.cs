@@ -1,5 +1,6 @@
 ﻿// View Models/VM_SummaryMugshot.cs
 using System;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Reactive;
@@ -9,11 +10,15 @@ using NPC_Plugin_Chooser_2.Views;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Splat;
+using System.Net.Http;
+using SixLabors.ImageSharp;
 using System.Windows.Media.Imaging;
 using System.Windows.Media;
 using System.Reactive.Disposables;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
+using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.Models;
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
@@ -22,6 +27,10 @@ namespace NPC_Plugin_Chooser_2.View_Models;
     {
         private readonly CompositeDisposable _disposables = new();
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
+        private readonly VM_ModSetting? _associatedModSetting;
+        private readonly Settings _settings;
+        private readonly FaceFinderClient _faceFinderClient;
+        private readonly PortraitCreator _portraitCreator;
 
         // IHasMugshotImage Implementation
         public string ImagePath { get; set; }
@@ -41,6 +50,8 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         public string NpcDisplayName { get; }
         public string ModDisplayName { get; }
         public string SourceNpcDisplayName { get; }
+        [Reactive] public bool IsLoading { get; private set; }
+        public FormKey SourceNpcFormKey { get; }
 
         // Decorator Icon Properties
         public bool IsGuestAppearance { get; }
@@ -49,30 +60,48 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         public string IssueNotificationText { get; }
         public bool HasNoData { get; }
         public string NoDataNotificationText { get; }
-        public bool HasMugshot { get; }
+        public bool HasMugshot { get; private set; }
+        
+        // --- 2. Add properties and command for Mod Page links ---
+        public record ModPageInfo(string DisplayName, string Url);
+        public ObservableCollection<ModPageInfo> ModPageUrls { get; } = new();
+        [ObservableAsProperty] public bool CanVisitModPage { get; }
+        [ObservableAsProperty] public bool HasSingleModPage { get; }
 
         // Commands
         public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
         public ReactiveCommand<Unit, Unit> JumpToNpcCommand { get; }
         public ReactiveCommand<Unit, Unit> JumpToModCommand { get; }
+        public ReactiveCommand<string, Unit> VisitModPageCommand { get; }
+        
 
         public VM_SummaryMugshot(
             string imagePath,
             FormKey targetNpcFormKey,
+            FormKey sourceNpcFormKey,
             string npcDisplayName,
             string modDisplayName,
             string sourceNpcDisplayName,
             bool isGuest, bool isAmbiguous, bool hasIssue, string issueText, bool hasNoData, string noDataText, bool hasMugshot,
             Lazy<VM_MainWindow> lazyMainWindowVm,
-            VM_Mods modsViewModel)
+            VM_Mods modsViewModel,
+            VM_ModSetting? associatedModSetting,
+            Settings settings,                   
+            FaceFinderClient faceFinderClient,   
+            PortraitCreator portraitCreator)
         {
             _lazyMainWindowVm = lazyMainWindowVm;
+            _associatedModSetting = associatedModSetting;
+            _settings = settings;
+            _faceFinderClient = faceFinderClient;
+            _portraitCreator = portraitCreator;
 
             ImagePath = imagePath;
             TargetNpcFormKey = targetNpcFormKey;
             NpcDisplayName = npcDisplayName;
             ModDisplayName = modDisplayName;
             SourceNpcDisplayName = sourceNpcDisplayName;
+            SourceNpcFormKey = sourceNpcFormKey;
 
             IsGuestAppearance = isGuest;
             IsAmbiguousSource = isAmbiguous;
@@ -99,6 +128,29 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 // This catch block correctly handles any errors by marking the mugshot as invalid.
                 Debug.WriteLine($"Error getting dimensions for image '{ImagePath}': {ex.Message}");
                 HasMugshot = false; // Fallback in case the placeholder file is missing/corrupt
+            }
+            
+            this.WhenAnyValue(x => x.ModPageUrls.Count).Select(count => count > 0).ToPropertyEx(this, x => x.CanVisitModPage).DisposeWith(_disposables);
+            this.WhenAnyValue(x => x.ModPageUrls.Count).Select(count => count == 1).ToPropertyEx(this, x => x.HasSingleModPage).DisposeWith(_disposables);
+            VisitModPageCommand = ReactiveCommand.Create<string>(Auxilliary.OpenUrl);
+
+            if (_associatedModSetting != null)
+            {
+                foreach (var modPath in _associatedModSetting.CorrespondingFolderPaths)
+                {
+                    var metaPath = Path.Combine(modPath, "meta.ini");
+                    if (File.Exists(metaPath))
+                    {
+                        // (This assumes you have a helper method to parse the ini file)
+                        var (gameName, modId) = Auxilliary.ParseMetaIni(metaPath);
+                        if (!string.IsNullOrWhiteSpace(gameName) && !string.IsNullOrWhiteSpace(modId))
+                        {
+                            var url = $"https://www.nexusmods.com/{gameName}/mods/{modId}";
+                            var folderName = Path.GetFileName(modPath.TrimEnd(Path.DirectorySeparatorChar));
+                            ModPageUrls.Add(new ModPageInfo(folderName, url));
+                        }
+                    }
+                }
             }
 
             // Command Implementations
@@ -133,32 +185,113 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             }).DisposeWith(_disposables);
         }
         
-        public async Task LoadImageAsync()
+        public async Task LoadAndGenerateImageAsync()
+    {
+        if (MugshotSource != null) return;
+        IsLoading = true;
+
+        try
         {
-            if (MugshotSource != null || string.IsNullOrEmpty(ImagePath)) return; // Don't load if already loaded
-
-            try
+            if (HasMugshot && File.Exists(ImagePath))
             {
-                // Load and decode on a background thread
-                var bitmap = await Task.Run(() =>
+                SetImageSource(ImagePath);
+                return;
+            }
+
+            // --- FaceFinder Fallback ---
+            if (_settings.UseFaceFinderFallback)
+            {
+                var faceData = await _faceFinderClient.GetFaceDataAsync(SourceNpcFormKey, this.ModDisplayName, _settings.FaceFinderApiKey);
+                if (faceData != null && !string.IsNullOrWhiteSpace(faceData.ImageUrl))
                 {
-                    var bmp = new BitmapImage();
-                    bmp.BeginInit();
-                    bmp.UriSource = new Uri(ImagePath, UriKind.Absolute);
-                    bmp.CacheOption = BitmapCacheOption.OnLoad;
-                    bmp.EndInit();
-                    bmp.Freeze(); // Make it thread-safe to pass to the UI thread
-                    return bmp;
-                });
+                    using var client = new HttpClient();
+                    var imageData = await client.GetByteArrayAsync(faceData.ImageUrl);
+                    SetImageSourceFromMemory(imageData);
+                    // (Optionally add logic here to cache the downloaded image)
+                    if (!string.IsNullOrWhiteSpace(faceData.ExternalUrl) && ModPageUrls.All(p => p.Url != faceData.ExternalUrl))
+                    {
+                        ModPageUrls.Add(new ModPageInfo("FaceFinder", faceData.ExternalUrl));
+                    }
+                    return;
+                }
+            }
 
-                // Assign to the property on the UI thread.
-                // Because MugshotSource is [Reactive], the UI will update automatically.
-                MugshotSource = bitmap;
-            }
-            catch (Exception ex)
+            // --- PortraitCreator Fallback ---
+            if (_settings.UsePortraitCreatorFallback && _associatedModSetting != null)
             {
-                Debug.WriteLine($"Error loading image '{ImagePath}': {ex.Message}");
+                var baseAutoGenFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
+                    ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoGen Mugshots")
+                    : _settings.MugshotsFolder;
+                var saveFolder = Path.Combine(baseAutoGenFolder, this.ModDisplayName);
+                var savePath = Path.Combine(saveFolder, SourceNpcFormKey.ModKey.ToString(), $"{SourceNpcFormKey.ID:X8}.png");
+
+                string nifPath = await _portraitCreator.FindNpcNifPath(this.SourceNpcFormKey, _associatedModSetting);
+                if (!string.IsNullOrWhiteSpace(nifPath) && _portraitCreator.NeedsRegeneration(savePath, nifPath, _associatedModSetting.CorrespondingFolderPaths))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
+                    if (await _portraitCreator.GeneratePortraitAsync(nifPath, _associatedModSetting.CorrespondingFolderPaths, savePath))
+                    {
+                        SetImageSource(savePath);
+                    }
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error generating summary image for {SourceNpcFormKey}: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+        
+        private void SetImageSource(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+
+            var bitmap = new BitmapImage();
+            using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read))
+            {
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.StreamSource = stream;
+                bitmap.EndInit();
+            }
+            bitmap.Freeze();
+
+            // Update this VM's properties to reflect the new image
+            this.MugshotSource = bitmap;
+            this.ImagePath = path;
+            this.HasMugshot = true;
+        }
+    
+        private void SetImageSourceFromMemory(byte[] imageData)
+        {
+            if (imageData == null || imageData.Length == 0) return;
+
+            var bitmap = new BitmapImage();
+            using (var stream = new MemoryStream(imageData))
+            {
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad; // Read fully into memory
+                bitmap.StreamSource = stream;
+                bitmap.EndInit();
+            }
+            bitmap.Freeze(); // Make it thread-safe for the UI
+
+            // Update the UI properties
+            this.MugshotSource = bitmap;
+            this.ImagePath = "in-memory"; // A non-file path to indicate it's not saved
+            this.HasMugshot = true;
+
+            // We also need to update the dimensions from the in-memory data
+            var info = Image.Identify(imageData);
+            OriginalPixelWidth = info.Width;
+            OriginalPixelHeight = info.Height;
+            OriginalDipWidth = info.Width;
+            OriginalDipHeight = info.Height;
+            OriginalDipDiagonal = Math.Sqrt(OriginalDipWidth * OriginalDipWidth + OriginalDipHeight * OriginalDipHeight);
         }
 
         public void Dispose()
@@ -166,6 +299,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             _disposables.Dispose();
         }
     }
+
 
     public class VM_SummaryListItem : ReactiveObject
     {
