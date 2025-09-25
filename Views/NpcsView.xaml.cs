@@ -365,17 +365,6 @@ namespace NPC_Plugin_Chooser_2.Views
             {
                 return;
             }
-            
-            // *** NEW GUARD CLAUSE ***
-            // Before running the packer, check if the visible images have actually loaded their dimensions.
-            // If any image has a diagonal of 0, it means LoadInitialImageAsync hasn't finished for it yet.
-            var visibleImagesForCheck = imagesToProcess.Where(img => img.IsVisible).ToList();
-            if (visibleImagesForCheck.Any(img => img.OriginalDipDiagonal <= 0))
-            {
-                Debug.WriteLine("[RefreshImageSizes] Aborted: Not all visible images have loaded their dimensions yet. Waiting for the awaited call.");
-                return; // It's too early. Abort and wait for the proper trigger.
-            }
-            // *** END NEW GUARD CLAUSE ***
 
             Dispatcher.BeginInvoke(new Action(() =>
             {

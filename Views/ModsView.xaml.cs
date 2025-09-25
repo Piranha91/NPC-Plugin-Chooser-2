@@ -139,25 +139,21 @@ namespace NPC_Plugin_Chooser_2.Views
                 this.BindCommand(ViewModel, vm => vm.ResetZoomModsCommand, v => v.ResetZoomModsButton).DisposeWith(d); // NEW BINDING
 
 
+                // In ModsView.xaml.cs, inside the WhenActivated block
+
                 ViewModel.RefreshMugshotSizesObservable
                     .ObserveOn(RxApp.MainThreadScheduler)
                     .Subscribe(_ => {
-                        Debug.WriteLine("ModsView: RefreshMugshotSizesObservable (from VM) triggered.");
-                        // This is often called after VM property changes (like ResetZoom).
-                        // We need to ensure the Grid is also up-to-date here.
-                        Dispatcher.BeginInvoke(new Action(() => {
-                            Debug.WriteLine("ModsView: VM Refresh - Phase 1: Invalidating MainContentGridForSplitter.");
-                            if (MainContentGridForSplitter.IsLoaded)
-                            {
-                                MainContentGridForSplitter.InvalidateMeasure();
-                                MainContentGridForSplitter.InvalidateArrange();
-                                MainContentGridForSplitter.UpdateLayout();
-                            }
-                            Dispatcher.BeginInvoke(new Action(() => {
-                                Debug.WriteLine("ModsView: VM Refresh - Phase 2: Calling RefreshMugshotImageSizes.");
-                                RefreshMugshotImageSizes();
-                            }), DispatcherPriority.Background);
-                        }), DispatcherPriority.ContextIdle);
+                        Debug.WriteLine("ModsView: RefreshMugshotSizesObservable (from VM) triggered. Invalidating ScrollViewer measure.");
+        
+                        // This is now the ONLY action. We are telling the layout system that the
+                        // ScrollViewer's size might be incorrect. The layout system will then
+                        // re-measure it, and if its size changes, the MugshotScrollViewer_SizeChanged
+                        // event will fire, which is our single point of truth for refreshing.
+                        if (MugshotScrollViewer.IsLoaded)
+                        {
+                            MugshotScrollViewer.InvalidateMeasure();
+                        }
                     })
                     .DisposeWith(d);
                 

@@ -51,6 +51,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private readonly NpcConsistencyProvider _consistencyProvider;
     private readonly NpcDescriptionProvider _descriptionProvider;
     private readonly Auxilliary _auxilliary;
+    private readonly ImagePacker _imagePacker;
     private readonly FaceFinderClient _faceFinderClient;
     private readonly CompositeDisposable _disposables = new();
     private readonly Lazy<VM_Mods> _lazyModsVm;
@@ -192,6 +193,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         NpcConsistencyProvider consistencyProvider,
         NpcDescriptionProvider descriptionProvider,
         FaceFinderClient faceFinderClient,
+        ImagePacker imagePacker,
         Lazy<VM_Mods> lazyModsVm,
         Lazy<VM_MainWindow> lazyMainWindowVm,
         AppearanceModFactory appearanceModFactory,
@@ -203,6 +205,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         _consistencyProvider = consistencyProvider;
         _descriptionProvider = descriptionProvider;
         _faceFinderClient = faceFinderClient;
+        _imagePacker = imagePacker;
         _lazyModsVm = lazyModsVm;
         _lazyMainWindowVm = lazyMainWindowVm;
         _appearanceModFactory = appearanceModFactory;
@@ -274,23 +277,22 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SelectedNpc)
-            // **MODIFICATION**: Make this subscription async to allow for awaiting
             .SelectMany(async selectedNpc =>
             {
                 var mugshotVMs = selectedNpc != null
                     ? await CreateMugShotViewModelsAsync(selectedNpc, _mugshotData)
                     : new ObservableCollection<VM_NpcsMenuMugshot>();
-
-                if (mugshotVMs.Any())
-                {
-                    // Wait for all the new VMs to finish their initial image/dimension loading.
-                    await Task.WhenAll(mugshotVMs.Select(vm => vm.IsReady));
-                }
-            
                 return mugshotVMs;
             })
             .ObserveOn(RxApp.MainThreadScheduler)
             .ToPropertyEx(this, x => x.CurrentNpcAppearanceMods)
+            .DisposeWith(_disposables);
+        
+        Observable.FromEventPattern<ImagePacker.PackingCompletedEventArgs>(
+                _imagePacker, nameof(ImagePacker.PackingCompleted))
+            .Throttle(TimeSpan.FromMilliseconds(100))
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(_ => TriggerAsyncMugshotGeneration())
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.CurrentNpcAppearanceMods)
@@ -2189,6 +2191,26 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         // Use the existing private helper method to get the specific image path,
         // ensuring consistency with the rest of the application.
         return GetImagePathForNpc(modSetting, npcFormKey, _mugshotData);
+    }
+    
+    private void TriggerAsyncMugshotGeneration()
+    {
+        if (CurrentNpcAppearanceMods == null || !CurrentNpcAppearanceMods.Any())
+        {
+            return;
+        }
+
+        Debug.WriteLine("ImagePacker has completed. Triggering background mugshot generation.");
+
+        // Asynchronously call GenerateMugshotAsync for all visible items that don't have a real mugshot yet.
+        foreach (var mugshotVM in CurrentNpcAppearanceMods)
+        {
+            if (mugshotVM.IsVisible && !mugshotVM.HasMugshot)
+            {
+                // Fire and forget. The VM will update its own image when the task completes.
+                _ = mugshotVM.GenerateMugshotAsync();
+            }
+        }
     }
 
     private void HandleShareAppearanceRequest(VM_NpcsMenuMugshot mugshotToShare)

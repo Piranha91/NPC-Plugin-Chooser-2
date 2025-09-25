@@ -44,6 +44,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     private readonly VM_NpcSelectionBar _npcSelectionBar;
     private readonly FaceFinderClient _faceFinderClient;
     private readonly PortraitCreator _portraitCreator;
+    private readonly ImagePacker _imagePacker;
     private readonly CancellationToken _cancellationToken;
     private readonly CompositeDisposable _disposables = new();
 
@@ -123,7 +124,8 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         Settings settings,
         VM_NpcSelectionBar npcSelectionBar,
         FaceFinderClient faceFinderClient,
-        PortraitCreator portraitCreator
+        PortraitCreator portraitCreator,
+        ImagePacker imagePacker
     )
     {
         _parentVMMaster = parentVMMaster;
@@ -133,6 +135,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         _npcSelectionBar = npcSelectionBar;
         _faceFinderClient = faceFinderClient;
         _portraitCreator = portraitCreator;
+        _imagePacker = imagePacker;
         _cancellationToken = cancellationToken;
 
         ImagePath = imagePath; // Store the given path (could be real or placeholder)
@@ -183,58 +186,8 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                                    File.Exists(imagePath) &&
                                    !imagePath.Equals(FullPlaceholderPath, StringComparison.OrdinalIgnoreCase);
         HasMugshot = isActualMugshotFile; // Set HasMugshot based on this check
-
-        // Load dimensions for the ImagePath (whether it's real or placeholder)
-        if (!string.IsNullOrWhiteSpace(ImagePath) && File.Exists(ImagePath))
-        {
-            try
-            {
-                var (pixelWidth, pixelHeight, dipWidth, dipHeight) = ImagePacker.GetImageDimensions(ImagePath);
-                OriginalPixelWidth = pixelWidth;
-                OriginalPixelHeight = pixelHeight;
-                OriginalDipWidth = dipWidth;
-                OriginalDipHeight = dipHeight;
-                OriginalDipDiagonal = Math.Sqrt(dipWidth * dipWidth + dipHeight * dipHeight);
-                ImageWidth = OriginalDipWidth;
-                ImageHeight = OriginalDipHeight;
-
-                // --- ADD THIS INITIALIZATION LOGIC ---
-                var bitmap = new BitmapImage();
-                bitmap.BeginInit();
-                bitmap.UriSource = new Uri(ImagePath, UriKind.Absolute);
-                bitmap.CacheOption = BitmapCacheOption.OnLoad; // Releases file lock
-                bitmap.EndInit();
-                bitmap.Freeze(); // Good practice for performance
-                this.MugshotSource = bitmap;
-                // --- END OF ADDED LOGIC ---
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error getting dimensions for '{ImagePath}' in VM_ModsMenuMugshot: {ex.Message}");
-                // If dimensions fail even for a placeholder, something is wrong. Clear out.
-                ImageWidth = 0;
-                ImageHeight = 0;
-                HasMugshot = false; // Ensure this is false if image load fails
-                OriginalPixelWidth = 0;
-                OriginalPixelHeight = 0;
-                OriginalDipWidth = 0;
-                OriginalDipHeight = 0;
-                OriginalDipDiagonal = 0;
-                ImagePath = string.Empty; // Prevent trying to display a broken path
-            }
-        }
-        else // Path was null, empty, or file doesn't exist (should be rare if VM_Mods passes valid placeholder)
-        {
-            ImageWidth = 0;
-            ImageHeight = 0;
-            HasMugshot = false;
-            OriginalPixelWidth = 0;
-            OriginalPixelHeight = 0;
-            OriginalDipWidth = 0;
-            OriginalDipHeight = 0;
-            OriginalDipDiagonal = 0;
-            ImagePath = string.Empty;
-        }
+        
+        _ = LoadInitialImageAsync();
 
         this.WhenAnyValue(x => x.ModPageUrls.Count)
             .Select(count => count > 0)
@@ -308,6 +261,60 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         VisitModPageCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Could not open URL: {ex.Message}"))
             .DisposeWith(_disposables);
+    }
+    
+    // --- NEW METHOD: Loads the initial on-disk or placeholder image asynchronously ---
+    public async Task LoadInitialImageAsync()
+    {
+        if (MugshotSource != null) return; // Already loaded
+
+        string pathToLoad = (!string.IsNullOrWhiteSpace(ImagePath) && File.Exists(ImagePath))
+            ? ImagePath
+            : FullPlaceholderPath;
+
+        if (!File.Exists(pathToLoad))
+        {
+            HasMugshot = false;
+            return;
+        }
+
+        try
+        {
+            // Set HasMugshot based on whether we're loading a real image
+            HasMugshot = !pathToLoad.Equals(FullPlaceholderPath, StringComparison.OrdinalIgnoreCase);
+
+            // Load bitmap and dimensions on a background thread
+            var (bitmap, dims) = await Task.Run(() =>
+            {
+                var bmp = new BitmapImage();
+                using (var stream = new FileStream(pathToLoad, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    bmp.BeginInit();
+                    bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    bmp.StreamSource = stream;
+                    bmp.EndInit();
+                }
+                bmp.Freeze();
+                
+                var dimensions = ImagePacker.GetImageDimensions(pathToLoad);
+                return (bmp, dimensions);
+            });
+            
+            // Assign results back on the UI thread
+            MugshotSource = bitmap;
+            OriginalPixelWidth = dims.PixelWidth;
+            OriginalPixelHeight = dims.PixelHeight;
+            OriginalDipWidth = dims.DipWidth;
+            OriginalDipHeight = dims.DipHeight;
+            OriginalDipDiagonal = Math.Sqrt(dims.DipWidth * dims.DipWidth + dims.DipHeight * dims.DipHeight);
+            ImageWidth = OriginalDipWidth;
+            ImageHeight = OriginalDipHeight;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error in LoadInitialImageAsync for '{ImagePath}': {ex.Message}");
+            HasMugshot = false;
+        }
     }
 
     private void ToggleFullScreen()
@@ -570,6 +577,16 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         this.MugshotSource = bitmap;
         this.ImagePath = path;
         this.HasMugshot = !isPlaceholder;
+        
+        var (pixelWidth, pixelHeight, dipWidth, dipHeight) = ImagePacker.GetImageDimensions(path);
+        OriginalPixelWidth = pixelWidth;
+        OriginalPixelHeight = pixelHeight;
+        OriginalDipWidth = dipWidth;
+        OriginalDipHeight = dipHeight;
+        OriginalDipDiagonal = Math.Sqrt(dipWidth * dipWidth + dipHeight * dipHeight);
+        ImageWidth = OriginalDipWidth;
+        ImageHeight = OriginalDipHeight;
+        
     }
 
     private void SetImageSourceFromMemory(byte[] imageData)
@@ -597,6 +614,8 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         OriginalDipWidth = info.Width;
         OriginalDipHeight = info.Height;
         OriginalDipDiagonal = Math.Sqrt(OriginalDipWidth * OriginalDipWidth + OriginalDipHeight * OriginalDipHeight);
+        
+
     }
 
     private (string? gameName, string? modId) ParseMetaIni(string filePath)

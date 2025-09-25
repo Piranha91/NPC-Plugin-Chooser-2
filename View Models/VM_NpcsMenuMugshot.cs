@@ -45,8 +45,6 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     //private readonly SolidColorBrush _deselectedWithoutDataBrush = new(Colors.Coral); // Now handled with an overlay
     private bool _isImageLoadingOrLoaded = false;
     private readonly object _imageLoadLock = new();
-    private readonly TaskCompletionSource<bool> _readyCompletionSource = new();
-    public Task IsReady => _readyCompletionSource.Task;
 
 
     // --- Existing properties ---
@@ -218,14 +216,6 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         _ = LoadInitialImageAsync(); 
         // --- END REPLACED SECTION ---
 
-
-        // If no *real* mugshot exists, try to generate one.
-        // This check now correctly uses the original imagePath parameter, not the HasMugshot property which is set asynchronously.
-        if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
-        {
-            _ = GenerateMugshotAsync(); // Fire-and-forget the generation task
-        }
-
         this.WhenAnyValue(x => x.IsSelected)
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(isSelected => SetBorderAndTooltip(isSelected))
@@ -374,82 +364,75 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
     public async Task LoadInitialImageAsync()
     {
-        try
+        if (_isImageLoadingOrLoaded) return;
+
+        lock (_imageLoadLock)
         {
             if (_isImageLoadingOrLoaded) return;
-
-            lock (_imageLoadLock)
-            {
-                if (_isImageLoadingOrLoaded) return;
-                _isImageLoadingOrLoaded = true;
-            }
-
-            string pathToLoad;
-            bool realMugshotExists = !string.IsNullOrWhiteSpace(ImagePath) && File.Exists(ImagePath);
-            HasMugshot = realMugshotExists;
-
-            if (realMugshotExists)
-            {
-                pathToLoad = ImagePath;
-            }
-            else if (PlaceholderExists)
-            {
-                pathToLoad = FullPlaceholderPath;
-            }
-            else
-            {
-                return; // No image to load
-            }
-
-            ImagePath = pathToLoad;
-
-            // Task.Run will now return a BitmapImage
-            var loadedBitmap = await Task.Run(() =>
-            {
-                // The bitmap is now created and prepared entirely on the background thread.
-                var bitmap = new BitmapImage();
-                try
-                {
-                    using var stream = new FileStream(pathToLoad, FileMode.Open, FileAccess.Read, FileShare.Read);
-                    bitmap.BeginInit();
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.StreamSource = stream;
-                    bitmap.EndInit();
-                    bitmap.Freeze(); // This is crucial for making it thread-safe
-
-                    // Return the completed, frozen bitmap.
-                    return bitmap;
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error loading initial image '{pathToLoad}': {ex.Message}");
-                    return null;
-                }
-            });
-
-            // This assignment happens back on the UI thread after the await.
-            if (loadedBitmap != null)
-            {
-                this.MugshotSource = loadedBitmap;
-
-                // Set original dimensions after loading
-                var (pixelWidth, pixelHeight, dipWidth, dipHeight) = ImagePacker.GetImageDimensions(pathToLoad);
-                OriginalPixelWidth = pixelWidth;
-                OriginalPixelHeight = pixelHeight;
-                OriginalDipWidth = dipWidth;
-                OriginalDipHeight = dipHeight;
-                OriginalDipDiagonal = Math.Sqrt(dipWidth * dipWidth + dipHeight * dipHeight);
-
-                ImageWidth = OriginalDipWidth;
-                ImageHeight = OriginalDipHeight;
-            }
+            _isImageLoadingOrLoaded = true;
         }
-        finally
+
+        string pathToLoad;
+        bool realMugshotExists = !string.IsNullOrWhiteSpace(ImagePath) && File.Exists(ImagePath);
+        HasMugshot = realMugshotExists;
+
+        if (realMugshotExists)
         {
-            _readyCompletionSource.TrySetResult(true);
+            pathToLoad = ImagePath;
+        }
+        else if (PlaceholderExists)
+        {
+            pathToLoad = FullPlaceholderPath;
+        }
+        else
+        {
+            return; // No image to load
+        }
+
+        ImagePath = pathToLoad;
+
+        // Task.Run will now return a BitmapImage
+        var loadedBitmap = await Task.Run(() =>
+        {
+            // The bitmap is now created and prepared entirely on the background thread.
+            var bitmap = new BitmapImage();
+            try
+            {
+                using var stream = new FileStream(pathToLoad, FileMode.Open, FileAccess.Read, FileShare.Read);
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.StreamSource = stream;
+                bitmap.EndInit();
+                bitmap.Freeze(); // This is crucial for making it thread-safe
+
+                // Return the completed, frozen bitmap.
+                return bitmap;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading initial image '{pathToLoad}': {ex.Message}");
+                return null;
+            }
+        });
+
+        // This assignment happens back on the UI thread after the await.
+        if (loadedBitmap != null)
+        {
+            this.MugshotSource = loadedBitmap;
+
+            // Set original dimensions after loading
+            var (pixelWidth, pixelHeight, dipWidth, dipHeight) = ImagePacker.GetImageDimensions(pathToLoad);
+            OriginalPixelWidth = pixelWidth;
+            OriginalPixelHeight = pixelHeight;
+            OriginalDipWidth = dipWidth;
+            OriginalDipHeight = dipHeight;
+            OriginalDipDiagonal = Math.Sqrt(dipWidth * dipWidth + dipHeight * dipHeight);
+
+            ImageWidth = OriginalDipWidth;
+            ImageHeight = OriginalDipHeight;
         }
     }
-    
+
     private (string? gameName, string? modId) ParseMetaIni(string filePath)
     {
         string? gameName = null;
@@ -901,6 +884,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                         Debug.WriteLine($"Generated mugshot for {SourceNpcFormKey}.");
                         SetImageSource(savePath);
                         _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, savePath);
+                        if (!AssociatedModSetting.MugShotFolderPaths.Contains(saveFolder))
+                        {
+                            AssociatedModSetting.MugShotFolderPaths.Add(saveFolder);
+                        }
                     }
                 }
             }

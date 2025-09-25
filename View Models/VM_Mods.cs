@@ -192,8 +192,6 @@ public class VM_Mods : ReactiveObject
         _imagePacker = imagePacker;
         _mugshotFactory = mugshotFactory;
         
-        _imagePacker.PackingCompleted += OnImagePackingCompleted;
-        
         RefreshAllModsCommand = ReactiveCommand.CreateFromTask(() => RefreshAllModSettingsAsync(null)).DisposeWith(_disposables);
         RefreshAllModsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing all mods: {ex.Message}")).DisposeWith(_disposables);
 
@@ -254,6 +252,14 @@ public class VM_Mods : ReactiveObject
             .Subscribe(ex => Debug.WriteLine($"Error ZoomOutModsCommand: {ex.Message}")).DisposeWith(_disposables);
         ResetZoomModsCommand.ThrownExceptions
             .Subscribe(ex => Debug.WriteLine($"Error ResetZoomModsCommand: {ex.Message}"))
+            .DisposeWith(_disposables);
+        
+        Observable.FromEventPattern<ImagePacker.PackingCompletedEventArgs>(
+                _imagePacker, nameof(ImagePacker.PackingCompleted))
+            .Throttle(TimeSpan.FromMilliseconds(100))
+            .ObserveOn(RxApp.MainThreadScheduler)
+            // Call this class's OWN TriggerAsyncMugshotGeneration method.
+            .Subscribe(_ => this.TriggerAsyncMugshotGeneration())
             .DisposeWith(_disposables);
 
         // --- Source Plugin Disambiguation Logic ---
@@ -570,10 +576,23 @@ public class VM_Mods : ReactiveObject
         ApplyFilters(); // Apply initial filter
     }
     
-    private void OnImagePackingCompleted(PackingResult result)
+    private void TriggerAsyncMugshotGeneration()
     {
-        // When the event fires, complete the waiting task with the results.
-        _packingCompletionSource?.TrySetResult(result);
+        if (CurrentModNpcMugshots == null || !CurrentModNpcMugshots.Any())
+        {
+            return;
+        }
+
+        Debug.WriteLine("Mods Menu packer finished. Triggering background image generation.");
+        foreach (var mugshotVM in CurrentModNpcMugshots)
+        {
+            // If the mugshot is a placeholder (`HasMugshot` is false), start the real image loading.
+            if (!mugshotVM.HasMugshot)
+            {
+                // Fire-and-forget. The VM will update its own image when the task completes.
+                _ = mugshotVM.LoadRealImageAsync();
+            }
+        }
     }
 
     /// <summary>
@@ -863,9 +882,6 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         modSetting,
         token
     );
-    
-    // Fire-and-forget the async task. It will update the image property when it's done. Do not await.
-    vm.LoadRealImageAsync();
     
     return vm;
 }

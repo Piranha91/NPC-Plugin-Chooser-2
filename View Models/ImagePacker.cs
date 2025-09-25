@@ -20,7 +20,13 @@ public record PackingResult(double DefinitiveWidth, double DefinitiveHeight);
 public class ImagePacker
 {
     // --- MODIFICATION: Event to notify subscribers that packing is complete ---
-    public event Action<PackingResult> PackingCompleted;
+    public event EventHandler<PackingCompletedEventArgs> PackingCompleted;
+    
+    public class PackingCompletedEventArgs : EventArgs
+    {
+        public PackingResult Result { get; }
+        public PackingCompletedEventArgs(PackingResult result) { Result = result; }
+    }
     
     public double FitOriginalImagesToContainer(
         ObservableCollection<IHasMugshotImage> imagesToPackCollection,
@@ -43,7 +49,7 @@ public class ImagePacker
             }
 
             // --- MODIFICATION: Fire event even on empty set to unblock waiters ---
-            PackingCompleted?.Invoke(new PackingResult(0, 0));
+            PackingCompleted?.Invoke(this, new PackingCompletedEventArgs(new PackingResult(0, 0)));
             return 1.0;
         }
 
@@ -135,8 +141,7 @@ public class ImagePacker
             finalWidth = visibleImages[0].ImageWidth;
             finalHeight = visibleImages[0].ImageHeight;
         }
-        PackingCompleted?.Invoke(new PackingResult(finalWidth, finalHeight));
-        // --- END MODIFICATION ---
+        PackingCompleted?.Invoke(this, new PackingCompletedEventArgs(new PackingResult(finalWidth, finalHeight)));
 
         return finalPackerScale;
     }
