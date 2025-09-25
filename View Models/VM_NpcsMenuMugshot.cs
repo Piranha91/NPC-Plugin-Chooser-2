@@ -876,7 +876,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 var savePath = Path.Combine(saveFolder, SourceNpcFormKey.ModKey.ToString(), $"{SourceNpcFormKey.ID:X8}.png");
     
                 string nifPath = _portraitCreator.FindNpcNifPath(this.SourceNpcFormKey, AssociatedModSetting.CorrespondingFolderPaths);
-                if (!string.IsNullOrWhiteSpace(nifPath))
+                if (!string.IsNullOrWhiteSpace(nifPath) && _portraitCreator.NeedsRegeneration(savePath, nifPath, AssociatedModSetting.CorrespondingFolderPaths))
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
                     if (await _portraitCreator.GeneratePortraitAsync(nifPath, AssociatedModSetting.CorrespondingFolderPaths, savePath))
@@ -924,15 +924,6 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         this.MugshotSource = bitmap;
         this.ImagePath = path;
         this.HasMugshot = true;
-
-        // *** NEW REQUIRED LOGIC ***
-        // Re-calculate and update dimensions to match the new, generated image.
-        var (pixelWidth, pixelHeight, dipWidth, dipHeight) = ImagePacker.GetImageDimensions(path);
-        OriginalPixelWidth = pixelWidth;
-        OriginalPixelHeight = pixelHeight;
-        OriginalDipWidth = dipWidth;
-        OriginalDipHeight = dipHeight;
-        OriginalDipDiagonal = Math.Sqrt(dipWidth * dipWidth + dipHeight * dipHeight);
     }
     
     private void SetImageSourceFromMemory(byte[] imageData)

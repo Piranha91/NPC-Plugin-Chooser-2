@@ -123,7 +123,7 @@ public class PortraitCreator
     // Checks if an existing auto-generated mugshot is outdated.s
     // In PortraitCreator.cs
 
-    public bool NeedsRegeneration(string pngPath, string nifPath)
+    public bool NeedsRegeneration(string pngPath, string nifPath, IEnumerable<string> currentDataFolders)
     {
         if (!File.Exists(pngPath)) return true;
 
@@ -333,6 +333,24 @@ public class PortraitCreator
             if (resY != _settings.ImageYRes)
             {
                 Debug.WriteLine($"[Regen Trigger] Y Resolution mismatch. PNG: {resY}, Current: {_settings.ImageYRes}");
+                needsRegen = true;
+            }
+            
+            // 7. Check Data Folders
+            if (root.TryGetProperty("data_folders", out var dfEl) && dfEl.ValueKind == JsonValueKind.Array)
+            {
+                var pngDataFolders = dfEl.EnumerateArray().Select(e => e.GetString() ?? "").ToList();
+                if (!pngDataFolders.SequenceEqual(currentDataFolders))
+                {
+                    Debug.WriteLine("[Regen Trigger] Data folders mismatch.");
+                    Debug.WriteLine($"  PNG:     [{string.Join(", ", pngDataFolders)}]");
+                    Debug.WriteLine($"  Current: [{string.Join(", ", currentDataFolders)}]");
+                    needsRegen = true;
+                }
+            }
+            else
+            {
+                Debug.WriteLine("[Regen Trigger] Data folders missing from PNG metadata.");
                 needsRegen = true;
             }
 

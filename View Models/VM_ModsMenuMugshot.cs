@@ -478,7 +478,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 }
 
                 bool needsRegen = _settings.UsePortraitCreatorFallback &&
-                                  _portraitCreator.NeedsRegeneration(existingCachedFile, nifPath);
+                                  _portraitCreator.NeedsRegeneration(existingCachedFile, nifPath, _parentVMModSetting.CorrespondingFolderPaths);
                 bool isStale = _settings.UseFaceFinderFallback &&
                                await _faceFinderClient.IsCacheStaleAsync(existingCachedFile, NpcFormKey,
                                    _parentVMModSetting.DisplayName, _settings.FaceFinderApiKey);
