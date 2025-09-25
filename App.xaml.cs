@@ -219,6 +219,21 @@ namespace NPC_Plugin_Chooser_2
             // Save the Portrait Creator output log
             var portraitCreator = _container.Resolve<PortraitCreator>();
             portraitCreator.SaveOutputLog();
+            
+            // NEW: Clean up the temporary extraction directory
+            try
+            {
+                string tempPath = portraitCreator.TempExtractionPath;
+                if (Directory.Exists(tempPath))
+                {
+                    Directory.Delete(tempPath, recursive: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log the error, but don't prevent the app from closing.
+                System.Diagnostics.Debug.WriteLine($"Failed to clean up temporary directory: {ex.Message}");
+            }
 
             // Your existing disposal logic
             var pluginProvider = _container.Resolve<PluginProvider>();

@@ -466,7 +466,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             var baseSavePath = Path.Combine(saveFolder, NpcFormKey.ModKey.ToString(), $"{NpcFormKey.ID:X8}");
 
             var existingCachedFile = Auxilliary.FindExistingCachedImage(baseSavePath);
-            string nifPath = _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting.CorrespondingFolderPaths);
+            string nifPath = await _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting);
 
             // 2. CHECK LOCAL: See if the existing file is valid and up-to-date
             if (existingCachedFile != null)

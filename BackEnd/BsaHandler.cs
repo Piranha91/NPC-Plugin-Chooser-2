@@ -31,6 +31,26 @@ public class BsaHandler : OptionalUIModule
         _openBsaArchiveReaders.Clear();
         AppendLog("Unloaded all cached BSA readers.");
     }
+
+    public void UnloadReadersInFolders(IEnumerable<string> folderPaths)
+    {
+        var toRemove = new HashSet<string>();
+        foreach (var reader in _openBsaArchiveReaders)
+        {
+            foreach (var folderPath in folderPaths)
+            {
+                if (reader.Key.StartsWith(folderPath, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    toRemove.Add(reader.Key);
+                }
+            }
+        }
+
+        foreach (var bsaPath in toRemove)
+        {
+            _openBsaArchiveReaders.Remove(bsaPath);
+        }
+    }
     
     public HashSet<string> GetBsaPathsForPluginInDir(ModKey modKey, string directory, GameRelease gameRelease)
     {
@@ -113,6 +133,21 @@ public class BsaHandler : OptionalUIModule
     public void OpenBsaReadersFor(ModSetting modSetting, GameRelease gameRelease)
     {
         var bsaDict = GetBsaPathsForPluginsInDirs(modSetting.CorrespondingModKeys, modSetting.CorrespondingFolderPaths, gameRelease);
+        
+        if (modSetting.DisplayName == VM_Mods.BaseGameModSettingName ||
+            modSetting.DisplayName == VM_Mods.CreationClubModsettingName)
+        {
+            foreach (var mk in modSetting.CorrespondingModKeys)
+            {
+               var entry = GetBsaPathsForPluginInDir(mk, _environmentStateProvider.DataFolderPath, gameRelease);
+               bsaDict.TryAdd(mk, entry);
+               if (!bsaDict[mk].Any())
+               {
+                   bsaDict[mk] = entry;
+               }
+            }
+        }
+        
         foreach (var bsaPaths in bsaDict.Values)
         {
             OpenBsaArchiveReaders(bsaPaths, gameRelease, true);
@@ -319,9 +354,47 @@ public class BsaHandler : OptionalUIModule
         return readers;
     }
     
-    public async Task PopulateBsaContentPathsAsync(IEnumerable<ModSetting> mods, GameRelease gameRelease, bool cacheReaders = false)
+    public bool CacheContainsModKey(ModKey modKey)
     {
-        _bsaContents.Clear();
+        return _bsaContents.ContainsKey(modKey);
+    }
+    
+    public async Task AddMissingModToCache(ModSetting mod, GameRelease gameRelease)
+    {
+        bool matched = false;
+        
+        foreach (var modKey in mod.CorrespondingModKeys)
+        {
+            if (_bsaContents.TryGetValue(modKey, out var contents))
+            {
+                foreach (var dataPath in mod.CorrespondingFolderPaths)
+                {
+                    if (contents.Any(x => x.Key.StartsWith(dataPath, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+
+            if (matched)
+            {
+                break;
+            }
+        }
+        
+        if (!matched)
+        {
+            await PopulateBsaContentPathsAsync(new List<ModSetting>() {mod}, gameRelease, reinitializeCache: false);
+        }
+    }
+    
+    public async Task PopulateBsaContentPathsAsync(IEnumerable<ModSetting> mods, GameRelease gameRelease, bool cacheReaders = false, bool reinitializeCache = true)
+    {
+        if (reinitializeCache)
+        {
+            _bsaContents.Clear();
+        }
 
         // Use Task.Run to offload the blocking I/O of reading BSA headers.
         await Task.Run(() =>

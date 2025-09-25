@@ -875,7 +875,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 var saveFolder = Path.Combine(baseAutoGenFolder, this.ModName);
                 var savePath = Path.Combine(saveFolder, SourceNpcFormKey.ModKey.ToString(), $"{SourceNpcFormKey.ID:X8}.png");
     
-                string nifPath = _portraitCreator.FindNpcNifPath(this.SourceNpcFormKey, AssociatedModSetting.CorrespondingFolderPaths);
+                string nifPath = await _portraitCreator.FindNpcNifPath(this.SourceNpcFormKey, AssociatedModSetting);
                 if (!string.IsNullOrWhiteSpace(nifPath) && _portraitCreator.NeedsRegeneration(savePath, nifPath, AssociatedModSetting.CorrespondingFolderPaths))
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
