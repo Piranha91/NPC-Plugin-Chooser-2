@@ -40,10 +40,9 @@ public class VM_MultiImageDisplay : ReactiveObject, IDisposable
 
     public VM_MultiImageDisplay(IEnumerable<IHasMugshotImage> images) //, Settings settings)
     {
-        // _settings = settings; // If using settings
         ImagesToDisplay =
             new ObservableCollection<IHasMugshotImage>(images.Where(img =>
-                img.HasMugshot && !string.IsNullOrEmpty(img.ImagePath)));
+                img.HasMugshot && (img.MugshotSource != null || !string.IsNullOrEmpty(img.ImagePath))));
 
         // Initialize zoom from settings if desired, e.g.:
         // ZoomLevel = Math.Max(MinZoomPercentage, Math.Min(MaxZoomPercentage, _settings.CompareViewZoomLevel));

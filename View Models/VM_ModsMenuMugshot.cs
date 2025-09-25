@@ -316,29 +316,29 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             HasMugshot = false;
         }
     }
-
+    
     private void ToggleFullScreen()
     {
-        // ImagePath now correctly points to either real image or placeholder
-        if (!string.IsNullOrEmpty(ImagePath) && File.Exists(ImagePath))
+        if (MugshotSource == null && (string.IsNullOrEmpty(ImagePath) || !File.Exists(ImagePath)))
         {
-            var fullScreenVM = new VM_FullScreenImage(ImagePath);
-            var fullScreenView = Locator.Current.GetService<IViewFor<VM_FullScreenImage>>() as Window;
+            ScrollableMessageBox.ShowWarning("Mugshot image (or placeholder) not found or path is invalid.");
+            return;
+        }
 
-            if (fullScreenView != null)
-            {
-                fullScreenView.DataContext = fullScreenVM;
-                fullScreenView.ShowDialog();
-            }
-            else
-            {
-                ScrollableMessageBox.ShowError("Could not create FullScreenImageView.");
-            }
+        // Prioritize the in-memory source, otherwise fall back to the path.
+        var fullScreenVM = MugshotSource != null
+            ? new VM_FullScreenImage(MugshotSource)
+            : new VM_FullScreenImage(ImagePath);
+
+        var fullScreenView = Locator.Current.GetService<IViewFor<VM_FullScreenImage>>() as Window;
+        if (fullScreenView != null)
+        {
+            fullScreenView.DataContext = fullScreenVM;
+            fullScreenView.ShowDialog();
         }
         else
         {
-            ScrollableMessageBox.ShowWarning(
-                $"Mugshot image (or placeholder) not found or path is invalid:\n{ImagePath}");
+            ScrollableMessageBox.ShowError("Could not create FullScreenImageView.");
         }
     }
 

@@ -701,8 +701,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         if (CurrentNpcAppearanceMods == null) return;
 
         var selectedMugshotVMs = CurrentNpcAppearanceMods
-            .Where(m => m.IsCheckedForCompare && m.HasMugshot && !string.IsNullOrEmpty(m.ImagePath) &&
-                        File.Exists(m.ImagePath))
+            .Where(m => m.IsCheckedForCompare && m.HasMugshot && 
+                        (m.MugshotSource != null || (!string.IsNullOrEmpty(m.ImagePath) && File.Exists(m.ImagePath))))
             .ToList();
 
         if (selectedMugshotVMs.Count < 2)

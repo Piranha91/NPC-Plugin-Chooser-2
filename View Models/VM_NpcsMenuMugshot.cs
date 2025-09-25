@@ -255,8 +255,20 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         SelectCommand = ReactiveCommand.Create(SelectThisMod).DisposeWith(Disposables);
         var canToggleFullScreen =
             this.WhenAnyValue(x => x.ImagePath, path => !string.IsNullOrEmpty(path) && File.Exists(path));
-        ToggleFullScreenCommand =
-            ReactiveCommand.Create(ToggleFullScreen, canToggleFullScreen).DisposeWith(Disposables);
+        ToggleFullScreenCommand = ReactiveCommand.Create(() =>
+        {
+            // Prioritize the in-memory source if it exists, otherwise fall back to the path
+            var fullScreenVM = MugshotSource != null 
+                ? new VM_FullScreenImage(MugshotSource) 
+                : new VM_FullScreenImage(ImagePath);
+
+            var fullScreenView = Locator.Current.GetService<IViewFor<VM_FullScreenImage>>() as Window;
+            if (fullScreenView != null)
+            {
+                fullScreenView.DataContext = fullScreenVM;
+                fullScreenView.ShowDialog();
+            }
+        }, this.WhenAnyValue(x => x.HasMugshot)).DisposeWith(Disposables);
         HideCommand = ReactiveCommand.Create(HideThisMod).DisposeWith(Disposables);
         UnhideCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnhideSelectedMod(this))
             .DisposeWith(Disposables);

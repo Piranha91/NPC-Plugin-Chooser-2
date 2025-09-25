@@ -17,10 +17,20 @@
         <Border BorderBrush="White" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center">
             <!-- ADD x:Name HERE -->
             <Image x:Name="FullScreenImage"
-                   Source="{Binding ImagePath}"
                    Stretch="Uniform"
                    MaxWidth="{Binding SystemParameters.PrimaryScreenWidth}"
-                   MaxHeight="{Binding SystemParameters.PrimaryScreenHeight}"/>
+                   MaxHeight="{Binding SystemParameters.PrimaryScreenHeight}">
+                <Image.Style>
+                    <Style TargetType="Image">
+                        <Setter Property="Source" Value="{Binding MugshotSource}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding MugshotSource}" Value="{x:Null}">
+                                <Setter Property="Source" Value="{Binding ImagePath}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Image.Style>
+            </Image>
         </Border>
     </Grid>
 </reactiveui:ReactiveWindow>

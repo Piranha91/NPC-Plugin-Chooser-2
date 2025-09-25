@@ -43,8 +43,19 @@
                                 Width="{Binding ImageWidth}"
                                 Height="{Binding ImageHeight}">
                             <Grid>
-                                <Image Source="{Binding ImagePath}" Stretch="Uniform"
-                                       ToolTip="{Binding Path=DataContext.ModName, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/> 
+                                <Image Stretch="Uniform"
+                                       ToolTip="{Binding Path=DataContext.ModName, RelativeSource={RelativeSource AncestorType=ItemsControl}}">
+                                    <Image.Style>
+                                        <Style TargetType="Image">
+                                            <Setter Property="Source" Value="{Binding MugshotSource}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding MugshotSource}" Value="{x:Null}">
+                                                    <Setter Property="Source" Value="{Binding ImagePath}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Image.Style>
+                                </Image>
                                         <!-- Tooltip might need adjustment if ModName isn't directly on IHasMugshotImage -->
                                 
                                 <!-- If IHasMugshotImage comes from VM_NpcsMenuMugshot, you can display ModName -->

@@ -60,7 +60,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         public string IssueNotificationText { get; }
         public bool HasNoData { get; }
         public string NoDataNotificationText { get; }
-        public bool HasMugshot { get; private set; }
+        [Reactive] public bool HasMugshot { get; private set; }
         
         // --- 2. Add properties and command for Mod Page links ---
         public record ModPageInfo(string DisplayName, string Url);
@@ -156,7 +156,11 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             // Command Implementations
             ToggleFullScreenCommand = ReactiveCommand.Create(() =>
             {
-                var fullScreenVM = new VM_FullScreenImage(ImagePath);
+                // Prioritize the in-memory source if it exists, otherwise fall back to the path
+                var fullScreenVM = MugshotSource != null 
+                    ? new VM_FullScreenImage(MugshotSource) 
+                    : new VM_FullScreenImage(ImagePath);
+
                 var fullScreenView = Locator.Current.GetService<IViewFor<VM_FullScreenImage>>() as Window;
                 if (fullScreenView != null)
                 {
