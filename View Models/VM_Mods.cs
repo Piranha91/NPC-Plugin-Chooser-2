@@ -193,12 +193,12 @@ public class VM_Mods : ReactiveObject
         _mugshotFactory = mugshotFactory;
         
         RefreshAllModsCommand = ReactiveCommand.CreateFromTask(() => RefreshAllModSettingsAsync(null)).DisposeWith(_disposables);
-        RefreshAllModsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing all mods: {ex.Message}")).DisposeWith(_disposables);
+        RefreshAllModsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing all mods: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
 
         ShowMugshotsCommand = ReactiveCommand.CreateFromTask<VM_ModSetting>(ShowMugshotsAsync).DisposeWith(_disposables);
         ShowMugshotsCommand.ThrownExceptions.Subscribe(ex =>
         {
-            ScrollableMessageBox.ShowError($"Error loading mugshots: {ex.Message}");
+            ScrollableMessageBox.ShowError($"Error loading mugshots: {ExceptionLogger.GetExceptionStack(ex)}");
             IsLoadingMugshots = false;
         }).DisposeWith(_disposables);
         
@@ -209,7 +209,7 @@ public class VM_Mods : ReactiveObject
         }).DisposeWith(_disposables);
         CancelMugshotLoadCommand.ThrownExceptions.Subscribe(ex =>
         {
-            ScrollableMessageBox.ShowError($"Error cancelling mugshot load: {ex.Message}");
+            ScrollableMessageBox.ShowError($"Error cancelling mugshot load: {ExceptionLogger.GetExceptionStack(ex)}");
         }).DisposeWith(_disposables);
 
         // --- NEW: Initialize Zoom Settings from _settings ---
@@ -247,11 +247,11 @@ public class VM_Mods : ReactiveObject
         }).DisposeWith(_disposables);
         // ... (exception handlers for commands) ...
         ZoomInModsCommand.ThrownExceptions
-            .Subscribe(ex => Debug.WriteLine($"Error ZoomInModsCommand: {ex.Message}")).DisposeWith(_disposables);
+            .Subscribe(ex => Debug.WriteLine($"Error ZoomInModsCommand: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
         ZoomOutModsCommand.ThrownExceptions
-            .Subscribe(ex => Debug.WriteLine($"Error ZoomOutModsCommand: {ex.Message}")).DisposeWith(_disposables);
+            .Subscribe(ex => Debug.WriteLine($"Error ZoomOutModsCommand: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
         ResetZoomModsCommand.ThrownExceptions
-            .Subscribe(ex => Debug.WriteLine($"Error ResetZoomModsCommand: {ex.Message}"))
+            .Subscribe(ex => Debug.WriteLine($"Error ResetZoomModsCommand: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         
         Observable.FromEventPattern<ImagePacker.PackingCompletedEventArgs>(
@@ -317,7 +317,7 @@ public class VM_Mods : ReactiveObject
 
         SetGlobalSourcePluginCommand.ThrownExceptions.Subscribe(ex =>
         {
-            ScrollableMessageBox.ShowError($"Error setting global source plugin: {ex.Message}");
+            ScrollableMessageBox.ShowError($"Error setting global source plugin: {ExceptionLogger.GetExceptionStack(ex)}");
         }).DisposeWith(_disposables);
         // --- END: Source Plugin Disambiguation Logic ---
 
@@ -563,15 +563,15 @@ public class VM_Mods : ReactiveObject
             }
         }).DisposeWith(_disposables);
         
-        BatchIncludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error including outfits: {ex.Message}")).DisposeWith(_disposables);
-        BatchExcludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error excluding outfits: {ex.Message}")).DisposeWith(_disposables);
-        BatchEnableInjectedRecordsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling injected record handling: {ex.Message}")).DisposeWith(_disposables);
-        BatchDisableInjectedRecordsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disalbing injected record handling: {ex.Message}")).DisposeWith(_disposables);
-        BatchEnableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling merge-in: {ex.Message}")).DisposeWith(_disposables);
-        BatchForceEnableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error force-enabling merge-in: {ex.Message}")).DisposeWith(_disposables);
-        BatchDisableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disabling merge-in: {ex.Message}")).DisposeWith(_disposables);
-        BatchEnableCopyAssetsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling asset copying: {ex.Message}")).DisposeWith(_disposables);
-        BatchDisableCopyAssetsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disabling asset copying: {ex.Message}")).DisposeWith(_disposables);
+        BatchIncludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error including outfits: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        BatchExcludeOutfitsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error excluding outfits: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        BatchEnableInjectedRecordsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling injected record handling: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        BatchDisableInjectedRecordsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disabling injected record handling: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        BatchEnableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling merge-in: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        BatchForceEnableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error force-enabling merge-in: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        BatchDisableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disabling merge-in: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        BatchEnableCopyAssetsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling asset copying: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        BatchDisableCopyAssetsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disabling asset copying: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
         
         ApplyFilters(); // Apply initial filter
     }
@@ -851,7 +851,7 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
         catch (TaskCanceledException) { /* Suppress cancellation error */ }
         catch (Exception ex)
         {
-            await Application.Current.Dispatcher.InvokeAsync(() => ScrollableMessageBox.ShowWarning($"Failed to load mugshot data for {selectedModSetting.DisplayName}:\n{ex.Message}", "Mugshot Load Error"));
+            await Application.Current.Dispatcher.InvokeAsync(() => ScrollableMessageBox.ShowWarning($"Failed to load mugshot data for {selectedModSetting.DisplayName}:\n{ExceptionLogger.GetExceptionStack(ex)}", "Mugshot Load Error"));
         }
         finally
         {
@@ -1030,7 +1030,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error checking mugshot validity for path {path}: {ex.Message}");
+                Debug.WriteLine($"Error checking mugshot validity for path {path}: {ExceptionLogger.GetExceptionStack(ex)}");
                 // keep scanning other folders
             }
         }
@@ -1243,7 +1243,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
         catch (Exception ex)
         {
-            ScrollableMessageBox.ShowError($"Failed to refresh '{vmToRefresh.DisplayName}':\n{ex.Message}");
+            ScrollableMessageBox.ShowError($"Failed to refresh '{vmToRefresh.DisplayName}':\n{ExceptionLogger.GetExceptionStack(ex)}");
         }
         finally
         {
@@ -1972,7 +1972,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Error enumerating ModsFolder for loose FaceGen caching: {ex.Message}");
+                    Debug.WriteLine($"Error enumerating ModsFolder for loose FaceGen caching: {ExceptionLogger.GetExceptionStack(ex)}");
                 }
             }
         }

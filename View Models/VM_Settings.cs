@@ -313,7 +313,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         RescanCachedModCommand =
             ReactiveCommand.CreateFromTask<string>(RescanCachedModAsync).DisposeWith(_disposables);
         RescanCachedModCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Failed to re-scan mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Failed to re-scan mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         OpenModLinkerCommand = ReactiveCommand.Create(OpenModLinkerWindow);
         SelectBackgroundColorCommand = ReactiveCommand.Create(SelectBackgroundColor).DisposeWith(_disposables);

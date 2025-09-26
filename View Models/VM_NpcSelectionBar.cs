@@ -258,11 +258,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }).DisposeWith(_disposables);
 
         ZoomInNpcsCommand.ThrownExceptions
-            .Subscribe(ex => Debug.WriteLine($"Error ZoomInNpcsCommand: {ex.Message}")).DisposeWith(_disposables).DisposeWith(_disposables);
+            .Subscribe(ex => Debug.WriteLine($"Error ZoomInNpcsCommand: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables).DisposeWith(_disposables);
         ZoomOutNpcsCommand.ThrownExceptions
-            .Subscribe(ex => Debug.WriteLine($"Error ZoomOutNpcsCommand: {ex.Message}")).DisposeWith(_disposables).DisposeWith(_disposables);
+            .Subscribe(ex => Debug.WriteLine($"Error ZoomOutNpcsCommand: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables).DisposeWith(_disposables);
         ResetZoomNpcsCommand.ThrownExceptions
-            .Subscribe(ex => Debug.WriteLine($"Error ResetZoomNpcsCommand: {ex.Message}"))
+            .Subscribe(ex => Debug.WriteLine($"Error ResetZoomNpcsCommand: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SelectedNpc)
@@ -493,16 +493,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             ReactiveCommand.Create(RemoveAllVisibleNpcsFromGroup, canExecuteAllGroupAction);
 
         AddCurrentNpcToGroupCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error adding NPC to group: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error adding NPC to group: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         RemoveCurrentNpcFromGroupCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error removing NPC from group: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error removing NPC from group: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         AddAllVisibleNpcsToGroupCommand.ThrownExceptions.Subscribe(ex =>
-                ScrollableMessageBox.ShowError($"Error adding all visible NPCs to group: {ex.Message}"))
+                ScrollableMessageBox.ShowError($"Error adding all visible NPCs to group: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         RemoveAllVisibleNpcsFromGroupCommand.ThrownExceptions.Subscribe(ex =>
-                ScrollableMessageBox.ShowError($"Error removing all visible NPCs from group: {ex.Message}"))
+                ScrollableMessageBox.ShowError($"Error removing all visible NPCs from group: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
 
         UpdateAvailableNpcGroups();
@@ -589,7 +589,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .Select(count => count >= 2);
         CompareSelectedCommand = ReactiveCommand.Create(ExecuteCompareSelected, canCompareSelected);
         CompareSelectedCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error comparing selected: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error comparing selected: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
 
         // Define the observable for enabling the Hide/Unhide menu button
@@ -606,27 +606,27 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         HideAllButSelectedCommand = ReactiveCommand.Create(ExecuteHideAllButSelected, canExecuteHideUnhideActions).DisposeWith(_disposables);
         HideAllButSelectedCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error hiding unselected: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error hiding unselected: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         HideAllSelectedCommand = ReactiveCommand.Create(ExecuteHideAllSelected, canExecuteHideUnhideActions).DisposeWith(_disposables);
         HideAllSelectedCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error hiding selected: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error hiding selected: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         UnhideAllSelectedCommand = ReactiveCommand.Create(ExecuteUnhideAllSelected, canExecuteHideUnhideActions).DisposeWith(_disposables);
         UnhideAllSelectedCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error unhiding selected: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error unhiding selected: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         UnhideAllButSelectedCommand =
             ReactiveCommand.Create(ExecuteUnhideAllButSelected, canExecuteHideUnhideActions).DisposeWith(_disposables);
         UnhideAllButSelectedCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error unhiding unselected: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error unhiding unselected: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
 
         var canDeselectAll = this.WhenAnyValue(x => x.CheckedMugshotCount)
             .Select(count => count >= 1);
         DeselectAllCommand = ReactiveCommand.Create(ExecuteDeselectAll, canDeselectAll).DisposeWith(_disposables);
         DeselectAllCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error deselecting all: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error deselecting all: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         // --- End NEW Setup ---
 
@@ -638,27 +638,27 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         ImportChoicesFromLoadOrderCommand.ThrownExceptions
             .Subscribe(ex =>
-                ScrollableMessageBox.ShowError($"Error importing choices from load order: {ex.Message}",
+                ScrollableMessageBox.ShowError($"Error importing choices from load order: {ExceptionLogger.GetExceptionStack(ex)}",
                     "Import Error"))
             .DisposeWith(_disposables);
         ExportChoicesCommand.ThrownExceptions
             .Subscribe(ex =>
-                ScrollableMessageBox.ShowError($"Error exporting choices: {ex.Message}", "Export Error"))
+                ScrollableMessageBox.ShowError($"Error exporting choices: {ExceptionLogger.GetExceptionStack(ex)}", "Export Error"))
             .DisposeWith(_disposables);
         ImportChoicesCommand.ThrownExceptions
             .Subscribe(ex =>
-                ScrollableMessageBox.ShowError($"Error importing choices: {ex.Message}", "Import Error"))
+                ScrollableMessageBox.ShowError($"Error importing choices: {ExceptionLogger.GetExceptionStack(ex)}", "Import Error"))
             .DisposeWith(_disposables);
         ClearChoicesCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error clearing choices: {ex.Message}", "Clear Error"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error clearing choices: {ExceptionLogger.GetExceptionStack(ex)}", "Clear Error"))
             .DisposeWith(_disposables);
         // --- End Import/Export Setup ---
         
         ShowFavoritesCommand = ReactiveCommand.Create(ShowFavoritesWindowForSharing).DisposeWith(_disposables);
-        ShowFavoritesCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening favorites: {ex.Message}")).DisposeWith(_disposables);
+        ShowFavoritesCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening favorites: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
 
         AddFavoriteFaceToNpcCommand = ReactiveCommand.Create<VM_NpcsMenuSelection>(ShowFavoritesWindowForApplying).DisposeWith(_disposables);
-        AddFavoriteFaceToNpcCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening favorites: {ex.Message}")).DisposeWith(_disposables);
+        AddFavoriteFaceToNpcCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening favorites: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
 
 
         if (CurrentNpcAppearanceMods != null && CurrentNpcAppearanceMods.Any())
@@ -736,7 +736,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
         catch (Exception ex)
         {
-            ScrollableMessageBox.ShowError($"Could not open comparison window: {ex.Message}", "Error Comparing");
+            ScrollableMessageBox.ShowError($"Could not open comparison window: {ExceptionLogger.GetExceptionStack(ex)}", "Error Comparing");
             Debug.WriteLine($"Error in ExecuteCompareSelected: {ex}");
         }
     }
@@ -912,7 +912,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         catch (Exception ex)
         {
             // Catch any other unexpected exceptions from Task.Run or message boxes.
-            ScrollableMessageBox.ShowError($"Failed to export choices: {ex.Message}", "Export Error");
+            ScrollableMessageBox.ShowError($"Failed to export choices: {ExceptionLogger.GetExceptionStack(ex)}", "Export Error");
         }
     }
 
@@ -1203,7 +1203,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
         catch (Exception ex)
         {
-            ScrollableMessageBox.ShowError($"An unexpected error occurred during import: {ex.Message}", "Import Error");
+            ScrollableMessageBox.ShowError($"An unexpected error occurred during import: {ExceptionLogger.GetExceptionStack(ex)}", "Import Error");
         }
     }
 
@@ -1316,7 +1316,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                         ex =>
                         {
                             Debug.WriteLine(
-                                $"VM_NpcSelectionBar.JumpToMod: Error executing ShowMugshotsCommand: {ex.Message}");
+                                $"VM_NpcSelectionBar.JumpToMod: Error executing ShowMugshotsCommand: {ExceptionLogger.GetExceptionStack(ex)}");
                         }
                     ).DisposeWith(_disposables);
             });
@@ -1424,7 +1424,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Error processing mugshot file '{filePath}': {ex.Message}");
+                        Debug.WriteLine($"Error processing mugshot file '{filePath}': {ExceptionLogger.GetExceptionStack(ex)}");
                     }
                 }
             }
@@ -1433,7 +1433,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error scanning mugshot directory '{_settings.MugshotsFolder}': {ex.Message}");
+            Debug.WriteLine($"Error scanning mugshot directory '{_settings.MugshotsFolder}': {ExceptionLogger.GetExceptionStack(ex)}");
         }
 
         System.Diagnostics.Debug.WriteLine(

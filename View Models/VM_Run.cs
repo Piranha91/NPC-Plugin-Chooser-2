@@ -400,7 +400,7 @@ public class VM_Run : ReactiveObject, IDisposable
         catch (Exception ex)
         {
             // Centralized exception handling for the async process
-            AppendLog($"ERROR: {ex.GetType().Name} - {ex.Message}", true);
+            AppendLog($"ERROR: {ex.GetType().Name} - {ExceptionLogger.GetExceptionStack(ex)}", true);
             AppendLog(ExceptionLogger.GetExceptionStack(ex), true);
             AppendLog("ERROR: Patching failed.", true);
             ResetProgress();

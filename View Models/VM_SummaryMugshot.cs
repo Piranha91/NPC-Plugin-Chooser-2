@@ -126,7 +126,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             catch (Exception ex)
             {
                 // This catch block correctly handles any errors by marking the mugshot as invalid.
-                Debug.WriteLine($"Error getting dimensions for image '{ImagePath}': {ex.Message}");
+                Debug.WriteLine($"Error getting dimensions for image '{ImagePath}': {ExceptionLogger.GetExceptionStack(ex)}");
                 HasMugshot = false; // Fallback in case the placeholder file is missing/corrupt
             }
             
@@ -242,7 +242,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error generating summary image for {SourceNpcFormKey}: {ex.Message}");
+            Debug.WriteLine($"Error generating summary image for {SourceNpcFormKey}: {ExceptionLogger.GetExceptionStack(ex)}");
         }
         finally
         {

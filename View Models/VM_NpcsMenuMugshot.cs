@@ -199,10 +199,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 (ambiguous, source) => ambiguous && source.HasValue)).DisposeWith(Disposables);
 
         SetNpcSourcePluginCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting NPC source plugin: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting NPC source plugin: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         SelectSameSourcePluginWherePossibleCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting NPC source plugin: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting NPC source plugin: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
 
         // --- Image Path and HasMugshot Logic ---
@@ -297,7 +297,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             MessageBus.Current.SendMessage(new ShareAppearanceRequest(this));
         }).DisposeWith(Disposables);
         ShareWithNpcCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error sharing NPC appearance: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error sharing NPC appearance: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
 
         UnshareFromNpcCommand = ReactiveCommand.Create(() =>
@@ -305,12 +305,12 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             MessageBus.Current.SendMessage(new UnshareAppearanceRequest(this));
         }).DisposeWith(Disposables);
         UnshareFromNpcCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error un-sharing NPC appearance: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error un-sharing NPC appearance: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
 
         AddToFavoritesCommand = ReactiveCommand.Create(ToggleFavorite).DisposeWith(Disposables);
         AddToFavoritesCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error updating favorites: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error updating favorites: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         
         OpenFolderCommand = ReactiveCommand.Create<string>(Auxilliary.OpenFolder).DisposeWith(Disposables);
@@ -318,47 +318,47 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         VisitModPageCommand = ReactiveCommand.Create<string>(Auxilliary.OpenUrl);
         
         SelectCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         ToggleFullScreenCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error showing image: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error showing image: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
-        HideCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error hiding mod: {ex.Message}"))
+        HideCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.Show($"Error hiding mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         UnhideCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error unhiding mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error unhiding mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         SelectAllFromThisModCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting all from mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting all from mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         SelectAvailableFromThisModCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting available from mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting available from mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         SelectVisibleFromThisModCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting visible from mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting visible from mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         SelectVisibleAndAvailableFromThisModCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting visible and available from mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting visible and available from mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         UnselectAllFromThisModCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error unselecting all from mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error unselecting all from mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         UnselectVisibleFromThisModCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error unselecting visible from mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error unselecting visible from mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         HideAllFromThisModCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error hiding all from mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error hiding all from mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         UnhideAllFromThisModCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error unhiding all from mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error unhiding all from mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         JumpToModCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.Show($"Error jumping to mod: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.Show($"Error jumping to mod: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         OpenFolderCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening folder: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening folder: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
-        VisitModPageCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Could not open URL: {ex.Message}"))
+        VisitModPageCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Could not open URL: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
 
 
@@ -422,7 +422,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error loading initial image '{pathToLoad}': {ex.Message}");
+                Debug.WriteLine($"Error loading initial image '{pathToLoad}': {ExceptionLogger.GetExceptionStack(ex)}");
                 return null;
             }
         });
@@ -472,7 +472,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error parsing {filePath}: {ex.Message}");
+            Debug.WriteLine($"Error parsing {filePath}: {ExceptionLogger.GetExceptionStack(ex)}");
         }
         return (gameName, modId);
     }
@@ -681,7 +681,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             {
                 // This catch might be redundant if File.Exists is reliable, but good for safety.
                 ScrollableMessageBox.ShowWarning(
-                    $"Mugshot not found or path is invalid (exception during display):\n{ImagePath}\n{ex.Message}");
+                    $"Mugshot not found or path is invalid (exception during display):\n{ImagePath}\n{ExceptionLogger.GetExceptionStack(ex)}");
             }
         }
         else
@@ -910,7 +910,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error generating real image for {SourceNpcFormKey}: {ex.Message}");
+            Debug.WriteLine($"Error generating real image for {SourceNpcFormKey}: {ExceptionLogger.GetExceptionStack(ex)}");
         }
         finally
         {

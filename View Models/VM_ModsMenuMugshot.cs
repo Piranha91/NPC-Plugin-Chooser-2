@@ -243,23 +243,23 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         VisitModPageCommand = ReactiveCommand.Create<string>(Auxilliary.OpenUrl);
 
         ToggleFullScreenCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error showing image: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error showing image: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         JumpToNpcCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error jumping to NPC: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error jumping to NPC: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         SetNpcSourcePluginCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting NPC source plugin: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting NPC source plugin: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
 
         AddToFavoritesCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error updating favorites: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error updating favorites: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         OpenFolderCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening folder: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening folder: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         VisitModPageCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Could not open URL: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Could not open URL: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
     }
     
@@ -312,7 +312,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error in LoadInitialImageAsync for '{ImagePath}': {ex.Message}");
+            Debug.WriteLine($"Error in LoadInitialImageAsync for '{ImagePath}': {ExceptionLogger.GetExceptionStack(ex)}");
             HasMugshot = false;
         }
     }
@@ -517,7 +517,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Failed to download from FaceFinder for {NpcFormKey}: {ex.Message}");
+                        Debug.WriteLine($"Failed to download from FaceFinder for {NpcFormKey}: {ExceptionLogger.GetExceptionStack(ex)}");
                     }
                 }
             }
@@ -549,7 +549,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error loading real image for {NpcFormKey}: {ex.Message}");
+            Debug.WriteLine($"Error loading real image for {NpcFormKey}: {ExceptionLogger.GetExceptionStack(ex)}");
         }
         finally
         {
@@ -646,7 +646,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error parsing {filePath}: {ex.Message}");
+            Debug.WriteLine($"Error parsing {filePath}: {ExceptionLogger.GetExceptionStack(ex)}");
         }
 
         return (gameName, modId);

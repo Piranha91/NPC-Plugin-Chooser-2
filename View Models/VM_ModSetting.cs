@@ -501,18 +501,18 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         UnlinkMugshotDataCommand = ReactiveCommand
             .CreateFromTask(UnlinkMugshotDataAsync, this.WhenAnyValue(x => x.CanUnlinkMugshots)).DisposeWith(_disposables);
         UnlinkMugshotDataCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error unlinking mugshot data: {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error unlinking mugshot data: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         SetResourcePluginsCommand = ReactiveCommand.Create(SetResourcePlugins).DisposeWith(_disposables);
         SetResourcePluginsCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing mod '{DisplayName}': {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing mod '{DisplayName}': {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         DeleteCommand = ReactiveCommand.Create(Delete, this.WhenAnyValue(x => x.CanDelete)).DisposeWith(_disposables);
-        DeleteCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error executing DeleteCommand: {ex.Message}"))
+        DeleteCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error executing DeleteCommand: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         RefreshCommand = ReactiveCommand.CreateFromTask(RefreshAsync).DisposeWith(_disposables);
         RefreshCommand.ThrownExceptions
-            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing mod '{DisplayName}': {ex.Message}"))
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing mod '{DisplayName}': {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.CorrespondingFolderPaths.Count)
@@ -1275,7 +1275,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Could not write rejection log file for {this.DisplayName}: {ex.Message}");
+                Debug.WriteLine($"Could not write rejection log file for {this.DisplayName}: {ExceptionLogger.GetExceptionStack(ex)}");
             }
         }
 
@@ -1581,7 +1581,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Failed to generate snapshot for {this.DisplayName}: {ex.Message}");
+            Debug.WriteLine($"Failed to generate snapshot for {this.DisplayName}: {ExceptionLogger.GetExceptionStack(ex)}");
             return null; // Return null on failure to ensure re-analysis
         }
     }
