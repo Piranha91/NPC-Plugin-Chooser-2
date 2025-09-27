@@ -2990,7 +2990,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // Fall back to the link cache in this case
             if (availablePlugins != null && availablePlugins.Any() || (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out currentNpcGetter) && currentNpcGetter != null))
             {
-                if (availablePlugins.Count == 1)
+                if (availablePlugins != null && availablePlugins.Count == 1)
                 {
                     if (plugins.TryGetValue(availablePlugins.First(), out var plugin))
                     {
