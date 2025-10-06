@@ -113,36 +113,59 @@ public class Settings
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
     [DefaultValue(true)]
     public bool AutoUpdateStaleMugshots { get; set; } = true;
-    public PortraitCameraMode SelectedCameraMode { get; set; } = PortraitCameraMode.Relative;
+    
+    [JsonConverter(typeof(PortraitCameraModeConverter))]
+    public PortraitCameraMode SelectedCameraMode { get; set; } = PortraitCameraMode.Portrait;
     // These should match the defaults or CLI options in your C++ app
     public string DefaultLightingJsonString { get; set; } = @"
 {
-	""lights"": [
-		{
-			""type"": ""ambient"",
-			""color"": [ 0.3, 0.25, 0.2 ],
-			""intensity"": 1.0
-		},
-		{
-			""type"": ""directional"",
-			""direction"": [ 0.5, 0.4, 1.0 ],
-			""color"": [ 1.0, 0.85, 0.7 ],
-			""intensity"": 1.1
-		},
-		{
-			""type"": ""directional"",
-			""direction"": [ -0.6, 0.2, 0.5 ],
-			""color"": [ 0.8, 0.7, 0.6 ],
-			""intensity"": 0.25
-		}
-	]
+    ""lights"": [
+        {
+            ""color"": [
+                1.0,
+                0.8799999952316284,
+                0.699999988079071
+            ],
+            ""intensity"": 0.6499999761581421,
+            ""type"": ""ambient""
+        },
+        {
+            ""color"": [
+                1.0,
+                0.8500000238418579,
+                0.6499999761581421
+            ],
+            ""direction"": [
+                -0.0798034518957138,
+                -0.99638432264328,
+                -0.029152285307645798
+            ],
+            ""intensity"": 1.600000023841858,
+            ""type"": ""directional""
+        },
+        {
+            ""color"": [
+                1.0,
+                0.8700000047683716,
+                0.6800000071525574
+            ],
+            ""direction"": [
+                0.12252168357372284,
+                -0.6893905401229858,
+                0.7139532566070557
+            ],
+            ""intensity"": 0.800000011920929,
+            ""type"": ""directional""
+        }
+    ]
 }";
     [JsonConverter(typeof(ColorJsonConverter))] // Apply the converter
-    public Color MugshotBackgroundColor { get; set; } = Color.FromRgb(227, 239, 251);
+    public Color MugshotBackgroundColor { get; set; } = Color.FromRgb(58, 61, 64);
 
+    public float VerticalFOV { get; set; } = 25;
     
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(0.20f)]
-    public float HeadTopOffset { get; set; } = 0.20f;
+    public float HeadTopOffset { get; set; } = 0.0f;
 
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(-0.05f)]
     public float HeadBottomOffset { get; set; } = -0.05f;
@@ -151,8 +174,9 @@ public class Settings
     public float CamX { get; set; } = 0.0f;
     public float CamY { get; set; } = 0.0f;
     public float CamZ { get; set; } = 0.0f;
-    public float CamPitch { get; set; } = 0.0f;
-    public float CamYaw { get; set; } = 0.0f;
+    public float CamPitch { get; set; } = 2.0f;
+    public float CamYaw { get; set; } = 90.0f;
+    public float CamRoll { get; set; } = 0.0f;
     
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(750)]
     public int ImageXRes { get; set; } = 750;
@@ -166,4 +190,7 @@ public class Settings
     public double MainWindowHeight { get; set; } = 700; // Default to your design height
     public double MainWindowWidth { get; set; } = 1000; // Default to your design width
     public WindowState MainWindowState { get; set; } = WindowState.Normal;
+    
+    // --- Manual Update Logging
+    public bool HasUpdatedTo2_0_7 { get; set; } = false;
 }

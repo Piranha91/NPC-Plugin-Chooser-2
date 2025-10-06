@@ -66,11 +66,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool AutoUpdateStaleMugshots { get; set; }
     [Reactive] public PortraitCameraMode SelectedCameraMode { get; set; }
     public IEnumerable<PortraitCameraMode> CameraModes { get; } = Enum.GetValues(typeof(PortraitCameraMode)).Cast<PortraitCameraMode>();
+    [Reactive] public float VerticalFOV { get; set; }
     [Reactive] public float CamX { get; set; }
     [Reactive] public float CamY { get; set; }
     [Reactive] public float CamZ { get; set; }
     [Reactive] public float CamPitch { get; set; }
     [Reactive] public float CamYaw { get; set; }
+    [Reactive] public float CamRoll { get; set; }
     [Reactive] public float HeadTopOffset { get; set; }
     [Reactive] public float HeadBottomOffset { get; set; }
     [Reactive] public int ImageXRes { get; set; }
@@ -239,11 +241,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         if (MugshotBackgroundColor.CanFreeze) MugshotBackgroundColor.Freeze(); // Good practice
         DefaultLightingJsonString = _model.DefaultLightingJsonString;
         SelectedCameraMode = _model.SelectedCameraMode;
+        VerticalFOV = _model.VerticalFOV;
         CamX = _model.CamX;
         CamY = _model.CamY;
         CamZ = _model.CamZ;
         CamPitch = _model.CamPitch;
         CamYaw = _model.CamYaw;
+        CamRoll = _model.CamRoll;
         HeadTopOffset = _model.HeadTopOffset;
         HeadBottomOffset = _model.HeadBottomOffset;
         ImageXRes = _model.ImageXRes;
@@ -340,11 +344,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => _model.AutoUpdateStaleMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedCameraMode).Skip(1)
             .Subscribe(mode => _model.SelectedCameraMode = mode).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.VerticalFOV).Skip(1).Subscribe(f => _model.VerticalFOV = f).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.CamX).Skip(1).Subscribe(f => _model.CamX = f).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.CamY).Skip(1).Subscribe(f => _model.CamY = f).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.CamZ).Skip(1).Subscribe(f => _model.CamZ = f).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.CamPitch).Skip(1).Subscribe(f => _model.CamPitch = f).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.CamYaw).Skip(1).Subscribe(f => _model.CamYaw = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.CamRoll).Skip(1).Subscribe(f => _model.CamRoll = f).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.HeadTopOffset).Skip(1).Subscribe(f => _model.HeadTopOffset = f).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.HeadBottomOffset).Skip(1).Subscribe(f => _model.HeadBottomOffset = f).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.ImageXRes).Skip(1).Subscribe(i => _model.ImageXRes = i).DisposeWith(_disposables);

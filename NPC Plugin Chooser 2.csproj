@@ -70,6 +70,22 @@
         <Link>NPC Portrait Creator\shaders\basic.vert</Link>
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
+      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\shaders\debug_line.frag">
+        <Link>NPC Portrait Creator\shaders\debug_line.frag</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\shaders\debug_line.vert">
+        <Link>NPC Portrait Creator\shaders\debug_line.vert</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\shaders\depth_shader.frag">
+        <Link>NPC Portrait Creator\shaders\depth_shader.frag</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+      <Content Include="..\..\NPC Portrait Creator\out\build\x64-Release\shaders\depth_shader.vert">
+        <Link>NPC Portrait Creator\shaders\depth_shader.vert</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
       <Content Include="Resources\No Mugshot.png">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>

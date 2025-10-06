@@ -2,6 +2,6 @@
 
 public enum PortraitCameraMode
 {
-    Relative,
+    Portrait,
     Fixed
 }

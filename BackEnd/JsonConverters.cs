@@ -1,4 +1,5 @@
 ﻿using System.Windows.Media;
+using Newtonsoft.Json.Converters;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -129,6 +130,29 @@ public class ColorJsonConverter : JsonConverter<Color>
     {
         var colorString = (string)reader.Value;
         return (Color)ColorConverter.ConvertFromString(colorString);
+    }
+}
+
+/// <summary>
+/// Custom converter to handle migration from old "Relative" enum value to new "Portrait" value.
+/// </summary>
+public class PortraitCameraModeConverter : StringEnumConverter
+{
+    public override object? ReadJson(JsonReader reader, Type objectType, object? existingValue, JsonSerializer serializer)
+    {
+        if (reader.TokenType == JsonToken.String)
+        {
+            string? enumText = reader.Value?.ToString();
+            
+            // Handle the migration from old enum name to new
+            if (enumText == "Relative")
+            {
+                return PortraitCameraMode.Portrait;
+            }
+        }
+        
+        // For all other cases, use the default StringEnumConverter behavior
+        return base.ReadJson(reader, objectType, existingValue, serializer);
     }
 }
 

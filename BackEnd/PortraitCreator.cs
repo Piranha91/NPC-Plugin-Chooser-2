@@ -344,11 +344,11 @@ public class PortraitCreator
                     }
                 }
             }
-            else // Relative Mode
+            else // Portrait Mode
             {
                 if (!hasOffsets)
                 {
-                    Debug.WriteLine("[Regen Trigger] Head offsets missing from PNG, but current mode is Relative.");
+                    Debug.WriteLine("[Regen Trigger] Head offsets missing from PNG, but current mode is Portrait.");
                     needsRegen = true;
                 }
                 else
@@ -509,6 +509,9 @@ public class PortraitCreator
             args.Append($"--data \"{dataFolder}\" ");
         }
         
+        // Pass the FOV setting
+        args.Append($"--fov {_settings.VerticalFOV} ");
+        
         // --- Add Image and Scene Settings ---
         args.Append($"--imgX {_settings.ImageXRes} ");
         args.Append($"--imgY {_settings.ImageYRes} ");
@@ -529,23 +532,25 @@ public class PortraitCreator
             args.Append($"--lighting-json \"{escapedJson}\" ");
         }
 
-        // NEW: Logic to select which camera parameters to use
+        // Always add pitch, yaw, and roll (they work in both modes per main.cpp)
+        args.Append($"--pitch {_settings.CamPitch} ");
+        args.Append($"--yaw {_settings.CamYaw} ");
+        args.Append($"--roll {_settings.CamRoll} ");
+
+        // Determine which camera mode to use
         bool useFixedCamera = _settings.SelectedCameraMode == PortraitCameraMode.Fixed &&
-                              (_settings.CamX != 0.0f || _settings.CamY != 0.0f || _settings.CamZ != 0.0f ||
-                               _settings.CamPitch != 0.0f || _settings.CamYaw != 0.0f);
+                              (_settings.CamX != 0.0f || _settings.CamY != 0.0f || _settings.CamZ != 0.0f);
 
         if (useFixedCamera)
         {
             args.Append($"--camX {_settings.CamX} ");
             args.Append($"--camY {_settings.CamY} ");
             args.Append($"--camZ {_settings.CamZ} ");
-            args.Append($"--pitch {_settings.CamPitch} ");
-            args.Append($"--yaw {_settings.CamYaw}");
         }
-        else // Use relative mode by default or if fixed values are all zero
+        else // Use Portrait mode (relative positioning)
         {
             args.Append($"--head-top-offset {_settings.HeadTopOffset} ");
-            args.Append($"--head-bottom-offset {_settings.HeadBottomOffset}");
+            args.Append($"--head-bottom-offset {_settings.HeadBottomOffset} ");
         }
 
         string executableDir = Path.GetDirectoryName(_executablePath);
