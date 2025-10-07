@@ -31,6 +31,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
         private readonly SummaryMugshotFactory _summaryMugshotFactory;
         private readonly CompositeDisposable _disposables = new();
+        private CancellationTokenSource? _summaryImageLoadCts;
         
         private record SummaryNpcData(FormKey TargetNpcFormKey, FormKey SourceNpcFormKey, string NpcDisplayName, string ModDisplayName, string SourceNpcDisplayName, bool IsGuest, string ImagePath, bool HasMugshot, bool IsAmbiguous, bool HasIssue, string IssueText, bool HasNoData, string NoDataText);
         private List<SummaryNpcData> _allNpcData = new();
@@ -264,6 +265,9 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 
         private void UpdateDisplay()
         {
+            // Cancel any image loading tasks from the previous page
+            _summaryImageLoadCts?.Cancel();
+            
             DisplayedItems.Clear();
             
             if (ViewMode == SummaryViewMode.List)
@@ -275,6 +279,9 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             }
             else // Gallery View
             {
+                // Create a new cancellation source for the current page
+                _summaryImageLoadCts = new CancellationTokenSource();
+                var token = _summaryImageLoadCts.Token;
                 var filteredData = GetFilteredData();
                 int totalItems = filteredData.Count;
                 TotalPages = Math.Max(1, (int)Math.Ceiling((double)totalItems / MaxNpcsPerPage));
@@ -311,9 +318,10 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 {
                     foreach(var vm in viewModelsForPage)
                     {
-                        await vm.LoadAndGenerateImageAsync();
+                        if (token.IsCancellationRequested) break;
+                        await vm.LoadAndGenerateImageAsync(token);
                     }
-                });
+                }, token);
             }
 
             if (!SummaryViewIsZoomLocked) SummaryViewHasUserManuallyZoomed = false;
@@ -349,6 +357,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 
         public void Dispose()
         {
+            _summaryImageLoadCts?.Cancel(); // Cancel any lingering tasks on dispose
             _disposables.Dispose();
         }
     }

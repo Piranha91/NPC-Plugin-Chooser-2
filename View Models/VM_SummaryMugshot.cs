@@ -189,13 +189,15 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             }).DisposeWith(_disposables);
         }
         
-        public async Task LoadAndGenerateImageAsync()
+        public async Task LoadAndGenerateImageAsync(CancellationToken token)
     {
         if (MugshotSource != null) return;
         IsLoading = true;
 
         try
         {
+            if (token.IsCancellationRequested) return;
+            
             if (HasMugshot && File.Exists(ImagePath))
             {
                 SetImageSource(ImagePath);
@@ -209,7 +211,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 if (faceData != null && !string.IsNullOrWhiteSpace(faceData.ImageUrl))
                 {
                     using var client = new HttpClient();
-                    var imageData = await client.GetByteArrayAsync(faceData.ImageUrl);
+                    var imageData = await client.GetByteArrayAsync(faceData.ImageUrl, token);
                     SetImageSourceFromMemory(imageData);
                     // (Optionally add logic here to cache the downloaded image)
                     if (!string.IsNullOrWhiteSpace(faceData.ExternalUrl) && ModPageUrls.All(p => p.Url != faceData.ExternalUrl))
@@ -219,6 +221,8 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                     return;
                 }
             }
+            
+            if (token.IsCancellationRequested) return;
 
             // --- PortraitCreator Fallback ---
             if (_settings.UsePortraitCreatorFallback && _associatedModSetting != null)
@@ -233,12 +237,16 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 if (!string.IsNullOrWhiteSpace(nifPath) && _portraitCreator.NeedsRegeneration(savePath, nifPath, _associatedModSetting.CorrespondingFolderPaths))
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
-                    if (await _portraitCreator.GeneratePortraitAsync(nifPath, _associatedModSetting.CorrespondingFolderPaths, savePath))
+                    if (await _portraitCreator.GeneratePortraitAsync(nifPath, _associatedModSetting.CorrespondingFolderPaths, savePath, token))
                     {
                         SetImageSource(savePath);
                     }
                 }
             }
+        }
+        catch (TaskCanceledException)
+        {
+            /* Swallow cancellation */
         }
         catch (Exception ex)
         {

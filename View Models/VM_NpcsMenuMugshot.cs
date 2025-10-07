@@ -37,7 +37,6 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly FaceFinderClient _faceFinderClient;
     private readonly PortraitCreator _portraitCreator;
-    private CancellationTokenSource? _generateMugshotCts;
     private readonly CompositeDisposable Disposables = new();
     private readonly SolidColorBrush _selectedWithDataBrush = new(Colors.LimeGreen);
     private readonly SolidColorBrush _selectedWithoutDataBrush = new(Colors.DarkMagenta);
@@ -795,12 +794,8 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         ShareSourceTooltipText = sb.ToString().Trim();
     }
 
-    public async Task GenerateMugshotAsync()
+    public async Task GenerateMugshotAsync(CancellationToken token)
     {
-        _generateMugshotCts?.Cancel();
-        _generateMugshotCts = new CancellationTokenSource();
-        var token = _generateMugshotCts.Token;
-    
         try
         {
             // First, ensure the initial placeholder image is loaded and visible.
@@ -894,7 +889,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 if (!string.IsNullOrWhiteSpace(nifPath) && _portraitCreator.NeedsRegeneration(savePath, nifPath, AssociatedModSetting.CorrespondingFolderPaths))
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
-                    if (await _portraitCreator.GeneratePortraitAsync(nifPath, AssociatedModSetting.CorrespondingFolderPaths, savePath))
+                    if (await _portraitCreator.GeneratePortraitAsync(nifPath, AssociatedModSetting.CorrespondingFolderPaths, savePath, token))
                     {
                         Debug.WriteLine($"Generated mugshot for {SourceNpcFormKey}.");
                         SetImageSource(savePath);

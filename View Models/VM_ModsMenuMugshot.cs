@@ -409,7 +409,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     }
 
     private async Task HandleSuccessfulDownload(byte[] imageData, FaceFinderResult faceData, string baseSavePath,
-        string saveFolder)
+        string saveFolder, CancellationToken token)
     {
         string finalImagePath;
         if (_settings.CacheFaceFinderImages)
@@ -419,7 +419,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             finalImagePath = $"{baseSavePath}.{extension}";
 
             Directory.CreateDirectory(Path.GetDirectoryName(finalImagePath)!);
-            await File.WriteAllBytesAsync(finalImagePath, imageData);
+            await File.WriteAllBytesAsync(finalImagePath, imageData, token);
             await _faceFinderClient.WriteMetadataAsync(finalImagePath, faceData);
 
             SetImageSource(finalImagePath, isPlaceholder: false);
@@ -514,7 +514,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 
                         using var client = new HttpClient();
                         var imageData = await client.GetByteArrayAsync(faceData.ImageUrl, _cancellationToken);
-                        await HandleSuccessfulDownload(imageData, faceData, baseSavePath, saveFolder);
+                        await HandleSuccessfulDownload(imageData, faceData, baseSavePath, saveFolder, _cancellationToken);
                         return; // SUCCESS: Image downloaded, exit.
                     }
                     catch (Exception ex)
@@ -536,7 +536,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(pngSavePath)!);
                 if (await _portraitCreator.GeneratePortraitAsync(nifPath, _parentVMModSetting.CorrespondingFolderPaths,
-                        pngSavePath))
+                        pngSavePath, _cancellationToken))
                 {
                     Debug.WriteLine($"Generated mugshot for {NpcFormKey}.");
                     SetImageSource(pngSavePath, isPlaceholder: false);

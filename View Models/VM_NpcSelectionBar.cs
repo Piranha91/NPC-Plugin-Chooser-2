@@ -69,6 +69,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private Dictionary<FormKey, HashSet<string>> _hiddenModsPerNpc = new();
     private Dictionary<FormKey, List<(string ModName, string ImagePath)>> _mugshotData = new();
     private readonly Subject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
+    private CancellationTokenSource? _mugshotGenerationCts;
 
     private readonly BehaviorSubject<VM_NpcsMenuSelection?> _requestScrollToNpcSubject =
         new BehaviorSubject<VM_NpcsMenuSelection?>(null);
@@ -2199,6 +2200,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     
     private void TriggerAsyncMugshotGeneration()
     {
+        // Cancel any generation tasks initiated for the previously selected NPC.
+        _mugshotGenerationCts?.Cancel();
+        _mugshotGenerationCts = new CancellationTokenSource();
+        var token = _mugshotGenerationCts.Token;
+
         if (CurrentNpcAppearanceMods == null || !CurrentNpcAppearanceMods.Any())
         {
             return;
@@ -2212,7 +2218,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             if (mugshotVM.IsVisible && !mugshotVM.HasMugshot)
             {
                 // Fire and forget. The VM will update its own image when the task completes.
-                _ = mugshotVM.GenerateMugshotAsync();
+                _ = mugshotVM.GenerateMugshotAsync(token);
             }
         }
     }

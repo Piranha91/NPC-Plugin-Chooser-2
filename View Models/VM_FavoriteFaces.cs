@@ -41,6 +41,7 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
     private readonly VM_NpcsMenuSelection? _targetNpcForApply;
     private readonly FavoriteMugshotFactory _favoriteMugshotFactory;
     private readonly CompositeDisposable _disposables = new();
+    private CancellationTokenSource? _imageLoadCts;
 
     public ViewModelActivator Activator { get; } = new();
     public FavoriteFacesMode Mode { get; }
@@ -164,6 +165,11 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
 
     private async Task LoadFavoritesAsync()
     {
+        // Cancel any previous load and create a new token source for this load operation
+        _imageLoadCts?.Cancel();
+        _imageLoadCts = new CancellationTokenSource();
+        var token = _imageLoadCts.Token;
+        
         await Task.Run(() =>
         {
             var npcViewModelMap = _npcsViewModel.AllNpcs.ToDictionary(npc => npc.NpcFormKey);
@@ -191,10 +197,12 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
 
                 favorites.Add(favVM);
             }
+            if (token.IsCancellationRequested) return;
 
             // Switch to UI thread to update collection
             RxApp.MainThreadScheduler.Schedule(() =>
             {
+                if (token.IsCancellationRequested) return;
                 FavoriteMugshots.Clear();
                 foreach (var fav in favorites) FavoriteMugshots.Add(fav);
                 _refreshImageSizesSubject.OnNext(Unit.Default);
@@ -202,8 +210,12 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
                 // Asynchronously load the actual image sources
                 Task.Run(async () =>
                 {
-                    foreach (var vm in FavoriteMugshots) await vm.LoadAndGenerateImageAsync();
-                });
+                    foreach (var vm in FavoriteMugshots)
+                    {
+                        if (token.IsCancellationRequested) break;
+                        await vm.LoadAndGenerateImageAsync(token);
+                    }
+                }, token);
             });
         });
     }
@@ -295,6 +307,7 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
 
     public void Dispose()
     {
+        _imageLoadCts?.Cancel(); // Cancel any running image loads when the window closes
         _disposables.Dispose();
     }
 }

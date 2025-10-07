@@ -487,14 +487,14 @@ public class PortraitCreator
     /// Queues a request to generate a portrait. This method is thread-safe and
     /// prevents duplicate render jobs for the same input/output pair.
     /// </summary>
-    public Task<bool> GeneratePortraitAsync(string nifPath, IEnumerable<string> dataFolderPaths, string outputPath)
+    public Task<bool> GeneratePortraitAsync(string nifPath, IEnumerable<string> dataFolderPaths, string outputPath, CancellationToken token)
     {
         var renderKey = (nifPath, outputPath);
 
         return _renderTasks.GetOrAdd(renderKey, key =>
         {
             // 1. Create the task to process the render request.
-            var renderTask = ProcessRenderRequestAsync(key.Item1, dataFolderPaths, key.Item2);
+            var renderTask = ProcessRenderRequestAsync(key.Item1, dataFolderPaths, key.Item2, token);
 
             // 2. Attach a continuation. This tells the task to perform an action
             //    (removing itself from the dictionary) as soon as it's finished,
@@ -513,14 +513,14 @@ public class PortraitCreator
     /// <summary>
     /// Waits for an available render slot and then executes the portrait creator process.
     /// </summary>
-    private async Task<bool> ProcessRenderRequestAsync(string nifPath, IEnumerable<string> dataFolderPaths, string outputPath)
+    private async Task<bool> ProcessRenderRequestAsync(string nifPath, IEnumerable<string> dataFolderPaths, string outputPath, CancellationToken token)
     {
         // Wait until a slot in the semaphore is free.
-        await _renderSemaphore.WaitAsync();
+        await _renderSemaphore.WaitAsync(token);
         try
         {
             // Once a slot is acquired, run the actual process.
-            return await RunProcessInternalAsync(nifPath, dataFolderPaths, outputPath);
+            return await RunProcessInternalAsync(nifPath, dataFolderPaths, outputPath, token);
         }
         finally
         {
@@ -532,7 +532,7 @@ public class PortraitCreator
     /// <summary>
     /// Contains the core logic for launching and monitoring the external executable.
     /// </summary>
-    private async Task<bool> RunProcessInternalAsync(string nifPath, IEnumerable<string> dataFolderPaths, string outputPath)
+    private async Task<bool> RunProcessInternalAsync(string nifPath, IEnumerable<string> dataFolderPaths, string outputPath, CancellationToken token)
     {
         if (!File.Exists(_executablePath))
         {
@@ -658,7 +658,21 @@ public class PortraitCreator
             process.BeginErrorReadLine();
         }
 
-        await process.WaitForExitAsync();
+        try
+        {
+            // Wait for the process to exit, now with cancellation support.
+            await process.WaitForExitAsync(token);
+        }
+        catch (TaskCanceledException)
+        {
+            // The operation was cancelled. Terminate the external process.
+            if (!process.HasExited)
+            {
+                process.Kill();
+                Debug.WriteLine($"[NPC Creator]: Process for '{Path.GetFileName(nifPath)}' cancelled and terminated.");
+            }
+            throw; // Re-throw the exception so the calling task knows it was cancelled.
+        }
             
         if (process.ExitCode != 0)
         {
