@@ -319,6 +319,23 @@ public class PortraitCreator
                 Debug.WriteLine("[Regen Trigger] Lighting profile missing from PNG metadata.");
                 needsRegen = true;
             }
+            
+            // 4B: Check normal map hack
+            if (root.TryGetProperty("normal_hack", out var normalHackEl) && 
+                (normalHackEl.ValueKind == JsonValueKind.True || normalHackEl.ValueKind == JsonValueKind.False))
+            {
+                bool metaNormalHack = normalHackEl.GetBoolean();
+                if (metaNormalHack != _settings.EnableNormalMapHack)
+                {
+                    Debug.WriteLine($"[Regen Trigger] Normal hack mismatch. PNG: {metaNormalHack}, Current: {_settings.EnableNormalMapHack}");
+                    needsRegen = true;
+                }
+            }
+            else
+            {
+                Debug.WriteLine("[Regen Trigger] Normal hack setting missing from PNG metadata.");
+                needsRegen = true;
+            }
 
             // 5. Check Camera Mode and Parameters
             bool hasCamera = root.TryGetProperty("camera", out var camEl);
@@ -557,6 +574,8 @@ public class PortraitCreator
         string bgColorString = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2}", 
             color.R / 255.0f, color.G / 255.0f, color.B / 255.0f);
         args.Append($"--bgcolor \"{bgColorString}\" ");
+        
+        args.Append($"--normal-hack {(_settings.EnableNormalMapHack ? "true" : "false")} ");
 
         // Pass the lighting profile as a direct JSON string.
         if (!string.IsNullOrWhiteSpace(_settings.DefaultLightingJsonString))

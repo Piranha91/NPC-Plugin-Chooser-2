@@ -195,6 +195,16 @@
                                         Command="{Binding SelectBackgroundColorCommand}" VerticalAlignment="Center"/>
                             </StackPanel>
                             
+                            <CheckBox Content="Enable Normal Map Hack"
+                                      IsChecked="{Binding EnableNormalMapHack, Mode=TwoWay}"
+                                      Margin="0,10,0,0">
+                                <CheckBox.ToolTip>
+                                    <TextBlock TextWrapping="Wrap" MaxWidth="400">
+                                        The normal maps as loaded by the Nif model don't produce maximal brightness when illuminated directly, but rather at an angle. This seems physically incorrect, since things should generally look brightest when illuminated head-on. This hack explicitly rotates non-model-space normals to maximally illuminate in the direction of the incident light, making things like eyes and hair look brighter. I think this is more accurate than default, but you can disable this if you think the generated portraits have too much glare.
+                                    </TextBlock>
+                                </CheckBox.ToolTip>
+                            </CheckBox>
+                            
                             <TextBlock Text="Lighting Profile (JSON)" FontWeight="Bold" Margin="0,10,0,0"/>
                             <TextBox Text="{Binding DefaultLightingJsonString, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="200"

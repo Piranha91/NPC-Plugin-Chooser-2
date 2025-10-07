@@ -161,7 +161,8 @@ public class Settings
 }";
     [JsonConverter(typeof(ColorJsonConverter))] // Apply the converter
     public Color MugshotBackgroundColor { get; set; } = Color.FromRgb(58, 61, 64);
-
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(true)]
+    public bool EnableNormalMapHack { get; set; } = true;
     public float VerticalFOV { get; set; } = 25;
     
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(0.20f)]

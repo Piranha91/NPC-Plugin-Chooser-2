@@ -77,7 +77,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public float HeadBottomOffset { get; set; }
     [Reactive] public int ImageXRes { get; set; }
     [Reactive] public int ImageYRes { get; set; }
-
+    [Reactive] public bool EnableNormalMapHack { get; set; }
     [Reactive] public string SkyrimGamePath { get; set; }
 
     // TargetPluginName now maps to the conceptual name in the model
@@ -240,6 +240,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         MugshotBackgroundColor = new SolidColorBrush(_model.MugshotBackgroundColor);
         if (MugshotBackgroundColor.CanFreeze) MugshotBackgroundColor.Freeze(); // Good practice
         DefaultLightingJsonString = _model.DefaultLightingJsonString;
+        EnableNormalMapHack = _model.EnableNormalMapHack;
         SelectedCameraMode = _model.SelectedCameraMode;
         VerticalFOV = _model.VerticalFOV;
         CamX = _model.CamX;
@@ -355,6 +356,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         this.WhenAnyValue(x => x.HeadBottomOffset).Skip(1).Subscribe(f => _model.HeadBottomOffset = f).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.ImageXRes).Skip(1).Subscribe(i => _model.ImageXRes = i).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.ImageYRes).Skip(1).Subscribe(i => _model.ImageYRes = i).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.EnableNormalMapHack).Skip(1)
+            .Subscribe(b => _model.EnableNormalMapHack = b).DisposeWith(_disposables);
         
         this.WhenAnyValue(x => x.OutputDirectory).Skip(1).Subscribe(s => _model.OutputDirectory = s)
             .DisposeWith(_disposables);

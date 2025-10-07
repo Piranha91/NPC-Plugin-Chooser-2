@@ -191,7 +191,8 @@ public class UpdateHandler
         }
     ]
 }";
-        
+            _settings.EnableNormalMapHack = true;
+            
             Debug.WriteLine("Portrait Creator settings reset to 1.0.7 defaults.");
         }
 
