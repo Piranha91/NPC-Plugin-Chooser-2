@@ -205,6 +205,17 @@
                                 </CheckBox.ToolTip>
                             </CheckBox>
                             
+                            <CheckBox Content="Use Modded Fallback Textures"
+                                      IsChecked="{Binding UseModdedFallbackTextures, Mode=TwoWay}"
+                                      Margin="0,10,0,0">
+                                <CheckBox.ToolTip>
+                                    <TextBlock TextWrapping="Wrap" MaxWidth="400">
+                                        If enabled (default), missing textures will search ALL files (loose or BSA) in the base game Data folder as a last resort. For example, vanilla skinned NPCs will use your installed skin textures.
+                                        If disabled, this fallback search is restricted to ONLY vanilla Skyrim and Creation Club BSAs, preventing loose or mod-added BSA textures in the base Data folder from overwriting the base game.
+                                    </TextBlock>
+                                </CheckBox.ToolTip>
+                            </CheckBox>
+                            
                             <TextBlock Text="Lighting Profile (JSON)" FontWeight="Bold" Margin="0,10,0,0"/>
                             <TextBox Text="{Binding DefaultLightingJsonString, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="200"

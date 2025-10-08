@@ -338,6 +338,24 @@ public class PortraitCreator
                 Debug.WriteLine("[Regen Trigger] Normal hack setting missing from PNG metadata.");
                 needsRegen = true;
             }
+            
+            // 4C: Check Use Modded Fallback Textures setting
+            if (root.TryGetProperty("use_modded_fallback_textures", out var fallbackEl) &&
+                (fallbackEl.ValueKind == JsonValueKind.True || fallbackEl.ValueKind == JsonValueKind.False))
+            {
+                bool metaFallback = fallbackEl.GetBoolean();
+                if (metaFallback != _settings.UseModdedFallbackTextures)
+                {
+                    Debug.WriteLine(
+                        $"[Regen Trigger] Modded fallback texture setting mismatch. PNG: {metaFallback}, Current: {_settings.UseModdedFallbackTextures}");
+                    needsRegen = true;
+                }
+            }
+            else
+            {
+                Debug.WriteLine("[Regen Trigger] Modded fallback texture setting missing from PNG metadata.");
+                needsRegen = true;
+            }
 
             // 5. Check Camera Mode and Parameters
             bool hasCamera = root.TryGetProperty("camera", out var camEl);
@@ -581,6 +599,8 @@ public class PortraitCreator
         args.Append($"--bgcolor \"{bgColorString}\" ");
         
         args.Append($"--normal-hack {(_settings.EnableNormalMapHack ? "true" : "false")} ");
+        
+        args.Append($"--mod-fallback-textures {(_settings.UseModdedFallbackTextures ? "true" : "false")} ");
 
         // Pass the lighting profile as a direct JSON string.
         if (!string.IsNullOrWhiteSpace(_settings.DefaultLightingJsonString))
