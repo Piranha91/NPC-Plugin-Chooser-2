@@ -319,7 +319,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                     foreach(var vm in viewModelsForPage)
                     {
                         if (token.IsCancellationRequested) break;
-                        await vm.LoadAndGenerateImageAsync(token);
+                        await vm.LoadRealImageAsync(token);
                     }
                 }, token);
             }

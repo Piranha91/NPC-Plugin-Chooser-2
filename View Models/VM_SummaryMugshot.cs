@@ -17,6 +17,8 @@ using System.Windows.Media;
 using System.Reactive.Disposables;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
 
@@ -74,6 +76,10 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         public ReactiveCommand<Unit, Unit> JumpToModCommand { get; }
         public ReactiveCommand<string, Unit> VisitModPageCommand { get; }
         
+        // --- NEW: Placeholder Image Configuration --- 
+        private const string PlaceholderResourceRelativePath = @"Resources\No Mugshot.png";
+        private static readonly string FullPlaceholderPath = Path.Combine(AppContext.BaseDirectory, PlaceholderResourceRelativePath);
+        
 
         public VM_SummaryMugshot(
             string imagePath,
@@ -111,24 +117,8 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             NoDataNotificationText = noDataText;
             HasMugshot = hasMugshot;
 
-            // Get image dimensions without loading the full image data.
-            try
-            {
-                var (pixelWidth, pixelHeight, dipWidth, dipHeight) = ImagePacker.GetImageDimensions(ImagePath);
-                OriginalPixelWidth = pixelWidth;
-                OriginalPixelHeight = pixelHeight;
-                OriginalDipWidth = dipWidth;
-                OriginalDipHeight = dipHeight;
-                OriginalDipDiagonal = Math.Sqrt(dipWidth * dipWidth + dipHeight * dipHeight);
-                ImageWidth = OriginalDipWidth;
-                ImageHeight = OriginalDipHeight;
-            }
-            catch (Exception ex)
-            {
-                // This catch block correctly handles any errors by marking the mugshot as invalid.
-                Debug.WriteLine($"Error getting dimensions for image '{ImagePath}': {ExceptionLogger.GetExceptionStack(ex)}");
-                HasMugshot = false; // Fallback in case the placeholder file is missing/corrupt
-            }
+            // Asynchronously load the initial image (placeholder or real) without blocking the constructor.
+            _ = LoadInitialImageAsync(); 
             
             this.WhenAnyValue(x => x.ModPageUrls.Count).Select(count => count > 0).ToPropertyEx(this, x => x.CanVisitModPage).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.ModPageUrls.Count).Select(count => count == 1).ToPropertyEx(this, x => x.HasSingleModPage).DisposeWith(_disposables);
@@ -189,20 +179,67 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             }).DisposeWith(_disposables);
         }
         
-        public async Task LoadAndGenerateImageAsync(CancellationToken token)
+        public async Task LoadInitialImageAsync()
+        {
+            if (MugshotSource != null) return; // Already loaded
+
+            string pathToLoad = (!string.IsNullOrWhiteSpace(ImagePath) && File.Exists(ImagePath))
+                ? ImagePath
+                : FullPlaceholderPath;
+
+            if (!File.Exists(pathToLoad))
+            {
+                HasMugshot = false; // Cannot display anything
+                return;
+            }
+
+            try
+            {
+                // Load bitmap and dimensions on a background thread
+                var (bitmap, dims) = await Task.Run(() =>
+                {
+                    var bmp = new BitmapImage();
+                    using (var stream = new FileStream(pathToLoad, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        bmp.BeginInit();
+                        bmp.CacheOption = BitmapCacheOption.OnLoad;
+                        bmp.StreamSource = stream;
+                        bmp.EndInit();
+                    }
+                    bmp.Freeze();
+                    
+                    var dimensions = ImagePacker.GetImageDimensions(pathToLoad);
+                    return (bmp, dimensions);
+                });
+                
+                // Assign results back on the UI thread
+                MugshotSource = bitmap;
+                OriginalPixelWidth = dims.PixelWidth;
+                OriginalPixelHeight = dims.PixelHeight;
+                OriginalDipWidth = dims.DipWidth;
+                OriginalDipHeight = dims.DipHeight;
+                OriginalDipDiagonal = Math.Sqrt(dims.DipWidth * dims.DipWidth + dims.DipHeight * dims.DipHeight);
+                ImageWidth = OriginalDipWidth;
+                ImageHeight = OriginalDipHeight;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in LoadInitialImageAsync for '{ImagePath}': {ExceptionLogger.GetExceptionStack(ex)}");
+                HasMugshot = false;
+            }
+        }
+        
+        // --- RENAMED METHOD ---
+        public async Task LoadRealImageAsync(CancellationToken token)
     {
-        if (MugshotSource != null) return;
+        // This method's purpose is to generate a real image if one doesn't already exist.
+        if (HasMugshot) return;
+        
         IsLoading = true;
 
         try
         {
             if (token.IsCancellationRequested) return;
-            
-            if (HasMugshot && File.Exists(ImagePath))
-            {
-                SetImageSource(ImagePath);
-                return;
-            }
 
             // --- FaceFinder Fallback ---
             if (_settings.UseFaceFinderFallback)

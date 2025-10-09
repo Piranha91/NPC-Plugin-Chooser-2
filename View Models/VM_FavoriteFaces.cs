@@ -213,7 +213,7 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
                     foreach (var vm in FavoriteMugshots)
                     {
                         if (token.IsCancellationRequested) break;
-                        await vm.LoadAndGenerateImageAsync(token);
+                        await vm.LoadRealImageAsync(token);
                     }
                 }, token);
             });
