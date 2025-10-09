@@ -206,7 +206,8 @@ namespace NPC_Plugin_Chooser_2
             await portraitCreator.InitializeAsync();
             
             var modsViewModel = container.Resolve<VM_Mods>();
-            await updateHandler.FinalCheckForUpdatesAndPatch(modsViewModel, splashVM);
+            var npcsViewModel = container.Resolve<VM_NpcSelectionBar>();
+            await updateHandler.FinalCheckForUpdatesAndPatch(npcsViewModel, modsViewModel, splashVM);
             
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
             return container;

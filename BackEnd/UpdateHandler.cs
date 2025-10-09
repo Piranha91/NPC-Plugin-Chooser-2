@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Windows;
 using System.Windows.Media;
+using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
 using NPC_Plugin_Chooser_2.Views;
@@ -62,7 +65,7 @@ public class UpdateHandler
     /// Checks the settings version against the current program version and applies any necessary updates.
     /// Runs after UI initializes
     /// </summary>
-    public async Task FinalCheckForUpdatesAndPatch(VM_Mods modsVm, VM_SplashScreen? splashReporter)
+    public async Task FinalCheckForUpdatesAndPatch(VM_NpcSelectionBar npcsVm, VM_Mods modsVm, VM_SplashScreen? splashReporter)
     {
         // If the settings version is empty (e.g., a new user), there's nothing to migrate.
         if (string.IsNullOrWhiteSpace(_settings.ProgramVersion))
@@ -98,6 +101,11 @@ public class UpdateHandler
         if (settingsVersion < "2.0.5")
         {
             await UpdateTo2_0_5_Final(modsVm, splashReporter);
+        }
+        
+        if (!_settings.HasUpdatedTo2_0_7_templates)
+        {
+            await UpdateTo2_0_7_Final(modsVm, npcsVm, splashReporter);
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -236,5 +244,90 @@ public class UpdateHandler
     {
         // Call the public refresh coordinator, passing the existing splash screen reporter
         await modsVm.RefreshAllModSettingsAsync(splashReporter);
+    }
+
+    private async Task UpdateTo2_0_7_Final(VM_Mods modsVm, VM_NpcSelectionBar npcSelectionBar,
+        VM_SplashScreen? splashReporter)
+    {
+        string messageStr = "Previous versions of NPC Plugin Chooser allowed you to select appearances for NPCs with invalid templates using the Select All From Mod batch action. This could result in bugged appearances in-game for those NPCs. Would you like to scan and automatically de-select these NPCs?";
+        if (!ScrollableMessageBox.Confirm(messageStr, "2.0.7 Update"))
+        {
+            _settings.HasUpdatedTo2_0_7_templates = true;
+            return;
+        }
+        
+        splashReporter?.UpdateStep("Validating existing NPC selections...");
+
+        var invalidSelections = new List<(FormKey npcKey, string modName, string reason)>();
+
+        // Check all existing selections
+        foreach (var selection in _settings.SelectedAppearanceMods.ToList())
+        {
+            var npcFormKey = selection.Key;
+            var (modName, sourceNpcFormKey) = selection.Value;
+
+            // Find the corresponding mod setting
+            var modSetting = modsVm.AllModSettings.FirstOrDefault(m =>
+                m.DisplayName.Equals(modName, StringComparison.OrdinalIgnoreCase));
+
+            if (modSetting == null)
+            {
+                // Mod no longer exists - this is a different issue, skip for now
+                continue;
+            }
+
+            // Validate the selection
+            var (isValid, failureReason) = npcSelectionBar.ValidateSelection(npcFormKey, modSetting);
+
+            if (!isValid)
+            {
+                invalidSelections.Add((npcFormKey, modName, failureReason));
+            }
+        }
+
+        if (invalidSelections.Any())
+        {
+            var message = new StringBuilder();
+            message.AppendLine($"Found {invalidSelections.Count} invalid NPC selection(s) from previous versions.");
+            message.AppendLine();
+            message.AppendLine(
+                "These selections have template chain issues that will likely cause incorrect appearances in-game.");
+            message.AppendLine();
+            message.AppendLine("Would you like to deselect these NPCs? (Recommended)");
+            message.AppendLine();
+            message.AppendLine("Details:");
+            message.AppendLine();
+            
+            foreach (var (npcKey, modName, reason) in invalidSelections)
+            {
+                message.AppendLine($"• {reason}");
+            }
+
+            if (ScrollableMessageBox.Confirm(message.ToString(), "Invalid NPC Selections Found",
+                    MessageBoxImage.Warning))
+            {
+                // User confirmed - deselect all problematic NPCs
+                foreach (var(npcKey, modName, _) in invalidSelections)
+                {
+                    _settings.SelectedAppearanceMods.Remove(npcKey);
+                    Debug.WriteLine($"Deselected invalid selection: {npcKey} -> {modName}");
+                }
+
+                ScrollableMessageBox.Show($"Deselected {invalidSelections.Count} invalid NPC selection(s).",
+                    "Selections Cleared");
+            }
+            else
+            {
+                ScrollableMessageBox.ShowWarning(
+                    "Invalid selections were kept. These NPCs may have incorrect appearances in-game until you manually correct them.",
+                    "Selections Kept");
+            }
+        }
+        else
+        {
+            Debug.WriteLine("No invalid NPC selections found during update check.");
+        }
+
+        _settings.HasUpdatedTo2_0_7_templates = true;
     }
 }

@@ -204,4 +204,5 @@ public class Settings
     
     // --- Manual Update Logging
     public bool HasUpdatedTo2_0_7 { get; set; } = false;
+    public bool HasUpdatedTo2_0_7_templates { get; set; } = false;
 }
