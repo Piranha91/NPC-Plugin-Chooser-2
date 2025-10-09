@@ -225,7 +225,8 @@ public class AssetHandler : OptionalUIModule
     /// <param name="relativePath">The asset's relative path (e.g., "textures\\actor.dds").</param>
     /// <param name="modSetting">The mod setting providing context for where to find the asset.</param>
     /// <param name="outputBasePath">The root output directory for the patch.</param>
-    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath, string? overrideDestinationRelativePath = null)
+    /// <param name="faceTintSubPath">The relative path of the face tint texture. Prevents mis-assignment of shared NPC face tints</param>
+    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath, string faceTintSubPath, string? overrideDestinationRelativePath = null)
     {
         // FIX: Create a composite key to uniquely identify an asset *within the context of its source mod*.
         // This prevents a failed lookup from one mod from blocking a successful lookup from another mod for the same relative path.
@@ -248,7 +249,7 @@ public class AssetHandler : OptionalUIModule
                     case AssetSourceType.LooseFile:
                         // Create two tasks: one for copying, one for analyzing the source file.
                         Task copyTask = PerformLooseCopyAsync(sourcePath, destPath);
-                        Task analysisTask = PostProcessNifTextures(sourcePath, modSetting, outputBasePath);
+                        Task analysisTask = PostProcessNifTextures(sourcePath, modSetting, outputBasePath, faceTintSubPath);
                     
                         // Await both tasks to run them in parallel.
                         await Task.WhenAll(copyTask, analysisTask);
@@ -259,7 +260,7 @@ public class AssetHandler : OptionalUIModule
                         // The original sequential logic is still best here.
                         if (await _bsaHandler.ExtractFileAsync(bsaPath, relativePath, destPath))
                         {
-                            await PostProcessNifTextures(destPath, modSetting, outputBasePath);
+                            await PostProcessNifTextures(destPath, modSetting, outputBasePath, faceTintSubPath);
                         }
                         break;
                 
@@ -313,8 +314,11 @@ public class AssetHandler : OptionalUIModule
     /// <summary>
     /// After a file is copied/extracted, this checks if it is a NIF file. If so, it parses it
     /// for texture paths and recursively requests those assets.
+    /// faceTintSubPath is requested explicitly so that it doesn't get erroneously copied to the wrong NPC because
+    /// this function is agnostic to whether or not these textures are assigned to a surrogate, so this could potentially
+    /// create the wrong face tint textures
     /// </summary>
-    private async Task PostProcessNifTextures(string nifPathToAnalyze, ModSetting modSetting, string outputBasePath)
+    private async Task PostProcessNifTextures(string nifPathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath)
     {
         // The check now correctly uses the passed-in path.
         if (!nifPathToAnalyze.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)) return;
@@ -326,6 +330,10 @@ public class AssetHandler : OptionalUIModule
             var regularizedPaths = new HashSet<string>();
             foreach (var t in texturesInNif)
             {
+                if (faceTintSubPath.Contains(t, StringComparison.OrdinalIgnoreCase) || t.Contains(faceTintSubPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
                 Auxilliary.TryRegularizePath(t, out var regularizedPath);
                 regularizedPaths.Add(regularizedPath);
             }
@@ -338,7 +346,7 @@ public class AssetHandler : OptionalUIModule
             var textureTasks = new List<Task>();
             foreach (var texRelPath in regularizedPaths)
             {
-                textureTasks.Add(RequestAssetCopyAsync(texRelPath, modSetting, outputBasePath));
+                textureTasks.Add(RequestAssetCopyAsync(texRelPath, modSetting, outputBasePath, faceTintSubPath));
             }
             // await Task.WhenAll(textureTasks); DO not await here - causes deadlock due to upstream semaphore
         }
@@ -440,8 +448,8 @@ public class AssetHandler : OptionalUIModule
         {
             (var surrogateFaceGenNifPath, var surrogateFaceGenDdsPath) = // These store the paths for the original NPC FormKey - e.g. the one being copied from
                 Auxilliary.GetFaceGenSubPathStrings(surrogateNpcFormKey, true);
-            RequestAssetCopyAsync(faceMeshRelativePath, appearanceModSetting, outputBasePath, overrideDestinationRelativePath: surrogateFaceGenNifPath);
-            RequestAssetCopyAsync(faceTexRelativePath, appearanceModSetting, outputBasePath, overrideDestinationRelativePath: surrogateFaceGenDdsPath);
+            RequestAssetCopyAsync(faceMeshRelativePath, appearanceModSetting, outputBasePath, faceTexRelativePath, overrideDestinationRelativePath: surrogateFaceGenNifPath);
+            RequestAssetCopyAsync(faceTexRelativePath, appearanceModSetting, outputBasePath, faceTexRelativePath, overrideDestinationRelativePath: surrogateFaceGenDdsPath);
         }
         else
         {
@@ -466,14 +474,14 @@ public class AssetHandler : OptionalUIModule
             Auxilliary.TryRegularizePath(relPath, out string regularizedPath);
             // This method is fire-and-forget; the task is added to the concurrent dictionary 
             // and runs in the background. It will not re-process assets it has already seen.
-            RequestAssetCopyAsync(regularizedPath, appearanceModSetting, outputBasePath);
+            RequestAssetCopyAsync(regularizedPath, appearanceModSetting, outputBasePath, faceTexRelativePath);
         }
     }
 
     /// <summary>
     /// Schedules asynchronous processing for assets identified via direct asset links.
     /// </summary>
-    public async Task ScheduleCopyAssetLinkFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting, string outputBasePath)
+    public async Task ScheduleCopyAssetLinkFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting, string outputBasePath, string faceTexRelativePath)
     {
         using var _ = ContextualPerformanceTracer.Trace("AssetHandler.ScheduleCopyAssetLinkFiles");
 
@@ -496,7 +504,7 @@ public class AssetHandler : OptionalUIModule
         {
             if (relPath != null)
             {
-                RequestAssetCopyAsync(relPath, appearanceModSetting, outputBasePath);
+                RequestAssetCopyAsync(relPath, appearanceModSetting, outputBasePath, faceTexRelativePath);
             }
         }
     }

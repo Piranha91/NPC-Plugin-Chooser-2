@@ -732,8 +732,11 @@ public class Patcher : OptionalUIModule
                                 await _assetHandler.ScheduleCopyNpcAssets(npcFormKey, appearanceNpcRecord,
                                     appearanceModSetting, // appearanceNpcRecord here rather than patchNpc is intentional
                                     _currentRunOutputAssetPath, npcIdentifier);
+                                
+                                var (_, faceTintPath) = Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, true);
+                                
                                 await _assetHandler.ScheduleCopyAssetLinkFiles(assetLinks, appearanceModSetting,
-                                    _currentRunOutputAssetPath);
+                                    _currentRunOutputAssetPath, faceTintPath);
 
 
                                 if (_settings.UseSkyPatcherMode)
