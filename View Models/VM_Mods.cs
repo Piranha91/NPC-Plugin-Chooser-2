@@ -2998,7 +2998,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             var availablePlugins = modSettingVM.AvailablePluginsForNpcs.TryGetValue(npcFormKey);
             // note: availablePlugins might be null if the given template doesn't come with FaceGen, causing the modSetting to reject it as an appearance mod.
             // Fall back to the link cache in this case
-            if (availablePlugins != null && availablePlugins.Any() || (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out currentNpcGetter) && currentNpcGetter != null))
+            if (availablePlugins != null && availablePlugins.Any())
             {
                 if (availablePlugins != null && availablePlugins.Count == 1)
                 {
@@ -3043,9 +3043,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                                                  + Environment.NewLine + $"Template Chain: {string.Join(" -> ", templateChain.Select(x => x.displayName))}");
                 return false;
             }
-            else if (currentNpcGetter != null)
+            else if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out currentNpcGetter) && currentNpcGetter != null)
             {
                 fromLinkCacheOnly.Add(currentNpcGetter.FormKey);
+                sourcePlugin = null;
             }
             else
             {
@@ -3060,7 +3061,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 {
                     currentNpcGetter =  sourcePlugin.Npcs.Where(x => x.FormKey.Equals(npcFormKey)).FirstOrDefault();   
                 }
-                
+                    
                 if (currentNpcGetter is null)
                 {
                     errorMessages.Add(
