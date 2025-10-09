@@ -47,6 +47,7 @@ public class VM_Mods : ReactiveObject
     private readonly ConcurrentDictionary<(string pluginSourcePath, ModKey modKey), bool> _overridesCache = new();
     private CancellationTokenSource? _mugshotLoadingCts;
     private TaskCompletionSource<PackingResult> _packingCompletionSource;
+    private IDisposable? _packingCompletedSubscription;
 
     private readonly CompositeDisposable _disposables = new();
 
@@ -258,8 +259,17 @@ public class VM_Mods : ReactiveObject
                 _imagePacker, nameof(ImagePacker.PackingCompleted))
             .Throttle(TimeSpan.FromMilliseconds(100))
             .ObserveOn(RxApp.MainThreadScheduler)
-            // Call this class's OWN TriggerAsyncMugshotGeneration method.
-            .Subscribe(_ => this.TriggerAsyncMugshotGeneration())
+            .Subscribe(evt => {
+                // Complete the TaskCompletionSource if we're waiting for it
+                if (_packingCompletionSource != null && !_packingCompletionSource.Task.IsCompleted)
+                {
+                    var result = evt.EventArgs.Result;
+                    _packingCompletionSource.SetResult(result);
+                }
+        
+                // Then trigger async generation as before
+                this.TriggerAsyncMugshotGeneration();
+            })
             .DisposeWith(_disposables);
 
         // --- Source Plugin Disambiguation Logic ---
