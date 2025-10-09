@@ -35,7 +35,7 @@ public class FaceFinderClient
     private readonly Settings _settings;
     private static readonly HttpClient _httpClient = new();
     private const string ApiBaseUrl = "https://npcfacefinder.com/";
-    private const string MetadataFileExtension = ".ffmeta.json";
+    public const string MetadataFileExtension = ".ffmeta.json";
     
     public FaceFinderClient(Settings settings)
     {
@@ -217,6 +217,7 @@ public class FaceFinderClient
         {
             var metadataJson = JsonConvert.SerializeObject(metadata, Formatting.Indented);
             await File.WriteAllTextAsync(metadataPath, metadataJson);
+            _settings.CachedFaceFinderPaths.Add(imagePath);
         }
         catch (Exception ex)
         {

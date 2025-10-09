@@ -99,6 +99,8 @@ public class Settings
     public string FaceFinderApiKey { get; set; } = string.Empty; // User must provide this
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(true)]
     public bool CacheFaceFinderImages { get; set; } = true;
+    public HashSet<string> CachedFaceFinderPaths { get; set; } = new();
+    public MugshotSearchMode SelectedMugshotSearchModeFF { get; set; } = MugshotSearchMode.Fast;
     public Dictionary<string, List<string>> FaceFinderModNameMappings { get; set; } = new();
 
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(false)]
@@ -191,7 +193,7 @@ public class Settings
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(750)]
     public int ImageYRes { get; set; } = 750;
     public HashSet<string> GeneratedMugshotPaths { get; set; } = new();
-    public MugshotSearchMode SelectedMugshotSearchMode { get; set; } = MugshotSearchMode.Fast;
+    public MugshotSearchMode SelectedMugshotSearchModePC { get; set; } = MugshotSearchMode.Fast;
     
     // --- Window State Properties ---
     public double MainWindowTop { get; set; } = 100; // Default a reasonable position
