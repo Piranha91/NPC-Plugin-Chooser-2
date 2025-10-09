@@ -703,6 +703,15 @@ public class PortraitCreator
         {
             Debug.WriteLine($"[NPC Creator ERROR]: Process exited with code {process.ExitCode}.");
         }
+        else
+        {
+            // SUCCESS: Add to cache
+            if (File.Exists(outputPath))
+            {
+                _settings.GeneratedMugshotPaths.Add(outputPath);
+                Debug.WriteLine($"[NPC Creator]: Successfully generated and cached: {outputPath}");
+            }
+        }
         
         processOutput.AppendLine($"--- Process exited with code {process.ExitCode} ---");
         _outputBuffer.Enqueue(processOutput.ToString());

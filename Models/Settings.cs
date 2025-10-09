@@ -6,7 +6,8 @@ using System.Windows;
 using System.Windows.Media;
 using Mutagen.Bethesda.Strings;
 using Newtonsoft.Json;
-using NPC_Plugin_Chooser_2.BackEnd; // Required for HashSet
+using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.View_Models; // Required for HashSet
 
 namespace NPC_Plugin_Chooser_2.Models;
 
@@ -189,6 +190,8 @@ public class Settings
     
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(750)]
     public int ImageYRes { get; set; } = 750;
+    public HashSet<string> GeneratedMugshotPaths { get; set; } = new();
+    public MugshotSearchMode SelectedMugshotSearchMode { get; set; } = MugshotSearchMode.Fast;
     
     // --- Window State Properties ---
     public double MainWindowTop { get; set; } = 100; // Default a reasonable position

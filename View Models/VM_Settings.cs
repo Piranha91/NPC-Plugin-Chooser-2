@@ -29,6 +29,12 @@ using ReactiveUI.Fody.Helpers;
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
+public enum MugshotSearchMode
+{
+    Fast,
+    Comprehensive
+}
+
 public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
@@ -81,6 +87,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool EnableNormalMapHack { get; set; }
     [Reactive] public bool UseModdedFallbackTextures { get; set; }
     [Reactive] public string SkyrimGamePath { get; set; }
+    [Reactive] public MugshotSearchMode SelectedMugshotSearchMode { get; set; }
+    public IEnumerable<MugshotSearchMode> MugshotSearchModes { get; } = Enum.GetValues(typeof(MugshotSearchMode)).Cast<MugshotSearchMode>();
+
 
     // TargetPluginName now maps to the conceptual name in the model
     [Reactive] public string TargetPluginName { get; set; }
@@ -259,6 +268,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         HeadBottomOffset = _model.HeadBottomOffset;
         ImageXRes = _model.ImageXRes;
         ImageYRes = _model.ImageYRes;
+        SelectedMugshotSearchMode = MugshotSearchMode.Fast;
+        
         OutputDirectory = _model.OutputDirectory;
         UseSkyPatcherMode = _model.UseSkyPatcherMode;
         AutoEslIfy = _model.AutoEslIfy;
@@ -370,6 +381,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         this.WhenAnyValue(x => x.UseModdedFallbackTextures).Skip(1)
             .Subscribe(b => _model.UseModdedFallbackTextures = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.OutputDirectory).Skip(1).Subscribe(s => _model.OutputDirectory = s)
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedMugshotSearchMode)
+            .Skip(1)
+            .Subscribe(mode => _model.SelectedMugshotSearchMode = mode)
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AppendTimestampToOutputDirectory).Skip(1)
             .Subscribe(b => _model.AppendTimestampToOutputDirectory = b).DisposeWith(_disposables);
@@ -1100,15 +1115,17 @@ Options:
         var progressVM = new VM_ProgressWindow
         {
             Title = "Scanning Mugshots",
-            StatusMessage = "Counting auto-generated mugshots...",
-            IsIndeterminate = true
+            StatusMessage = SelectedMugshotSearchMode == MugshotSearchMode.Fast 
+                ? "Checking cached generated mugshots..." 
+                : "Counting auto-generated mugshots...",
+            IsIndeterminate = SelectedMugshotSearchMode == MugshotSearchMode.Fast
         };
 
         var progressWindow = new ProgressWindow
         {
-            ViewModel = progressVM,
+            ViewModel = progressVM
         };
-        
+
         // Try to set the owner, but don't fail if we can't
         try
         {
@@ -1123,84 +1140,117 @@ Options:
             Debug.WriteLine($"Could not set progress window owner: {ex.Message}");
         }
 
-
         progressWindow.Show();
 
         try
         {
-            // Count auto-generated files first
+            // Declare autoGenFiles outside the if/else to ensure it's always initialized
+            List<string> autoGenFiles = new List<string>();
             int autoGenCount = 0;
-            var foldersToCheck = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var allMugshotFolders = new List<(VM_ModSetting modSetting, string folder)>();
 
-            // Collect all folders
-            foreach (var modSetting in modSettings)
+            if (SelectedMugshotSearchMode == MugshotSearchMode.Fast)
             {
-                if (progressVM.IsCancellationRequested)
+                // FAST MODE: Use cached list
+                await Task.Run(() =>
+                {
+                    // Filter cached paths to only existing files
+                    autoGenFiles = _model.GeneratedMugshotPaths
+                        .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                        .ToList();
+
+                    // Remove non-existent files from cache
+                    var nonExistentFiles = _model.GeneratedMugshotPaths
+                        .Where(path => !File.Exists(path))
+                        .ToList();
+
+                    if (nonExistentFiles.Any())
+                    {
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            foreach (var file in nonExistentFiles)
+                            {
+                                _model.GeneratedMugshotPaths.Remove(file);
+                            }
+                            Debug.WriteLine($"Removed {nonExistentFiles.Count} non-existent files from cache.");
+                        });
+                    }
+
+                    autoGenCount = autoGenFiles.Count;
+                });
+            }
+            else
+            {
+                // COMPREHENSIVE MODE: Scan all folders
+                var allMugshotFolders = new List<(VM_ModSetting modSetting, string folder)>();
+
+                // Collect all folders
+                foreach (var modSetting in modSettings)
+                {
+                    if (progressVM.IsCancellationRequested)
+                    {
+                        progressWindow.Close();
+                        return;
+                    }
+
+                    foreach (var mugshotFolder in modSetting.MugShotFolderPaths)
+                    {
+                        if (string.IsNullOrWhiteSpace(mugshotFolder) || !Directory.Exists(mugshotFolder))
+                            continue;
+
+                        allMugshotFolders.Add((modSetting, mugshotFolder));
+                    }
+                }
+
+                if (!allMugshotFolders.Any())
                 {
                     progressWindow.Close();
+                    ScrollableMessageBox.Show("No mugshot folders found to process.", "No Mugshots");
                     return;
                 }
 
-                foreach (var mugshotFolder in modSetting.MugShotFolderPaths)
+                // Scan for auto-generated files
+                progressVM.IsIndeterminate = false;
+                progressVM.ProgressMaximum = allMugshotFolders.Count;
+                progressVM.StatusMessage = "Scanning for auto-generated mugshots...";
+
+                int foldersScanned = 0;
+
+                await Task.Run(() =>
                 {
-                    if (string.IsNullOrWhiteSpace(mugshotFolder) || !Directory.Exists(mugshotFolder))
-                        continue;
-
-                    allMugshotFolders.Add((modSetting, mugshotFolder));
-                }
-            }
-
-            if (!allMugshotFolders.Any())
-            {
-                progressWindow.Close();
-                ScrollableMessageBox.Show("No mugshot folders found to process.", "No Mugshots");
-                return;
-            }
-
-            // Scan for auto-generated files
-            progressVM.IsIndeterminate = false;
-            progressVM.ProgressMaximum = allMugshotFolders.Count;
-            progressVM.StatusMessage = "Scanning for auto-generated mugshots...";
-
-            int foldersScanned = 0;
-            var autoGenFiles = new List<string>();
-
-            await Task.Run(() =>
-            {
-                foreach (var (modSetting, mugshotFolder) in allMugshotFolders)
-                {
-                    if (progressVM.IsCancellationRequested)
-                        return;
-
-                    try
+                    foreach (var (modSetting, mugshotFolder) in allMugshotFolders)
                     {
-                        var pngFiles = Directory.EnumerateFiles(mugshotFolder, "*.png", SearchOption.AllDirectories);
-                        foreach (var pngFile in pngFiles)
-                        {
-                            if (progressVM.IsCancellationRequested)
-                                return;
+                        if (progressVM.IsCancellationRequested)
+                            return;
 
-                            if (_portraitCreator.IsAutoGenerated(pngFile))
+                        try
+                        {
+                            var pngFiles = Directory.EnumerateFiles(mugshotFolder, "*.png", SearchOption.AllDirectories);
+                            foreach (var pngFile in pngFiles)
                             {
-                                autoGenFiles.Add(pngFile);
-                                autoGenCount++;
+                                if (progressVM.IsCancellationRequested)
+                                    return;
+
+                                if (_portraitCreator.IsAutoGenerated(pngFile))
+                                {
+                                    autoGenFiles.Add(pngFile);
+                                    autoGenCount++;
+                                }
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error scanning folder '{mugshotFolder}': {ex.Message}");
-                    }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error scanning folder '{mugshotFolder}': {ex.Message}");
+                        }
 
-                    foldersScanned++;
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        progressVM.UpdateProgress(foldersScanned, 
-                            $"Scanning folders... Found {autoGenCount} auto-generated mugshots");
-                    });
-                }
-            });
+                        foldersScanned++;
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            progressVM.UpdateProgress(foldersScanned,
+                                $"Scanning folders... Found {autoGenCount} auto-generated mugshots");
+                        });
+                    }
+                });
+            }
 
             if (progressVM.IsCancellationRequested)
             {
@@ -1208,7 +1258,7 @@ Options:
                 return;
             }
 
-            if (autoGenCount == 0)
+            if (autoGenCount == 0 || !autoGenFiles.Any())
             {
                 progressWindow.Close();
                 ScrollableMessageBox.Show("No auto-generated mugshots found to delete.", "Nothing to Delete");
@@ -1226,7 +1276,7 @@ Options:
 
             // Build the detailed message
             var messageBuilder = new StringBuilder();
-            messageBuilder.AppendLine($"Found {autoGenCount} auto-generated mugshot(s) in {filesByFolder.Count} folder(s).");
+            messageBuilder.AppendLine($"Found {autoGenFiles.Count} auto-generated mugshot(s) in {filesByFolder.Count} folder(s).");
             messageBuilder.AppendLine();
             messageBuilder.AppendLine("This will permanently delete all auto-generated portrait images.");
             messageBuilder.AppendLine("Empty folders will also be removed.");
@@ -1288,10 +1338,6 @@ Options:
             // Perform deletion
             int deletedCount = 0;
             var emptyFoldersToRemove = new Dictionary<VM_ModSetting, List<string>>();
-            var modSettingLookup = modSettings.ToDictionary(
-                ms => ms.MugShotFolderPaths,
-                ms => ms
-            );
 
             await Task.Run(() =>
             {
@@ -1310,6 +1356,12 @@ Options:
 
                         File.Delete(pngFile);
                         deletedCount++;
+
+                        // Remove from cache
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            _model.GeneratedMugshotPaths.Remove(pngFile);
+                        });
 
                         // Clean up empty parent directories
                         if (mugshotFolder != null)
@@ -1363,13 +1415,18 @@ Options:
 
                         Application.Current.Dispatcher.Invoke(() =>
                         {
-                            progressVM.UpdateProgress(deletedCount, 
+                            progressVM.UpdateProgress(deletedCount,
                                 $"Deleted {deletedCount} of {autoGenFiles.Count} mugshots...");
                         });
                     }
                     catch (Exception deleteEx)
                     {
                         Debug.WriteLine($"Failed to delete file '{pngFile}': {deleteEx.Message}");
+                        // Remove from cache even if delete failed (file doesn't exist)
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            _model.GeneratedMugshotPaths.Remove(pngFile);
+                        });
                     }
                 }
             });
@@ -1378,7 +1435,7 @@ Options:
 
             if (progressVM.IsCancellationRequested)
             {
-                ScrollableMessageBox.Show($"Operation cancelled. Deleted {deletedCount} of {autoGenCount} auto-generated mugshots.", 
+                ScrollableMessageBox.Show($"Operation cancelled. Deleted {deletedCount} of {autoGenFiles.Count} auto-generated mugshots.",
                     "Deletion Cancelled");
             }
             else
@@ -1411,7 +1468,7 @@ Options:
                     }
                 });
 
-                ScrollableMessageBox.Show($"Successfully deleted {deletedCount} auto-generated mugshot(s).", 
+                ScrollableMessageBox.Show($"Successfully deleted {deletedCount} auto-generated mugshot(s).",
                     "Deletion Complete");
             }
         }
