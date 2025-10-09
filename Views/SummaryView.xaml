@@ -92,7 +92,16 @@
                                 <Grid Background="WhiteSmoke">
                                     <Image x:Name="MugshotImage" 
                                            Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True">
-                                        </Image>
+                                    </Image>
+                                    <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Background="{DynamicResource MugshotCaptionBackground}" Padding="3,1">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding NpcDisplayName}" Foreground="{DynamicResource MugshotCaptionForeground}"  FontSize="10" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+                                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                                                     Width="{Binding ElementName=MugshotImage, Path=ActualWidth, Converter={StaticResource WidthPercentageConverter}, ConverterParameter=90}">
+                                                <TextBlock Text="{Binding ModDisplayName}" Foreground="{DynamicResource MugshotCaptionSecondaryForeground}" FontSize="9" HorizontalAlignment="Center" FontStyle="Italic" TextAlignment="Center" TextWrapping="NoWrap"/>
+                                            </Viewbox>
+                                        </StackPanel>
+                                    </Border>
                                     
                                     <Image Source="/NPC Plugin Chooser 2;component/Resources/RedDragon.png"
                                            Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"
