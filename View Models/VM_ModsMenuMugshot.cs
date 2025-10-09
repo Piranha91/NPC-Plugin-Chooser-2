@@ -309,8 +309,12 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             OriginalDipWidth = dims.DipWidth;
             OriginalDipHeight = dims.DipHeight;
             OriginalDipDiagonal = Math.Sqrt(dims.DipWidth * dims.DipWidth + dims.DipHeight * dims.DipHeight);
-            ImageWidth = OriginalDipWidth;
-            ImageHeight = OriginalDipHeight;
+            // MODIFICATION: Only set display dimensions if they haven't been set externally (e.g., by the packer)
+            if (ImageWidth == 0 && ImageHeight == 0)
+            {
+                ImageWidth = OriginalDipWidth;
+                ImageHeight = OriginalDipHeight;
+            }
         }
         catch (Exception ex)
         {
