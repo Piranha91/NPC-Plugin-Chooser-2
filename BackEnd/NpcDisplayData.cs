@@ -16,6 +16,7 @@ public record NpcDisplayData
     public bool IsTemplateUser { get; init; }
     public FormKey TemplateFormKey { get; init; }
     public bool IsInLoadOrder { get; init; }
+    public bool IsUnique { get; init; }
 
     /// <summary>
     /// Creates an NpcDisplayData instance from a full INpcGetter record.
@@ -29,7 +30,8 @@ public record NpcDisplayData
             EditorID = npcGetter.EditorID,
             IsTemplateUser = npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits),
             TemplateFormKey = npcGetter.Template.FormKey,
-            IsInLoadOrder = true
+            IsInLoadOrder = true,
+            IsUnique = npcGetter.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Unique),
         };
     }
 

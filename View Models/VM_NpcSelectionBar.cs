@@ -124,6 +124,14 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     [ObservableAsProperty] public bool IsShareStatusSearch3 { get; }
     [Reactive] public ShareStatusFilterType SelectedShareStatusFilter3 { get; set; } = ShareStatusFilterType.Any;
     
+    // Uniquness Status Visibilty & Selection
+    [ObservableAsProperty] public bool IsUniquenessSearch1 { get; }
+    [Reactive] public UniquenessFilterType SelectedUniquenessFilter1 { get; set; } = UniquenessFilterType.Unique;
+    [ObservableAsProperty] public bool IsUniquenessSearch2 { get; }
+    [Reactive] public UniquenessFilterType SelectedUniquenessFilter2 { get; set; } = UniquenessFilterType.Unique;
+    [ObservableAsProperty] public bool IsUniquenessSearch3 { get; }
+    [Reactive] public UniquenessFilterType SelectedUniquenessFilter3 { get; set; } = UniquenessFilterType.Unique;
+    
 
     [Reactive] public SearchLogic CurrentSearchLogic { get; set; } = SearchLogic.AND;
     public Array AvailableSearchTypes => Enum.GetValues(typeof(NpcSearchType));
@@ -357,12 +365,24 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         this.WhenAnyValue(x => x.SearchType3)
             .Select(type => type == NpcSearchType.ShareStatus)
             .ToPropertyEx(this, x => x.IsShareStatusSearch3).DisposeWith(_disposables);
+        
+        this.WhenAnyValue(x => x.SearchType1)
+            .Select(type => type == NpcSearchType.Uniqueness)
+            .ToPropertyEx(this, x => x.IsUniquenessSearch1).DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SearchType2)
+            .Select(type => type == NpcSearchType.Uniqueness)
+            .ToPropertyEx(this, x => x.IsUniquenessSearch2).DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SearchType3)
+            .Select(type => type == NpcSearchType.Uniqueness)
+            .ToPropertyEx(this, x => x.IsUniquenessSearch3).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SearchType1)
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus) SearchText1 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness) SearchText1 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter1 = null;
             })
             .DisposeWith(_disposables);
@@ -370,7 +390,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus) SearchText2 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness) SearchText2 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter2 = null;
             })
             .DisposeWith(_disposables);
@@ -378,7 +398,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus) SearchText3 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness) SearchText3 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter3 = null;
             })
             .DisposeWith(_disposables);
@@ -406,13 +426,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .DisposeWith(_disposables);
 
         var filter1Changes = this.WhenAnyValue(
-            x => x.SearchText1, x => x.SearchType1, x => x.SelectedStateFilter1, x => x.SelectedGroupFilter1, x => x.SelectedShareStatusFilter1
+            x => x.SearchText1, x => x.SearchType1, x => x.SelectedStateFilter1, x => x.SelectedGroupFilter1, x => x.SelectedShareStatusFilter1, x => x.SelectedUniquenessFilter1
         ).Select(_ => Unit.Default);
         var filter2Changes = this.WhenAnyValue(
-            x => x.SearchText2, x => x.SearchType2, x => x.SelectedStateFilter2, x => x.SelectedGroupFilter2, x => x.SelectedShareStatusFilter2
+            x => x.SearchText2, x => x.SearchType2, x => x.SelectedStateFilter2, x => x.SelectedGroupFilter2, x => x.SelectedShareStatusFilter2, x => x.SelectedUniquenessFilter2
         ).Select(_ => Unit.Default);
         var filter3Changes = this.WhenAnyValue(
-            x => x.SearchText3, x => x.SearchType3, x => x.SelectedStateFilter3, x => x.SelectedGroupFilter3, x => x.SelectedShareStatusFilter3
+            x => x.SearchText3, x => x.SearchType3, x => x.SelectedStateFilter3, x => x.SelectedGroupFilter3, x => x.SelectedShareStatusFilter3, x => x.SelectedUniquenessFilter3
         ).Select(_ => Unit.Default);
         var logicChanges = this.WhenAnyValue(
             x => x.CurrentSearchLogic
@@ -1697,6 +1717,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             predicates.Add(npc => CheckShareStatus(npc, SelectedShareStatusFilter1, allShareSources, allSelectedShareSources));
         }
+        else if (SearchType1 == NpcSearchType.Uniqueness)
+        {
+            predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter1));
+        }
         else if (SearchType1 == NpcSearchType.Group)
         {
             var p = BuildGroupPredicate(SelectedGroupFilter1);
@@ -1716,6 +1740,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             predicates.Add(npc => CheckShareStatus(npc, SelectedShareStatusFilter2, allShareSources, allSelectedShareSources));
         }
+        else if (SearchType2 == NpcSearchType.Uniqueness)
+        {
+            predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter2));
+        }
         else if (SearchType2 == NpcSearchType.Group)
         {
             var p = BuildGroupPredicate(SelectedGroupFilter2);
@@ -1734,6 +1762,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         else if (SearchType3 == NpcSearchType.ShareStatus) // NEW
         {
             predicates.Add(npc => CheckShareStatus(npc, SelectedShareStatusFilter3, allShareSources, allSelectedShareSources));
+        }
+        else if (SearchType3 == NpcSearchType.Uniqueness)
+        {
+            predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter3));
         }
         else if (SearchType3 == NpcSearchType.Group)
         {
@@ -1907,6 +1939,20 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 // The NPC is a share source AND at least one guest has it selected.
                 return allSelectedShareSources.Contains(npcMenu.NpcFormKey);
 
+            default:
+                return true;
+        }
+    }
+    
+    private bool CheckUniqueness(VM_NpcsMenuSelection npcMenu, UniquenessFilterType filterType)
+    {
+        switch (filterType)
+        {
+            case UniquenessFilterType.Unique:
+                return npcMenu.IsUnique;
+            case UniquenessFilterType.Generic:
+                return !npcMenu.IsUnique;
+            case UniquenessFilterType.Any:
             default:
                 return true;
         }

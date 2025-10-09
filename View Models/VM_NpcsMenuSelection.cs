@@ -38,6 +38,7 @@ public class VM_NpcsMenuSelection : ReactiveObject
     [Reactive] public string FormIdString { get; set; }
     private bool _pluginFound = false;
     public bool IsInLoadOrder { get; set; }
+    [Reactive] public bool IsUnique { get; set; } 
     [Reactive] public string NpcGroupsDisplay { get; set; } = "Groups: None";
 
     // This property reflects the centrally stored selection
@@ -71,6 +72,7 @@ public class VM_NpcsMenuSelection : ReactiveObject
         NpcData = npcData;
         NpcEditorId = npcData.EditorID ?? _defaultEditorID;
         IsInLoadOrder = npcData.IsInLoadOrder;
+        IsUnique = npcData.IsUnique;
 
         UpdateDisplayName();
     }

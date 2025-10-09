@@ -29,7 +29,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Description("Shared/Guest Appearance")]
         ShareStatus,
         
+        [Description("Uniqueness")]
+        Uniqueness,
+        
         [Description("Group")]
         Group
+    }
+    
+    public enum UniquenessFilterType
+    {
+        Any,
+        Unique,
+        Generic
     }
 }

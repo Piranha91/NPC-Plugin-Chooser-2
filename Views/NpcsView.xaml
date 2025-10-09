@@ -48,6 +48,11 @@
                 <x:Type TypeName="vm:ShareStatusFilterType"/>
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
+        <ObjectDataProvider x:Key="UniquenessFilterTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="vm:UniquenessFilterType"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
         <ObjectDataProvider x:Key="NpcSortPropertyEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="vm:NpcSortProperty"/>
@@ -172,6 +177,9 @@
                                                 <DataTrigger Binding="{Binding IsShareStatusSearch1}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsUniquenessSearch1}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </TextBox.Style>
@@ -181,6 +189,9 @@
                                </ComboBox>
                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource ShareStatusFilterTypeEnumValues}}" SelectedItem="{Binding SelectedShareStatusFilter1, Mode=TwoWay}" ToolTip="Filter by guest status" Visibility="{Binding IsShareStatusSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
                                    <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                               </ComboBox>
+                               <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource UniquenessFilterTypeEnumValues}}" SelectedItem="{Binding SelectedUniquenessFilter1, Mode=TwoWay}" ToolTip="Filter by uniqueness" Visibility="{Binding IsUniquenessSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                   <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
                                </ComboBox>
                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter1, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch1, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                            </Grid>
@@ -206,6 +217,9 @@
                                                 <DataTrigger Binding="{Binding IsShareStatusSearch2}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsUniquenessSearch2}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </TextBox.Style>
@@ -215,6 +229,9 @@
                                 </ComboBox>
                                 <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource ShareStatusFilterTypeEnumValues}}" SelectedItem="{Binding SelectedShareStatusFilter2, Mode=TwoWay}" ToolTip="Filter by guest status" Visibility="{Binding IsShareStatusSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource UniquenessFilterTypeEnumValues}}" SelectedItem="{Binding SelectedUniquenessFilter2, Mode=TwoWay}" ToolTip="Filter by uniqueness" Visibility="{Binding IsUniquenessSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
                                 </ComboBox>
                                 <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter2, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch2, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                            </Grid>
@@ -240,6 +257,9 @@
                                                  <DataTrigger Binding="{Binding IsShareStatusSearch3}" Value="True">
                                                      <Setter Property="Visibility" Value="Collapsed"/>
                                                  </DataTrigger>
+                                                 <DataTrigger Binding="{Binding IsUniquenessSearch3}" Value="True">
+                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                 </DataTrigger>
                                              </Style.Triggers>
                                          </Style>
                                      </TextBox.Style>
@@ -249,6 +269,9 @@
                                  </ComboBox>
                                   <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource ShareStatusFilterTypeEnumValues}}" SelectedItem="{Binding SelectedShareStatusFilter3, Mode=TwoWay}" ToolTip="Filter by guest status" Visibility="{Binding IsShareStatusSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
                                       <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                                  </ComboBox>
+                                  <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource UniquenessFilterTypeEnumValues}}" SelectedItem="{Binding SelectedUniquenessFilter3, Mode=TwoWay}" ToolTip="Filter by uniqueness" Visibility="{Binding IsUniquenessSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                      <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
                                   </ComboBox>
                                  <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter3, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch3, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                              </Grid>
