@@ -247,18 +247,27 @@ public class AssetHandler : OptionalUIModule
                 switch (sourceType)
                 {
                     case AssetSourceType.LooseFile:
-                        // Create two tasks: one for copying, one for analyzing the source file.
-                        Task copyTask = PerformLooseCopyAsync(sourcePath, destPath);
-                        Task analysisTask = PostProcessNifTextures(sourcePath, modSetting, outputBasePath, faceTintSubPath);
-                    
-                        // Await both tasks to run them in parallel.
-                        await Task.WhenAll(copyTask, analysisTask);
+                        if (modSetting.CopyAssets)
+                        {
+                            // Create two tasks: one for copying, one for analyzing the source file.
+                            Task copyTask = PerformLooseCopyAsync(sourcePath, destPath);
+                            Task analysisTask = PostProcessNifTextures(sourcePath, modSetting, outputBasePath,
+                                faceTintSubPath);
+
+                            // Await both tasks to run them in parallel.
+                            await Task.WhenAll(copyTask, analysisTask);
+                        }
+                        else
+                        {
+                            await PerformLooseCopyAsync(sourcePath, destPath);
+                        }
+
                         break;
 
                     case AssetSourceType.BsaFile:
                         // For BSAs, we must extract first, then analyze the extracted file.
                         // The original sequential logic is still best here.
-                        if (await _bsaHandler.ExtractFileAsync(bsaPath, relativePath, destPath))
+                        if (await _bsaHandler.ExtractFileAsync(bsaPath, relativePath, destPath) && modSetting.CopyAssets)
                         {
                             await PostProcessNifTextures(destPath, modSetting, outputBasePath, faceTintSubPath);
                         }
