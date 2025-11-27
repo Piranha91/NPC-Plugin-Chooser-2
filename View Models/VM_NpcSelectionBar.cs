@@ -2006,7 +2006,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         // Helper function to centralize VM creation and prevent duplicates.
         void CreateVmIfNotExists(string modName, FormKey sourceNpcKey, string? overrideSourceNpc = null)
         {
-            var vmKey = (modName, sourceNpcKey);
+            var vmKey = (modName.ToLowerInvariant(), sourceNpcKey);
             if (finalModVMs.ContainsKey(vmKey)) return;
 
             // Find an associated mod setting if it exists. This is optional.
