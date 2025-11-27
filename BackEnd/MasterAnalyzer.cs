@@ -145,6 +145,13 @@ public class MasterAnalyzer
             foreach (var masterKey in masterSet)
             {
                 var references = new List<string>();
+                
+                // Check trivial case: The record itself acts as a reference because it is an override of the master
+                if (record.FormKey.ModKey.Equals(masterKey))
+                {
+                    references.Add("Record Override (The record itself is defined in the master)");
+                }
+                
                 FindMasterReferences(
                     record,
                     new List<string>(),
