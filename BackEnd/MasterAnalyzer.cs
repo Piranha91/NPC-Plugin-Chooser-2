@@ -19,11 +19,13 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 public class MasterAnalyzer
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
+    private readonly NpcConsistencyProvider _npcConsistencyProvider;
     private readonly Settings _settings;
 
-    public MasterAnalyzer(EnvironmentStateProvider environmentStateProvider, Settings settings)
+    public MasterAnalyzer(EnvironmentStateProvider environmentStateProvider, NpcConsistencyProvider npcConsistencyProvider, Settings settings)
     {
         _environmentStateProvider = environmentStateProvider;
+        _npcConsistencyProvider = npcConsistencyProvider;
         _settings = settings;
     }
 
@@ -131,6 +133,13 @@ public class MasterAnalyzer
 
             var recordLogString = GetLogString(record, true);
             var visitedObjects = new HashSet<object>();
+            
+            // Check if this is an NPC and get appearance mod info
+            string? appearanceModInfo = null;
+            if (record is INpcGetter npcGetter)
+            {
+                appearanceModInfo = GetAppearanceModInfo(npcGetter.FormKey);
+            }
 
             // Search for references to each master
             foreach (var masterKey in masterSet)
@@ -150,7 +159,8 @@ public class MasterAnalyzer
                     result.ReferencesByMaster[masterKey].Add(new MasterReference
                     {
                         SourceRecord = recordLogString,
-                        ReferencePath = reference
+                        ReferencePath = reference,
+                        AppearanceModInfo = appearanceModInfo
                     });
                 }
             }
@@ -300,6 +310,34 @@ public class MasterAnalyzer
     }
 
     /// <summary>
+    /// Gets the appearance mod info string for an NPC, including shared source if applicable.
+    /// </summary>
+    private string? GetAppearanceModInfo(FormKey npcFormKey)
+    {
+        var (modName, sourceNpcFormKey) = _npcConsistencyProvider.GetSelectedMod(npcFormKey);
+        
+        if (string.IsNullOrEmpty(modName))
+        {
+            return null;
+        }
+
+        // Check if this is a shared appearance (source NPC is different from this NPC)
+        if (!sourceNpcFormKey.IsNull && !sourceNpcFormKey.Equals(npcFormKey))
+        {
+            // Try to resolve the source NPC to get its name
+            string sourceNpcString = sourceNpcFormKey.ToString();
+            if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(sourceNpcFormKey, out var sourceNpc) && sourceNpc != null)
+            {
+                sourceNpcString = GetLogString(sourceNpc, true);
+            }
+            
+            return $"{modName} (Shared from {sourceNpcString})";
+        }
+
+        return modName;
+    }
+
+    /// <summary>
     /// Formats the analysis result into a human-readable report.
     /// </summary>
     public string FormatAnalysisReport(MasterAnalysisResult result)
@@ -334,10 +372,18 @@ public class MasterAnalyzer
                 sb.AppendLine();
 
                 // Group references by source record for readability
-                var groupedRefs = references.GroupBy(r => r.SourceRecord);
+                var groupedRefs = references.GroupBy(r => new { r.SourceRecord, r.AppearanceModInfo });
                 foreach (var group in groupedRefs)
                 {
-                    sb.AppendLine($"  [{group.Key}]");
+                    // Build the source record header with appearance mod info if available
+                    var headerBuilder = new StringBuilder($"  [{group.Key.SourceRecord}");
+                    if (!string.IsNullOrEmpty(group.Key.AppearanceModInfo))
+                    {
+                        headerBuilder.Append($" | Appearance Mod: {group.Key.AppearanceModInfo}");
+                    }
+                    headerBuilder.Append("]");
+                    sb.AppendLine(headerBuilder.ToString());
+                    
                     foreach (var reference in group)
                     {
                         sb.AppendLine($"    -> {reference.ReferencePath}");
@@ -374,4 +420,5 @@ public class MasterReference
 {
     public string SourceRecord { get; set; } = string.Empty;
     public string ReferencePath { get; set; } = string.Empty;
+    public string? AppearanceModInfo { get; set; }
 }
