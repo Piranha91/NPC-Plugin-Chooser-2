@@ -144,6 +144,7 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<EasyNpcTranslator>().AsSelf().SingleInstance();
             builder.RegisterType<FaceFinderClient>().AsSelf().SingleInstance();
             builder.RegisterType<PortraitCreator>().AsSelf().SingleInstance();
+            builder.RegisterType<MasterAnalyzer>().AsSelf().SingleInstance();
 
             splashVM.UpdateProgress(30, "Registering ViewModels...");
             builder.RegisterType<VM_MainWindow>().AsSelf().SingleInstance();

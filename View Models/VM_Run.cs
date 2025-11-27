@@ -41,6 +41,7 @@ public class VM_Run : ReactiveObject, IDisposable
     private readonly PluginProvider _pluginProvider;
     private readonly RecordHandler _recordHandler;
     private readonly Auxilliary _aux;
+    private readonly MasterAnalyzer _masterAnalyzer;
     private CancellationTokenSource? _patchingCts;
     private readonly CompositeDisposable _disposables = new();
     private readonly Subject<string> _logMessageSubject = new Subject<string>();
@@ -83,6 +84,8 @@ public class VM_Run : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> RunCommand { get; }
     public ReactiveCommand<Unit, Unit> GenerateSpawnBatCommand { get; }
     public ReactiveCommand<Unit, Unit> ShowStatusCommand { get; }
+    
+    public ReactiveCommand<Unit, Unit> AnalyzeMastersCommand { get; }
 
     public VM_Run(
         EnvironmentStateProvider environmentStateProvider,
@@ -97,7 +100,8 @@ public class VM_Run : ReactiveObject, IDisposable
         RecordDeltaPatcher recordDeltaPatcher,
         Auxilliary aux,
         PluginProvider pluginProvider,
-        RecordHandler recordHandler)
+        RecordHandler recordHandler,
+        MasterAnalyzer masterAnalyzer)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -112,6 +116,7 @@ public class VM_Run : ReactiveObject, IDisposable
         _aux = aux;
         _pluginProvider = pluginProvider;
         _recordHandler = recordHandler;
+        _masterAnalyzer = masterAnalyzer;
 
         _patcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         _validator.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
@@ -258,6 +263,20 @@ public class VM_Run : ReactiveObject, IDisposable
                 UpdateAvailableGroups();
             })
             .DisposeWith(_disposables); // Add subscription to disposables
+        
+        // Analyze Masters command - can execute when not running and environment is valid
+        var canAnalyzeMasters = this.WhenAnyValue(
+            x => x.IsRunning,
+            x => x._environmentStateProvider.Status,
+            (running, status) => !running && status == EnvironmentStateProvider.EnvironmentStatus.Valid);
+
+        AnalyzeMastersCommand = ReactiveCommand.CreateFromTask(AnalyzeMastersAsync, canAnalyzeMasters)
+            .DisposeWith(_disposables);
+
+        AnalyzeMastersCommand.ThrownExceptions.Subscribe(ex =>
+        {
+            AppendLog($"ERROR: Failed to analyze masters: {ExceptionLogger.GetExceptionStack(ex)}", true);
+        }).DisposeWith(_disposables);
     }
 
     private void TogglePatcherExecution()
@@ -562,6 +581,129 @@ public class VM_Run : ReactiveObject, IDisposable
                 SelectedNpcGroup = ALL_NPCS_GROUP;
             }
         });
+    }
+
+    /// <summary>
+    /// Handles the Analyze Masters command execution.
+    /// Prompts user to select a plugin, shows master selection dialog, then displays analysis results.
+    /// </summary>
+    private async Task AnalyzeMastersAsync()
+    {
+        // Step 1: Prompt user to select an ESP/ESM/ESL file
+        var openFileDialog = new OpenFileDialog
+        {
+            Title = "Select Plugin to Analyze",
+            Filter = "Plugin files (*.esp;*.esm;*.esl)|*.esp;*.esm;*.esl|All files (*.*)|*.*",
+            InitialDirectory = _environmentStateProvider.DataFolderPath,
+            CheckFileExists = true
+        };
+
+        if (openFileDialog.ShowDialog() != true)
+        {
+            AppendLog("Master analysis cancelled - no file selected.");
+            return;
+        }
+
+        string targetPluginPath = openFileDialog.FileName;
+        AppendLog($"Selected plugin for analysis: {Path.GetFileName(targetPluginPath)}", forceLog: true);
+
+        // Step 2: Read masters from the selected plugin
+        var masters = _masterAnalyzer.GetMastersFromPlugin(targetPluginPath);
+
+        if (!masters.Any())
+        {
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                ScrollableMessageBox.ShowWarning(
+                    $"The selected plugin '{Path.GetFileName(targetPluginPath)}' has no master files listed in its header.",
+                    "No Masters Found");
+            });
+            return;
+        }
+
+        AppendLog($"Found {masters.Count} master(s) in plugin header.", forceLog: true);
+
+        // Step 3: Show master selection dialog
+        List<ModKey>? selectedMasters = null;
+
+        Application.Current?.Dispatcher.Invoke(() =>
+        {
+            var selectionWindow = new Views.MasterSelectionWindow();
+    
+            // Find the main window safely - avoid setting Owner to itself
+            var mainWindow = Application.Current.Windows
+                                 .OfType<Window>()
+                                 .FirstOrDefault(w => w is not Views.MasterSelectionWindow && w.IsActive)
+                             ?? Application.Current.Windows
+                                 .OfType<Window>()
+                                 .FirstOrDefault(w => w is not Views.MasterSelectionWindow);
+    
+            if (mainWindow != null && mainWindow != selectionWindow)
+            {
+                selectionWindow.Owner = mainWindow;
+            }
+    
+            selectionWindow.Initialize(targetPluginPath, masters);
+
+            if (selectionWindow.ShowDialog() == true)
+            {
+                selectedMasters = selectionWindow.SelectedMasters;
+            }
+        });
+
+        if (selectedMasters == null || !selectedMasters.Any())
+        {
+            AppendLog("Master analysis cancelled - no masters selected.");
+            return;
+        }
+
+        AppendLog($"Analyzing {selectedMasters.Count} selected master(s)...", forceLog: true);
+
+        // Step 4: Run the analysis
+        MasterAnalysisResult? result = null;
+
+        try
+        {
+
+            // Run analysis on a background thread
+            result = await Task.Run(() =>
+                _masterAnalyzer.AnalyzeMasterReferences(
+                    targetPluginPath,
+                    selectedMasters,
+                    IsVerboseModeEnabled));
+        }
+        catch (OperationCanceledException)
+        {
+            AppendLog("Master analysis was cancelled.");
+            ResetProgress();
+            return;
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"ERROR during master analysis: {ex.Message}", true);
+            ResetProgress();
+            return;
+        }
+
+        ResetProgress();
+
+        if (result == null)
+        {
+            AppendLog("ERROR: Analysis returned no results.", true);
+            return;
+        }
+
+        // Step 5: Format and display results
+        string report = _masterAnalyzer.FormatAnalysisReport(result);
+
+        // Log summary to the Run view log
+        int totalReferences = result.ReferencesByMaster.Values.Sum(list => list.Count);
+        AppendLog(
+            $"Analysis complete. Found {totalReferences} total reference(s) across {selectedMasters.Count} master(s).",
+            forceLog: true);
+
+        // Show detailed results in ScrollableMessageBox
+        Application.Current?.Dispatcher.Invoke(() => { ScrollableMessageBox.Show(report, "Master Analysis Results"); });
     }
 
     private record PatchingBatch(string Suffix, List<KeyValuePair<FormKey, ScreeningResult>> Selections);

@@ -64,6 +64,14 @@
                     VerticalAlignment="Center"
                     ToolTip="Generates a report detailing the current app environment"/>
             
+            <Button x:Name="AnalyzeMastersButton"
+                    Content="Analyze Masters"
+                    Command="{Binding AnalyzeMastersCommand}"
+                    DockPanel.Dock="Left"
+                    Margin="15,0,0,0"
+                    VerticalAlignment="Center"
+                    ToolTip="Analyze why specific masters are required by a plugin file"/>
+            
             <TextBlock /> <!-- Fills remaining space as LastChildFill is true by default -->
         </DockPanel>
 

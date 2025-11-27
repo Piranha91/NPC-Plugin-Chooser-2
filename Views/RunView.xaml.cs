@@ -55,6 +55,9 @@ namespace NPC_Plugin_Chooser_2.Views
                 // Bind Progress Bar (OneWay since VM updates it)
                 this.OneWayBind(ViewModel, vm => vm.ProgressValue, v => v.ProgressBar.Value).DisposeWith(d); // Assumes ProgressBar has x:Name="ProgressBar"
                 this.OneWayBind(ViewModel, vm => vm.ProgressText, v => v.ProgressTextBlock.Text).DisposeWith(d); // Assumes TextBlock has x:Name="ProgressTextBlock"
+                
+                // Bind the Analyze Masters command
+                this.BindCommand(ViewModel, vm => vm.AnalyzeMastersCommand, v => v.AnalyzeMastersButton).DisposeWith(d);
             });
         }
     }
