@@ -1988,10 +1988,16 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         {
             IsRefreshing = true; // Show the "Refreshing..." indicator
 
-            // This is the key part: we ask the parent VM to perform the refresh.
-            // This keeps the logic that needs global context (like FaceGen caches)
-            // in the parent, which is a clean separation of concerns.
-            await _parentVm.RefreshSingleModSettingAsync(this);
+            // Ask the parent VM to perform the refresh and get result + reason
+            var (isValid, failureReason) = await _parentVm.RefreshSingleModSettingAsync(this);
+            
+            if (!isValid)
+            {
+                // If the refresh determined the mod is no longer valid, notify the user.
+                ScrollableMessageBox.Show(
+                    $"The mod '{DisplayName}' no longer contains any plugins or FaceGen files.\nReason: {failureReason}\n\nIt will be removed from the appearance mods list.",
+                    "Mod Removed");
+            }
         }
         finally
         {

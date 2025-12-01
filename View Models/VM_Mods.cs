@@ -1108,17 +1108,17 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     
     // In VM_Mods.cs
 
-    public async Task RefreshSingleModSettingAsync(VM_ModSetting vmToRefresh)
+    public async Task<(bool Success, string FailureReason)> RefreshSingleModSettingAsync(VM_ModSetting vmToRefresh)
     {
-        if (vmToRefresh == null) return;
+        if (vmToRefresh == null) return (false, "VM is null");
 
         // 1. Generate caches for the specific mod being refreshed.
         var faceGenCache = await CacheFaceGenPathsOnLoadAsync(new[] { vmToRefresh }, null); // No splash screen
 
         // 2. Update the mod keys based on current folder contents
         vmToRefresh.UpdateCorrespondingModKeys();
-        
-        // Find and add any missing masters before proceeding with analysis. ***
+
+        // Find and add any missing masters before proceeding with analysis.
         if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
         {
             var allModDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
@@ -1126,10 +1126,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             FindAndAddMissingMasters(vmToRefresh, allModDirectories, warnings);
             if (warnings.Any())
             {
-                Debug.WriteLine($"Warnings during master discovery for '{vmToRefresh.DisplayName}':\n{string.Join("\n", warnings)}");
+                Debug.WriteLine(
+                    $"Warnings during master discovery for '{vmToRefresh.DisplayName}':\n{string.Join("\n", warnings)}");
             }
         }
-        
+
         // 3. Load the necessary plugins for this mod
         var modFolderPathsForVm = vmToRefresh.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var plugins = _pluginProvider.LoadPlugins(vmToRefresh.CorrespondingModKeys, modFolderPathsForVm);
@@ -1137,38 +1138,52 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         try
         {
             var originalContainedNpcs = vmToRefresh.NpcFormKeysToDisplayName.Keys.ToHashSet();
+
             // 4a. Re-evaluate the mod's fundamental type (Appearance vs. Non-Appearance)
+
+            // Step 1: Check if plugins provide appearance data
+            bool hasAppearancePlugins = false;
             if (vmToRefresh.CorrespondingModKeys.Any())
             {
-                // If there are plugins, check if they are appearance-related.
-                vmToRefresh.IsFaceGenOnlyEntry = !await ContainsAppearancePluginsAsync(vmToRefresh.CorrespondingModKeys, modFolderPathsForVm);
+                hasAppearancePlugins =
+                    await ContainsAppearancePluginsAsync(vmToRefresh.CorrespondingModKeys, modFolderPathsForVm);
+            }
+
+            // Step 2: Check if FaceGen files exist
+            bool hasFaceGen = faceGenCache.allFaceGenLooseFiles.Any() ||
+                              (faceGenCache.allFaceGenBsaFiles.TryGetValue(vmToRefresh.DisplayName, out var bsaFiles) &&
+                               bsaFiles.Any());
+
+            // Step 3: Branching Logic
+            if (hasAppearancePlugins)
+            {
+                // It is a valid plugin-based appearance mod
+                vmToRefresh.IsFaceGenOnlyEntry = false;
+            }
+            else if (hasFaceGen)
+            {
+                // It has no valid appearance plugins, but has FaceGen. Treat as FaceGen-Only.
+                vmToRefresh.IsFaceGenOnlyEntry = true;
             }
             else
             {
-                // If there are NO plugins, it's only a valid appearance mod if it contains FaceGen files.
-                bool hasFaceGen = faceGenCache.allFaceGenLooseFiles.Any() || 
-                                  (faceGenCache.allFaceGenBsaFiles.TryGetValue(vmToRefresh.DisplayName, out var bsaFiles) && bsaFiles.Any());
+                // Neither valid plugins nor FaceGen. It's no longer an appearance mod.
+                string failureReason = "No FaceGen files found";
 
-                if (hasFaceGen)
+                // Cache the folder paths as non-appearance so they aren't automatically re-scanned next launch.
+                foreach (var path in vmToRefresh.CorrespondingFolderPaths)
                 {
-                    vmToRefresh.IsFaceGenOnlyEntry = true;
+                    if (!string.IsNullOrWhiteSpace(path))
+                    {
+                        _settings.CachedNonAppearanceMods.TryAdd(path, failureReason);
+                    }
                 }
-                else
-                {
-                    // This mod has no plugins AND no FaceGen. It's no longer an appearance mod.
-                    ScrollableMessageBox.Show(
-                        $"The mod '{vmToRefresh.DisplayName}' no longer contains any plugins or FaceGen files. It will be removed from the appearance mods list.",
-                        "Mod Removed");
 
-                    // Note: Don't add it to cached non appearance mods. If the user deleted the facegen or plugin contents in error, they have a chance to rstore them.
-                    // If the user doesn't restore them, this mod will be identified as non-appearance and chached at next startup.
-
-                    // Remove the VM from the list and exit.
-                    RemoveModSetting(vmToRefresh);
-                    return; // Stop further processing for this mod.
-                }
+                // Remove the VM from the list and exit.
+                RemoveModSetting(vmToRefresh);
+                return (false, failureReason); // Return failure and the specific reason
             }
-            
+
             if (vmToRefresh.IsFaceGenOnlyEntry)
             {
                 var scanResult = FaceGenScanner.CreateFaceGenScanResultFromCache(vmToRefresh,
@@ -1186,10 +1201,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     }
                 }
             }
-            
+
             // 4b. Re-run the core analysis functions
-            vmToRefresh.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage);
-            
+            vmToRefresh.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins,
+                _settings.LocalizationLanguage);
+
             var analysisTasks = new List<Task>
             {
                 Task.Run(() => vmToRefresh.CheckMergeInSuitability(null)),
@@ -1202,21 +1218,21 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
 
             await Task.WhenAll(analysisTasks);
-            
+
             var environmentEditorIdMap = _environmentStateProvider.LoadOrder.PriorityOrder.Npc().WinningOverrides()
                 .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
                 .GroupBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, 
-                    g => g.Select(npc => npc.FormKey).ToHashSet(), 
+                .ToDictionary(g => g.Key,
+                    g => g.Select(npc => npc.FormKey).ToHashSet(),
                     StringComparer.OrdinalIgnoreCase);
-            
+
             var modEditorIdMap = plugins.SelectMany(x => x.Npcs)
                 .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
                 .GroupBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, 
-                    g => g.Select(npc => npc.FormKey).ToHashSet(), 
+                .ToDictionary(g => g.Key,
+                    g => g.Select(npc => npc.FormKey).ToHashSet(),
                     StringComparer.OrdinalIgnoreCase);
-        
+
             var guests = await vmToRefresh.GetSkyPatcherImportsAsync(environmentEditorIdMap, modEditorIdMap);
             foreach (var (target, source, modDisplayName, npcDisplayName) in guests)
             {
@@ -1225,7 +1241,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             // 5. Update UI-dependent properties
             RecalculateMugshotValidity(vmToRefresh);
-            
+
             // 6. Update NPC selection Bar
             var toUpdate = _npcSelectionBar.AllNpcs.Where(npc =>
                 vmToRefresh.NpcFormKeysToDisplayName.Keys.Contains(npc.NpcFormKey)).ToList();
@@ -1236,8 +1252,9 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     npc.AppearanceMods.Add(vmToRefresh);
                 }
             }
-            
-            var removedNpcs = originalContainedNpcs.Where(formKey => !vmToRefresh.NpcFormKeysToDisplayName.Keys.Contains(formKey)).ToList();
+
+            var removedNpcs = originalContainedNpcs
+                .Where(formKey => !vmToRefresh.NpcFormKeysToDisplayName.Keys.Contains(formKey)).ToList();
             var toRemove = _npcSelectionBar.AllNpcs.Where(npc =>
                 removedNpcs.Contains(npc.NpcFormKey)).ToList();
 
@@ -1250,10 +1267,13 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
 
             RequestNpcSelectionBarRefreshView();
+            return (true, string.Empty); // Valid
         }
         catch (Exception ex)
         {
-            ScrollableMessageBox.ShowError($"Failed to refresh '{vmToRefresh.DisplayName}':\n{ExceptionLogger.GetExceptionStack(ex)}");
+            ScrollableMessageBox.ShowError(
+                $"Failed to refresh '{vmToRefresh.DisplayName}':\n{ExceptionLogger.GetExceptionStack(ex)}");
+            return (true, string.Empty); // Treat as valid (don't delete) on exception
         }
         finally
         {
@@ -1888,18 +1908,18 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
     }
     
-    public async Task<bool> RescanSingleModFolderAsync(string modFolderPath)
+    public async Task<(bool Success, string FailureReason)> RescanSingleModFolderAsync(string modFolderPath)
     {
         if (string.IsNullOrWhiteSpace(modFolderPath) || !Directory.Exists(modFolderPath))
         {
-            return false;
+            return (false, "Path does not exist");
         }
 
         string modFolderName = Path.GetFileName(modFolderPath);
         if (_allModSettingsInternal.Any(vm => vm.DisplayName.Equals(modFolderName, StringComparison.OrdinalIgnoreCase)))
         {
             ScrollableMessageBox.ShowWarning($"An appearance mod named '{modFolderName}' already exists. Cannot re-import from cached list.", "Mod Already Exists");
-            return false;
+            return (false, "Mod already exists in the list");
         }
 
         var modKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, new List<string>(), false);
@@ -1908,14 +1928,16 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         _allModSettingsInternal.Add(newVm);
         SortVMsInPlace();
-        
-        await RefreshSingleModSettingAsync(newVm);
+    
+        // Capture the result and reason from the refresh logic
+        var (isValid, failureReason) = await RefreshSingleModSettingAsync(newVm);
 
-        bool wasSuccessfullyImported = _allModSettingsInternal.Contains(newVm);
-        
+        // RefreshSingleModSettingAsync handles the removal of the VM if it's invalid.
+    
         ApplyFilters();
 
-        return wasSuccessfullyImported;
+        // Return the tuple
+        return (isValid, failureReason);
     }
     
     // This NEW helper method contains the logic to resolve and save guest appearances.

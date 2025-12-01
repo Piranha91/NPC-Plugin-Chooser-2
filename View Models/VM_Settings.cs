@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
@@ -1949,7 +1949,8 @@ Options:
 
         var modsVM = _lazyModListVM.Value;
 
-        bool wasReimported = await modsVM.RescanSingleModFolderAsync(path);
+        // Deconstruct the result to get the reason
+        var (wasReimported, failureReason) = await modsVM.RescanSingleModFolderAsync(path);
 
         if (wasReimported)
         {
@@ -1968,9 +1969,10 @@ Options:
         }
         else
         {
+            // Now includes the specific failure reason (e.g., "No FaceGen files found")
             ScrollableMessageBox.Show(
-                $"The mod at '{Path.GetFileName(path)}' is still not recognized as an appearance mod.",
-                "Re-Scan Complete");
+                $"The mod at '{Path.GetFileName(path)}' is still not recognized as an appearance mod.\nReason: {failureReason}",
+                "Re-Scan Failed");
         }
     }
 
