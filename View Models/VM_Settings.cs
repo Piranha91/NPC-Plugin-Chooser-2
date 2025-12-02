@@ -1960,7 +1960,9 @@ Options:
             if (!itemToRemove.Equals(default(KeyValuePair<string, string>)))
             {
                 CachedNonAppearanceMods.Remove(itemToRemove);
-                // Filtered list will update automatically due to subscription
+
+                // FIX: Explicitly remove from the filtered list bound to the UI
+                FilteredNonAppearanceMods.Remove(itemToRemove);
             }
 
             ScrollableMessageBox.Show(
