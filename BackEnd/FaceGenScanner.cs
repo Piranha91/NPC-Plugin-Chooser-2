@@ -94,22 +94,40 @@ public static class FaceGenScanner
     /// </summary>
     private static void ProcessFilePath(string filePath, ref bool meshesExist, ref bool texturesExist, Dictionary<string, HashSet<string>> filesDict)
     {
-        // Path examples:
-        // Meshes/actors/character/facegendata/facegeom/Skyrim.esm/00012345.nif
-        // Textures/actors/character/facegendata/facetint/Skyrim.esm/00012345.dds
-        
-        // The plugin name is the name of the parent directory.
-        string? pluginName = new FileInfo(filePath.Replace('/', Path.DirectorySeparatorChar)).Directory?.Name;
-        if (string.IsNullOrWhiteSpace(pluginName)) return;
+        // Normalize paths to forward slashes for consistent checking. 
+        // VM_Mods caches loose files and BSA paths using '/', but we ensure safety here.
+        string normalizedPath = filePath.Replace('\\', '/');
 
-        string fileId = Path.GetFileNameWithoutExtension(filePath);
-        if (string.IsNullOrWhiteSpace(fileId)) return;
+        // STRICT VALIDATION FIX:
+        // 1. Identify file type
+        bool isMesh = normalizedPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase);
+        bool isTexture = normalizedPath.EndsWith(".dds", StringComparison.OrdinalIgnoreCase);
 
-        // Update flags based on file extension
-        if (filePath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)) meshesExist = true;
-        else if (filePath.EndsWith(".dds", StringComparison.OrdinalIgnoreCase)) texturesExist = true;
+        // 2. Enforce the required folder structure
+        bool isValidMeshPath = isMesh && normalizedPath.Contains("meshes/actors/character/facegendata/facegeom", StringComparison.OrdinalIgnoreCase);
+        bool isValidTexturePath = isTexture && normalizedPath.Contains("textures/actors/character/facegendata/facetint", StringComparison.OrdinalIgnoreCase);
 
-        // Add the file ID to the dictionary
+        // If it doesn't match the strict criteria, ignore it immediately.
+        if (!isValidMeshPath && !isValidTexturePath) 
+        {
+            return;
+        }
+
+        // 3. Extract Plugin Name (Parent Directory)
+        // We handle this via string manipulation on the normalized path to avoid FileInfo overhead/OS inconsistencies.
+        // Expected structure: .../facegeom/PluginName.esp/00001234.nif
+        var segments = normalizedPath.Split('/');
+        if (segments.Length < 2) return;
+
+        string pluginName = segments[segments.Length - 2];
+        string fileId = Path.GetFileNameWithoutExtension(normalizedPath);
+
+        if (string.IsNullOrWhiteSpace(pluginName) || string.IsNullOrWhiteSpace(fileId)) return;
+
+        // 4. Update flags and dictionary
+        if (isValidMeshPath) meshesExist = true;
+        if (isValidTexturePath) texturesExist = true;
+
         if (!filesDict.TryGetValue(pluginName, out var set))
         {
             set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
