@@ -69,6 +69,7 @@ public class VM_Mods : ReactiveObject
     [Reactive] public ModNpcSearchType SelectedNpcSearchType { get; set; } = ModNpcSearchType.Name;
     [Reactive] public string NpcSearchText { get; set; } = string.Empty;
     public Array AvailableNpcSearchTypes => Enum.GetValues(typeof(ModNpcSearchType));
+    [Reactive] public bool ShowMugshotOnlyMods { get; set; } = true;
     [Reactive] public bool IsLoadingNpcData { get; private set; }
 
     // --- Data Lists (Left Panel) ---
@@ -333,7 +334,7 @@ public class VM_Mods : ReactiveObject
 
         // --- Setup Filter Reaction ---
         this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText, x => x.NpcSearchText,
-                x => x.SelectedNpcSearchType) // Added NpcSearchType
+                x => x.SelectedNpcSearchType, x => x.ShowMugshotOnlyMods) 
             .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler)
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => ApplyFilters())
@@ -2305,6 +2306,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
 
         IEnumerable<VM_ModSetting> filtered = _allModSettingsInternal;
+        
+        if (!ShowMugshotOnlyMods)
+        {
+            filtered = filtered.Where(vm => !vm.IsMugshotOnlyEntry);
+        }
 
         if (!string.IsNullOrWhiteSpace(NameFilterText))
         {

@@ -107,6 +107,12 @@
                                      IsEnabled="{Binding IsLoadingNpcData, Converter={StaticResource BooleanNegationConverter}}"
                                      ToolTip="Enter NPC search term (active after initial load)"/>
                         </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,2,15,2" VerticalAlignment="Center">
+                            <CheckBox IsChecked="{Binding ShowMugshotOnlyMods, Mode=TwoWay}" 
+                                      Content="Show Mugshot-Only Mods"
+                                      ToolTip="If unchecked, mods that contain only images (no plugins or data folders) will be hidden from the list."
+                                      VerticalAlignment="Center"/>
+                        </StackPanel>
                         <TextBlock Text="Loading NPC data..." FontStyle="Italic"
                                    Margin="15,0,0,0" VerticalAlignment="Center"
                                    Visibility="{Binding IsLoadingNpcData, Converter={StaticResource BooleanToVisibilityConverter}}"/>
