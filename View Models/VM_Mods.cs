@@ -1629,6 +1629,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         
         var scanResult = FaceGenScanner.CreateFaceGenScanResultFromCache(tempVmForAnalysis, allFaceGenLooseFiles, allFaceGenBsaFiles);
 
+        // Pre-Condition: If no FaceGen exists at all, we reject it immediately.
+        // This handles cases like "Sword Mods" with no FaceGen assets.
         if (!scanResult.AnyFilesFound)
         {
             return new CacheNonAppearanceResult(modFolderPath, "No FaceGen Files Found");
@@ -1636,7 +1638,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
         
-        // *** CALL THE NEW MASTER DISCOVERY LOGIC ***
+        // Find missing masters (Resources)
         var warnings = new ConcurrentBag<string>();
         FindAndAddMissingMasters(tempVmForAnalysis, allModDirectories, warnings);
         if (splashReporter != null && !warnings.IsEmpty)
@@ -1647,9 +1649,15 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
         }
     
-        // Now, tempVmForAnalysis has been updated with any discovered dependency folders and resource plugins.
+        // Determine if the plugin explicitly modifies NPCs (Standard Appearance Mod)
+        bool isStandardAppearanceMod = false;
+        if (modKeysInFolder.Any())
+        {
+            isStandardAppearanceMod = await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath });
+        }
 
-        if (modKeysInFolder.Any() && await ContainsAppearancePluginsAsync(modKeysInFolder, new() { modFolderPath }))
+        // PATH A: It is a valid, record-altering Appearance Mod
+        if (isStandardAppearanceMod)
         {
             // Run analysis using the temporary VM
             tempVmForAnalysis.CheckMergeInSuitability(
@@ -1659,56 +1667,55 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     ? null
                     : splashReporter.ShowMessagesOnClose, _settings.LocalizationLanguage);
 
-            // Return a DTO with the data, not the VM itself
             return new NewVmCreationData(
                 modFolderPath,
-                tempVmForAnalysis.CorrespondingModKeys.ToList(), // Use updated list
+                tempVmForAnalysis.CorrespondingModKeys.ToList(),
                 IsFaceGenOnly: false,
                 FaceGenFormKeys: new HashSet<FormKey>(),
                 ShouldDisableMergeIn: !tempVmForAnalysis.MergeInDependencyRecords,
                 MergeInTooltip: tempVmForAnalysis.MergeInToolTip,
                 FoundInjectedRecords: injectedFound,
                 InjectedTooltip: tempVmForAnalysis.HandleInjectedOverridesToolTip,
-                AllFolderPaths: tempVmForAnalysis.CorrespondingFolderPaths.ToList(), // Use updated list
-                ResourceOnlyKeys: new HashSet<ModKey>(tempVmForAnalysis.ResourceOnlyModKeys) // Use updated set
+                AllFolderPaths: tempVmForAnalysis.CorrespondingFolderPaths.ToList(),
+                ResourceOnlyKeys: new HashSet<ModKey>(tempVmForAnalysis.ResourceOnlyModKeys)
             );
         }
-        else if (modKeysInFolder.Any())
+        
+        // PATH B: Fallthrough (Nordic Faces Case)
+        // If we reach here, it's because:
+        // 1. There are NO plugins (Pure FaceGen mod)
+        // 2. There ARE plugins, but they are dummy/resource plugins (Nordic Faces)
+        // Since we passed the !scanResult.AnyFilesFound check at the top, we know FaceGen exists.
+        // We accept this as a FaceGen-Only entry.
+
+        var faceGenKeys = new HashSet<FormKey>();
+        foreach (var (pluginName, npcIds) in scanResult.FaceGenFiles)
         {
-            return new CacheNonAppearanceResult(modFolderPath,
-                "Does not provide new NPCs or modify any NPCs currently in load order");
-        }
-        else // FaceGen only
-        {
-            var faceGenKeys = new HashSet<FormKey>();
-            foreach (var (pluginName, npcIds) in scanResult.FaceGenFiles)
+            foreach (var id in npcIds.Where(id => id.Length == 8))
             {
-                foreach (var id in npcIds.Where(id => id.Length == 8))
+                if (FormKey.TryFactory($"{id.Substring(2, 6)}:{pluginName}", out var formKey))
                 {
-                    if (FormKey.TryFactory($"{id.Substring(2, 6)}:{pluginName}", out var formKey))
-                    {
-                        faceGenKeys.Add(formKey);
-                    }
+                    faceGenKeys.Add(formKey);
                 }
             }
-
-            tempVmForAnalysis.CheckMergeInSuitability(
-                splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
-
-            // Return a DTO for a FaceGen-only mod
-            return new NewVmCreationData(
-                modFolderPath,
-                tempVmForAnalysis.CorrespondingModKeys.ToList(), // Use updated list
-                IsFaceGenOnly: true,
-                FaceGenFormKeys: faceGenKeys,
-                ShouldDisableMergeIn: !tempVmForAnalysis.MergeInDependencyRecords,
-                MergeInTooltip: tempVmForAnalysis.MergeInToolTip,
-                FoundInjectedRecords: false,
-                InjectedTooltip: tempVmForAnalysis.HandleInjectedOverridesToolTip,
-                AllFolderPaths: tempVmForAnalysis.CorrespondingFolderPaths.ToList(), // Use updated list
-                ResourceOnlyKeys: new HashSet<ModKey>(tempVmForAnalysis.ResourceOnlyModKeys) // Use updated set
-            );
         }
+
+        tempVmForAnalysis.CheckMergeInSuitability(
+            splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
+
+        // Return a DTO for a FaceGen-only mod
+        return new NewVmCreationData(
+            modFolderPath,
+            tempVmForAnalysis.CorrespondingModKeys.ToList(),
+            IsFaceGenOnly: true, // Explicitly mark as FaceGen Only
+            FaceGenFormKeys: faceGenKeys,
+            ShouldDisableMergeIn: !tempVmForAnalysis.MergeInDependencyRecords,
+            MergeInTooltip: tempVmForAnalysis.MergeInToolTip,
+            FoundInjectedRecords: false,
+            InjectedTooltip: tempVmForAnalysis.HandleInjectedOverridesToolTip,
+            AllFolderPaths: tempVmForAnalysis.CorrespondingFolderPaths.ToList(),
+            ResourceOnlyKeys: new HashSet<ModKey>(tempVmForAnalysis.ResourceOnlyModKeys)
+        );
     }
 
     private void UpgradeVmWithPathAndPlugins(VM_ModSetting vm, string modFolderPath, List<ModKey> modKeysInFolder)
