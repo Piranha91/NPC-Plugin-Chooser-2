@@ -360,6 +360,10 @@ public class VM_Run : ReactiveObject, IDisposable
                 PatchingStartTime = DateTime.Now;
 
                 var validSelections = _validator.GetScreeningCache().Where(kv => kv.Value.SelectionIsValid).ToList();
+                
+                // Reiniitialize the output mod in case the user is re-running the patcher in the current session
+                _environmentStateProvider.OutputMod = new SkyrimMod(
+                    ModKey.FromName(_environmentStateProvider.OutputPluginName, ModType.Plugin), _environmentStateProvider.SkyrimVersion);
 
                 // --- NEW: Splitting Logic ---
                 if (_settings.SplitOutput && validSelections.Any())
