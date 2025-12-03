@@ -103,7 +103,7 @@ public class UpdateHandler
             await UpdateTo2_0_5_Final(modsVm, splashReporter);
         }
         
-        if (!_settings.HasUpdatedTo2_0_7_templates)
+        if (settingsVersion < "2.0.9" && !_settings.HasUpdatedTo2_0_7_templates)
         {
             await UpdateTo2_0_7_Final(modsVm, npcsVm, splashReporter);
         }
