@@ -2092,7 +2092,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
         
         // --- NEW: Source 4: FaceFinder fallback ---
-        if (_settings.UseFaceFinderFallback && !string.IsNullOrWhiteSpace(_settings.FaceFinderApiKey))
+        if (_settings.UseFaceFinderFallback)
         {
             // --- NEW: Create a reverse lookup for efficient checking ---
             var serverToLocalMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -2110,7 +2110,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
             }
 
-            var faceFinderResults = await _faceFinderClient.GetAllFaceDataForNpcAsync(targetNpcFormKey, _settings.FaceFinderApiKey);
+            var faceFinderResults = await _faceFinderClient.GetAllFaceDataForNpcAsync(targetNpcFormKey);
 
             foreach (var serverResult in faceFinderResults)
             {

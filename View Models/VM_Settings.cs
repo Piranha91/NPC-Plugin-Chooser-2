@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
@@ -60,7 +60,6 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     // --- NEW: Mugshot Fallback Properties ---
     public bool IsFaceFinderAvailable { get; }
     [Reactive] public bool UseFaceFinderFallback { get; set; }
-    [Reactive] public bool IsApiKeySet { get; private set; }
     [Reactive] public bool CacheFaceFinderImages { get; set; } 
     [Reactive] public bool UsePortraitCreatorFallback { get; set; }
     [Reactive] public int MaxParallelPortraitRenders { get; set; }
@@ -195,8 +194,6 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     {
         _model = settingsModel;
         
-        IsApiKeySet = !string.IsNullOrWhiteSpace(_model.FaceFinderApiKey);
-
         _environmentStateProvider = environmentStateProvider;
         _environmentStateProvider.OnEnvironmentUpdated
             .ObserveOn(RxApp.MainThreadScheduler) // Ensure UI updates happen on the UI thread
@@ -990,37 +987,6 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
         // Final fallback if neither preferred nor specific fallback exists
         return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-    }
-    
-    public void UpdateApiKey(string plainTextKey)
-    {
-        // If the user clears the box, clear the setting.
-        if (string.IsNullOrWhiteSpace(plainTextKey))
-        {
-            _model.FaceFinderApiKey = string.Empty;
-            IsApiKeySet = false;
-            return;
-        }
-
-        try
-        {
-            byte[] apiBytes = Encoding.UTF8.GetBytes(plainTextKey);
-
-            // Encrypt the key using the current user's credentials.
-            byte[] encryptedBytes = ProtectedData.Protect(
-                apiBytes,
-                null, // Optional additional entropy
-                DataProtectionScope.CurrentUser);
-
-            // Store the encrypted, Base64-encoded string in the settings model.
-            _model.FaceFinderApiKey = Convert.ToBase64String(encryptedBytes);
-            IsApiKeySet = true;
-        }
-        catch (CryptographicException ex)
-        {
-            ScrollableMessageBox.ShowError($"Could not secure the API key: {ExceptionLogger.GetExceptionStack(ex)}");
-            IsApiKeySet = false;
-        }
     }
     
     private void OpenModLinkerWindow()

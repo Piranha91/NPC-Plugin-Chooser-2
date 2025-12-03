@@ -33,9 +33,24 @@ public class FaceFinderNpcResult
 public class FaceFinderClient
 {
     private readonly Settings _settings;
+    private readonly string _apiKey = GetAPIKey();
     private static readonly HttpClient _httpClient = new();
-    private const string ApiBaseUrl = "https://npcfacefinder.com/";
+    private const string ApiBaseUrl = "https://npcfacefinder.com";
     public const string MetadataFileExtension = ".ffmeta.json";
+
+    private const byte _xorKey = 0x55;
+
+    private static readonly byte[] _obfuscatedBytes =
+    {
+        0x1B, 0x05, 0x16, 0x13, 0x13, 0x78, 0x0F, 0x2C, 0x12, 0x0D, 0x67, 0x0F, 0x10, 0x31, 0x3B, 0x20, 0x3E, 0x30,
+        0x26, 0x63, 0x31, 0x20, 0x6C, 0x63, 0x1D, 0x2D, 0x06, 0x3B, 0x6C, 0x05, 0x11, 0x2C, 0x24, 0x3E, 0x63, 0x62,
+        0x36, 0x31, 0x63, 0x26, 0x24, 0x31, 0x3D, 0x34, 0x33, 0x3C, 0x00, 0x3B, 0x25, 0x13, 0x05, 0x21, 0x34, 0x07,
+        0x0D, 0x07, 0x1A, 0x3C, 0x1B, 0x19, 0x1D, 0x66, 0x1A, 0x00, 0x1E, 0x16, 0x24, 0x6D, 0x2F, 0x02, 0x2D, 0x01,
+        0x20, 0x07, 0x23, 0x36, 0x3D, 0x30, 0x19, 0x6C, 0x6D, 0x22, 0x3E, 0x6D, 0x12, 0x24, 0x25, 0x3B, 0x1A, 0x20,
+        0x06, 0x25, 0x3B, 0x13, 0x0D, 0x24, 0x6C, 0x11, 0x03, 0x0C, 0x37, 0x14, 0x23, 0x3B, 0x13, 0x24, 0x34, 0x1C,
+        0x36, 0x61, 0x22, 0x67, 0x14, 0x17, 0x67, 0x01, 0x6D, 0x32, 0x36, 0x21, 0x1E, 0x24, 0x30, 0x06, 0x1F, 0x31,
+        0x60, 0x27, 0x34, 0x3E, 0x0D, 0x31, 0x22, 0x10,
+    };
     
     public FaceFinderClient(Settings settings)
     {
@@ -50,29 +65,16 @@ public class FaceFinderClient
         public string? ExternalUrl { get; init; }
     }
     
-    public async Task<List<string>> GetAllModNamesAsync(string encryptedApiKey)
+    public async Task<List<string>> GetAllModNamesAsync()
     {
         var allModNames = new List<string>();
-        if (string.IsNullOrWhiteSpace(encryptedApiKey)) return allModNames;
-
-        string plainTextApiKey;
-        try
-        {
-            byte[] encryptedBytes = Convert.FromBase64String(encryptedApiKey);
-            byte[] apiBytes = ProtectedData.Unprotect(encryptedBytes, null, DataProtectionScope.CurrentUser);
-            plainTextApiKey = Encoding.UTF8.GetString(apiBytes);
-        }
-        catch (Exception ex) {
-            Debug.WriteLine($"Failed to decrypt FaceFinder API key for mod list: {ex.Message}");
-            return allModNames;
-        }
-
+        
         int currentPage = 1;
         while (true)
         {
             var requestUri = $"/api/public/mods/search?page={currentPage}";
             var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
-            request.Headers.Add("X-API-Key", plainTextApiKey);
+            request.Headers.Add("X-API-Key", _apiKey);
 
             try
             {
@@ -95,37 +97,33 @@ public class FaceFinderClient
         return allModNames.OrderBy(name => name).ToList();
     }
 
-    public async Task<FaceFinderResult?> GetFaceDataAsync(FormKey npcFormKey, string modNameToFind, string encryptedApiKey)
+    public async Task<FaceFinderResult?> GetFaceDataAsync(FormKey npcFormKey, string modNameToFind)
     {
-        if (string.IsNullOrWhiteSpace(encryptedApiKey)) return null;
-
-        string plainTextApiKey;
-        try
-        {
-            byte[] encryptedBytes = Convert.FromBase64String(encryptedApiKey);
-            byte[] apiBytes = ProtectedData.Unprotect(encryptedBytes, null, DataProtectionScope.CurrentUser);
-            plainTextApiKey = Encoding.UTF8.GetString(apiBytes);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Failed to decrypt FaceFinder API key: {ex.Message}");
-            return null;
-        }
-        
         string faceFinderModName = modNameToFind;
-        if (_settings.FaceFinderModNameMappings.TryGetValue(modNameToFind, out var mappedNames) && mappedNames.LastOrDefault() is { } lastMappedName)
+        if (_settings.FaceFinderModNameMappings.TryGetValue(modNameToFind, out var mappedNames) &&
+            mappedNames.LastOrDefault() is { } lastMappedName)
         {
             faceFinderModName = lastMappedName;
             Debug.WriteLine($"Remapped local mod '{modNameToFind}' to FaceFinder mod '{faceFinderModName}'");
         }
-        
-        var formKeyValue = $"{npcFormKey.ID:X8}:{npcFormKey.ModKey.FileName}";
+
+        // -------------------------------------------------------------------------
+        // FIX APPLIED HERE:
+        // 1. Use 'X8' for Uppercase Hex (Required for IDs like 0001325F)
+        // 2. Only apply .ToLowerInvariant() to the FileName (Required for DB match)
+        // -------------------------------------------------------------------------
+        var formKeyValue = $"{npcFormKey.ID:X8}:{npcFormKey.ModKey.FileName.String.ToLowerInvariant()}";
+
         var encodedFormKey = WebUtility.UrlEncode(formKeyValue);
-        var encodedModName = WebUtility.UrlEncode(faceFinderModName); 
+        var encodedModName = WebUtility.UrlEncode(faceFinderModName);
+
+        // Note: We do NOT need the "page=1" hack here because we aren't sending 
+        // the page parameter at all. The default server behavior (Implicit Page 1) 
+        // works correctly as long as the FormKey casing is correct.
         var requestUri = $"/api/public/npc/faces/search?formKey={encodedFormKey}&search={encodedModName}";
-        
+
         var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
-        request.Headers.Add("X-API-Key", plainTextApiKey);
+        request.Headers.Add("X-API-Key", _apiKey);
 
         try
         {
@@ -133,8 +131,7 @@ public class FaceFinderClient
             if (!response.IsSuccessStatusCode) return null;
 
             var content = await response.Content.ReadAsStringAsync();
-            
-            // Using Newtonsoft.Json to easily parse the structure
+
             var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
             var firstResult = results?.FirstOrDefault();
 
@@ -159,7 +156,7 @@ public class FaceFinderClient
         }
     }
 
-    public async Task<bool> IsCacheStaleAsync(string imagePath, FormKey npcFormKey, string modNameToFind, string encryptedApiKey)
+    public async Task<bool> IsCacheStaleAsync(string imagePath, FormKey npcFormKey, string modNameToFind)
     {
         var metadataPath = imagePath + MetadataFileExtension;
 
@@ -188,7 +185,7 @@ public class FaceFinderClient
                 faceFinderModName = lastMappedName;
             }
 
-            var latestData = await GetFaceDataAsync(npcFormKey, faceFinderModName, encryptedApiKey);
+            var latestData = await GetFaceDataAsync(npcFormKey, faceFinderModName);
             if (latestData == null)
             {
                 // If the API fails, we can't check for an update.
@@ -241,65 +238,110 @@ public class FaceFinderClient
             return null;
         }
     }
-    
-    public async Task<List<FaceFinderNpcResult>> GetAllFaceDataForNpcAsync(FormKey npcFormKey, string encryptedApiKey)
+
+    public async Task<List<FaceFinderNpcResult>> GetAllFaceDataForNpcAsync(FormKey npcFormKey)
     {
-        var allFaces = new List<FaceFinderNpcResult>();
-        if (string.IsNullOrWhiteSpace(encryptedApiKey)) return allFaces;
+        // Use a Dictionary to automatically handle deduplication by ID
+        var distinctFaces = new Dictionary<int, FaceFinderNpcResult>();
 
-        string plainTextApiKey;
-        try
-        {
-            byte[] encryptedBytes = Convert.FromBase64String(encryptedApiKey);
-            byte[] apiBytes = ProtectedData.Unprotect(encryptedBytes, null, DataProtectionScope.CurrentUser);
-            plainTextApiKey = Encoding.UTF8.GetString(apiBytes);
-        }
-        catch (Exception ex) {
-            Debug.WriteLine($"Failed to decrypt FaceFinder API key for NPC face list: {ex.Message}");
-            return allFaces;
-        }
-
-        var formKeyValue = $"{npcFormKey.ID:X8}:{npcFormKey.ModKey.FileName}";
+        // Prepare the base Key
+        var formKeyValue = $"{npcFormKey.ID:X8}:{npcFormKey.ModKey.FileName.String.ToLowerInvariant()}";
         var encodedFormKey = WebUtility.UrlEncode(formKeyValue);
+
         int currentPage = 1;
 
         while (true)
         {
-            var requestUri = $"/api/public/npc/faces/search?formKey={encodedFormKey}&page={currentPage}";
-            var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
-            request.Headers.Add("X-API-Key", plainTextApiKey);
+            // We might need to make TWO requests for the first page to cover the server bug
+            var urisToFetch = new List<string>();
 
-            try
+            if (currentPage == 1)
             {
-                var response = await _httpClient.SendAsync(request);
-                if (!response.IsSuccessStatusCode) break;
+                // STRATEGY: Fetch BOTH behaviors for Page 1
+                // 1. Implicit (No page param) -> Gets "Fuzzy" matches (The list of 26)
+                urisToFetch.Add($"/api/public/npc/faces/search?formKey={encodedFormKey}");
 
-                var content = await response.Content.ReadAsStringAsync();
-                var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
+                // 2. Explicit (With page param) -> Gets "Strict" matches (The list of 6)
+                urisToFetch.Add($"/api/public/npc/faces/search?formKey={encodedFormKey}&page=1");
+            }
+            else
+            {
+                // For Page 2+, we have no choice but to use the parameter
+                urisToFetch.Add($"/api/public/npc/faces/search?formKey={encodedFormKey}&page={currentPage}");
+            }
 
-                if (results == null || !results.Any()) break; // No more pages.
+            bool foundDataOnThisPage = false;
 
-                foreach (var result in results)
+            foreach (var requestUri in urisToFetch)
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
+                request.Headers.Add("X-API-Key", _apiKey);
+
+                try
                 {
-                    string? modName = result.mod?.name;
-                    string? imageUrl = result.images?.full;
-                    string? updatedAtStr = result.updated_at;
+                    var response = await _httpClient.SendAsync(request);
+                    if (!response.IsSuccessStatusCode) continue; // Skip failed requests, try the next one
 
-                    if (string.IsNullOrWhiteSpace(modName) || string.IsNullOrWhiteSpace(imageUrl) || string.IsNullOrWhiteSpace(updatedAtStr) ||
-                        !DateTime.TryParse(updatedAtStr, null, DateTimeStyles.RoundtripKind, out var updatedAt))
+                    var content = await response.Content.ReadAsStringAsync();
+                    var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
+
+                    if (results != null && results.Any())
                     {
-                        continue;
-                    }
+                        foundDataOnThisPage = true;
 
-                    allFaces.Add(new FaceFinderNpcResult { ModName = modName, ImageUrl = imageUrl, UpdatedAt = updatedAt });
+                        foreach (var result in results)
+                        {
+                            // Safely cast the ID to int for deduplication
+                            int id = (int)result.id;
+
+                            // If we already have this ID, skip it
+                            if (distinctFaces.ContainsKey(id)) continue;
+
+                            string? modName = result.mod?.name;
+                            string? imageUrl = result.images?.full;
+                            string? updatedAtStr = result.updated_at;
+
+                            if (string.IsNullOrWhiteSpace(modName) ||
+                                string.IsNullOrWhiteSpace(imageUrl) ||
+                                string.IsNullOrWhiteSpace(updatedAtStr) ||
+                                !DateTime.TryParse(updatedAtStr, null, DateTimeStyles.RoundtripKind, out var updatedAt))
+                            {
+                                continue;
+                            }
+
+                            distinctFaces.Add(id, new FaceFinderNpcResult
+                            {
+                                ModName = modName,
+                                ImageUrl = imageUrl,
+                                UpdatedAt = updatedAt
+                            });
+                        }
+                    }
                 }
-                currentPage++;
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"FaceFinder API error on page {currentPage}: {ex.Message}");
+                }
             }
-            catch (Exception ex) {
-                Debug.WriteLine($"FaceFinder API error getting face list for {npcFormKey} on page {currentPage}: {ex.Message}");
-                break;
-            }
+
+            // If NEITHER request returned data for this page, we are done
+            if (!foundDataOnThisPage) break;
+
+            currentPage++;
         }
-        return allFaces;
+
+        return distinctFaces.Values.ToList();
+    }
+
+    private static string GetAPIKey()
+    {
+        byte[] decoded = new byte[_obfuscatedBytes.Length];
+        
+        for (int i = 0; i < _obfuscatedBytes.Length; i++)
+        {
+            decoded[i] = (byte)(_obfuscatedBytes[i] ^ _xorKey);
+        }
+
+        return Encoding.UTF8.GetString(decoded);
     }
 }

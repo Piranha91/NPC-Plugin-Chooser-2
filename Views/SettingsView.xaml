@@ -134,27 +134,6 @@
                     <Border Margin="15,5,0,5" BorderBrush="Gray" BorderThickness="1" CornerRadius="3"
                             Visibility="{Binding UseFaceFinderFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <StackPanel>
-                            <Label Content="FaceFinder API Key" FontWeight="Bold" Margin="0,10,0,0" ToolTip="Paste your API key below. The key is encrypted and stored locally using your Windows user account credentials."/>
-                            <Grid Visibility="{Binding UseFaceFinderFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                    
-                                <PasswordBox x:Name="ApiKeyPasswordBox"
-                                             Grid.Column="0"
-                                             PasswordChanged="ApiKeyPasswordBox_PasswordChanged"
-                                             VerticalContentAlignment="Center"
-                                             ToolTip="Paste your API key here. It will be stored securely."/>
-
-                                <TextBlock Grid.Column="1" 
-                                           Text="✓ Key is set" 
-                                           Foreground="Green" 
-                                           Margin="10,0,0,0"
-                                           VerticalAlignment="Center"
-                                           Visibility="{Binding IsApiKeySet, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            </Grid>
-                            
                             <CheckBox Content="Cache downloaded images locally"
                                       IsChecked="{Binding CacheFaceFinderImages, Mode=TwoWay}"
                                       Margin="0,10,0,0"

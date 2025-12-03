@@ -244,7 +244,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             // --- FaceFinder Fallback ---
             if (_settings.UseFaceFinderFallback)
             {
-                var faceData = await _faceFinderClient.GetFaceDataAsync(SourceNpcFormKey, this.ModDisplayName, _settings.FaceFinderApiKey);
+                var faceData = await _faceFinderClient.GetFaceDataAsync(SourceNpcFormKey, this.ModDisplayName);
                 if (faceData != null && !string.IsNullOrWhiteSpace(faceData.ImageUrl))
                 {
                     using var client = new HttpClient();

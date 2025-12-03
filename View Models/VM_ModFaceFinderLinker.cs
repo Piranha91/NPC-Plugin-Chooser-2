@@ -154,7 +154,7 @@ namespace NPC_Plugin_Chooser_2.View_Models
         {
             IsLoading = true;
     
-            var ffModsTask = _faceFinderClient.GetAllModNamesAsync(_settings.FaceFinderApiKey);
+            var ffModsTask = _faceFinderClient.GetAllModNamesAsync();
             var localMods = _vmMods.AllModSettings.Select(s => s.DisplayName).OrderBy(s => s).ToList();
             var ffMods = await ffModsTask;
     
