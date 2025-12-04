@@ -53,6 +53,7 @@ public class VM_Mods : ReactiveObject
 
     public const string BaseGameModSettingName = "Base Game";
     public const string CreationClubModsettingName = "Creation Club";
+    const string tokenFileName = "NPC_Token.json";
 
     private readonly ObservableAsPropertyHelper<PatchingMode> _currentPatchingMode;
     public PatchingMode CurrentPatchingMode => _currentPatchingMode.Value;
@@ -1446,7 +1447,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         // Use a thread-safe bag to collect results from all parallel tasks.
         var scanResults = new ConcurrentBag<ModFolderScanResult>();
         var scannedModFolders = 0;
-        const string tokenFileName = "NPC_Token.json";
+
         var cachedNonAppearanceDirs = _settings.CachedNonAppearanceMods.Keys.ToHashSet();
 
         splashReporter?.UpdateStep($"Scanning {modDirectories.Count} folders for new appearance mods",
@@ -1760,10 +1761,37 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         var baseGameModKeys = _environmentStateProvider.BaseGamePlugins ?? new();
         var creationClubModKeys = _environmentStateProvider.CreationClubPlugins ?? new();
 
-        baseGameModKeys.RemoveWhere(mk => tempList.Any(vm =>
-            !vm.IsFaceGenOnlyEntry && !vm.IsMugshotOnlyEntry && vm.CorrespondingModKeys.Contains(mk)));
-        creationClubModKeys.RemoveWhere(mk => tempList.Any(vm =>
-            !vm.IsFaceGenOnlyEntry && !vm.IsMugshotOnlyEntry && vm.CorrespondingModKeys.Contains(mk)));
+        // Helper to determine if a plugin is "claimed" by a valid VM (one without the token file)
+        bool IsPluginClaimedByValidVm(ModKey modKey)
+        {
+            return tempList.Any(vm =>
+            {
+                if (vm.IsFaceGenOnlyEntry || vm.IsMugshotOnlyEntry) return false;
+                if (!vm.CorrespondingModKeys.Contains(modKey)) return false;
+
+                // Check each folder in the VM
+                foreach (var folderPath in vm.CorrespondingFolderPaths)
+                {
+                    if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath)) continue;
+
+                    // Does this folder contain the plugin?
+                    string potentialPluginPath = Path.Combine(folderPath, modKey.FileName.String);
+                    if (File.Exists(potentialPluginPath))
+                    {
+                        // Does it NOT have the token file?
+                        if (!File.Exists(Path.Combine(folderPath, tokenFileName)))
+                        {
+                            return true; // Valid claim found
+                        }
+                    }
+                }
+
+                return false;
+            });
+        }
+
+        baseGameModKeys.RemoveWhere(IsPluginClaimedByValidVm);
+        creationClubModKeys.RemoveWhere(IsPluginClaimedByValidVm);
 
         if (creationClubModKeys.Any() && !tempList.Any(vm =>
                 vm.DisplayName.Equals(CreationClubModsettingName, StringComparison.OrdinalIgnoreCase)))
