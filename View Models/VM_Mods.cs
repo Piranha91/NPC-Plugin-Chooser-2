@@ -165,7 +165,7 @@ public class VM_Mods : ReactiveObject
     private readonly VM_ModsMenuMugshot.Factory _mugshotFactory;
     
     // Helpers
-    private static readonly Regex MugshotNameRegex =
+    public  static readonly Regex MugshotNameRegex =
         new(@"^(?<hex>[0-9A-F]{8})\.(png|jpg|jpeg|bmp)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 

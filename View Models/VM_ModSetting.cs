@@ -1130,6 +1130,80 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                 }
             }
         }
+        
+        else if (IsMugshotOnlyEntry)
+        {
+            using (ContextualPerformanceTracer.Trace("RefreshNpcLists.MugshotOnly"))
+            {
+                foreach (var folder in MugShotFolderPaths)
+                {
+                    if (!Directory.Exists(folder)) continue;
+
+                    try
+                    {
+                        var imageFiles = Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories)
+                            .Where(f => VM_Mods.MugshotNameRegex.IsMatch(Path.GetFileName(f)));
+
+                        foreach (var file in imageFiles)
+                        {
+                            var fileName = Path.GetFileName(file);
+                            var match = VM_Mods.MugshotNameRegex.Match(fileName);
+                            if (!match.Success) continue;
+
+                            var directoryInfo = new DirectoryInfo(Path.GetDirectoryName(file)!);
+                            var pluginName = directoryInfo.Name;
+                            var hexPart = match.Groups["hex"].Value;
+
+                            var tail6 = hexPart.Length >= 6 ? hexPart[^6..] : hexPart;
+                            var formKeyString = $"{tail6}:{pluginName}";
+
+                            if (FormKey.TryFactory(formKeyString, out var npcFormKey))
+                            {
+                                if (!NpcFormKeys.Contains(npcFormKey))
+                                {
+                                    NpcFormKeys.Add(npcFormKey);
+                                    string displayName = string.Empty;
+
+                                    // Attempt to resolve the NPC from the active Load Order to get real names
+                                    if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey,
+                                            out var existingNpc))
+                                    {
+                                        if (Auxilliary.TryGetName(existingNpc, language, out string name))
+                                        {
+                                            NpcNames.Add(name);
+                                            displayName = name;
+                                        }
+
+                                        if (!string.IsNullOrEmpty(existingNpc.EditorID))
+                                        {
+                                            NpcEditorIDs.Add(existingNpc.EditorID);
+                                            if (string.IsNullOrEmpty(displayName)) displayName = existingNpc.EditorID;
+                                        }
+                                    }
+
+                                    // Fallback if the NPC doesn't exist in the load order or resolution failed
+                                    if (string.IsNullOrEmpty(displayName))
+                                    {
+                                        displayName = npcFormKey.ToString();
+                                    }
+
+                                    NpcFormKeysToDisplayName.Add(npcFormKey, displayName);
+
+                                    // Always ensure the ID string is searchable
+                                    NpcEditorIDs.Add(npcFormKey.IDString());
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error scanning mugshot-only folder {folder}: {ex.Message}");
+                    }
+                }
+
+                NpcCount = NpcFormKeys.Count;
+            }
+        }
 
         // --- Post-Processing: Populate NpcPluginDisambiguation, identify AmbiguousNpcFormKeys ---
         using (ContextualPerformanceTracer.Trace("RefreshNpcLists.PostProcessing"))
