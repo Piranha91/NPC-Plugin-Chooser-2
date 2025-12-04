@@ -347,7 +347,7 @@ public class VM_Run : ReactiveObject, IDisposable
                         $"Found {validationReport.InvalidSelections.Count} invalid NPC selection(s) that will be skipped:\n\n");
                 message.AppendLine(string.Join("\n", validationReport.InvalidSelections));
                 message.AppendLine(
-                    "\nThese selections point to missing NPCs or mod folders. Continue with the valid selections?");
+                    "\nThese selections point to missing NPCs or mods. Skip them and continue only with the valid selections?");
 
                 Application.Current?.Dispatcher.Invoke(() =>
                 {

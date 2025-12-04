@@ -151,9 +151,9 @@ public class Validator : OptionalUIModule
                 if (!modSettingsMap.TryGetValue(selectedModDisplayName, out appearanceModSetting))
                 {
                     AppendLog(
-                        $"  SCREENING ERROR: Cannot find Mod Setting '{selectedModDisplayName}' for NPC {npcIdentifier}. This selection is invalid.",
+                        $"  SCREENING ERROR: Cannot find Mod '{selectedModDisplayName}' for NPC {npcIdentifier}. This selection is invalid or a placeholder.",
                         true);
-                    invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod Setting not found)");
+                    invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod not installed or doesn't contain this NPC)");
                     await Task.Delay(1, ct);
                     continue;
                 }
