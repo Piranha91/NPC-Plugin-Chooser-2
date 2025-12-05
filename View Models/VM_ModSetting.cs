@@ -1428,6 +1428,13 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                 continue;
             }
 
+            if (ResourceOnlyModKeys.Contains(plugin.ModKey))
+            {
+                continue; // counting records in resource modkeys breaks this algorithm because such modkeys can include
+                          // things like USSEP, base followers, or any other plugins from which the appearance mod might
+                          // import things like headparts, textures, etc.
+            }
+
             // Get counts of appearance records instantly (O(1) operation)
             appearanceRecordCount += plugin.Npcs.Count;
             appearanceRecordCount += plugin.Armors.Count;
