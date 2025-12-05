@@ -3,11 +3,19 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:themes="clr-namespace:NPC_Plugin_Chooser_2.Themes"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         mc:Ignorable="d"
         Title="Select Masters to Analyze"
         Height="450" Width="500"
         WindowStartupLocation="CenterOwner"
-        ResizeMode="CanResizeWithGrip">
+        ResizeMode="CanResizeWithGrip"
+        Style="{StaticResource ThemedWindowStyle}">
+
+    <i:Interaction.Behaviors>
+        <themes:TitleBarThemingBehavior />
+    </i:Interaction.Behaviors>
+
     <Grid Margin="15">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -17,7 +25,6 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
         <TextBlock Grid.Row="0" 
                    Text="Analyzing Masters For:" 
                    FontWeight="SemiBold"
@@ -26,11 +33,11 @@
         <TextBlock Grid.Row="1" 
                    x:Name="TargetPluginTextBlock"
                    Text="[Plugin Name]"
-                   Foreground="DarkBlue"
+                   Foreground="{DynamicResource PrimaryForeground}"
+                   FontWeight="Bold"
                    TextWrapping="Wrap"
                    Margin="0,0,0,15"/>
 
-        <!-- Master Selection List -->
         <GroupBox Grid.Row="2" Header="Select Masters to Analyze" Margin="0,0,0,10">
             <Grid>
                 <Grid.RowDefinitions>
@@ -38,7 +45,6 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 
-                <!-- Select All/None Buttons -->
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="5,5,5,5">
                     <Button Content="Select All" 
                             x:Name="SelectAllButton"
@@ -51,12 +57,10 @@
                             Padding="10,3"/>
                 </StackPanel>
                 
-                <!-- ListBox with Checkboxes -->
                 <ListBox Grid.Row="1" 
                          x:Name="MastersListBox"
                          SelectionMode="Multiple"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                         BorderThickness="0">
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <CheckBox Content="{Binding FileName}" 
@@ -68,15 +72,13 @@
             </Grid>
         </GroupBox>
 
-        <!-- Status/Info -->
         <TextBlock Grid.Row="3" 
                    x:Name="StatusTextBlock"
                    Text="Select the masters you want to analyze, then click Analyze."
                    TextWrapping="Wrap"
-                   Foreground="Gray"
+                   Foreground="{DynamicResource DisabledForeground}"
                    Margin="0,0,0,10"/>
 
-        <!-- Buttons -->
         <StackPanel Grid.Row="4" 
                     Orientation="Horizontal" 
                     HorizontalAlignment="Right">
