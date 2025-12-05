@@ -128,8 +128,7 @@
                     
                     <CheckBox Content="Use FaceFinder API for missing mugshots"
                               IsChecked="{Binding UseFaceFinderFallback, Mode=TwoWay}"
-                              Margin="0,0,0,5"
-                              Visibility="{Binding IsFaceFinderAvailable, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                              Margin="0,0,0,5"/>
                     
                     <Border Margin="15,5,0,5" BorderBrush="Gray" BorderThickness="1" CornerRadius="3"
                             Visibility="{Binding UseFaceFinderFallback, Converter={StaticResource BooleanToVisibilityConverter}}">

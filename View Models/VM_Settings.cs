@@ -58,7 +58,6 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public SkyrimRelease SkyrimRelease { get; set; }
     
     // --- NEW: Mugshot Fallback Properties ---
-    public bool IsFaceFinderAvailable { get; }
     [Reactive] public bool UseFaceFinderFallback { get; set; }
     [Reactive] public bool CacheFaceFinderImages { get; set; } 
     [Reactive] public bool UsePortraitCreatorFallback { get; set; }
@@ -234,13 +233,6 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         MugshotsFolder = _model.MugshotsFolder;
         
         // --- NEW: Mugshot Fallback Initialization ---
-        // --- TEMPORARY FOR DEBUGGING
-        IsFaceFinderAvailable = File.Exists("FaceFinderTest.txt");
-        if (!IsFaceFinderAvailable)
-        {
-            _model.UseFaceFinderFallback = false; // Force disable if feature is not available
-        }
-        // --- END TEMPORARY FOR DEBUGGING
         
         UseFaceFinderFallback = _model.UseFaceFinderFallback;
         CacheFaceFinderImages = _model.CacheFaceFinderImages;
