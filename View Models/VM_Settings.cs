@@ -60,6 +60,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     // --- NEW: Mugshot Fallback Properties ---
     [Reactive] public bool UseFaceFinderFallback { get; set; }
     [Reactive] public bool CacheFaceFinderImages { get; set; } 
+    [Reactive] public bool LogFaceFinderRequests { get; set; }
     [Reactive] public bool UsePortraitCreatorFallback { get; set; }
     [Reactive] public int MaxParallelPortraitRenders { get; set; }
     [Reactive] public SolidColorBrush MugshotBackgroundColor { get; set; }
@@ -237,6 +238,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         
         UseFaceFinderFallback = _model.UseFaceFinderFallback;
         CacheFaceFinderImages = _model.CacheFaceFinderImages;
+        LogFaceFinderRequests = _model.LogFaceFinderRequests;
         SelectedMugshotSearchModeFF = MugshotSearchMode.Fast;
         UsePortraitCreatorFallback = _model.UsePortraitCreatorFallback;
         MaxParallelPortraitRenders = _model.MaxParallelPortraitRenders;
@@ -355,6 +357,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => _model.UseFaceFinderFallback = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.CacheFaceFinderImages).Skip(1) 
             .Subscribe(b => _model.CacheFaceFinderImages = b).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.LogFaceFinderRequests).Skip(1)
+            .Subscribe(b => _model.LogFaceFinderRequests = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedMugshotSearchModeFF)
             .Skip(1)
             .Subscribe(mode => _model.SelectedMugshotSearchModeFF = mode)

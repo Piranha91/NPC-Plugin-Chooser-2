@@ -158,6 +158,12 @@
                                       ToolTip="If checked, images downloaded from FaceFinder are saved and checked for updates. If unchecked, images are downloaded fresh every time."
                                       Visibility="{Binding UseFaceFinderFallback, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                             
+                            <CheckBox Content="Log API Requests/Responses"
+                                      IsChecked="{Binding LogFaceFinderRequests, Mode=TwoWay}"
+                                      Margin="0,5,0,0"
+                                      ToolTip="Writes API traffic to FaceFinderLog.txt in the application directory."
+                                      Visibility="{Binding UseFaceFinderFallback, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            
                             <Button Content="Link Mod Names to FaceFinder"
                                     Command="{Binding OpenModLinkerCommand}"
                                     ToolTip="Manually link local mod names to their corresponding entry on the FaceFinder server."

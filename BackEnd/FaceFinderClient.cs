@@ -37,6 +37,9 @@ public class FaceFinderClient
     private static readonly HttpClient _httpClient = new();
     private const string ApiBaseUrl = "https://npcfacefinder.com";
     public const string MetadataFileExtension = ".ffmeta.json";
+    private const string LogFileName = "FaceFinderLog.txt";
+    private static bool _isLogCleared = false;
+    private static readonly object _logLock = new();
 
     private const byte _xorKey = 0x55;
 
@@ -55,6 +58,75 @@ public class FaceFinderClient
     public FaceFinderClient(Settings settings)
     {
         _settings = settings;
+        
+        // Clear log on startup (only once per session)
+        if (!_isLogCleared)
+        {
+            try 
+            {
+                if (File.Exists(LogFileName)) File.Delete(LogFileName);
+            }
+            catch (Exception ex) 
+            { 
+                Debug.WriteLine($"Failed to clear log file: {ex.Message}"); 
+            }
+            finally
+            {
+                _isLogCleared = true;
+            }
+        }
+    }
+    
+    private async Task LogInteractionAsync(HttpRequestMessage request, HttpResponseMessage? response = null, string? responseContent = null)
+    {
+        if (!_settings.LogFaceFinderRequests) return;
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("========================================");
+                sb.AppendLine($"Timestamp: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                sb.AppendLine($"Request: {request.Method} {request.RequestUri}");
+                
+                // Log Headers (Redacting API Key)
+                foreach (var header in request.Headers)
+                {
+                    string value = header.Key == "X-API-Key" ? "{REDACTED_API}" : string.Join(", ", header.Value);
+                    sb.AppendLine($"Header: {header.Key} = {value}");
+                }
+
+                if (response != null)
+                {
+                    sb.AppendLine("----------------------------------------");
+                    sb.AppendLine($"Response Status: {(int)response.StatusCode} {response.ReasonPhrase}");
+                    if (!string.IsNullOrWhiteSpace(responseContent))
+                    {
+                        // Truncate overly long responses if necessary, though full JSON is usually helpful for debugging
+                        sb.AppendLine("Response Body:");
+                        sb.AppendLine(responseContent);
+                    }
+                }
+                else
+                {
+                    sb.AppendLine("----------------------------------------");
+                    sb.AppendLine("Response: [NULL/FAILED]");
+                }
+                
+                sb.AppendLine("========================================");
+                sb.AppendLine();
+
+                lock (_logLock)
+                {
+                    File.AppendAllText(LogFileName, sb.ToString());
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Logging failed: {ex.Message}");
+            }
+        });
     }
 
     // Internal class for serializing metadata to a sidecar file
@@ -79,9 +151,10 @@ public class FaceFinderClient
             try
             {
                 var response = await _httpClient.SendAsync(request);
-                if (!response.IsSuccessStatusCode) break;
-
                 var content = await response.Content.ReadAsStringAsync();
+                await LogInteractionAsync(request, response, content);
+
+                if (!response.IsSuccessStatusCode) break;
                 var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
 
                 if (results == null || !results.Any()) break; // No more pages
@@ -128,11 +201,15 @@ public class FaceFinderClient
         try
         {
             var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode) return null;
 
             var content = await response.Content.ReadAsStringAsync();
 
             var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
+            
+            await LogInteractionAsync(request, response, content);
+
+            if (!response.IsSuccessStatusCode) return null;
+            
             var firstResult = results?.FirstOrDefault();
 
             if (firstResult == null) return null;
@@ -152,6 +229,7 @@ public class FaceFinderClient
         catch (Exception ex)
         {
             Debug.WriteLine($"FaceFinder API error for {npcFormKey}: {ex.Message}");
+            await LogInteractionAsync(request, null, $"EXCEPTION: {ex.Message}");
             return null;
         }
     }
@@ -280,9 +358,12 @@ public class FaceFinderClient
                 try
                 {
                     var response = await _httpClient.SendAsync(request);
-                    if (!response.IsSuccessStatusCode) continue; // Skip failed requests, try the next one
 
                     var content = await response.Content.ReadAsStringAsync();
+                    
+                    await LogInteractionAsync(request, response, content);
+                    
+                    if (!response.IsSuccessStatusCode) continue; // Skip failed requests, try the next one
                     var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
 
                     if (results != null && results.Any())
@@ -321,6 +402,7 @@ public class FaceFinderClient
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"FaceFinder API error on page {currentPage}: {ex.Message}");
+                    await LogInteractionAsync(request, null, $"EXCEPTION: {ex.Message}");
                 }
             }
 
