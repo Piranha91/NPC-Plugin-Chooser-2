@@ -694,6 +694,14 @@ Delete a mod if you want to re-scan it."
                         ToolTip="Enter any console commands you want to execute AFTER the player.placeatme commands."/>
                 </StackPanel>
             </GroupBox>
+            
+            <GroupBox Header="Troubleshooting" Margin="0,0,0,10" Padding="5">
+                <StackPanel>
+                    <CheckBox Content="Log Activity" 
+                              IsChecked="{Binding LogActivity, Mode=TwoWay}"
+                              ToolTip="Enables detailed logging of application activity to help diagnose issues."/>
+                </StackPanel>
+            </GroupBox>
         </StackPanel>
     </ScrollViewer>
 </reactiveui:ReactiveUserControl>

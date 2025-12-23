@@ -53,6 +53,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private readonly Auxilliary _auxilliary;
     private readonly ImagePacker _imagePacker;
     private readonly FaceFinderClient _faceFinderClient;
+    private readonly EventLogger _eventLogger;
     private readonly CompositeDisposable _disposables = new();
     private readonly Lazy<VM_Mods> _lazyModsVm;
     private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
@@ -205,6 +206,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         NpcDescriptionProvider descriptionProvider,
         FaceFinderClient faceFinderClient,
         ImagePacker imagePacker,
+        EventLogger eventLogger,
         Lazy<VM_Mods> lazyModsVm,
         Lazy<VM_MainWindow> lazyMainWindowVm,
         AppearanceModFactory appearanceModFactory,
@@ -218,6 +220,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         _descriptionProvider = descriptionProvider;
         _faceFinderClient = faceFinderClient;
         _imagePacker = imagePacker;
+        _eventLogger = eventLogger;
         _lazyModsVm = lazyModsVm;
         _lazyMainWindowVm = lazyMainWindowVm;
         _appearanceModFactory = appearanceModFactory;
@@ -1999,18 +2002,25 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData)
     {
         if (selectionVm == null) return new ObservableCollection<VM_NpcsMenuMugshot>();
+        
+        _eventLogger.LogHeader($"Resolving Appearances for: {selectionVm.DisplayName} [{selectionVm.NpcFormKey}]");
 
         var finalModVMs = new Dictionary<(string ModName, FormKey SourceKey), VM_NpcsMenuMugshot>();
         var targetNpcFormKey = selectionVm.NpcFormKey;
 
         // Helper function to centralize VM creation and prevent duplicates.
-        void CreateVmIfNotExists(string modName, FormKey sourceNpcKey, string? overrideSourceNpc = null)
+        void CreateVmIfNotExists(string modName, FormKey sourceNpcKey, string? overrideSourceNpc = null, string sourceCategory = "Unknown")
         {
             var vmKey = (modName.ToLowerInvariant(), sourceNpcKey);
-            if (finalModVMs.ContainsKey(vmKey)) return;
+            if (finalModVMs.ContainsKey(vmKey))
+            {
+                _eventLogger.Log($"Duplicate prevented: {modName} (Source: {sourceCategory}) already exists.");
+                return;
+            }
 
             // Find an associated mod setting if it exists. This is optional.
             var modSettingVM = _lazyModsVm.Value.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(modName, StringComparison.OrdinalIgnoreCase));
+            _eventLogger.Log($"Adding: '{modName}' via [{sourceCategory}]", "MUGSHOT");
             
             string? imagePath = GetImagePathForNpc(modSettingVM, sourceNpcKey, mugshotData);
             var specificPluginKey = GetPluginKeyForNpc(modSettingVM, sourceNpcKey);
@@ -2063,22 +2073,29 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         // --- Source 1: Standard appearances from the NPC's game data ---
+        int source1Count = 0;
         foreach (var modSetting in selectionVm.AppearanceMods)
         {
-            CreateVmIfNotExists(modSetting.DisplayName, targetNpcFormKey);
+            CreateVmIfNotExists(modSetting.DisplayName, targetNpcFormKey, sourceCategory: "Saved Mod Setting");
+            source1Count++;
         }
+        _eventLogger.Log($"Found {source1Count} saved appearance mods.", "SOURCE 1");
 
         // --- Source 2: Guest appearances from settings ---
+        int source2Count = 0;
         if (_settings.GuestAppearances.TryGetValue(targetNpcFormKey, out var guestList))
         {
             foreach (var guest in guestList)
             {
-                CreateVmIfNotExists(guest.ModName, guest.NpcFormKey, guest.NpcDisplayName);
+                CreateVmIfNotExists(guest.ModName, guest.NpcFormKey, guest.NpcDisplayName, sourceCategory: "Guest/Shared");
+                source2Count++;
             }
         }
+        _eventLogger.Log($"Found {source2Count} guest appearance assignments.", "SOURCE 2");
 
         // --- Source 3: All other mugshots from the cache for this NPC ---
         // This corrected section ensures mugshot-only mods are always included.
+        int source3Count = 0;
         if (mugshotData.TryGetValue(targetNpcFormKey, out var allMugshotsForNpc))
         {
             foreach (var mugshotInfo in allMugshotsForNpc)
@@ -2086,14 +2103,18 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 // The source NPC for a standard mugshot is the target NPC itself.
                 if (_lazyModsVm.Value.AllModSettings.Any(m => m.DisplayName.Equals(mugshotInfo.ModName, StringComparison.OrdinalIgnoreCase)))
                 {
-                    CreateVmIfNotExists(mugshotInfo.ModName, targetNpcFormKey);
+                    // If it wasn't added in Source 1 (e.g. data mismatch), add it here
+                    CreateVmIfNotExists(mugshotInfo.ModName, targetNpcFormKey, sourceCategory: "Mugshot Match");
+                    source3Count++;
                 }
             }
         }
+        _eventLogger.Log($"Scanned {source3Count} directory mugshots (some may have been native matches).", "SOURCE 3");
         
         // --- NEW: Source 4: FaceFinder fallback ---
         if (_settings.UseFaceFinderFallback)
         {
+            _eventLogger.Log("FaceFinder fallback is enabled. Querying API...", "SOURCE 4");
             // --- NEW: Create a reverse lookup for efficient checking ---
             var serverToLocalMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var mapping in _settings.FaceFinderModNameMappings) //
@@ -2112,6 +2133,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
             var faceFinderResults = await _faceFinderClient.GetAllFaceDataForNpcAsync(targetNpcFormKey);
 
+            int ffCount = 0;
             foreach (var serverResult in faceFinderResults)
             {
                 bool alreadyExists = false;
@@ -2121,6 +2143,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 // Check 1: Does a VM with the exact server name already exist?
                 if (finalModVMs.ContainsKey(vmKey))
                 {
+                    _eventLogger.Log($"FaceFinder Match: '{serverModName}' already exists locally.", "SOURCE 4");
                     alreadyExists = true;
                 }
                 // Check 2: If not, is this server name mapped to any local mods that already exist?
@@ -2130,6 +2153,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     {
                         if (finalModVMs.ContainsKey((localName, targetNpcFormKey)))
                         {
+                            _eventLogger.Log($"FaceFinder Match (Linked): '{serverModName}' mapped to existing '{localName}'.", "SOURCE 4");
                             alreadyExists = true;
                             break;
                         }
@@ -2139,11 +2163,19 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 // Only create the new VM if no existing local version (direct or linked) was found.
                 if (!alreadyExists)
                 {
-                    CreateVmIfNotExists(serverModName, targetNpcFormKey);
+                    CreateVmIfNotExists(serverModName, targetNpcFormKey, sourceCategory: "FaceFinder");
                     Debug.WriteLine($"Discovered new unlinked appearance for {selectionVm.DisplayName} from '{serverModName}' via FaceFinder.");
+                    ffCount++;
                 }
             }
+            _eventLogger.Log($"Added {ffCount} new options via FaceFinder.", "SOURCE 4");
         }
+        else
+        {
+            _eventLogger.Log("FaceFinder fallback is disabled.", "SOURCE 4");
+        }
+        
+        _eventLogger.Log($"Final count: {finalModVMs.Count} appearance options generated.", "SUMMARY");
 
         // --- Finalize: Sort, configure, and set the current selection ---
         var npcSourcePlugin = targetNpcFormKey.ModKey;

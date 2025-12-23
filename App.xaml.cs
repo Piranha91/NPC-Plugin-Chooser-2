@@ -162,6 +162,8 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<VM_ModSetting>().AsSelf();
             builder.RegisterType<VM_ModFaceFinderLinker>().AsSelf(); 
             builder.RegisterType<ImagePacker>().AsSelf().SingleInstance();
+            
+            builder.RegisterType<EventLogger>().AsSelf().SingleInstance();
 
             splashVM.UpdateProgress(40, "Registering Views with DI...");
             builder.RegisterType<MainWindow>().As<IViewFor<VM_MainWindow>>();

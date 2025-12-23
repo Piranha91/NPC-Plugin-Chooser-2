@@ -159,6 +159,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool ShowNpcFormKeyInList { get; set; }
     [Reactive] public bool ShowNpcFormIdInList { get; set; }
     [Reactive] public string NpcListSeparator { get; set; } = " | ";
+    
+    [Reactive] public bool LogActivity { get; set; }
 
     // For throttled saving
     private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
@@ -289,6 +291,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         ShowNpcFormKeyInList = _model.ShowNpcFormKeyInList;
         ShowNpcFormIdInList = _model.ShowNpcFormIdInList;
         NpcListSeparator = _model.NpcListSeparator;
+        
+        LogActivity = _model.LogActivity;
 
         ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
         ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
@@ -455,6 +459,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         this.WhenAnyValue(x => x.SuppressPopupWarnings)
             .Skip(1)
             .Subscribe(b => _model.SuppressPopupWarnings = b)
+            .DisposeWith(_disposables);
+        
+        this.WhenAnyValue(x => x.LogActivity)
+            .Skip(1)
+            .Subscribe(b => _model.LogActivity = b)
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.IsLocalizationEnabled)
