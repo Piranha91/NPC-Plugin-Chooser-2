@@ -399,6 +399,8 @@ public class FaceFinderClient
                                 string.IsNullOrWhiteSpace(updatedAtStr) ||
                                 !DateTime.TryParse(updatedAtStr, null, DateTimeStyles.RoundtripKind, out var updatedAt))
                             {
+                                await LogInteractionAsync(request, response, $"Invalid mod name: {modName}, image url: {imageUrl}, or updatedAt: {updatedAtStr}");
+                                _eventLogger.Log($"{npcFormKey}: Invalid mod name: {modName}, image url: {imageUrl}, or updatedAt: {updatedAtStr}");
                                 continue;
                             }
 
