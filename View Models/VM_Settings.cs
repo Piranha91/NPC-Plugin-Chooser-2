@@ -46,6 +46,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
     private readonly EasyNpcTranslator _easyNpcTranslator;
     private readonly PortraitCreator _portraitCreator;
+    private readonly EventLogger _eventLogger;
 
     public ViewModelActivator Activator { get; } = new ViewModelActivator();
 
@@ -193,7 +194,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         NpcConsistencyProvider consistencyProvider,
         Lazy<VM_MainWindow> lazyMainWindowVm,
         EasyNpcTranslator easyNpcTranslator,
-        PortraitCreator portraitCreator)
+        PortraitCreator portraitCreator,
+        EventLogger eventLogger)
     {
         _model = settingsModel;
         
@@ -231,6 +233,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         _lazyMainWindowVm = lazyMainWindowVm;
         _easyNpcTranslator = easyNpcTranslator;
         _portraitCreator = portraitCreator;
+        _eventLogger = eventLogger;
 
         // Initialize other VM properties from the model
         ModsFolder = _model.ModsFolder;
@@ -1000,7 +1003,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     
     private void OpenModLinkerWindow()
     {
-        var linkerViewModel = new VM_ModFaceFinderLinker(_model, new FaceFinderClient(_model), _lazyModListVM.Value);
+        var linkerViewModel = new VM_ModFaceFinderLinker(_model, new FaceFinderClient(_model, _eventLogger), _lazyModListVM.Value);
         var linkerView = new ModFaceFinderLinkerWindow
         {
             DataContext = linkerViewModel

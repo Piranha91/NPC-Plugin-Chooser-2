@@ -2133,6 +2133,14 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
             var faceFinderResults = await _faceFinderClient.GetAllFaceDataForNpcAsync(targetNpcFormKey);
 
+            var preLogging = faceFinderResults.Select(x => x.ModName + ": " + x.ImageUrl).ToList();
+            string indexedList = String.Empty;
+            for (int i = 0; i < preLogging.Count; i++)
+            {
+                indexedList += i+1 + ": " + preLogging[i] + Environment.NewLine;
+            }
+            _eventLogger.Log($"Received the following appearance mod list from FaceFinder server: {preLogging.Count}" + Environment.NewLine + indexedList, "FACEFINDER");
+
             int ffCount = 0;
             foreach (var serverResult in faceFinderResults)
             {

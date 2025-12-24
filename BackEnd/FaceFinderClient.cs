@@ -33,6 +33,7 @@ public class FaceFinderNpcResult
 public class FaceFinderClient
 {
     private readonly Settings _settings;
+    private readonly EventLogger _eventLogger;
     private readonly string _apiKey = GetAPIKey();
     private static readonly HttpClient _httpClient = new();
     private const string ApiBaseUrl = "https://npcfacefinder.com";
@@ -55,9 +56,10 @@ public class FaceFinderClient
         0x60, 0x27, 0x34, 0x3E, 0x0D, 0x31, 0x22, 0x10,
     };
     
-    public FaceFinderClient(Settings settings)
+    public FaceFinderClient(Settings settings, EventLogger eventLogger)
     {
         _settings = settings;
+        _eventLogger = eventLogger;
         
         // Clear log on startup (only once per session)
         if (!_isLogCleared)
@@ -164,6 +166,8 @@ public class FaceFinderClient
             }
             catch (Exception ex) {
                 Debug.WriteLine($"FaceFinder API error getting mod list on page {currentPage}: {ex.Message}");
+                await LogInteractionAsync(request, response: null, responseContent: $"FaceFinder API error getting mod list on page {currentPage}: {ex.Message}");
+                _eventLogger.Log($"GetAllModNames: FaceFinder API error getting mod list on page {currentPage}: {ex.Message}");
                 break;
             }
         }
@@ -197,12 +201,13 @@ public class FaceFinderClient
 
         var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
         request.Headers.Add("X-API-Key", _apiKey);
+        string content = string.Empty;
 
         try
         {
             var response = await _httpClient.SendAsync(request);
 
-            var content = await response.Content.ReadAsStringAsync();
+            content = await response.Content.ReadAsStringAsync();
 
             var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
             
@@ -221,6 +226,12 @@ public class FaceFinderClient
             if (string.IsNullOrWhiteSpace(imageUrl) || string.IsNullOrWhiteSpace(updatedAtStr) ||
                 !DateTime.TryParse(updatedAtStr, null, DateTimeStyles.RoundtripKind, out var updatedAt))
             {
+                string msg = "One of the following fields are missing or invalid:\n";
+                msg += "imageUrl: " + imageUrl + "\n";
+                msg += "updatedAt: " + updatedAtStr + "\n";
+                await LogInteractionAsync(request, response, msg);
+                _eventLogger.Log($"FaceFinder Clinet: {npcFormKey}: {modNameToFind}:" + Environment.NewLine + msg);
+                
                 return null;
             }
 
@@ -230,6 +241,7 @@ public class FaceFinderClient
         {
             Debug.WriteLine($"FaceFinder API error for {npcFormKey}: {ex.Message}");
             await LogInteractionAsync(request, null, $"EXCEPTION: {ex.Message}");
+            _eventLogger.Log($"FaceFinder API error for {npcFormKey}: {ex.Message}" + Environment.NewLine + Environment.NewLine + "Content" + Environment.NewLine + content);
             return null;
         }
     }
@@ -403,6 +415,7 @@ public class FaceFinderClient
                 {
                     Debug.WriteLine($"FaceFinder API error on page {currentPage}: {ex.Message}");
                     await LogInteractionAsync(request, null, $"EXCEPTION: {ex.Message}");
+                    _eventLogger.Log($"FaceFinder API mod retrieval error for {npcFormKey} on page {currentPage}: {ex.Message}");
                 }
             }
 
@@ -412,6 +425,7 @@ public class FaceFinderClient
             currentPage++;
         }
 
+        _eventLogger.Log($"FaceFinder Client: Returned {distinctFaces.Count()} appearance mods for {npcFormKey}");
         return distinctFaces.Values.ToList();
     }
 
