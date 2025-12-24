@@ -157,7 +157,10 @@ public class FaceFinderClient
                 await LogInteractionAsync(request, response, content);
 
                 if (!response.IsSuccessStatusCode) break;
-                var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
+                var results = JsonConvert.DeserializeObject<List<dynamic>>(content, new JsonSerializerSettings 
+                { 
+                    DateParseHandling = DateParseHandling.None 
+                });
 
                 if (results == null || !results.Any()) break; // No more pages
 
@@ -209,7 +212,10 @@ public class FaceFinderClient
 
             content = await response.Content.ReadAsStringAsync();
 
-            var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
+            var results = JsonConvert.DeserializeObject<List<dynamic>>(content, new JsonSerializerSettings 
+            { 
+                DateParseHandling = DateParseHandling.None 
+            });
             
             await LogInteractionAsync(request, response, content);
 
@@ -376,7 +382,10 @@ public class FaceFinderClient
                     await LogInteractionAsync(request, response, content);
                     
                     if (!response.IsSuccessStatusCode) continue; // Skip failed requests, try the next one
-                    var results = JsonConvert.DeserializeObject<List<dynamic>>(content);
+                    var results = JsonConvert.DeserializeObject<List<dynamic>>(content, new JsonSerializerSettings 
+                    { 
+                        DateParseHandling = DateParseHandling.None 
+                    });
 
                     if (results != null && results.Any())
                     {
