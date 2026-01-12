@@ -923,7 +923,7 @@ public class Auxilliary : IDisposable
         using var _ = ContextualPerformanceTracer.Trace("Auxilliary.TryGetOrAddGenericRecordAsOverride");
         if(TryGetPatchRecordGroup(recordGetter, outputMod, out var group, out exceptionString) && group != null)
         {
-            duplicateRecord = OverrideMixIns.GetOrAddAsOverride(group, recordGetter);
+            duplicateRecord = group.GetOrAddAsOverride(recordGetter);
             return true;
         }
         duplicateRecord = null;
