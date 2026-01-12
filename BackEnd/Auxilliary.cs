@@ -116,13 +116,6 @@ public class Auxilliary : IDisposable
     
     public static string FixMojibake(string input)
     {
-        // You should probably add a bool to your Settings class like "FixGarbledNames"
-        // so users can toggle this on only if they are experiencing the bug.
-        /*
-        if (string.IsNullOrEmpty(input) || !_settings.FixGarbledNames) 
-            return input;
-            */
-
         try 
         {
             // 1. Get the encoding that likely "created" the garbage (Windows-1252)

@@ -463,7 +463,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         
         this.WhenAnyValue(x => x.FixGarbledText)
             .Skip(1)
-            .Subscribe(x => _model.FixGarbledText = x)
+            .Subscribe(x => 
+            {
+                _model.FixGarbledText = x;
+                if (_lazyNpcSelectionBar.IsValueCreated)
+                {
+                    _lazyNpcSelectionBar.Value.RefreshAllNpcDisplayNames();
+                }
+            })
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SuppressPopupWarnings)
