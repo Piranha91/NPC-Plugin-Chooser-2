@@ -211,4 +211,5 @@ public class Settings
     
     // --- Troubleshooting ---
     public bool LogActivity { get; set; } = false;
+    public bool FixGarbledText { get; set; } = false;
 }

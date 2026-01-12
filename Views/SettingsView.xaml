@@ -521,6 +521,10 @@
                                 </Style>
                             </ComboBox.Style>
                         </ComboBox>
+                        
+                        <CheckBox Margin="5 0 0 0" IsChecked="{Binding FixGarbledText}" 
+                                  Visibility="{Binding IsLocalizationEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  ToolTip="If your localized NPC names look garbled, try checking this box to enable the fix.">Fix Encoding</CheckBox>
                     </StackPanel>
                     
                     <CheckBox Content="Don't show me popup warnings for actions with potential side effects"

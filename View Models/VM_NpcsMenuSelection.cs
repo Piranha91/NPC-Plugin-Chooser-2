@@ -98,11 +98,19 @@ public class VM_NpcsMenuSelection : ReactiveObject
             NpcData.Name.TryLookup(language.Value, out var localizedName))
         {
             NpcName = localizedName;
+            if (_settings.FixGarbledText)
+            {
+                NpcName = Auxilliary.FixMojibake(NpcName);
+            }
             hasName = true;
         }
         else if (NpcData?.Name?.String != null)
         {
             NpcName = NpcData.Name.String;
+            if (_settings.FixGarbledText)
+            {
+                NpcName = Auxilliary.FixMojibake(NpcName);
+            }
             hasName = true;
         }
         else

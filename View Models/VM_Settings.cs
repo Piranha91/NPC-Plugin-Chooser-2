@@ -153,6 +153,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public Language? SelectedLocalizationLanguage { get; set; }
 
     public IEnumerable<Language> AvailableLanguages { get; } = Enum.GetValues(typeof(Language)).Cast<Language>();
+    [Reactive] public bool FixGarbledText { get; set; } = false;
 
     // --- NPC Display ---
     [Reactive] public bool ShowNpcNameInList { get; set; } = true;
@@ -288,6 +289,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SuppressPopupWarnings = _model.SuppressPopupWarnings;
         IsLocalizationEnabled = _model.LocalizationLanguage.HasValue;
         SelectedLocalizationLanguage = _model.LocalizationLanguage;
+        FixGarbledText = _model.FixGarbledText;
         IsDarkMode = _model.IsDarkMode;
         ShowNpcNameInList = _model.ShowNpcNameInList;
         ShowNpcEditorIdInList = _model.ShowNpcEditorIdInList;
@@ -457,6 +459,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                     _lazyNpcSelectionBar.Value.RefreshAllNpcDisplayNames();
                 }
             })
+            .DisposeWith(_disposables);
+        
+        this.WhenAnyValue(x => x.FixGarbledText)
+            .Skip(1)
+            .Subscribe(x => _model.FixGarbledText = x)
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SuppressPopupWarnings)

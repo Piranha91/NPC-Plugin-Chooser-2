@@ -84,7 +84,7 @@ public class Auxilliary : IDisposable
         LoadRaceCache();
     }
 
-    public static bool TryGetName(ITranslatedNamedGetter namedGetter, Language? language, out string name)
+    public static bool TryGetName(ITranslatedNamedGetter namedGetter, Language? language, bool fixGarbled, out string name)
     {
         name = string.Empty;
 
@@ -96,14 +96,52 @@ public class Auxilliary : IDisposable
         if (language != null && namedGetter.Name.TryLookup(language.Value, out var localizedName))
         {
             name = localizedName;
+            if (fixGarbled)
+            {
+                name = FixMojibake(name);
+            }
             return true;
         }
         else if (namedGetter.Name.String != null)
         {
             name = namedGetter.Name.String;
+            if (fixGarbled)
+            {
+                name = FixMojibake(name);
+            }
             return true;
         }
         return false;
+    }
+    
+    public static string FixMojibake(string input)
+    {
+        // You should probably add a bool to your Settings class like "FixGarbledNames"
+        // so users can toggle this on only if they are experiencing the bug.
+        /*
+        if (string.IsNullOrEmpty(input) || !_settings.FixGarbledNames) 
+            return input;
+            */
+
+        try 
+        {
+            // 1. Get the encoding that likely "created" the garbage (Windows-1252)
+            Encoding western = Encoding.GetEncoding(1252);
+        
+            // 2. Get the encoding it *should* have been (UTF-8)
+            Encoding utf8 = Encoding.UTF8;
+
+            // 3. Convert the string back to the original raw bytes
+            byte[] rawBytes = western.GetBytes(input);
+
+            // 4. Re-interpret those bytes as UTF-8
+            return utf8.GetString(rawBytes);
+        }
+        catch (Exception)
+        {
+            // If conversion fails, return original to be safe
+            return input;
+        }
     }
     
     public static string GetLogString(IMajorRecordGetter majorRecordGetter, Language? language, bool fullString = false)

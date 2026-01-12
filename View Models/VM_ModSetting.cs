@@ -1059,13 +1059,13 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                                     if (language != null &&
                                         _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcGetter,
                                             out var mainGetter)
-                                        && Auxilliary.TryGetName(npc, language, out string localizedName))
+                                        && Auxilliary.TryGetName(npc, language, _lazySettingsVm.Value.FixGarbledText, out string localizedName))
                                     {
                                         NpcNames.Add(localizedName);
                                         displayName = localizedName;
                                     }
 
-                                    else if (Auxilliary.TryGetName(npc, language, out string name))
+                                    else if (Auxilliary.TryGetName(npc, language, _lazySettingsVm.Value.FixGarbledText, out string name))
                                     {
                                         NpcNames.Add(name);
                                         displayName = name;
@@ -1108,7 +1108,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                     {
                         var npc = sourceContext.Record;
                         string displayName = string.Empty;
-                        if (Auxilliary.TryGetName(npc, language, out string name))
+                        if (Auxilliary.TryGetName(npc, language, _lazySettingsVm.Value.FixGarbledText, out string name))
                         {
                             NpcNames.Add(name);
                             displayName = name;
@@ -1168,7 +1168,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                                     if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey,
                                             out var existingNpc))
                                     {
-                                        if (Auxilliary.TryGetName(existingNpc, language, out string name))
+                                        if (Auxilliary.TryGetName(existingNpc, language, _lazySettingsVm.Value.FixGarbledText, out string name))
                                         {
                                             NpcNames.Add(name);
                                             displayName = name;
