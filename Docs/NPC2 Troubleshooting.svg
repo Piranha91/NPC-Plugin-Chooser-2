@@ -1,0 +1,2817 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="685.08234mm"
+   height="835.65356mm"
+   viewBox="0 0 685.08235 835.65356"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   sodipodi:docname="NPC2 Troubleshooting.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="0.39244426"
+     inkscape:cx="909.68332"
+     inkscape:cy="2484.4292"
+     inkscape:window-width="1920"
+     inkscape:window-height="1010"
+     inkscape:window-x="-6"
+     inkscape:window-y="-6"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1">
+    <inkscape:page
+       x="0"
+       y="0"
+       width="685.08234"
+       height="835.65356"
+       id="page17"
+       margin="0"
+       bleed="0" />
+  </sodipodi:namedview>
+  <defs
+     id="defs1">
+    <marker
+       style="overflow:visible"
+       id="Triangle"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-2-4"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-9-6" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-3"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-3" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-6"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-6" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-2-4-0"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-9-6-1" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-6-8"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-6-0" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-6-3"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-6-4" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-2-4-1"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-9-6-9" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-6"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-6" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-6-3"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-6-5" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-1"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-5" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-7"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-44" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-7"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-7" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-6-3-8"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-6-5-7" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-7-5"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-7-1" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-2-8"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-5-4" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-6"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-5" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-11"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-1" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-6-3-5"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-6-5-77" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-11-4"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-1-5" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-6-3-5-0"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-6-5-77-1" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-11-5"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-1-8" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-6-3-5-3"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-6-5-77-2" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-11-2"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-1-54" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-6-3-5-1"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-6-5-77-3" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-1"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-2" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-11-4-3"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-1-5-0" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-6-3-5-0-1"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-6-5-77-1-9" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-11-4-3-4"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-1-5-0-5" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-6-3-5-0-1-0"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-6-5-77-1-9-5" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-11-4-3-4-3"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-1-5-0-5-0" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-6-3-5-0-1-0-0"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-6-5-77-1-9-5-8" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-11-4-3-4-3-5"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-1-5-0-5-0-3" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-6-3-5-0-1-0-0-2"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-6-5-77-1-9-5-8-6" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-6-0"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-5-5" />
+    </marker>
+    <marker
+       style="overflow:visible"
+       id="Triangle-1-1-3-8-3-5-11-4-3-4-3-9"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="Triangle arrow"
+       markerWidth="1"
+       markerHeight="1"
+       viewBox="0 0 1 1"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135-4-9-8-9-9-3-1-5-0-5-0-2" />
+    </marker>
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(64.886102,-2.6707506)">
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.683154"
+       id="rect1"
+       width="36.389854"
+       height="26.832918"
+       x="56.266529"
+       y="3.3081682"
+       ry="6.1888919" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="74.544945"
+       y="15.254332"
+       id="text1"><tspan
+         sodipodi:role="line"
+         id="tspan1"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="74.544945"
+         y="15.254332">Did everything </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="74.544945"
+         y="20.986958"
+         id="tspan2">work?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.746932"
+       id="rect1-0"
+       width="36.389854"
+       height="32.076912"
+       x="9.5631361"
+       y="145.93797"
+       ry="7.3983955" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="27.603193"
+       y="155.26215"
+       id="text1-9"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="27.603193"
+         y="155.26215"
+         id="tspan2-0">Is your Skyrim</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="27.603193"
+         y="160.99477"
+         id="tspan18">installed in the</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="27.603193"
+         y="166.7274"
+         id="tspan19">default Steam or </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="27.603193"
+         y="172.46002"
+         id="tspan20">GOG folder?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.746932"
+       id="rect1-0-4"
+       width="36.389854"
+       height="32.076912"
+       x="46.240105"
+       y="200.51364"
+       ry="7.3983955" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="64.280159"
+       y="209.83781"
+       id="text1-9-2"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="64.280159"
+         y="209.83781"
+         id="tspan20-3">Did you leave the</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="64.280159"
+         y="215.57043"
+         id="tspan31">Game Data Path</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="64.280159"
+         y="221.30307"
+         id="tspan32">blank?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.640958"
+       id="rect1-0-4-4"
+       width="36.389854"
+       height="23.62051"
+       x="-43.329693"
+       y="253.35342"
+       ry="5.4479647" />
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.640958"
+       id="rect1-0-4-4-12"
+       width="36.389854"
+       height="23.62051"
+       x="-37.409939"
+       y="314.27197"
+       ry="5.4479647" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="-25.289639"
+       y="265.0083"
+       id="text1-9-2-7"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="-25.289639"
+         y="265.0083"
+         id="tspan32-5">Do that</tspan></text>
+    <rect
+       style="fill:#800000;stroke-width:0.640958"
+       id="rect1-0-4-4-2"
+       width="36.389854"
+       height="23.62051"
+       x="35.767323"
+       y="314.74811"
+       ry="5.4479647" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="53.807377"
+       y="326.40298"
+       id="text1-9-2-7-1"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="53.807377"
+         y="326.40298"
+         id="tspan32-5-1">Submit Bug</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="53.807377"
+         y="332.13562"
+         id="tspan43">Report</tspan></text>
+    <rect
+       style="fill:#800000;stroke-width:0.640958"
+       id="rect1-0-4-4-2-9"
+       width="36.389854"
+       height="23.62051"
+       x="437.8967"
+       y="676.74915"
+       ry="5.4479647" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="455.93674"
+       y="688.40405"
+       id="text1-9-2-7-1-6"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="455.93674"
+         y="688.40405"
+         id="tspan32-5-1-4">Submit Bug</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="455.93674"
+         y="694.13666"
+         id="tspan43-5">Report</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.781002"
+       id="rect1-0-4-4-2-9-5"
+       width="54.028744"
+       height="23.62051"
+       x="467.55688"
+       y="748.11292"
+       ry="5.4479647" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="494.41635"
+       y="756.19238"
+       id="text1-9-2-7-1-6-6"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="494.41635"
+         y="756.19238"
+         id="tspan43-5-1">Change it to one of </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="494.41635"
+         y="761.92499"
+         id="tspan143">these options</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="494.41635"
+         y="767.65765"
+         id="tspan144">(Include As New is safer)</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.640958"
+       id="rect1-0-4-4-2-2"
+       width="36.389854"
+       height="23.62051"
+       x="108.37667"
+       y="356.16016"
+       ry="5.4479647" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="126.41673"
+       y="367.81503"
+       id="text1-9-2-7-1-16"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="126.41673"
+         y="367.81503"
+         id="tspan43-3">Rerun those </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="126.41673"
+         y="373.54767"
+         id="tspan64">patchers</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.640958"
+       id="rect1-0-4-4-2-2-0"
+       width="36.389854"
+       height="23.62051"
+       x="233.41733"
+       y="355.61908"
+       ry="5.4479647" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="251.93411"
+       y="361.31488"
+       id="text1-9-2-7-1-16-8"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="251.93411"
+         y="361.31488"
+         id="tspan64-1">Install them and</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="251.93411"
+         y="367.04752"
+         id="tspan90">hit the Refresh</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="251.93411"
+         y="372.78012"
+         id="tspan91">button in NPC2's </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="251.93411"
+         y="378.51276"
+         id="tspan92">Mods tab</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.640958"
+       id="rect1-0-4-4-2-2-0-4"
+       width="36.389854"
+       height="23.62051"
+       x="252.09309"
+       y="418.03748"
+       ry="5.4479647" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="270.60986"
+       y="425.99774"
+       id="text1-9-2-7-1-16-8-1"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="270.60986"
+         y="425.99774"
+         id="tspan90-5">Hit the Refresh</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="270.60986"
+         y="431.73038"
+         id="tspan91-3">button in NPC2's </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="270.60986"
+         y="437.46298"
+         id="tspan92-3">Mods tab</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.841167"
+       id="rect1-0-4-4-2-2-0-6"
+       width="44.017483"
+       height="33.631771"
+       x="283.77634"
+       y="355.06845"
+       ry="7.7570171" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="305.39188"
+       y="360.76425"
+       id="text1-9-2-7-1-16-8-3"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="305.39188"
+         y="360.76425"
+         id="tspan92-8">Do all required </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="305.39188"
+         y="366.49689"
+         id="tspan101">mods show up in </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="305.39188"
+         y="372.22949"
+         id="tspan102">the Corresponding</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="305.39188"
+         y="377.96213"
+         id="tspan103">Mod Folder Paths</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="305.39188"
+         y="383.69476"
+         id="tspan104">in NPC2's Mods tab?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.640958"
+       id="rect1-0-4-4-2-1"
+       width="36.389854"
+       height="23.62051"
+       x="84.573708"
+       y="301.04816"
+       ry="5.4479647" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="102.85213"
+       y="309.36594"
+       id="text1-9-2-7-1-1"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="102.85213"
+         y="309.36594"
+         id="tspan43-2">Move NPC2 output </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="102.85213"
+         y="315.09857"
+         id="tspan59">to the bottom</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="102.85213"
+         y="320.83118"
+         id="tspan60">of your load order</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.687547"
+       id="rect1-0-4-4-2-1-0"
+       width="41.872211"
+       height="23.62051"
+       x="135.78497"
+       y="300.55472"
+       ry="5.4479647" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="156.68538"
+       y="306.96558"
+       id="text1-9-2-7-1-1-4"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="156.68538"
+         y="306.96558"
+         id="tspan60-9">Have you rerun</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="156.68538"
+         y="312.69821"
+         id="tspan62">those patchers</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="156.68538"
+         y="318.43082"
+         id="tspan63">after running NPC2?</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="-20.246958"
+       y="326.64847"
+       id="text1-9-2-7-6"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="-20.246958"
+         y="326.64847"
+         id="tspan32-5-2">Change it</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.848086"
+       id="rect1-0-4-4-12-2"
+       width="51.287563"
+       height="29.34123"
+       x="190.24329"
+       y="240.89093"
+       ry="6.7674232" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="215.39143"
+       y="245.6398"
+       id="text1-9-2-7-6-90"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="215.39143"
+         y="245.6398"
+         id="tspan32-5-2-3">Figure out why</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="215.39143"
+         y="251.37242"
+         id="tspan69">the individual mods</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="215.39143"
+         y="257.10504"
+         id="tspan70">don't work before trying</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="215.39143"
+         y="262.83768"
+         id="tspan71">to make an appearance</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="215.39143"
+         y="268.57031"
+         id="tspan72">merge</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.966017"
+       id="rect1-0-4-4-12-2-9"
+       width="66.542824"
+       height="29.34123"
+       x="253.89046"
+       y="294.99066"
+       ry="6.7674232" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="286.78543"
+       y="299.73953"
+       id="text1-9-2-7-6-90-2"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="286.78543"
+         y="299.73953"
+         id="tspan72-5">Check the Requirements</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="286.78543"
+         y="305.47217"
+         id="tspan85">section for the problematic</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="286.78543"
+         y="311.20477"
+         id="tspan86">replacers on their Nexus</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="286.78543"
+         y="316.93741"
+         id="tspan87">page. Do they have requirements</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="286.78543"
+         y="322.67004"
+         id="tspan89">you forgot to intall?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.856855"
+       id="rect1-0-4-4-1"
+       width="36.389854"
+       height="42.212852"
+       x="8.4310341"
+       y="252.99649"
+       ry="9.7362051" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="26.47109"
+       y="262.32068"
+       id="text1-9-2-7-4"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="26.47109"
+         y="262.32068"
+         id="tspan34">Is the Skyrim </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="26.47109"
+         y="268.05331"
+         id="tspan37">Version in your</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="26.47109"
+         y="273.78592"
+         id="tspan38">Settings tab set to</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="26.47109"
+         y="279.51855"
+         id="tspan40">match the game</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="26.47109"
+         y="285.25119"
+         id="tspan41">version you're</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="26.47109"
+         y="290.9838"
+         id="tspan42">using? </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="26.47109"
+         y="296.71643"
+         id="tspan39" /></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.989024"
+       id="rect1-0-8"
+       width="63.80164"
+       height="32.076912"
+       x="-30.141047"
+       y="202.17741"
+       ry="7.3983955" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="1.7240856"
+       y="210.07141"
+       id="text1-9-4"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="1.724085"
+         y="210.07141"
+         id="tspan23">Did you point the Game Data </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="1.7240855"
+         y="215.80403"
+         id="tspan24">Path inthe Settings tab to</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="1.724086"
+         y="221.53667"
+         id="tspan26">the correct data path (e.g </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="1.7240856"
+         y="227.26929"
+         id="tspan28">C:\My\Skyrim\data)?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:1.77718"
+       id="rect1-2"
+       width="95.250221"
+       height="69.375175"
+       x="26.76458"
+       y="55.041393"
+       ry="16.001074" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;white-space:pre;inline-size:103.623;display:inline;fill:#4d4d4d;stroke-width:0.683154"
+       x="74.884956"
+       y="68.894463"
+       id="text1-7"
+       transform="translate(-2.0639959,-7.6896799)"><tspan
+         x="74.884956"
+         y="68.894463"
+         id="tspan5"><tspan
+           style="fill:#ffffff"
+           id="tspan4">Is your environment set up correctly?
+</tspan></tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="35.57473"
+       y="69.625443"
+       id="text1-7-4"><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="35.57473"
+         y="69.625443"
+         id="tspan7">In the Settings tab, does the Environment </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="35.57473"
+         y="75.35807"
+         id="tspan8">Status say &quot;Valid&quot;?</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="35.57473"
+         y="81.090691"
+         id="tspan9" /><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="35.57473"
+         y="86.823318"
+         id="tspan10">Next to &quot;Valid&quot;, does it show the correct </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="35.57473"
+         y="92.555946"
+         id="tspan13"># of plugins?</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="35.57473"
+         y="98.288567"
+         id="tspan14" /><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="35.57473"
+         y="104.02119"
+         id="tspan15">In the Run tab, if you click &quot;Environment </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="35.57473"
+         y="109.75381"
+         id="tspan16">Status&quot;, does it show you your correct load </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="35.57473"
+         y="115.48644"
+         id="tspan17">order?</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="35.57473"
+         y="121.21907"
+         id="tspan11" /></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.683154"
+       id="rect1-1"
+       width="36.389854"
+       height="26.832918"
+       x="120.27895"
+       y="2.6707506"
+       ry="6.1888919" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="138.55736"
+       y="14.616914"
+       id="text1-1"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="138.55736"
+         y="14.616914"
+         id="tspan2-2">Great. Why are</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="138.55736"
+         y="20.349539"
+         id="tspan3">you here?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.743166"
+       id="rect1-1-12"
+       width="43.06403"
+       height="26.832918"
+       x="153.97943"
+       y="76.211411"
+       ry="6.1888919" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="175.8333"
+       y="86.012306"
+       id="text1-1-5"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="175.8333"
+         y="86.012306"
+         id="tspan3-8">Are the generated</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="175.8333"
+         y="91.744934"
+         id="tspan46">textures &amp; meshes</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="175.8333"
+         y="97.477554"
+         id="tspan47">winning all conflicts?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.683154"
+       id="rect1-1-1"
+       width="36.389854"
+       height="26.832918"
+       x="268.81396"
+       y="239.54424"
+       ry="6.1888919" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="288.10367"
+       y="248.28798"
+       id="text1-1-9"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="288.10367"
+         y="248.28798"
+         id="tspan3-3">Is the problem </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="288.10367"
+         y="254.0206"
+         id="tspan44">with all NPCs or</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="288.10367"
+         y="259.75323"
+         id="tspan45">just some?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:1.18797"
+       id="rect1-1-1-7"
+       width="69.760727"
+       height="42.326534"
+       x="308.84515"
+       y="479.25537"
+       ry="9.7624254" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="343.57065"
+       y="487.69586"
+       id="text1-1-9-71"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="343.57065"
+         y="487.69586"
+         id="tspan105">Remove all Corresponding</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="343.57065"
+         y="493.4285"
+         id="tspan115">Mod Folders for the problematic</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="343.57065"
+         y="499.1611"
+         id="tspan116">mods, click the Delete button</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="343.57065"
+         y="504.89374"
+         id="tspan117">that appears, and allow NPC2</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="343.57065"
+         y="510.62637"
+         id="tspan118">to re-import the mod with</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="343.57065"
+         y="516.35901"
+         id="tspan119">default settings</tspan></text>
+    <rect
+       style="fill:#800000;stroke-width:1.18797"
+       id="rect1-1-1-7-8"
+       width="69.760727"
+       height="42.326534"
+       x="74.869926"
+       y="795.99774"
+       ry="9.7624254" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:start;writing-mode:lr-tb;direction:ltr;text-anchor:start;fill:#4d4d4d;stroke-width:0.683154"
+       x="79.256714"
+       y="801.91003"
+       id="text1-1-9-71-4"><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="79.256714"
+         y="801.91003"
+         id="tspan119-0">- Go to NPC2's Run Tab</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="79.256714"
+         y="807.64264"
+         id="tspan155">- Click on &quot;Environment Status&quot;</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="79.256714"
+         y="813.37531"
+         id="tspan156">- Copy all of the displayed output</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="79.256714"
+         y="819.10791"
+         id="tspan157">- Paste it to Pastebin.com or a</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="79.256714"
+         y="824.84052"
+         id="tspan158">  similar text dump site</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="79.256714"
+         y="830.57318"
+         id="tspan159">- Include a link to your paste in</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:start;text-anchor:start;fill:#ffffff;stroke-width:0.683154"
+         x="79.256714"
+         y="836.30579"
+         id="tspan160">  your help request</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.773373"
+       id="rect1-1-1-3"
+       width="39.011852"
+       height="32.076912"
+       x="361.82617"
+       y="417.59552"
+       ry="7.3983955" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="380.63916"
+       y="423.95563"
+       id="text1-1-9-7"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="380.63916"
+         y="423.95563"
+         id="tspan77">Did you change</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="380.63916"
+         y="429.68826"
+         id="tspan109">any settings in</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="380.63916"
+         y="435.42087"
+         id="tspan110">NPC2's Mods tab</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="380.63916"
+         y="441.1535"
+         id="tspan111">from their defaults?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.771568"
+       id="rect1-1-1-5"
+       width="46.41848"
+       height="26.832918"
+       x="221.60571"
+       y="184.78758"
+       ry="6.1888919" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="243.92929"
+       y="193.53133"
+       id="text1-1-9-4"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="243.92929"
+         y="193.53133"
+         id="tspan45-6">Do your appearance</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="243.92929"
+         y="199.26395"
+         id="tspan66">mods work in-game</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="243.92929"
+         y="204.99658"
+         id="tspan67">WITHOUT using NPC2?</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="104.90356"
+       y="12.721465"
+       id="text1-8"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="104.90356"
+         y="12.721465"
+         id="tspan2-4">Yes</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="80.760674"
+       y="42.411079"
+       id="text1-8-5"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="80.760674"
+         y="42.411079"
+         id="tspan2-4-7">No</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="45.790726"
+       y="135.7583"
+       id="text1-8-5-0"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="45.790726"
+         y="135.7583"
+         id="tspan2-4-7-2">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle)"
+       d="M 93.759105,16.357054 H 114.71085"
+       id="path3"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="207.28651"
+       y="197.00339"
+       id="text1-8-4"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="207.28651"
+         y="197.00339"
+         id="tspan2-4-2">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-7)"
+       d="m 196.14206,200.63898 h 20.95175"
+       id="path3-9"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="136.87396"
+       y="84.98214"
+       id="text1-8-9"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="136.87396"
+         y="84.98214"
+         id="tspan2-4-8">Yes</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="196.33704"
+       y="114.42717"
+       id="text1-8-9-6"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="196.33704"
+         y="114.42717"
+         id="tspan2-4-8-1">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-3)"
+       d="m 125.72952,88.617731 h 20.95175"
+       id="path3-1"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="322.01044"
+       y="248.99187"
+       id="text1-8-9-2"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="322.01044"
+         y="248.99187"
+         id="tspan2-4-8-2">All</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1)"
+       d="M 73.256014,31.483421 V 52.435163"
+       id="path3-2"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-6)"
+       d="m 287.75802,268.47728 v 20.95175"
+       id="path3-2-4"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-6-0)"
+       d="M 55.219978,341.5651 105.11029,787.93289"
+       id="path3-2-4-3"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1)"
+       d="M 62.046689,127.98027 47.231565,142.7954"
+       id="path3-2-5"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="274.99237"
+       y="280.396"
+       id="text1-8-5-0-7"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="274.99237"
+         y="280.396"
+         id="tspan2-4-7-2-7">Just Some</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-2-8)"
+       d="M 168.16232,298.15036 195.72226,204.2407"
+       id="path3-2-5-2-0"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="56.188133"
+       y="189.85486"
+       id="text1-8-5-0-7-1"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="56.188133"
+         y="189.85486"
+         id="tspan2-4-7-2-6-7">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-2-4)"
+       d="m 41.94553,181.96971 14.815124,14.81513"
+       id="path3-2-5-5-7"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="22.006262"
+       y="243.44281"
+       id="text1-8-5-0-7-1-0"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="22.006262"
+         y="243.44281"
+         id="tspan2-4-7-2-6-7-6">Yes</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="57.454277"
+       y="248.6721"
+       id="text1-8-5-0-7-1-0-6"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="57.454277"
+         y="248.6721"
+         id="tspan2-4-7-2-6-7-6-8">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-2-4-0)"
+       d="M 7.7636597,235.55766 22.578784,250.37279"
+       id="path3-2-5-5-7-1"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="5.6431866"
+       y="190.14342"
+       id="text1-8-5-0-4"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="5.6431866"
+         y="190.14342"
+         id="tspan2-4-7-2-4">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3)"
+       d="M 21.89915,182.36539 7.084026,197.18052"
+       id="path3-2-5-6"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="50.544693"
+       y="304.83365"
+       id="text1-8-5-0-7-1-2"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="50.544693"
+         y="304.83365"
+         id="tspan2-4-7-2-6-7-8">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-2-4-1)"
+       d="m 36.302088,296.94851 14.815126,14.81513"
+       id="path3-2-5-5-7-2"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="-0.00025688155"
+       y="305.12222"
+       id="text1-8-5-0-4-89"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="-0.00025690449"
+         y="305.12222"
+         id="tspan2-4-7-2-4-07">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8)"
+       d="M 16.255708,297.34419 1.4405839,312.15932"
+       id="path3-2-5-6-8"
+       sodipodi:nodetypes="cc" />
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.640958"
+       id="rect1-0-4-4-12-9"
+       width="36.389854"
+       height="23.62051"
+       x="113.07243"
+       y="132.3642"
+       ry="5.4479647" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="129.99704"
+       y="139.4967"
+       id="text1-9-2-7-6-9"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="129.99704"
+         y="139.4967"
+         id="tspan32-5-2-7">Move the output</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="129.99704"
+         y="145.22932"
+         id="tspan48">files so that they</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="129.99704"
+         y="150.96196"
+         id="tspan49">win conflicts</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="151.91228"
+       y="114.87173"
+       id="text1-8-5-0-4-89-6"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="151.91228"
+         y="114.87173"
+         id="tspan2-4-7-2-4-07-9">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3)"
+       d="M 167.07517,105.66061 148.6846,128.69928"
+       id="path3-2-5-6-8-3"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-6)"
+       d="m 180.30513,105.25025 18.39057,23.03867"
+       id="path3-2-5-6-8-3-2"
+       sodipodi:nodetypes="cc" />
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.743166"
+       id="rect1-1-12-2"
+       width="43.06403"
+       height="26.832918"
+       x="175.65262"
+       y="131.0784"
+       ry="6.1888919" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="197.50648"
+       y="138.73402"
+       id="text1-1-5-5"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="197.50648"
+         y="138.73402"
+         id="tspan47-1">Are the NPC2 output</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="197.50648"
+         y="144.46664"
+         id="tspan51">plugins at the very</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="197.50648"
+         y="150.19928"
+         id="tspan52">bottom of your load</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="197.50648"
+         y="155.9319"
+         id="tspan53">order?</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="218.01022"
+       y="169.29414"
+       id="text1-8-9-6-8"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="218.01022"
+         y="169.29414"
+         id="tspan2-4-8-1-6">Yes</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="173.58546"
+       y="169.73871"
+       id="text1-8-5-0-4-89-6-2"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="173.58546"
+         y="169.73871"
+         id="tspan2-4-7-2-4-07-9-1">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5)"
+       d="m 188.74836,160.5276 -18.39057,23.03867"
+       id="path3-2-5-6-8-3-4"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="225.47716"
+       y="222.30887"
+       id="text1-8-5-0-4-89-6-2-0"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="225.47716"
+         y="222.30887"
+         id="tspan2-4-7-2-4-07-9-1-0">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-11)"
+       d="m 240.64006,213.09775 -18.39057,23.03867"
+       id="path3-2-5-6-8-3-4-4"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-6-3)"
+       d="m 201.97832,160.11724 18.39057,23.03867"
+       id="path3-2-5-6-8-3-2-6"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="282.55542"
+       y="222.05058"
+       id="text1-8-9-6-8-9"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="282.55542"
+         y="222.05058"
+         id="tspan2-4-8-1-6-3">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-6-3-5)"
+       d="m 266.52354,212.8737 18.39057,23.03867"
+       id="path3-2-5-6-8-3-2-6-0"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="322.7413"
+       y="332.85461"
+       id="text1-8-5-0-4-89-6-2-0-1"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="322.7413"
+         y="332.85461"
+         id="tspan96">I have</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="322.7413"
+         y="338.58725"
+         id="tspan97">all the requirements</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="322.7413"
+         y="344.31985"
+         id="tspan98">installed</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="353.67703"
+       y="300.92981"
+       id="text1-8-5-0-4-89-6-2-0-1-5"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="353.67703"
+         y="300.92981"
+         id="tspan98-2">There are no requirements</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="353.67703"
+         y="306.66245"
+         id="tspan100">for these replacer mods</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-11-5)"
+       d="m 274.26121,326.98061 -18.39057,23.03867"
+       id="path3-2-5-6-8-3-4-4-9"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="261.353"
+       y="334.26489"
+       id="text1-8-9-6-8-9-5"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="261.353"
+         y="334.26489"
+         id="tspan2-4-8-1-6-3-1">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-6-3-5-3)"
+       d="m 294.42397,325.56475 10.04785,25.18394"
+       id="path3-2-5-6-8-3-2-6-0-0"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="353.13754"
+       y="460.65512"
+       id="text1-8-5-0-4-89-6-2-0-6"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="353.13754"
+         y="460.65512"
+         id="tspan2-4-7-2-4-07-9-1-0-2">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-11-4)"
+       d="m 368.30044,451.44404 -18.39057,23.03867"
+       id="path3-2-5-6-8-3-4-4-0"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="410.21582"
+       y="460.39685"
+       id="text1-8-9-6-8-9-3"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="410.21582"
+         y="460.39685"
+         id="tspan2-4-8-1-6-3-5">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-6-3-5-0)"
+       d="m 394.18392,451.21999 18.39057,23.03867"
+       id="path3-2-5-6-8-3-2-6-0-6"
+       sodipodi:nodetypes="cc" />
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.858008"
+       id="rect1-1-1-7-2"
+       width="36.389854"
+       height="42.326534"
+       x="357.62967"
+       y="544.30188"
+       ry="9.7624254" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="375.90808"
+       y="556.07947"
+       id="text1-1-9-71-9"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="375.90808"
+         y="556.07947"
+         id="tspan45-62-3">Re-check the mod</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="375.90808"
+         y="561.81207"
+         id="tspan79-1">folder paths in</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="375.90808"
+         y="567.54474"
+         id="tspan80-48">NPC2's Mods tab</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="375.90808"
+         y="573.27734"
+         id="tspan81-2">to make sure </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="375.90808"
+         y="579.00995"
+         id="tspan105-0">they're correct</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:1.04767"
+       id="rect1-1-1-7-2-9"
+       width="54.255981"
+       height="42.326534"
+       x="498.13931"
+       y="674.49445"
+       ry="9.7624254" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="524.67657"
+       y="686.27203"
+       id="text1-1-9-71-9-7"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="524.67657"
+         y="686.27203"
+         id="tspan105-0-6">For this mod, in NPC2's</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="524.67657"
+         y="692.00464"
+         id="tspan139">Mods tab, is Record</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="524.67657"
+         y="697.7373"
+         id="tspan140">Override Handling Mode</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="524.67657"
+         y="703.46991"
+         id="tspan141">set to either Include or</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="524.67657"
+         y="709.20251"
+         id="tspan142">Include As New?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:1.04767"
+       id="rect1-1-1-7-2-9-6"
+       width="54.255981"
+       height="42.326534"
+       x="542.19086"
+       y="748.65405"
+       ry="9.7624254" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="568.72809"
+       y="760.43164"
+       id="text1-1-9-71-9-7-8"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="568.72809"
+         y="760.43164"
+         id="tspan142-0">In NPC2's Mods tab,</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="568.72809"
+         y="766.16425"
+         id="tspan148">try changing &quot;Max Nested</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="568.72809"
+         y="771.89691"
+         id="tspan149">Search Layers&quot; for this mod</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="568.72809"
+         y="777.62952"
+         id="tspan150">to a higher number</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:1.17573"
+       id="rect1-1-1-7-8-5"
+       width="68.330544"
+       height="42.326534"
+       x="416.57593"
+       y="543.41107"
+       ry="9.7624254" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="447.96432"
+       y="551.85156"
+       id="text1-1-9-71-0-5"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="447.96432"
+         y="551.85156"
+         id="tspan105-1-7">In SSEEdit, do</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="447.96432"
+         y="557.58417"
+         id="tspan123">the Headparts,</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="447.96432"
+         y="563.31683"
+         id="tspan124">Face Texture, </tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="447.96432"
+         y="569.04944"
+         id="tspan125">Face Tints, and Race</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="447.96432"
+         y="574.78204"
+         id="tspan126">in the NPC2 output match</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="447.96432"
+         y="580.51471"
+         id="tspan127">the source appearance mods?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.773373"
+       id="rect1-1-1-3-4"
+       width="39.011852"
+       height="32.076912"
+       x="395.11707"
+       y="482.64203"
+       ry="7.3983955" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="413.93005"
+       y="489.00214"
+       id="text1-1-9-7-8"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="413.93005"
+         y="489.00214"
+         id="tspan45-0-1">Do the FaceGen</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="413.93005"
+         y="494.73477"
+         id="tspan74-4">.nif and .dds files</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="413.93005"
+         y="500.46738"
+         id="tspan75-3">in NPC2's output</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="413.93005"
+         y="506.20001"
+         id="tspan76-5">match those in the</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="413.93005"
+         y="511.93265"
+         id="tspan77-5">source mods?</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="386.42844"
+       y="525.7016"
+       id="text1-8-5-0-4-89-6-2-0-6-2"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="386.42844"
+         y="525.7016"
+         id="tspan2-4-7-2-4-07-9-1-0-2-6">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-11-4-3)"
+       d="M 401.59136,516.49053 383.20079,539.5292"
+       id="path3-2-5-6-8-3-4-4-0-8"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="443.50671"
+       y="525.44336"
+       id="text1-8-9-6-8-9-3-9"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="443.50671"
+         y="525.44336"
+         id="tspan2-4-8-1-6-3-5-2">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-6-3-5-0-1)"
+       d="m 427.47484,516.26648 18.39057,23.03867"
+       id="path3-2-5-6-8-3-2-6-0-6-9"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="424.03378"
+       y="598.00519"
+       id="text1-8-5-0-4-89-6-2-0-6-2-0"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="424.03378"
+         y="598.00519"
+         id="tspan2-4-7-2-4-07-9-1-0-2-6-1">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-11-4-3-4)"
+       d="m 439.19673,588.79415 -18.39057,23.03867"
+       id="path3-2-5-6-8-3-4-4-0-8-3"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="481.11206"
+       y="597.74695"
+       id="text1-8-9-6-8-9-3-9-2"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="481.11206"
+         y="597.74695"
+         id="tspan2-4-8-1-6-3-5-2-2">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-6-3-5-0-1-0)"
+       d="m 465.08021,588.5701 18.39057,23.03867"
+       id="path3-2-5-6-8-3-2-6-0-6-9-2"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="465.01578"
+       y="656.66974"
+       id="text1-8-5-0-4-89-6-2-0-6-2-0-3"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="465.01578"
+         y="656.66974"
+         id="tspan2-4-7-2-4-07-9-1-0-2-6-1-5">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-11-4-3-4-3)"
+       d="M 480.17872,647.45873 461.78815,670.4974"
+       id="path3-2-5-6-8-3-4-4-0-8-3-6"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-11-4-3-4-3-9)"
+       d="M 438.65904,700.89415 151.9395,794.72313"
+       id="path3-2-5-6-8-3-4-4-0-8-3-6-8"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="522.09406"
+       y="656.4115"
+       id="text1-8-9-6-8-9-3-9-2-5"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="522.09406"
+         y="656.4115"
+         id="tspan2-4-8-1-6-3-5-2-2-8">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-6-3-5-0-1-0-0)"
+       d="m 506.0622,647.23468 18.39057,23.03867"
+       id="path3-2-5-6-8-3-2-6-0-6-9-2-3"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="499.8667"
+       y="729.97742"
+       id="text1-8-5-0-4-89-6-2-0-6-2-0-3-6"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="499.8667"
+         y="729.97742"
+         id="tspan2-4-7-2-4-07-9-1-0-2-6-1-5-6">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-11-4-3-4-3-5)"
+       d="m 515.02965,720.76641 -18.39057,23.03867"
+       id="path3-2-5-6-8-3-4-4-0-8-3-6-3"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="556.94495"
+       y="729.71918"
+       id="text1-8-9-6-8-9-3-9-2-5-9"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="556.94495"
+         y="729.71918"
+         id="tspan2-4-8-1-6-3-5-2-2-8-4">Yes</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="594.69946"
+       y="808.76294"
+       id="text1-8-9-6-8-9-3-9-2-5-9-6"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="594.69946"
+         y="808.76294"
+         id="tspan2-4-8-1-6-3-5-2-2-8-4-0">Nothing so far has worked</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-6-3-5-0-1-0-0-2)"
+       d="m 540.91313,720.54236 18.39057,23.03867"
+       id="path3-2-5-6-8-3-2-6-0-6-9-2-3-5"
+       sodipodi:nodetypes="cc" />
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.743166"
+       id="rect1-1-12-2-3"
+       width="43.06403"
+       height="26.832918"
+       x="110.86069"
+       y="244.66808"
+       ry="6.1888919" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="132.71455"
+       y="252.3237"
+       id="text1-1-5-5-8"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="132.71455"
+         y="252.3237"
+         id="tspan53-0">Are the plugins below</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="132.71455"
+         y="258.05634"
+         id="tspan56">NPC2 only patchers</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="132.71455"
+         y="263.78894"
+         id="tspan57">like Synthesis,</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="132.71455"
+         y="269.52158"
+         id="tspan58">DynDOLOD, etc?</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="148.45102"
+       y="280.26181"
+       id="text1-8-9-6-8-3"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="148.45102"
+         y="280.26181"
+         id="tspan2-4-8-1-6-7">Yes</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="174.87239"
+       y="294.71332"
+       id="text1-8-9-6-8-3-8"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="174.87239"
+         y="294.71332"
+         id="tspan2-4-8-1-6-7-4">Yes</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="113.5608"
+       y="280.22964"
+       id="text1-8-5-0-4-89-6-2-2"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="113.5608"
+         y="280.22964"
+         id="tspan2-4-7-2-4-07-9-1-9">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-7)"
+       d="m 123.95643,274.11727 -18.39057,23.03867"
+       id="path3-2-5-6-8-3-4-7"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-6-3-8)"
+       d="m 137.18639,273.70691 18.39057,23.03867"
+       id="path3-2-5-6-8-3-2-6-5"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="134.64404"
+       y="338.65012"
+       id="text1-8-5-0-4-89-6-2-2-5"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="134.64404"
+         y="338.65012"
+         id="tspan2-4-7-2-4-07-9-1-9-3">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-7-5)"
+       d="m 149.80693,329.43902 -18.39057,23.03867"
+       id="path3-2-5-6-8-3-4-7-1"
+       sodipodi:nodetypes="cc" />
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.743166"
+       id="rect1-1-12-2-9"
+       width="43.06403"
+       height="26.832918"
+       x="146.01648"
+       y="187.54616"
+       ry="6.1888919" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="167.87035"
+       y="195.20178"
+       id="text1-1-5-5-2"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="167.87035"
+         y="195.20178"
+         id="tspan47-1-9">Are the NPC2 output</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="167.87035"
+         y="200.9344"
+         id="tspan51-3">plugins at the very</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="167.87035"
+         y="206.66704"
+         id="tspan52-4">bottom of your load</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="167.87035"
+         y="212.39966"
+         id="tspan53-4">order?</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="137.2074"
+       y="226.54356"
+       id="text1-8-5-0-4-89-6-2-9"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="137.2074"
+         y="226.54356"
+         id="tspan2-4-7-2-4-07-9-1-6">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-1)"
+       d="m 152.37029,217.33246 -18.39057,23.03867"
+       id="path3-2-5-6-8-3-4-3"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="-16.889301"
+       y="243.64645"
+       id="text1-8-5-0-4-8"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="-16.889301"
+         y="243.64645"
+         id="tspan2-4-7-2-4-0">No</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="43.232048"
+       y="234.73575"
+       id="text1-8-5-0-4-8-7"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="43.232048"
+         y="234.73575"
+         id="tspan2-4-7-2-4-0-1">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-6)"
+       d="M -0.63333741,235.86842 -15.448461,250.68355"
+       id="path3-2-5-6-1"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-6-3)"
+       d="M 67.367011,234.53886 40.753503,250.70238"
+       id="path3-2-5-6-1-5"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:0.683, 0.683;stroke-dashoffset:0;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-6-8)"
+       d="M 47.264663,227.16589 -9.3504519,248.72295"
+       id="path3-2-5-6-1-7"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.674315;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3)"
+       d="M -46.528953,263.93863 H -64.402396 V 85.922537 h 80.599109"
+       id="path34" />
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.674315;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1"
+       d="M -42.442172,326.3694 H -64.548945 V 262.32317"
+       id="path34-0"
+       sodipodi:nodetypes="ccc" />
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.683001;stroke-linecap:butt;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;marker-end:url(#Triangle-1-1)"
+       d="m 322.98235,309.39565 h 60.54428 v 102.19351"
+       id="path98"
+       sodipodi:nodetypes="ccc" />
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.683001;stroke-linecap:butt;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;marker-end:url(#Triangle-1-1-1)"
+       d="m 309.59215,251.21771 73.69105,0 0,55.33707"
+       id="path98-8"
+       sodipodi:nodetypes="ccc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="279.08694"
+       y="400.17239"
+       id="text1-8-5-0-4-89-6-2-0-8"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="279.08694"
+         y="400.17239"
+         id="tspan2-4-7-2-4-07-9-1-0-27">No</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-5-11-2)"
+       d="m 294.24986,390.96126 -18.39057,23.03867"
+       id="path3-2-5-6-8-3-4-4-96"
+       sodipodi:nodetypes="cc" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+       x="342.57007"
+       y="400.25119"
+       id="text1-8-9-6-8-9-1"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#000000;stroke-width:0.683154"
+         x="342.57007"
+         y="400.25119"
+         id="tspan2-4-8-1-6-3-7">Yes</tspan></text>
+    <path
+       style="fill:#ffffff;stroke:#000000;stroke-width:0.683;stroke-linecap:butt;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Triangle-1-1-3-8-3-6-3-5-1)"
+       d="m 320.13334,390.73721 40.30186,28.09512"
+       id="path3-2-5-6-8-3-2-6-0-7"
+       sodipodi:nodetypes="cc" />
+    <rect
+       style="fill:#4d4d4d;stroke-width:0.931304"
+       id="rect1-0-4-4-2-3"
+       width="64.031784"
+       height="28.339865"
+       x="457.55841"
+       y="615.95422"
+       ry="6.5364623" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="488.23956"
+       y="627.60907"
+       id="text1-9-2-7-1-9"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="488.23956"
+         y="627.60907"
+         id="tspan43-8">Does the appearance</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="488.23956"
+         y="633.34167"
+         id="tspan133">mod make changes to vanilla</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="488.23956"
+         y="639.07434"
+         id="tspan134">records like Race or Headparts?</tspan></text>
+    <rect
+       style="fill:#4d4d4d;stroke-width:1.18781"
+       id="rect1-0-4-4-2-3-8"
+       width="66.054367"
+       height="44.689053"
+       x="386.27454"
+       y="614.10388"
+       ry="10.30733" />
+    <text
+       xml:space="preserve"
+       style="font-size:4.5861px;font-family:Cambria;-inkscape-font-specification:'Cambria, Normal';text-align:center;writing-mode:lr-tb;direction:ltr;text-anchor:middle;fill:#4d4d4d;stroke-width:0.683154"
+       x="416.78714"
+       y="622.55634"
+       id="text1-9-2-7-1-9-4"><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="416.78714"
+         y="622.55634"
+         id="tspan43-8-6">In NPC2's Mods menu</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="416.78714"
+         y="628.28894"
+         id="tspan128">check the plugin name(s)</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="416.78714"
+         y="634.02161"
+         id="tspan129">to the right of the Mod name.</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="416.78714"
+         y="639.75421"
+         id="tspan130">Make sure the correct plugin</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="416.78714"
+         y="645.48682"
+         id="tspan131">shows up and, if not, adjust</tspan><tspan
+         sodipodi:role="line"
+         style="text-align:center;text-anchor:middle;fill:#ffffff;stroke-width:0.683154"
+         x="416.78714"
+         y="651.21948"
+         id="tspan132">the Corresponding Mod Paths</tspan></text>
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.683001;stroke-linecap:butt;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;marker-end:url(#Triangle-1-1)"
+       d="m 565.64826,793.52562 v 27.64192 H 153.0419"
+       id="path150" />
+  </g>
+</svg>
