@@ -24,15 +24,58 @@
 
     <Grid Margin="5">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <ScrollViewer Grid.Row="0" x:Name="MugshotScrollViewer"
+        <!-- Filter Bar -->
+        <Border Grid.Row="0" BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="5" Margin="0,0,0,5">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="Name:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <TextBox Grid.Column="1" 
+                         Text="{Binding FilterName, UpdateSourceTrigger=PropertyChanged}" 
+                         VerticalContentAlignment="Center"
+                         Margin="0,0,10,0"
+                         ToolTip="Filter by NPC display name (partial match)"/>
+
+                <TextBlock Grid.Column="2" Text="EditorID:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <TextBox Grid.Column="3" 
+                         Text="{Binding FilterEditorId, UpdateSourceTrigger=PropertyChanged}" 
+                         VerticalContentAlignment="Center"
+                         Margin="0,0,10,0"
+                         ToolTip="Filter by NPC FormKey/EditorID (partial match)"/>
+
+                <TextBlock Grid.Column="4" Text="Mod:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <TextBox Grid.Column="5" 
+                         Text="{Binding FilterModName, UpdateSourceTrigger=PropertyChanged}" 
+                         VerticalContentAlignment="Center"
+                         Margin="0,0,10,0"
+                         ToolTip="Filter by mod name (partial match)"/>
+
+                <Button Grid.Column="6" 
+                        Content="Clear" 
+                        Command="{Binding ClearFiltersCommand}" 
+                        Padding="8,2"
+                        ToolTip="Clear all filters"/>
+            </Grid>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" x:Name="MugshotScrollViewer"
                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                       SizeChanged="MugshotScrollViewer_SizeChanged"
                       PreviewMouseWheel="MugshotScrollViewer_PreviewMouseWheel">
-            <ItemsControl x:Name="FavoritesItemsControl" ItemsSource="{Binding FavoriteMugshots}"
+            <ItemsControl x:Name="FavoritesItemsControl" ItemsSource="{Binding FilteredFavoriteMugshots}"
                           ScrollViewer.CanContentScroll="True">
                 <ItemsControl.ItemContainerStyle>
                     <Style TargetType="ContentPresenter">
@@ -106,7 +149,7 @@
             </ItemsControl>
         </ScrollViewer>
         
-        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="5">
+        <Border Grid.Row="2" BorderBrush="Gray" BorderThickness="0,1,0,0" Padding="5">
             <Grid>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                     <Button Command="{Binding ZoomOutCommand}" Content="-" Width="25" Height="25" Margin="2,0" ToolTip="Zoom Out (Ctrl+Scroll Wheel)"/>

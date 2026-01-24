@@ -12,6 +12,7 @@ using System.Reactive.Subjects;
 using System.Threading.Tasks;
 using System.Windows;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Skyrim;
 using Noggog;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
@@ -34,6 +35,7 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
 
     // Dependencies
     private readonly Settings _settings;
+    private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly NpcConsistencyProvider _consistencyProvider;
     private readonly VM_NpcSelectionBar _npcsViewModel;
     private readonly VM_Mods _modsViewModel;
@@ -50,8 +52,15 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
 
     // UI Properties
     public ObservableCollection<VM_SummaryMugshot> FavoriteMugshots { get; } = new();
+    public ObservableCollection<VM_SummaryMugshot> FilteredFavoriteMugshots { get; } = new();
     [Reactive] public VM_SummaryMugshot? SelectedMugshot { get; set; }
     [Reactive] public VM_NpcsMenuSelection? CurrentTargetNpc { get; private set; }
+
+    // Filter Properties
+    [Reactive] public string FilterName { get; set; } = string.Empty;
+    [Reactive] public string FilterEditorId { get; set; } = string.Empty;
+    [Reactive] public string FilterModName { get; set; } = string.Empty;
+    public ReactiveCommand<Unit, Unit> ClearFiltersCommand { get; }
 
     // Zoom Control Properties
     [Reactive] public double ZoomLevel { get; set; }
@@ -92,6 +101,7 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
 
     public VM_FavoriteFaces(
         Settings settings,
+        EnvironmentStateProvider environmentStateProvider,
         NpcConsistencyProvider consistencyProvider,
         VM_NpcSelectionBar npcsViewModel,
         VM_Mods modsViewModel,
@@ -101,6 +111,7 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
         FavoriteMugshotFactory favoriteMugshotFactory)
     {
         _settings = settings;
+        _environmentStateProvider = environmentStateProvider;
         _consistencyProvider = consistencyProvider;
         _npcsViewModel = npcsViewModel;
         _modsViewModel = modsViewModel;
@@ -132,6 +143,14 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
             .DisposeWith(_disposables);
         CancelCommand = ReactiveCommand.Create(() => RequestClose?.Invoke()).DisposeWith(_disposables);
         CloseCommand = ReactiveCommand.Create(() => RequestClose?.Invoke()).DisposeWith(_disposables);
+        
+        // Clear Filters Command
+        ClearFiltersCommand = ReactiveCommand.Create(() =>
+        {
+            FilterName = string.Empty;
+            FilterEditorId = string.Empty;
+            FilterModName = string.Empty;
+        }).DisposeWith(_disposables);
 
         // Zoom setup
         ZoomLevel = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, _settings.NpcsViewZoomLevel));
@@ -160,7 +179,84 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
                 if (IsZoomLocked || HasUserManuallyZoomed) _refreshImageSizesSubject.OnNext(Unit.Default);
             }).DisposeWith(_disposables);
 
+        // Filter subscription - update FilteredFavoriteMugshots when filters or source collection changes
+        this.WhenAnyValue(
+                x => x.FilterName,
+                x => x.FilterEditorId,
+                x => x.FilterModName)
+            .Throttle(TimeSpan.FromMilliseconds(150))
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(_ => ApplyFilters())
+            .DisposeWith(_disposables);
+
+        // Also refresh filters when the source collection changes
+        FavoriteMugshots.CollectionChanged += (s, e) => ApplyFilters();
+
         this.WhenActivated((CompositeDisposable d) => { LoadFavoritesAsync().ConfigureAwait(false); });
+    }
+
+    private void ApplyFilters()
+    {
+        var nameFilter = FilterName?.Trim() ?? string.Empty;
+        var editorIdFilter = FilterEditorId?.Trim() ?? string.Empty;
+        var modNameFilter = FilterModName?.Trim() ?? string.Empty;
+
+        var filtered = FavoriteMugshots.Where(mugshot =>
+        {
+            // Name filter (matches NpcDisplayName or SourceNpcDisplayName)
+            if (!string.IsNullOrEmpty(nameFilter))
+            {
+                bool nameMatches = 
+                    (mugshot.NpcDisplayName?.IndexOf(nameFilter, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                    (mugshot.SourceNpcDisplayName?.IndexOf(nameFilter, StringComparison.OrdinalIgnoreCase) >= 0);
+                if (!nameMatches) return false;
+            }
+
+            // EditorID filter (matches TargetNpcFormKey or SourceNpcFormKey)
+            if (!string.IsNullOrEmpty(editorIdFilter))
+            {
+                bool targetMatch = false;
+                bool sourceMatch = false;
+                
+                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(mugshot.TargetNpcFormKey,
+                        out var targetNpcGetter) && targetNpcGetter.EditorID != null)
+                {
+                    targetMatch = targetNpcGetter.EditorID
+                        .IndexOf(editorIdFilter, StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+                
+                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(mugshot.SourceNpcFormKey,
+                        out var sourceNpcGetter) && sourceNpcGetter.EditorID != null)
+                {
+                    sourceMatch = sourceNpcGetter.EditorID
+                        .IndexOf(editorIdFilter, StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+                
+                bool editorIdMatches = targetMatch || sourceMatch;
+                if (!editorIdMatches) return false;
+            }
+
+            // Mod Name filter
+            if (!string.IsNullOrEmpty(modNameFilter))
+            {
+                bool modNameMatches = mugshot.ModDisplayName?.IndexOf(modNameFilter, StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!modNameMatches) return false;
+            }
+
+            return true;
+        }).ToList();
+
+        FilteredFavoriteMugshots.Clear();
+        foreach (var item in filtered)
+        {
+            FilteredFavoriteMugshots.Add(item);
+        }
+
+        // Trigger image size refresh after filtering
+        if (!IsZoomLocked && !HasUserManuallyZoomed)
+        {
+            _refreshImageSizesSubject.OnNext(Unit.Default);
+        }
     }
 
     private async Task LoadFavoritesAsync()
@@ -205,6 +301,9 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
                 if (token.IsCancellationRequested) return;
                 FavoriteMugshots.Clear();
                 foreach (var fav in favorites) FavoriteMugshots.Add(fav);
+                
+                // ApplyFilters will be triggered by CollectionChanged, but call it explicitly to ensure it runs
+                ApplyFilters();
                 _refreshImageSizesSubject.OnNext(Unit.Default);
 
                 // Asynchronously load the actual image sources

@@ -1,4 +1,4 @@
-﻿using System.Reactive.Disposables;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -84,9 +84,10 @@ namespace NPC_Plugin_Chooser_2.Views
 
         private void RefreshMugshotImageSizes()
         {
-            if (ViewModel?.FavoriteMugshots == null || !ViewModel.FavoriteMugshots.Any()) return;
+            // Use FilteredFavoriteMugshots instead of FavoriteMugshots for sizing calculations
+            if (ViewModel?.FilteredFavoriteMugshots == null || !ViewModel.FilteredFavoriteMugshots.Any()) return;
 
-            var imagesToProcess = ViewModel.FavoriteMugshots.OfType<IHasMugshotImage>().ToList();
+            var imagesToProcess = ViewModel.FilteredFavoriteMugshots.OfType<IHasMugshotImage>().ToList();
             if (!imagesToProcess.Any()) return;
 
             Dispatcher.BeginInvoke(new Action(() =>
