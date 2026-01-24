@@ -2171,20 +2171,28 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         var processingTasks = allRelevantBsaPaths.Select(bsaPath => Task.Run(() =>
         {
             var faceGenFilesInArchive = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var bsaReaders =
-                _bsaHandler.OpenBsaArchiveReaders(new[] { bsaPath }, _settings.SkyrimRelease.ToGameRelease(), false);
-
-            if (bsaReaders.TryGetValue(bsaPath, out var reader) && reader.Files.Any())
+            try
             {
-                foreach (var fileRecord in reader.Files)
+                var bsaReaders =
+                    _bsaHandler.OpenBsaArchiveReaders(new[] { bsaPath }, _settings.SkyrimRelease.ToGameRelease(), false);
+
+                if (bsaReaders.TryGetValue(bsaPath, out var reader) && reader.Files.Any())
                 {
-                    string path = fileRecord.Path.ToLowerInvariant().Replace('\\', '/');
-                    if (path.StartsWith("meshes/actors/character/facegendata/") ||
-                        path.StartsWith("textures/actors/character/facegendata/"))
+                    foreach (var fileRecord in reader.Files)
                     {
-                        faceGenFilesInArchive.Add(path);
+                        string path = fileRecord.Path.ToLowerInvariant().Replace('\\', '/');
+                        if (path.StartsWith("meshes/actors/character/facegendata/") ||
+                            path.StartsWith("textures/actors/character/facegendata/"))
+                        {
+                            faceGenFilesInArchive.Add(path);
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to read BSA archive: {bsaPath}", ex);
             }
 
             bsaContentCache.TryAdd(bsaPath, faceGenFilesInArchive);
