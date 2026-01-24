@@ -142,6 +142,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     [Reactive] public bool ShowHiddenMods { get; set; } = false;
     [Reactive] public bool ShowSingleOptionNpcs { get; set; } = true;
     [Reactive] public bool ShowUnloadedNpcs { get; set; } = true;
+    [Reactive] public bool ShowSkyPatcherTemplates { get; set; }
     [Reactive] public bool ShowNpcDescriptions { get; set; }
     public List<VM_NpcsMenuSelection> AllNpcs { get; } = new();
     public ObservableCollection<VM_NpcsMenuSelection> FilteredNpcs { get; } = new();
@@ -424,6 +425,17 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .Subscribe(show => 
             {
                 _settings.ShowUnloadedNpcs = show;
+                ApplyFilter(false);
+            })
+            .DisposeWith(_disposables);
+        
+        ShowSkyPatcherTemplates = _settings.ShowSkyPatcherTemplates;
+        this.WhenAnyValue(x => x.ShowSkyPatcherTemplates)
+            .Skip(1)
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(val => 
+            {
+                _settings.ShowSkyPatcherTemplates = val;
                 ApplyFilter(false);
             })
             .DisposeWith(_disposables);
@@ -1680,6 +1692,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         if (!ShowUnloadedNpcs)
         {
             results = results.Where(n => n.IsInLoadOrder).ToList();
+        }
+        
+        if (!ShowSkyPatcherTemplates)
+        {
+            // Exclude if the NPC's FormKey is in the known templates list
+            results = results.Where(n => !_settings.CachedSkyPatcherTemplates.Contains(n.NpcFormKey)).ToList();
         }
         
         var predicates = new List<Func<VM_NpcsMenuSelection, bool>>();

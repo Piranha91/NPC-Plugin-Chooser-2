@@ -118,6 +118,7 @@
 
                 <CheckBox Content="Show Single-Option NPCs" Margin="10,2,5,2" IsChecked="{Binding ShowSingleOptionNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that only have one available appearance."/>
                 <CheckBox Content="Show Unloaded NPCs" Margin="5,2,5,2" IsChecked="{Binding ShowUnloadedNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that are not part of your current load order (e.g., from mugshots or inactive mods)."/>
+                <CheckBox Content="Show SkyPatcher Templates" Margin="5,2,5,2" IsChecked="{Binding ShowSkyPatcherTemplates, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides dummy NPCs used by SkyPatcher NPC Replacers. You should not select an appearance for these dummy NPCs."/>
                 <CheckBox Content="Show Hidden Mods" Margin="5,2" IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Toggle visibility of hidden appearance mods"/>
                 <CheckBox Content="Show NPC Descriptions" Margin="5,2,15,2" IsChecked="{Binding ShowNpcDescriptions, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If checked, shows descriptions for selected base game NPCs from online sources."/>
                 <Button Content="Favs" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center" Command="{Binding ShowFavoritesCommand}" ToolTip="Add an appearance from your list of favorite faces."/>

@@ -1238,6 +1238,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             var guests = await vmToRefresh.GetSkyPatcherImportsAsync(environmentEditorIdMap, modEditorIdMap);
             foreach (var (target, source, modDisplayName, npcDisplayName) in guests)
             {
+                _settings.CachedSkyPatcherTemplates.Add(source);
                 AddGuestAppearanceToSettings(target, source, modDisplayName, npcDisplayName);
             }
 
@@ -1986,6 +1987,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             if (AddGuestAppearanceToSettings(targetNpcKey, sourceNpcKey, modDisplayName, npcDisplayName))
             {
+                _settings.CachedSkyPatcherTemplates.Add(sourceNpcKey);
                 addedCount++;
             }
         }

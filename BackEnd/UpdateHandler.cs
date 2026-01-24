@@ -52,7 +52,7 @@ public class UpdateHandler
         {
             UpdateTo2_0_4_Initial();
         }
-        
+
         if (!_settings.HasUpdatedTo2_0_7)
         {
             UpdateTo2_0_7_Initial();
@@ -60,12 +60,13 @@ public class UpdateHandler
 
         Debug.WriteLine("Settings update process complete.");
     }
-    
+
     // <summary>
     /// Checks the settings version against the current program version and applies any necessary updates.
     /// Runs after UI initializes
     /// </summary>
-    public async Task FinalCheckForUpdatesAndPatch(VM_NpcSelectionBar npcsVm, VM_Mods modsVm, VM_SplashScreen? splashReporter)
+    public async Task FinalCheckForUpdatesAndPatch(VM_NpcSelectionBar npcsVm, VM_Mods modsVm,
+        VM_SplashScreen? splashReporter)
     {
         // If the settings version is empty (e.g., a new user), there's nothing to migrate.
         if (string.IsNullOrWhiteSpace(_settings.ProgramVersion))
@@ -97,15 +98,20 @@ public class UpdateHandler
         {
             await UpdateTo2_0_4_Final(modsVm, splashReporter);
         }
-        
+
         if (settingsVersion < "2.0.5")
         {
             await UpdateTo2_0_5_Final(modsVm, splashReporter);
         }
-        
+
         if (settingsVersion < "2.0.9" && !_settings.HasUpdatedTo2_0_7_templates)
         {
             await UpdateTo2_0_7_Final(modsVm, npcsVm, splashReporter);
+        }
+
+        if (settingsVersion < "2.1.1")
+        {
+            await UpdateTo2_1_1_Final(modsVm, splashReporter);
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -124,7 +130,7 @@ public class UpdateHandler
             """;
         ScrollableMessageBox.Show(message, "Updating to 2.0.4");
     }
-    
+
     private void UpdateTo2_0_7_Initial()
     {
         bool shouldReset = true;
@@ -138,7 +144,7 @@ public class UpdateHandler
 
                 Would you like to do so?
                 """;
-        
+
             shouldReset = ScrollableMessageBox.Confirm(message, "Portrait Creator Settings Update");
         }
 
@@ -156,7 +162,7 @@ public class UpdateHandler
             _settings.CamY = 0.0f;
             _settings.CamZ = 0.0f;
             _settings.SelectedCameraMode = PortraitCameraMode.Portrait;
-        
+
             _settings.DefaultLightingJsonString = @"
 {
     ""lights"": [
@@ -200,7 +206,7 @@ public class UpdateHandler
     ]
 }";
             _settings.EnableNormalMapHack = true;
-            
+
             Debug.WriteLine("Portrait Creator settings reset to 1.0.7 defaults.");
         }
 
@@ -216,7 +222,7 @@ public class UpdateHandler
             !modVm.IsFaceGenOnlyEntry).ToList();
 
         splashReporter?.UpdateStep($"Updating to 2.0.4: Scanning mods for injected records...", modsToScan.Count);
-            
+
         var modsWithInjectedRecords = new ConcurrentBag<VM_ModSetting>();
 
         // 1. Perform the expensive, IO-bound work on background threads
@@ -225,10 +231,12 @@ public class UpdateHandler
             Parallel.ForEach(modsToScan, modVm =>
             {
                 // .Result is acceptable here as we are already inside a background thread via Task.Run
-                if (modVm.CheckForInjectedRecords(splashReporter == null ? null : splashReporter.ShowMessagesOnClose, _settings.LocalizationLanguage).Result)
+                if (modVm.CheckForInjectedRecords(splashReporter == null ? null : splashReporter.ShowMessagesOnClose,
+                        _settings.LocalizationLanguage).Result)
                 {
                     modsWithInjectedRecords.Add(modVm);
                 }
+
                 splashReporter?.IncrementProgress(string.Empty);
             });
         });
@@ -239,7 +247,7 @@ public class UpdateHandler
             modVm.HasAlteredHandleInjectedRecordsLogic = true;
         }
     }
-    
+
     private async Task UpdateTo2_0_5_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
     {
         // Call the public refresh coordinator, passing the existing splash screen reporter
@@ -249,13 +257,14 @@ public class UpdateHandler
     private async Task UpdateTo2_0_7_Final(VM_Mods modsVm, VM_NpcSelectionBar npcSelectionBar,
         VM_SplashScreen? splashReporter)
     {
-        string messageStr = "Previous versions of NPC Plugin Chooser allowed you to select appearances for NPCs with invalid templates using the Select All From Mod batch action. This could result in bugged appearances in-game for those NPCs. Would you like to scan and automatically de-select these NPCs?";
+        string messageStr =
+            "Previous versions of NPC Plugin Chooser allowed you to select appearances for NPCs with invalid templates using the Select All From Mod batch action. This could result in bugged appearances in-game for those NPCs. Would you like to scan and automatically de-select these NPCs?";
         if (!ScrollableMessageBox.Confirm(messageStr, "2.0.7 Update"))
         {
             _settings.HasUpdatedTo2_0_7_templates = true;
             return;
         }
-        
+
         splashReporter?.UpdateStep("Validating existing NPC selections...");
 
         var invalidSelections = new List<(FormKey npcKey, string modName, string reason)>();
@@ -297,7 +306,7 @@ public class UpdateHandler
             message.AppendLine();
             message.AppendLine("Details:");
             message.AppendLine();
-            
+
             foreach (var (npcKey, modName, reason) in invalidSelections)
             {
                 message.AppendLine($"• {reason}");
@@ -307,7 +316,7 @@ public class UpdateHandler
                     MessageBoxImage.Warning))
             {
                 // User confirmed - deselect all problematic NPCs
-                foreach (var(npcKey, modName, _) in invalidSelections)
+                foreach (var (npcKey, modName, _) in invalidSelections)
                 {
                     _settings.SelectedAppearanceMods.Remove(npcKey);
                     Debug.WriteLine($"Deselected invalid selection: {npcKey} -> {modName}");
@@ -329,5 +338,51 @@ public class UpdateHandler
         }
 
         _settings.HasUpdatedTo2_0_7_templates = true;
+    }
+
+    private async Task UpdateTo2_1_1_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
+    {
+        splashReporter?.UpdateStep("Caching SkyPatcher Templates...");
+
+        // We need empty maps because GetSkyPatcherImportsAsync requires them for resolving editor IDs,
+        // though for this specific update we are mostly interested in FormKey matches which don't need the map.
+        // If your mods rely heavily on EditorID mapping for SkyPatcher, we might miss some here without full maps,
+        // but building full maps is expensive. 
+        // Ideally, we reuse the maps if available, but passing empty ones is safe to prevent crashes.
+        var emptyMap = new Dictionary<string, HashSet<FormKey>>();
+
+        var allMods = modsVm.AllModSettings.ToList();
+        int count = 0;
+
+        await Task.Run(async () =>
+        {
+            foreach (var mod in allMods)
+            {
+                try
+                {
+                    // Re-parse the INIs for this mod
+                    var imports = await mod.GetSkyPatcherImportsAsync(emptyMap, emptyMap);
+
+                    foreach (var import in imports)
+                    {
+                        // Cache the SOURCE NPC (the template)
+                        lock (_settings.CachedSkyPatcherTemplates)
+                        {
+                            _settings.CachedSkyPatcherTemplates.Add(import.SourceNpc);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error scanning SkyPatcher INIs for {mod.DisplayName}: {ex.Message}");
+                }
+
+                count++;
+                splashReporter?.UpdateProgress((double)count / allMods.Count * 100, $"Scanning {mod.DisplayName}...");
+            }
+        });
+
+        Debug.WriteLine(
+            $"SkyPatcher Template Scan Complete. Cached {_settings.CachedSkyPatcherTemplates.Count} templates.");
     }
 }

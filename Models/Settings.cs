@@ -46,6 +46,7 @@ public class Settings
     public bool ShowNpcDescriptions { get; set; } = true;
     public bool ShowSingleOptionNpcs { get; set; } = true;
     public bool ShowUnloadedNpcs { get; set; } = true;
+    public bool ShowSkyPatcherTemplates { get; set; } = false;
     public List<ModSetting> ModSettings { get; set; } = new();
     // The string is the ModName, the FormKey is the NPC within that mod providing the appearance.
     public Dictionary<FormKey, (string ModName, FormKey NpcFormKey)> SelectedAppearanceMods { get; set; } = new();
@@ -55,6 +56,7 @@ public class Settings
     public Dictionary<FormKey, HashSet<(string ModName, FormKey NpcFormKey, string NpcDisplayName)>> GuestAppearances { get; set; } = new();
     public HashSet<string> HiddenModNames { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> HiddenModsPerNpc { get; set; } = new();
+    public HashSet<FormKey> CachedSkyPatcherTemplates { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> NpcGroupAssignments { get; set; } = new();
     public Dictionary<FormKey, OutfitOverride> NpcOutfitOverrides { get; set; } = new();
     public HashSet<ModKey> ImportFromLoadOrderExclusions { get; set; } = new();
