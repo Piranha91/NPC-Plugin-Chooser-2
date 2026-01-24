@@ -804,10 +804,10 @@ public class Patcher : OptionalUIModule
 
                         _environmentStateProvider.OutputMod.ModHeader.Description = PluginDescriptionSignature;
                         
-                        _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath, new BinaryWriteParameters
-                        {
-                            MastersListOrdering = new MastersListOrderingByLoadOrder(_environmentStateProvider.LoadOrder)
-                        });
+                        await _environmentStateProvider.OutputMod.BeginWrite
+                            .ToPath(outputPluginPath)
+                            .WithLoadOrder(_environmentStateProvider.LoadOrder)
+                            .WriteAsync();
                         
                         AppendLog($"Saved plugin: {outputPluginPath}.", false, true);
 
