@@ -3,6 +3,7 @@ using System.IO;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Assets;
+using Mutagen.Bethesda.Plugins.Binary.Parameters;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Plugins.Utility;
@@ -803,7 +804,10 @@ public class Patcher : OptionalUIModule
 
                         _environmentStateProvider.OutputMod.ModHeader.Description = PluginDescriptionSignature;
                         
-                        _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath);
+                        _environmentStateProvider.OutputMod.WriteToBinary(outputPluginPath, new BinaryWriteParameters
+                        {
+                            MastersListOrdering = new MastersListOrderingByLoadOrder(_environmentStateProvider.LoadOrder)
+                        });
                         
                         AppendLog($"Saved plugin: {outputPluginPath}.", false, true);
 
