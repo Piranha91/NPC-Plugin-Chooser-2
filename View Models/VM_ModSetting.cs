@@ -87,6 +87,9 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     [Reactive] public string HandleInjectedOverridesToolTip { get; set; } = ModSetting.DefaultRecordInjectionToolTip;
 
     [Reactive] public RecordOverrideHandlingMode? OverrideRecordOverrideHandlingMode { get; set; }
+    [Reactive] public ObservableCollection<string> Keywords { get; set; } = new();
+    private const string DefaultKeywordsToolTip = "Add Keyword records that will be applied to all NPCs receiving appearances from this mod.";
+    [ObservableAsProperty] public string KeywordsToolTip { get; }
 
     public IEnumerable<KeyValuePair<RecordOverrideHandlingMode?, string>> RecordOverrideHandlingModes { get; }
         = new[]
@@ -188,6 +191,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     public ReactiveCommand<string, Unit> RemoveMugshotFolderPathCommand { get; }
     public ReactiveCommand<Unit, Unit> UnlinkMugshotDataCommand { get; }
     public ReactiveCommand<Unit, Unit> SetResourcePluginsCommand { get; }
+    public ReactiveCommand<Unit, Unit> SetKeywordsCommand { get; }
     public ReactiveCommand<Unit, Unit> DeleteCommand { get; }
     public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
 
@@ -244,6 +248,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         AvailablePluginsForNpcs = new Dictionary<FormKey, List<ModKey>>(model.AvailablePluginsForNpcs);
         AmbiguousNpcFormKeys = new HashSet<FormKey>(model.AmbiguousNpcFormKeys);
         NpcFormKeysToNotifications = new(model.NpcFormKeysToNotifications);
+        Keywords = new ObservableCollection<string>(model.Keywords ?? new HashSet<string>());
         _isLoadingFromModel = false;
     }
 
@@ -488,6 +493,24 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                 }
             })
             .DisposeWith(_disposables);
+        
+        this.WhenAnyValue(x => x.Keywords)
+            .Select(keywords =>
+            {
+                if (keywords is null)
+                    return Observable.Return(DefaultKeywordsToolTip);
+
+                return Observable.FromEventPattern<NotifyCollectionChangedEventHandler, NotifyCollectionChangedEventArgs>(
+                        h => keywords.CollectionChanged += h,
+                        h => keywords.CollectionChanged -= h)
+                    .StartWith((EventPattern<NotifyCollectionChangedEventArgs>?)null)
+                    .Select(_ => keywords.Count > 0 
+                        ? $"Keywords: {string.Join(", ", keywords)}" 
+                        : DefaultKeywordsToolTip);
+            })
+            .Switch()
+            .ToPropertyEx(this, x => x.KeywordsToolTip, initialValue: DefaultKeywordsToolTip, scheduler: RxApp.MainThreadScheduler)
+            .DisposeWith(_disposables);
 
         // --- Command Initializations ---
         AddFolderPathCommand = ReactiveCommand.CreateFromTask(AddFolderPathAsync).DisposeWith(_disposables);
@@ -506,6 +529,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         SetResourcePluginsCommand = ReactiveCommand.Create(SetResourcePlugins).DisposeWith(_disposables);
         SetResourcePluginsCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing mod '{DisplayName}': {ExceptionLogger.GetExceptionStack(ex)}"))
+            .DisposeWith(_disposables);
+        SetKeywordsCommand = ReactiveCommand.Create(SetKeywords).DisposeWith(_disposables);
+        SetKeywordsCommand.ThrownExceptions
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error setting keywords for mod '{DisplayName}': {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
         DeleteCommand = ReactiveCommand.Create(Delete, this.WhenAnyValue(x => x.CanDelete)).DisposeWith(_disposables);
         DeleteCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error executing DeleteCommand: {ExceptionLogger.GetExceptionStack(ex)}"))
@@ -643,6 +670,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             PluginsWithOverrideRecords = _pluginsWithOverrideRecords,
 
             NpcFormKeysToNotifications = NpcFormKeysToNotifications,
+            Keywords = new HashSet<string>(Keywords),
             LastKnownState = LastKnownState
         };
         return model;
@@ -2247,6 +2275,36 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     {
         var effectiveMode = OverrideRecordOverrideHandlingMode ?? _lazySettingsVm.Value.SelectedRecordOverrideHandlingMode;
         IsMaxNestedIntervalDepthVisible = effectiveMode != RecordOverrideHandlingMode.Ignore;
+    }
+    
+    /// <summary>
+    /// Opens a dialog for the user to manage keywords for this mod setting.
+    /// </summary>
+    private void SetKeywords()
+    {
+        // Gather all unique keywords from other mod settings
+        var otherKeywords = _parentVm.AllModSettings
+            .Where(m => m != this)
+            .SelectMany(m => m.Keywords)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var window = new KeywordSelectionWindow();
+        window.Initialize(DisplayName, Keywords, otherKeywords);
+        
+        // Find the currently active window to set as the owner
+        window.Owner = System.Windows.Application.Current.Windows.OfType<Window>().SingleOrDefault(x => x.IsActive);
+
+        window.ShowDialog();
+
+        if (window.HasChanged)
+        {
+            Keywords.Clear();
+            foreach (var keyword in window.GetKeywords().OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+            {
+                Keywords.Add(keyword);
+            }
+        }
     }
 
     #region Drag and Drop Logic

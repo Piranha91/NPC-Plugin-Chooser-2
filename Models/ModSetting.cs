@@ -27,6 +27,7 @@ public class ModSetting
     public bool HasAlteredMergeLogic { get; set; } = false; 
     public bool HandleInjectedRecords { get; set; } = false;
     public bool HasAlteredHandleInjectedRecordsLogic { get; set; } = false;
+    public HashSet<string> Keywords { get; set; } = new();
     
     [JsonIgnore]
     public static string DefaultRecordInjectionToolTip =

@@ -453,6 +453,12 @@
                                                         Margin="5 0 0 0"
                                                         ToolTip="If checked, the patcher will search for and merge in records that are injected. This can potentially make patching take longer."
                                                         Visibility="{Binding MergeInDependencyRecordsVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <Button Content="Set Keywords"
+                                                    Command="{Binding SetKeywordsCommand}"
+                                                    Padding="5,2"
+                                                    Margin="10,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    ToolTip="{Binding KeywordsToolTip}"/>
                                         </StackPanel>
                                     </WrapPanel>
                                      
