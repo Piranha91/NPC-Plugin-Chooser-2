@@ -2,6 +2,7 @@
 using System.IO;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Allocators;
 using Mutagen.Bethesda.Plugins.Assets;
 using Mutagen.Bethesda.Plugins.Binary.Parameters;
 using Mutagen.Bethesda.Plugins.Cache;
@@ -95,6 +96,9 @@ public class Patcher : OptionalUIModule
             ResetProgress();
             return;
         }
+        
+        _environmentStateProvider.CurrentAllocator = new TextFileFormKeyAllocator(_environmentStateProvider.OutputMod, _environmentStateProvider.GetAllocatorPath());
+        _environmentStateProvider.OutputMod.SetAllocator(_environmentStateProvider.CurrentAllocator);
 
         if (!_modSettingsMap.Any())
         {
@@ -808,6 +812,9 @@ public class Patcher : OptionalUIModule
                             .ToPath(outputPluginPath)
                             .WithLoadOrder(_environmentStateProvider.LoadOrder)
                             .WriteAsync();
+                        
+                        _environmentStateProvider.CurrentAllocator?.Commit();
+                        _environmentStateProvider.CurrentAllocator?.Dispose();
                         
                         AppendLog($"Saved plugin: {outputPluginPath}.", false, true);
 

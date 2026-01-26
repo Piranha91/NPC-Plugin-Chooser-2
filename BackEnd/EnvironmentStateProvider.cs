@@ -11,6 +11,7 @@ using System.Reactive.Subjects;
 using System.Reflection;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Allocators;
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
@@ -32,6 +33,7 @@ public class EnvironmentStateProvider : ReactiveObject
     public DirectoryPath InternalDataPath { get; set; }
     public DirectoryPath DataFolderPath { get; private set; }
     public ISkyrimMod OutputMod { get; set; }
+    public TextFileFormKeyAllocator? CurrentAllocator { get; set; }
     public HashSet<ModKey> BaseGamePlugins => Implicits.Get(SkyrimVersion.ToGameRelease()).BaseMasters.ToHashSet();
     public HashSet<ModKey> CreationClubPlugins { get; set; } = new();
     public ModKey AbsoluteBasePlugin = ModKey.FromFileName("Skyrim.esm");
@@ -244,5 +246,12 @@ public class EnvironmentStateProvider : ReactiveObject
         }
 
         return false;
+    }
+
+    public string GetAllocatorPath()
+    {
+        string pluginName = Path.GetFileNameWithoutExtension(OutputPluginName);
+        string allocatorName = "Allocator_" + pluginName;
+        return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, allocatorName) + ".txt";
     }
 }
