@@ -31,6 +31,8 @@ public class Patcher : OptionalUIModule
     private Dictionary<string, ModSetting> _modSettingsMap;
     private string _currentRunOutputAssetPath = string.Empty;
 
+    private Dictionary<string, IKeywordGetter> _generatedKeywords = new();
+
     private bool _clearOutputDirectoryOnRun = true;
 
     public const string ALL_NPCS_GROUP = VM_Run.ALL_NPCS_GROUP;
@@ -62,6 +64,8 @@ public class Patcher : OptionalUIModule
         await _bsaHandler.PopulateBsaContentPathsAsync(_settings.ModSettings,
             _environmentStateProvider.SkyrimVersion.ToGameRelease());
         AppendLog("Finished Pre-Indexing BSA file paths.", false, true);
+        
+        _generatedKeywords.Clear();
     }
 
     public Dictionary<string, ModSetting> BuildModSettingsMap()
@@ -110,6 +114,7 @@ public class Patcher : OptionalUIModule
             if (isFirstIteration)
             {
                 _assetHandler.Initialize(); // asset handler should only be reinitialized once regardless of how many output plugins there are.
+                GenerateKeywords();
             }
 
             _recordDeltaPatcher.Reinitialize(true);
@@ -593,7 +598,6 @@ public class Patcher : OptionalUIModule
                                                 _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                                 break;
                                         }
-
                                         break;
                                     default:
                                         AppendLog(
@@ -724,6 +728,9 @@ public class Patcher : OptionalUIModule
 
                                         break;
                                 }
+                                
+                                ApplyKeywords(patchNpc, appearanceModSetting.Keywords);
+
                             }
                             else
                             {
@@ -1206,5 +1213,59 @@ public class Patcher : OptionalUIModule
         if (npc == null) return false;
         return !npc.Template.IsNull &&
                npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits);
+    }
+
+    private IKeywordGetter GetoOrCreateKeyword(string keyword)
+    {
+        if (_generatedKeywords.TryGetValue(keyword, out var keywordGetter) && keywordGetter != null)
+        {
+            return keywordGetter;
+        }
+        
+        //var newKeyword = new Keyword(_environmentStateProvider.OutputMod, keyword);
+        var newKeyword = _environmentStateProvider.OutputMod.Keywords.AddNew(keyword);
+        newKeyword.EditorID = keyword;
+        _generatedKeywords.Add(keyword, newKeyword);
+        return newKeyword;
+    }
+    
+    // Generates all used keywords in the first pass to ensure that in a split mod, the first generated plugin gets
+    // all of the keywords.
+    private void GenerateKeywords()
+    {
+        var keywordStrings = _settings
+            .ModSettings
+            .SelectMany(x => x.Keywords)
+            .Distinct()
+            .ToHashSet();
+
+        foreach (var k in keywordStrings)
+        {
+            GetoOrCreateKeyword(k);
+        }
+    }
+    
+    private void ApplyKeywords(Npc patchNpc, IEnumerable<string> keywords)
+    {
+        if (_settings.UseSkyPatcherMode)
+        {
+            _skyPatcherInterface.ApplyKeywords(patchNpc.FormKey, keywords);
+        }
+        else
+        {
+            foreach (var kw in keywords)
+            {
+                var keyword = GetoOrCreateKeyword(kw);
+                if (patchNpc.Keywords == null)
+                {
+                    patchNpc.Keywords = new();
+                }
+
+                if (!patchNpc.Keywords.Contains(keyword))
+                {
+                    patchNpc.Keywords.Add(keyword);
+                }
+            }
+        }
     }
 }

@@ -178,6 +178,23 @@ public class SkyPatcherInterface : OptionalUIModule
         string outfitStr = FormatFormKeyForSkyPatcher(outfitFk);
         npcContainer.ActionStrings.Add($"outfitDefault={outfitStr}");
     }
+    
+    public void ApplyKeywords(FormKey surrogateFk, IEnumerable<string> keywords)
+    {
+        if (!TryGetOriginalFormKey(surrogateFk, out var applyTo))
+        {
+            return;
+        }
+        
+        if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
+        {
+            return;
+        }
+        
+        var kwStr = string.Join(",", keywords);
+        
+        npcContainer.ActionStrings.Add($"keywordsToAdd = {kwStr}");
+    }
 
     public bool WriteIni(string outputRootFolder)
     {
