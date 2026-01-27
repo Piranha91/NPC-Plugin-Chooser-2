@@ -493,7 +493,22 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                 string propName = srcPropKvp.Key; PropertyInfo srcProp = srcPropKvp.Value;
                 if (!destinationAllProps.TryGetValue(propName, out var destProp)) continue; 
                 
-                object? sourceValue = srcProp.GetValue(source); Type destPropType = destProp.PropertyType; 
+                object? sourceValue;
+                try
+                {
+                    sourceValue = srcProp.GetValue(source);
+                }
+                catch (NotSupportedException)
+                {
+                    // Some Mutagen interface properties are not supported on all concrete types
+                    continue;
+                }
+                catch (TargetInvocationException ex) when (ex.InnerException is NotSupportedException)
+                {
+                    // NotSupportedException can also be wrapped in TargetInvocationException
+                    continue;
+                }
+                Type destPropType = destProp.PropertyType;
 
                 if (sourceValue == null) { // Handle setting null
                     if (destProp.CanWrite) destProp.SetValue(destination, null);
