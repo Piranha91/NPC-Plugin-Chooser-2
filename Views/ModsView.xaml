@@ -861,6 +861,23 @@
                         </StackPanel>
                     </GroupBox>
                     
+                    <GroupBox Header="CotR" Margin="5,2" Padding="5,2">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="Keyword:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBox Text="{Binding CotRKeyword, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                     Width="80" VerticalAlignment="Center" Margin="0,0,5,0"
+                                     ToolTip="The keyword that will be applied to Charmers of the Reach mods and used to identify them for RSV exclusion."/>
+                            <Button Content="Auto-Apply CotR Keyword" 
+                                    Command="{Binding ApplyCotRKeywordCommand}" 
+                                    Margin="0,0,5,0" Padding="5,2" 
+                                    ToolTip="Reads CotR_Plugins.txt from the application directory and applies the CotR keyword to all mod settings containing a matching plugin. The default list includes many popular CotR-based replacers but can be edited manually."/>
+                            <Button Content="Write RSV Exclusion" 
+                                    Command="{Binding WriteRsvExclusionCommand}" 
+                                    Padding="5,2" 
+                                    ToolTip="Adds the 'RSVignore' keyword to all mod settings that have the CotR keyword, preventing RSV from overwriting their skin textures."/>
+                        </StackPanel>
+                    </GroupBox>
+                    
                     <GroupBox Margin="5,2" Padding="5,2"
                               Visibility="{Binding ShowSourcePluginControls, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">

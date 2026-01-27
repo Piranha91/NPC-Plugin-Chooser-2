@@ -128,6 +128,10 @@
       <Resource Include="Resources\SelectedSourcePlugin.png" />
       <None Remove="Resources\RedDragon.png" />
       <Resource Include="Resources\RedDragon.png" />
+      <None Remove="Resources\CotR_Plugins.txt" />
+      <Content Include="Resources\CotR_Plugins.txt">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
     </ItemGroup>
 
 </Project>

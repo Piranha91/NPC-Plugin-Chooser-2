@@ -115,6 +115,10 @@ public class VM_Mods : ReactiveObject
     public ReactiveCommand<Unit, Unit> BatchDisableInjectedRecordsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchEnableCopyAssetsCommand { get; }
     public ReactiveCommand<Unit, Unit> BatchDisableCopyAssetsCommand { get; }
+    
+    [Reactive] public string CotRKeyword { get; set; }
+    public ReactiveCommand<Unit, Unit> ApplyCotRKeywordCommand { get; }
+    public ReactiveCommand<Unit, Unit> WriteRsvExclusionCommand { get; }
 
     // --- NEW: Zoom Control Properties & Commands for ModsView ---
     [Reactive] public double ModsViewZoomLevel { get; set; }
@@ -214,6 +218,16 @@ public class VM_Mods : ReactiveObject
         {
             ScrollableMessageBox.ShowError($"Error cancelling mugshot load: {ExceptionLogger.GetExceptionStack(ex)}");
         }).DisposeWith(_disposables);
+        
+        CotRKeyword = _settings.CotRKeyword;
+        this.WhenAnyValue(x => x.CotRKeyword)
+            .Skip(1)
+            .Throttle(TimeSpan.FromMilliseconds(300))
+            .Subscribe(keyword =>
+            {
+                _settings.CotRKeyword = keyword ?? "CotR";
+            })
+            .DisposeWith(_disposables);
 
         // --- NEW: Initialize Zoom Settings from _settings ---
         ModsViewZoomLevel =
@@ -584,6 +598,15 @@ public class VM_Mods : ReactiveObject
         BatchDisableMergeInCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disabling merge-in: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
         BatchEnableCopyAssetsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error enabling asset copying: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
         BatchDisableCopyAssetsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error disabling asset copying: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        ApplyCotRKeywordCommand = ReactiveCommand.Create(ApplyCotRKeyword).DisposeWith(_disposables);
+        ApplyCotRKeywordCommand.ThrownExceptions
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error applying CotR keyword: {ExceptionLogger.GetExceptionStack(ex)}"))
+            .DisposeWith(_disposables);
+
+        WriteRsvExclusionCommand = ReactiveCommand.Create(WriteRsvExclusion).DisposeWith(_disposables);
+        WriteRsvExclusionCommand.ThrownExceptions
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error writing RSV exclusion: {ExceptionLogger.GetExceptionStack(ex)}"))
+            .DisposeWith(_disposables);
         
         ApplyFilters(); // Apply initial filter
     }
@@ -3208,6 +3231,113 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     public CancellationToken GetCurrentMugshotLoadToken()
     {
         return _mugshotLoadingCts?.Token ?? CancellationToken.None;
+    }
+
+    private void ApplyCotRKeyword()
+    {
+        var baseDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources");
+        var pluginListFiles = Directory.GetFiles(baseDirectory, "CotR_Plugins*.txt");
+
+        if (!pluginListFiles.Any())
+        {
+            ScrollableMessageBox.ShowError($"No CotR_Plugins*.txt files found in:\n{baseDirectory}");
+            return;
+        }
+
+        const string confirmMessage =
+            "This will apply the Charmers of the Reach keyword to all mods containing a plugin listed in CotR_Plugins.txt.\n\n" +
+            "NPC Plugin Chooser 2 ships with a default CotR_Plugins.txt file containing many of the popular CotR-based replacer mods (in the Resources folder). " +
+            "However, it may be out of date or missing some of the less popular ones.\n\n" +
+            "You can edit this file in NotePad or add the keyword manually to any Mods that aren't in the default list using the Set Keywords button.\n\n" +
+            "You can also create additional files (e.g., CotR_Plugins_Custom.txt) to add more plugins without modifying the original file, making your changes update-safe.\n\n" +
+            "Do you want to proceed?";
+
+        if (!ScrollableMessageBox.Confirm(confirmMessage, "Apply CotR Keyword"))
+        {
+            return;
+        }
+
+        var cotRPluginFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var filePath in pluginListFiles)
+        {
+            foreach (var line in File.ReadLines(filePath))
+            {
+                var trimmed = line.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                {
+                    cotRPluginFileNames.Add(trimmed);
+                }
+            }
+        }
+
+        if (!cotRPluginFileNames.Any())
+        {
+            ScrollableMessageBox.ShowWarning("CotR_Plugins*.txt files are empty or contain no valid entries.");
+            return;
+        }
+
+        var keyword = CotRKeyword?.Trim();
+        if (string.IsNullOrEmpty(keyword))
+        {
+            ScrollableMessageBox.ShowError("CotR Keyword cannot be empty.");
+            return;
+        }
+
+        var taggedModNames = new List<string>();
+        foreach (var modSetting in _allModSettingsInternal)
+        {
+            bool hasMatch = modSetting.CorrespondingModKeys
+                .Any(modKey => cotRPluginFileNames.Contains(modKey.FileName.String));
+
+            if (hasMatch)
+            {
+                if (!modSetting.Keywords.Contains(keyword, StringComparer.OrdinalIgnoreCase))
+                {
+                    modSetting.Keywords.Add(keyword);
+                    taggedModNames.Add(modSetting.DisplayName);
+                }
+            }
+        }
+
+        if (taggedModNames.Any())
+        {
+            var message = $"Applied '{keyword}' keyword to {taggedModNames.Count} mod setting(s):\n\n" +
+                          string.Join("\n", taggedModNames.OrderBy(n => n));
+            ScrollableMessageBox.Show(message, "CotR Keyword Applied");
+        }
+        else
+        {
+            ScrollableMessageBox.Show(
+                "No new mod settings were tagged. All matching mods may already have the keyword.",
+                "CotR Keyword Applied");
+        }
+    }
+
+    private void WriteRsvExclusion()
+    {
+        var keyword = CotRKeyword?.Trim();
+        if (string.IsNullOrEmpty(keyword))
+        {
+            ScrollableMessageBox.ShowError("CotR Keyword cannot be empty.");
+            return;
+        }
+
+        const string rsvIgnoreKeyword = "RSVignore";
+        int matchCount = 0;
+
+        foreach (var modSetting in _allModSettingsInternal)
+        {
+            if (modSetting.Keywords.Contains(keyword, StringComparer.OrdinalIgnoreCase))
+            {
+                if (!modSetting.Keywords.Contains(rsvIgnoreKeyword, StringComparer.OrdinalIgnoreCase))
+                {
+                    modSetting.Keywords.Add(rsvIgnoreKeyword);
+                    matchCount++;
+                }
+            }
+        }
+
+        ScrollableMessageBox.Show($"Added '{rsvIgnoreKeyword}' keyword to {matchCount} mod setting(s) that had the '{keyword}' keyword.");
     }
 
     public string GetStatusReport()

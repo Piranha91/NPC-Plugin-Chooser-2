@@ -1,0 +1,48 @@
+﻿Refined Volkihars.esp
+Refined Auri.esp
+BjornRefined.esp
+KaidanRefined.esp
+GorrRefined.esp
+GoreRefined.esp
+LucienRefined.esp
+SofiaRefined.esp
+RemielRefined.esp
+SeranaRefined.esp
+0SkeeverRefined.esp
+GeneralTulliusRefined.esp
+MarcurioRefined.esp
+MarcusTheKnightRefined.esp
+Vigilant NPCs Refined.esp
+Glenmoril NPCs Refined.esp
+KW_UnslaadNPCsRefined.esp
+MOSRefined.esp
+MOSRefinedDawnguard.esp
+MOSRefinedDragonborn.esp
+MOSUniqueNPC.esp
+TSOSRefined.esp
+TSOSRefinedDawnguard.esp
+TSOSRefinedDragonborn.esp
+TSOSRefinedHearthfire.esp
+TSOSRefinedStenvar.esp
+TSOSMFMiraak.esp
+0TSOSRefinedDwarfofSkyrim.esp
+TSOS_Apachii_Store_Patch.esp
+TSOS_Aesir_Weaponry_Patch.esp
+TDOSRefined.esp
+Karura's Companions Refined.esp
+Karura's Dark Brotherhood Refined.esp
+Karura's Cicero Refined.esp
+Karura's Brynjolf Refined.esp
+Karura's Thieves Guild Refined.esp
+Karura's Daedric Princes Refined.esp
+Karura's Ordinary People Refined.esp
+Karura's Ordinary People Refined BUVARP Patch.esp
+Mythos Followers Refined.esp
+TaliesinReplacer.esp // 
+LucienReplacer.esp
+0SeranaReplacer.esp
+0LordHarkonandValericaReplacer.esp
+0BrynjolfReplacer.esp
+0KaidanReplacer.esp
+0AuriReplacer.esp
+Gentle Auri.esp

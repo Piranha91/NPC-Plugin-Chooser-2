@@ -67,6 +67,7 @@ public class Settings
     public bool SuppressPopupWarnings { get; set; } = false;
     public Language? LocalizationLanguage { get; set; } = null;
     public bool IsDarkMode { get; set; } = false;
+    public string CotRKeyword { get; set; } = "CotR";
     
     // --- NPC Display ---
     public bool ShowNpcNameInList { get; set; } = true;
