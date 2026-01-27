@@ -819,55 +819,62 @@
                 </StackPanel>
 
                 <WrapPanel VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,2,10,2">
-                        
-                        <TextBlock Text="Batch Actions:" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        <Button Content="Refresh All" Command="{Binding RefreshAllModsCommand}" Margin="5,0,0,0" Padding="5,2" ToolTip="Completely re-scans all mod folders and rebuilds the mod list."/>
-                        <CheckBox Content="Rescan Non-Appearance Mods"
-                                  IsChecked="{Binding ShouldRescanNonAppearanceMods, Mode=TwoWay}"
-                                  VerticalAlignment="Center"
-                                  Margin="5,0,0,0"
-                                  ToolTip="If checked, the 'Refresh All' action will also clear the cache of non-appearance mods and attempt to re-import them."/>
+                    <TextBlock Text="Batch Actions:" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,2,5,2"/>
 
-                        <Border Background="Gray" Width="1" Margin="10,4" VerticalAlignment="Stretch" />
+                    <GroupBox Header="Refresh" Margin="5,2" Padding="5,2">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="Refresh All" Command="{Binding RefreshAllModsCommand}" Padding="5,2" ToolTip="Completely re-scans all mod folders and rebuilds the mod list."/>
+                            <CheckBox Content="Rescan Non-Appearance Mods"
+                                      IsChecked="{Binding ShouldRescanNonAppearanceMods, Mode=TwoWay}"
+                                      VerticalAlignment="Center"
+                                      Margin="5,0,0,0"
+                                      ToolTip="If checked, the 'Refresh All' action will also clear the cache of non-appearance mods and attempt to re-import them."/>
+                        </StackPanel>
+                    </GroupBox>
 
-                        <Button Content="Include" Command="{Binding BatchIncludeOutfitsCommand}" Margin="0,0,5,0" Padding="5,2" ToolTip="Enable 'Include Outfits' for ALL mods."/>
-                        <Button Content="Exclude" Command="{Binding BatchExcludeOutfitsCommand}" Padding="5,2" ToolTip="Disable 'Include Outfits' for ALL mods."/>
-                        <TextBlock Text="Outfits" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                    <GroupBox Header="Outfits" Margin="5,2" Padding="5,2">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="Include" Command="{Binding BatchIncludeOutfitsCommand}" Margin="0,0,5,0" Padding="5,2" ToolTip="Enable 'Include Outfits' for ALL mods."/>
+                            <Button Content="Exclude" Command="{Binding BatchExcludeOutfitsCommand}" Padding="5,2" ToolTip="Disable 'Include Outfits' for ALL mods."/>
+                        </StackPanel>
+                    </GroupBox>
 
-                        <Border Background="Gray" Width="1" Margin="10,4" VerticalAlignment="Stretch" />
+                    <GroupBox Header="Injected Record Search" Margin="5,2" Padding="5,2">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="Enable" Command="{Binding BatchEnableInjectedRecordsCommand}" Margin="0,0,5,0" Padding="5,2" ToolTip="Enable 'Search for Injected Records' for ALL mods."/>
+                            <Button Content="Disable" Command="{Binding BatchDisableInjectedRecordsCommand}" Padding="5,2" ToolTip="Disable 'Search for Injected Records' for ALL mods."/>
+                        </StackPanel>
+                    </GroupBox>
 
-                        <Button Content="Enable" Command="{Binding BatchEnableInjectedRecordsCommand}" Margin="0,0,5,0" Padding="5,2" ToolTip="Enable 'Search for Injected Records' for ALL mods."/>
-                        <Button Content="Disable" Command="{Binding BatchDisableInjectedRecordsCommand}" Padding="5,2" ToolTip="Disable 'Search for Injected Records' for ALL mods."/>
-                        <TextBlock Text="Injected Record Search" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                    <GroupBox Header="Merge-in" Margin="5,2" Padding="5,2">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="On" Command="{Binding BatchEnableMergeInCommand}" Margin="0,0,5,0" Padding="5,2" ToolTip="Enable 'Merge Dependencies' for all mods not flagged as non-appearance."/>
+                            <Button Content="Force" Command="{Binding BatchForceEnableMergeInCommand}" Margin="0,0,5,0" Padding="5,2" ToolTip="Enable 'Merge Dependencies' for ALL mods (use with caution)."/>
+                            <Button Content="Off" Command="{Binding BatchDisableMergeInCommand}" Padding="5,2" ToolTip="Disable 'Merge Dependencies' for ALL mods."/>
+                        </StackPanel>
+                    </GroupBox>
 
-                        <Border Background="Gray" Width="1" Margin="10,4" VerticalAlignment="Stretch" />
-                        
-                        <Button Content="On" Command="{Binding BatchEnableMergeInCommand}" Margin="0,0,5,0" Padding="5,2" ToolTip="Enable 'Merge Dependencies' for all mods not flagged as non-appearance."/>
-                        <Button Content="Force" Command="{Binding BatchForceEnableMergeInCommand}" Margin="0,0,5,0" Padding="5,2" ToolTip="Enable 'Merge Dependencies' for ALL mods (use with caution)."/>
-                        <Button Content="Off" Command="{Binding BatchDisableMergeInCommand}" Padding="5,2" ToolTip="Disable 'Merge Dependencies' for ALL mods."/>
-                        <TextBlock Text="Merge-in" VerticalAlignment="Center" Margin="5,0,0,0"/>
-                        
-                        <Border Background="Gray" Width="1" Margin="10,4" VerticalAlignment="Stretch" />
-
-                        <Button Content="Enable" Command="{Binding BatchEnableCopyAssetsCommand}" Margin="0,0,5,0" Padding="5,2" ToolTip="Enable 'Copy Assets' for ALL mods."/>
-                        <Button Content="Disable" Command="{Binding BatchDisableCopyAssetsCommand}" Padding="5,2" ToolTip="Disable 'Copy Assets' for ALL mods."/>
-                        <TextBlock Text="Asset Copying" VerticalAlignment="Center" Margin="5,0,0,0"/>
-
-                    </StackPanel>
+                    <GroupBox Header="Asset Copying" Margin="5,2" Padding="5,2">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="Enable" Command="{Binding BatchEnableCopyAssetsCommand}" Margin="0,0,5,0" Padding="5,2" ToolTip="Enable 'Copy Assets' for ALL mods."/>
+                            <Button Content="Disable" Command="{Binding BatchDisableCopyAssetsCommand}" Padding="5,2" ToolTip="Disable 'Copy Assets' for ALL mods."/>
+                        </StackPanel>
+                    </GroupBox>
                     
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,10,2"
-                                Visibility="{Binding ShowSourcePluginControls, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <TextBlock Text="Source Plugin for Ambiguous NPCs:" VerticalAlignment="Center" Margin="10,0,5,0"
-                           ToolTip="Select a plugin to be the default source for NPCs found in multiple plugins within this mod setting."/>
-                        <ComboBox ItemsSource="{Binding AvailableSourcePluginsForSelectedMod}" 
-                              SelectedItem="{Binding SelectedSourcePluginForDisambiguation, Mode=TwoWay}"
-                              DisplayMemberPath="FileName"
-                              MinWidth="150" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                        <Button Content="Set as Source Plugin" Command="{Binding SetGlobalSourcePluginCommand}" 
-                            Padding="5,2" VerticalAlignment="Center"
-                            ToolTip="Set the selected plugin as the primary source for all NPCs in this mod setting that are found in multiple plugins."/>
-                    </StackPanel>
+                    <GroupBox Margin="5,2" Padding="5,2"
+                              Visibility="{Binding ShowSourcePluginControls, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="Source Plugin for Ambiguous NPCs:" VerticalAlignment="Center" Margin="0,0,5,0"
+                                       ToolTip="Select a plugin to be the default source for NPCs found in multiple plugins within this mod setting."/>
+                            <ComboBox ItemsSource="{Binding AvailableSourcePluginsForSelectedMod}" 
+                                      SelectedItem="{Binding SelectedSourcePluginForDisambiguation, Mode=TwoWay}"
+                                      DisplayMemberPath="FileName"
+                                      MinWidth="150" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <Button Content="Set as Source Plugin" Command="{Binding SetGlobalSourcePluginCommand}" 
+                                    Padding="5,2" VerticalAlignment="Center"
+                                    ToolTip="Set the selected plugin as the primary source for all NPCs in this mod setting that are found in multiple plugins."/>
+                        </StackPanel>
+                    </GroupBox>
                 </WrapPanel>
             </DockPanel>
         </Border>
