@@ -954,7 +954,7 @@ public class Auxilliary : IDisposable
         using var _ = ContextualPerformanceTracer.Trace("Auxilliary.TryGetOrAddGenericRecordAsOverride");
         if(TryGetPatchRecordGroup(recordGetter, outputMod, out var group, out exceptionString) && group != null)
         {
-            duplicateRecord = group.GetOrAddAsOverride(recordGetter);
+            duplicateRecord = GetOrAddAsOverrideMixIns.GetOrAddAsOverride(group, recordGetter);
             return true;
         }
         duplicateRecord = null;
@@ -978,27 +978,6 @@ public class Auxilliary : IDisposable
         } 
     }
     
-    public static bool TryGetPatchRecordGroup(Type getterType, ISkyrimModGetter outputMod, out dynamic? group)
-    {
-        bool success = false;
-        group = null;
-        try
-        {
-            group = outputMod.GetTopLevelGroup(getterType);
-        }
-        catch
-        {
-
-        }
-
-        if (group == null)
-        {
-            group = outputMod.GetTopLevelGroup(GetLoquiType(getterType));
-        }
-
-        return group != null;
-    }
-
     public static Type? GetRecordGetterType(IMajorRecordGetter recordGetter)
     {
         try
@@ -1010,18 +989,6 @@ public class Auxilliary : IDisposable
             return null;
         }
         
-    }
-
-    public static Type? GetLoquiType(Type type)
-    {
-        try
-        {
-            return LoquiRegistration.GetRegister(type).GetterType;
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     public void CollectShallowAssetLinks(IEnumerable<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> recordContexts, List<IAssetLinkGetter> assetLinks)
