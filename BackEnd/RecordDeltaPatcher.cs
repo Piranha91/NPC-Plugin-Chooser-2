@@ -9,9 +9,11 @@ using System.Linq;
 using System.Reflection;
 using DynamicData;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Skyrim;
 using Mutagen.Bethesda.Strings;
 using Noggog;
-using NPC_Plugin_Chooser_2.Models; // For Noggog.ExtendedList<>
+using NPC_Plugin_Chooser_2.Models;
+using Activator = System.Activator; // For Noggog.ExtendedList<>
 
 namespace NPC_Plugin_Chooser_2.BackEnd
 {
@@ -34,6 +36,8 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         private readonly Dictionary<FormKey, Dictionary<string, object?>> _patchedValues = new();
         // A separate, internal log for delta patching warnings.
         private readonly List<string> _internalLog = new();
+        // NPCs that trigger errors
+        private readonly HashSet<string> _affectedNpcLogStrings = new();
         // Context fields for logging
         private IMajorRecordGetter? _currentRecordContext;
         private ModKey? _currentModKeyContext;
@@ -55,6 +59,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             if (clearLog)
             {
                 _internalLog.Clear();
+                _affectedNpcLogStrings.Clear();
             }
             // Optionally clear reflection caches if needed:
             // _getterCache.Clear();
@@ -74,12 +79,26 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             {
                 // Place the log file in the same directory as the application executable.
                 string logPath = Path.Combine(AppContext.BaseDirectory, "DeltaPatchingLog.txt");
-                
+        
                 // Write all captured warnings to the file.
                 File.WriteAllLines(logPath, _internalLog);
 
+                // Build the summary message with affected NPCs
+                var summaryBuilder = new System.Text.StringBuilder();
+                summaryBuilder.Append($"Some exceptions were encountered during delta patching. This is probably not a problem, but if an NPC with handled overrides does not look right in-game, see the logged exceptions at {logPath}");
+        
+                if (_affectedNpcLogStrings.Any())
+                {
+                    summaryBuilder.AppendLine();
+                    summaryBuilder.AppendLine("Affected NPCs:");
+                    foreach (var npcLogString in _affectedNpcLogStrings.OrderBy(s => s))
+                    {
+                        summaryBuilder.AppendLine($"  - {npcLogString}");
+                    }
+                }
+
                 // Append a single, clean summary message to the main log.
-                AppendLog($"Some exceptions were encountered during delta patching. This is probably not a problem, but if an NPC with handled overrides does not look right in-game, see the logged exceptions at {logPath}", false, true);
+                AppendLog(summaryBuilder.ToString(), false, true);
             }
             catch (Exception ex)
             {
@@ -449,6 +468,12 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         {
             string logContext = $"[{Auxilliary.GetLogString(_currentRecordContext, _settings.LocalizationLanguage, true)} | {_currentModKeyContext}]";
             _internalLog.Add($"{logContext} {message}");
+    
+            // Track affected NPC for summary
+            if (_currentRecordContext is INpcGetter)
+            {
+                _affectedNpcLogStrings.Add(Auxilliary.GetLogString(_currentRecordContext, _settings.LocalizationLanguage, true));
+            }
         }
 
         /// <summary>
