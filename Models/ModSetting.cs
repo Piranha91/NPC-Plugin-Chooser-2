@@ -45,7 +45,7 @@ public class ModSetting
 
     public RecordOverrideHandlingMode? ModRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
     public int MaxNestedIntervalDepth { get; set; } = 2;
-
+    public bool IncludeAllOverrides { get; set; } = false;
     public HashSet<ModKey> PluginsWithOverrideRecords { get; set; } = new();
     public bool IncludeOutfits { get; set; } = false;
     public bool CopyAssets { get; set; } = true;

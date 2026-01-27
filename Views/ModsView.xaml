@@ -498,28 +498,44 @@
                                          </ComboBox>
                                      </StackPanel>
                                      
-                                     <StackPanel Grid.Row="8" Orientation="Horizontal" Visibility="{Binding IsMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                         <TextBlock Text="Max Nested Search Layers"
-                                                    VerticalAlignment="Center">
-                                             <TextBlock.ToolTip>
-                                                 <ToolTip>
-                                                     <TextBlock TextWrapping="Wrap" Width="300">
-                                                         Controls how many layers deep the patcher will search for overridden records between finding relevant records.
-                                                         <LineBreak/><LineBreak/>
-                                                         Higher values may find more obscure overrides but will significantly increase patching time.
-                                                         <LineBreak/><LineBreak/>
-                                                         Leave blank to use the default. Set to 0 to only check direct dependencies.
-                                                     </TextBlock>
-                                                 </ToolTip>
-                                             </TextBlock.ToolTip>
-                                         </TextBlock>
+                                     <StackPanel Grid.Row="8" Orientation="Horizontal" 
+                                                Visibility="{Binding IsOverrideHandlingControlsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <!-- Max Nested Search Layers - hidden when Include All is checked -->
+                                        <StackPanel Orientation="Horizontal" 
+                                                    Visibility="{Binding IsMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <TextBlock Text="Max Nested Search Layers"
+                                                       VerticalAlignment="Center">
+                                                <TextBlock.ToolTip>
+                                                    <ToolTip>
+                                                        <TextBlock TextWrapping="Wrap" Width="300">
+                                                            Controls how many layers deep the patcher will search for overridden records between finding relevant records.
+                                                            <LineBreak/><LineBreak/>
+                                                            Higher values may find more obscure overrides but will significantly increase patching time.
+                                                            <LineBreak/><LineBreak/>
+                                                            Leave blank to use the default. Set to 0 to only check direct dependencies.
+                                                        </TextBlock>
+                                                    </ToolTip>
+                                                </TextBlock.ToolTip>
+                                            </TextBlock>
 
-                                         <TextBox Text="{Binding MaxNestedIntervalDepth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"
-                                                  MinWidth="40"
-                                                  VerticalAlignment="Center"
-                                                  Margin="5 0 0 0"
-                                                  ToolTip="Default is 2. Leave blank to use default."/>
-                                     </StackPanel>
+                                            <TextBox Text="{Binding MaxNestedIntervalDepth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"
+                                                     MinWidth="40"
+                                                     VerticalAlignment="Center"
+                                                     Margin="5 0 0 0"
+                                                     ToolTip="Default is 2. Leave blank to use default."/>
+                                        </StackPanel>
+                                        
+                                        <!-- Include All checkbox - always visible when this row is visible -->
+                                        <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
+                                            <TextBlock Text="Include All" 
+                                                       VerticalAlignment="Center"
+                                                       ToolTip="If checked, grabs ALL override records from the plugins instead of traversing from NPC records. Use with caution."/>
+                                            <CheckBox IsChecked="{Binding IncludeAllOverrides, Mode=TwoWay}"
+                                                      VerticalAlignment="Center"
+                                                      Margin="5,0,0,0"
+                                                      ToolTip="If checked, grabs ALL override records from the plugins instead of traversing from NPC records. Use with caution - this may include irrelevant overrides."/>
+                                        </StackPanel>
+                                    </StackPanel>
 
                                      <Button Grid.Row="9" Grid.Column="0"
                                              Content="Delete"

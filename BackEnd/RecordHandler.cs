@@ -288,6 +288,175 @@ public class RecordHandler
         return dependencyContexts.ToHashSet();;
     }
     
+    /// <summary>
+    /// Gets ALL override records from the specified plugins, regardless of NPC traversal.
+    /// This is a simpler but less targeted approach compared to DeepGetOverriddenDependencyRecords.
+    /// </summary>
+    /// <param name="relevantContextKeys">The ModKeys of plugins to search for overrides.</param>
+    /// <param name="searchedFormKeys">FormKeys that have already been processed (will be updated).</param>
+    /// <param name="fallBackModFolderNames">Fallback folder paths for plugin loading.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A HashSet of all override record contexts found in the specified plugins.</returns>
+    public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
+        GetAllOverriddenDependencyRecords(List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys, 
+            HashSet<string> fallBackModFolderNames, CancellationToken ct)
+    {
+        using var _ = ContextualPerformanceTracer.Trace("RecordHandler.GetAllOverriddenDependencyRecords");
+        
+        foreach (var modKey in relevantContextKeys)
+        {
+            TryAddPluginToCaches(modKey, fallBackModFolderNames);
+        }
+        
+        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyContexts = new();
+        
+        foreach (var modKey in relevantContextKeys)
+        {
+            ct.ThrowIfCancellationRequested();
+            
+            if (!_modLinkCaches.TryGetValue(modKey, out var linkCache) || linkCache == null)
+            {
+                continue;
+            }
+            
+            // Get the plugin to iterate through all its records
+            if (!_pluginProvider.TryGetPlugin(modKey, fallBackModFolderNames, out var plugin) || plugin == null)
+            {
+                continue;
+            }
+            
+            // Iterate through all major records in the plugin
+            foreach (var record in plugin.EnumerateMajorRecords())
+            {
+                ct.ThrowIfCancellationRequested();
+                
+                // Skip if already processed
+                if (searchedFormKeys.Contains(record.FormKey))
+                {
+                    continue;
+                }
+                
+                // Check if this is an override (FormKey's ModKey is NOT one of the appearance mod's plugins)
+                if (!relevantContextKeys.Contains(record.FormKey.ModKey))
+                {
+                    // This is an override record (originates from outside the mod's plugins)
+                    searchedFormKeys.Add(record.FormKey);
+    
+                    try
+                    {
+                        var context = linkCache.ResolveContext(record.FormKey, record.Registration.GetterType);
+                        if (context != null)
+                        {
+                            dependencyContexts.Add(context);
+                        }
+                    }
+                    catch
+                    {
+                        // Skip records that can't be resolved to a context
+                    }
+                }
+            }
+        }
+    
+    return dependencyContexts;
+}
+    
+    /// <summary>
+    /// Duplicates ALL override records from the specified plugins as new records.
+    /// This is a simpler but less targeted approach compared to DuplicateInOverrideRecords.
+    /// </summary>
+    public HashSet<IMajorRecord>
+        DuplicateAllOverrideRecordsAsNew(IMajorRecord rootRecord, List<ModKey> relevantContextKeys, 
+            ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords,
+            HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings, 
+            HashSet<FormKey> searchedFormKeys, CancellationToken ct)
+    {
+        using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateAllOverrideRecordsAsNew");
+        HashSet<IMajorRecord> mergedInRecords = new();
+        
+        foreach (var modKey in relevantContextKeys)
+        {
+            TryAddPluginToCaches(modKey, fallBackModFolderNames);
+        }
+
+        Dictionary<FormKey, FormKey> remappedOverrideMap = new();
+        
+        foreach (var modKey in relevantContextKeys)
+        {
+            ct.ThrowIfCancellationRequested();
+            
+            if (!_modLinkCaches.TryGetValue(modKey, out var linkCache) || linkCache == null)
+            {
+                continue;
+            }
+            
+            if (!_pluginProvider.TryGetPlugin(modKey, fallBackModFolderNames, out var plugin) || plugin == null)
+            {
+                continue;
+            }
+            
+            foreach (var record in plugin.EnumerateMajorRecords())
+            {
+                ct.ThrowIfCancellationRequested();
+                
+                // Skip if already processed
+                if (searchedFormKeys.Contains(record.FormKey))
+                {
+                    continue;
+                }
+                
+                // Check if this is an override (FormKey's ModKey is NOT one of the appearance mod's plugins)
+                if (!relevantContextKeys.Contains(record.FormKey.ModKey))
+                {
+                    searchedFormKeys.Add(record.FormKey);
+    
+                    // Skip if already mapped
+                    if (_currentDuplicateInMappings.ContainsKey(record.FormKey))
+                    {
+                        remappedOverrideMap.TryAdd(record.FormKey, _currentDuplicateInMappings[record.FormKey]);
+                        continue;
+                    }
+                    
+                    try
+                    {
+                        var context = linkCache.ResolveContext(record.FormKey, record.Registration.GetterType);
+                        if (context != null)
+                        {
+                            var duplicate = context.DuplicateIntoAsNewRecord(_environmentStateProvider.OutputMod);
+                            duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + modKey.FileName;
+                            _currentDuplicateInMappings.Add(record.FormKey, duplicate.FormKey);
+                            remappedOverrideMap.Add(record.FormKey, duplicate.FormKey);
+                            mergedInRecords.Add(duplicate);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        exceptionStrings.Add($"Failed to duplicate {record.FormKey}: {ex.Message}");
+                    }
+                }
+            }
+        }
+        
+        // Remap links in all merged records and root record
+        foreach (var newRecord in mergedInRecords.And(rootRecord).ToArray())
+        {
+            newRecord.RemapLinks(remappedOverrideMap);
+        }
+        
+        // Now merge in any new records that the overrides may reference
+        var importSourceModKeys = relevantContextKeys
+            .Distinct()
+            .Where(k => k != npcSourceModKey)
+            .ToHashSet();
+        var newMergedSubRecords = DuplicateFromOnlyReferencedGetters(_environmentStateProvider.OutputMod, 
+            mergedInRecords, importSourceModKeys, rootContextKey, true, handleInjectedRecords, 
+            fallBackModFolderNames, ref exceptionStrings);
+        
+        mergedInRecords.UnionWith(newMergedSubRecords);
+        
+        return mergedInRecords;
+    }
+    
     private void CollectOverriddenDependencyRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
         HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey> searchedFormKeys, CancellationToken ct)
     {
