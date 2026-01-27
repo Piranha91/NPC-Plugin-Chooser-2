@@ -343,6 +343,16 @@ public class Patcher : OptionalUIModule
                             var mergeInDependencyRecords = appearanceModSetting?.MergeInDependencyRecords ?? false;
                             var recordOverrideHandlingMode = appearanceModSetting?.ModRecordOverrideHandlingMode ??
                                                              _settings.DefaultRecordOverrideHandlingMode;
+                            
+                            // When mod setting uses "Default" mode (null), use the global defaults
+                            // Otherwise use the mod-specific settings
+                            var useDefaultOverrideSettings = appearanceModSetting?.ModRecordOverrideHandlingMode == null;
+                            var maxNestedIntervalDepth = useDefaultOverrideSettings 
+                                ? _settings.DefaultMaxNestedIntervalDepth 
+                                : appearanceModSetting.MaxNestedIntervalDepth;
+                            var includeAllOverrides = useDefaultOverrideSettings 
+                                ? _settings.DefaultIncludeAllOverrides 
+                                : appearanceModSetting.IncludeAllOverrides;
 
                             if (isFaceGenOnly)
                             {
@@ -479,7 +489,7 @@ public class Patcher : OptionalUIModule
                                                 HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord,
                                                     IMajorRecordGetter>> dependencyContexts;
 
-                                                if (appearanceModSetting.IncludeAllOverrides)
+                                                if (includeAllOverrides)
                                                 {
                                                     AppendLog(
                                                         $"  Using 'Include All' mode - collecting all overrides from plugins",
@@ -498,7 +508,7 @@ public class Patcher : OptionalUIModule
                                                             appearanceModSetting.CorrespondingModKeys,
                                                             searchedOverrideFormKeysForGroup,
                                                             currentModFolderPaths,
-                                                            appearanceModSetting.MaxNestedIntervalDepth,
+                                                            maxNestedIntervalDepth,
                                                             ct));
                                                 }
 
@@ -611,7 +621,7 @@ public class Patcher : OptionalUIModule
                                                 List<string> overrideExceptionStrings = new();
                                                 HashSet<IMajorRecord> mergedInRecords;
 
-                                                if (appearanceModSetting.IncludeAllOverrides)
+                                                if (includeAllOverrides)
                                                 {
                                                     AppendLog(
                                                         $"  Using 'Include All' mode - duplicating all overrides from plugins as new records",
@@ -633,7 +643,7 @@ public class Patcher : OptionalUIModule
                                                         appearanceModSetting.CorrespondingModKeys,
                                                         appearanceModKey.Value, patchNpc.FormKey.ModKey,
                                                         appearanceModSetting.HandleInjectedRecords,
-                                                        appearanceModSetting.MaxNestedIntervalDepth,
+                                                        maxNestedIntervalDepth,
                                                         currentModFolderPaths,
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
@@ -729,7 +739,7 @@ public class Patcher : OptionalUIModule
                                                 HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord,
                                                     IMajorRecordGetter>> dependencyContexts;
 
-                                                if (appearanceModSetting.IncludeAllOverrides)
+                                                if (includeAllOverrides)
                                                 {
                                                     AppendLog(
                                                         $"  Using 'Include All' mode - collecting all overrides from plugins",
@@ -748,7 +758,7 @@ public class Patcher : OptionalUIModule
                                                             appearanceModSetting.CorrespondingModKeys,
                                                             searchedOverrideFormKeysForGroup,
                                                             currentModFolderPaths,
-                                                            appearanceModSetting.MaxNestedIntervalDepth,
+                                                            maxNestedIntervalDepth,
                                                             ct));
                                                 }
 
@@ -793,7 +803,7 @@ public class Patcher : OptionalUIModule
                                                 List<string> overrideExceptionStrings = new();
                                                 HashSet<IMajorRecord> mergedInRecords;
 
-                                                if (appearanceModSetting.IncludeAllOverrides)
+                                                if (includeAllOverrides)
                                                 {
                                                     AppendLog(
                                                         $"  Using 'Include All' mode - duplicating all overrides from plugins as new records",
@@ -815,7 +825,7 @@ public class Patcher : OptionalUIModule
                                                         appearanceModSetting.CorrespondingModKeys,
                                                         appearanceModKey.Value, patchNpc.FormKey.ModKey,
                                                         appearanceModSetting.HandleInjectedRecords,
-                                                        appearanceModSetting.MaxNestedIntervalDepth,
+                                                        maxNestedIntervalDepth,
                                                         currentModFolderPaths,
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,

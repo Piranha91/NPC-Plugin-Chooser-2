@@ -108,6 +108,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public PatchingMode SelectedPatchingMode { get; set; }
     public IEnumerable<PatchingMode> PatchingModes { get; } = Enum.GetValues(typeof(PatchingMode)).Cast<PatchingMode>();
     [Reactive] public RecordOverrideHandlingMode SelectedRecordOverrideHandlingMode { get; set; }
+    [Reactive] public int DefaultMaxNestedIntervalDepth { get; set; }
+    [Reactive] public bool DefaultIncludeAllOverrides { get; set; }
+    [Reactive] public bool IsDefaultOverrideHandlingControlsVisible { get; set; }
+    [Reactive] public bool IsDefaultMaxNestedIntervalDepthVisible { get; set; }
 
     public IEnumerable<RecordOverrideHandlingMode> RecordOverrideHandlingModes { get; } =
         Enum.GetValues(typeof(RecordOverrideHandlingMode)).Cast<RecordOverrideHandlingMode>();
@@ -281,6 +285,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         AppendTimestampToOutputDirectory = _model.AppendTimestampToOutputDirectory;
         SelectedPatchingMode = _model.PatchingMode;
         SelectedRecordOverrideHandlingMode = _model.DefaultRecordOverrideHandlingMode;
+        DefaultMaxNestedIntervalDepth = _model.DefaultMaxNestedIntervalDepth;
+        DefaultIncludeAllOverrides = _model.DefaultIncludeAllOverrides;
+        UpdateDefaultOverrideVisibility(); // Initialize visibility state
         AddMissingNpcsOnUpdate = _model.AddMissingNpcsOnUpdate;
         BatFilePreCommands = _model.BatFilePreCommands;
         BatFilePostCommands = _model.BatFilePostCommands;
@@ -538,6 +545,38 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 // Persist the final value to the model. This will be the original value if the
                 // user confirmed, or it will be re-triggered with 'Ignore' if they cancelled.
                 _model.DefaultRecordOverrideHandlingMode = mode;
+                UpdateDefaultOverrideVisibility();
+            })
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.DefaultMaxNestedIntervalDepth)
+            .Skip(1)
+            .Subscribe(value => _model.DefaultMaxNestedIntervalDepth = value)
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.DefaultIncludeAllOverrides)
+            .Skip(1)
+            .Subscribe(value =>
+            {
+                if (value && !SuppressPopupWarnings)
+                {
+                    const string message =
+                        "WARNING: The 'Include All' option will grab ALL override records from the selected plugins, " +
+                        "not just those linked to the NPCs being processed.\n\n" +
+                        "This method might include overrides that aren't relevant to the NPCs being selected.\n\n" +
+                        "This option should only be used if:\n" +
+                        "• You are selecting ALL NPCs in this mod, OR\n" +
+                        "• As a fallback if you can't set the right Max Nested Search Layers without your computer running out of memory and crashing.\n\n" +
+                        "Are you sure you want to enable this option?";
+
+                    if (!ScrollableMessageBox.Confirm(message, "Confirm Include All Overrides"))
+                    {
+                        Observable.Timer(TimeSpan.FromMilliseconds(1), RxApp.MainThreadScheduler)
+                            .Subscribe(_ => { DefaultIncludeAllOverrides = false; });
+                    }
+                }
+                _model.DefaultIncludeAllOverrides = DefaultIncludeAllOverrides;
+                UpdateDefaultOverrideVisibility();
             })
             .DisposeWith(_disposables);
 
@@ -1983,6 +2022,14 @@ Options:
         sb.AppendLine("SkyPatcher Mode: " + UseSkyPatcherMode);
         sb.AppendLine("AutoEslIfy: " + AutoEslIfy);
         return sb.ToString();
+    }
+
+    private void UpdateDefaultOverrideVisibility()
+    {
+        // The entire row is visible when mode is not Ignore
+        IsDefaultOverrideHandlingControlsVisible = SelectedRecordOverrideHandlingMode != RecordOverrideHandlingMode.Ignore;
+        // Max Nested is visible only if mode is not Ignore AND "Include All" is not checked
+        IsDefaultMaxNestedIntervalDepthVisible = SelectedRecordOverrideHandlingMode != RecordOverrideHandlingMode.Ignore && !DefaultIncludeAllOverrides;
     }
 
     public void Dispose()

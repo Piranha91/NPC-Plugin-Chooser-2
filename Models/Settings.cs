@@ -41,6 +41,8 @@ public class Settings
     // Default Overrideable Settings
 
     public RecordOverrideHandlingMode DefaultRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
+    public int DefaultMaxNestedIntervalDepth { get; set; } = 2;
+    public bool DefaultIncludeAllOverrides { get; set; } = false;
 
     // UI / Other
     public bool ShowNpcDescriptions { get; set; } = true;
