@@ -257,32 +257,216 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         }
 
         /// <summary>
-        /// Represents a difference for a list property.
+        /// Represents a difference for a list property, tracking items added and removed.
         /// </summary>
         public class ListDiff : PropertyDiff
         {
             /// <summary>
-            /// Gets the items that should be in the list.
+            /// Gets the items that were added (present in source, not in target/base).
             /// </summary>
-            public IReadOnlyList<object?> Items { get; }
+            public IReadOnlyList<object?> AddedItems { get; }
+            
+            /// <summary>
+            /// Gets the items that were removed (present in target/base, not in source).
+            /// </summary>
+            public IReadOnlyList<object?> RemovedItems { get; }
 
             /// <summary>
             /// Initializes a new instance of the <see cref="ListDiff"/> class.
+            /// Calculates which items were added and which were removed.
             /// </summary>
             /// <param name="propertyName">The name of the list property.</param>
-            /// <param name="sourceList">The source list containing the new items.</param>
-            public ListDiff(string propertyName, IEnumerable sourceList) : base(propertyName) { Items = sourceList.Cast<object?>().ToList(); }
+            /// <param name="sourceList">The source/modified list (the override).</param>
+            /// <param name="targetList">The target/base list to compare against (the master).</param>
+            public ListDiff(string propertyName, IEnumerable sourceList, IEnumerable? targetList) : base(propertyName) 
+            { 
+                var sourceItems = sourceList.Cast<object?>().ToList();
+                var targetItems = targetList?.Cast<object?>().ToList() ?? new List<object?>();
+                
+                // Calculate additions: items in source that are not in target
+                // Using a custom equality check that handles FormLinks and other Mutagen types
+                AddedItems = sourceItems.Where(s => !ContainsEquivalent(targetItems, s)).ToList();
+                
+                // Calculate removals: items in target that are not in source
+                RemovedItems = targetItems.Where(t => !ContainsEquivalent(sourceItems, t)).ToList();
+            }
+            
+            /// <summary>
+            /// Checks if a collection contains an item equivalent to the given value.
+            /// Handles FormLinks and other types that may need special equality comparison.
+            /// </summary>
+            private static bool ContainsEquivalent(IEnumerable<object?> collection, object? item)
+            {
+                if (item == null)
+                {
+                    return collection.Any(x => x == null);
+                }
+                
+                foreach (var existing in collection)
+                {
+                    if (existing == null) continue;
+                    
+                    // Try direct equality first
+                    if (item.Equals(existing))
+                    {
+                        return true;
+                    }
+                    
+                    // For FormLinks, compare by FormKey
+                    if (item is IFormLinkGetter itemLink && existing is IFormLinkGetter existingLink)
+                    {
+                        if (itemLink.FormKey == existingLink.FormKey)
+                        {
+                            return true;
+                        }
+                    }
+                }
+                
+                return false;
+            }
 
             /// <summary>
-            /// Applies the list difference by clearing the destination list and adding all items from this diff.
+            /// Applies the list difference by adding new items and removing deleted items
+            /// from the destination list, preserving items that were already present.
             /// </summary>
             /// <param name="destinationRecord">The record to apply the changes to.</param>
             /// <param name="destPropInfo">The <see cref="PropertyInfo"/> for the list property on the destination record.</param>
             /// <param name="patcher">The instance of the <see cref="RecordDeltaPatcher"/>.</param>
-            public override void Apply(MajorRecord destinationRecord, PropertyInfo destPropInfo, RecordDeltaPatcher patcher) { 
-                patcher.CopyListProperty(Items, destPropInfo, destinationRecord, new HashSet<object>(ReferenceEqualityComparer.Instance)); 
+            public override void Apply(MajorRecord destinationRecord, PropertyInfo destPropInfo, RecordDeltaPatcher patcher) 
+            { 
+                object? destListObj = destPropInfo.GetValue(destinationRecord);
+                
+                if (destListObj == null)
+                {
+                    // If the destination list is null, we need to create it
+                    // Fall back to the behavior of creating the list and adding added items
+                    patcher.CopyListProperty(AddedItems, destPropInfo, destinationRecord, new HashSet<object>(ReferenceEqualityComparer.Instance));
+                    return;
+                }
+                
+                if (destListObj is not IList destList)
+                {
+                    patcher.LogInternal($"Warning (ListDiff.Apply): Property '{PropertyName}' is not IList. Type: {destListObj?.GetType().FullName}. Skipping.");
+                    return;
+                }
+                
+                // Get the item type for the list
+                Type listActualType = destList.GetType();
+                if (!listActualType.IsGenericType || listActualType.GetGenericArguments().Length == 0)
+                {
+                    patcher.LogInternal($"Warning (ListDiff.Apply): Dest list '{PropertyName}' not generic. Type: {listActualType.FullName}. Skipping.");
+                    return;
+                }
+                Type destItemType = listActualType.GetGenericArguments()[0];
+                
+                // Step 1: Remove items that were deleted in the delta
+                // We iterate backwards to safely remove while iterating
+                for (int i = destList.Count - 1; i >= 0; i--)
+                {
+                    var existingItem = destList[i];
+                    if (ContainsEquivalent(RemovedItems, existingItem))
+                    {
+                        destList.RemoveAt(i);
+                    }
+                }
+                
+                // Step 2: Add items that were added in the delta (if not already present)
+                var processedObjects = new HashSet<object>(ReferenceEqualityComparer.Instance);
+                foreach (var itemToAdd in AddedItems)
+                {
+                    // Check if this item is already in the destination list
+                    bool alreadyExists = false;
+                    foreach (var existing in destList)
+                    {
+                        if (existing != null && itemToAdd != null)
+                        {
+                            if (existing.Equals(itemToAdd))
+                            {
+                                alreadyExists = true;
+                                break;
+                            }
+                            
+                            // For FormLinks, compare by FormKey
+                            if (existing is IFormLinkGetter existingLink && itemToAdd is IFormLinkGetter addLink)
+                            {
+                                if (existingLink.FormKey == addLink.FormKey)
+                                {
+                                    alreadyExists = true;
+                                    break;
+                                }
+                            }
+                        }
+                        else if (existing == null && itemToAdd == null)
+                        {
+                            alreadyExists = true;
+                            break;
+                        }
+                    }
+                    
+                    if (alreadyExists)
+                    {
+                        continue;
+                    }
+                    
+                    // Add the item, converting types if necessary
+                    if (itemToAdd == null)
+                    {
+                        if (!destItemType.IsValueType || Nullable.GetUnderlyingType(destItemType) != null)
+                        {
+                            destList.Add(null);
+                        }
+                        continue;
+                    }
+                    
+                    Type itemSourceType = itemToAdd.GetType();
+                    if (destItemType.IsAssignableFrom(itemSourceType))
+                    {
+                        destList.Add(itemToAdd);
+                    }
+                    else
+                    {
+                        // Try to convert the item type (e.g., from getter to setter type)
+                        object? convertedItem = patcher.TryCreateInstanceFromGetter(destItemType, itemToAdd);
+                        if (convertedItem != null)
+                        {
+                            if (!patcher.IsSimpleType(destItemType))
+                            {
+                                patcher.CopyPropertiesRecursively(itemToAdd, convertedItem, processedObjects);
+                            }
+                            destList.Add(convertedItem);
+                        }
+                        else
+                        {
+                            if (destItemType.IsInterface || destItemType.IsAbstract)
+                            {
+                                patcher.LogInternal($"Error (ListDiff.Apply): Cannot create instance for list item interface/abstract '{destItemType.Name}'. Skipping item.");
+                                continue;
+                            }
+                            
+                            try
+                            {
+                                convertedItem = Activator.CreateInstance(destItemType);
+                                patcher.CopyPropertiesRecursively(itemToAdd, convertedItem, processedObjects);
+                                destList.Add(convertedItem);
+                            }
+                            catch (Exception ex)
+                            {
+                                patcher.LogInternal($"Error (ListDiff.Apply): Failed to add item to list '{PropertyName}'. {ex.Message}");
+                            }
+                        }
+                    }
+                }
             }
-            public override object? GetValue() => Items;
+            
+            /// <summary>
+            /// Returns the added items (for conflict detection purposes).
+            /// </summary>
+            public override object? GetValue() => AddedItems;
+            
+            /// <summary>
+            /// Indicates whether this diff represents any actual changes.
+            /// </summary>
+            public bool HasChanges => AddedItems.Any() || RemovedItems.Any();
         }
         #endregion
 
@@ -348,20 +532,38 @@ namespace NPC_Plugin_Chooser_2.BackEnd
                 bool treatAsListDiff = false;
                 if (sourceValue != null && !(sourceValue is string))
                 {
-                    if (sourceValue is IList) treatAsListDiff = true;
+                    // Check for both mutable and read-only list interfaces
+                    if (sourceValue is IList) 
+                    {
+                        treatAsListDiff = true;
+                    }
+                    else if (sourceValue is IEnumerable && !(sourceValue is IDictionary))
+                    {
+                        // Check if it's a generic IReadOnlyList<> or IEnumerable<> that looks like a list
+                        sourceType = sourceValue.GetType();
+                        if (sourceType.GetInterfaces().Any(i => 
+                                i.IsGenericType && 
+                                (i.GetGenericTypeDefinition() == typeof(IReadOnlyList<>) ||
+                                 i.GetGenericTypeDefinition() == typeof(IReadOnlyCollection<>))))
+                        {
+                            treatAsListDiff = true;
+                        }
+                    }
                 }
 
                 if (treatAsListDiff)
                 {
                     var sourceListForDiff = (IEnumerable)sourceValue!;
-                    var targetList = targetValue as IEnumerable; bool areEqual = false;
-                    if (targetList != null)
+                    var targetList = targetValue as IEnumerable;
+
+                    // Create the ListDiff with both source and target so it can compute additions/removals
+                    var listDiff = new ListDiff(propertyName, sourceListForDiff, targetList);
+
+                    // Only add if there are actual changes
+                    if (listDiff.HasChanges)
                     {
-                        var sourceObjList = sourceListForDiff.Cast<object?>().ToList();
-                        var targetObjList = targetList.Cast<object?>().ToList();
-                        if (sourceObjList.Count == targetObjList.Count) areEqual = sourceObjList.SequenceEqual(targetObjList);
+                        differences.Add(listDiff);
                     }
-                    if (!areEqual) differences.Add(new ListDiff(propertyName, sourceListForDiff));
                 }
                 else
                 {
