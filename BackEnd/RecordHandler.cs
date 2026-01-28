@@ -335,6 +335,11 @@ public class RecordHandler
                 {
                     continue;
                 }
+
+                if (record is INpcGetter)
+                {
+                    continue; // patcher has explicit logic to manually handle NPCs
+                }
                 
                 // Check if this is an override (FormKey's ModKey is NOT one of the appearance mod's plugins)
                 if (!relevantContextKeys.Contains(record.FormKey.ModKey))
