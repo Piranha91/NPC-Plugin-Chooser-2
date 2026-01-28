@@ -1347,7 +1347,15 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                         _ =>
                         {
                             Debug.WriteLine(
-                                $"VM_NpcSelectionBar.JumpToMod: Successfully triggered ShowMugshots for {targetModSetting.DisplayName}. VM_Mods will signal scroll.");
+                                $"VM_NpcSelectionBar.JumpToMod: Successfully triggered ShowMugshots for {targetModSetting.DisplayName}.");
+
+                            // *** THE FIX: Explicitly signal scroll after a small delay ***
+                            RxApp.MainThreadScheduler.Schedule(TimeSpan.FromMilliseconds(50), () =>
+                            {
+                                Debug.WriteLine(
+                                    $"VM_NpcSelectionBar.JumpToMod: Signaling scroll for {targetModSetting.DisplayName}.");
+                                modsVm.SignalScrollToMod(targetModSetting);
+                            });
                         },
                         ex =>
                         {

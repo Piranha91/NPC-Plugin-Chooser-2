@@ -38,10 +38,13 @@ namespace NPC_Plugin_Chooser_2.Views
 
             if (this.DataContext == null)
             {
-                try {
+                try
+                {
                     ViewModel = Locator.Current.GetService<VM_Mods>();
                     DataContext = this.ViewModel;
-                } catch (Exception ex) {
+                }
+                catch (Exception ex)
+                {
                     Debug.WriteLine($"Error resolving VM_Mods: {ex.Message}");
                 }
             }
@@ -61,91 +64,109 @@ namespace NPC_Plugin_Chooser_2.Views
                     .DisposeWith(d);
 
                 // From View (TextBox) to VM, with throttle
-                Observable.FromEventPattern<TextChangedEventArgs>(ZoomPercentageTextBoxMods, nameof(ZoomPercentageTextBoxMods.TextChanged))
+                Observable.FromEventPattern<TextChangedEventArgs>(ZoomPercentageTextBoxMods,
+                        nameof(ZoomPercentageTextBoxMods.TextChanged))
                     .Select(ep => ((TextBox)ep.Sender).Text)
-                    .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler) 
+                    .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler)
                     .ObserveOn(RxApp.MainThreadScheduler)
                     .Subscribe(text =>
                     {
                         Debug.WriteLine($"ModsView: ZoomPercentageTextBoxMods TextChanged to '{text}' (throttled)");
                         if (ViewModel != null)
                         {
-                            if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out double result))
+                            if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture,
+                                    out double result))
                             {
                                 ViewModel.ModsViewHasUserManuallyZoomed = true;
-                                double clampedResult = Math.Max(_minZoomPercentage, Math.Min(_maxZoomPercentage, result)); // Use field
-                                if (Math.Abs(ViewModel.ModsViewZoomLevel - clampedResult) > 0.001) 
+                                double clampedResult = Math.Max(_minZoomPercentage,
+                                    Math.Min(_maxZoomPercentage, result)); // Use field
+                                if (Math.Abs(ViewModel.ModsViewZoomLevel - clampedResult) > 0.001)
                                 {
-                                    Debug.WriteLine($"ModsView: Textbox updating VM.ModsViewZoomLevel to {clampedResult}");
+                                    Debug.WriteLine(
+                                        $"ModsView: Textbox updating VM.ModsViewZoomLevel to {clampedResult}");
                                     ViewModel.ModsViewZoomLevel = clampedResult;
                                 }
                             }
                             else if (!string.IsNullOrWhiteSpace(text))
                             {
                                 Debug.WriteLine($"ModsView: Textbox parse failed for '{text}', resetting to VM value.");
-                                ZoomPercentageTextBoxMods.Text = ViewModel.ModsViewZoomLevel.ToString("F2", CultureInfo.InvariantCulture);
+                                ZoomPercentageTextBoxMods.Text =
+                                    ViewModel.ModsViewZoomLevel.ToString("F2", CultureInfo.InvariantCulture);
                             }
                         }
                     })
                     .DisposeWith(d);
                 // --- End TextBox Zoom Level Binding ---
-                
+
                 _sizeChangedSubject
                     .Throttle(TimeSpan.FromMilliseconds(250), RxApp.MainThreadScheduler)
                     .ObserveOn(RxApp.MainThreadScheduler)
-                    .Subscribe(args => {
-                        Debug.WriteLine($"ModsView: _sizeChangedSubject (Throttled ScrollViewer.SizeChanged) triggered. New Size: {args.NewSize.Width}x{args.NewSize.Height}");
+                    .Subscribe(args =>
+                    {
+                        Debug.WriteLine(
+                            $"ModsView: _sizeChangedSubject (Throttled ScrollViewer.SizeChanged) triggered. New Size: {args.NewSize.Width}x{args.NewSize.Height}");
                         if (ViewModel != null && !ViewModel.ModsViewIsZoomLocked && !_userHasAdjustedSplitter)
                         {
                             ViewModel.ModsViewHasUserManuallyZoomed = false;
                         }
+
                         // Here, the ScrollViewer's size *has* changed, so we can directly refresh.
                         // No need for the extra invalidation of MainContentGridForSplitter,
                         // as this path is a *result* of layout changes, not a trigger for them in the same way.
                         RefreshMugshotImageSizes();
                     })
                     .DisposeWith(d);
-                
+
                 // Subscription to GridSplitter DragCompleted (NEW explicit refresh trigger)
                 Observable.FromEventPattern<DragCompletedEventArgs>(ColumnSplitter, nameof(GridSplitter.DragCompleted))
                     .ObserveOn(RxApp.MainThreadScheduler)
-                    .Subscribe(ep => {
+                    .Subscribe(ep =>
+                    {
                         _userHasAdjustedSplitter = true;
                         Debug.WriteLine("ModsView: ColumnSplitter_DragCompleted. User has adjusted.");
-                        if(ViewModel != null) ViewModel.ModsViewHasUserManuallyZoomed = true; // Keep user's intent
+                        if (ViewModel != null) ViewModel.ModsViewHasUserManuallyZoomed = true; // Keep user's intent
 
                         // Sequence: 1. Invalidate Grid, 2. Update Grid Layout, 3. Refresh Images
-                        Dispatcher.BeginInvoke(new Action(() => {
-                            Debug.WriteLine("ModsView: DragCompleted - Phase 1: Invalidating MainContentGridForSplitter.");
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            Debug.WriteLine(
+                                "ModsView: DragCompleted - Phase 1: Invalidating MainContentGridForSplitter.");
                             if (MainContentGridForSplitter.IsLoaded)
                             {
                                 MainContentGridForSplitter.InvalidateMeasure();
                                 MainContentGridForSplitter.InvalidateArrange(); // Invalidate both
-                                MainContentGridForSplitter.UpdateLayout();      // Force re-layout of the grid and its columns
+                                MainContentGridForSplitter
+                                    .UpdateLayout(); // Force re-layout of the grid and its columns
                             }
+
                             // Now that the grid owning the columns has hopefully updated,
                             // queue the image refresh to run after this.
-                            Dispatcher.BeginInvoke(new Action(() => {
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
                                 Debug.WriteLine("ModsView: DragCompleted - Phase 2: Calling RefreshMugshotImageSizes.");
                                 RefreshMugshotImageSizes();
                             }), DispatcherPriority.Background); // Or Loaded. Background is safer.
                         }), DispatcherPriority.ContextIdle); // Or even Send if you want it more immediate after drag.
                     })
                     .DisposeWith(d);
-                
+
                 this.BindCommand(ViewModel, vm => vm.ZoomInModsCommand, v => v.ZoomInButtonMods).DisposeWith(d);
                 this.BindCommand(ViewModel, vm => vm.ZoomOutModsCommand, v => v.ZoomOutButtonMods).DisposeWith(d);
-                this.Bind(ViewModel, vm => vm.ModsViewIsZoomLocked, v => v.LockZoomCheckBoxMods.IsChecked).DisposeWith(d);
-                this.BindCommand(ViewModel, vm => vm.ResetZoomModsCommand, v => v.ResetZoomModsButton).DisposeWith(d); // NEW BINDING
+                this.Bind(ViewModel, vm => vm.ModsViewIsZoomLocked, v => v.LockZoomCheckBoxMods.IsChecked)
+                    .DisposeWith(d);
+                this.BindCommand(ViewModel, vm => vm.ResetZoomModsCommand, v => v.ResetZoomModsButton)
+                    .DisposeWith(d); // NEW BINDING
 
 
                 // In ModsView.xaml.cs, inside the WhenActivated block
 
                 ViewModel.RefreshMugshotSizesObservable
                     .ObserveOn(RxApp.MainThreadScheduler)
-                    .Subscribe(_ => {
-                        Debug.WriteLine("ModsView: RefreshMugshotSizesObservable (from VM) triggered. Invalidating ScrollViewer measure.");
-        
+                    .Subscribe(_ =>
+                    {
+                        Debug.WriteLine(
+                            "ModsView: RefreshMugshotSizesObservable (from VM) triggered. Invalidating ScrollViewer measure.");
+
                         // This is now the ONLY action. We are telling the layout system that the
                         // ScrollViewer's size might be incorrect. The layout system will then
                         // re-measure it, and if its size changes, the MugshotScrollViewer_SizeChanged
@@ -156,60 +177,69 @@ namespace NPC_Plugin_Chooser_2.Views
                         }
                     })
                     .DisposeWith(d);
-                
+
                 if (ViewModel.CurrentModNpcMugshots != null && ViewModel.CurrentModNpcMugshots.Any())
                 {
                     RefreshMugshotImageSizes();
                 }
-                
+
                 // NEW: Subscribe to the ViewModel's scroll request observable for Mods
                 ViewModel.RequestScrollToModObservable
-            .Where(modToScrollTo => modToScrollTo != null) 
-            .ObserveOn(RxApp.MainThreadScheduler) 
-            .Subscribe(async modSettingToScrollTo => 
-            {
-                Debug.WriteLine($"ModsView.WhenActivated: Received scroll request for ModSetting {modSettingToScrollTo.DisplayName}");
-                try
-                {
-                    await Task.Delay(150); // Increased delay slightly for UI to settle
-                    ModSettingsItemsControl.UpdateLayout(); 
-
-                    if (ModSettingsItemsControl.Items.Contains(modSettingToScrollTo))
+                    .Where(modToScrollTo => modToScrollTo != null)
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(async modSettingToScrollTo =>
                     {
-                        var container = ModSettingsItemsControl.ItemContainerGenerator.ContainerFromItem(modSettingToScrollTo) as FrameworkElement;
-                        
-                        if (container != null)
+                        Debug.WriteLine(
+                            $"ModsView.WhenActivated: Received scroll request for ModSetting {modSettingToScrollTo.DisplayName}");
+                        try
                         {
-                            container.BringIntoView();
-                            Debug.WriteLine($"ModsView: Scrolled to {modSettingToScrollTo.DisplayName} using BringIntoView on container.");
-                        }
-                        else
-                        {
-                            Debug.WriteLine($"ModsView: Container for {modSettingToScrollTo.DisplayName} not found after initial UpdateLayout. Item might be virtualized or not yet rendered.");
-                            // For a plain ItemsControl that isn't virtualizing heavily, if the container is null,
-                            // it often means the item is simply not visible or not yet part of the visual tree.
-                            // If ModSettingsItemsControl *is* virtualizing (e.g. its ItemsPanel is VirtualizingStackPanel),
-                            // then this is a harder problem without ListBox.ScrollIntoView.
-                            // One advanced technique would be to calculate the approximate offset based on item index and average item height,
-                            // then use ScrollViewer.ScrollToVerticalOffset. This is complex.
+                            await Task.Delay(50); // Small delay to let UI settle after tab switch
+                            ModSettingsItemsControl.UpdateLayout();
 
-                            // As a simpler fallback, if your ItemsControl is NOT virtualizing,
-                            // this else block might mean the item isn't present or an issue with ItemContainerGenerator.
-                            // If it IS virtualizing, and BringIntoView on the container is the goal,
-                            // and the container is null, we are a bit stuck with simple methods.
+                            // Check if the item is the current VM selection (to avoid stale requests from BehaviorSubject replay)
+                            var currentVmSelectedMod = ViewModel.SelectedModForMugshots;
+                            if (modSettingToScrollTo != currentVmSelectedMod)
+                            {
+                                Debug.WriteLine(
+                                    $"ModsView: Scroll request for '{modSettingToScrollTo.DisplayName}' does not match current VM selection " +
+                                    $"'{currentVmSelectedMod?.DisplayName ?? "null"}'. Ignoring stale request.");
+                                return;
+                            }
+
+                            if (ModSettingsItemsControl.Items.Contains(modSettingToScrollTo))
+                            {
+                                // Use ScrollIntoView - this properly handles virtualized items!
+                                ModSettingsItemsControl.ScrollIntoView(modSettingToScrollTo);
+                                Debug.WriteLine(
+                                    $"ModsView: Called ScrollIntoView for {modSettingToScrollTo.DisplayName}.");
+
+                                // Optional: After scrolling, ensure visibility with BringIntoView on the container
+                                await Task.Delay(50); // Give ScrollIntoView time to work
+                                ModSettingsItemsControl.UpdateLayout();
+
+                                var container =
+                                    ModSettingsItemsControl.ItemContainerGenerator.ContainerFromItem(
+                                        modSettingToScrollTo) as FrameworkElement;
+                                if (container != null)
+                                {
+                                    container.BringIntoView();
+                                    Debug.WriteLine(
+                                        $"ModsView: Ensured visibility using BringIntoView on container for {modSettingToScrollTo.DisplayName}.");
+                                }
+                            }
+                            else
+                            {
+                                Debug.WriteLine(
+                                    $"ModsView: ModSetting {modSettingToScrollTo.DisplayName} not in ModSettingsItemsControl items when trying to scroll.");
+                            }
                         }
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"ModsView: ModSetting {modSettingToScrollTo.DisplayName} not in ModSettingsItemsControl items when trying to scroll.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"ModsView: Error during scroll attempt for {modSettingToScrollTo.DisplayName}: {ex.Message}");
-                }
-            })
-            .DisposeWith(d); 
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine(
+                                $"ModsView: Error during scroll attempt for {modSettingToScrollTo.DisplayName}: {ex.Message}");
+                        }
+                    })
+                    .DisposeWith(d);
             });
         }
 
