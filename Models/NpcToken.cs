@@ -9,5 +9,6 @@ namespace NPC_Plugin_Chooser_2.Models;
 public class NpcToken
 {
     public string CreationDate { get; set; } = string.Empty;
+    public List<ModKey> CreatedPlugins { get; set; } = new();
     public Dictionary<FormKey, NpcAppearanceData> ProcessedNpcs { get; set; } = new();
 }

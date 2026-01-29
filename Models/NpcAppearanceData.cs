@@ -9,4 +9,5 @@ public class NpcAppearanceData
 {
     public string ModName { get; set; } = string.Empty;
     public ModKey AppearancePlugin { get; set; }
+    public ModKey OutputPlugin { get; set; }
 }

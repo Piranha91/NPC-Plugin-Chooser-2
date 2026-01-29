@@ -394,11 +394,17 @@ public class VM_Run : ReactiveObject, IDisposable
                         // Call patcher with just the NPCs for this specific batch
                         await _patcher.RunPatchingLogic(batch.Selections, false, i == 0, token);
                     }
+                    
+                    // Write unified NPC token file after all batches are complete
+                    _patcher.WriteUnifiedTokenFile();
                 }
                 else
                 {
                     // If not splitting, run the patcher once with all valid selections
                     await _patcher.RunPatchingLogic(validSelections, false, true, token);
+                    
+                    // Write unified NPC token file after patching is complete
+                    _patcher.WriteUnifiedTokenFile();
                 }
                 // --- END: Splitting Logic ---
 
@@ -853,7 +859,7 @@ public class VM_Run : ReactiveObject, IDisposable
     /// * **Low allocation pressure** – Rather than concatenating strings
     ///   (<c>LogOutput += …</c>)—which reallocates the entire buffer each time—the method
     ///   maintains a single <see cref="StringBuilder"/> (<c>_logBuilder</c>).  
-    ///   Each scheduled delegate appends the new line and then publishes the builder’s
+    ///   Each scheduled delegate appends the new line and then publishes the builder's
     ///   current contents to the bound property, avoiding O(<i>n</i><sup>2</sup>) growth as
     ///   the log gets longer.
     ///
