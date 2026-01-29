@@ -1077,7 +1077,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                                         .Traits))
                                 {
                                     string message =
-                                        $"Discarded {Auxilliary.GetLogString(npcGetter, language)} from {DisplayName} because it has no FaceGen and does not use a template.";
+                                        $"Discarded {Auxilliary.GetLogString(npcGetter, language, true)} from {DisplayName} because it has no FaceGen and does not use a template.";
                                     //Debug.WriteLine(message);
                                     rejectionMessages.Add(message);
                                     continue;
@@ -1439,7 +1439,8 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         {
             if (looseFileCache.TryGetValue(modFolderPath, out var looseFilesInThisMod))
             {
-                if (looseFilesInThisMod.Contains(faceGenMeshRelPath) || looseFilesInThisMod.Contains(faceGenTexRelPath))
+                if (looseFilesInThisMod.Any(f => f.Equals(faceGenMeshRelPath, StringComparison.OrdinalIgnoreCase)) || 
+                    looseFilesInThisMod.Any(f => f.Equals(faceGenTexRelPath, StringComparison.OrdinalIgnoreCase)))
                 {
                     return true;
                 }
