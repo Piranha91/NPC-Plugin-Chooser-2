@@ -660,10 +660,11 @@ public class VM_Mods : ReactiveObject
 
         var faceGenCache = await CacheFaceGenPathsOnLoadAsync(new[] { newVm }, null);
 
+        var modFolderPaths = newVm.CorrespondingFolderPaths.ToHashSet();
         var plugins =
-            _pluginProvider.LoadPlugins(newVm.CorrespondingModKeys, newVm.CorrespondingFolderPaths.ToHashSet());
+            _pluginProvider.LoadPlugins(newVm.CorrespondingModKeys, modFolderPaths, out var loadedPaths);
         await Task.Run(() => newVm.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage));
-        _pluginProvider.UnloadPlugins(newVm.CorrespondingModKeys);
+        _pluginProvider.UnloadPlugins(loadedPaths);
     }
 
     /// <summary>
@@ -1158,7 +1159,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         // 3. Load the necessary plugins for this mod
         var modFolderPathsForVm = vmToRefresh.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var plugins = _pluginProvider.LoadPlugins(vmToRefresh.CorrespondingModKeys, modFolderPathsForVm);
+        var plugins = _pluginProvider.LoadPlugins(vmToRefresh.CorrespondingModKeys, modFolderPathsForVm, out var loadedPluginPaths);
 
         try
         {
@@ -1304,7 +1305,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         finally
         {
             // 6. Unload the plugins
-            _pluginProvider.UnloadPlugins(vmToRefresh.CorrespondingModKeys);
+            _pluginProvider.UnloadPlugins(loadedPluginPaths);
         }
     }
 
@@ -1525,7 +1526,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
 
             // Unload plugins used only in this task's scope.
-            _pluginProvider.UnloadPlugins(modKeysInFolder);
+            _pluginProvider.UnloadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
 
             splashReporter?.IncrementProgress($"Scanned: {modFolderName}");
         })).ToList();
@@ -1907,7 +1908,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 await Task.Run(async () =>
                 {
                     var modFolderPathsForVm = vm.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
-                    var plugins = _pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPathsForVm);
+                    var plugins = _pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPathsForVm, out var loadedPluginPathsForVm);
                     try
                     {
                         using (ContextualPerformanceTracer.Trace("RefreshNpcLists"))
@@ -1944,7 +1945,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     }
                     finally
                     {
-                        _pluginProvider.UnloadPlugins(vm.CorrespondingModKeys);
+                        _pluginProvider.UnloadPlugins(loadedPluginPathsForVm);
                         var currentAnalyzed = Interlocked.Increment(ref analyzedCount);
                         var progress = modSettingsToLogCount > 0
                             ? (double)currentAnalyzed / modSettingsToLogCount * 100.0
@@ -2686,10 +2687,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             var faceGenCache = await CacheFaceGenPathsOnLoadAsync(new[] { winner }, null);
 
+            var winnerFolderPaths = winner.CorrespondingFolderPaths.ToHashSet();
             var plugins = _pluginProvider.LoadPlugins(winner.CorrespondingModKeys,
-                winner.CorrespondingFolderPaths.ToHashSet());
+                winnerFolderPaths, out var loadedWinnerPaths);
             Task.Run(() => winner.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage));
-            _pluginProvider.UnloadPlugins(winner.CorrespondingModKeys);
+            _pluginProvider.UnloadPlugins(loadedWinnerPaths);
 
             // 2. Update NPC Selections (_model.SelectedAppearanceMods via _consistencyProvider)
             string loserName = loser.DisplayName;

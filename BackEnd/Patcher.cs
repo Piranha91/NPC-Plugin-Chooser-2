@@ -226,6 +226,7 @@ public class Patcher : OptionalUIModule
 
                     List<ModKey> modKeysForBatch = new();
                     HashSet<string> currentModFolderPaths = new();
+                    HashSet<string> loadedPluginPaths = new();
 
                     await Task.Run(() =>
                     {
@@ -236,7 +237,7 @@ public class Patcher : OptionalUIModule
                         {
                             modKeysForBatch.AddRange(currentModSetting.CorrespondingModKeys);
                             currentModFolderPaths = currentModSetting.CorrespondingFolderPaths.ToHashSet();
-                            _pluginProvider.LoadPlugins(modKeysForBatch, currentModFolderPaths);
+                            _pluginProvider.LoadPlugins(modKeysForBatch, currentModFolderPaths, out loadedPluginPaths);
                             _recordHandler.PrimeLinkCachesFor(modKeysForBatch, currentModFolderPaths);
                             _recordHandler.ResetMapping();
                             _bsaHandler.OpenBsaReadersFor(currentModSetting, _settings.SkyrimRelease.ToGameRelease());
@@ -909,10 +910,10 @@ public class Patcher : OptionalUIModule
                     var perfReport = ContextualPerformanceTracer.GenerateReportForGroup(npcGroup.Key, false);
                     AppendLog(perfReport, false, true);
 
-                    if (modKeysForBatch.Any())
+                    if (loadedPluginPaths.Any())
                     {
                         AppendLog($"--- Unloading resources for batch: {npcGroup.Key} ---", false, true);
-                        _pluginProvider.UnloadPlugins(modKeysForBatch);
+                        _pluginProvider.UnloadPlugins(loadedPluginPaths);
                         _recordHandler.ClearLinkCachesFor(modKeysForBatch);
                     }
                 }

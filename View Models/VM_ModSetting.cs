@@ -2305,7 +2305,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             }
         }
 
-        _pluginProvider.UnloadPlugins(CorrespondingModKeys);
+        _pluginProvider.UnloadPlugins(CorrespondingModKeys, existingPluginPaths);
     }
     
     private void UpdateIsMaxNestedIntervalDepthVisible()
