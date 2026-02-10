@@ -49,6 +49,7 @@ public class Settings
     public bool ShowSingleOptionNpcs { get; set; } = true;
     public bool ShowUnloadedNpcs { get; set; } = true;
     public bool ShowSkyPatcherTemplates { get; set; } = false;
+    public bool ShowUninstalledMods { get; set; } = true;
     public List<ModSetting> ModSettings { get; set; } = new();
     // The string is the ModName, the FormKey is the NPC within that mod providing the appearance.
     public Dictionary<FormKey, (string ModName, FormKey NpcFormKey)> SelectedAppearanceMods { get; set; } = new();

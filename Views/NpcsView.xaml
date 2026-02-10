@@ -122,32 +122,41 @@
                         <CheckBox Content="Unloaded NPCs" Margin="3,2,3,2" IsChecked="{Binding ShowUnloadedNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that are not part of your current load order (e.g., from mugshots or inactive mods)."/>
                         <CheckBox Content="SkyPatcher Templates" Margin="3,2,3,2" IsChecked="{Binding ShowSkyPatcherTemplates, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides dummy NPCs used by SkyPatcher NPC Replacers. You should not select an appearance for these dummy NPCs."/>
                         <CheckBox Content="Hidden Mods" Margin="3,2, 3, 2" IsChecked="{Binding ShowHiddenMods, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Toggle visibility of hidden appearance mods"/>
+                        <CheckBox Content="Uninstalled Mods" Margin="3,2,3,2" IsChecked="{Binding ShowUninstalledMods, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides mugshot-only appearance entries (mods without a corresponding data folder), including those from FaceFinder."/>
                         <CheckBox Content="NPC Descriptions" Margin="3,2,3,2" IsChecked="{Binding ShowNpcDescriptions, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If checked, shows descriptions for selected base game NPCs from online sources."/>
                     </StackPanel>
                 </GroupBox>
                 
-                <Button Content="Favs" Margin="10,2,5,2" Padding="5,2" VerticalAlignment="Center" Command="{Binding ShowFavoritesCommand}" ToolTip="Add an appearance from your list of favorite faces."/>
-
-                <Button Content="Get Choices from Load Order" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
-                        Command="{Binding ImportChoicesFromLoadOrderCommand}" ToolTip="Automatically select appearance mods for NPCs based on your current load order and loose file overrides."/>
-                <Button Content="Export My Choices" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
-                         Command="{Binding ExportChoicesCommand}" ToolTip="Export the current list of selected appearance mods for each NPC to a .json file."/>
-                <Button Content="Import My Choices" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
-                         Command="{Binding ImportChoicesCommand}" ToolTip="Import a list of NPC appearance selections from a .json file, overwriting current choices."/>
-                <Button Content="Clear My Choices" Margin="0,2,15,2" Padding="5,2" VerticalAlignment="Center"
-                        Command="{Binding ClearChoicesCommand}" ToolTip="Clear all selections you have made."/>
+                <GroupBox Header="NPC Appearance Selections" VerticalAlignment="Center" Margin="5,-10,5,0" Padding="2">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Get from Load Order" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
+                                Command="{Binding ImportChoicesFromLoadOrderCommand}" ToolTip="Automatically select appearance mods for NPCs based on your current load order and loose file overrides."/>
+                        <Button Content="Export" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
+                                Command="{Binding ExportChoicesCommand}" ToolTip="Export the current list of selected appearance mods for each NPC to a .json file."/>
+                        <Button Content="Import" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
+                                Command="{Binding ImportChoicesCommand}" ToolTip="Import a list of NPC appearance selections from a .json file, overwriting current choices."/>
+                        <Button Content="Clear" Margin="0,2,15,2" Padding="5,2" VerticalAlignment="Center"
+                                Command="{Binding ClearChoicesCommand}" ToolTip="Clear all selections you have made."/>
+                    </StackPanel>
+                </GroupBox>
                 
-                <Button Content="Compare Selected" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
-                        Command="{Binding CompareSelectedCommand}"
-                        ToolTip="Compare all checked mugshots in a full-screen view (Requires 2+ selected)."/>
-                <Button Content="Hide/Unhide" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
-                        ContextMenu="{StaticResource HideUnhideContextMenuResource}"
-                        Click="HideUnhideButton_Click"
-                        IsEnabled="{Binding CanOpenHideUnhideMenu}"
-                        ToolTip="Hide or unhide mugshots. Right-click or click for options (enabled if at least one mugshot is checked)."/>
-                <Button Content="Deselect all" Margin="0,2,0,2" Padding="5,2" VerticalAlignment="Center"
-                        Command="{Binding DeselectAllCommand}"
-                        ToolTip="Uncheck all mugshots for the current NPC (Requires 1+ selected)."/>
+                <Button Content="Favs" Margin="10,2,10,2" Padding="5,2" VerticalAlignment="Center" Command="{Binding ShowFavoritesCommand}" ToolTip="Add an appearance from your list of favorite faces."/>
+                
+                <GroupBox Header="Selected Mugshots" VerticalAlignment="Center" Margin="5,-10,5,0" Padding="2">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Compare" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
+                                Command="{Binding CompareSelectedCommand}"
+                                ToolTip="Compare all checked mugshots in a full-screen view (Requires 2+ selected)."/>
+                        <Button Content="Hide/Unhide" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
+                                ContextMenu="{StaticResource HideUnhideContextMenuResource}"
+                                Click="HideUnhideButton_Click"
+                                IsEnabled="{Binding CanOpenHideUnhideMenu}"
+                                ToolTip="Hide or unhide mugshots. Right-click or click for options (enabled if at least one mugshot is checked)."/>
+                        <Button Content="Deselect all" Margin="0,2,0,2" Padding="5,2" VerticalAlignment="Center"
+                                Command="{Binding DeselectAllCommand}"
+                                ToolTip="Uncheck all mugshots for the current NPC (Requires 1+ selected)."/>
+                        </StackPanel>
+                </GroupBox>
             </WrapPanel>
         </Border>
 

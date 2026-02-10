@@ -143,6 +143,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     [Reactive] public bool ShowSingleOptionNpcs { get; set; } = true;
     [Reactive] public bool ShowUnloadedNpcs { get; set; } = true;
     [Reactive] public bool ShowSkyPatcherTemplates { get; set; }
+    [Reactive] public bool ShowUninstalledMods { get; set; } = true;
     [Reactive] public bool ShowNpcDescriptions { get; set; }
     public List<VM_NpcsMenuSelection> AllNpcs { get; } = new();
     public ObservableCollection<VM_NpcsMenuSelection> FilteredNpcs { get; } = new();
@@ -437,6 +438,22 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 _settings.ShowSkyPatcherTemplates = val;
                 ApplyFilter(false);
+            })
+            .DisposeWith(_disposables);
+
+        ShowUninstalledMods = _settings.ShowUninstalledMods;
+        this.WhenAnyValue(x => x.ShowUninstalledMods)
+            .Skip(1)
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(val =>
+            {
+                _settings.ShowUninstalledMods = val;
+                if (!NpcsViewIsZoomLocked)
+                {
+                    NpcsViewHasUserManuallyZoomed = false;
+                }
+
+                ToggleModVisibility();
             })
             .DisposeWith(_disposables);
 
@@ -3049,7 +3066,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             bool isSpecificallyHidden = npcSpecificHidden?.Contains(mod.ModName) ?? false;
             bool shouldBeHidden = isGloballyHidden || isSpecificallyHidden;
             mod.IsSetHidden = shouldBeHidden;
-            bool shouldBeVisible = ShowHiddenMods || !mod.IsSetHidden;
+            bool shouldBeVisible = (ShowHiddenMods || !mod.IsSetHidden) && (ShowUninstalledMods || !mod.HasNoData);
             if (mod.IsVisible != shouldBeVisible)
             {
                 mod.IsVisible = shouldBeVisible;
