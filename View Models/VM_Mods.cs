@@ -3057,6 +3057,22 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                             }
                         }
 
+                        bool npcGetterUsesTemplate =
+                            npcGetter.Configuration.Flags.HasFlag(NpcConfiguration.TemplateFlag.Traits);
+                        bool baseNpcGetterUsesTemplate =
+                            baseNpcGetter.Configuration.Flags.HasFlag(NpcConfiguration.TemplateFlag.Traits);
+
+                        if (npcGetterUsesTemplate != baseNpcGetterUsesTemplate)
+                        {
+                            return true;
+                        }
+
+                        if (npcGetterUsesTemplate && baseNpcGetterUsesTemplate &&
+                            !npcGetter.Template.Equals(baseNpcGetter.Template))
+                        {
+                            return true;
+                        }
+
                         break; // Analyzed highest priority mod containing this NPC; no need to look further
                     }
                 }
