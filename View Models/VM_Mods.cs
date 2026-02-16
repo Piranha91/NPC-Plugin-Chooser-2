@@ -3057,10 +3057,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                             }
                         }
 
-                        bool npcGetterUsesTemplate =
-                            npcGetter.Configuration.Flags.HasFlag(NpcConfiguration.TemplateFlag.Traits);
-                        bool baseNpcGetterUsesTemplate =
-                            baseNpcGetter.Configuration.Flags.HasFlag(NpcConfiguration.TemplateFlag.Traits);
+                        bool npcGetterUsesTemplate = Auxilliary.HasTraitsFlag(npcGetter);
+                        bool baseNpcGetterUsesTemplate = Auxilliary.HasTraitsFlag(baseNpcGetter);
 
                         if (npcGetterUsesTemplate != baseNpcGetterUsesTemplate)
                         {
