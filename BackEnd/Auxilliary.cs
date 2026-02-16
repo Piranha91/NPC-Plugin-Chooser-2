@@ -1030,6 +1030,14 @@ public class Auxilliary : IDisposable
     /// <summary>
     /// Opens the given URL in the default web browser.
     /// </summary>
+    /// <remarks>
+    /// Uses explorer.exe to open the URL rather than ShellExecuteEx directly.
+    /// When launched from a standalone .exe (outside an IDE), ShellExecuteEx can cause
+    /// Chromium-based browsers (Edge, Chrome) to crash immediately with STATUS_ACCESS_VIOLATION
+    /// (0xC0000005) due to problematic handle/job-object inheritance from the parent process.
+    /// Routing through explorer.exe avoids this because it launches the browser from its own
+    /// clean process context.
+    /// </remarks>
     /// <param name="url">The URL to open.</param>
     public static void OpenUrl(string url)
     {
@@ -1041,13 +1049,15 @@ public class Auxilliary : IDisposable
 
         try
         {
-            // UseShellExecute = true is crucial for opening URLs in the default browser.
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{url}\"",
+                UseShellExecute = false
+            });
         }
         catch (Exception ex)
         {
-            // Log the error and re-throw it so the ReactiveCommand's exception
-            // handler can catch it and display a user-friendly message.
             Debug.WriteLine($"Error opening URL '{url}': {ex.Message}");
             throw;
         }

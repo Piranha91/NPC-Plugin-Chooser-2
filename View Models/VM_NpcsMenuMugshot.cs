@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
@@ -317,7 +317,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         
         OpenFolderCommand = ReactiveCommand.Create<string>(Auxilliary.OpenFolder).DisposeWith(Disposables);
         
-        VisitModPageCommand = ReactiveCommand.Create<string>(Auxilliary.OpenUrl);
+        VisitModPageCommand = ReactiveCommand.Create<string>(Auxilliary.OpenUrl).DisposeWith(Disposables);
         
         SelectCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.Show($"Error selecting mod: {ExceptionLogger.GetExceptionStack(ex)}"))

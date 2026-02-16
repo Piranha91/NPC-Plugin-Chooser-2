@@ -122,7 +122,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             
             this.WhenAnyValue(x => x.ModPageUrls.Count).Select(count => count > 0).ToPropertyEx(this, x => x.CanVisitModPage).DisposeWith(_disposables);
             this.WhenAnyValue(x => x.ModPageUrls.Count).Select(count => count == 1).ToPropertyEx(this, x => x.HasSingleModPage).DisposeWith(_disposables);
-            VisitModPageCommand = ReactiveCommand.Create<string>(Auxilliary.OpenUrl);
+            VisitModPageCommand = ReactiveCommand.Create<string>(Auxilliary.OpenUrl).DisposeWith(_disposables);;
 
             if (_associatedModSetting != null)
             {

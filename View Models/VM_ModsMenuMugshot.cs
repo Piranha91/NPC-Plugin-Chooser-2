@@ -240,7 +240,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         AddToFavoritesCommand = ReactiveCommand.Create(ToggleFavorite).DisposeWith(_disposables);
 
         OpenFolderCommand = ReactiveCommand.Create<string>(Auxilliary.OpenFolder).DisposeWith(_disposables);
-        VisitModPageCommand = ReactiveCommand.Create<string>(Auxilliary.OpenUrl);
+        VisitModPageCommand = ReactiveCommand.Create<string>(Auxilliary.OpenUrl).DisposeWith(_disposables);
 
         ToggleFullScreenCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error showing image: {ExceptionLogger.GetExceptionStack(ex)}"))
