@@ -307,8 +307,14 @@ public class Patcher : OptionalUIModule
                             {
                                 if (appearanceModSetting.CorrespondingModKeys.Any())
                                 {
-                                    foreach (var candidateKey in appearanceModSetting.CorrespondingModKeys)
+                                    for (int i = appearanceModSetting.CorrespondingModKeys.Count - 1; i >= 0; i--) // iterate backwards; lowest in list is winner.
                                     {
+                                        var candidateKey = appearanceModSetting.CorrespondingModKeys[i];
+                                        if (appearanceModSetting.ResourceOnlyModKeys.Contains(candidateKey))
+                                        {
+                                            continue;
+                                        }
+                                        
                                         if (_recordHandler.TryGetRecordGetterFromMod(appearanceNpcFormKey.ToLink<INpcGetter>(),
                                                 candidateKey, currentModFolderPaths,
                                                 RecordHandler.RecordLookupFallBack.None,
