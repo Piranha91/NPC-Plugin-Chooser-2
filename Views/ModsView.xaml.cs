@@ -165,16 +165,8 @@ namespace NPC_Plugin_Chooser_2.Views
                     .Subscribe(_ =>
                     {
                         Debug.WriteLine(
-                            "ModsView: RefreshMugshotSizesObservable (from VM) triggered. Invalidating ScrollViewer measure.");
-
-                        // This is now the ONLY action. We are telling the layout system that the
-                        // ScrollViewer's size might be incorrect. The layout system will then
-                        // re-measure it, and if its size changes, the MugshotScrollViewer_SizeChanged
-                        // event will fire, which is our single point of truth for refreshing.
-                        if (MugshotScrollViewer.IsLoaded)
-                        {
-                            MugshotScrollViewer.InvalidateMeasure();
-                        }
+                            "ModsView: RefreshMugshotSizesObservable (from VM) triggered. Calling RefreshMugshotImageSizes directly.");
+                        RefreshMugshotImageSizes();
                     })
                     .DisposeWith(d);
 
