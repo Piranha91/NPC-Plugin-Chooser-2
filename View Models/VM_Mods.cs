@@ -83,6 +83,7 @@ public class VM_Mods : ReactiveObject
     public ObservableCollection<VM_ModsMenuMugshot> CurrentModNpcMugshots { get; } = new();
 
     [Reactive] public bool IsLoadingMugshots { get; private set; }
+    [Reactive] public string TotalModsLoadedText { get; private set; } = "0 mods loaded";
 
     // This property will be set to true by the View (ModsView.xaml.cs) when the user
     // directly interacts with zoom (Ctrl+Scroll, +/- buttons).
@@ -198,7 +199,10 @@ public class VM_Mods : ReactiveObject
         _modSettingFromModFolderFactory = modSettingFromModFolderFactory;
         _imagePacker = imagePacker;
         _mugshotFactory = mugshotFactory;
-        
+
+        ModSettingsList.CollectionChanged += (_, _) =>
+            TotalModsLoadedText = $"{ModSettingsList.Count} mod{(ModSettingsList.Count == 1 ? "" : "s")} loaded";
+
         RefreshAllModsCommand = ReactiveCommand.CreateFromTask(() => RefreshAllModSettingsAsync(null)).DisposeWith(_disposables);
         RefreshAllModsCommand.ThrownExceptions.Subscribe(ex => ScrollableMessageBox.ShowError($"Error refreshing all mods: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
 

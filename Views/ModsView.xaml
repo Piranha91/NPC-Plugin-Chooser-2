@@ -129,6 +129,13 @@
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          ScrollViewer.VerticalScrollBarVisibility="Auto">
 
+                    <ListBox.Resources>
+                        <Style TargetType="ScrollBar">
+                            <Setter Property="ToolTip" 
+                                    Value="{Binding DataContext.TotalModsLoadedText, RelativeSource={RelativeSource AncestorType=ListBox}}"/>
+                        </Style>
+                    </ListBox.Resources>
+
                     <!-- This style makes the ListBoxItems behave like the old ItemsControl items
                          (no selection highlight, no border, etc.) -->
                     <ListBox.ItemContainerStyle>
