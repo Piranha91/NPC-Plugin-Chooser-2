@@ -103,7 +103,7 @@
         <!-- Settings Row (Grid.Row="0") -->
         <Border Grid.Row="0" BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="5">
             <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <GroupBox Header="NPC Groups" VerticalAlignment="Center" Margin="0,-10,5,0" Padding="2">
+                <GroupBox Header="NPC Groups" VerticalAlignment="Center" Margin="0,-7,5,0" Padding="2">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,10,2">
                         <TextBlock Text="Group:" VerticalAlignment="Center" Margin="0,0,5,0"/>
                         <ComboBox MinWidth="120" MaxWidth="200" Margin="0,0,5,0" VerticalAlignment="Center" 
@@ -118,8 +118,8 @@
                     </StackPanel>
                 </GroupBox>
                 
-                <GroupBox Header="Show" VerticalAlignment="Center" Margin="5,-10,5,0" Padding="2">
-                    <StackPanel Orientation="Horizontal">
+                <GroupBox Header="Show" VerticalAlignment="Center" Margin="5,-7,5,0" Padding="2">
+                    <StackPanel Orientation="Horizontal" MinHeight="26">
                         <CheckBox Content="Single-Option NPCs" Margin="3,2,3,2" IsChecked="{Binding ShowSingleOptionNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that only have one available appearance."/>
                         <CheckBox Content="Unloaded NPCs" Margin="3,2,3,2" IsChecked="{Binding ShowUnloadedNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that are not part of your current load order (e.g., from mugshots or inactive mods)."/>
                         <CheckBox Content="SkyPatcher Templates" Margin="3,2,3,2" IsChecked="{Binding ShowSkyPatcherTemplates, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides dummy NPCs used by SkyPatcher NPC Replacers. You should not select an appearance for these dummy NPCs."/>
@@ -129,7 +129,7 @@
                     </StackPanel>
                 </GroupBox>
                 
-                <GroupBox Header="NPC Appearance Selections" VerticalAlignment="Center" Margin="5,-10,5,0" Padding="2">
+                <GroupBox Header="NPC Appearance Selections" VerticalAlignment="Center" Margin="5,-7,5,0" Padding="2">
                     <StackPanel Orientation="Horizontal">
                         <Button Content="Get from Load Order" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
                                 Command="{Binding ImportChoicesFromLoadOrderCommand}" ToolTip="Automatically select appearance mods for NPCs based on your current load order and loose file overrides."/>
@@ -142,7 +142,7 @@
                     </StackPanel>
                 </GroupBox>
                 
-                <GroupBox Header="Selected Mugshots" VerticalAlignment="Center" Margin="5,-10,5,0" Padding="2">
+                <GroupBox Header="Selected Mugshots" VerticalAlignment="Center" Margin="5,-7,5,0" Padding="2">
                     <StackPanel Orientation="Horizontal">
                         <Button Content="Compare" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
                                 Command="{Binding CompareSelectedCommand}"
@@ -158,7 +158,7 @@
                         </StackPanel>
                 </GroupBox>
                 
-                <GroupBox Header="Submenus" VerticalAlignment="Center" Margin="5,-10,5,0" Padding="2">
+                <GroupBox Header="Submenus" VerticalAlignment="Center" Margin="5,-7,5,0" Padding="2">
                     <Button Content="Favorites" Padding="5,2" VerticalAlignment="Center" Command="{Binding ShowFavoritesCommand}" ToolTip="Add an appearance from your list of favorite faces."/>
                 </GroupBox>
             </WrapPanel>
