@@ -1612,14 +1612,13 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                     foreach (var record in pluginRecords)
                     {
                         // if the record actually exists in the master, then this is an override. Otherwise, it's an injection
-                        if (!_recordHandler.TryGetRecordGetterFromMod(record.ToLink(), masterModKey, new(),
+                        if (!_recordHandler.TryGetRecordGetterFromMod(record, masterModKey, new(),
                                 RecordHandler.RecordLookupFallBack.None, out _))
                         {
                             IsPerformingBatchAction = true;
                             HandleInjectedRecords = true;
-                            var injectionName = Auxilliary.GetLogString(record, language, true);
                             HandleInjectedOverridesToolTip =
-                                $"This plugin has been scanned and found to contain at least one injected record ({injectionName}). It is recommended to enable Injected Record Handling";
+                                $"This plugin has been scanned and found to contain at least one injected record ({record.Type}: {record.FormKey}). It is recommended to enable Injected Record Handling";
                             HasAlteredHandleInjectedRecordsLogic = true;
                             IsPerformingBatchAction = false;
                             return true;
