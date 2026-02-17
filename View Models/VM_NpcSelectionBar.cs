@@ -191,6 +191,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     // --- New: Other Display Controls
     public bool NormalizeImageDimensions => _settings.NormalizeImageDimensions;
     public int MaxMugshotsToFit => _settings.MaxMugshotsToFit;
+    
+    // --- Template Icon Display Controls ---
+    [Reactive] public bool ShowTemplateStatusInList { get; set; }
+    [Reactive] public TemplateIconPosition TemplateIconPosition { get; set; }
 
     // --- NPC Group Properties ---
     [Reactive] public string SelectedGroupName { get; set; } = string.Empty;
@@ -260,6 +264,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             Math.Max(_minZoomPercentage,
                 Math.Min(_maxZoomPercentage, _settings.NpcsViewZoomLevel)); // Clamp initial load
         NpcsViewIsZoomLocked = _settings.NpcsViewIsZoomLocked;
+        ShowTemplateStatusInList = _settings.ShowTemplateStatusInList;
+        TemplateIconPosition = _settings.TemplateIconPosition;
         Debug.WriteLine(
             $"VM_NpcSelectionBar.Constructor: Initial ZoomLevel: {NpcsViewZoomLevel:F2}, IsZoomLocked: {NpcsViewIsZoomLocked}");
 

@@ -551,6 +551,13 @@
                         <CheckBox Content="EditorID" IsChecked="{Binding ShowNpcEditorIdInList, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0" ToolTip="Show the NPC's editor ID."/>
                         <CheckBox Content="FormKey" IsChecked="{Binding ShowNpcFormKeyInList, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0" ToolTip="Show the NPC's FormKey (e.g., 000123AB:Skyrim.esm)."/>
                         <CheckBox Content="FormID" IsChecked="{Binding ShowNpcFormIdInList, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0" ToolTip="Show the NPC's full FormID based on your load order (e.g., 010123AB)."/>
+                        <CheckBox Content="Template Status" IsChecked="{Binding ShowTemplateStatusInList, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,5,0"
+                                  ToolTip="Show template status icons (T / !) next to NPCs that are used as appearance templates by other NPCs or mods."/>
+                        <ComboBox ItemsSource="{Binding TemplateIconPositions}"
+                                  SelectedItem="{Binding TemplateIconPosition, Mode=TwoWay}"
+                                  MinWidth="60" VerticalAlignment="Center" Margin="0,0,10,0"
+                                  ToolTip="Choose whether template icons appear to the left or right of the NPC name."
+                                  Visibility="{Binding ShowTemplateStatusInList, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                         <TextBlock Text="Separator:" VerticalAlignment="Center" Margin="0,0,5,0"/>
                         <TextBox Text="{Binding NpcListSeparator, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="30" VerticalAlignment="Center"/>
                     </StackPanel>

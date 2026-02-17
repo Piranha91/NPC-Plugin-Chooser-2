@@ -399,55 +399,103 @@
                                                       CommandParameter="{Binding}"/>
                                         </ContextMenu>
                                     </Border.ContextMenu>
-                                     <StackPanel Orientation="Horizontal">
-                                         <!-- Grey "T" for winning-override template sources -->
-                                         <TextBlock Text="T" FontWeight="Bold" Foreground="Gray" Margin="0,0,2,0"
-                                                    ToolTip="{Binding WinningOverrideTemplateUsersTooltip}">
-                                             <TextBlock.Style>
-                                                 <Style TargetType="TextBlock">
+                                     <Grid>
+                                         <Grid.ColumnDefinitions>
+                                             <ColumnDefinition Width="Auto"/>
+                                             <ColumnDefinition Width="*"/>
+                                             <ColumnDefinition Width="Auto"/>
+                                         </Grid.ColumnDefinitions>
+
+                                         <!-- Left-side template indicators -->
+                                         <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                             <StackPanel.Style>
+                                                 <Style TargetType="StackPanel">
                                                      <Setter Property="Visibility" Value="Collapsed"/>
                                                      <Style.Triggers>
-                                                         <DataTrigger Binding="{Binding IsWinningOverrideTemplateSource}" Value="True">
+                                                         <MultiDataTrigger>
+                                                             <MultiDataTrigger.Conditions>
+                                                                 <Condition Binding="{Binding DataContext.ShowTemplateStatusInList, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="True"/>
+                                                                 <Condition Binding="{Binding DataContext.TemplateIconPosition, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="Left"/>
+                                                             </MultiDataTrigger.Conditions>
                                                              <Setter Property="Visibility" Value="Visible"/>
-                                                         </DataTrigger>
+                                                         </MultiDataTrigger>
                                                      </Style.Triggers>
                                                  </Style>
-                                             </TextBlock.Style>
-                                         </TextBlock>
-                                         <!-- Purple/Green "T" for app-mod template sources -->
-                                         <TextBlock Text="T" FontWeight="Bold" Margin="0,0,2,0"
-                                                    ToolTip="{Binding AppModTemplateTooltip}">
-                                             <TextBlock.Style>
-                                                 <Style TargetType="TextBlock">
+                                             </StackPanel.Style>
+                                             <!-- Grey "T" for winning-override template sources -->
+                                             <TextBlock Text="T" FontWeight="Bold" Foreground="Gray" Margin="0,0,2,0"
+                                                        ToolTip="{Binding WinningOverrideTemplateUsersTooltip}"
+                                                        Visibility="{Binding IsWinningOverrideTemplateSource, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                             <!-- Purple/Green "T" for app-mod template sources -->
+                                             <TextBlock Text="T" FontWeight="Bold" Margin="0,0,2,0"
+                                                        ToolTip="{Binding AppModTemplateTooltip}">
+                                                 <TextBlock.Style>
+                                                     <Style TargetType="TextBlock">
+                                                         <Setter Property="Visibility" Value="Collapsed"/>
+                                                         <Setter Property="Foreground" Value="MediumPurple"/>
+                                                         <Style.Triggers>
+                                                             <DataTrigger Binding="{Binding ShowAppModTemplateT}" Value="True">
+                                                                 <Setter Property="Visibility" Value="Visible"/>
+                                                             </DataTrigger>
+                                                             <DataTrigger Binding="{Binding IsAppModTemplateGreen}" Value="True">
+                                                                 <Setter Property="Foreground" Value="LimeGreen"/>
+                                                             </DataTrigger>
+                                                         </Style.Triggers>
+                                                     </Style>
+                                                 </TextBlock.Style>
+                                             </TextBlock>
+                                             <!-- Red "!" for template conflict -->
+                                             <TextBlock Text="!" FontWeight="Bold" Foreground="Red" Margin="0,0,3,0"
+                                                        ToolTip="{Binding TemplateConflictTooltip}"
+                                                        Visibility="{Binding HasTemplateConflict, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         </StackPanel>
+
+                                         <TextBlock Grid.Column="1" Text="{Binding DisplayName}"/>
+
+                                         <!-- Right-side template indicators -->
+                                         <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                             <StackPanel.Style>
+                                                 <Style TargetType="StackPanel">
                                                      <Setter Property="Visibility" Value="Collapsed"/>
-                                                     <Setter Property="Foreground" Value="MediumPurple"/>
                                                      <Style.Triggers>
-                                                         <DataTrigger Binding="{Binding ShowAppModTemplateT}" Value="True">
+                                                         <MultiDataTrigger>
+                                                             <MultiDataTrigger.Conditions>
+                                                                 <Condition Binding="{Binding DataContext.ShowTemplateStatusInList, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="True"/>
+                                                                 <Condition Binding="{Binding DataContext.TemplateIconPosition, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="Right"/>
+                                                             </MultiDataTrigger.Conditions>
                                                              <Setter Property="Visibility" Value="Visible"/>
-                                                         </DataTrigger>
-                                                         <DataTrigger Binding="{Binding IsAppModTemplateGreen}" Value="True">
-                                                             <Setter Property="Foreground" Value="LimeGreen"/>
-                                                         </DataTrigger>
+                                                         </MultiDataTrigger>
                                                      </Style.Triggers>
                                                  </Style>
-                                             </TextBlock.Style>
-                                         </TextBlock>
-                                         <!-- Red "!" for template conflict -->
-                                         <TextBlock Text="!" FontWeight="Bold" Foreground="Red" Margin="0,0,3,0"
-                                                    ToolTip="{Binding TemplateConflictTooltip}">
-                                             <TextBlock.Style>
-                                                 <Style TargetType="TextBlock">
-                                                     <Setter Property="Visibility" Value="Collapsed"/>
-                                                     <Style.Triggers>
-                                                         <DataTrigger Binding="{Binding HasTemplateConflict}" Value="True">
-                                                             <Setter Property="Visibility" Value="Visible"/>
-                                                         </DataTrigger>
-                                                     </Style.Triggers>
-                                                 </Style>
-                                             </TextBlock.Style>
-                                         </TextBlock>
-                                         <TextBlock Text="{Binding DisplayName}"/>
-                                     </StackPanel>
+                                             </StackPanel.Style>
+                                             <!-- Grey "T" for winning-override template sources -->
+                                             <TextBlock Text="T" FontWeight="Bold" Foreground="Gray" Margin="3,0,0,0"
+                                                        ToolTip="{Binding WinningOverrideTemplateUsersTooltip}"
+                                                        Visibility="{Binding IsWinningOverrideTemplateSource, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                             <!-- Purple/Green "T" for app-mod template sources -->
+                                             <TextBlock Text="T" FontWeight="Bold" Margin="2,0,0,0"
+                                                        ToolTip="{Binding AppModTemplateTooltip}">
+                                                 <TextBlock.Style>
+                                                     <Style TargetType="TextBlock">
+                                                         <Setter Property="Visibility" Value="Collapsed"/>
+                                                         <Setter Property="Foreground" Value="MediumPurple"/>
+                                                         <Style.Triggers>
+                                                             <DataTrigger Binding="{Binding ShowAppModTemplateT}" Value="True">
+                                                                 <Setter Property="Visibility" Value="Visible"/>
+                                                             </DataTrigger>
+                                                             <DataTrigger Binding="{Binding IsAppModTemplateGreen}" Value="True">
+                                                                 <Setter Property="Foreground" Value="LimeGreen"/>
+                                                             </DataTrigger>
+                                                         </Style.Triggers>
+                                                     </Style>
+                                                 </TextBlock.Style>
+                                             </TextBlock>
+                                             <!-- Red "!" for template conflict -->
+                                             <TextBlock Text="!" FontWeight="Bold" Foreground="Red" Margin="2,0,0,0"
+                                                        ToolTip="{Binding TemplateConflictTooltip}"
+                                                        Visibility="{Binding HasTemplateConflict, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         </StackPanel>
+                                     </Grid>
                                  </Border>
                              </DataTemplate>
                          </ListBox.ItemTemplate>

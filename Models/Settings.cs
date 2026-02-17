@@ -78,6 +78,8 @@ public class Settings
     public bool ShowNpcFormKeyInList { get; set; }
     public bool ShowNpcFormIdInList { get; set; }
     public string NpcListSeparator { get; set; } = " | ";
+    public bool ShowTemplateStatusInList { get; set; } = true;
+    public TemplateIconPosition TemplateIconPosition { get; set; } = TemplateIconPosition.Left;
 
     // EasyNPC Interchangeability / Settings
     public Dictionary<FormKey, ModKey> EasyNpcDefaultPlugins { get; set; } = new(); 
@@ -218,4 +220,10 @@ public class Settings
     // --- Troubleshooting ---
     public bool LogActivity { get; set; } = false;
     public bool FixGarbledText { get; set; } = false;
+}
+
+public enum TemplateIconPosition
+{
+    Left,
+    Right
 }

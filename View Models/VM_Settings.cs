@@ -165,6 +165,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool ShowNpcFormKeyInList { get; set; }
     [Reactive] public bool ShowNpcFormIdInList { get; set; }
     [Reactive] public string NpcListSeparator { get; set; } = " | ";
+    [Reactive] public bool ShowTemplateStatusInList { get; set; } = true;
+    [Reactive] public TemplateIconPosition TemplateIconPosition { get; set; } = TemplateIconPosition.Left;
+    public IEnumerable<TemplateIconPosition> TemplateIconPositions { get; } = Enum.GetValues(typeof(TemplateIconPosition)).Cast<TemplateIconPosition>();
     
     [Reactive] public bool LogActivity { get; set; }
 
@@ -303,6 +306,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         ShowNpcFormKeyInList = _model.ShowNpcFormKeyInList;
         ShowNpcFormIdInList = _model.ShowNpcFormIdInList;
         NpcListSeparator = _model.NpcListSeparator;
+        ShowTemplateStatusInList = _model.ShowTemplateStatusInList;
+        TemplateIconPosition = _model.TemplateIconPosition;
         
         LogActivity = _model.LogActivity;
 
@@ -430,6 +435,20 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         this.WhenAnyValue(x => x.ShowNpcFormIdInList).Skip(1).Subscribe(b => _model.ShowNpcFormIdInList = b)
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.NpcListSeparator).Skip(1).Subscribe(s => _model.NpcListSeparator = s)
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.ShowTemplateStatusInList).Skip(1).Subscribe(b =>
+            {
+                _model.ShowTemplateStatusInList = b;
+                if (_lazyNpcSelectionBar.IsValueCreated)
+                    _lazyNpcSelectionBar.Value.ShowTemplateStatusInList = b;
+            })
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.TemplateIconPosition).Skip(1).Subscribe(p =>
+            {
+                _model.TemplateIconPosition = p;
+                if (_lazyNpcSelectionBar.IsValueCreated)
+                    _lazyNpcSelectionBar.Value.TemplateIconPosition = p;
+            })
             .DisposeWith(_disposables);
 
         // Combine all display setting changes into a single observable to trigger updates
