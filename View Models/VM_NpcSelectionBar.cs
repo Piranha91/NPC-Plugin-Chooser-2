@@ -71,6 +71,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private Dictionary<FormKey, List<(string ModName, string ImagePath)>> _mugshotData = new();
     private readonly Subject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
     private CancellationTokenSource? _mugshotGenerationCts;
+    
+    // Template filter caches — built once during InitializeAsync
+    private HashSet<FormKey> _baseRecordIsTemplateSources = new();     // NPCs referenced as template by other base records
+    private HashSet<FormKey> _winOverrideIsTemplateSources = new();    // NPCs referenced as template by other winning overrides
+    private HashSet<FormKey> _appModUsedAsTemplateSources = new();     // NPCs referenced as template by any appearance mod's NPC records
 
     private readonly BehaviorSubject<VM_NpcsMenuSelection?> _requestScrollToNpcSubject =
         new BehaviorSubject<VM_NpcsMenuSelection?>(null);
@@ -132,6 +137,14 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     [Reactive] public UniquenessFilterType SelectedUniquenessFilter2 { get; set; } = UniquenessFilterType.Unique;
     [ObservableAsProperty] public bool IsUniquenessSearch3 { get; }
     [Reactive] public UniquenessFilterType SelectedUniquenessFilter3 { get; set; } = UniquenessFilterType.Unique;
+    
+    // Template Status Visibility & Selection
+    [ObservableAsProperty] public bool IsTemplateSearch1 { get; }
+    [Reactive] public TemplateFilterType SelectedTemplateFilter1 { get; set; } = TemplateFilterType.BaseHasTemplate;
+    [ObservableAsProperty] public bool IsTemplateSearch2 { get; }
+    [Reactive] public TemplateFilterType SelectedTemplateFilter2 { get; set; } = TemplateFilterType.BaseHasTemplate;
+    [ObservableAsProperty] public bool IsTemplateSearch3 { get; }
+    [Reactive] public TemplateFilterType SelectedTemplateFilter3 { get; set; } = TemplateFilterType.BaseHasTemplate;
     
 
     [Reactive] public SearchLogic CurrentSearchLogic { get; set; } = SearchLogic.AND;
@@ -384,10 +397,22 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ToPropertyEx(this, x => x.IsUniquenessSearch3).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SearchType1)
+            .Select(type => type == NpcSearchType.Template)
+            .ToPropertyEx(this, x => x.IsTemplateSearch1).DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SearchType2)
+            .Select(type => type == NpcSearchType.Template)
+            .ToPropertyEx(this, x => x.IsTemplateSearch2).DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SearchType3)
+            .Select(type => type == NpcSearchType.Template)
+            .ToPropertyEx(this, x => x.IsTemplateSearch3).DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SearchType1)
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness) SearchText1 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Template) SearchText1 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter1 = null;
             })
             .DisposeWith(_disposables);
@@ -395,7 +420,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness) SearchText2 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Template) SearchText2 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter2 = null;
             })
             .DisposeWith(_disposables);
@@ -403,7 +428,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness) SearchText3 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Template) SearchText3 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter3 = null;
             })
             .DisposeWith(_disposables);
@@ -458,13 +483,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .DisposeWith(_disposables);
 
         var filter1Changes = this.WhenAnyValue(
-            x => x.SearchText1, x => x.SearchType1, x => x.SelectedStateFilter1, x => x.SelectedGroupFilter1, x => x.SelectedShareStatusFilter1, x => x.SelectedUniquenessFilter1
+            x => x.SearchText1, x => x.SearchType1, x => x.SelectedStateFilter1, x => x.SelectedGroupFilter1, x => x.SelectedShareStatusFilter1, x => x.SelectedUniquenessFilter1, x => x.SelectedTemplateFilter1
         ).Select(_ => Unit.Default);
         var filter2Changes = this.WhenAnyValue(
-            x => x.SearchText2, x => x.SearchType2, x => x.SelectedStateFilter2, x => x.SelectedGroupFilter2, x => x.SelectedShareStatusFilter2, x => x.SelectedUniquenessFilter2
+            x => x.SearchText2, x => x.SearchType2, x => x.SelectedStateFilter2, x => x.SelectedGroupFilter2, x => x.SelectedShareStatusFilter2, x => x.SelectedUniquenessFilter2, x => x.SelectedTemplateFilter2
         ).Select(_ => Unit.Default);
         var filter3Changes = this.WhenAnyValue(
-            x => x.SearchText3, x => x.SearchType3, x => x.SelectedStateFilter3, x => x.SelectedGroupFilter3, x => x.SelectedShareStatusFilter3, x => x.SelectedUniquenessFilter3
+            x => x.SearchText3, x => x.SearchType3, x => x.SelectedStateFilter3, x => x.SelectedGroupFilter3, x => x.SelectedShareStatusFilter3, x => x.SelectedUniquenessFilter3, x => x.SelectedTemplateFilter3
         ).Select(_ => Unit.Default);
         var logicChanges = this.WhenAnyValue(
             x => x.CurrentSearchLogic
@@ -1643,6 +1668,75 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     }
                 }
             }
+
+            // --- Build template caches ---
+            splashReporter?.UpdateStep("Building template index...");
+            
+            var newBaseIsTemplate = new HashSet<FormKey>();
+            var newOverrideIsTemplate = new HashSet<FormKey>();
+            var newAppModUsedAsTemplate = new HashSet<FormKey>();
+
+            // Pass 1: Compute per-NPC "has template" flags and build reverse "is template" indices
+            foreach (var kvp in npcViewModelMap)
+            {
+                var fk = kvp.Key;
+                var vm = kvp.Value;
+
+                // --- Winning override (already resolved during NpcDisplayData pass) ---
+                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(fk, out var winOverride))
+                {
+                    bool winHasTemplate = Auxilliary.IsValidTemplatedNpc(winOverride);
+                    vm.WinningOverrideHasTemplate = winHasTemplate;
+                    if (winHasTemplate)
+                    {
+                        newOverrideIsTemplate.Add(winOverride.Template.FormKey);
+                    }
+                }
+
+                // --- Base record (original definition in the NPC's origin plugin) ---
+                try
+                {
+                    var allContexts = _environmentStateProvider.LinkCache
+                        .ResolveAllContexts<INpc, INpcGetter>(fk).ToList();
+                    if (allContexts.Any())
+                    {
+                        // Last context = lowest priority = the original/base record
+                        var baseGetter = allContexts.Last().Record;
+                        bool baseHasTemplate = Auxilliary.IsValidTemplatedNpc(baseGetter);
+                        vm.BaseRecordHasTemplate = baseHasTemplate;
+                        if (baseHasTemplate)
+                        {
+                            newBaseIsTemplate.Add(baseGetter.Template.FormKey);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Template cache: could not resolve base record for {fk}: {ex.Message}");
+                }
+            }
+
+            // Pass 2: Build "appearance mod uses as template" index
+            if (_lazyModsVm.Value?.AllModSettings != null)
+            {
+                foreach (var modSetting in _lazyModsVm.Value.AllModSettings)
+                {
+                    foreach (var (_, notification) in modSetting.NpcFormKeysToNotifications)
+                    {
+                        if (notification.IssueType == NpcIssueType.Template &&
+                            notification.ReferencedFormKey.HasValue &&
+                            !notification.ReferencedFormKey.Value.IsNull)
+                        {
+                            newAppModUsedAsTemplate.Add(notification.ReferencedFormKey.Value);
+                        }
+                    }
+                }
+            }
+
+            _baseRecordIsTemplateSources = newBaseIsTemplate;
+            _winOverrideIsTemplateSources = newOverrideIsTemplate;
+            _appModUsedAsTemplateSources = newAppModUsedAsTemplate;
+            Debug.WriteLine($"Template cache built: BaseIsTemplate={newBaseIsTemplate.Count}, WinnerIsTemplate={newOverrideIsTemplate.Count}, AppModUsedAsTemplate={newAppModUsedAsTemplate.Count}");
         });
 
         // 5. Finalize on UI thread
@@ -1767,6 +1861,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter1));
         }
+        else if (SearchType1 == NpcSearchType.Template)
+        {
+            predicates.Add(npc => CheckTemplate(npc, SelectedTemplateFilter1));
+        }
         else if (SearchType1 == NpcSearchType.Group)
         {
             var p = BuildGroupPredicate(SelectedGroupFilter1);
@@ -1790,6 +1888,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter2));
         }
+        else if (SearchType2 == NpcSearchType.Template)
+        {
+            predicates.Add(npc => CheckTemplate(npc, SelectedTemplateFilter2));
+        }
         else if (SearchType2 == NpcSearchType.Group)
         {
             var p = BuildGroupPredicate(SelectedGroupFilter2);
@@ -1812,6 +1914,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         else if (SearchType3 == NpcSearchType.Uniqueness)
         {
             predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter3));
+        }
+        else if (SearchType3 == NpcSearchType.Template)
+        {
+            predicates.Add(npc => CheckTemplate(npc, SelectedTemplateFilter3));
         }
         else if (SearchType3 == NpcSearchType.Group)
         {
@@ -2003,10 +2109,41 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 return true;
         }
     }
+    
+    private bool CheckTemplate(VM_NpcsMenuSelection npcMenu, TemplateFilterType filterType)
+    {
+        switch (filterType)
+        {
+            case TemplateFilterType.BaseHasTemplate:
+                return npcMenu.BaseRecordHasTemplate;
+
+            case TemplateFilterType.BaseIsTemplate:
+                return _baseRecordIsTemplateSources.Contains(npcMenu.NpcFormKey);
+
+            case TemplateFilterType.WinnerHasTemplate:
+                return npcMenu.WinningOverrideHasTemplate;
+
+            case TemplateFilterType.WinnerIsTemplate:
+                return _winOverrideIsTemplateSources.Contains(npcMenu.NpcFormKey);
+
+            case TemplateFilterType.AppModsHaveTemplate:
+                // At least one appearance mod for this NPC has a template notification
+                return npcMenu.AppearanceMods.Any(mod =>
+                    mod.NpcFormKeysToNotifications.TryGetValue(npcMenu.NpcFormKey, out var notification) &&
+                    notification.IssueType == NpcIssueType.Template);
+
+            case TemplateFilterType.AppModsUseAsTemplate:
+                // Some appearance mod for another NPC references this NPC as a template
+                return _appModUsedAsTemplateSources.Contains(npcMenu.NpcFormKey);
+
+            default:
+                return true;
+        }
+    }
 
     private Func<VM_NpcsMenuSelection, bool>? BuildTextPredicate(NpcSearchType type, string searchText)
     {
-        if (type == NpcSearchType.SelectionState || type == NpcSearchType.Group || type == NpcSearchType.ShareStatus ||
+        if (type == NpcSearchType.SelectionState || type == NpcSearchType.Group || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Template ||
             string.IsNullOrWhiteSpace(searchText))
         {
             return null;
@@ -3476,4 +3613,20 @@ public enum NpcSortProperty
     Name,
     EditorID,
     FormKey
+}
+
+public enum TemplateFilterType
+{
+    [Description("Base Record Has Template")]
+    BaseHasTemplate,
+    [Description("Base Record Is Template")]
+    BaseIsTemplate,
+    [Description("Winning Override Has Template")]
+    WinnerHasTemplate,
+    [Description("Winning Override Is Template")]
+    WinnerIsTemplate,
+    [Description("Appearance Mod(s) Have Template")]
+    AppModsHaveTemplate,
+    [Description("Appearance Mod(s) Use as Template")]
+    AppModsUseAsTemplate
 }

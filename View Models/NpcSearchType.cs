@@ -33,7 +33,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         Uniqueness,
         
         [Description("Group")]
-        Group
+        Group,
+        
+        [Description("Template")]
+        Template
     }
     
     public enum UniquenessFilterType

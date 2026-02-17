@@ -39,6 +39,11 @@ public class VM_NpcsMenuSelection : ReactiveObject
     private bool _pluginFound = false;
     public bool IsInLoadOrder { get; set; }
     [Reactive] public bool IsUnique { get; set; } 
+    
+    // Template cache — populated once during initialization
+    public bool BaseRecordHasTemplate { get; set; }
+    public bool WinningOverrideHasTemplate { get; set; }
+    
     [Reactive] public string NpcGroupsDisplay { get; set; } = "Groups: None";
 
     // This property reflects the centrally stored selection
