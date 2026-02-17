@@ -1442,6 +1442,15 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 "Mod Not Found");
         }
     }
+    
+    public void JumpToTemplate(VM_NpcsMenuMugshot mugshot)
+    {
+        if (mugshot?.TemplateNpcKey != null && !mugshot.TemplateNpcKey.Value.IsNull)
+        {
+            // Reuses the existing logic that clears filters and scrolls to the NPC
+            JumpToTemplateReference(mugshot.TemplateNpcKey.Value);
+        }
+    }
 
     private void UpdateSelectionState(FormKey npcFormKey, string? selectedModName, FormKey sourceNpcFormKey)
     {
@@ -2367,6 +2376,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 {
                     if (notif.ReferencedFormKey != null)
                     {
+                        appearanceVM.TemplateNpcKey = notif.ReferencedFormKey.Value;
+                        appearanceVM.CanJumpToTemplate = true;
+                        
                         var assignment = _consistencyProvider.GetSelectedMod(notif.ReferencedFormKey.Value);
                         if (assignment.ModName != null)
                         {

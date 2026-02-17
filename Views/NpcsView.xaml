@@ -805,6 +805,7 @@
                                          <MenuItem Header="Unhide All From This Mod" Command="{Binding UnhideAllFromThisModCommand}" />
                                          <Separator />
                                          <MenuItem Header="Jump to Mod" Command="{Binding JumpToModCommand}" Visibility="{Binding CanJumpToMod, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         <MenuItem Header="Jump to Template" Command="{Binding JumpToTemplateCommand}" Visibility="{Binding CanJumpToTemplate, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          <Separator/>
                                     
                                         <MenuItem Header="Select Source Plugin"

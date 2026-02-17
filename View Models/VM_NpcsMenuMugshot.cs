@@ -67,6 +67,8 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     [Reactive] public bool HasIssueNotification { get; set; } = false;
     [Reactive] public NpcIssueType IssueType { get; set; } = NpcIssueType.Template;
     [Reactive] public string IssueNotificationText { get; set; } = string.Empty;
+    [Reactive] public FormKey? TemplateNpcKey { get; set; }
+    [Reactive] public bool CanJumpToTemplate { get; set; }
     public bool IsAmbiguousSource { get; }
     public ObservableCollection<ModKey> AvailableSourcePlugins { get; } = new();
     [Reactive] public ModKey? CurrentSourcePlugin { get; set; }
@@ -113,6 +115,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     public ReactiveCommand<Unit, Unit> HideAllFromThisModCommand { get; }
     public ReactiveCommand<Unit, Unit> UnhideAllFromThisModCommand { get; }
     public ReactiveCommand<Unit, Unit> JumpToModCommand { get; }
+    public ReactiveCommand<Unit, Unit> JumpToTemplateCommand { get; }
     public ReactiveCommand<ModKey, Unit> SetNpcSourcePluginCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectSameSourcePluginWherePossibleCommand { get; }
     public ReactiveCommand<Unit, Unit> ShareWithNpcCommand { get; }
@@ -292,6 +295,8 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             .DisposeWith(Disposables);
         JumpToModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.JumpToMod(this),
             this.WhenAnyValue(x => x.CanJumpToMod)).DisposeWith(Disposables);
+        JumpToTemplateCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.JumpToTemplate(this),
+            this.WhenAnyValue(x => x.CanJumpToTemplate)).DisposeWith(Disposables);
 
         // The command now sends a message containing itself.
         ShareWithNpcCommand = ReactiveCommand.Create(() =>
@@ -356,6 +361,9 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             .DisposeWith(Disposables);
         JumpToModCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.Show($"Error jumping to mod: {ExceptionLogger.GetExceptionStack(ex)}"))
+            .DisposeWith(Disposables);
+        JumpToTemplateCommand.ThrownExceptions
+            .Subscribe(ex => ScrollableMessageBox.ShowError($"Error jumping to template: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(Disposables);
         OpenFolderCommand.ThrownExceptions
             .Subscribe(ex => ScrollableMessageBox.ShowError($"Error opening folder: {ExceptionLogger.GetExceptionStack(ex)}"))
