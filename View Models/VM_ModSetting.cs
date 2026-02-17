@@ -1065,15 +1065,18 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                             }
 
                             FormKey currentNpcKey = npcGetter.FormKey;
+                            bool hasFaceGen = false;
+                            bool isValidTemplatedNpc = Auxilliary.IsValidTemplatedNpc(npcGetter);
 
                             using (ContextualPerformanceTracer.Trace("RefreshNpcLists.FaceGenCheck"))
                             {
                                 // This is the cache of BSA files relevant to the *current mod setting*
                                 allFaceGenBsaFiles.TryGetValue(this.DisplayName, out var currentBsaCache);
+                                hasFaceGen = FaceGenExists(currentNpcKey, allFaceGenLooseFiles,
+                                    currentBsaCache ?? new HashSet<string>());
 
-                                if (!FaceGenExists(currentNpcKey, allFaceGenLooseFiles,
-                                        currentBsaCache ?? new HashSet<string>()) &&
-                                    !Auxilliary.IsValidTemplatedNpc(npcGetter))
+                                if (!hasFaceGen &&
+                                    !isValidTemplatedNpc)
                                 {
                                     string message =
                                         $"Discarded {Auxilliary.GetLogString(npcGetter, language, true)} from {DisplayName} because it has no FaceGen and does not use a template.";
@@ -1096,15 +1099,24 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
                             using (ContextualPerformanceTracer.Trace("RefreshNpcLists.TemplateCheck"))
                             {
-                                if (Auxilliary.IsValidTemplatedNpc(npcGetter))
+                                if (isValidTemplatedNpc)
                                 {
                                     string templateStr = npcGetter.Template.FormKey.ToString();
+                                    string issueMessage =
+                                        $"his NPC from {plugin.ModKey.FileName} has the Traits flag so it inherits appearance from {templateStr}. Regardless of which mod you select here, if you see the Template icon, it'll use the appearance of the template.";
+                                    if (hasFaceGen)
+                                    {
+                                        issueMessage = "Despite having FaceGen files, t" + issueMessage;
+                                    }
+                                    else
+                                    {
+                                        issueMessage = "T" + issueMessage;
+                                    }
 
                                     NpcFormKeysToNotifications[currentNpcKey] = (
                                         IssueType: NpcIssueType.Template,
-                                        IssueMessage:
-                                        $"Despite having FaceGen files, this NPC from {plugin.ModKey.FileName} has the Traits flag so it inherits appearance from {templateStr}. If the selected Appearance Mod for this NPC doesn't match that of its Template, visual glitches can occur in-game.",
-                                        FormKey: npcGetter.Template?.FormKey);
+                                        IssueMessage: issueMessage,
+                                        FormKey: npcGetter.Template.FormKey);
                                 }
                             }
 
