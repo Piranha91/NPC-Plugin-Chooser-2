@@ -399,7 +399,21 @@
                                                       CommandParameter="{Binding}"/>
                                         </ContextMenu>
                                     </Border.ContextMenu>
-                                     <TextBlock Text="{Binding DisplayName}" />
+                                     <StackPanel Orientation="Horizontal">
+                                         <!-- Green "T" for winning-override template sources -->
+                                         <TextBlock Text="T" FontWeight="Bold" Foreground="LimeGreen"
+                                                    Margin="0,0,3,0"
+                                                    Visibility="{Binding IsWinningOverrideTemplateSource, 
+                                                        Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                    ToolTip="{Binding WinningOverrideTemplateUsersTooltip}"/>
+                                         <!-- Green "!" for app-mod-only template sources -->
+                                         <TextBlock Text="!" FontWeight="Bold" Foreground="LimeGreen"
+                                                    Margin="0,0,3,0"
+                                                    Visibility="{Binding IsAppModOnlyTemplateSource, 
+                                                        Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                    ToolTip="{Binding AppModOnlyTemplateUsersTooltip}"/>
+                                         <TextBlock Text="{Binding DisplayName}"/>
+                                     </StackPanel>
                                  </Border>
                              </DataTemplate>
                          </ListBox.ItemTemplate>

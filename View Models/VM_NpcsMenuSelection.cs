@@ -44,6 +44,13 @@ public class VM_NpcsMenuSelection : ReactiveObject
     public bool BaseRecordHasTemplate { get; set; }
     public bool WinningOverrideHasTemplate { get; set; }
     
+    // Template "is source" indicators — populated during InitializeAsync
+    [Reactive] public bool IsWinningOverrideTemplateSource { get; set; }
+    [Reactive] public string WinningOverrideTemplateUsersTooltip { get; set; } = string.Empty;
+
+    [Reactive] public bool IsAppModOnlyTemplateSource { get; set; }
+    [Reactive] public string AppModOnlyTemplateUsersTooltip { get; set; } = string.Empty;
+    
     [Reactive] public string NpcGroupsDisplay { get; set; } = "Groups: None";
 
     // This property reflects the centrally stored selection

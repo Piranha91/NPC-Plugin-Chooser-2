@@ -76,6 +76,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private HashSet<FormKey> _baseRecordIsTemplateSources = new();     // NPCs referenced as template by other base records
     private HashSet<FormKey> _winOverrideIsTemplateSources = new();    // NPCs referenced as template by other winning overrides
     private HashSet<FormKey> _appModUsedAsTemplateSources = new();     // NPCs referenced as template by any appearance mod's NPC records
+    
+    // Reverse maps: template target → who references it (for tooltips)
+    private Dictionary<FormKey, List<FormKey>> _winOverrideTemplateUsers = new();
+    private Dictionary<FormKey, List<(string ModName, FormKey NpcFormKey)>> _appModTemplateUsers = new();
 
     private readonly BehaviorSubject<VM_NpcsMenuSelection?> _requestScrollToNpcSubject =
         new BehaviorSubject<VM_NpcsMenuSelection?>(null);
@@ -1675,6 +1679,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             var newBaseIsTemplate = new HashSet<FormKey>();
             var newOverrideIsTemplate = new HashSet<FormKey>();
             var newAppModUsedAsTemplate = new HashSet<FormKey>();
+            var newWinOverrideTemplateUsers = new Dictionary<FormKey, List<FormKey>>();
+            var newAppModTemplateUsers = new Dictionary<FormKey, List<(string ModName, FormKey NpcFormKey)>>();
 
             // Pass 1: Compute per-NPC "has template" flags and build reverse "is template" indices
             foreach (var kvp in npcViewModelMap)
@@ -1689,7 +1695,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     vm.WinningOverrideHasTemplate = winHasTemplate;
                     if (winHasTemplate)
                     {
-                        newOverrideIsTemplate.Add(winOverride.Template.FormKey);
+                        var templateFk = winOverride.Template.FormKey;
+                        newOverrideIsTemplate.Add(templateFk);
+
+                        // Build reverse mapping for tooltip
+                        if (!newWinOverrideTemplateUsers.TryGetValue(templateFk, out var users))
+                        {
+                            users = new List<FormKey>();
+                            newWinOverrideTemplateUsers[templateFk] = users;
+                        }
+                        users.Add(fk);
                     }
                 }
 
@@ -1721,13 +1736,22 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 foreach (var modSetting in _lazyModsVm.Value.AllModSettings)
                 {
-                    foreach (var (_, notification) in modSetting.NpcFormKeysToNotifications)
+                    foreach (var (npcFormKey, notification) in modSetting.NpcFormKeysToNotifications)
                     {
                         if (notification.IssueType == NpcIssueType.Template &&
                             notification.ReferencedFormKey.HasValue &&
                             !notification.ReferencedFormKey.Value.IsNull)
                         {
-                            newAppModUsedAsTemplate.Add(notification.ReferencedFormKey.Value);
+                            var templateFk = notification.ReferencedFormKey.Value;
+                            newAppModUsedAsTemplate.Add(templateFk);
+
+                            // Build reverse mapping for tooltip
+                            if (!newAppModTemplateUsers.TryGetValue(templateFk, out var appUsers))
+                            {
+                                appUsers = new List<(string, FormKey)>();
+                                newAppModTemplateUsers[templateFk] = appUsers;
+                            }
+                            appUsers.Add((modSetting.DisplayName, npcFormKey));
                         }
                     }
                 }
@@ -1736,7 +1760,49 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             _baseRecordIsTemplateSources = newBaseIsTemplate;
             _winOverrideIsTemplateSources = newOverrideIsTemplate;
             _appModUsedAsTemplateSources = newAppModUsedAsTemplate;
+            _winOverrideTemplateUsers = newWinOverrideTemplateUsers;
+            _appModTemplateUsers = newAppModTemplateUsers;
             Debug.WriteLine($"Template cache built: BaseIsTemplate={newBaseIsTemplate.Count}, WinnerIsTemplate={newOverrideIsTemplate.Count}, AppModUsedAsTemplate={newAppModUsedAsTemplate.Count}");
+            
+            // Populate "is template source" indicators on each NPC VM
+            foreach (var kvp in npcViewModelMap)
+            {
+                var fk = kvp.Key;
+                var vm = kvp.Value;
+
+                // Green "T" — this NPC is used as template by another NPC's winning override
+                if (newWinOverrideTemplateUsers.TryGetValue(fk, out var winUsers) && winUsers.Count > 0)
+                {
+                    vm.IsWinningOverrideTemplateSource = true;
+                    var lines = winUsers.Select(userFk =>
+                    {
+                        if (npcViewModelMap.TryGetValue(userFk, out var userVm))
+                            return $"{userVm.DisplayName} ({userFk})";
+                        return userFk.ToString();
+                    });
+                    vm.WinningOverrideTemplateUsersTooltip =
+                        "Winning override is template source for:\n" + string.Join("\n", lines);
+                }
+
+                // Green "!" — this NPC is used as template ONLY by appearance mods (not base/winning override)
+                if (!newBaseIsTemplate.Contains(fk) &&
+                    !newOverrideIsTemplate.Contains(fk) &&
+                    newAppModTemplateUsers.TryGetValue(fk, out var appUsers) && appUsers.Count > 0)
+                {
+                    vm.IsAppModOnlyTemplateSource = true;
+                    var lines = appUsers.Select(entry =>
+                    {
+                        string npcLabel;
+                        if (npcViewModelMap.TryGetValue(entry.NpcFormKey, out var userVm))
+                            npcLabel = $"{userVm.DisplayName} ({entry.NpcFormKey})";
+                        else
+                            npcLabel = entry.NpcFormKey.ToString();
+                        return $"{npcLabel} in [{entry.ModName}]";
+                    });
+                    vm.AppModOnlyTemplateUsersTooltip =
+                        "Used as template by appearance mod(s):\n" + string.Join("\n", lines);
+                }
+            }
         });
 
         // 5. Finalize on UI thread
