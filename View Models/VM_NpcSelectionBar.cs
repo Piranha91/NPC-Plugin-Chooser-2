@@ -228,6 +228,23 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     public ReactiveCommand<VM_NpcsMenuSelection, Unit> AddFavoriteFaceToNpcCommand { get; }
     public ReactiveCommand<FormKey, Unit> JumpToTemplateReferenceCommand { get; }
 
+    // --- NPC Navigation Commands ---
+    public ReactiveCommand<Unit, Unit> NavigateNextNpcCommand { get; }
+    public ReactiveCommand<Unit, Unit> NavigatePreviousNpcCommand { get; }
+    public ReactiveCommand<Unit, Unit> NavigateBackNpcCommand { get; }
+    public ReactiveCommand<Unit, Unit> NavigateForwardNpcCommand { get; }
+
+    // Navigation history state
+    private readonly List<VM_NpcsMenuSelection> _npcViewHistory = new();
+    private int _npcViewHistoryIndex = -1;
+    private bool _isNavigatingHistory = false;
+    private readonly Subject<Unit> _npcNavHistoryChanged = new();
+
+    [ObservableAsProperty] public bool CanNavigateNext { get; }
+    [ObservableAsProperty] public bool CanNavigatePrevious { get; }
+    [ObservableAsProperty] public bool CanNavigateBack { get; }
+    [ObservableAsProperty] public bool CanNavigateForward { get; }
+
     // --- Constructor ---
     public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider,
         Settings settings,
@@ -306,6 +323,107 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             JumpToTemplateReference(fk);
         }).DisposeWith(_disposables);
 
+        // --- NPC Navigation Commands ---
+        var canNavigateNext = this.WhenAnyValue(
+                x => x.SelectedNpc,
+                x => x.FilteredNpcs.Count,
+                (sel, _) =>
+                {
+                    if (sel == null || FilteredNpcs.Count == 0) return false;
+                    int idx = FilteredNpcs.IndexOf(sel);
+                    return idx >= 0 && idx < FilteredNpcs.Count - 1;
+                });
+        canNavigateNext.ToPropertyEx(this, x => x.CanNavigateNext).DisposeWith(_disposables);
+
+        var canNavigatePrevious = this.WhenAnyValue(
+                x => x.SelectedNpc,
+                x => x.FilteredNpcs.Count,
+                (sel, _) =>
+                {
+                    if (sel == null || FilteredNpcs.Count == 0) return false;
+                    int idx = FilteredNpcs.IndexOf(sel);
+                    return idx > 0;
+                });
+        canNavigatePrevious.ToPropertyEx(this, x => x.CanNavigatePrevious).DisposeWith(_disposables);
+
+        var canNavigateBack = _npcNavHistoryChanged.StartWith(Unit.Default)
+            .Select(_ => _npcViewHistoryIndex > 0);
+        canNavigateBack.ToPropertyEx(this, x => x.CanNavigateBack).DisposeWith(_disposables);
+
+        var canNavigateForward = _npcNavHistoryChanged.StartWith(Unit.Default)
+            .Select(_ => _npcViewHistoryIndex >= 0 && _npcViewHistoryIndex < _npcViewHistory.Count - 1);
+        canNavigateForward.ToPropertyEx(this, x => x.CanNavigateForward).DisposeWith(_disposables);
+
+        NavigateNextNpcCommand = ReactiveCommand.Create(() =>
+        {
+            if (SelectedNpc == null) return;
+            int idx = FilteredNpcs.IndexOf(SelectedNpc);
+            if (idx >= 0 && idx < FilteredNpcs.Count - 1)
+            {
+                SelectedNpc = FilteredNpcs[idx + 1];
+                SignalScrollToNpc(SelectedNpc);
+            }
+        }, canNavigateNext).DisposeWith(_disposables);
+
+        NavigatePreviousNpcCommand = ReactiveCommand.Create(() =>
+        {
+            if (SelectedNpc == null) return;
+            int idx = FilteredNpcs.IndexOf(SelectedNpc);
+            if (idx > 0)
+            {
+                SelectedNpc = FilteredNpcs[idx - 1];
+                SignalScrollToNpc(SelectedNpc);
+            }
+        }, canNavigatePrevious).DisposeWith(_disposables);
+
+        NavigateBackNpcCommand = ReactiveCommand.Create(() =>
+        {
+            if (_npcViewHistoryIndex > 0)
+            {
+                _isNavigatingHistory = true;
+                _npcViewHistoryIndex--;
+                var target = _npcViewHistory[_npcViewHistoryIndex];
+                if (FilteredNpcs.Contains(target))
+                {
+                    SelectedNpc = target;
+                    SignalScrollToNpc(target);
+                }
+                else
+                {
+                    // Target not visible in current filter — skip without changing history
+                    _isNavigatingHistory = false;
+                }
+                _isNavigatingHistory = false;
+                _npcNavHistoryChanged.OnNext(Unit.Default);
+            }
+        }, canNavigateBack).DisposeWith(_disposables);
+
+        NavigateForwardNpcCommand = ReactiveCommand.Create(() =>
+        {
+            if (_npcViewHistoryIndex >= 0 && _npcViewHistoryIndex < _npcViewHistory.Count - 1)
+            {
+                _isNavigatingHistory = true;
+                _npcViewHistoryIndex++;
+                var target = _npcViewHistory[_npcViewHistoryIndex];
+                if (FilteredNpcs.Contains(target))
+                {
+                    SelectedNpc = target;
+                    SignalScrollToNpc(target);
+                }
+                else
+                {
+                    _isNavigatingHistory = false;
+                }
+                _isNavigatingHistory = false;
+                _npcNavHistoryChanged.OnNext(Unit.Default);
+            }
+        }, canNavigateForward).DisposeWith(_disposables);
+
+        NavigateNextNpcCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error NavigateNextNpcCommand: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        NavigatePreviousNpcCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error NavigatePreviousNpcCommand: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        NavigateBackNpcCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error NavigateBackNpcCommand: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+        NavigateForwardNpcCommand.ThrownExceptions.Subscribe(ex => Debug.WriteLine($"Error NavigateForwardNpcCommand: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables);
+
         ZoomInNpcsCommand.ThrownExceptions
             .Subscribe(ex => Debug.WriteLine($"Error ZoomInNpcsCommand: {ExceptionLogger.GetExceptionStack(ex)}")).DisposeWith(_disposables).DisposeWith(_disposables);
         ZoomOutNpcsCommand.ThrownExceptions
@@ -326,6 +444,28 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 {
                     NpcsViewHasUserManuallyZoomed = false;
                 }
+            })
+            .DisposeWith(_disposables);
+
+        // Track NPC view history for back/forward navigation
+        this.WhenAnyValue(x => x.SelectedNpc)
+            .Where(npc => npc != null && !_isNavigatingHistory)
+            .Subscribe(npc =>
+            {
+                // If we're not at the end of history, truncate forward entries
+                if (_npcViewHistoryIndex < _npcViewHistory.Count - 1)
+                {
+                    _npcViewHistory.RemoveRange(_npcViewHistoryIndex + 1,
+                        _npcViewHistory.Count - _npcViewHistoryIndex - 1);
+                }
+
+                // Avoid duplicate consecutive entries
+                if (_npcViewHistory.Count == 0 || _npcViewHistory[^1] != npc)
+                {
+                    _npcViewHistory.Add(npc!);
+                    _npcViewHistoryIndex = _npcViewHistory.Count - 1;
+                }
+                _npcNavHistoryChanged.OnNext(Unit.Default);
             })
             .DisposeWith(_disposables);
 
