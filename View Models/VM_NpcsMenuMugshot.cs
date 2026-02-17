@@ -570,7 +570,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 .FirstOrDefault(x => x.ModKey.Equals(ModKey));
 
             if (context != null &&
-                context.Record.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
+                Auxilliary.IsValidTemplatedNpc(context.Record))
             {
                 string message = String.Empty;
                 string title = String.Empty;

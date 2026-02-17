@@ -1018,7 +1018,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
 
                 // NEW: Skip NPCs that fully inherit their appearance from a template via the "Traits" flag.
-                if (npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
+                if (Auxilliary.IsValidTemplatedNpc(npcGetter))
                 {
                     continue;
                 }
@@ -2600,7 +2600,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 var newEntry = (currentNpcGetter.FormKey, Auxilliary.GetLogString(currentNpcGetter, _settings.LocalizationLanguage, true));
                 templateChain.Add(newEntry);
 
-                if (currentNpcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
+                if (Auxilliary.HasTraitsFlag(currentNpcGetter))
                 {
                     if (currentNpcGetter.Template == null || currentNpcGetter.Template.IsNull)
                     {

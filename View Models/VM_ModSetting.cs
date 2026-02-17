@@ -1073,8 +1073,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
                                 if (!FaceGenExists(currentNpcKey, allFaceGenLooseFiles,
                                         currentBsaCache ?? new HashSet<string>()) &&
-                                    !npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag
-                                        .Traits))
+                                    !Auxilliary.IsValidTemplatedNpc(npcGetter))
                                 {
                                     string message =
                                         $"Discarded {Auxilliary.GetLogString(npcGetter, language, true)} from {DisplayName} because it has no FaceGen and does not use a template.";
@@ -1097,11 +1096,9 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
                             using (ContextualPerformanceTracer.Trace("RefreshNpcLists.TemplateCheck"))
                             {
-                                if (npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag
-                                        .Traits))
+                                if (Auxilliary.IsValidTemplatedNpc(npcGetter))
                                 {
-                                    string templateStr = npcGetter.Template?.FormKey.ToString() ??
-                                                         "NULL TEMPLATE";
+                                    string templateStr = npcGetter.Template.FormKey.ToString();
 
                                     NpcFormKeysToNotifications[currentNpcKey] = (
                                         IssueType: NpcIssueType.Template,

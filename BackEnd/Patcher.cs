@@ -1286,7 +1286,7 @@ public class Patcher : OptionalUIModule
         AppendLog(
             $"      Copied appearance fields from {sourceNpc.FormKey.ModKey.FileName} to {targetNpc.FormKey} in patch.");
 
-        if (NPCisTemplated(targetNpc) && !NPCisTemplated(sourceNpc))
+        if (Auxilliary.IsValidTemplatedNpc(targetNpc) && !Auxilliary.IsValidTemplatedNpc(sourceNpc))
         {
             AppendLog($"      Removing template flag from {targetNpc.FormKey} in patch.");
             targetNpc.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
@@ -1375,13 +1375,6 @@ public class Patcher : OptionalUIModule
         }
         
         return false;
-    }
-
-    private bool NPCisTemplated(INpcGetter? npc)
-    {
-        if (npc == null) return false;
-        return !npc.Template.IsNull &&
-               npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits);
     }
 
     private IKeywordGetter GetoOrCreateKeyword(string keyword)

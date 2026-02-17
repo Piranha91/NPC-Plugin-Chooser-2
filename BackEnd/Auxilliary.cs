@@ -360,8 +360,7 @@ public class Auxilliary : IDisposable
         bool isTemplate = false;
         using (ContextualPerformanceTracer.Trace("IVAR.TemplateCheck"))
         {
-            isTemplate = npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag
-                .Traits);
+            isTemplate = IsValidTemplatedNpc(npcGetter);
 
             if (isTemplate)
             {
@@ -552,6 +551,14 @@ public class Auxilliary : IDisposable
     public static bool HasTraitsFlag(INpcGetter npc)
     {
         return npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits);
+    }
+
+    public static bool IsValidTemplatedNpc(INpcGetter? npc)
+    {
+        return npc != null &&
+               HasTraitsFlag(npc) && 
+               npc.Template != null && 
+               !npc.Template.IsNull;
     }
     
     /// <summary>

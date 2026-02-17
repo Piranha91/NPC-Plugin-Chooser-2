@@ -3061,8 +3061,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                             }
                         }
 
-                        bool npcGetterUsesTemplate = Auxilliary.HasTraitsFlag(npcGetter);
-                        bool baseNpcGetterUsesTemplate = Auxilliary.HasTraitsFlag(baseNpcGetter);
+                        bool npcGetterUsesTemplate = Auxilliary.IsValidTemplatedNpc(npcGetter);
+                        bool baseNpcGetterUsesTemplate = Auxilliary.IsValidTemplatedNpc(baseNpcGetter);
 
                         if (npcGetterUsesTemplate != baseNpcGetterUsesTemplate)
                         {
@@ -3188,7 +3188,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 var newEntry = (currentNpcGetter.FormKey, Auxilliary.GetLogString(currentNpcGetter, _settings.LocalizationLanguage, true));
                 templateChain.Add(newEntry);
 
-                if (currentNpcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits))
+                if (Auxilliary.HasTraitsFlag(currentNpcGetter))
                 {
                     if (currentNpcGetter.Template is null || currentNpcGetter.Template.IsNull)
                     {

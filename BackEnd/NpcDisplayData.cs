@@ -28,7 +28,7 @@ public record NpcDisplayData
             FormKey = npcGetter.FormKey,
             Name = npcGetter.Name,
             EditorID = npcGetter.EditorID,
-            IsTemplateUser = npcGetter.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits),
+            IsTemplateUser = Auxilliary.IsValidTemplatedNpc(npcGetter),
             TemplateFormKey = npcGetter.Template.FormKey,
             IsInLoadOrder = true,
             IsUnique = npcGetter.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Unique),
