@@ -43,14 +43,25 @@ public class VM_NpcsMenuSelection : ReactiveObject
     // Template cache — populated once during initialization
     public bool BaseRecordHasTemplate { get; set; }
     public bool WinningOverrideHasTemplate { get; set; }
-    
-    // Template "is source" indicators — populated during InitializeAsync
-    [Reactive] public bool IsWinningOverrideTemplateSource { get; set; }
-    [Reactive] public string WinningOverrideTemplateUsersTooltip { get; set; } = string.Empty;
 
-    [Reactive] public bool IsAppModOnlyTemplateSource { get; set; }
-    [Reactive] public string AppModOnlyTemplateUsersTooltip { get; set; } = string.Empty;
-    
+    // --- Template source indicators ---
+
+    // Grey T — winning override template source (static, set once during init)
+    [Reactive] public bool IsWinningOverrideTemplateSource { get; set; }
+    public string WinningOverrideTemplateUsersTooltip { get; set; } = string.Empty;
+
+    // Raw reference data — set once during init, used by recalculation
+    public List<(string ModName, FormKey NpcFormKey, string NpcDisplayName)> AppModTemplateReferences { get; set; } = new();
+
+    // Purple/Green T — app-mod template source (reactive, updated on selection change)
+    [Reactive] public bool ShowAppModTemplateT { get; set; }
+    [Reactive] public bool IsAppModTemplateGreen { get; set; }  // true = green, false = purple
+    [Reactive] public string AppModTemplateTooltip { get; set; } = string.Empty;
+
+    // Red ! — template conflict (reactive, updated on selection change)
+    [Reactive] public bool HasTemplateConflict { get; set; }
+    [Reactive] public string TemplateConflictTooltip { get; set; } = string.Empty;
+
     [Reactive] public string NpcGroupsDisplay { get; set; } = "Groups: None";
 
     // This property reflects the centrally stored selection

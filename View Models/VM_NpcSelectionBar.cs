@@ -76,10 +76,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private HashSet<FormKey> _baseRecordIsTemplateSources = new();     // NPCs referenced as template by other base records
     private HashSet<FormKey> _winOverrideIsTemplateSources = new();    // NPCs referenced as template by other winning overrides
     private HashSet<FormKey> _appModUsedAsTemplateSources = new();     // NPCs referenced as template by any appearance mod's NPC records
-    
-    // Reverse maps: template target → who references it (for tooltips)
+
+    // Reverse maps: template target → who references it (for tooltips & recalculation)
     private Dictionary<FormKey, List<FormKey>> _winOverrideTemplateUsers = new();
     private Dictionary<FormKey, List<(string ModName, FormKey NpcFormKey)>> _appModTemplateUsers = new();
+
+    // When NPC X's selection changes, which template-source NPCs need recalculation?
+    private Dictionary<FormKey, HashSet<FormKey>> _npcToAffectedTemplateSources = new();
+
+    // Fast lookup from FormKey → VM (populated during init)
+    private Dictionary<FormKey, VM_NpcsMenuSelection> _npcVmLookup = new();
 
     private readonly BehaviorSubject<VM_NpcsMenuSelection?> _requestScrollToNpcSubject =
         new BehaviorSubject<VM_NpcsMenuSelection?>(null);
@@ -345,6 +351,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         _consistencyProvider.NpcSelectionChanged
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(args => UpdateSelectionState(args.NpcFormKey, args.SelectedModName, args.SourceNpcFormKey))
+            .DisposeWith(_disposables);
+        
+        _consistencyProvider.NpcSelectionChanged
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(args => RecalculateTemplateIndicatorsForSelection(args.NpcFormKey))
             .DisposeWith(_disposables);
         
         // Listen for the request to share an appearance
@@ -1679,6 +1690,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             var newBaseIsTemplate = new HashSet<FormKey>();
             var newOverrideIsTemplate = new HashSet<FormKey>();
             var newAppModUsedAsTemplate = new HashSet<FormKey>();
+
+            // NEW: reverse maps for tooltip content
             var newWinOverrideTemplateUsers = new Dictionary<FormKey, List<FormKey>>();
             var newAppModTemplateUsers = new Dictionary<FormKey, List<(string ModName, FormKey NpcFormKey)>>();
 
@@ -1699,12 +1712,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                         newOverrideIsTemplate.Add(templateFk);
 
                         // Build reverse mapping for tooltip
-                        if (!newWinOverrideTemplateUsers.TryGetValue(templateFk, out var users))
+                        if (!newWinOverrideTemplateUsers.TryGetValue(templateFk, out var winUsers))
                         {
-                            users = new List<FormKey>();
-                            newWinOverrideTemplateUsers[templateFk] = users;
+                            winUsers = new List<FormKey>();
+                            newWinOverrideTemplateUsers[templateFk] = winUsers;
                         }
-                        users.Add(fk);
+                        winUsers.Add(fk);
                     }
                 }
 
@@ -1745,7 +1758,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                             var templateFk = notification.ReferencedFormKey.Value;
                             newAppModUsedAsTemplate.Add(templateFk);
 
-                            // Build reverse mapping for tooltip
+                            // Build reverse mapping
                             if (!newAppModTemplateUsers.TryGetValue(templateFk, out var appUsers))
                             {
                                 appUsers = new List<(string, FormKey)>();
@@ -1757,50 +1770,67 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
             }
 
+            // Store all caches
             _baseRecordIsTemplateSources = newBaseIsTemplate;
             _winOverrideIsTemplateSources = newOverrideIsTemplate;
             _appModUsedAsTemplateSources = newAppModUsedAsTemplate;
             _winOverrideTemplateUsers = newWinOverrideTemplateUsers;
             _appModTemplateUsers = newAppModTemplateUsers;
+
+            // Build reverse lookup: "when NPC X's selection changes, recalculate these template sources"
+            var newNpcToAffected = new Dictionary<FormKey, HashSet<FormKey>>();
+            foreach (var (templateFk, references) in newAppModTemplateUsers)
+            {
+                foreach (var (_, npcFk) in references)
+                {
+                    if (!newNpcToAffected.TryGetValue(npcFk, out var set))
+                    {
+                        set = new HashSet<FormKey>();
+                        newNpcToAffected[npcFk] = set;
+                    }
+                    set.Add(templateFk);
+                }
+            }
+            _npcToAffectedTemplateSources = newNpcToAffected;
+
+            // Build VM lookup for fast access during recalculation
+            _npcVmLookup = new Dictionary<FormKey, VM_NpcsMenuSelection>(npcViewModelMap);
+
             Debug.WriteLine($"Template cache built: BaseIsTemplate={newBaseIsTemplate.Count}, WinnerIsTemplate={newOverrideIsTemplate.Count}, AppModUsedAsTemplate={newAppModUsedAsTemplate.Count}");
-            
-            // Populate "is template source" indicators on each NPC VM
+
+            // --- Populate template-source indicators on each NPC VM ---
             foreach (var kvp in npcViewModelMap)
             {
                 var fk = kvp.Key;
                 var vm = kvp.Value;
 
-                // Green "T" — this NPC is used as template by another NPC's winning override
-                if (newWinOverrideTemplateUsers.TryGetValue(fk, out var winUsers) && winUsers.Count > 0)
+                // Grey T — winning override template source (static)
+                if (newWinOverrideTemplateUsers.TryGetValue(fk, out var winUsersForVm) && winUsersForVm.Count > 0)
                 {
                     vm.IsWinningOverrideTemplateSource = true;
-                    var lines = winUsers.Select(userFk =>
+                    var lines = winUsersForVm.Select(userFk =>
                     {
                         if (npcViewModelMap.TryGetValue(userFk, out var userVm))
                             return $"{userVm.DisplayName} ({userFk})";
                         return userFk.ToString();
                     });
                     vm.WinningOverrideTemplateUsersTooltip =
-                        "Winning override is template source for:\n" + string.Join("\n", lines);
+                        "Winning override template source for:\n" + string.Join("\n", lines);
                 }
 
-                // Green "!" — this NPC is used as template ONLY by appearance mods (not base/winning override)
-                if (!newBaseIsTemplate.Contains(fk) &&
-                    !newOverrideIsTemplate.Contains(fk) &&
-                    newAppModTemplateUsers.TryGetValue(fk, out var appUsers) && appUsers.Count > 0)
+                // Store raw app-mod references with display names baked in
+                if (newAppModTemplateUsers.TryGetValue(fk, out var appRefs) && appRefs.Count > 0)
                 {
-                    vm.IsAppModOnlyTemplateSource = true;
-                    var lines = appUsers.Select(entry =>
+                    vm.AppModTemplateReferences = appRefs.Select(entry =>
                     {
-                        string npcLabel;
-                        if (npcViewModelMap.TryGetValue(entry.NpcFormKey, out var userVm))
-                            npcLabel = $"{userVm.DisplayName} ({entry.NpcFormKey})";
-                        else
-                            npcLabel = entry.NpcFormKey.ToString();
-                        return $"{npcLabel} in [{entry.ModName}]";
-                    });
-                    vm.AppModOnlyTemplateUsersTooltip =
-                        "Used as template by appearance mod(s):\n" + string.Join("\n", lines);
+                        string displayName = npcViewModelMap.TryGetValue(entry.NpcFormKey, out var userVm)
+                            ? userVm.DisplayName
+                            : entry.NpcFormKey.ToString();
+                        return (entry.ModName, entry.NpcFormKey, displayName);
+                    }).ToList();
+
+                    // Initial calculation of purple/green/red state
+                    RecalculateAppModTemplateIndicators(vm);
                 }
             }
         });
@@ -3604,6 +3634,114 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         Debug.WriteLine($"Mugshot cache updated for {npcFormKey} with mod '{modName}'.");
+    }
+
+    // --- Template Source Indicator Recalculation ---
+
+    /// <summary>
+    /// Recalculates the purple/green T and red ! indicators for a single NPC
+    /// that is an app-mod template source, based on current selections.
+    /// </summary>
+    private void RecalculateAppModTemplateIndicators(VM_NpcsMenuSelection vm)
+    {
+        if (vm.AppModTemplateReferences.Count == 0)
+        {
+            vm.ShowAppModTemplateT = false;
+            vm.HasTemplateConflict = false;
+            vm.TemplateConflictTooltip = string.Empty;
+            vm.AppModTemplateTooltip = string.Empty;
+            return;
+        }
+
+        vm.ShowAppModTemplateT = true;
+
+        var selectedRefs = new List<(string ModName, FormKey NpcFormKey, string NpcDisplayName)>();
+        var unselectedRefs = new List<(string ModName, FormKey NpcFormKey, string NpcDisplayName)>();
+
+        foreach (var entry in vm.AppModTemplateReferences)
+        {
+            var selection = _consistencyProvider.GetSelectedMod(entry.NpcFormKey);
+            if (string.Equals(selection.ModName, entry.ModName, StringComparison.OrdinalIgnoreCase))
+                selectedRefs.Add(entry);
+            else
+                unselectedRefs.Add(entry);
+        }
+
+        bool anySelected = selectedRefs.Count > 0;
+        vm.IsAppModTemplateGreen = anySelected;
+
+        // Build tooltip
+        var sb = new StringBuilder();
+        if (selectedRefs.Any())
+        {
+            sb.Append("Currently selected as template source for:");
+            foreach (var r in selectedRefs)
+                sb.Append($"\n  {r.NpcDisplayName} ({r.NpcFormKey}) in [{r.ModName}]");
+        }
+        if (unselectedRefs.Any())
+        {
+            if (sb.Length > 0) sb.Append("\n\n");
+            sb.Append("Referenced as template source by (not currently selected):");
+            foreach (var r in unselectedRefs)
+                sb.Append($"\n  {r.NpcDisplayName} ({r.NpcFormKey}) in [{r.ModName}]");
+        }
+        vm.AppModTemplateTooltip = sb.ToString();
+
+        // Red ! conflict: a selected app-mod references this NPC as template,
+        // but this NPC has a DIFFERENT mod selected for itself
+        if (anySelected)
+        {
+            var thisSelection = _consistencyProvider.GetSelectedMod(vm.NpcFormKey);
+            if (!string.IsNullOrEmpty(thisSelection.ModName))
+            {
+                var conflicting = selectedRefs
+                    .Where(r => !string.Equals(r.ModName, thisSelection.ModName,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (conflicting.Any())
+                {
+                    vm.HasTemplateConflict = true;
+                    var cSb = new StringBuilder();
+                    cSb.Append($"This NPC has [{thisSelection.ModName}] selected, " +
+                        "but is used as a template source by NPCs with a different mod selected:");
+                    foreach (var c in conflicting)
+                        cSb.Append($"\n  {c.NpcDisplayName} ({c.NpcFormKey}) → [{c.ModName}]");
+                    cSb.Append("\nThe template relationship may cause appearance conflicts.");
+                    vm.TemplateConflictTooltip = cSb.ToString();
+                    return;
+                }
+            }
+        }
+
+        vm.HasTemplateConflict = false;
+        vm.TemplateConflictTooltip = string.Empty;
+    }
+
+    /// <summary>
+    /// When a selection changes for any NPC, recalculate all template-source NPCs
+    /// that could be affected.
+    /// </summary>
+    private void RecalculateTemplateIndicatorsForSelection(FormKey changedNpcFormKey)
+    {
+        // 1. This NPC might be referenced by template sources — recalculate those
+        if (_npcToAffectedTemplateSources.TryGetValue(changedNpcFormKey, out var affectedSources))
+        {
+            foreach (var templateSourceFk in affectedSources)
+            {
+                if (_npcVmLookup.TryGetValue(templateSourceFk, out var sourceVm))
+                {
+                    RecalculateAppModTemplateIndicators(sourceVm);
+                }
+            }
+        }
+
+        // 2. This NPC might itself be a template source — its red ! depends on its own selection
+        if (_npcVmLookup.TryGetValue(changedNpcFormKey, out var thisVm) &&
+            thisVm.AppModTemplateReferences.Count > 0)
+        {
+            RecalculateAppModTemplateIndicators(thisVm);
+        }
     }
 
     // --- Disposal ---
