@@ -62,6 +62,10 @@ public class VM_NpcsMenuSelection : ReactiveObject
     [Reactive] public bool HasTemplateConflict { get; set; }
     [Reactive] public string TemplateConflictTooltip { get; set; } = string.Empty;
 
+    // Context menu "Jump to Template Reference" — populated during init
+    public ObservableCollection<TemplateReferenceEntry> TemplateReferenceEntries { get; set; } = new();
+    [Reactive] public bool HasTemplateReferences { get; set; }
+
     [Reactive] public string NpcGroupsDisplay { get; set; } = "Groups: None";
 
     // This property reflects the centrally stored selection
@@ -176,6 +180,11 @@ public class VM_NpcsMenuSelection : ReactiveObject
         }
     }
 }
+
+/// <summary>
+/// Lightweight entry for the "Jump to Template Reference" context menu.
+/// </summary>
+public record TemplateReferenceEntry(string DisplayText, FormKey NpcFormKey);
 
 public static class NpcListExtensions
 {

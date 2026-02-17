@@ -226,6 +226,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     public ReactiveCommand<object, Unit> SetNpcOutfitOverrideCommand { get; }
     public ReactiveCommand<Unit, Unit> ShowFavoritesCommand { get; }
     public ReactiveCommand<VM_NpcsMenuSelection, Unit> AddFavoriteFaceToNpcCommand { get; }
+    public ReactiveCommand<FormKey, Unit> JumpToTemplateReferenceCommand { get; }
 
     // --- Constructor ---
     public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider,
@@ -298,6 +299,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 SetNpcOutfitOverride(npcVM.NpcFormKey, newOverride);
             }
+        }).DisposeWith(_disposables);
+
+        JumpToTemplateReferenceCommand = ReactiveCommand.Create<FormKey>(fk =>
+        {
+            JumpToTemplateReference(fk);
         }).DisposeWith(_disposables);
 
         ZoomInNpcsCommand.ThrownExceptions
@@ -1837,6 +1843,40 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
                     // Initial calculation of purple/green/red state
                     RecalculateAppModTemplateIndicators(vm);
+                }
+
+                // Populate "Jump to Template Reference" context menu entries
+                var jumpEntries = new List<TemplateReferenceEntry>();
+
+                if (newWinOverrideTemplateUsers.TryGetValue(fk, out var winJumpUsers))
+                {
+                    foreach (var userFk in winJumpUsers)
+                    {
+                        string label = npcViewModelMap.TryGetValue(userFk, out var userVm)
+                            ? $"{userVm.DisplayName}  (winning override)"
+                            : $"{userFk}  (winning override)";
+                        jumpEntries.Add(new TemplateReferenceEntry(label, userFk));
+                    }
+                }
+
+                if (newAppModTemplateUsers.TryGetValue(fk, out var appJumpRefs))
+                {
+                    foreach (var (modName, npcFk) in appJumpRefs)
+                    {
+                        // Avoid duplicates if already added as a winning override user
+                        if (jumpEntries.Any(e => e.NpcFormKey.Equals(npcFk)))
+                            continue;
+                        string label = npcViewModelMap.TryGetValue(npcFk, out var userVm)
+                            ? $"{userVm.DisplayName}  (in [{modName}])"
+                            : $"{npcFk}  (in [{modName}])";
+                        jumpEntries.Add(new TemplateReferenceEntry(label, npcFk));
+                    }
+                }
+
+                if (jumpEntries.Count > 0)
+                {
+                    vm.TemplateReferenceEntries = new ObservableCollection<TemplateReferenceEntry>(jumpEntries);
+                    vm.HasTemplateReferences = true;
                 }
             }
         });
@@ -3747,6 +3787,45 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             thisVm.AppModTemplateReferences.Count > 0)
         {
             RecalculateAppModTemplateIndicators(thisVm);
+        }
+    }
+
+    /// <summary>
+    /// Navigates to an NPC in the list by FormKey, ensuring it is visible in the filtered list.
+    /// Used by the "Jump to Template Reference" context menu.
+    /// </summary>
+    private void JumpToTemplateReference(FormKey targetNpcFormKey)
+    {
+        if (targetNpcFormKey.IsNull) return;
+
+        var targetVm = AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(targetNpcFormKey));
+        if (targetVm == null)
+        {
+            Debug.WriteLine($"JumpToTemplateReference: NPC {targetNpcFormKey} not found in AllNpcs.");
+            return;
+        }
+
+        // If the target is not in the current filtered list, clear filters to make it visible
+        if (!FilteredNpcs.Contains(targetVm))
+        {
+            Debug.WriteLine($"JumpToTemplateReference: NPC {targetVm.DisplayName} not in filtered list. Clearing filters.");
+            SearchText1 = string.Empty;
+            SearchText2 = string.Empty;
+            SearchText3 = string.Empty;
+            ShowSingleOptionNpcs = true;
+            ShowUnloadedNpcs = true;
+            ApplyFilter(initializing: false, preserveSelection: false);
+        }
+
+        if (FilteredNpcs.Contains(targetVm))
+        {
+            SelectedNpc = targetVm;
+            SignalScrollToNpc(targetVm);
+            Debug.WriteLine($"JumpToTemplateReference: Navigated to {targetVm.DisplayName}.");
+        }
+        else
+        {
+            Debug.WriteLine($"JumpToTemplateReference: NPC {targetVm.DisplayName} still not visible after clearing filters.");
         }
     }
 

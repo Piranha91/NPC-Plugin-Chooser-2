@@ -397,6 +397,32 @@
                                             <MenuItem Header="Add Face from Favorites"
                                                       Command="{Binding Path=DataContext.AddFavoriteFaceToNpcCommand, Source={StaticResource DataContextProxy}}"
                                                       CommandParameter="{Binding}"/>
+                                            <Separator Visibility="{Binding HasTemplateReferences, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <MenuItem Header="Jump to Template Reference"
+                                                      ItemsSource="{Binding TemplateReferenceEntries}"
+                                                      Command="{Binding Path=DataContext.JumpToTemplateReferenceCommand, Source={StaticResource DataContextProxy}}"
+                                                      CommandParameter="{Binding TemplateReferenceEntries[0].NpcFormKey}"
+                                                      Visibility="{Binding HasTemplateReferences, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding TemplateReferenceEntries.Count}" Value="1">
+                                                                <Setter Property="ItemsSource" Value="{x:Null}"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding TemplateReferenceEntries.Count, Converter={StaticResource IsGreaterThanOneConverter}}" Value="True">
+                                                                <Setter Property="Command" Value="{x:Null}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </MenuItem.Style>
+                                                <MenuItem.ItemContainerStyle>
+                                                    <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                        <Setter Property="Header" Value="{Binding DisplayText}"/>
+                                                        <Setter Property="Command" Value="{Binding Path=DataContext.JumpToTemplateReferenceCommand, Source={StaticResource DataContextProxy}}"/>
+                                                        <Setter Property="CommandParameter" Value="{Binding NpcFormKey}"/>
+                                                    </Style>
+                                                </MenuItem.ItemContainerStyle>
+                                            </MenuItem>
                                         </ContextMenu>
                                     </Border.ContextMenu>
                                      <Grid>
