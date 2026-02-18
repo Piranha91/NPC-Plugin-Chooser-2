@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Reactive.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Media;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
 using NPC_Plugin_Chooser_2.Views;
@@ -14,7 +16,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 /// <summary>
 /// Handles migrating user settings from older versions of the application to the current version.
 /// </summary>
-public class UpdateHandler
+public class UpdateHandler 
 {
     private readonly Settings _settings;
 
@@ -65,8 +67,8 @@ public class UpdateHandler
     /// Checks the settings version against the current program version and applies any necessary updates.
     /// Runs after UI initializes
     /// </summary>
-    public async Task FinalCheckForUpdatesAndPatch(VM_NpcSelectionBar npcsVm, VM_Mods modsVm,
-        VM_SplashScreen? splashReporter)
+    public async Task FinalCheckForUpdatesAndPatch(VM_NpcSelectionBar npcsVm, VM_Mods modsVm, PluginProvider pluginProvider,
+        Auxilliary aux, VM_SplashScreen? splashReporter)
     {
         // If the settings version is empty (e.g., a new user), there's nothing to migrate.
         if (string.IsNullOrWhiteSpace(_settings.ProgramVersion))
@@ -112,6 +114,11 @@ public class UpdateHandler
         if (settingsVersion < "2.1.1")
         {
             await UpdateTo2_1_1_Final(modsVm, splashReporter);
+        }
+        
+        if (settingsVersion < "2.1.3")
+        {
+            await UpdateTo2_1_3_Final(modsVm, npcsVm, pluginProvider, aux, splashReporter);
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -384,5 +391,263 @@ public class UpdateHandler
 
         Debug.WriteLine(
             $"SkyPatcher Template Scan Complete. Cached {_settings.CachedSkyPatcherTemplates.Count} templates.");
+    }
+    
+    /// <summary>
+    /// Prunes NPCs from all mod entries that no longer pass the updated race/template
+    /// validation (e.g. templated dragons, spiders, etc. that were previously allowed
+    /// through because any templated NPC bypassed the ActorTypeNPC check).
+    /// 
+    /// When the same NPC appears in multiple plugins within a single VM_ModSetting,
+    /// priority is determined by CorrespondingModKeys order (last = highest priority).
+    /// If the highest-priority version passes the check, the NPC is kept even if a
+    /// lower-priority version would fail.
+    /// </summary>
+    private async Task UpdateTo2_1_3_Final(VM_Mods modsVm, VM_NpcSelectionBar npcsVm,
+        PluginProvider pluginProvider, Auxilliary aux, VM_SplashScreen? splashReporter)
+    {
+        splashReporter?.UpdateStep("Updating to 2.1.3: Pruning invalid templated NPCs...");
+
+        var modsToCheck = modsVm.AllModSettings.ToList();
+
+        if (!modsToCheck.Any())
+        {
+            Debug.WriteLine("2.1.3 Update: No mod entries found.");
+            return;
+        }
+
+        // --- Phase 1: Scan all mods and compile the full removal manifest on a background thread ---
+        // Key: VM_ModSetting  Value: list of (FormKey, logString) pairs flagged for removal
+        var removalManifest = new Dictionary<VM_ModSetting, List<(FormKey NpcFormKey, string LogString)>>();
+        // Track which plugins were loaded per mod so we can unload them afterwards
+        var loadedPathsByMod = new Dictionary<VM_ModSetting, HashSet<string>>();
+        // Keep the loaded plugins alive for Phase 3 (NpcNames/NpcEditorIDs rebuild)
+        var pluginsByMod = new Dictionary<VM_ModSetting, HashSet<ISkyrimModGetter>>();
+
+        await Task.Run(() =>
+        {
+            int modIndex = 0;
+            foreach (var vm in modsToCheck)
+            {
+                modIndex++;
+                splashReporter?.UpdateProgress((double)modIndex / modsToCheck.Count * 50,
+                    $"Scanning {vm.DisplayName}...");
+
+                var modFolderPaths = vm.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var plugins = pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPaths, out var loadedPaths);
+                loadedPathsByMod[vm] = loadedPaths;
+                pluginsByMod[vm] = plugins;
+
+                // Build a lookup of NPC records respecting CorrespondingModKeys priority.
+                // Iterate plugins in CorrespondingModKeys order so that later (higher-priority)
+                // entries overwrite earlier ones.
+                var npcLookup = new Dictionary<FormKey, INpcGetter>();
+                foreach (var modKey in vm.CorrespondingModKeys)
+                {
+                    var plugin = plugins.FirstOrDefault(p => p.ModKey == modKey);
+                    if (plugin == null) continue;
+
+                    foreach (var npc in plugin.Npcs)
+                    {
+                        npcLookup[npc.FormKey] = npc; // last-wins: higher-priority ModKey overwrites
+                    }
+                }
+
+                var flaggedForRemoval = new List<(FormKey, string)>();
+
+                foreach (var npcFormKey in vm.NpcFormKeys)
+                {
+                    // If the NPC isn't in the loaded plugins, it may have come from another source
+                    // (e.g. FaceGen-only or mugshot-only). Leave it alone.
+                    if (!npcLookup.TryGetValue(npcFormKey, out var npcGetter))
+                    {
+                        continue;
+                    }
+
+                    if (!aux.IsValidAppearanceRace(npcGetter.Race.FormKey, npcGetter,
+                            _settings.LocalizationLanguage, out string rejectionMessage, out var resolvedRace))
+                    {
+                        var raceLogStr = resolvedRace != null
+                            ? Auxilliary.GetLogString(resolvedRace, _settings.LocalizationLanguage, fullString: false)
+                            : npcGetter.Race.FormKey.ToString();
+                        var logStr = Auxilliary.GetLogString(npcGetter, _settings.LocalizationLanguage, fullString: true)
+                                     + $" [Race: {raceLogStr}]";
+                        flaggedForRemoval.Add((npcFormKey, logStr));
+                        Debug.WriteLine(
+                            $"2.1.3 Update: Flagging {logStr} from {vm.DisplayName} because {rejectionMessage}");
+                    }
+                }
+
+                if (flaggedForRemoval.Any())
+                {
+                    removalManifest[vm] = flaggedForRemoval;
+                }
+            }
+        });
+
+        // If nothing to remove, clean up and return early
+        if (!removalManifest.Any())
+        {
+            Debug.WriteLine("2.1.3 Update: No invalid templated NPCs found across any mods.");
+            foreach (var kvp in loadedPathsByMod)
+            {
+                pluginProvider.UnloadPlugins(kvp.Value);
+            }
+            return;
+        }
+
+        // --- Phase 2: User notification and optional backup (UI thread) ---
+        int totalFlagged = removalManifest.Values.Sum(list => list.Count);
+
+        // Build a combined display message
+        var displayMessage = new StringBuilder();
+        displayMessage.AppendLine(
+            "2.1.3 has updated its NPC loader to exclude non-humanoid template NPCs which previously " +
+            "had been erroneously included in the NPC list. The following NPCs are slated for removal:");
+        displayMessage.AppendLine();
+
+        foreach (var (vm, flagged) in removalManifest)
+        {
+            displayMessage.AppendLine($"[{vm.DisplayName}] ({flagged.Count} NPC(s)):");
+            foreach (var (_, logStr) in flagged)
+            {
+                displayMessage.AppendLine($"  • {logStr}");
+            }
+            displayMessage.AppendLine();
+        }
+
+        // Check if any flagged NPCs have user assignments
+        var allFlaggedFormKeys = removalManifest.Values
+            .SelectMany(list => list.Select(entry => entry.NpcFormKey))
+            .ToHashSet();
+
+        var flaggedWithAssignments = allFlaggedFormKeys
+            .Where(fk => _settings.SelectedAppearanceMods.ContainsKey(fk))
+            .ToList();
+
+        if (flaggedWithAssignments.Any())
+        {
+            var backupMessage = new StringBuilder();
+            backupMessage.AppendLine(
+                "2.1.3 has updated its NPC loader to exclude non-humanoid template NPCs which previously " +
+                "had been erroneously included in the NPC list. You have made a selection for the following " +
+                "NPCs which are slated for removal. Would you like to make a backup of your selections now " +
+                "so that if any of the removals are erroneous, you can restore them by re-importing your list?");
+            backupMessage.AppendLine();
+
+            foreach (var fk in flaggedWithAssignments)
+            {
+                var (modName, _) = _settings.SelectedAppearanceMods[fk];
+                // Find the log string from the manifest
+                var logStr = removalManifest.Values
+                    .SelectMany(list => list)
+                    .FirstOrDefault(entry => entry.NpcFormKey == fk).LogString ?? fk.ToString();
+                backupMessage.AppendLine($"  • {logStr}  →  [{modName}]");
+            }
+
+            if (ScrollableMessageBox.Confirm(backupMessage.ToString(), "Backup Selections Before 2.1.3 Update",
+                    MessageBoxImage.Warning))
+            {
+                // Execute the same export that the Export button uses
+                try
+                {
+                    await npcsVm.ExportChoicesCommand.Execute().FirstAsync();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"2.1.3 Update: Export failed or was cancelled: {ex.Message}");
+                    // If the export failed, we still proceed with the removal
+                }
+            }
+        }
+
+        // --- Phase 3: Perform the removal and rebuild NpcNames/NpcEditorIDs on a background thread ---
+        splashReporter?.UpdateStep("Updating to 2.1.3: Removing invalid NPCs...");
+
+        await Task.Run(() =>
+        {
+            int totalRemoved = 0;
+
+            foreach (var (vm, flagged) in removalManifest)
+            {
+                var formKeysToRemove = flagged.Select(entry => entry.NpcFormKey).ToHashSet();
+
+                // Remove from all mod-level collections
+                foreach (var formKey in formKeysToRemove)
+                {
+                    vm.NpcFormKeys.Remove(formKey);
+                    vm.NpcFormKeysToDisplayName.Remove(formKey);
+                    vm.AvailablePluginsForNpcs.Remove(formKey);
+                    vm.NpcFormKeysToNotifications.Remove(formKey);
+                    vm.AmbiguousNpcFormKeys.Remove(formKey);
+
+                    // Clear any user selection for the pruned NPC
+                    _settings.SelectedAppearanceMods.Remove(formKey);
+                }
+
+                // Rebuild NpcNames and NpcEditorIDs from the remaining NPCs
+                var remainingNpcNames = new HashSet<string>();
+                var remainingNpcEditorIDs = new HashSet<string>();
+                var npcFormKeysFoundInPlugins = new HashSet<FormKey>();
+
+                if (pluginsByMod.TryGetValue(vm, out var plugins))
+                {
+                    foreach (var plugin in plugins)
+                    {
+                        foreach (var npc in plugin.Npcs)
+                        {
+                            // Only include NPCs that are still in the mod's NPC list
+                            if (!vm.NpcFormKeys.Contains(npc.FormKey)) continue;
+                            npcFormKeysFoundInPlugins.Add(npc.FormKey);
+
+                            if (Auxilliary.TryGetName(npc, _settings.LocalizationLanguage,
+                                    _settings.FixGarbledText, out string name))
+                            {
+                                remainingNpcNames.Add(name);
+                            }
+
+                            if (!string.IsNullOrEmpty(npc.EditorID))
+                            {
+                                remainingNpcEditorIDs.Add(npc.EditorID);
+                            }
+                        }
+                    }
+                }
+                
+                // For remaining NPCs not found in plugins (mugshot-only, FaceGen-only),
+                // preserve their display names so search still works
+                foreach (var npcFormKey in vm.NpcFormKeys)
+                {
+                    if (npcFormKeysFoundInPlugins.Contains(npcFormKey)) continue;
+                    if (vm.NpcFormKeysToDisplayName.TryGetValue(npcFormKey, out var displayName)
+                        && !string.IsNullOrEmpty(displayName))
+                    {
+                        remainingNpcNames.Add(displayName);
+                    }
+                }
+
+                vm.NpcNames = remainingNpcNames;
+                vm.NpcEditorIDs = remainingNpcEditorIDs;
+                vm.RefreshNpcCount();
+
+                totalRemoved += formKeysToRemove.Count;
+                Debug.WriteLine(
+                    $"2.1.3 Update: Removed {formKeysToRemove.Count} invalid NPC(s) from {vm.DisplayName}");
+            }
+
+            Debug.WriteLine($"2.1.3 Update: Pruning complete. Removed {totalRemoved} invalid NPC(s) total.");
+        });
+        
+        // --- Phase 4: Synchronize the NPC selection bar (UI thread) ---
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            npcsVm.PruneRemovedNpcs(allFlaggedFormKeys);
+        });
+
+        // --- Cleanup: Unload all plugins that were loaded during the scan ---
+        foreach (var kvp in loadedPathsByMod)
+        {
+            pluginProvider.UnloadPlugins(kvp.Value);
+        }
     }
 }

@@ -1053,6 +1053,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                                 if (!_aux.IsValidAppearanceRace(npcGetter.Race.FormKey, npcGetter,
                                         language,
                                         out string rejectionMessage,
+                                        out _,
                                         sourcePluginRace:
                                         sourcePluginRace)) // if sourcePluginRace is null, falls back to searching the link cache
                                 {
@@ -1426,8 +1427,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             }
         }
 
-        NpcCount = NpcFormKeys.Count;
+        RefreshNpcCount();
     }
+    
+    public void RefreshNpcCount() => NpcCount = NpcFormKeys.Count;
 
     /// <summary>
     /// Checks if FaceGen for the given FormKey exists using pre-cached sets of file paths.

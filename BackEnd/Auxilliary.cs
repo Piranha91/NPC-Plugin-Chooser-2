@@ -340,11 +340,12 @@ public class Auxilliary : IDisposable
         return logBuilder.ToString();
     }
 
-    public bool IsValidAppearanceRace(FormKey raceFormKey, INpcGetter npcGetter, Language? language, out string rejectionMessage, IRaceGetter? sourcePluginRace = null)
+    public bool IsValidAppearanceRace(FormKey raceFormKey, INpcGetter npcGetter, Language? language, out string rejectionMessage, out IRaceGetter? resolvedRace, IRaceGetter? sourcePluginRace = null)
     {
         bool isCached = false;
         bool isValid = true;
         rejectionMessage = "";
+        resolvedRace = null;
         RaceEvaluation raceEvaluation;
 
         using (ContextualPerformanceTracer.Trace("IVAR.CacheCheck1"))
@@ -361,11 +362,6 @@ public class Auxilliary : IDisposable
         using (ContextualPerformanceTracer.Trace("IVAR.TemplateCheck"))
         {
             isTemplate = IsValidTemplatedNpc(npcGetter);
-
-            if (isTemplate)
-            {
-                return true; // return true without cacheing; this NPC's race is irrelevant
-            }
         }
         
         if (!isCached)
@@ -380,6 +376,7 @@ public class Auxilliary : IDisposable
                 if (sourcePluginRace != null)
                 {
                     raceGetter = sourcePluginRace;
+                    resolvedRace = raceGetter;
                 }
                 else if (raceFormKey.IsNull)
                 {
@@ -389,6 +386,7 @@ public class Auxilliary : IDisposable
                              out raceGetter) || raceGetter is null)
                 {
                     raceEvaluation = RaceEvaluation.InvalidNotInLoadOrder;
+                    resolvedRace = raceGetter;
                 }
             }
 
@@ -401,7 +399,7 @@ public class Auxilliary : IDisposable
                         raceEvaluation = RaceEvaluation.InvalidNullKeywords;
                         identifier = GetLogString(raceGetter, language, true);
                     }
-                    else if (!isTemplate && !raceGetter.Keywords.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim
+                    else if (!raceGetter.Keywords.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim
                                  .Keyword
                                  .ActorTypeNPC))
                     {
@@ -445,6 +443,11 @@ public class Auxilliary : IDisposable
 
             if (raceEvaluation == RaceEvaluation.InvalidNotNpc)
             {
+                // Bethesda assigned FoxRace to some templated human NPCs; allow those through
+                if (isTemplate && raceFormKey == Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Race.FoxRace.FormKey)
+                {
+                    return true;
+                }
                 rejectionMessage = "its race is missing the ActorTypeNPC keyword.";
                 return false;
             }
@@ -452,7 +455,7 @@ public class Auxilliary : IDisposable
         
         return true;
     }
-
+    
     public void SaveRaceCache()
     {
         string cachePath = Path.Combine(AppContext.BaseDirectory, _raceValidityCacheFileName);

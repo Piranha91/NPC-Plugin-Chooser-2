@@ -1204,7 +1204,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
                 
                 // NEW: Skip creatures (bears, spiders, etc.) by checking for a valid appearance race.
-                if (!_auxilliary.IsValidAppearanceRace(npcGetter.Race.FormKey, npcGetter, _settings.LocalizationLanguage, out _))
+                if (!_auxilliary.IsValidAppearanceRace(npcGetter.Race.FormKey, npcGetter, _settings.LocalizationLanguage, out _, out _))
                 {
                     continue;
                 }
@@ -3979,6 +3979,50 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             Debug.WriteLine($"JumpToTemplateReference: NPC {targetVm.DisplayName} still not visible after clearing filters.");
         }
+    }
+    
+    /// <summary>
+    /// After a version migration has removed NPC FormKeys from mod-level collections,
+    /// this method synchronizes the NPC selection bar by:
+    ///   1. Removing stale mod references from each affected NPC VM's AppearanceMods.
+    ///   2. Removing NPC VMs that no longer have any appearance source (mod or mugshot).
+    ///   3. Re-applying the current filter.
+    /// Must be called on the UI thread.
+    /// </summary>
+    public void PruneRemovedNpcs(HashSet<FormKey> prunedFormKeys)
+    {
+        if (prunedFormKeys == null || prunedFormKeys.Count == 0) return;
+
+        // Step 1: For each pruned NPC, remove mods whose NpcFormKeys no longer contain it
+        foreach (var fk in prunedFormKeys)
+        {
+            var npcVm = AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(fk));
+            if (npcVm == null) continue;
+
+            for (int i = npcVm.AppearanceMods.Count - 1; i >= 0; i--)
+            {
+                if (!npcVm.AppearanceMods[i].NpcFormKeys.Contains(fk))
+                {
+                    npcVm.AppearanceMods.RemoveAt(i);
+                }
+            }
+        }
+
+        // Step 2: Remove NPC VMs that have no remaining appearance sources
+        for (int i = AllNpcs.Count - 1; i >= 0; i--)
+        {
+            var npc = AllNpcs[i];
+            if (!npc.AppearanceMods.Any() && !_mugshotData.ContainsKey(npc.NpcFormKey))
+            {
+                _npcVmLookup.Remove(npc.NpcFormKey);
+                AllNpcs.RemoveAt(i);
+            }
+        }
+
+        // Step 3: Re-apply the filter to update FilteredNpcs
+        ApplyFilter(initializing: false);
+
+        Debug.WriteLine($"PruneRemovedNpcs: Processed {prunedFormKeys.Count} pruned FormKey(s). AllNpcs now has {AllNpcs.Count} entries.");
     }
 
     // --- Disposal ---

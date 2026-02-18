@@ -210,7 +210,9 @@ namespace NPC_Plugin_Chooser_2
             
             var modsViewModel = container.Resolve<VM_Mods>();
             var npcsViewModel = container.Resolve<VM_NpcSelectionBar>();
-            await updateHandler.FinalCheckForUpdatesAndPatch(npcsViewModel, modsViewModel, splashVM);
+            var pluginProvider = container.Resolve<PluginProvider>();
+            var aux = container.Resolve<Auxilliary>();
+            await updateHandler.FinalCheckForUpdatesAndPatch(npcsViewModel, modsViewModel, pluginProvider, aux, splashVM);
             
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
             return container;
