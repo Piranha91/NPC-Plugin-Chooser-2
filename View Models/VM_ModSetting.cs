@@ -1087,6 +1087,19 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                                 }
                             }
 
+                            // --- Leveled NPC Template Chain Check ---
+                            // NPCs whose template chain terminates in a Leveled NPC
+                            // cannot have a unique appearance selected, so exclude them.
+                            if (isValidTemplatedNpc &&
+                                _aux.TemplateChainTerminatesInLeveledNpc(npcGetter, plugins))
+                            {
+                                string message =
+                                    $"Discarded {Auxilliary.GetLogString(npcGetter, language, true)} from {DisplayName} because its template chain terminates in a Leveled NPC.";
+                                //Debug.WriteLine(message);
+                                rejectionMessages.Add(message);
+                                continue;
+                            }
+
                             if (!AvailablePluginsForNpcs.TryGetValue(currentNpcKey, out var sourceList))
                             {
                                 sourceList = new List<ModKey>();

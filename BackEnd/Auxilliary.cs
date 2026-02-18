@@ -36,6 +36,10 @@ public class Auxilliary : IDisposable
     public Dictionary<FormKey, string> FormIDCache = new();
     private ConcurrentDictionary<FormKey, RaceEvaluation> _raceValidityCache = new();
     private string _raceValidityCacheFileName = "RaceEvalCache.json";
+    
+    // Session-scoped cache: true = chain terminates in a Leveled NPC, false = chain is valid.
+    // Keyed by the NPC FormKey whose template link was (or would be) followed.
+    private readonly ConcurrentDictionary<FormKey, bool> _leveledNpcChainCache = new();
 
     public static HashSet<string> ValidPluginExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -81,6 +85,7 @@ public class Auxilliary : IDisposable
     {
         FormIDCache.Clear();
         _raceValidityCache.Clear();
+        _leveledNpcChainCache.Clear();
         LoadRaceCache();
     }
 
@@ -562,6 +567,128 @@ public class Auxilliary : IDisposable
                HasTraitsFlag(npc) && 
                npc.Template != null && 
                !npc.Template.IsNull;
+    }
+
+    /// <summary>
+    /// Walks the template chain starting from the given NPC and returns true if the chain
+    /// terminates in a Leveled NPC (LVLN record). NPCs whose template chain ends in a
+    /// Leveled NPC cannot have a unique appearance selected for them.
+    /// 
+    /// Results are cached per-session so that overlapping chains (e.g. A→B→C→LVLN then
+    /// D→B→…) short-circuit as soon as they hit an already-evaluated FormKey.
+    /// 
+    /// Resolution order for each link in the chain:
+    ///   1. Search the provided mod plugins (if any).
+    ///   2. Fall back to the environment link cache.
+    /// </summary>
+    public bool TemplateChainTerminatesInLeveledNpc(
+        INpcGetter npcGetter,
+        IEnumerable<ISkyrimModGetter>? modPlugins = null,
+        int maxDepth = 50)
+    {
+        if (!IsValidTemplatedNpc(npcGetter))
+        {
+            return false; // Not templated at all — nothing to check
+        }
+
+        // Check if this exact NPC was already evaluated
+        if (_leveledNpcChainCache.TryGetValue(npcGetter.FormKey, out var cachedResult))
+        {
+            return cachedResult;
+        }
+
+        // Collect every NPC FormKey we visit so we can backfill the cache afterwards
+        var visitedNpcFormKeys = new List<FormKey> { npcGetter.FormKey };
+        var visitedSet = new HashSet<FormKey>();
+        var templateFormKey = npcGetter.Template.FormKey;
+        var pluginList = modPlugins?.ToList(); // avoid multiple enumeration
+        bool result = false; // assume valid until proven otherwise
+
+        for (int depth = 0; depth < maxDepth; depth++)
+        {
+            if (templateFormKey.IsNull || !visitedSet.Add(templateFormKey))
+            {
+                break; // null link or cycle detected
+            }
+
+            // --- Check the cache for this template FormKey ---
+            if (_leveledNpcChainCache.TryGetValue(templateFormKey, out var cached))
+            {
+                result = cached;
+                break; // propagate the cached answer to everything upstream
+            }
+
+            // --- Try to resolve as a Leveled NPC first (cheapest decisive check) ---
+            bool isLeveled = false;
+
+            // Check plugins
+            if (!isLeveled && pluginList != null)
+            {
+                foreach (var plugin in pluginList)
+                {
+                    if (plugin.LeveledNpcs.FirstOrDefault(l => l.FormKey == templateFormKey) != null)
+                    {
+                        isLeveled = true;
+                        break;
+                    }
+                }
+            }
+
+            // Check link cache
+            if (!isLeveled)
+            {
+                isLeveled = _environmentStateProvider.LinkCache
+                    .TryResolve<ILeveledNpcGetter>(templateFormKey, out _);
+            }
+
+            if (isLeveled)
+            {
+                result = true;
+                break;
+            }
+
+            // --- Not a Leveled NPC — try to resolve as a regular NPC and continue walking ---
+            INpcGetter? nextNpc = null;
+
+            // Check plugins first
+            if (pluginList != null)
+            {
+                foreach (var plugin in pluginList)
+                {
+                    nextNpc = plugin.Npcs.FirstOrDefault(n => n.FormKey == templateFormKey);
+                    if (nextNpc != null) break;
+                }
+            }
+
+            // Fall back to link cache
+            if (nextNpc == null)
+            {
+                _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(templateFormKey, out nextNpc);
+            }
+
+            if (nextNpc == null)
+            {
+                break; // can't resolve further — assume valid
+            }
+
+            // Track this intermediate NPC so it gets cached too
+            visitedNpcFormKeys.Add(nextNpc.FormKey);
+
+            if (!IsValidTemplatedNpc(nextNpc))
+            {
+                break; // chain ends at a non-templated NPC — valid
+            }
+
+            templateFormKey = nextNpc.Template.FormKey;
+        }
+
+        // --- Backfill the cache for every NPC FormKey we visited in this chain ---
+        foreach (var formKey in visitedNpcFormKeys)
+        {
+            _leveledNpcChainCache.TryAdd(formKey, result);
+        }
+
+        return result;
     }
     
     /// <summary>

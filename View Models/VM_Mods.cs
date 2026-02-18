@@ -3105,6 +3105,31 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
         }
 
+        // --- Early-out: check the session cache before doing the expensive chain walk ---
+        // If onboarding already determined this NPC's chain ends in a Leveled NPC, skip the full traversal.
+        INpcGetter? earlyNpcGetter = null;
+        // Try to resolve from the mod's own plugins first
+        foreach (var plugin in plugins.Values)
+        {
+            earlyNpcGetter = plugin.Npcs.FirstOrDefault(n => n.FormKey == npcFormKey);
+            if (earlyNpcGetter != null) break;
+        }
+        // Fall back to link cache
+        if (earlyNpcGetter == null)
+        {
+            _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out earlyNpcGetter);
+        }
+
+        if (earlyNpcGetter != null && 
+            Auxilliary.IsValidTemplatedNpc(earlyNpcGetter) &&
+            _aux.TemplateChainTerminatesInLeveledNpc(earlyNpcGetter, plugins.Values))
+        {
+            ScrollableMessageBox.ShowWarning(
+                "This NPC appearance uses a template whose template chain ends with a Leveled NPC. " +
+                "Therefore, you cannot select a unique appearance for it.");
+            return false;
+        }
+
         int cycleCount = 0;
         ISkyrimModGetter? sourcePlugin = null;
         INpcGetter? currentNpcGetter = null;

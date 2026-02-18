@@ -407,7 +407,7 @@ public class UpdateHandler
         PluginProvider pluginProvider, Auxilliary aux, EnvironmentStateProvider environmentStateProvider, 
         VM_SplashScreen? splashReporter)
     {
-        splashReporter?.UpdateStep("Updating to 2.1.3: Pruning invalid templated NPCs...");
+        splashReporter?.UpdateStep("Updating to 2.1.3: Pruning invalid templated NPCs and leveled NPC template chains...");
 
         var modsToCheck = modsVm.AllModSettings.ToList();
 
@@ -485,6 +485,17 @@ public class UpdateHandler
                         Debug.WriteLine(
                             $"2.1.3 Update: Flagging {logStr} from {vm.DisplayName} because {rejectionMessage}");
                     }
+                    // Second check: if the NPC passed the race check, see if its template
+                    // chain terminates in a Leveled NPC (these can't have unique appearances).
+                    else if (Auxilliary.IsValidTemplatedNpc(npcGetter) &&
+                             aux.TemplateChainTerminatesInLeveledNpc(npcGetter, plugins))
+                    {
+                        var logStr = Auxilliary.GetLogString(npcGetter, _settings.LocalizationLanguage, fullString: true);
+                        var leveledReason = "its template chain terminates in a Leveled NPC.";
+                        flaggedForRemoval.Add((npcFormKey, logStr));
+                        Debug.WriteLine(
+                            $"2.1.3 Update: Flagging {logStr} from {vm.DisplayName} because {leveledReason}");
+                    }
                 }
 
                 if (flaggedForRemoval.Any())
@@ -497,7 +508,7 @@ public class UpdateHandler
         // If nothing to remove, clean up and return early
         if (!removalManifest.Any())
         {
-            Debug.WriteLine("2.1.3 Update: No invalid templated NPCs found across any mods.");
+            Debug.WriteLine("2.1.3 Update: No invalid templated NPCs or leveled NPC template chains found across any mods.");
             foreach (var kvp in loadedPathsByMod)
             {
                 pluginProvider.UnloadPlugins(kvp.Value);
@@ -511,8 +522,9 @@ public class UpdateHandler
         // Build a combined display message
         var displayMessage = new StringBuilder();
         displayMessage.AppendLine(
-            "2.1.3 has updated its NPC loader to exclude non-humanoid template NPCs which previously " +
-            "had been erroneously included in the NPC list. The following NPCs are slated for removal:");
+            "2.1.3 has updated its NPC loader to exclude non-humanoid template NPCs and NPCs whose " +
+            "template chain terminates in a Leveled NPC, which previously had been erroneously included " +
+            "in the NPC list. The following NPCs are slated for removal:");
         displayMessage.AppendLine();
 
         foreach (var (vm, flagged) in removalManifest)
@@ -538,8 +550,9 @@ public class UpdateHandler
         {
             var backupMessage = new StringBuilder();
             backupMessage.AppendLine(
-                "2.1.3 has updated its NPC loader to exclude non-humanoid template NPCs which previously " +
-                "had been erroneously included in the NPC list. You have made a selection for the following " +
+                "2.1.3 has updated its NPC loader to exclude non-humanoid template NPCs and NPCs whose " +
+                "template chain terminates in a Leveled NPC, which previously had been erroneously included " +
+                "in the NPC list. You have made a selection for the following " +
                 "NPCs which are slated for removal. Would you like to make a backup of your selections now " +
                 "so that if any of the removals are erroneous, you can restore them by re-importing your list?");
             backupMessage.AppendLine();
