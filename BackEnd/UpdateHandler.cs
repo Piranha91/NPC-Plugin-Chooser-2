@@ -68,7 +68,7 @@ public class UpdateHandler
     /// Runs after UI initializes
     /// </summary>
     public async Task FinalCheckForUpdatesAndPatch(VM_NpcSelectionBar npcsVm, VM_Mods modsVm, PluginProvider pluginProvider,
-        Auxilliary aux, VM_SplashScreen? splashReporter)
+        Auxilliary aux, EnvironmentStateProvider environmentStateProvider, VM_SplashScreen? splashReporter)
     {
         // If the settings version is empty (e.g., a new user), there's nothing to migrate.
         if (string.IsNullOrWhiteSpace(_settings.ProgramVersion))
@@ -118,7 +118,7 @@ public class UpdateHandler
         
         if (settingsVersion < "2.1.3")
         {
-            await UpdateTo2_1_3_Final(modsVm, npcsVm, pluginProvider, aux, splashReporter);
+            await UpdateTo2_1_3_Final(modsVm, npcsVm, pluginProvider, aux, environmentStateProvider, splashReporter);
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -404,7 +404,8 @@ public class UpdateHandler
     /// lower-priority version would fail.
     /// </summary>
     private async Task UpdateTo2_1_3_Final(VM_Mods modsVm, VM_NpcSelectionBar npcsVm,
-        PluginProvider pluginProvider, Auxilliary aux, VM_SplashScreen? splashReporter)
+        PluginProvider pluginProvider, Auxilliary aux, EnvironmentStateProvider environmentStateProvider, 
+        VM_SplashScreen? splashReporter)
     {
         splashReporter?.UpdateStep("Updating to 2.1.3: Pruning invalid templated NPCs...");
 
@@ -467,9 +468,17 @@ public class UpdateHandler
                     if (!aux.IsValidAppearanceRace(npcGetter.Race.FormKey, npcGetter,
                             _settings.LocalizationLanguage, out string rejectionMessage, out var resolvedRace))
                     {
-                        var raceLogStr = resolvedRace != null
-                            ? Auxilliary.GetLogString(resolvedRace, _settings.LocalizationLanguage, fullString: false)
-                            : npcGetter.Race.FormKey.ToString();
+                        var raceLogStr = npcGetter.Race.FormKey.ToString();
+                            if (resolvedRace != null)
+                            {
+                                raceLogStr = Auxilliary.GetLogString(resolvedRace, _settings.LocalizationLanguage,
+                                    fullString: false);
+                            }
+                            else if (environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(npcGetter.Race, out var raceGetter) && raceGetter != null)
+                            {
+                                raceLogStr = Auxilliary.GetLogString(raceGetter, _settings.LocalizationLanguage,
+                                    fullString: false);
+                            }
                         var logStr = Auxilliary.GetLogString(npcGetter, _settings.LocalizationLanguage, fullString: true)
                                      + $" [Race: {raceLogStr}]";
                         flaggedForRemoval.Add((npcFormKey, logStr));
