@@ -127,9 +127,13 @@ public class Auxilliary : IDisposable
 
     /// <summary>
     /// Attempts to fix mojibake (UTF-8 bytes misinterpreted as Windows-1252).
-    /// Only applies the fix if the input actually appears to be garbled.
-    /// Returns the original string unchanged if it already contains valid
-    /// non-Latin script characters (CJK, Cyrillic, etc.).
+    /// Only applies the fix if the input doesn't already contain valid non-Latin
+    /// script and the round-trip produces a clearly improved result.
+    ///
+    /// We intentionally do NOT pre-filter with pattern detection. Windows-1252
+    /// maps bytes 0x80-0x9F to scattered Unicode codepoints (€, ‚, ƒ, „, …),
+    /// making reliable mojibake heuristics impractical. Instead we always attempt
+    /// the round-trip and validate the result.
     /// </summary>
     public static string FixMojibake(string input)
     {
@@ -138,37 +142,30 @@ public class Auxilliary : IDisposable
 
         try
         {
-            // STEP 1: If the string already contains valid non-Latin characters
-            //         (CJK, Cyrillic, Korean, Thai, Arabic, Hebrew, etc.),
-            //         it was decoded correctly — don't touch it.
+            // Already contains CJK / Cyrillic / Hangul / etc. → decoded correctly
             if (ContainsNonLatinScript(input))
                 return input;
 
-            // STEP 2: Check if the string contains character patterns typical of
-            //         UTF-8 → Windows-1252 mojibake. If it doesn't look garbled,
-            //         leave it alone.
-            if (!LooksLikeMojibake(input))
-                return input;
-
-            // STEP 3: Attempt the round-trip: Windows-1252 → bytes → UTF-8
+            // Attempt Windows-1252 → bytes → UTF-8 round-trip
             byte[] rawBytes = _windows1252.Value.GetBytes(input);
             string candidate = Encoding.UTF8.GetString(rawBytes);
 
-            // STEP 4: Validate the result — it should contain meaningful characters
-            //         and not have the UTF-8 replacement character (U+FFFD) which
-            //         indicates the bytes weren't valid UTF-8 after all.
+            // U+FFFD means the bytes weren't valid UTF-8 — not mojibake
             if (candidate.Contains('\uFFFD'))
-                return input; // Conversion produced errors — not actually mojibake
+                return input;
 
-            // STEP 5: Sanity check — the result should have at least some 
-            //         non-ASCII content (the whole point of the fix).
-            if (ContainsNonLatinScript(candidate) || IsReasonableText(candidate))
+            // Accept only if the conversion actually changed something AND
+            // the result contains meaningful non-Latin text or is at least
+            // reasonable (> 50% printable, non-replacement characters)
+            if (candidate != input &&
+                (ContainsNonLatinScript(candidate) || IsReasonableText(candidate)))
+            {
                 return candidate;
+            }
 
-            // If we get here, the conversion didn't produce clearly better text
             return input;
         }
-        catch (Exception)
+        catch
         {
             return input;
         }
@@ -177,123 +174,33 @@ public class Auxilliary : IDisposable
     /// <summary>
     /// Returns true if the string contains characters from non-Latin scripts,
     /// indicating it was already decoded correctly.
-    /// Covers: CJK Unified, Hiragana, Katakana, Hangul, Cyrillic, Arabic,
-    ///         Hebrew, Thai, Devanagari, and other major scripts.
     /// </summary>
     private static bool ContainsNonLatinScript(string s)
     {
         foreach (char c in s)
         {
-            // CJK Unified Ideographs (Chinese/Japanese Kanji)
-            if (c >= 0x4E00 && c <= 0x9FFF) return true;
-            // CJK Extension A
-            if (c >= 0x3400 && c <= 0x4DBF) return true;
-            // Hiragana
-            if (c >= 0x3040 && c <= 0x309F) return true;
-            // Katakana
-            if (c >= 0x30A0 && c <= 0x30FF) return true;
-            // Hangul Syllables (Korean)
-            if (c >= 0xAC00 && c <= 0xD7AF) return true;
-            // Cyrillic
-            if (c >= 0x0400 && c <= 0x04FF) return true;
-            // Arabic
-            if (c >= 0x0600 && c <= 0x06FF) return true;
-            // Hebrew
-            if (c >= 0x0590 && c <= 0x05FF) return true;
-            // Thai
-            if (c >= 0x0E00 && c <= 0x0E7F) return true;
-            // Devanagari
-            if (c >= 0x0900 && c <= 0x097F) return true;
-            // CJK Compatibility Ideographs
-            if (c >= 0xF900 && c <= 0xFAFF) return true;
-            // Halfwidth/Fullwidth Katakana & CJK
-            if (c >= 0xFF65 && c <= 0xFFDC) return true;
-            // CJK Symbols and Punctuation
-            if (c >= 0x3000 && c <= 0x303F) return true;
+            if (c >= 0x4E00 && c <= 0x9FFF) return true;  // CJK Unified Ideographs
+            if (c >= 0x3400 && c <= 0x4DBF) return true;  // CJK Extension A
+            if (c >= 0x3040 && c <= 0x309F) return true;  // Hiragana
+            if (c >= 0x30A0 && c <= 0x30FF) return true;  // Katakana
+            if (c >= 0xAC00 && c <= 0xD7AF) return true;  // Hangul Syllables
+            if (c >= 0x0400 && c <= 0x04FF) return true;  // Cyrillic
+            if (c >= 0x0600 && c <= 0x06FF) return true;  // Arabic
+            if (c >= 0x0590 && c <= 0x05FF) return true;  // Hebrew
+            if (c >= 0x0E00 && c <= 0x0E7F) return true;  // Thai
+            if (c >= 0x0900 && c <= 0x097F) return true;  // Devanagari
+            if (c >= 0xF900 && c <= 0xFAFF) return true;  // CJK Compat. Ideographs
+            if (c >= 0xFF65 && c <= 0xFFDC) return true;  // Halfwidth Katakana/CJK
+            if (c >= 0x3000 && c <= 0x303F) return true;  // CJK Symbols & Punctuation
         }
         return false;
     }
 
     /// <summary>
-    /// Heuristic: returns true if the string contains character sequences
-    /// characteristic of UTF-8 multibyte sequences misread as Windows-1252.
-    ///
-    /// UTF-8 encodes non-ASCII as 2-4 byte sequences starting with specific
-    /// lead bytes. When misread as Windows-1252, these produce distinctive 
-    /// patterns:
-    ///   - 2-byte: lead Ã (0xC3) followed by a character in 0x80-0xBF range
-    ///   - 3-byte (CJK/Cyrillic): lead Ã£/Ã¤/Ã¥/Ã¨/Ã© (0xE3-0xE9 mapped)
-    ///             followed by two chars in the 0x80-0xBF range
-    ///   - General: high density of characters in 0x80-0xBF range (continuation
-    ///             bytes) which are unusual in legitimate Windows-1252 text
-    /// </summary>
-    private static bool LooksLikeMojibake(string s)
-    {
-        if (s.Length < 2)
-            return false;
-
-        int suspiciousPatterns = 0;
-        int highByteCount = 0;
-
-        for (int i = 0; i < s.Length; i++)
-        {
-            char c = s[i];
-
-            // Count characters in the 0x80-0xBF range (UTF-8 continuation bytes
-            // when misread as Windows-1252 produce chars like €,‚,ƒ,„,…,†,‡,ˆ,‰,
-            // Š,‹,Œ,Ž,',' etc.)
-            if (c >= 0x0080 && c <= 0x00BF)
-                highByteCount++;
-
-            // Pattern: Ã (0xC3) followed by a Latin character — classic 2-byte mojibake
-            // This catches accented characters like é→Ã©, ü→Ã¼, ñ→Ã±, etc.
-            if (c == 0x00C3 && i + 1 < s.Length)
-            {
-                char next = s[i + 1];
-                if (next >= 0x0080 && next <= 0x00BF)
-                    suspiciousPatterns++;
-            }
-
-            // Pattern: Ã¢/Ã£/Ã¤/Ã¥ (0xC2-C5 range) + two continuation-like chars
-            // This catches 3-byte UTF-8 sequences (CJK, etc.)
-            if (c >= 0x00C2 && c <= 0x00C5 && i + 2 < s.Length)
-            {
-                char next1 = s[i + 1];
-                char next2 = s[i + 2];
-                if (next1 >= 0x0080 && next1 <= 0x00BF &&
-                    next2 >= 0x0080 && next2 <= 0x00BF)
-                    suspiciousPatterns++;
-            }
-
-            // Pattern: Ã¨/Ã© (0xE8/0xE9 lead byte range for 3-byte CJK)  
-            // mapped through Windows-1252 these become è/é followed by 
-            // continuation bytes
-            if ((c == 0x00E8 || c == 0x00E9 || c == 0x00E3 || c == 0x00E4 || c == 0x00E5) 
-                && i + 2 < s.Length)
-            {
-                char next1 = s[i + 1];
-                char next2 = s[i + 2];
-                if (next1 >= 0x0080 && next1 <= 0x00BF &&
-                    next2 >= 0x0080 && next2 <= 0x00BF)
-                    suspiciousPatterns++;
-            }
-        }
-
-        // If we found suspicious patterns, it's likely mojibake
-        if (suspiciousPatterns > 0)
-            return true;
-
-        // High density of 0x80-0xBF range characters is suspicious
-        // (these are rare in legitimate Western text)
-        if (s.Length >= 3 && (double)highByteCount / s.Length > 0.3)
-            return true;
-
-        return false;
-    }
-
-    /// <summary>
-    /// Basic check that the converted text looks reasonable
-    /// (not all replacement characters or control characters).
+    /// Fallback: accepts the conversion if more than half the characters are
+    /// printable non-replacement content. Catches cases where the converted
+    /// text is improved but uses scripts not explicitly listed in
+    /// ContainsNonLatinScript (e.g. Georgian, Tibetan, Ethiopic).
     /// </summary>
     private static bool IsReasonableText(string s)
     {
