@@ -157,7 +157,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public Language? SelectedLocalizationLanguage { get; set; }
 
     public IEnumerable<Language> AvailableLanguages { get; } = Enum.GetValues(typeof(Language)).Cast<Language>();
-    [Reactive] public bool FixGarbledText { get; set; } = false;
+    [Reactive] public bool FixGarbledText { get; set; } = true;
 
     // --- NPC Display ---
     [Reactive] public bool ShowNpcNameInList { get; set; } = true;
