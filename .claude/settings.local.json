@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp DarkMode.xaml \"Tokyo Night.xaml\")",
+      "Bash(cp LightTheme.xaml \"GitHub Light.xaml\")",
+      "Bash(dotnet build:*)"
+    ]
+  }
+}

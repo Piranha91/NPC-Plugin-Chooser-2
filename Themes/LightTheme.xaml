@@ -2,20 +2,51 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:reactiveui="http://reactiveui.net">
 
+    <!-- Backgrounds -->
     <SolidColorBrush x:Key="PrimaryBackground" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="SecondaryBackground" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="TertiaryBackground" Color="#E8E8E8"/>
+    <SolidColorBrush x:Key="NavBarBackground" Color="#F0F0F0"/>
+
+    <!-- Foregrounds -->
     <SolidColorBrush x:Key="PrimaryForeground" Color="#000000"/>
+    <SolidColorBrush x:Key="SecondaryForeground" Color="#555555"/>
+    <SolidColorBrush x:Key="HintForeground" Color="Gray"/>
+    <SolidColorBrush x:Key="DisabledForeground" Color="#999999"/>
+
+    <!-- Borders -->
     <SolidColorBrush x:Key="BorderBrush" Color="DarkGray"/>
+
+    <!-- Inputs -->
     <SolidColorBrush x:Key="TextBoxBackground" Color="#FFFFFF"/>
+
+    <!-- Buttons -->
     <SolidColorBrush x:Key="ButtonBackground" Color="#DDDDDD"/>
     <SolidColorBrush x:Key="ButtonHoverBackground" Color="#555555"/>
+    <SolidColorBrush x:Key="ButtonPressBackground" Color="#CCCCCC"/>
     <SolidColorBrush x:Key="DisabledButtonBackground" Color="#EFEFEF"/>
-    <SolidColorBrush x:Key="DisabledForeground" Color="#999999"/>
     <SolidColorBrush x:Key="ToggleButtonBackground" Color="#DDDDDD"/>
+
+    <!-- Accent -->
+    <SolidColorBrush x:Key="AccentBrush" Color="#0078D4"/>
+    <SolidColorBrush x:Key="AccentForeground" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="FocusBrush" Color="#0078D4"/>
+
+    <!-- Status -->
+    <SolidColorBrush x:Key="StatusValidForeground" Color="Green"/>
+    <SolidColorBrush x:Key="StatusErrorForeground" Color="Red"/>
+    <SolidColorBrush x:Key="StatusPendingForeground" Color="Orange"/>
+
+    <!-- Selection -->
+    <SolidColorBrush x:Key="SelectedItemBackground" Color="#CCE8FF"/>
+
+    <!-- Misc -->
     <SolidColorBrush x:Key="HighlightAlteredText" Color="Purple"/>
     <SolidColorBrush x:Key="MugshotCaptionBackground" Color="#AAF0F0F0"/>
     <SolidColorBrush x:Key="MugshotCaptionForeground" Color="#000000"/>
     <SolidColorBrush x:Key="MugshotCaptionSecondaryForeground" Color="#555555"/>
+    <SolidColorBrush x:Key="ScrollBarThumbBackground" Color="#999999"/>
+    <SolidColorBrush x:Key="LinkAutoColor" Color="Green"/>
     <SolidColorBrush x:Key="LinkManualColor" Color="{Binding Source={StaticResource HighlightAlteredText}, Path=Color}"/>
     <SolidColorBrush x:Key="LinkUsedColor" Color="{Binding Source={StaticResource DisabledForeground}, Path=Color}"/>
     

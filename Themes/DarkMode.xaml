@@ -2,16 +2,45 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:reactiveui="http://reactiveui.net">
 
+    <!-- Backgrounds -->
     <SolidColorBrush x:Key="PrimaryBackground" Color="#252526"/>
     <SolidColorBrush x:Key="SecondaryBackground" Color="#2D2D30"/>
+    <SolidColorBrush x:Key="TertiaryBackground" Color="#383838"/>
+    <SolidColorBrush x:Key="NavBarBackground" Color="#1E1E1E"/>
+
+    <!-- Foregrounds -->
     <SolidColorBrush x:Key="PrimaryForeground" Color="#F1F1F1"/>
+    <SolidColorBrush x:Key="SecondaryForeground" Color="#AAAAAA"/>
+    <SolidColorBrush x:Key="HintForeground" Color="#707070"/>
+    <SolidColorBrush x:Key="DisabledForeground" Color="#707070"/>
+
+    <!-- Borders -->
     <SolidColorBrush x:Key="BorderBrush" Color="#434346"/>
+
+    <!-- Inputs -->
     <SolidColorBrush x:Key="TextBoxBackground" Color="#3C3C3C"/>
+
+    <!-- Buttons -->
     <SolidColorBrush x:Key="ButtonBackground" Color="#3F3F46"/>
     <SolidColorBrush x:Key="ButtonHoverBackground" Color="#555555"/>
+    <SolidColorBrush x:Key="ButtonPressBackground" Color="#2D2D30"/>
     <SolidColorBrush x:Key="DisabledButtonBackground" Color="#2D2D30"/>
-    <SolidColorBrush x:Key="DisabledForeground" Color="#707070"/>
     <SolidColorBrush x:Key="ToggleButtonBackground" Color="#3F3F46"/>
+
+    <!-- Accent -->
+    <SolidColorBrush x:Key="AccentBrush" Color="#007ACC"/>
+    <SolidColorBrush x:Key="AccentForeground" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="FocusBrush" Color="#007ACC"/>
+
+    <!-- Status -->
+    <SolidColorBrush x:Key="StatusValidForeground" Color="LightGreen"/>
+    <SolidColorBrush x:Key="StatusErrorForeground" Color="#FF6B68"/>
+    <SolidColorBrush x:Key="StatusPendingForeground" Color="Orange"/>
+
+    <!-- Selection -->
+    <SolidColorBrush x:Key="SelectedItemBackground" Color="#3F3F46"/>
+
+    <!-- Misc -->
     <SolidColorBrush x:Key="HighlightAlteredText" Color="MediumPurple"/>
     <SolidColorBrush x:Key="MugshotCaptionBackground" Color="#AA000000"/>
     <SolidColorBrush x:Key="MugshotCaptionForeground" Color="#F1F1F1"/>

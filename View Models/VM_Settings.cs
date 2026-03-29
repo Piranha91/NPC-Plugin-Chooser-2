@@ -149,6 +149,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool NormalizeImageDimensions { get; set; }
     [Reactive] public int MaxMugshotsToFit { get; set; }
     [Reactive] public bool IsDarkMode { get; set; }
+    [Reactive] public string SelectedThemeName { get; set; } = "DarkMode";
+    public ObservableCollection<string> AvailableThemes { get; } = new();
 
     [Reactive] public bool SuppressPopupWarnings { get; set; }
 
@@ -301,6 +303,16 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SelectedLocalizationLanguage = _model.LocalizationLanguage;
         FixGarbledText = _model.FixGarbledText;
         IsDarkMode = _model.IsDarkMode;
+
+        // Populate available themes from the Themes folder
+        foreach (var theme in ThemeManager.GetAvailableThemes())
+            AvailableThemes.Add(theme);
+
+        // Resolve saved theme: prefer ThemeName, fall back to IsDarkMode for backward compatibility
+        if (!string.IsNullOrEmpty(_model.ThemeName) && AvailableThemes.Contains(_model.ThemeName))
+            SelectedThemeName = _model.ThemeName;
+        else if (AvailableThemes.Count > 0)
+            SelectedThemeName = _model.IsDarkMode ? "DarkMode" : "LightTheme";
         ShowNpcNameInList = _model.ShowNpcNameInList;
         ShowNpcEditorIdInList = _model.ShowNpcEditorIdInList;
         ShowNpcFormKeyInList = _model.ShowNpcFormKeyInList;
@@ -526,12 +538,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             })
             .DisposeWith(_disposables);
 
-        this.WhenAnyValue(x => x.IsDarkMode)
+        this.WhenAnyValue(x => x.SelectedThemeName)
             .Skip(1) // Skip initial value set from model
-            .Subscribe(isDark =>
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Subscribe(themeName =>
             {
-                _model.IsDarkMode = isDark;
-                ThemeManager.ApplyTheme(isDark);
+                _model.ThemeName = themeName;
+                ThemeManager.ApplyTheme(themeName);
             })
             .DisposeWith(_disposables);
 

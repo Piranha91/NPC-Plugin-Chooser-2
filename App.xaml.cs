@@ -121,7 +121,11 @@ namespace NPC_Plugin_Chooser_2
 
             splashVM.UpdateProgress(15, "Loading settings model...");
             var settingsModel = VM_Settings.LoadSettings(); // Use the static method from your Settings model
-            ThemeManager.ApplyTheme(settingsModel.IsDarkMode);
+            // Apply theme: prefer saved ThemeName, fall back to IsDarkMode for backward compat
+            if (!string.IsNullOrEmpty(settingsModel.ThemeName))
+                ThemeManager.ApplyTheme(settingsModel.ThemeName);
+            else
+                ThemeManager.ApplyTheme(settingsModel.IsDarkMode);
             // Run the update handler to migrate settings before they are used by the application.
             splashVM.UpdateProgress(16, "Checking for setting updates...");
             var updateHandler = new UpdateHandler(settingsModel);
