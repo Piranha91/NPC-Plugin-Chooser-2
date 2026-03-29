@@ -120,14 +120,27 @@ namespace NPC_Plugin_Chooser_2.Views
                     .Subscribe(args => SaveWindowSettings())
                     .DisposeWith(disposables);
 
-                // Alternative for saving, if already handling App.Exit for other settings:
-                // The App.Exit event in App.xaml.cs is generally better for saving *all* settings,
-                // but window-specific state like position/size is often saved directly from the window's Closing event.
-                // If VM_Settings.SaveAllSettings() is robust and called on App.Exit,
-                // you just need to ensure _appSettings instance is updated before that.
+                // Tab style switching
+                this.WhenAnyValue(x => x.ViewModel.TabStyle)
+                    .Where(style => style != null)
+                    .Subscribe(style => ApplyTabStyle(style))
+                    .DisposeWith(disposables);
             });
         }
         
+        private void ApplyTabStyle(string style)
+        {
+            var templateKey = style == "Underline" ? "UnderlineTabTemplate" : "BoxTabTemplate";
+            if (Resources[templateKey] is ControlTemplate template)
+            {
+                NpcsRadioButton.Template = template;
+                ModsRadioButton.Template = template;
+                SummaryRadioButton.Template = template;
+                SettingsRadioButton.Template = template;
+                RunRadioButton.Template = template;
+            }
+        }
+
         private void ApplyWindowSettings()
         {
             if (_appSettings == null) return;

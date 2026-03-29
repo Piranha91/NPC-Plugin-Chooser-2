@@ -71,6 +71,7 @@ public class Settings
     public Language? LocalizationLanguage { get; set; } = null;
     public bool IsDarkMode { get; set; } = false;
     public string? ThemeName { get; set; }
+    public string TabStyle { get; set; } = "Box";
     public string CotRKeyword { get; set; } = "CotR";
     
     // --- NPC Display ---

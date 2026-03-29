@@ -151,6 +151,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool IsDarkMode { get; set; }
     [Reactive] public string SelectedThemeName { get; set; } = "DarkMode";
     public ObservableCollection<string> AvailableThemes { get; } = new();
+    [Reactive] public string SelectedTabStyle { get; set; } = "Box";
+    public List<string> AvailableTabStyles { get; } = new() { "Box", "Underline" };
 
     [Reactive] public bool SuppressPopupWarnings { get; set; }
 
@@ -313,6 +315,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             SelectedThemeName = _model.ThemeName;
         else if (AvailableThemes.Count > 0)
             SelectedThemeName = _model.IsDarkMode ? "DarkMode" : "LightTheme";
+        SelectedTabStyle = _model.TabStyle;
         ShowNpcNameInList = _model.ShowNpcNameInList;
         ShowNpcEditorIdInList = _model.ShowNpcEditorIdInList;
         ShowNpcFormKeyInList = _model.ShowNpcFormKeyInList;
@@ -546,6 +549,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 _model.ThemeName = themeName;
                 ThemeManager.ApplyTheme(themeName);
             })
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SelectedTabStyle)
+            .Skip(1)
+            .Subscribe(style => _model.TabStyle = style)
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SelectedRecordOverrideHandlingMode)

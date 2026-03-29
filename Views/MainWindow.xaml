@@ -20,38 +20,89 @@
     </i:Interaction.Behaviors>
     
     <Window.Resources>
-        <Style x:Key="TabToggleButtonStyle" TargetType="RadioButton">
-            <Setter Property="Background" Value="{DynamicResource ToggleButtonBackground}"/>
-            <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+        <!-- Box-style tab template (original) -->
+        <ControlTemplate x:Key="BoxTabTemplate" TargetType="RadioButton">
+            <Border x:Name="Border"
+                    Background="{DynamicResource ToggleButtonBackground}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1,1,1,0"
+                    CornerRadius="3,3,0,0"
+                    Padding="10,4">
+                <TextBlock Text="{TemplateBinding Content}"
+                           Foreground="{TemplateBinding Foreground}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter TargetName="Border" Property="Background" Value="{DynamicResource PrimaryBackground}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                    <Setter TargetName="Border" Property="Panel.ZIndex" Value="1"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.5"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
 
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="Border"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="1,1,1,0"
-                                CornerRadius="3,3,0,0"
-                                Padding="10,4">
-                            <TextBlock Text="{TemplateBinding Content}"
-                                       Foreground="{TemplateBinding Foreground}"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="White"/>
-                                <Setter Property="Foreground" Value="Black"/>
-                                <Setter TargetName="Border" Property="Panel.ZIndex" Value="1"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+        <!-- Underline-indicator tab template -->
+        <ControlTemplate x:Key="UnderlineTabTemplate" TargetType="RadioButton">
+            <Grid>
+                <Border x:Name="HoverBg"
+                        Background="{DynamicResource TertiaryBackground}"
+                        CornerRadius="4"
+                        Opacity="0"
+                        Margin="2,4,2,6"/>
+                <TextBlock x:Name="Label"
+                           Text="{TemplateBinding Content}"
+                           Foreground="{TemplateBinding Foreground}"
+                           FontFamily="Segoe UI, sans-serif"
+                           FontSize="13"
+                           Padding="14,8,14,10"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+                <Border x:Name="Underline"
+                        Height="2"
+                        CornerRadius="1"
+                        Background="{DynamicResource AccentBrush}"
+                        VerticalAlignment="Bottom"
+                        Margin="10,0,10,0"
+                        Opacity="0"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+                <EventTrigger RoutedEvent="UIElement.MouseEnter">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetName="HoverBg"
+                                             Storyboard.TargetProperty="Opacity"
+                                             To="1" Duration="0:0:0.10"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+                <EventTrigger RoutedEvent="UIElement.MouseLeave">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetName="HoverBg"
+                                             Storyboard.TargetProperty="Opacity"
+                                             To="0" Duration="0:0:0.12"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter TargetName="Label"     Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                    <Setter TargetName="Underline" Property="Opacity"    Value="1"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.4"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <Style x:Key="TabToggleButtonStyle" TargetType="RadioButton">
+            <Setter Property="Background"  Value="Transparent"/>
+            <Setter Property="Foreground"  Value="{DynamicResource SecondaryForeground}"/>
+            <Setter Property="Cursor"      Value="Hand"/>
+            <Setter Property="Template"    Value="{StaticResource BoxTabTemplate}"/>
         </Style>
     </Window.Resources>
     
@@ -61,10 +112,13 @@
             <RowDefinition Height="*"/> <!-- Content -->
         </Grid.RowDefinitions>
 
-        <!-- Tab Navigation -->
-        <StackPanel Grid.Row="0"
-                    Orientation="Horizontal">
-        
+        <!-- Tab Navigation Bar -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource NavBarBackground}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1">
+        <StackPanel Orientation="Horizontal" Margin="4,0">
+
           <RadioButton x:Name="NpcsRadioButton"
                        Style="{StaticResource TabToggleButtonStyle}"
                        Content="NPCs"
@@ -101,14 +155,16 @@
                        IsEnabled="{Binding AreOtherTabsEnabled}" />
         
         </StackPanel>
+        </Border>
 
         <!-- Content Area -->
-        <Border Grid.Row="1" BorderThickness="1" BorderBrush="DarkGray" Margin="5" VerticalAlignment="Stretch">
-            <reactiveui:ViewModelViewHost x:Name="ViewModelViewHost" ViewModel="{Binding CurrentViewModel}" 
-                                          VerticalAlignment="Stretch"
-                                          HorizontalAlignment="Stretch"
-                                          HorizontalContentAlignment="Stretch"
-                                          VerticalContentAlignment="Stretch"/>
-        </Border>
+        <reactiveui:ViewModelViewHost Grid.Row="1"
+                                      x:Name="ViewModelViewHost"
+                                      ViewModel="{Binding CurrentViewModel}"
+                                      VerticalAlignment="Stretch"
+                                      HorizontalAlignment="Stretch"
+                                      HorizontalContentAlignment="Stretch"
+                                      VerticalContentAlignment="Stretch"
+                                      Margin="0"/>
     </Grid>
 </reactiveui:ReactiveWindow>

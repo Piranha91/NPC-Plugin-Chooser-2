@@ -515,6 +515,10 @@
                         <ComboBox ItemsSource="{Binding AvailableThemes}"
                                   SelectedItem="{Binding SelectedThemeName, Mode=TwoWay}"
                                   MinWidth="160"/>
+                        <TextBlock Text="Tab Style:" VerticalAlignment="Center" Margin="20,0,8,0"/>
+                        <ComboBox ItemsSource="{Binding AvailableTabStyles}"
+                                  SelectedItem="{Binding SelectedTabStyle, Mode=TwoWay}"
+                                  MinWidth="100"/>
                     </StackPanel>
                     
                     <StackPanel Orientation="Horizontal" Margin="0,5,0,0">

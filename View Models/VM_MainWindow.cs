@@ -35,6 +35,7 @@ public class VM_MainWindow : ReactiveObject, IDisposable
     [Reactive] public bool IsRunTabSelected { get; set; }
     [Reactive] public bool AreOtherTabsEnabled { get; private set; }
     [Reactive] public bool IsLoadingFolders { get; set; } = false;
+    [Reactive] public string TabStyle { get; set; } = "Box";
 
     public VM_MainWindow(
         VM_NpcSelectionBar npcsViewModel,
@@ -54,6 +55,12 @@ public class VM_MainWindow : ReactiveObject, IDisposable
         _settings = settings;
 
         AreOtherTabsEnabled = false; // Default to false, InitializeApplicationState will set it.
+
+        // Sync tab style from settings
+        TabStyle = _settingsViewModel.SelectedTabStyle;
+        _settingsViewModel.WhenAnyValue(x => x.SelectedTabStyle)
+            .Subscribe(style => TabStyle = style)
+            .DisposeWith(_disposables);
 
         // Reactive handling for conditions changing *after* initial setup
         Observable.CombineLatest(
