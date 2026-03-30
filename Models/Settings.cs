@@ -50,7 +50,7 @@ public class Settings
     public bool ShowUnloadedNpcs { get; set; } = true;
     public bool ShowSkyPatcherTemplates { get; set; } = false;
     public bool ShowUninstalledMods { get; set; } = true;
-    public bool AutoAdvanceAfterSelection { get; set; } = false;
+    public bool AutoAdvanceAfterSelection { get; set; } = true;
     public List<ModSetting> ModSettings { get; set; } = new();
     // The string is the ModName, the FormKey is the NPC within that mod providing the appearance.
     public Dictionary<FormKey, (string ModName, FormKey NpcFormKey)> SelectedAppearanceMods { get; set; } = new();
@@ -72,8 +72,8 @@ public class Settings
     public Language? LocalizationLanguage { get; set; } = null;
     public bool IsDarkMode { get; set; } = true;
     public string? ThemeName { get; set; }
-    public string TabStyle { get; set; } = "Box";
-    public string NpcSelectionIndicator { get; set; } = "Bar";
+    public string TabStyle { get; set; } = "Underline";
+    public string NpcSelectionIndicator { get; set; } = "Text Color";
     public string CotRKeyword { get; set; } = "CotR";
     
     // --- NPC Display ---
