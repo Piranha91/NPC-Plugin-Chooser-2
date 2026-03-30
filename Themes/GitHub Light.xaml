@@ -265,8 +265,13 @@
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="4"/>
                         <ToggleButton IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
-                                      Focusable="false" ClickMode="Press"
-                                      Background="Transparent" BorderThickness="0"/>
+                                      Focusable="false" ClickMode="Press">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border Background="Transparent"/>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
                         <ContentPresenter x:Name="ContentSite" Margin="8,0,28,0"
                                           IsHitTestVisible="False"
                                           Content="{TemplateBinding SelectionBoxItem}"

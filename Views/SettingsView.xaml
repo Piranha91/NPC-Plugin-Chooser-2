@@ -42,13 +42,13 @@
                         <TextBox Grid.Column="0" Text="{Binding SkyrimGamePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
                         <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectGameFolderCommand}"/>
                     </Grid>
-                    <TextBlock Text="Leave blank to attempt auto-detection based on the selected Skyrim version." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+                    <TextBlock Text="Leave blank to attempt auto-detection based on the selected Skyrim version." FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="0,0,0,10"/>
 
                     <!-- Skyrim Version -->
                     <TextBlock Text="Skyrim Version:" Margin="0,0,0,2"/>
                     <ComboBox ItemsSource="{Binding Source={StaticResource SkyrimReleaseEnumValues}}"
                               SelectedItem="{Binding SkyrimRelease, Mode=TwoWay}" Margin="0,0,0,2"/>
-                    <TextBlock Text="Ensure this matches the game version you are modding." FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+                    <TextBlock Text="Ensure this matches the game version you are modding." FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="0,0,0,10"/>
 
                     <!-- Environment Status -->
                     <TextBlock Text="Environment Status:" FontWeight="Bold" Margin="0,5,0,2"/>
@@ -60,13 +60,13 @@
                                     <Setter Property="Text" Value="{Binding EnvironmentStatus, Mode=OneWay}"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding EnvironmentStatus}" Value="Valid">
-                                            <Setter Property="Foreground" Value="Green"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource StatusValidForeground}"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding EnvironmentStatus}" Value="Invalid">
-                                            <Setter Property="Foreground" Value="Red"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource StatusErrorForeground}"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding EnvironmentStatus}" Value="Pending">
-                                            <Setter Property="Foreground" Value="Orange"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource StatusPendingForeground}"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
@@ -82,7 +82,7 @@
                             </Run.Text>
                         </Run>
                     </TextBlock>
-                    <TextBlock Text="{Binding EnvironmentErrorText}" Foreground="Red" TextWrapping="Wrap" MaxHeight="100" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <TextBlock Text="{Binding EnvironmentErrorText}" Foreground="{DynamicResource StatusErrorForeground}" TextWrapping="Wrap" MaxHeight="100" ScrollViewer.VerticalScrollBarVisibility="Auto">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Style.Triggers>
@@ -127,7 +127,7 @@
                         <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectModsFolderCommand}"/>
                     </Grid>
                     <TextBlock Text="Specify the root folder where your mods are installed (used for Mod linking)."
-                               FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+                               FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="0,0,0,10"/>
                 </StackPanel>
             </GroupBox>
 
@@ -143,7 +143,7 @@
                         <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectMugshotsFolderCommand}"/>
                     </Grid>
                     <TextBlock Text="Folder containing subfolders for each mod's NPC preview images."
-                               FontSize="10" Foreground="Gray" Margin="0,0,0,10"/>
+                               FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="0,0,0,10"/>
                     
                     <CheckBox Content="Use FaceFinder API for missing mugshots"
                               IsChecked="{Binding UseFaceFinderFallback, Mode=TwoWay}"
@@ -261,10 +261,10 @@
                                     <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsLightingJsonValid}" Value="True">
-                                                <Setter Property="BorderBrush" Value="Green"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource StatusValidForeground}"/>
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding IsLightingJsonValid}" Value="False">
-                                                <Setter Property="BorderBrush" Value="Red"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource StatusErrorForeground}"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -418,7 +418,7 @@
                         <TextBox Grid.Column="0" Text="{Binding OutputDirectory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
                         <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectOutputDirectoryCommand}"/>
                     </Grid>
-                    <TextBlock Text="Directory where the generated plugin and related files will be saved." FontSize="10" Foreground="Gray" Margin="0,0,0,5"/>
+                    <TextBlock Text="Directory where the generated plugin and related files will be saved." FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="0,0,0,5"/>
 
                     <!-- Append Date/Time Stamp (New) -->
                     <CheckBox Content="Append Date/Time Stamp to Output Directory"
@@ -529,18 +529,8 @@
                         <ComboBox ItemsSource="{Binding AvailableLanguages}"
                                   SelectedItem="{Binding SelectedLocalizationLanguage, Mode=TwoWay}"
                                   MinWidth="120"
-                                  Margin="10,0,0,0">
-                            <ComboBox.Style>
-                                <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsLocalizationEnabled}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ComboBox.Style>
-                        </ComboBox>
+                                  Margin="10,0,0,0"
+                                  Visibility="{Binding IsLocalizationEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                         
                         <CheckBox Margin="5 0 0 0" IsChecked="{Binding FixGarbledText}" 
                                   Visibility="{Binding IsLocalizationEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"
@@ -608,7 +598,7 @@
                                            Height="180"
                                            Margin="0,0,0,10"
                                            ToolTip="Select plugins to exclude when determining the 'default' appearance plugin in EasyNPC-like mode."/>
-                    <TextBlock Text="Plugins selected here will be ignored when assigning conflict-winning overrides to EasyNPC's Default Plugin selections" FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
+                    <TextBlock Text="Plugins selected here will be ignored when assigning conflict-winning overrides to EasyNPC's Default Plugin selections" FontSize="10" Foreground="{DynamicResource HintForeground}" TextWrapping="Wrap"/>
                 </StackPanel>
             </GroupBox>
             <GroupBox Header="Load Order Import Settings" Margin="0,0,0,10" Padding="5">
@@ -618,7 +608,7 @@
                                            Height="180"
                                            Margin="0,0,0,10"
                                            ToolTip="Select plugins to exclude when using the 'Import Choices from Load Order' feature."/>
-                    <TextBlock Text="When importing choices from your load order, winning override plugins selected here will be ignored, and the next available override will be chosen instead." FontSize="10" Foreground="Gray" TextWrapping="Wrap"/>
+                    <TextBlock Text="When importing choices from your load order, winning override plugins selected here will be ignored, and the next available override will be chosen instead." FontSize="10" Foreground="{DynamicResource HintForeground}" TextWrapping="Wrap"/>
                 </StackPanel>
             </GroupBox>
            <GroupBox Header="Mod Import Settings" Margin="0,5,0,10" Padding="5">
@@ -669,7 +659,7 @@
                                     Content="X" 
                                     Command="{Binding DataContext.RemoveCachedModCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                     CommandParameter="{Binding Key}"
-                                    Foreground="Red" 
+                                    Foreground="{DynamicResource StatusErrorForeground}" 
                                     FontWeight="Bold"
                                     Cursor="Hand"
                                     Margin="5,0,0,0"
@@ -697,7 +687,7 @@
 Mouse over each entry to see the reason.
 Delete a mod if you want to re-scan it."
                                FontSize="10" 
-                               Foreground="Gray" 
+                               Foreground="{DynamicResource HintForeground}" 
                   
              TextWrapping="Wrap"
                                Margin="0,2,0,0" />
