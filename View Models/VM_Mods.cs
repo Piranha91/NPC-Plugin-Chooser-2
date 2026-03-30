@@ -1081,29 +1081,42 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     public async Task PopulateModSettingsAsync(VM_SplashScreen? splashReporter)
     {
         _aux.ReinitializeModDependentProperties();
-        
+
         // Phase 0: Cache FaceGen
+        StartupLogger.LogPhase("Mod Population - Phase 0: FaceGen Caching");
         splashReporter?.UpdateStep("Pre-caching asset file paths...");
+        StartupLogger.Log("Starting FaceGen path caching");
         var faceGenCache = await CacheFaceGenPathsOnLoadAsync(null, splashReporter); // pass null to force full scan of mods folder
-        
+        StartupLogger.Log("FaceGen path caching complete");
+
         // Phase 1: Initialize and load data from disk
+        StartupLogger.LogPhase("Mod Population - Phase 1: Load From Disk");
+        StartupLogger.Log("Initializing population");
         var (tempList, loadedDisplayNames, claimedMugshotPaths, warnings) = InitializePopulation(splashReporter);
 
+        StartupLogger.Log("Loading mods from settings");
         LoadModsFromSettings(tempList, loadedDisplayNames, claimedMugshotPaths);
 
+        StartupLogger.Log("Scanning for mugshot-only mods");
         var vmsFromMugshotsOnly =
             ScanForMugshotOnlyMods(loadedDisplayNames, claimedMugshotPaths, warnings, splashReporter);
 
+        StartupLogger.Log("Starting mod folder scan");
         await ScanForModsInModFolderAsync(tempList, vmsFromMugshotsOnly, loadedDisplayNames, faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, claimedMugshotPaths,
             splashReporter, warnings);
+        StartupLogger.Log("Mod folder scan complete");
 
         // Phase 2: Consolidate and sort the gathered data
+        StartupLogger.LogPhase("Mod Population - Phase 2: Consolidate");
+        StartupLogger.Log("Finalizing mod list");
         FinalizeModList(tempList, vmsFromMugshotsOnly);
         AddBaseAndCreationClubMods(tempList);
         _allModSettingsInternal.Clear();
         _allModSettingsInternal.AddRange(SortVMs(tempList));
+        StartupLogger.Log($"Total mods after consolidation: {_allModSettingsInternal.Count}");
 
         // Phase 3: Perform heavy analysis on the consolidated data
+        StartupLogger.LogPhase("Mod Population - Phase 3: Analysis");
 
         try
         {
@@ -1479,6 +1492,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         var cachedNonAppearanceDirs = _settings.CachedNonAppearanceMods.Keys.ToHashSet();
 
+        StartupLogger.Log($"Scanning {modDirectories.Count} mod folders (parallel)");
         splashReporter?.UpdateStep($"Scanning {modDirectories.Count} folders for new appearance mods",
             modDirectories.Count);
 
@@ -1498,6 +1512,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 splashReporter?.IncrementProgress($"Scanned: {modFolderName}");
                 return; // Skip this directory.
             }
+
+            StartupLogger.Log($"Scanning mod folder: {modFolderName}");
 
             var modKeysInFolder = _aux.GetModKeysInDirectory(modFolderPath, warnings, false);
 
@@ -1655,9 +1671,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         IReadOnlyCollection<string> allModDirectories)
     {
         // This VM will be discarded and never touches the UI.
+        string modFolderName = Path.GetFileName(modFolderPath);
         var tempVmForAnalysis = _modSettingFromModFolderFactory(modFolderPath, modKeysInFolder, this);
         tempVmForAnalysis.IsNewlyCreated = true;
-        
+
+        StartupLogger.Log($"  [{modFolderName}] Checking FaceGen cache");
         var scanResult = FaceGenScanner.CreateFaceGenScanResultFromCache(tempVmForAnalysis, allFaceGenLooseFiles, allFaceGenBsaFiles);
 
         // Pre-Condition: If no FaceGen exists at all, we reject it immediately.
@@ -1667,9 +1685,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             return new CacheNonAppearanceResult(modFolderPath, "No FaceGen Files Found");
         }
 
+        StartupLogger.Log($"  [{modFolderName}] Loading plugins");
         _pluginProvider.LoadPlugins(modKeysInFolder, new HashSet<string> { modFolderPath });
-        
+
         // Find missing masters (Resources)
+        StartupLogger.Log($"  [{modFolderName}] Finding missing masters");
         var warnings = new ConcurrentBag<string>();
         FindAndAddMissingMasters(tempVmForAnalysis, allModDirectories, warnings);
         if (splashReporter != null && !warnings.IsEmpty)
@@ -1681,6 +1701,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
     
         // Determine if the plugin explicitly modifies NPCs (Standard Appearance Mod)
+        StartupLogger.Log($"  [{modFolderName}] Checking for appearance plugins");
         bool isStandardAppearanceMod = false;
         if (modKeysInFolder.Any())
         {
@@ -1690,6 +1711,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         // PATH A: It is a valid, record-altering Appearance Mod
         if (isStandardAppearanceMod)
         {
+            StartupLogger.Log($"  [{modFolderName}] Identified as standard appearance mod, running analysis");
             // Run analysis using the temporary VM
             tempVmForAnalysis.CheckMergeInSuitability(
                 splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
@@ -1904,6 +1926,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
         // --- END CACHING LOGIC ---
 
+        StartupLogger.Log($"Analyzing {vmsToAnalyze.Count} mods (cache misses), {allVMs.Count - vmsToAnalyze.Count} cache hits, parallelism: {maxParallelism}");
+
         var refreshTasks = vmsToAnalyze.Select(async vm =>
         {
             await semaphore.WaitAsync();
@@ -1911,6 +1935,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             {
                 await Task.Run(async () =>
                 {
+                    StartupLogger.Log($"Analyzing mod: {vm.DisplayName}");
                     var modFolderPathsForVm = vm.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
                     var plugins = _pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPathsForVm, out var loadedPluginPathsForVm);
                     try
@@ -1965,7 +1990,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }).ToList();
 
         await Task.WhenAll(refreshTasks);
-        
+        StartupLogger.Log("All mod analysis tasks complete");
+
         // --- Resolve and apply the collected SkyPatcher data after all analysis is done ---
         if (!allSkyPatcherGuests.IsEmpty)
         {
@@ -2954,6 +2980,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // TryGetPlugin is likely a fast, synchronous operation.
             if (_pluginProvider.TryGetPlugin(modKey, modFolderPaths, out var plugin) && plugin != null)
             {
+                StartupLogger.Log($"    Checking plugin: {modKey.FileName} for new NPCs");
                 bool pluginProvidesNewNpcs = false;
                 using (ContextualPerformanceTracer.Trace("PopulateMods.PluginProvidesNewNpcs"))
                 {
@@ -2963,6 +2990,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     }
                 }
 
+                StartupLogger.Log($"    Checking plugin: {modKey.FileName} for appearance modifications");
                 using (ContextualPerformanceTracer.Trace("PopulateMods.PluginModifiesAppearanceAsync"))
                 {
                     if (await PluginModifiesAppearanceAsync(plugin, modKeysInMod))

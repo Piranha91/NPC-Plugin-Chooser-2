@@ -1001,6 +1001,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             {
                 try
                 {
+                    StartupLogger.Log($"  [{DisplayName}] Caching plugin races");
                     using (ContextualPerformanceTracer.Trace("RefreshNpcLists.CachePluginRaces"))
                     {
                         // If the plugin is not in the load order, cache its race to pass to downstream evaluation function so it doesn't waste time searching the main link cache for a FormKey that was never there
@@ -1028,6 +1029,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                             continue;
                         }
 
+                        StartupLogger.Log($"  [{DisplayName}] Processing plugin: {plugin.ModKey.FileName} ({plugin.Npcs.Count} NPCs)");
                         foreach (var npcGetter in plugin.Npcs)
                         {
                             using (ContextualPerformanceTracer.Trace("RefreshNpcLists.RaceChecks"))
@@ -1486,6 +1488,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// </summary>
     public void CheckMergeInSuitability(Action<string>? showMessageAction)
     {
+        StartupLogger.Log($"  [{DisplayName}] Checking merge-in suitability");
         int appearanceRecordCount = 0;
         int nonAppearanceRecordCount = 0;
         bool isBaseGame = false;
@@ -1594,6 +1597,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// </summary>
     public async Task<bool> CheckForInjectedRecords(Action<string>? showMessageAction, Language? language)
     {
+        StartupLogger.Log($"  [{DisplayName}] Checking for injected records");
         foreach (var modKey in CorrespondingModKeys)
         {
             if (_environmentStateProvider.BaseGamePlugins.Contains(modKey) ||
@@ -2057,6 +2061,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             typeof(INpcGetter),
         };
 
+        StartupLogger.Log($"  [{DisplayName}] Finding plugins with overrides");
         using (ContextualPerformanceTracer.Trace("FindPluginsWithOverrides", this.DisplayName))
         {
             _pluginsWithOverrideRecords.Clear();
@@ -2194,6 +2199,8 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         }
 
         if (!iniFiles.Any()) return guestAppearances;
+
+        StartupLogger.Log($"  [{DisplayName}] Parsing {iniFiles.Count} SkyPatcher INI files");
 
         foreach (var iniFile in iniFiles)
         {

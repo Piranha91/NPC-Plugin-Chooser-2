@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
@@ -177,6 +177,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public IEnumerable<TemplateIconPosition> TemplateIconPositions { get; } = Enum.GetValues(typeof(TemplateIconPosition)).Cast<TemplateIconPosition>();
     
     [Reactive] public bool LogActivity { get; set; }
+    [Reactive] public bool LogStartup { get; set; }
 
     // For throttled saving
     private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
@@ -237,8 +238,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         }
 
         // Now that the environment parameters have been set, initialize the environment
+        StartupLogger.Log($"Setting environment target: {SkyrimRelease}, path: {SkyrimGamePath}");
         _environmentStateProvider.SetEnvironmentTarget(SkyrimRelease, SkyrimGamePath, TargetPluginName);
+        StartupLogger.Log("Updating environment (load order, link cache)");
         _environmentStateProvider.UpdateEnvironment();
+        StartupLogger.Log($"Environment initialized, status: {_environmentStateProvider.Status}");
         // Finished environment initialization
 
         _aux = aux;
@@ -330,6 +334,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         TemplateIconPosition = _model.TemplateIconPosition;
         
         LogActivity = _model.LogActivity;
+        LogStartup = _model.LogStartup;
 
         ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
         ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
@@ -527,6 +532,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         this.WhenAnyValue(x => x.LogActivity)
             .Skip(1)
             .Subscribe(b => _model.LogActivity = b)
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.LogStartup)
+            .Skip(1)
+            .Subscribe(b => _model.LogStartup = b)
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.IsLocalizationEnabled)
@@ -826,6 +836,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         try
         {
             // --- STEP 1 ---
+            StartupLogger.LogPhase("Settings Init - Step 1: Populate Mod List");
             splashReporter?.UpdateStep($"Step 1 of {totalSteps}: Populating mod list...");
 
             using (ContextualPerformanceTracer.Trace("VM_Settings.PopulateModSettings"))
@@ -835,8 +846,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 await _lazyModListVM.Value
                     .PopulateModSettingsAsync(splashReporter); // Base 70%, span 10% (e.g. 70-80)
             }
+            StartupLogger.Log("Mod population complete");
 
             // --- STEP 2 ---
+            StartupLogger.LogPhase("Settings Init - Step 2: NPC Selection Bar");
             splashReporter?.UpdateStep($"Step 2 of {totalSteps}: Initializing NPC selection bar...");
 
             using (ContextualPerformanceTracer.Trace("VM_Settings.InitializeNpcSelectionBar"))
@@ -844,6 +857,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 splashReporter?.UpdateProgress(80, "Initializing NPC selection bar...");
                 await _lazyNpcSelectionBar.Value.InitializeAsync(splashReporter);
             }
+            StartupLogger.Log("NPC selection bar initialized");
 
             // --- STEP 3 ---
             splashReporter?.UpdateStep($"Step 3 of {totalSteps}: Applying default settings...");

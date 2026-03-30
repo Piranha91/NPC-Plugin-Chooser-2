@@ -1,4 +1,4 @@
-using Mutagen.Bethesda.Plugins;
+﻿using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -223,6 +223,7 @@ public class Settings
     
     // --- Troubleshooting ---
     public bool LogActivity { get; set; } = false;
+    public bool LogStartup { get; set; } = false;
     public bool FixGarbledText { get; set; } = true;
 }
 

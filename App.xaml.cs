@@ -39,11 +39,16 @@ namespace NPC_Plugin_Chooser_2
 
         protected override async void OnStartup(StartupEventArgs e)
         {
+            // Check for file-based startup logging trigger before anything else
+            StartupLogger.InitializeFromFileTrigger();
+            StartupLogger.Log("Application starting");
+
             using (ContextualPerformanceTracer.Trace("App.OnStartup"))
             {
                 base.OnStartup(e);
                 this.Exit += OnApplicationExit;
 
+                StartupLogger.Log("Showing splash screen");
                 var splashVM = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, keepTopMost: false);
                 splashVM.UpdateProgress(0, "Initializing application...");
 
@@ -53,6 +58,7 @@ namespace NPC_Plugin_Chooser_2
                 }
                 catch (Exception ex)
                 {
+                    StartupLogger.Log($"Fatal error during startup: {ex.Message}", "ERROR");
                     splashVM?.ShowMessagesOnClose("An error occured during startup: " + Environment.NewLine + Environment.NewLine + ExceptionLogger.GetExceptionStack(ex));
                 }
 
@@ -95,12 +101,14 @@ namespace NPC_Plugin_Chooser_2
                     (mainWindow as MainWindow)?.ViewModel ??
                     Locator.Current.GetService<VM_MainWindow>();
 
+                StartupLogger.Log("Initializing application state");
                 using (ContextualPerformanceTracer.Trace("App.OnStartup.InitializeApplicationState"))
                 {
                     mainWindowViewModel?.InitializeApplicationState(isStartup: true);
                 }
 
                 splashVM.UpdateProgress(100, "Application loaded.");
+                StartupLogger.Complete();
                 await Task.Delay(250);
                 await splashVM.CloseSplashScreenAsync();
             }
@@ -119,8 +127,13 @@ namespace NPC_Plugin_Chooser_2
             var builder = new ContainerBuilder();
             builder.Populate(services);
 
+            StartupLogger.LogPhase("Loading Settings");
             splashVM.UpdateProgress(15, "Loading settings model...");
+            StartupLogger.Log("Loading settings from disk");
             var settingsModel = VM_Settings.LoadSettings(); // Use the static method from your Settings model
+            // Enable startup logging from settings if not already enabled by file trigger
+            StartupLogger.InitializeFromSettings(settingsModel.LogStartup);
+            StartupLogger.Log("Settings loaded successfully");
             // Apply theme: prefer saved ThemeName, fall back to IsDarkMode for backward compat
             if (!string.IsNullOrEmpty(settingsModel.ThemeName))
                 ThemeManager.ApplyTheme(settingsModel.ThemeName);
@@ -128,11 +141,14 @@ namespace NPC_Plugin_Chooser_2
                 ThemeManager.ApplyTheme(settingsModel.IsDarkMode);
             // Run the update handler to migrate settings before they are used by the application.
             splashVM.UpdateProgress(16, "Checking for setting updates...");
+            StartupLogger.Log("Running update handler");
             var updateHandler = new UpdateHandler(settingsModel);
             updateHandler.InitialCheckForUpdatesAndPatch();
             builder.RegisterInstance(settingsModel).AsSelf().SingleInstance();
 
+            StartupLogger.LogPhase("Dependency Injection Setup");
             splashVM.UpdateProgress(20, "Registering core components...");
+            StartupLogger.Log("Registering core components");
             builder.RegisterType<EnvironmentStateProvider>().AsSelf().SingleInstance();
             builder.RegisterType<Auxilliary>().AsSelf().SingleInstance();
             builder.RegisterType<Patcher>().AsSelf().SingleInstance();
@@ -198,25 +214,34 @@ namespace NPC_Plugin_Chooser_2
             Locator.CurrentMutable.Register(() => new MultiImageDisplayView(), typeof(IViewFor<VM_MultiImageDisplay>));
 
             splashVM.UpdateProgress(60, "Building DI container...");
+            StartupLogger.Log("Building DI container");
             var container = builder.Build();
             autofacResolver.SetLifetimeScope(container);
             
+            StartupLogger.LogPhase("Application Initialization");
             splashVM.UpdateProgress(65, "Initializing main application services...");
             VM_Settings? settingsViewModel;
+            StartupLogger.Log("Resolving VM_Settings");
             using (ContextualPerformanceTracer.Trace("InitializeCoreApplicationAsync.ResolveSettingsVM"))
             {
                 settingsViewModel = container.Resolve<VM_Settings>();
             }
 
+            StartupLogger.Log("Starting VM_Settings.InitializeAsync");
             await settingsViewModel.InitializeAsync(splashVM); // Pass splashVM implicitly if injected, or explicitly if needed
+            StartupLogger.Log("VM_Settings.InitializeAsync complete");
+
+            StartupLogger.Log("Initializing PortraitCreator");
             var portraitCreator = container.Resolve<PortraitCreator>();
             await portraitCreator.InitializeAsync();
-            
+            StartupLogger.Log("PortraitCreator initialized");
+
             var modsViewModel = container.Resolve<VM_Mods>();
             var npcsViewModel = container.Resolve<VM_NpcSelectionBar>();
             var pluginProvider = container.Resolve<PluginProvider>();
             var aux = container.Resolve<Auxilliary>();
             var environmentProvider = container.Resolve<EnvironmentStateProvider>();
+            StartupLogger.Log("Running final update checks");
             await updateHandler.FinalCheckForUpdatesAndPatch(npcsViewModel, modsViewModel, pluginProvider, aux, environmentProvider, splashVM);
             
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync

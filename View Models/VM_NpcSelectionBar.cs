@@ -1803,11 +1803,14 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         // --- Scan Mugshots (largely unchanged) ---
+        StartupLogger.LogPhase("NPC Initialization - Mugshot Scan");
         splashReporter?.UpdateStep("Scanning mugshot directory...");
+        StartupLogger.Log("Scanning mugshot directory");
         using (ContextualPerformanceTracer.Trace("InitializeNpcs.ScanMugshots"))
         {
             _mugshotData = await Task.Run(() => ScanMugshotDirectory(splashReporter));
         }
+        StartupLogger.Log($"Mugshot scan complete, found {_mugshotData.Count} entries");
 
         await Application.Current.Dispatcher.InvokeAsync(UpdateAvailableNpcGroups);
         splashReporter?.UpdateStep("Analyzing NPC data...");
@@ -1837,6 +1840,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             }
 
             // 3. BATCH PROCESS: Resolve all NPCs in a single pass.
+            StartupLogger.Log($"Resolving {allRequiredNpcKeys.Count} unique NPC records");
             splashReporter?.UpdateStep("Resolving NPC records", allRequiredNpcKeys.Count);
             foreach (var npcFormKey in allRequiredNpcKeys)
             {
@@ -1898,6 +1902,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             }
 
             // --- Build template caches ---
+            StartupLogger.Log($"NPC list created with {npcViewModelMap.Count} entries, building template index");
             splashReporter?.UpdateStep("Building template index...");
             
             var newBaseIsTemplate = new HashSet<FormKey>();
