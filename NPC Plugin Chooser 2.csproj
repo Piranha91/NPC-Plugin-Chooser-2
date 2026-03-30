@@ -39,18 +39,18 @@
         <SubType>Designer</SubType>
       </Page>
       <!-- Exclude theme files from BAML compilation; they are loaded from disk at runtime -->
-      <Page Remove="Themes\DarkMode.xaml" />
-      <Page Remove="Themes\LightTheme.xaml" />
+      <Page Remove="Themes\Dark.xaml" />
+      <Page Remove="Themes\Light.xaml" />
       <Page Remove="Themes\Tokyo Night.xaml" />
       <Page Remove="Themes\GitHub Light.xaml" />
-      <None Remove="Themes\DarkMode.xaml" />
-      <None Remove="Themes\LightTheme.xaml" />
+      <None Remove="Themes\Dark.xaml" />
+      <None Remove="Themes\Light.xaml" />
       <None Remove="Themes\Tokyo Night.xaml" />
       <None Remove="Themes\GitHub Light.xaml" />
-      <Content Include="Themes\DarkMode.xaml">
+      <Content Include="Themes\Dark.xaml">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
-      <Content Include="Themes\LightTheme.xaml">
+      <Content Include="Themes\Light.xaml">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
       <Content Include="Themes\Tokyo Night.xaml">

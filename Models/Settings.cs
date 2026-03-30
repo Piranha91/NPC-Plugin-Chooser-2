@@ -1,4 +1,4 @@
-﻿using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -70,7 +70,7 @@ public class Settings
     public int MaxNpcsPerPageSummaryView { get; set; } = 100;
     public bool SuppressPopupWarnings { get; set; } = false;
     public Language? LocalizationLanguage { get; set; } = null;
-    public bool IsDarkMode { get; set; } = false;
+    public bool IsDarkMode { get; set; } = true;
     public string? ThemeName { get; set; }
     public string TabStyle { get; set; } = "Box";
     public string NpcSelectionIndicator { get; set; } = "Bar";

@@ -33,7 +33,7 @@ namespace NPC_Plugin_Chooser_2.Themes
 
         /// <summary>
         /// Applies the theme with the given display name.
-        /// Falls back to "DarkMode" if the requested theme is not found.
+        /// Falls back to "Dark" if the requested theme is not found.
         /// </summary>
         public static void ApplyTheme(string themeName)
         {
@@ -47,8 +47,8 @@ namespace NPC_Plugin_Chooser_2.Themes
             var themeFile = Path.Combine(ThemesFolder, themeName + ".xaml");
             if (!File.Exists(themeFile))
             {
-                // Fallback: try DarkMode
-                themeFile = Path.Combine(ThemesFolder, "DarkMode.xaml");
+                // Fallback: try Dark
+                themeFile = Path.Combine(ThemesFolder, "Dark.xaml");
                 if (!File.Exists(themeFile))
                     return; // No themes available at all
             }
@@ -94,7 +94,7 @@ namespace NPC_Plugin_Chooser_2.Themes
         /// </summary>
         public static void ApplyTheme(bool isDark)
         {
-            ApplyTheme(isDark ? "DarkMode" : "LightTheme");
+            ApplyTheme(isDark ? "Dark" : "Light");
         }
     }
 }

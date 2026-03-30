@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
@@ -149,7 +149,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool NormalizeImageDimensions { get; set; }
     [Reactive] public int MaxMugshotsToFit { get; set; }
     [Reactive] public bool IsDarkMode { get; set; }
-    [Reactive] public string SelectedThemeName { get; set; } = "DarkMode";
+    [Reactive] public string SelectedThemeName { get; set; } = "Dark";
     public ObservableCollection<string> AvailableThemes { get; } = new();
     [Reactive] public string SelectedTabStyle { get; set; } = "Box";
     public List<string> AvailableTabStyles { get; } = new() { "Box", "Underline" };
@@ -317,7 +317,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         if (!string.IsNullOrEmpty(_model.ThemeName) && AvailableThemes.Contains(_model.ThemeName))
             SelectedThemeName = _model.ThemeName;
         else if (AvailableThemes.Count > 0)
-            SelectedThemeName = _model.IsDarkMode ? "DarkMode" : "LightTheme";
+            SelectedThemeName = _model.IsDarkMode ? "Dark" : "Light";
         SelectedTabStyle = _model.TabStyle;
         SelectedNpcSelectionIndicator = _model.NpcSelectionIndicator;
         AutoAdvanceAfterSelection = _model.AutoAdvanceAfterSelection;
