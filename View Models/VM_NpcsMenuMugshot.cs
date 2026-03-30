@@ -527,12 +527,21 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                         {
                             _consistencyProvider.ClearSelectedMod(_targetNpcFormKey);
                         }
+                        return; // Selection was reverted, don't auto-advance
                     }
                 }
                 else // fall back to simple analzyer
                 {
                     CheckAndHandleTemplates();
                 }
+            }
+
+            // Auto-advance to next NPC after a brief delay
+            if (_settings.AutoAdvanceAfterSelection)
+            {
+                Observable.Timer(TimeSpan.FromMilliseconds(150), RxApp.MainThreadScheduler)
+                    .Subscribe(_ => _vmNpcSelectionBar.NavigateNextNpcCommand.Execute().Subscribe())
+                    .DisposeWith(Disposables);
             }
         }
     }

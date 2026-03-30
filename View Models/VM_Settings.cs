@@ -157,6 +157,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public List<string> AvailableNpcSelectionIndicators { get; } = new() { "None", "Bar", "Text Color" };
 
     [Reactive] public bool SuppressPopupWarnings { get; set; }
+    [Reactive] public bool AutoAdvanceAfterSelection { get; set; }
 
     // --- NEW: Localization Settings ---
     [Reactive] public bool IsLocalizationEnabled { get; set; }
@@ -319,6 +320,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             SelectedThemeName = _model.IsDarkMode ? "DarkMode" : "LightTheme";
         SelectedTabStyle = _model.TabStyle;
         SelectedNpcSelectionIndicator = _model.NpcSelectionIndicator;
+        AutoAdvanceAfterSelection = _model.AutoAdvanceAfterSelection;
         ShowNpcNameInList = _model.ShowNpcNameInList;
         ShowNpcEditorIdInList = _model.ShowNpcEditorIdInList;
         ShowNpcFormKeyInList = _model.ShowNpcFormKeyInList;
@@ -567,6 +569,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 if (_lazyNpcSelectionBar.IsValueCreated)
                     _lazyNpcSelectionBar.Value.NpcSelectionIndicator = indicator;
             })
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.AutoAdvanceAfterSelection)
+            .Skip(1)
+            .Subscribe(b => _model.AutoAdvanceAfterSelection = b)
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SelectedRecordOverrideHandlingMode)

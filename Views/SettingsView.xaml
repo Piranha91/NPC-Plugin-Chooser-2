@@ -525,7 +525,13 @@
                                   MinWidth="100"
                                   ToolTip="Show a colored indicator on NPCs with saved selections. Green = has data, Purple = mugshot only, Red = not in load order."/>
                     </StackPanel>
-                    
+
+                    <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                        <CheckBox Content="Auto-advance after selection" IsChecked="{Binding AutoAdvanceAfterSelection, Mode=TwoWay}"
+                                  VerticalAlignment="Center"
+                                  ToolTip="Automatically advance to the next NPC in the list after selecting a mugshot."/>
+                    </StackPanel>
+
                     <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
                         <CheckBox Content="Enable Localization"
                                   IsChecked="{Binding IsLocalizationEnabled, Mode=TwoWay}"
