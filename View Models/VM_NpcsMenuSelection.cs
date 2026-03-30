@@ -2,6 +2,8 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Reactive.Linq;
+using System.Windows.Media;
 using DynamicData;
 using Microsoft.Build.Tasks.Deployment.ManifestUtilities;
 using Microsoft.WindowsAPICodePack.Shell.PropertySystem;
@@ -9,10 +11,10 @@ using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using Mutagen.Bethesda.Strings;
 using NPC_Plugin_Chooser_2.BackEnd;
-using NPC_Plugin_Chooser_2.Models; // For Settings if needed indirectly
+using NPC_Plugin_Chooser_2.Models;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
-using Splat; // For Locator if needed
+using Splat;
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
@@ -70,6 +72,8 @@ public class VM_NpcsMenuSelection : ReactiveObject
 
     // This property reflects the centrally stored selection
     [Reactive] public string? SelectedAppearanceModName { get; set; }
+    [Reactive] public bool SelectedModHasData { get; set; }
+    [Reactive] public SolidColorBrush? SelectionIndicatorBrush { get; set; }
     [Reactive] public ObservableCollection<VM_ModSetting> AppearanceMods { get; set; } = new();
 
     // Alternative constructor for NPCs found *only* via mugshots

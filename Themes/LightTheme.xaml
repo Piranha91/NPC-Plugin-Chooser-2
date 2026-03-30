@@ -36,6 +36,7 @@
     <SolidColorBrush x:Key="StatusValidForeground" Color="Green"/>
     <SolidColorBrush x:Key="StatusErrorForeground" Color="Red"/>
     <SolidColorBrush x:Key="StatusPendingForeground" Color="Orange"/>
+    <SolidColorBrush x:Key="SelectionNoDataBrush" Color="DarkMagenta"/>
 
     <!-- Selection -->
     <SolidColorBrush x:Key="SelectedItemBackground" Color="#CCE8FF"/>

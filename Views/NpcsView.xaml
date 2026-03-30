@@ -384,7 +384,23 @@
                              SelectionChanged="NpcListBox_OnSelectionChanged">
                          <ListBox.ItemTemplate>
                              <DataTemplate>
-                                 <Border>
+                                 <Border BorderBrush="{Binding SelectionIndicatorBrush}">
+                                     <Border.Style>
+                                         <Style TargetType="Border">
+                                             <Setter Property="BorderThickness" Value="0"/>
+                                             <Setter Property="Padding" Value="0"/>
+                                             <Style.Triggers>
+                                                 <MultiDataTrigger>
+                                                     <MultiDataTrigger.Conditions>
+                                                         <Condition Binding="{Binding DataContext.NpcSelectionIndicator, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="Bar"/>
+                                                         <Condition Binding="{Binding SelectionIndicatorBrush, Converter={StaticResource IsNotNullConverter}}" Value="True"/>
+                                                     </MultiDataTrigger.Conditions>
+                                                     <Setter Property="BorderThickness" Value="3,0,0,0"/>
+                                                     <Setter Property="Padding" Value="6,0,0,0"/>
+                                                 </MultiDataTrigger>
+                                             </Style.Triggers>
+                                         </Style>
+                                     </Border.Style>
                                      <Border.ToolTip>
                                          <ToolTip>
                                               <StackPanel>
@@ -514,7 +530,21 @@
                                                         Visibility="{Binding HasTemplateConflict, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          </StackPanel>
 
-                                         <TextBlock Grid.Column="1" Text="{Binding DisplayName}"/>
+                                         <TextBlock Grid.Column="1" Text="{Binding DisplayName}">
+                                             <TextBlock.Style>
+                                                 <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                     <Style.Triggers>
+                                                         <MultiDataTrigger>
+                                                             <MultiDataTrigger.Conditions>
+                                                                 <Condition Binding="{Binding DataContext.NpcSelectionIndicator, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="Text Color"/>
+                                                                 <Condition Binding="{Binding SelectionIndicatorBrush, Converter={StaticResource IsNotNullConverter}}" Value="True"/>
+                                                             </MultiDataTrigger.Conditions>
+                                                             <Setter Property="Foreground" Value="{Binding SelectionIndicatorBrush}"/>
+                                                         </MultiDataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </TextBlock.Style>
+                                         </TextBlock>
 
                                          <!-- Right-side template indicators -->
                                          <StackPanel Grid.Column="2" Orientation="Horizontal">

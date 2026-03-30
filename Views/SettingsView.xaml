@@ -519,6 +519,11 @@
                         <ComboBox ItemsSource="{Binding AvailableTabStyles}"
                                   SelectedItem="{Binding SelectedTabStyle, Mode=TwoWay}"
                                   MinWidth="100"/>
+                        <TextBlock Text="NPC Selection Label:" VerticalAlignment="Center" Margin="20,0,8,0"/>
+                        <ComboBox ItemsSource="{Binding AvailableNpcSelectionIndicators}"
+                                  SelectedItem="{Binding SelectedNpcSelectionIndicator, Mode=TwoWay}"
+                                  MinWidth="100"
+                                  ToolTip="Show a colored indicator on NPCs with saved selections. Green = has data, Purple = mugshot only, Red = not in load order."/>
                     </StackPanel>
                     
                     <StackPanel Orientation="Horizontal" Margin="0,5,0,0">

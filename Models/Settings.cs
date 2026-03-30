@@ -72,6 +72,7 @@ public class Settings
     public bool IsDarkMode { get; set; } = false;
     public string? ThemeName { get; set; }
     public string TabStyle { get; set; } = "Box";
+    public string NpcSelectionIndicator { get; set; } = "Bar";
     public string CotRKeyword { get; set; } = "CotR";
     
     // --- NPC Display ---
