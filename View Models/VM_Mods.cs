@@ -1476,6 +1476,56 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
     #endregion
 
+    /// <summary>
+    /// Parses an MO2 modlist.txt and returns the set of enabled mod folder names (lines starting with '+').
+    /// Returns null if the file cannot be read or filtering is not enabled.
+    /// </summary>
+    private HashSet<string>? GetEnabledModNamesFromModlist()
+    {
+        if (!_settings.FilterByActiveModsMO2 ||
+            string.IsNullOrWhiteSpace(_settings.MO2ModlistPath) ||
+            !File.Exists(_settings.MO2ModlistPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var enabledMods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var line in File.ReadLines(_settings.MO2ModlistPath))
+            {
+                if (line.StartsWith('+'))
+                {
+                    enabledMods.Add(line.Substring(1).Trim());
+                }
+            }
+            StartupLogger.Log($"MO2 modlist filter: {enabledMods.Count} enabled mods loaded from {_settings.MO2ModlistPath}");
+            return enabledMods;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error reading MO2 modlist: {ExceptionLogger.GetExceptionStack(ex)}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Returns mod directories from the ModsFolder, optionally filtered by the MO2 modlist.
+    /// </summary>
+    private List<string> GetModDirectories()
+    {
+        if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder))
+            return new List<string>();
+
+        var allDirs = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
+        var enabledMods = GetEnabledModNamesFromModlist();
+        if (enabledMods == null) return allDirs;
+
+        var filtered = allDirs.Where(dir => enabledMods.Contains(Path.GetFileName(dir))).ToList();
+        StartupLogger.Log($"MO2 modlist filter: {filtered.Count}/{allDirs.Count} mod folders passed filter");
+        return filtered;
+    }
+
     private async Task ScanForModsInModFolderAsync(List<VM_ModSetting> tempList,
         List<VM_ModSetting> vmsFromMugshotsOnly, HashSet<string> loadedDisplayNames,
         Dictionary<string, HashSet<string>> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles,
@@ -1483,7 +1533,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     {
         if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder)) return;
 
-        var modDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
+        var modDirectories = GetModDirectories();
         if (!modDirectories.Any()) return;
 
         // Use a thread-safe bag to collect results from all parallel tasks.
@@ -2088,16 +2138,13 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             // Scenario 2: No specific VMs provided. Scan all subdirectories in the main Mods folder.
             allPathsToScanForLooseFiles = new List<string>();
-            if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
+            try
             {
-                try
-                {
-                    allPathsToScanForLooseFiles.AddRange(Directory.EnumerateDirectories(_settings.ModsFolder));
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error enumerating ModsFolder for loose FaceGen caching: {ExceptionLogger.GetExceptionStack(ex)}");
-                }
+                allPathsToScanForLooseFiles.AddRange(GetModDirectories());
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error enumerating ModsFolder for loose FaceGen caching: {ExceptionLogger.GetExceptionStack(ex)}");
             }
         }
 
@@ -2154,13 +2201,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             {
                 // Scenario 2: Full scan. Create temporary VMs for every mod folder to discover their plugins and associated BSAs.
                 var tempVmsForFullScan = new List<VM_ModSetting>();
-                if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
+                foreach (var modDir in GetModDirectories())
                 {
-                    foreach (var modDir in Directory.EnumerateDirectories(_settings.ModsFolder))
-                    {
-                        var modKeys = _aux.GetModKeysInDirectory(modDir, new(), false);
-                        tempVmsForFullScan.Add(_modSettingFromModFolderFactory(modDir, modKeys, this));
-                    }
+                    var modKeys = _aux.GetModKeysInDirectory(modDir, new(), false);
+                    tempVmsForFullScan.Add(_modSettingFromModFolderFactory(modDir, modKeys, this));
                 }
 
                 // Also include Base Game and Creation Club in a full scan.

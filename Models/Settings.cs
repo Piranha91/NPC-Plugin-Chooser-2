@@ -18,6 +18,8 @@ public class Settings
     // Mod Environment
     public string ModsFolder { get; set; } = string.Empty;
     public string MugshotsFolder { get; set; } = string.Empty;
+    public bool FilterByActiveModsMO2 { get; set; } = false;
+    public string MO2ModlistPath { get; set; } = string.Empty;
     public Dictionary<string, string> CachedNonAppearanceMods { get; set; } = new(); // These have been examined and determined to not have NPC mods. Used to speed up startup
 
     // Game Environment

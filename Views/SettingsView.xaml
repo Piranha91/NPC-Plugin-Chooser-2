@@ -128,6 +128,26 @@
                     </Grid>
                     <TextBlock Text="Specify the root folder where your mods are installed (used for Mod linking)."
                                FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="0,0,0,10"/>
+
+                    <!-- MO2 Modlist Filter -->
+                    <CheckBox Content="Filter by active mods (MO2)"
+                              IsChecked="{Binding FilterByActiveModsMO2, Mode=TwoWay}"
+                              ToolTip="When enabled, only mod folders corresponding to enabled entries in the selected MO2 modlist.txt will be imported."
+                              Margin="0,0,0,5"/>
+
+                    <Grid Margin="15,0,0,5"
+                          Visibility="{Binding FilterByActiveModsMO2, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding MO2ModlistPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 IsReadOnly="True" Margin="0,0,5,0"/>
+                        <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectMO2ModlistCommand}"/>
+                    </Grid>
+                    <TextBlock Text="Select your MO2 profile's modlist.txt to filter which mod folders are imported."
+                               FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="15,0,0,5"
+                               Visibility="{Binding FilterByActiveModsMO2, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 </StackPanel>
             </GroupBox>
 
