@@ -273,28 +273,28 @@ namespace NPC_Plugin_Chooser_2.Views
                 ViewModel.AddCurrentNpcToGroupCommand
                     .Where(wasSuccessful => wasSuccessful) // Only trigger if the command returned true
                     .ObserveOn(RxApp.MainThreadScheduler)
-                    .Subscribe(_ => AnimateButtonConfirmation(AddCurrentNpcButton, "Add Cur"))
+                    .Subscribe(_ => AnimateButtonConfirmation(AddCurrentNpcButton, "Add"))
                     .DisposeWith(d);
 
                 // Animate Remove button on successful execution
                 ViewModel.RemoveCurrentNpcFromGroupCommand
                     .Where(wasSuccessful => wasSuccessful) // Only trigger if the command returned true
                     .ObserveOn(RxApp.MainThreadScheduler)
-                    .Subscribe(_ => AnimateButtonConfirmation(RemoveCurrentNpcButton, "Rem Cur"))
+                    .Subscribe(_ => AnimateButtonConfirmation(RemoveCurrentNpcButton, "Remove"))
                     .DisposeWith(d);
                 
                 // Animate Add button on successful execution
                 ViewModel.AddAllVisibleNpcsToGroupCommand
                     .Where(wasSuccessful => wasSuccessful) // Only trigger if the command returned true
                     .ObserveOn(RxApp.MainThreadScheduler)
-                    .Subscribe(_ => AnimateButtonConfirmation(AddVisibleNpcsButton, "Add Vis"))
+                    .Subscribe(_ => AnimateButtonConfirmation(AddVisibleNpcsButton, "Add"))
                     .DisposeWith(d);
 
                 // Animate Remove button on successful execution
                 ViewModel.RemoveAllVisibleNpcsFromGroupCommand
                     .Where(wasSuccessful => wasSuccessful) // Only trigger if the command returned true
                     .ObserveOn(RxApp.MainThreadScheduler)
-                    .Subscribe(_ => AnimateButtonConfirmation(RemoveVisibleNpcsButton, "Rem Vis"))
+                    .Subscribe(_ => AnimateButtonConfirmation(RemoveVisibleNpcsButton, "Remove"))
                     .DisposeWith(d);
             });
         }
