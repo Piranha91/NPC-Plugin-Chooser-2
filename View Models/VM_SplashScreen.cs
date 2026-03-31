@@ -196,7 +196,7 @@ public class VM_SplashScreen : ReactiveObject, IDisposable
     {
         if (LogText.Any())
         {
-            ScrollableMessageBox.Show(LogText, "Initialization Error");
+            ScrollableMessageBox.Show(LogText, "Initialization Warning");
         }
 
         Dispose();
