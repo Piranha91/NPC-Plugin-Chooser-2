@@ -6,7 +6,9 @@
       "Bash(dotnet build:*)",
       "Bash(xargs grep:*)",
       "Bash(ls \"s:/Dev/NPC Plugin Chooser 2/\"*.sln)",
-      "Bash(ls \"s:/Dev/NPC Plugin Chooser 2/NPC Plugin Chooser 2/\"*.csproj)"
+      "Bash(ls \"s:/Dev/NPC Plugin Chooser 2/NPC Plugin Chooser 2/\"*.csproj)",
+      "Bash(grep -n 'Grey \"\"T\"\"\\\\|Green \"\"T\"\"' Views/NpcsView.xaml)",
+      "Bash(grep -A 20 'Grey \"\"\"\"T\"\"\"\" for winning-override' Views/NpcsView.xaml)"
     ]
   }
 }
