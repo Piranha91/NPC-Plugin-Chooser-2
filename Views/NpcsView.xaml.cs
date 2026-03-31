@@ -53,6 +53,8 @@ namespace NPC_Plugin_Chooser_2.Views
                 Debug.WriteLine("!!!!!!!!!!!!!!!! CRITICAL: DataContextProxy RESOURCE NOT FOUND !!!!!!!!!!!!!!!!");
             }
 
+            this.PreviewKeyDown += NpcsView_PreviewKeyDown;
+
             this.Loaded += (s, e) =>
             {
                 if (this.DataContext is VM_NpcSelectionBar vm)
@@ -349,6 +351,29 @@ namespace NPC_Plugin_Chooser_2.Views
             }
 
             RefreshImageSizes();
+        }
+
+        private void NpcsView_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyboardDevice.Modifiers != ModifierKeys.Alt) return;
+
+            // When Alt is held, WPF reports e.Key as Key.System; the actual key is in e.SystemKey
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+
+            ICommand? command = key switch
+            {
+                Key.Up => ViewModel?.NavigatePreviousNpcCommand,
+                Key.Down => ViewModel?.NavigateNextNpcCommand,
+                Key.Left => ViewModel?.NavigateBackNpcCommand,
+                Key.Right => ViewModel?.NavigateForwardNpcCommand,
+                _ => null
+            };
+
+            if (command != null && command.CanExecute(null))
+            {
+                command.Execute(null);
+                e.Handled = true;
+            }
         }
 
         private void NpcListBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)

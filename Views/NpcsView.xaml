@@ -98,12 +98,8 @@
     
     </UserControl.Resources>
 
-    <UserControl.InputBindings>
-        <KeyBinding Key="Up" Modifiers="Alt" Command="{Binding NavigatePreviousNpcCommand}"/>
-        <KeyBinding Key="Down" Modifiers="Alt" Command="{Binding NavigateNextNpcCommand}"/>
-        <KeyBinding Key="Left" Modifiers="Alt" Command="{Binding NavigateBackNpcCommand}"/>
-        <KeyBinding Key="Right" Modifiers="Alt" Command="{Binding NavigateForwardNpcCommand}"/>
-    </UserControl.InputBindings>
+    <!-- Navigation shortcuts (Alt+Arrow) are handled via PreviewKeyDown in code-behind
+         so they work even when the ListBox has focus and would otherwise consume arrow keys. -->
 
     <Grid>
         <Grid.RowDefinitions>
