@@ -4,7 +4,9 @@
       "Bash(cp DarkMode.xaml \"Tokyo Night.xaml\")",
       "Bash(cp LightTheme.xaml \"GitHub Light.xaml\")",
       "Bash(dotnet build:*)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(ls \"s:/Dev/NPC Plugin Chooser 2/\"*.sln)",
+      "Bash(ls \"s:/Dev/NPC Plugin Chooser 2/NPC Plugin Chooser 2/\"*.csproj)"
     ]
   }
 }
