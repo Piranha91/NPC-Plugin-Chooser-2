@@ -725,6 +725,67 @@ Delete a mod if you want to re-scan it."
                 </StackPanel>
             </GroupBox>
 
+            <GroupBox Header="Ignored Mods" Margin="0,5,0,10" Padding="5">
+                <StackPanel>
+                    <TextBox Text="{Binding IgnoredModFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,3" ToolTip="Filter the list of ignored mods below."/>
+
+                    <ListBox ItemsSource="{Binding FilteredIgnoredMods}" Height="150" HorizontalContentAlignment="Stretch" BorderThickness="1">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Converter={StaticResource FullPathToFolderNameConverter}}"
+                                               ToolTip="{Binding}"
+                                               VerticalAlignment="Center"/>
+
+                                    <Button Grid.Column="1"
+                                            Content="X"
+                                            Command="{Binding DataContext.RemoveIgnoredModCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                            CommandParameter="{Binding}"
+                                            Foreground="{DynamicResource StatusErrorForeground}"
+                                            FontWeight="Bold"
+                                            Cursor="Hand"
+                                            Margin="5,0,0,0"
+                                            VerticalAlignment="Center">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="BorderThickness" Value="0"/>
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <Button Content="Add Folder(s)..."
+                            Command="{Binding AddIgnoredModCommand}"
+                            Margin="0,4,0,0"
+                            HorizontalAlignment="Left"
+                            Padding="10,3"
+                            ToolTip="Select folder(s) to ignore during mod import"/>
+                    <TextBlock Text="Mods added here will be skipped during import. If a mod is already loaded, it will be removed.
+Remove a mod from this list to allow it to be imported again."
+                               FontSize="10"
+                               Foreground="{DynamicResource HintForeground}"
+                               TextWrapping="Wrap"
+                               Margin="0,2,0,0" />
+                </StackPanel>
+            </GroupBox>
+
             <GroupBox Header="Spawn Bat File Options" Margin="0,0,0,10" Padding="5">
                 <StackPanel>
                     <TextBlock Text="Console Commands Before Spawning:" Margin="0,0,0,2"/>

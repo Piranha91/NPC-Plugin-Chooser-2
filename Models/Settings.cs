@@ -21,6 +21,7 @@ public class Settings
     public bool FilterByActiveModsMO2 { get; set; } = false;
     public string MO2ModlistPath { get; set; } = string.Empty;
     public Dictionary<string, string> CachedNonAppearanceMods { get; set; } = new(); // These have been examined and determined to not have NPC mods. Used to speed up startup
+    public HashSet<string> IgnoredMods { get; set; } = new(); // Manually specified mod folders to skip during import
 
     // Game Environment
     public SkyrimRelease SkyrimRelease { get; set; } = SkyrimRelease.SkyrimSE;

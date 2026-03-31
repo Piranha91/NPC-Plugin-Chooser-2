@@ -1541,6 +1541,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         var scannedModFolders = 0;
 
         var cachedNonAppearanceDirs = _settings.CachedNonAppearanceMods.Keys.ToHashSet();
+        var ignoredMods = _settings.IgnoredMods;
 
         StartupLogger.Log($"Scanning {modDirectories.Count} mod folders (parallel)");
         splashReporter?.UpdateStep($"Scanning {modDirectories.Count} folders for new appearance mods",
@@ -1557,7 +1558,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             var currentProgress = (double)Interlocked.Increment(ref scannedModFolders) / modDirectories.Count * 100.0;
 
             if (File.Exists(Path.Combine(modFolderPath, tokenFileName)) ||
-                cachedNonAppearanceDirs.Contains(modFolderPath))
+                cachedNonAppearanceDirs.Contains(modFolderPath) ||
+                ignoredMods.Contains(modFolderPath))
             {
                 splashReporter?.IncrementProgress($"Scanned: {modFolderName}");
                 return; // Skip this directory.
