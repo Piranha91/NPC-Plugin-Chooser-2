@@ -113,6 +113,25 @@ public static class StartupLogger
     }
 
     /// <summary>
+    /// Logs that startup completed without a mods folder, but keeps the log stream open
+    /// so that initialization after the user selects a mods folder is also captured.
+    /// </summary>
+    public static void DeferCompletion()
+    {
+        if (!_isEnabled) return;
+
+        lock (_lock)
+        {
+            try
+            {
+                _writer?.WriteLine();
+                _writer?.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Thread {Thread.CurrentThread.ManagedThreadId,3}] [INFO] No mods folder configured — deferring log completion until folder is selected.");
+            }
+            catch { }
+        }
+    }
+
+    /// <summary>
     /// Marks startup as complete and closes the log stream.
     /// </summary>
     public static void Complete()

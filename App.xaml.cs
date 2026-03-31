@@ -108,7 +108,19 @@ namespace NPC_Plugin_Chooser_2
                 }
 
                 splashVM.UpdateProgress(100, "Application loaded.");
-                StartupLogger.Complete();
+
+                // If mods folder is blank (e.g. first launch), defer log completion so that
+                // initialization after the user selects a mods folder is also captured.
+                var settingsModel = _container?.Resolve<Settings>();
+                if (StartupLogger.IsEnabled && string.IsNullOrEmpty(settingsModel?.ModsFolder))
+                {
+                    StartupLogger.DeferCompletion();
+                }
+                else
+                {
+                    StartupLogger.Complete();
+                }
+
                 await Task.Delay(250);
                 await splashVM.CloseSplashScreenAsync();
             }

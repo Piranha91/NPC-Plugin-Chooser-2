@@ -546,7 +546,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
         this.WhenAnyValue(x => x.LogStartup)
             .Skip(1)
-            .Subscribe(b => _model.LogStartup = b)
+            .Subscribe(b =>
+            {
+                _model.LogStartup = b;
+                if (b && string.IsNullOrEmpty(ModsFolder))
+                {
+                    StartupLogger.InitializeFromSettings(true);
+                }
+            })
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.IsLocalizationEnabled)
@@ -1015,6 +1022,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
         if (dialog.ShowDialog() != CommonFileDialogResult.Ok) return;
 
+        StartupLogger.LogPhase("Deferred Mods Folder Selection");
+        StartupLogger.Log($"User selected mods folder: {dialog.FileName}");
+
         ModsFolder = dialog.FileName;
 
         VM_SplashScreen? splashScreen = null;
@@ -1035,11 +1045,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             {
                 await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen);
             }
+            StartupLogger.Log("Mod population complete");
 
             if (_lazyNpcSelectionBar.IsValueCreated)
             {
                 await _lazyNpcSelectionBar.Value.InitializeAsync(splashScreen);
             }
+            StartupLogger.Log("NPC selection bar initialized");
 
             if (_lazyModListVM.IsValueCreated)
             {
@@ -1050,6 +1062,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         }
         finally
         {
+            StartupLogger.Complete();
             _lazyMainWindowVm.Value.IsLoadingFolders = false;
             // Ensure the splash screen is closed and the main window is re-enabled
             if (splashScreen != null)
