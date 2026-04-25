@@ -233,7 +233,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 // For mugshot view, we need more details
                 var modSetting = _modsViewModel.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(modName, StringComparison.OrdinalIgnoreCase));
                 
-                string imagePath = _npcsViewModel.GetMugshotPathForNpc(modName, sourceNpcKey) ?? placeholderPath;
+                string imagePath = _npcsViewModel.GetMugshotPathForNpc(modName, sourceNpcKey, targetNpcKey) ?? placeholderPath;
                 bool hasMugshot = !imagePath.Equals(placeholderPath, StringComparison.OrdinalIgnoreCase);
 
                 // Decorator info

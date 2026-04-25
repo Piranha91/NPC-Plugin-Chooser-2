@@ -2570,7 +2570,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             var modSettingVM = _lazyModsVm.Value.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(modName, StringComparison.OrdinalIgnoreCase));
             _eventLogger.Log($"Adding: '{modName}' via [{sourceCategory}]", "MUGSHOT");
             
-            string? imagePath = GetImagePathForNpc(modSettingVM, sourceNpcKey, mugshotData);
+            string? imagePath = GetImagePathForNpc(modSettingVM, sourceNpcKey, mugshotData, targetNpcFormKey);
             var specificPluginKey = GetPluginKeyForNpc(modSettingVM, sourceNpcKey);
 
             var appearanceVM = _appearanceModFactory(
@@ -2654,6 +2654,18 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 // The source NPC for a standard mugshot is the target NPC itself.
                 if (_lazyModsVm.Value.AllModSettings.Any(m => m.DisplayName.Equals(mugshotInfo.ModName, StringComparison.OrdinalIgnoreCase)))
                 {
+                    // Skip if this mod is already represented as a SkyPatcher guest for this NPC:
+                    // the guest entry already carries the (now mugshot-linked) donor source key,
+                    // and a target-keyed entry would point at an NPC the mod's plugin doesn't contain.
+                    bool alreadySkyPatcherGuest = finalModVMs.Any(kvp =>
+                        kvp.Key.ModName.Equals(mugshotInfo.ModName, StringComparison.OrdinalIgnoreCase)
+                        && _settings.CachedSkyPatcherTemplates.Contains(kvp.Key.SourceKey));
+                    if (alreadySkyPatcherGuest)
+                    {
+                        _eventLogger.Log($"Skipping mugshot-match for '{mugshotInfo.ModName}': already present as SkyPatcher guest.", "SOURCE 3");
+                        continue;
+                    }
+
                     // If it wasn't added in Source 1 (e.g. data mismatch), add it here
                     CreateVmIfNotExists(mugshotInfo.ModName, targetNpcFormKey, sourceCategory: "Mugshot Match");
                     source3Count++;
@@ -2790,31 +2802,46 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     }
     
     // Helper method to look up image paths for any NPC
-    private string? GetImagePathForNpc(VM_ModSetting modSetting, FormKey npcFormKey, Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData)
+    private string? GetImagePathForNpc(VM_ModSetting modSetting, FormKey npcFormKey, Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData, FormKey? targetNpcFormKey = null)
     {
         if (modSetting == null || !modSetting.MugShotFolderPaths.Any()) return null;
 
-        if (mugshotData.TryGetValue(npcFormKey, out var availableMugshotsForNpc))
+        var path = TryFindImagePathForKey(modSetting, npcFormKey, mugshotData);
+        if (path != null) return path;
+
+        // SkyPatcher surrogate fallback: when the appearance source is a SkyPatcher
+        // donor/template NPC, also try looking up mugshots keyed by the target NPC,
+        // since users commonly name mugshot files after the target rather than the donor.
+        if (targetNpcFormKey.HasValue
+            && !targetNpcFormKey.Value.Equals(npcFormKey)
+            && _settings.CachedSkyPatcherTemplates.Contains(npcFormKey))
         {
-            // Iterate through all assigned mugshot paths for the mod setting.
-            foreach (var path in modSetting.MugShotFolderPaths)
+            return TryFindImagePathForKey(modSetting, targetNpcFormKey.Value, mugshotData);
+        }
+
+        return null;
+    }
+
+    private static string? TryFindImagePathForKey(VM_ModSetting modSetting, FormKey npcFormKey, Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData)
+    {
+        if (!mugshotData.TryGetValue(npcFormKey, out var availableMugshotsForNpc)) return null;
+
+        foreach (var path in modSetting.MugShotFolderPaths)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) continue;
+
+            string mugshotDirName = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var mugshotInfo = availableMugshotsForNpc.FirstOrDefault(m => m.ModName.Equals(mugshotDirName, StringComparison.OrdinalIgnoreCase));
+
+            if (mugshotInfo != default && !string.IsNullOrWhiteSpace(mugshotInfo.ImagePath) && File.Exists(mugshotInfo.ImagePath))
             {
-                if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) continue;
-
-                // The existing logic matches based on the directory's name.
-                string mugshotDirName = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                var mugshotInfo = availableMugshotsForNpc.FirstOrDefault(m => m.ModName.Equals(mugshotDirName, StringComparison.OrdinalIgnoreCase));
-
-                if (mugshotInfo != default && !string.IsNullOrWhiteSpace(mugshotInfo.ImagePath) && File.Exists(mugshotInfo.ImagePath))
-                {
-                    return mugshotInfo.ImagePath; // Return the first valid path found.
-                }
+                return mugshotInfo.ImagePath;
             }
         }
-        return null; // No matching mugshot found in any of the specified folders.
+        return null;
     }
     
-    public string? GetMugshotPathForNpc(string modName, FormKey npcFormKey)
+    public string? GetMugshotPathForNpc(string modName, FormKey npcFormKey, FormKey? targetNpcFormKey = null)
     {
         // Find the mod setting associated with the given mod name.
         var modSetting = _lazyModsVm.Value.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(modName, StringComparison.OrdinalIgnoreCase));
@@ -2829,10 +2856,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             }
             return null;
         }
-    
+
         // Use the existing private helper method to get the specific image path,
         // ensuring consistency with the rest of the application.
-        return GetImagePathForNpc(modSetting, npcFormKey, _mugshotData);
+        return GetImagePathForNpc(modSetting, npcFormKey, _mugshotData, targetNpcFormKey);
     }
     
     private void TriggerAsyncMugshotGeneration()
