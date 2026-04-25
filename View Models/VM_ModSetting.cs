@@ -882,6 +882,12 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
         CorrespondingModKeys.Clear();
         CorrespondingModKeys.AddRange(correspondingModKeys);
+
+        // Re-derive ResourceOnlyModKeys from the updated CorrespondingModKeys.
+        // A plugin is resource-only iff some other plugin in this mod setting lists it as a master:
+        // it's a base plugin that the user must install regardless, so its records should not be merged
+        // into the output patch (they'll be loaded from the base plugin at runtime via masters).
+        RecomputeResourceOnlyPlugins();
     }
 
     private async Task AddMugshotFolderPathAsync()
@@ -2297,14 +2303,14 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         }
     }
 
-    /// <summary> 
-    /// Checks if a given folder should be treated as a resource folder. 
-    /// A folder is a resource if it contains no plugins, or if all of its plugins 
-    /// are masters of other plugins already in this mod setting. 
-    /// </summary> 
+    /// <summary>
+    /// Checks if a given folder should be treated as a resource folder.
+    /// A folder is a resource if it contains no plugins, or if all of its plugins
+    /// are masters of other plugins already in this mod setting.
+    /// </summary>
     private void AutoSetResourcePlugins(string folderPath)
     {
-        // Find all plugins within the new folder path. 
+        // Find all plugins within the new folder path.
         var pluginsInNewFolder = _aux.GetModKeysInDirectory(folderPath, new List<string>(), false);
 
         if (!pluginsInNewFolder.Any())
@@ -2312,11 +2318,11 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             return;
         }
 
-        // Condition B: Check if the folder's plugins are masters of existing plugins. 
+        // Condition B: Check if the folder's plugins are masters of existing plugins.
         var existingPluginPaths = this.CorrespondingFolderPaths.ToHashSet();
         var allExistingMasters = new HashSet<ModKey>();
 
-        // Compile a set of all masters required by plugins already in this mod setting. 
+        // Compile a set of all masters required by plugins already in this mod setting.
         foreach (var modKey in this.CorrespondingModKeys)
         {
             if (_pluginProvider.TryGetPlugin(modKey, existingPluginPaths, out var plugin) && plugin != null)
@@ -2334,6 +2340,77 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             {
                 ResourceOnlyModKeys.Add(modKey);
             }
+        }
+
+        _pluginProvider.UnloadPlugins(CorrespondingModKeys, existingPluginPaths);
+    }
+
+    /// <summary>
+    /// Recomputes <see cref="ResourceOnlyModKeys"/> from scratch based on master relationships
+    /// within <see cref="CorrespondingModKeys"/>. The rule is two-stage so that sibling plugins
+    /// of a base/foundation plugin (e.g. <c>3DNPC0.esp</c>/<c>3DNPC1.esp</c> next to <c>3DNPC.esp</c>)
+    /// are caught even when nothing in this mod setting names them directly as a master:
+    ///
+    ///   1. Find every plugin in <c>CorrespondingModKeys</c> that another plugin in
+    ///      <c>CorrespondingModKeys</c> lists as a master — these are confirmed base plugins.
+    ///   2. For every folder in <c>CorrespondingFolderPaths</c> that contains at least one
+    ///      confirmed base plugin, treat ALL of that folder's plugins as resource-only.
+    ///
+    /// The folder-level promotion captures the "this whole mod folder is the foundation install,
+    /// not the appearance overlay" semantic the user manages by hand in the Set Resource-Only
+    /// Plugins dialog. Safe to call repeatedly; preserves semantics across mod load, refresh, and migration.
+    /// </summary>
+    public void RecomputeResourceOnlyPlugins()
+    {
+        if (CorrespondingModKeys == null || CorrespondingModKeys.Count == 0)
+        {
+            ResourceOnlyModKeys.Clear();
+            return;
+        }
+
+        var existingPluginPaths = this.CorrespondingFolderPaths.ToHashSet();
+        var correspondingSet = new HashSet<ModKey>(CorrespondingModKeys);
+
+        // Stage 1: directly-named master plugins inside CorrespondingModKeys.
+        var basePluginsInCmk = new HashSet<ModKey>();
+        foreach (var modKey in CorrespondingModKeys)
+        {
+            if (_pluginProvider.TryGetPlugin(modKey, existingPluginPaths, out var plugin) && plugin != null)
+            {
+                foreach (var masterRef in plugin.ModHeader.MasterReferences)
+                {
+                    if (correspondingSet.Contains(masterRef.Master))
+                    {
+                        basePluginsInCmk.Add(masterRef.Master);
+                    }
+                }
+            }
+        }
+
+        // Stage 2: any folder containing a stage-1 base plugin promotes all of its plugins.
+        var derivedResourceOnly = new HashSet<ModKey>(basePluginsInCmk);
+        if (basePluginsInCmk.Count > 0)
+        {
+            foreach (var folderPath in CorrespondingFolderPaths)
+            {
+                var pluginsInFolder = _aux.GetModKeysInDirectory(folderPath, new List<string>(), false);
+                if (pluginsInFolder.Any(p => basePluginsInCmk.Contains(p)))
+                {
+                    foreach (var p in pluginsInFolder)
+                    {
+                        if (correspondingSet.Contains(p))
+                        {
+                            derivedResourceOnly.Add(p);
+                        }
+                    }
+                }
+            }
+        }
+
+        ResourceOnlyModKeys.Clear();
+        foreach (var key in derivedResourceOnly)
+        {
+            ResourceOnlyModKeys.Add(key);
         }
 
         _pluginProvider.UnloadPlugins(CorrespondingModKeys, existingPluginPaths);

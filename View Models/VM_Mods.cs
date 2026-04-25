@@ -2339,12 +2339,26 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     private void FindAndAddMissingMasters(
         VM_ModSetting vm,
         IReadOnlyCollection<string> allModDirectories,
-        ConcurrentBag<string> warnings)
+        ConcurrentBag<string> warnings,
+        bool excludeNpcSourcePlugins = true)
     {
+        const string LogTag = "[FindAndAddMissingMasters]";
         var loadOrderKeys = _environmentStateProvider.LoadOrderModKeys.ToHashSet();
         // Start with the plugins we know about before this process began.
         var knownPluginKeysInVm = new HashSet<ModKey>(vm.CorrespondingModKeys);
         var currentFoldersInVm = vm.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Optional: source plugins of NPCs in this VM. When excludeNpcSourcePlugins is true,
+        // these are skipped as candidate missing masters since they are the NPC-providing
+        // plugins themselves rather than resources to be pulled in.
+        var npcSourcePluginKeys = excludeNpcSourcePlugins
+            ? vm.NpcFormKeys.Select(fk => fk.ModKey).ToHashSet()
+            : new HashSet<ModKey>();
+
+        StartupLogger.Log($"{LogTag} '{vm.DisplayName}' enter; excludeNpcSourcePlugins={excludeNpcSourcePlugins}, NpcFormKeys.Count={vm.NpcFormKeys.Count}");
+        StartupLogger.Log($"{LogTag} '{vm.DisplayName}' currentFolders=[{string.Join(", ", currentFoldersInVm.Select(Path.GetFileName))}]");
+        StartupLogger.Log($"{LogTag} '{vm.DisplayName}' knownPluginKeysInVm=[{string.Join(", ", knownPluginKeysInVm.Select(k => k.FileName.String))}]");
+        StartupLogger.Log($"{LogTag} '{vm.DisplayName}' npcSourcePluginKeys ({npcSourcePluginKeys.Count})=[{string.Join(", ", npcSourcePluginKeys.Select(k => k.FileName.String))}]");
 
         var missingMastersToFind = new HashSet<ModKey>();
 
@@ -2355,7 +2369,19 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             foreach (var masterRef in plugin.ModHeader.MasterReferences)
             {
                 var masterKey = masterRef.Master;
-                if (!loadOrderKeys.Contains(masterKey) && !knownPluginKeysInVm.Contains(masterKey))
+                bool inLoadOrder = loadOrderKeys.Contains(masterKey);
+                bool inKnown = knownPluginKeysInVm.Contains(masterKey);
+                bool inNpcSources = npcSourcePluginKeys.Contains(masterKey);
+
+                string classification;
+                if (inLoadOrder) classification = "in load order";
+                else if (inKnown) classification = "already in VM";
+                else if (inNpcSources) classification = "skipped (NPC source plugin)";
+                else classification = "MISSING -> will search";
+
+                StartupLogger.Log($"{LogTag} '{vm.DisplayName}'   plugin={plugin.ModKey.FileName} master={masterKey.FileName} -> {classification}");
+
+                if (!inLoadOrder && !inKnown && !inNpcSources)
                 {
                     missingMastersToFind.Add(masterKey);
                 }
@@ -2364,8 +2390,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         if (!missingMastersToFind.Any())
         {
+            StartupLogger.Log($"{LogTag} '{vm.DisplayName}' no missing masters; exiting.");
             return; // Nothing to do
         }
+
+        StartupLogger.Log($"{LogTag} '{vm.DisplayName}' missingMastersToFind=[{string.Join(", ", missingMastersToFind.Select(k => k.FileName.String))}]");
 
         // Step 2: Find potential source folders for the missing masters.
         var foldersToSearch = allModDirectories.Where(d => !currentFoldersInVm.Contains(d)).ToList();
@@ -2386,6 +2415,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             if (candidates.Any())
             {
                 var winner = candidates.OrderByDescending(c => c.LastWrite).First();
+                StartupLogger.Log($"{LogTag} '{vm.DisplayName}'   master '{master.FileName}' -> chose folder '{Path.GetFileName(winner.Path)}' from {candidates.Count} candidate(s): [{string.Join(", ", candidates.Select(c => Path.GetFileName(c.Path)))}]");
                 if (candidates.Count > 1)
                 {
                     var sources = string.Join(", ", candidates.Select(c => Path.GetFileName(c.Path)));
@@ -2402,14 +2432,15 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
             else
             {
-                Debug.WriteLine(
-                    $"Could not find a local source for missing master '{master.FileName}' for mod '{vm.DisplayName}'.");
+                StartupLogger.Log(
+                    $"{LogTag} '{vm.DisplayName}'   master '{master.FileName}' -> no local source found.");
             }
         }
 
         // Step 3: Apply the newly discovered folders and plugins to the VM.
         if (newResourceFoldersToAdd.Any())
         {
+            StartupLogger.Log($"{LogTag} '{vm.DisplayName}' adding {newResourceFoldersToAdd.Count} resource folder(s): [{string.Join(", ", newResourceFoldersToAdd.Keys.Select(Path.GetFileName))}]");
             vm.IsPerformingBatchAction = true; // prevent popups
             foreach (var (folderPath, pluginsInFolder) in newResourceFoldersToAdd)
             {
@@ -2429,6 +2460,79 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
 
             vm.IsPerformingBatchAction = false;
+        }
+        else
+        {
+            StartupLogger.Log($"{LogTag} '{vm.DisplayName}' no resource folders to add.");
+        }
+    }
+
+    /// <summary>
+    /// Removes <see cref="VM_ModSetting.CorrespondingFolderPaths"/> entries that the *current*
+    /// <see cref="FindAndAddMissingMasters"/> would not re-add — typically left over from older
+    /// versions of the detector that added foundation-mod folders (e.g. "Interesting NPCs SE").
+    ///
+    /// Strategy: identify the primary folder (the one whose folder name matches the mod's
+    /// <see cref="VM_ModSetting.DisplayName"/>), reset the folder list to just the primary,
+    /// rebuild <c>CorrespondingModKeys</c>, and let the current detector re-add any folders
+    /// it actually needs. Anything not re-added drops out.
+    ///
+    /// No-op (defensive) when the primary folder cannot be unambiguously identified, when the
+    /// mod has only one folder, or for auto-generated entries — these are either safe already
+    /// or risky to mutate without user input.
+    /// </summary>
+    public void CleanupCorrespondingFolders(VM_ModSetting vm, ConcurrentBag<string>? warnings = null)
+    {
+        if (vm.IsAutoGenerated) return;
+        if (vm.CorrespondingFolderPaths.Count <= 1) return;
+        if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder)) return;
+
+        StartupLogger.Log($"[CleanupCorrespondingFolders] '{vm.DisplayName}' enter; folders=[{string.Join(", ", vm.CorrespondingFolderPaths.Select(Path.GetFileName))}]");
+
+        // Identify the primary folder by name match against DisplayName.
+        var primary = vm.CorrespondingFolderPaths.FirstOrDefault(p =>
+            string.Equals(
+                Path.GetFileName(p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+                vm.DisplayName,
+                StringComparison.OrdinalIgnoreCase));
+        if (primary == null)
+        {
+            StartupLogger.Log($"[CleanupCorrespondingFolders] '{vm.DisplayName}' skipped — no folder name matches the mod name.");
+            return;
+        }
+        StartupLogger.Log($"[CleanupCorrespondingFolders] '{vm.DisplayName}' primary='{Path.GetFileName(primary)}'");
+
+        var originalFolders = vm.CorrespondingFolderPaths.ToList();
+        if (originalFolders.Count == 1) return;
+
+        // Reset to primary only and rebuild keys.
+        vm.IsPerformingBatchAction = true;
+        try
+        {
+            vm.CorrespondingFolderPaths.Clear();
+            vm.CorrespondingFolderPaths.Add(primary);
+            vm.UpdateCorrespondingModKeys();
+
+            // Re-add only what the current detector says is genuinely needed.
+            var allModDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
+            var localWarnings = warnings ?? new ConcurrentBag<string>();
+            FindAndAddMissingMasters(vm, allModDirectories, localWarnings, true);
+
+            // UpdateCorrespondingModKeys (called inside FindAndAddMissingMasters' caller chain or
+            // implicitly via the additions) already re-derives ResourceOnlyModKeys via the wiring
+            // added in v2 — but call again to be safe in case the additions skipped that path.
+            vm.UpdateCorrespondingModKeys();
+        }
+        finally
+        {
+            vm.IsPerformingBatchAction = false;
+        }
+
+        var removed = originalFolders.Except(vm.CorrespondingFolderPaths, StringComparer.OrdinalIgnoreCase).ToList();
+        if (removed.Any())
+        {
+            Debug.WriteLine($"CleanupCorrespondingFolders: '{vm.DisplayName}' dropped {removed.Count} stale folder(s): " +
+                            string.Join(", ", removed.Select(Path.GetFileName)));
         }
     }
 

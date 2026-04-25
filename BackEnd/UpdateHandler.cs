@@ -121,7 +121,62 @@ public class UpdateHandler
             await UpdateTo2_1_3_Final(modsVm, npcsVm, pluginProvider, aux, environmentStateProvider, splashReporter);
         }
 
+        if (settingsVersion < "2.1.6")
+        {
+            await UpdateTo2_1_6_Final(modsVm, splashReporter);
+        }
+
         Debug.WriteLine("Settings update process complete.");
+    }
+
+    /// <summary>
+    /// 2.1.6 migration. Two passes over every mod setting:
+    ///   1. <see cref="VM_Mods.CleanupCorrespondingFolders"/> — drops stale entries from
+    ///      <c>CorrespondingFolderPaths</c> that the current missing-master detector would
+    ///      not re-add. Older versions of that detector attached foundation-mod folders
+    ///      (e.g. "Interesting NPCs SE") to replacers (e.g. "Amalee Replacer - by Taranis")
+    ///      even when the master plugin was already in the load order.
+    ///   2. <see cref="VM_ModSetting.RecomputeResourceOnlyPlugins"/> — re-derives
+    ///      <c>ResourceOnlyModKeys</c> from master relationships and folder co-residence,
+    ///      so multi-ESP foundations (e.g. 3DNPC.esp + 3DNPC0.esp + 3DNPC1.esp) are all
+    ///      flagged together. Belt-and-suspenders for mods skipped by step 1.
+    /// Together these prevent the NPC-base-plugin records from being duplicated into the
+    /// output patch during dependency merge.
+    /// </summary>
+    private async Task UpdateTo2_1_6_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
+    {
+        splashReporter?.UpdateStep("Updating to 2.1.6: cleaning up resource-only plugins and stale folders...");
+
+        var warnings = new System.Collections.Concurrent.ConcurrentBag<string>();
+
+        await Task.Run(() =>
+        {
+            var modsToProcess = modsVm.AllModSettings.ToList();
+            int processed = 0;
+            foreach (var modVm in modsToProcess)
+            {
+                try
+                {
+                    modsVm.CleanupCorrespondingFolders(modVm, warnings);
+                    modVm.RecomputeResourceOnlyPlugins();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"UpdateTo2_1_6_Final: failed for {modVm.DisplayName}: {ex.Message}");
+                }
+                processed++;
+                splashReporter?.UpdateProgress((double)processed / modsToProcess.Count * 100,
+                    $"Updating mod entry: {modVm.DisplayName}...");
+            }
+        });
+
+        if (!warnings.IsEmpty)
+        {
+            Debug.WriteLine("2.1.6 cleanup warnings:" + Environment.NewLine +
+                            string.Join(Environment.NewLine, warnings));
+        }
+
+        Debug.WriteLine("2.1.6 resource-only / corresponding-folder cleanup complete.");
     }
 
     private void UpdateTo2_0_4_Initial()
