@@ -39,6 +39,7 @@ public partial class UC_InternalMugshotPreview : UserControl
         Unloaded += (_, _) =>
         {
             DetachManualHandlers();
+            if (_viewer != null) _viewer.SceneCommitted -= OnSceneCommitted;
             _cameraModeWatcher?.Dispose();
             _cameraModeWatcher = null;
         };
@@ -57,6 +58,10 @@ public partial class UC_InternalMugshotPreview : UserControl
         {
             _vm.PreviewLoaded -= OnPreviewLoaded;
         }
+        if (_viewer != null)
+        {
+            _viewer.SceneCommitted -= OnSceneCommitted;
+        }
         _cameraModeWatcher?.Dispose();
         _cameraModeWatcher = null;
 
@@ -66,6 +71,14 @@ public partial class UC_InternalMugshotPreview : UserControl
         if (_vm != null)
         {
             _vm.PreviewLoaded += OnPreviewLoaded;
+        }
+        if (_viewer != null)
+        {
+            // SceneCommitted fires after VM_CharacterViewer.ProcessPendingScene
+            // finishes uploading meshes to the renderer. This is the only reliable
+            // signal that vm.Renderer.Meshes is populated, which MeshAwareCameraFitter
+            // requires — LoadByIdentityAsync returns before the mesh upload completes.
+            _viewer.SceneCommitted += OnSceneCommitted;
         }
 
         // The Settings instance is shared; pull it from the current Application
@@ -85,10 +98,31 @@ public partial class UC_InternalMugshotPreview : UserControl
 
     private void OnPreviewLoaded()
     {
-        // After a successful load, re-apply Auto framing so the on-screen
-        // camera matches what the offscreen renderer would produce.
-        ApplyCameraModeImmediately();
+        // LoadByIdentityAsync returns once the load is queued, NOT once meshes
+        // are uploaded — refreshing the crop overlay (a pure-pixel calculation)
+        // is fine here, but framing is deferred to OnSceneCommitted so it runs
+        // after vm.Renderer.Meshes is populated.
         UpdateCropOverlay();
+    }
+
+    private void OnSceneCommitted()
+    {
+        // SceneCommitted may be raised from the inline marshaller (UI thread for
+        // the live preview path) but route through the dispatcher anyway so we
+        // can't accidentally clobber an in-progress drag callback.
+        if (Dispatcher.CheckAccess())
+        {
+            ApplyCameraModeImmediately();
+            UpdateCropOverlay();
+        }
+        else
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                ApplyCameraModeImmediately();
+                UpdateCropOverlay();
+            }));
+        }
     }
 
     /// <summary>If Auto mode: apply MeshAware framing now. If Manual: attach handlers
