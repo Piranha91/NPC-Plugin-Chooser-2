@@ -1,12 +1,16 @@
 // App.xaml.cs
 using Autofac;
+using CharacterViewer.Rendering;
+using CharacterViewer.Rendering.Offscreen;
 using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
+using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost.Adapters;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views;
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
 using Splat;
-using Splat.Autofac; 
+using Splat.Autofac;
 using System.IO;
 using System.Reflection;
 using System.Windows;
@@ -178,6 +182,45 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<PortraitCreator>().AsSelf().SingleInstance();
             builder.RegisterType<MasterAnalyzer>().AsSelf().SingleInstance();
 
+            // CharacterViewer.Rendering host adapters — bind NPC2's concrete services
+            // behind the renderer's interfaces so the renderer never sees Mutagen
+            // or NPC2-specific types directly.
+            builder.RegisterType<NpcChooserViewerLoggerAdapter>().As<ICharacterViewerLogger>().SingleInstance();
+            builder.RegisterType<NpcChooserSettingsAdapter>().As<ICharacterViewerSettings>().SingleInstance();
+            builder.RegisterType<NpcChooserDataFolderAdapter>().As<IDataFolderProvider>().SingleInstance();
+            builder.RegisterType<NpcChooserBsaProviderAdapter>().As<IBsaArchiveProvider>().SingleInstance();
+            builder.RegisterType<NpcChooserNpcMeshDataSourceAdapter>().As<INpcMeshDataSource>().SingleInstance();
+            builder.RegisterType<WpfDispatcherMarshaller>().As<IRenderThreadMarshaller>().SingleInstance();
+
+            // CharacterViewer.Rendering leaf services.
+            builder.RegisterType<NpcMeshResolver>().AsSelf().SingleInstance();
+            builder.RegisterType<CharacterViewerLogGate>().AsSelf().SingleInstance();
+            builder.RegisterType<GameAssetResolver>().AsSelf().SingleInstance();
+            builder.RegisterType<BsdFileParser>().AsSelf().SingleInstance();
+            builder.RegisterType<BodyTriFileParser>().AsSelf().SingleInstance();
+            builder.RegisterType<BodySlideDeformer>().AsSelf().SingleInstance();
+            builder.RegisterType<CharacterPreviewCache>().AsSelf().SingleInstance();
+            builder.RegisterType<VM_CharacterViewer>().AsSelf();  // transient — one per preview window
+
+            builder.RegisterType<InternalMugshotGenerator>().AsSelf().SingleInstance();
+            builder.RegisterType<MugshotStalenessChecker>().AsSelf().SingleInstance();
+
+            // Offscreen renderer is a managed singleton — its GameWindow + FBO
+            // are amortized across many mugshot renders. The factory must be
+            // called from the WPF UI thread (GLFW init constraint); see the
+            // eager resolution below in InitializeCoreApplicationAsync.
+            builder.Register(c => OffscreenRendererFactory.Create(
+                    c.Resolve<CharacterPreviewCache>(),
+                    c.Resolve<BodySlideDeformer>(),
+                    c.Resolve<BsdFileParser>(),
+                    c.Resolve<BodyTriFileParser>(),
+                    c.Resolve<GameAssetResolver>(),
+                    c.Resolve<ICharacterViewerSettings>(),
+                    c.Resolve<CharacterViewerLogGate>(),
+                    c.Resolve<ICharacterViewerLogger>()))
+                .As<IOffscreenRenderer>()
+                .SingleInstance();
+
             splashVM.UpdateProgress(30, "Registering ViewModels...");
             builder.RegisterType<VM_MainWindow>().AsSelf().SingleInstance();
             builder.RegisterType<VM_NpcSelectionBar>().AsSelf().SingleInstance();
@@ -192,7 +235,8 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<VM_SummaryMugshot >().AsSelf();
             builder.RegisterType<VM_MultiImageDisplay>().AsSelf(); 
             builder.RegisterType<VM_ModSetting>().AsSelf();
-            builder.RegisterType<VM_ModFaceFinderLinker>().AsSelf(); 
+            builder.RegisterType<VM_ModFaceFinderLinker>().AsSelf();
+            builder.RegisterType<VM_InternalMugshotPreview>().AsSelf();
             builder.RegisterType<ImagePacker>().AsSelf().SingleInstance();
             
             builder.RegisterType<EventLogger>().AsSelf().SingleInstance();
@@ -248,6 +292,58 @@ namespace NPC_Plugin_Chooser_2
             await portraitCreator.InitializeAsync();
             StartupLogger.Log("PortraitCreator initialized");
 
+            // CharacterViewer.Rendering bundled-DLL version check. Bump the
+            // required version when this build starts depending on an API
+            // introduced in a newer release of CharacterViewer.Rendering.
+            // Policy is documented at the top of CharacterViewerRendering.cs:
+            // Major = breaking, Minor = additive, Patch = bugfix.
+            var requiredViewerVersion = new Version(1, 0, 0);
+            if (CharacterViewerRendering.Version < requiredViewerVersion)
+            {
+                StartupLogger.Log(
+                    $"Bundled CharacterViewer.Rendering is v{CharacterViewerRendering.Version}; " +
+                    $"this build of NPC2 expects v{requiredViewerVersion} or newer. " +
+                    "Some Internal-renderer features may be unavailable.",
+                    "WARN");
+            }
+
+            // GLFW requires the OffscreenRenderer to be constructed on the WPF UI
+            // thread. We're already on it here; eagerly resolve so the GameWindow
+            // is built now and subsequent background-thread render calls succeed.
+            try
+            {
+                StartupLogger.Log("Initializing CharacterViewer offscreen renderer");
+                container.Resolve<IOffscreenRenderer>();
+                StartupLogger.Log("CharacterViewer offscreen renderer initialized");
+            }
+            catch (Exception ex)
+            {
+                StartupLogger.Log("OffscreenRenderer initialization failed: " + ex.Message, "WARN");
+            }
+
+            // Pre-warm the BSA reader cache on a background thread. The Internal
+            // renderer's broadcast-lookup adapter (NpcChooserBsaProviderAdapter)
+            // needs every mod's archives indexed; doing this lazily on the first
+            // mugshot generation would block the calling thread for several
+            // seconds with hundreds of mods. Fire-and-forget here so the work
+            // overlaps with the rest of startup.
+            try
+            {
+                var bsaProvider = container.Resolve<IBsaArchiveProvider>();
+                _ = Task.Run(() =>
+                {
+                    try { bsaProvider.EnsureAllArchivesOpened(); }
+                    catch (Exception ex)
+                    {
+                        StartupLogger.Log("Background BSA pre-warm failed: " + ex.Message, "WARN");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                StartupLogger.Log("Could not schedule BSA pre-warm: " + ex.Message, "WARN");
+            }
+
             var modsViewModel = container.Resolve<VM_Mods>();
             var npcsViewModel = container.Resolve<VM_NpcSelectionBar>();
             var pluginProvider = container.Resolve<PluginProvider>();
@@ -283,6 +379,19 @@ namespace NPC_Plugin_Chooser_2
             {
                 // Log the error, but don't prevent the app from closing.
                 System.Diagnostics.Debug.WriteLine($"Failed to clean up temporary directory: {ex.Message}");
+            }
+
+            // Dispose the offscreen renderer's GL context before the container goes away.
+            try
+            {
+                if (_container.TryResolve<IOffscreenRenderer>(out var offscreenRenderer))
+                {
+                    offscreenRenderer.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5));
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to dispose OffscreenRenderer: {ex.Message}");
             }
 
             // Your existing disposal logic

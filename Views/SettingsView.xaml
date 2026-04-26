@@ -227,12 +227,136 @@
                         </StackPanel>
                     </Border>
                     
-                    <CheckBox Content="Auto-Generate missing mugshots using NPC Portrait Creator"
+                    <CheckBox Content="Auto-Generate missing mugshots"
                               IsChecked="{Binding UsePortraitCreatorFallback, Mode=TwoWay}"
                               Margin="0,5,0,0"/>
 
-                    <Border Margin="15,5,0,5" Padding="10" BorderBrush="Gray" BorderThickness="1" CornerRadius="3"
-                        Visibility="{Binding UsePortraitCreatorFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <!-- Renderer selection: Internal (in-process) vs Legacy NPC Portrait Creator subprocess -->
+                    <StackPanel Orientation="Horizontal" Margin="15,5,0,5"
+                                Visibility="{Binding UsePortraitCreatorFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <TextBlock Text="Renderer:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox ItemsSource="{Binding RendererChoices}"
+                                  SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                                  Width="260" />
+                    </StackPanel>
+
+                    <!-- Internal renderer settings panel -->
+                    <Border Margin="15,5,0,5" Padding="10" BorderBrush="Gray" BorderThickness="1" CornerRadius="3">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding UsePortraitCreatorFallback}" Value="True"/>
+                                            <Condition Binding="{Binding IsInternalRenderer}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <TextBlock Text="Internal Renderer (in-process CharacterViewer)" FontWeight="Bold" Margin="0,0,0,5"/>
+
+                            <TextBlock Text="Camera Mode:" Margin="0,5,0,2"/>
+                            <ComboBox ItemsSource="{Binding InternalCameraModeChoices}"
+                                      SelectedItem="{Binding InternalCameraMode, Mode=TwoWay}"
+                                      Width="200" HorizontalAlignment="Left"
+                                      ToolTip="Auto: hair-aware framing (head + hair-above-head). Manual: use the saved orbit camera state from the live preview."/>
+
+                            <!-- Auto-mode tunables -->
+                            <StackPanel>
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding InternalCameraMode}" Value="Auto">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+
+                                <TextBlock Text="Frame Top Fraction (0–1):" Margin="0,8,0,2"/>
+                                <TextBox Text="{Binding InternalHeadTopFraction, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"
+                                         ToolTip="Top of the head bounding box mapped to this fraction of the frame height. 0.95 = head top sits 5% below the frame top."/>
+
+                                <TextBlock Text="Frame Bottom Fraction (0–1):" Margin="0,5,0,2"/>
+                                <TextBox Text="{Binding InternalHeadBottomFraction, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"/>
+
+                                <TextBlock Text="Yaw (degrees, 180 = facing camera):" Margin="0,5,0,2"/>
+                                <TextBox Text="{Binding InternalYaw, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"/>
+
+                                <TextBlock Text="Pitch (degrees):" Margin="0,5,0,2"/>
+                                <TextBox Text="{Binding InternalPitch, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"/>
+
+                                <CheckBox Content="Include hair / brows / mouth in framing"
+                                          IsChecked="{Binding InternalIncludeAccessories, Mode=TwoWay}"
+                                          Margin="0,8,0,0"
+                                          ToolTip="When enabled, hair-above-head and other facial accessories help frame the shot — but floor-length braids are clipped at the head's lower bound so they don't blow out the frame."/>
+
+                                <TextBlock Text="Hair-Above Padding:" Margin="0,5,0,2"/>
+                                <TextBox Text="{Binding InternalHairAbovePadding, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"/>
+                            </StackPanel>
+
+                            <TextBlock Text="Background Color (RGB 0–255):" Margin="0,10,0,2"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox Text="{Binding InternalBackgroundR, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
+                                <TextBlock Text=" / " VerticalAlignment="Center" Margin="3,0"/>
+                                <TextBox Text="{Binding InternalBackgroundG, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
+                                <TextBlock Text=" / " VerticalAlignment="Center" Margin="3,0"/>
+                                <TextBox Text="{Binding InternalBackgroundB, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
+                            </StackPanel>
+
+                            <TextBlock Text="Output Resolution:" Margin="0,10,0,2"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox Text="{Binding InternalOutputWidth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="60"
+                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
+                                <TextBlock Text=" x " VerticalAlignment="Center" Margin="5,0"/>
+                                <TextBox Text="{Binding InternalOutputHeight, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="60"
+                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
+                            </StackPanel>
+
+                            <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
+                                                              Height="540" Margin="0,12,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Legacy NPC Portrait Creator settings panel -->
+                    <Border Margin="15,5,0,5" Padding="10" BorderBrush="Gray" BorderThickness="1" CornerRadius="3">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding UsePortraitCreatorFallback}" Value="True"/>
+                                            <Condition Binding="{Binding IsLegacyRenderer}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
                         <StackPanel>
                             <TextBlock Text="Max Parallel Portrait Renders" FontWeight="Bold" Margin="0,5,0,0"/>
                             <TextBlock TextWrapping="Wrap" Margin="0,0,0,5" Opacity="0.8">

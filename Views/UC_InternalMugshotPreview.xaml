@@ -1,0 +1,72 @@
+<UserControl x:Class="NPC_Plugin_Chooser_2.Views.UC_InternalMugshotPreview"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
+             xmlns:glWpf="clr-namespace:OpenTK.Wpf;assembly=GLWpfControl"
+             mc:Ignorable="d"
+             d:DesignHeight="540" d:DesignWidth="600"
+             d:DataContext="{d:DesignInstance Type=vm:VM_InternalMugshotPreview}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </UserControl.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>     <!-- Toolbar -->
+            <RowDefinition Height="*"/>        <!-- Viewport -->
+            <RowDefinition Height="Auto"/>     <!-- Status -->
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <Border Grid.Row="0" Padding="6" BorderBrush="Gray" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="Load Selected NPC" Command="{Binding LoadSelectedNpcCommand}" Padding="6,2" Margin="0,0,6,0"/>
+                <Button Content="Reload" Command="{Binding ReloadCommand}" Padding="6,2" Margin="0,0,12,0"/>
+
+                <TextBlock Text="Lighting:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <ComboBox x:Name="LightingLayoutCombo"
+                          ItemsSource="{Binding Viewer.LightingLayouts}"
+                          SelectedItem="{Binding Viewer.SelectedLightingLayout, Mode=TwoWay}"
+                          Width="160" Margin="0,0,8,0"
+                          ToolTip="Lighting preset (built-in + your saved presets)."/>
+
+                <TextBlock Text="Colors:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <ComboBox x:Name="LightingColorCombo"
+                          ItemsSource="{Binding Viewer.LightingColorSchemes}"
+                          SelectedItem="{Binding Viewer.SelectedLightingColorScheme, Mode=TwoWay}"
+                          Width="140" Margin="0,0,12,0"
+                          ToolTip="Lighting color scheme."/>
+
+                <Button Content="Reset" Command="{Binding ResetCommand}" Padding="6,2" Margin="0,0,6,0"
+                        ToolTip="Restore Internal-renderer settings to defaults."/>
+            </StackPanel>
+        </Border>
+
+        <!-- Viewport with yellow crop overlay -->
+        <Grid Grid.Row="1" x:Name="ViewportRoot" ClipToBounds="True" Background="#222">
+            <glWpf:GLWpfControl x:Name="GlControl" Render="GlControl_OnRender"/>
+
+            <!-- Yellow crop rectangle: positioned by code-behind -->
+            <Canvas x:Name="OverlayCanvas" IsHitTestVisible="False">
+                <Rectangle x:Name="CropRect"
+                           Stroke="#FFFF00"
+                           StrokeThickness="2"
+                           StrokeDashArray="4 4"
+                           Visibility="Collapsed"/>
+            </Canvas>
+
+            <!-- Loading dim -->
+            <Border Background="#80000000"
+                    Visibility="{Binding Viewer.IsLoading, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                <TextBlock Text="Loading…" Foreground="White" FontSize="20"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+        </Grid>
+
+        <!-- Status -->
+        <Border Grid.Row="2" Padding="6,4" BorderBrush="Gray" BorderThickness="0,1,0,0">
+            <TextBlock Text="{Binding StatusText}" Opacity="0.8" TextTrimming="CharacterEllipsis"/>
+        </Border>
+    </Grid>
+</UserControl>

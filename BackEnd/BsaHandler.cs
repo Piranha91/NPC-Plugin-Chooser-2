@@ -358,6 +358,14 @@ public class BsaHandler : OptionalUIModule
     {
         return _bsaContents.ContainsKey(modKey);
     }
+
+    /// <summary>
+    /// Snapshot of every ModKey whose BSAs have been indexed via
+    /// <see cref="PopulateBsaContentPathsAsync"/> / <see cref="AddMissingModToCache"/>.
+    /// Used by the CharacterViewer BSA adapter to satisfy lookups that don't know
+    /// which mod a file belongs to.
+    /// </summary>
+    public IReadOnlyCollection<ModKey> GetIndexedModKeys() => _bsaContents.Keys.ToList();
     
     public async Task AddMissingModToCache(ModSetting mod, GameRelease gameRelease)
     {

@@ -11,6 +11,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\..\SynthEBD\CharacterViewer.Rendering\CharacterViewer.Rendering.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="Autofac" Version="8.2.1" />
       <PackageReference Include="gong-wpf-dragdrop" Version="4.0.0" />
       <PackageReference Include="Hjg.Pngcs" Version="1.1.4" />

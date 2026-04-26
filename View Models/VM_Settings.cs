@@ -26,6 +26,7 @@ using NPC_Plugin_Chooser_2.Views;
 using NPC_Plugin_Chooser_2.Themes;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
+using Splat;
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
@@ -66,6 +67,33 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool LogFaceFinderRequests { get; set; }
     [Reactive] public bool UsePortraitCreatorFallback { get; set; }
     [Reactive] public int MaxParallelPortraitRenders { get; set; }
+
+    // --- Renderer Selection ---
+    [Reactive] public MugshotRenderer SelectedRenderer { get; set; }
+    public IEnumerable<MugshotRenderer> RendererChoices { get; } = Enum.GetValues(typeof(MugshotRenderer)).Cast<MugshotRenderer>();
+    [ObservableAsProperty] public bool IsInternalRenderer { get; }
+    [ObservableAsProperty] public bool IsLegacyRenderer { get; }
+
+    // --- Internal Mugshot (CharacterViewer) settings ---
+    [Reactive] public InternalMugshotCameraMode InternalCameraMode { get; set; }
+    public IEnumerable<InternalMugshotCameraMode> InternalCameraModeChoices { get; } = Enum.GetValues(typeof(InternalMugshotCameraMode)).Cast<InternalMugshotCameraMode>();
+    [Reactive] public float InternalHeadTopFraction { get; set; }
+    [Reactive] public float InternalHeadBottomFraction { get; set; }
+    [Reactive] public float InternalYaw { get; set; }
+    [Reactive] public float InternalPitch { get; set; }
+    [Reactive] public float InternalHairAbovePadding { get; set; }
+    [Reactive] public bool InternalIncludeAccessories { get; set; }
+    [Reactive] public byte InternalBackgroundR { get; set; }
+    [Reactive] public byte InternalBackgroundG { get; set; }
+    [Reactive] public byte InternalBackgroundB { get; set; }
+    [Reactive] public int InternalOutputWidth { get; set; }
+    [Reactive] public int InternalOutputHeight { get; set; }
+
+    /// <summary>Live preview view-model for the Internal renderer's mugshot
+    /// preview UC. Lazily resolved from the Splat container — the GLWpfControl
+    /// requires WPF UI thread + a real surface, so creating it before the
+    /// Settings panel is shown is wasted work.</summary>
+    [Reactive] public VM_InternalMugshotPreview? InternalMugshotPreviewVM { get; private set; }
     [Reactive] public SolidColorBrush MugshotBackgroundColor { get; set; }
     [Reactive] public string DefaultLightingJsonString { get; set; }
     [ObservableAsProperty] public bool IsLightingJsonValid { get; }
@@ -279,6 +307,50 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         UsePortraitCreatorFallback = _model.UsePortraitCreatorFallback;
         MaxParallelPortraitRenders = _model.MaxParallelPortraitRenders;
 
+        // --- Internal Renderer Initialization ---
+        SelectedRenderer = _model.SelectedRenderer;
+        InternalCameraMode = _model.InternalMugshot.CameraMode;
+        InternalHeadTopFraction = _model.InternalMugshot.HeadTopFraction;
+        InternalHeadBottomFraction = _model.InternalMugshot.HeadBottomFraction;
+        InternalYaw = _model.InternalMugshot.Yaw;
+        InternalPitch = _model.InternalMugshot.Pitch;
+        InternalHairAbovePadding = _model.InternalMugshot.HairAbovePadding;
+        InternalIncludeAccessories = _model.InternalMugshot.IncludeAccessories;
+        InternalBackgroundR = _model.InternalMugshot.BackgroundR;
+        InternalBackgroundG = _model.InternalMugshot.BackgroundG;
+        InternalBackgroundB = _model.InternalMugshot.BackgroundB;
+        InternalOutputWidth = _model.InternalMugshot.OutputWidth;
+        InternalOutputHeight = _model.InternalMugshot.OutputHeight;
+
+        this.WhenAnyValue(x => x.SelectedRenderer)
+            .Select(r => r == MugshotRenderer.Internal)
+            .ToPropertyEx(this, x => x.IsInternalRenderer);
+        this.WhenAnyValue(x => x.SelectedRenderer)
+            .Select(r => r == MugshotRenderer.LegacyPortraitCreator)
+            .ToPropertyEx(this, x => x.IsLegacyRenderer);
+
+        // Lazily instantiate the preview VM the first time the Internal panel
+        // becomes visible, so we don't pay the GL setup cost during startup.
+        this.WhenAnyValue(x => x.IsInternalRenderer, x => x.UsePortraitCreatorFallback,
+                (internalSel, fallbackOn) => internalSel && fallbackOn)
+            .DistinctUntilChanged()
+            .Where(visible => visible && InternalMugshotPreviewVM == null)
+            .Subscribe(_ =>
+            {
+                try
+                {
+                    InternalMugshotPreviewVM = Locator.Current.GetService<VM_InternalMugshotPreview>();
+                    if (InternalMugshotPreviewVM != null)
+                    {
+                        InternalMugshotPreviewVM.ResetRequested += RefreshInternalFromModel;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("Failed to resolve VM_InternalMugshotPreview: " + ex.Message);
+                }
+            }).DisposeWith(_disposables);
+
         // --- NEW: Portrait Creator Initialization ---
         AutoUpdateOldMugshots = _model.AutoUpdateOldMugshots;
         AutoUpdateStaleMugshots = _model.AutoUpdateStaleMugshots;
@@ -444,6 +516,33 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => _model.UsePortraitCreatorFallback = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MaxParallelPortraitRenders).Skip(1)
             .Subscribe(value => _model.MaxParallelPortraitRenders = value).DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SelectedRenderer).Skip(1)
+            .Subscribe(r => _model.SelectedRenderer = r).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalCameraMode).Skip(1)
+            .Subscribe(m => _model.InternalMugshot.CameraMode = m).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalHeadTopFraction).Skip(1)
+            .Subscribe(f => _model.InternalMugshot.HeadTopFraction = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalHeadBottomFraction).Skip(1)
+            .Subscribe(f => _model.InternalMugshot.HeadBottomFraction = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalYaw).Skip(1)
+            .Subscribe(f => _model.InternalMugshot.Yaw = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalPitch).Skip(1)
+            .Subscribe(f => _model.InternalMugshot.Pitch = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalHairAbovePadding).Skip(1)
+            .Subscribe(f => _model.InternalMugshot.HairAbovePadding = f).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalIncludeAccessories).Skip(1)
+            .Subscribe(b => _model.InternalMugshot.IncludeAccessories = b).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalBackgroundR).Skip(1)
+            .Subscribe(v => _model.InternalMugshot.BackgroundR = v).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalBackgroundG).Skip(1)
+            .Subscribe(v => _model.InternalMugshot.BackgroundG = v).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalBackgroundB).Skip(1)
+            .Subscribe(v => _model.InternalMugshot.BackgroundB = v).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalOutputWidth).Skip(1)
+            .Subscribe(i => _model.InternalMugshot.OutputWidth = i).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalOutputHeight).Skip(1)
+            .Subscribe(i => _model.InternalMugshot.OutputHeight = i).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
@@ -997,6 +1096,27 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public void RequestThrottledSave()
     {
         _saveRequestSubject.OnNext(Unit.Default);
+    }
+
+    /// <summary>Re-pulls the Internal-renderer flat properties from the model.
+    /// Called after the preview UC's Reset button replaces InternalMugshot
+    /// with a fresh defaults instance — without this, the bound TextBoxes
+    /// would still display the old values until the next app restart.</summary>
+    private void RefreshInternalFromModel()
+    {
+        var c = _model.InternalMugshot;
+        InternalCameraMode = c.CameraMode;
+        InternalHeadTopFraction = c.HeadTopFraction;
+        InternalHeadBottomFraction = c.HeadBottomFraction;
+        InternalYaw = c.Yaw;
+        InternalPitch = c.Pitch;
+        InternalHairAbovePadding = c.HairAbovePadding;
+        InternalIncludeAccessories = c.IncludeAccessories;
+        InternalBackgroundR = c.BackgroundR;
+        InternalBackgroundG = c.BackgroundG;
+        InternalBackgroundB = c.BackgroundB;
+        InternalOutputWidth = c.OutputWidth;
+        InternalOutputHeight = c.OutputHeight;
     }
 
     public void SaveSettings()

@@ -1,4 +1,5 @@
-﻿using Mutagen.Bethesda.Plugins;
+﻿using CharacterViewer.Rendering;
+using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -123,7 +124,15 @@ public class Settings
 
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(false)]
     public bool UsePortraitCreatorFallback { get; set; } = false;
-    
+
+    // Which mugshot renderer to use when UsePortraitCreatorFallback fires.
+    // Internal = in-process .NET CharacterViewer; Legacy = NPC Portrait Creator subprocess.
+    public MugshotRenderer SelectedRenderer { get; set; } = MugshotRenderer.Internal;
+
+    // Configuration block for the Internal renderer. Persisted as a nested object
+    // so the legacy fields below aren't shadowed when the user toggles back.
+    public InternalMugshotSettings InternalMugshot { get; set; } = new();
+
     // -- Portrait Creator Parameters --
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
     [DefaultValue(4)]
@@ -234,4 +243,58 @@ public enum TemplateIconPosition
 {
     Left,
     Right
+}
+
+public enum MugshotRenderer
+{
+    Internal,            // default — in-process CharacterViewer.Rendering
+    LegacyPortraitCreator,
+}
+
+public enum InternalMugshotCameraMode
+{
+    Auto,    // CameraFraming.MeshAware — head + hair-above-head's-bottom
+    Manual,  // user's saved Distance/Azimuth/Elevation/Target
+}
+
+public sealed class InternalMugshotSettings
+{
+    public InternalMugshotCameraMode CameraMode { get; set; } = InternalMugshotCameraMode.Auto;
+
+    // Auto-mode tunables (mirror Portrait Creator's existing knobs).
+    public float HeadTopFraction { get; set; } = 0.95f;
+    public float HeadBottomFraction { get; set; } = 0.10f;
+    public float Yaw { get; set; } = 180f;
+    public float Pitch { get; set; } = 0f;
+    public float HairAbovePadding { get; set; } = 0f;
+    public bool IncludeAccessories { get; set; } = true;
+
+    // Manual-mode camera state — saved on every drag-end in the live preview.
+    public float ManualDistance { get; set; } = 200f;
+    public float ManualAzimuth { get; set; } = 180f;
+    public float ManualElevation { get; set; } = 0f;
+    public float ManualTargetX { get; set; } = 0f;
+    public float ManualTargetY { get; set; } = 120f;
+    public float ManualTargetZ { get; set; } = 0f;
+
+    // Lighting: named preset selected in the preview's lighting dropdown.
+    public string LightingLayoutName { get; set; } = "";
+    public string LightingColorSchemeName { get; set; } = "";
+
+    // FBO clear color.
+    public byte BackgroundR { get; set; } = 105;
+    public byte BackgroundG { get; set; } = 105;
+    public byte BackgroundB { get; set; } = 105;
+
+    // Saved PNG dimensions.
+    public int OutputWidth { get; set; } = 512;
+    public int OutputHeight { get; set; } = 512;
+
+    // Verbose log toggle bound through the settings adapter.
+    public bool VerboseLog { get; set; } = false;
+
+    // User-defined lighting presets persisted across sessions. The settings
+    // adapter wraps these in ObservableCollections at runtime.
+    public List<CharacterViewerLightingLayout> UserLightingLayouts { get; set; } = new();
+    public List<CharacterViewerLightingColorScheme> UserLightingColorSchemes { get; set; } = new();
 }
