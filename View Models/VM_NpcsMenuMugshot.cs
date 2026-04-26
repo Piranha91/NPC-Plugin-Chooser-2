@@ -923,12 +923,13 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
                 if (_settings.SelectedRenderer == MugshotRenderer.Internal)
                 {
-                    // Internal renderer doesn't need an AssociatedModSetting — it
-                    // resolves mesh paths from the link cache and pulls files via
-                    // the BSA adapter's broadcast lookup.
+                    // Look up the persisted ModSetting for THIS tile's source mod.
+                    // The render is scoped to it — every tile for the same NPC
+                    // across different mods must produce distinct mugshots.
+                    var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == ModName);
                     if (_stalenessChecker.NeedsRegeneration(savePath, SourceNpcFormKey))
                     {
-                        generated = await _internalMugshotGenerator.GenerateAsync(SourceNpcFormKey, savePath, token);
+                        generated = await _internalMugshotGenerator.GenerateAsync(SourceNpcFormKey, sourceMod, savePath, token);
                     }
                 }
                 else

@@ -366,6 +366,54 @@ public class BsaHandler : OptionalUIModule
     /// which mod a file belongs to.
     /// </summary>
     public IReadOnlyCollection<ModKey> GetIndexedModKeys() => _bsaContents.Keys.ToList();
+
+    /// <summary>
+    /// Strict-scoped existence check: tests whether <paramref name="path"/>
+    /// exists inside any indexed BSA owned by <paramref name="modKey"/>
+    /// AND physically located under <paramref name="folderPath"/> (i.e.
+    /// <c>bsaPath.StartsWith(folderPath)</c> case-insensitively). Used by
+    /// the CharacterViewer renderer's per-mod-folder scope chain — the
+    /// "is this file in the mod's BSA at this folder" question that the
+    /// asset resolver asks for each scope in order.
+    /// </summary>
+    public bool FileExistsInArchiveAtFolder(string path, ModKey modKey, string folderPath, out string? bsaPath, bool convertSlashes = true)
+    {
+        bsaPath = null;
+        if (string.IsNullOrEmpty(folderPath)) return false;
+        if (convertSlashes) path = path.Replace('/', '\\');
+        if (!_bsaContents.TryGetValue(modKey, out var bsaFiles)) return false;
+        foreach (var entry in bsaFiles)
+        {
+            if (!entry.Key.StartsWith(folderPath, StringComparison.OrdinalIgnoreCase)) continue;
+            if (entry.Value.Contains(path))
+            {
+                bsaPath = entry.Key;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Snapshot of every BSA file path whose contents have been indexed —
+    /// the actual on-disk archive paths that <see cref="FileExists"/>
+    /// scans during a broadcast lookup. Deduped case-insensitively. Used
+    /// by the CharacterViewer BSA adapter to log exactly which archives
+    /// are being searched on each lookup, so the user can correlate a
+    /// missing-asset trace with the BSA inventory.
+    /// </summary>
+    public IReadOnlyCollection<string> GetIndexedBsaPaths()
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var modEntry in _bsaContents.Values)
+        {
+            foreach (var bsaPath in modEntry.Keys)
+            {
+                paths.Add(bsaPath);
+            }
+        }
+        return paths;
+    }
     
     public async Task AddMissingModToCache(ModSetting mod, GameRelease gameRelease)
     {

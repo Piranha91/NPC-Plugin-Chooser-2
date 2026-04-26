@@ -567,7 +567,10 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 
                 if (_settings.SelectedRenderer == MugshotRenderer.Internal)
                 {
-                    generated = await _internalMugshotGenerator.GenerateAsync(NpcFormKey, pngSavePath, _cancellationToken);
+                    // Tile's source mod — every tile must render its own mod's
+                    // appearance (not the user's currently-selected mod).
+                    var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == _parentVMModSetting.DisplayName);
+                    generated = await _internalMugshotGenerator.GenerateAsync(NpcFormKey, sourceMod, pngSavePath, _cancellationToken);
                 }
                 else if (!string.IsNullOrWhiteSpace(nifPath))
                 {

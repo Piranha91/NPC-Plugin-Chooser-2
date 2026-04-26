@@ -3,6 +3,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reactive;
 using System.Windows;
 using Mutagen.Bethesda.Plugins;
@@ -281,7 +282,11 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 {
                     if (_stalenessChecker.NeedsRegeneration(savePath, SourceNpcFormKey))
                     {
-                        if (await _internalMugshotGenerator.GenerateAsync(SourceNpcFormKey, savePath, token))
+                        // Tile's source mod — every tile must render its own
+                        // mod's appearance (not the user's currently-selected
+                        // mod).
+                        var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == ModDisplayName);
+                        if (await _internalMugshotGenerator.GenerateAsync(SourceNpcFormKey, sourceMod, savePath, token))
                         {
                             SetImageSource(savePath);
                         }

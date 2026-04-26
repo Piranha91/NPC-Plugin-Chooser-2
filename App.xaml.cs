@@ -297,7 +297,18 @@ namespace NPC_Plugin_Chooser_2
             // introduced in a newer release of CharacterViewer.Rendering.
             // Policy is documented at the top of CharacterViewerRendering.cs:
             // Major = breaking, Minor = additive, Patch = bugfix.
-            var requiredViewerVersion = new Version(1, 0, 0);
+            //
+            // 1.1.0 added OffscreenRenderRequest.AdditionalDataFolders +
+            // VM_CharacterViewer.AdditionalDataFolders (consumed by both the
+            // mugshot generator and the live preview), plus the per-render
+            // GL context release that fixes "WGL: Failed to make context
+            // current: The requested resource is in use" on parallel renders.
+            // 1.2.0 added the strict two-phase scope chain
+            // (OffscreenRenderRequest.AdditionalScopes + RenderScope +
+            // IBsaArchiveProvider.TryLocateInScopedBsa) so the active mod's
+            // BSAs win over vanilla when both ship the same relative path
+            // (e.g. mod-overridden FaceGen NIFs).
+            var requiredViewerVersion = new Version(1, 2, 0);
             if (CharacterViewerRendering.Version < requiredViewerVersion)
             {
                 StartupLogger.Log(
@@ -310,6 +321,9 @@ namespace NPC_Plugin_Chooser_2
             // GLFW requires the OffscreenRenderer to be constructed on the WPF UI
             // thread. We're already on it here; eagerly resolve so the GameWindow
             // is built now and subsequent background-thread render calls succeed.
+            // Per-render context release is handled inside the rendering library
+            // (CharacterViewer.Rendering 1.1.0+) so we no longer need to detach
+            // here ourselves.
             try
             {
                 StartupLogger.Log("Initializing CharacterViewer offscreen renderer");

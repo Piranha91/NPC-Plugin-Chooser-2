@@ -23,9 +23,11 @@ public sealed class NpcChooserNpcMeshDataSourceAdapter : INpcMeshDataSource
     public ResolvedNpcMeshPaths? Resolve(NpcIdentity identity)
     {
         if (!FormKey.TryFactory(identity.CacheKey, out var formKey)) return null;
-        var linkCache = _env.LinkCache;
-        if (linkCache == null) return null;
-        return _resolver.Resolve(formKey, linkCache);
+        // Honor the user's appearance-mod selection for this NPC: records come
+        // from the selected mod's plugins and assets are pulled from its data
+        // folders, with the conflict-winning override + vanilla data folder as
+        // fallback when the mod doesn't override a given record / file.
+        return _resolver.ResolveForActiveSelection(formKey);
     }
 
     public object? CurrentInvalidationToken => _env.LinkCache;

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using CharacterViewer.Rendering;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 using NPC_Plugin_Chooser_2.Models;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
@@ -26,6 +27,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     private readonly Settings _settings;
     private readonly Lazy<VM_NpcSelectionBar> _npcSelectionBar;
     private readonly EnvironmentStateProvider _env;
+    private readonly NpcMeshResolver _resolver;
     private readonly CompositeDisposable _disposables = new();
 
     public VM_CharacterViewer Viewer { get; }
@@ -49,12 +51,14 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         VM_CharacterViewer viewer,
         Settings settings,
         Lazy<VM_NpcSelectionBar> npcSelectionBar,
-        EnvironmentStateProvider env)
+        EnvironmentStateProvider env,
+        NpcMeshResolver resolver)
     {
         Viewer = viewer;
         _settings = settings;
         _npcSelectionBar = npcSelectionBar;
         _env = env;
+        _resolver = resolver;
 
         LoadSelectedNpcCommand = ReactiveCommand.CreateFromTask(LoadSelectedNpcAsync).DisposeWith(_disposables);
         ReloadCommand = ReactiveCommand.CreateFromTask(ReloadAsync,
@@ -110,6 +114,12 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         try
         {
             StatusText = $"Loading {formKey}…";
+            // Strict per-mod asset-resolution chain (vanilla + active mod's
+            // CorrespondingFolderPaths/ModKeys). The VM snapshots this
+            // property at LoadAsync entry and clears it after SceneCommitted
+            // so per-load state can't leak into the next load.
+            // AdditionalScopes (1.2.0+) supersedes AdditionalDataFolders.
+            Viewer.AdditionalScopes = _resolver.BuildResolutionScopesForActiveSelection(formKey);
             // The viewer's INpcMeshDataSource adapter parses CacheKey as a FormKey;
             // DisplayLabel is purely diagnostic.
             var identity = new NpcIdentity(formKey.ToString(), formKey.ToString());

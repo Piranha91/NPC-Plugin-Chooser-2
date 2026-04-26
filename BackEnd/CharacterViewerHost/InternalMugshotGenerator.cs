@@ -43,20 +43,28 @@ public sealed class InternalMugshotGenerator
 
     /// <summary>
     /// Renders the NPC at <paramref name="npcFormKey"/> to a PNG at
-    /// <paramref name="outputPath"/>. Returns false if mesh resolution fails or
-    /// the renderer throws; the caller can fall back to FaceFinder / Legacy.
+    /// <paramref name="outputPath"/>. <paramref name="modSetting"/> scopes
+    /// the render to a specific mod — for mugshot tiles each tile passes
+    /// its own source mod so tiles for the same NPC produced by different
+    /// mods render distinct appearances. Returns false if mesh resolution
+    /// fails or the renderer throws; the caller can fall back to FaceFinder
+    /// / Legacy.
     /// </summary>
-    public async Task<bool> GenerateAsync(FormKey npcFormKey, string outputPath, CancellationToken token = default)
+    public async Task<bool> GenerateAsync(FormKey npcFormKey, ModSetting? modSetting, string outputPath, CancellationToken token = default)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int tid = Environment.CurrentManagedThreadId;
-        Trace($"ENTER tid={tid} npc={npcFormKey}");
+        Trace($"ENTER tid={tid} npc={npcFormKey} mod=[{modSetting?.DisplayName ?? "(none)"}]");
         try
         {
             var linkCache = _env.LinkCache;
             if (linkCache == null) { Trace($"EXIT tid={tid} npc={npcFormKey} no-linkcache elapsed={sw.ElapsedMilliseconds}ms"); return false; }
 
-            var paths = _resolver.Resolve(npcFormKey, linkCache);
+            // Resolve scoped to the explicit per-tile mod. Records come from
+            // its plugins (LinkCache.Winner fallback for anything the mod
+            // doesn't override) and asset paths get rebased to mod folders
+            // when present.
+            var paths = _resolver.Resolve(npcFormKey, modSetting);
             Trace($"  resolve tid={tid} npc={npcFormKey} ok={paths != null} elapsed={sw.ElapsedMilliseconds}ms");
             if (paths == null) { Trace($"EXIT tid={tid} npc={npcFormKey} resolve-null elapsed={sw.ElapsedMilliseconds}ms"); return false; }
 
@@ -83,6 +91,14 @@ public sealed class InternalMugshotGenerator
                     : BuildAutoFraming(cfg),
                 EnableNormalMapHack = _settings.EnableNormalMapHack,
                 UseModdedFallbackTextures = _settings.UseModdedFallbackTextures,
+                // Strict per-mod asset-resolution chain: vanilla (data folder
+                // + Base Game / Creation Club plugin filenames) at index 0,
+                // then each of the mod's CorrespondingFolderPaths paired with
+                // its CorrespondingModKeys. The renderer iterates last-to-first
+                // in two phases (all loose, then all scoped BSA) per the
+                // 8-step contract. AdditionalScopes (1.2.0+) supersedes
+                // AdditionalDataFolders.
+                AdditionalScopes = _resolver.BuildResolutionScopes(modSetting),
                 Cancellation = token,
             };
 
