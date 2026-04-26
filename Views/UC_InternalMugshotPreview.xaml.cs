@@ -30,6 +30,11 @@ public partial class UC_InternalMugshotPreview : UserControl
     private bool _manualHandlersAttached;
     private CameraModeWatcher? _cameraModeWatcher;
 
+    // Reset on every UC instance — false until this instance has run its first
+    // OnRender. Used to detect the "WPF recreated the UC but the persistent VM
+    // still holds GL IDs from the dead context" case (see GlControl_OnRender).
+    private bool _firstRenderProcessed;
+
     public UC_InternalMugshotPreview()
     {
         InitializeComponent();
@@ -298,6 +303,22 @@ public partial class UC_InternalMugshotPreview : UserControl
     {
         if (_viewer == null) return;
 
+        // Stale-VM / dead-context detection. GLWpfControl creates a new GL context
+        // per UC instance, but VM_InternalMugshotPreview (and its VM_CharacterViewer)
+        // is cached on the singleton VM_Settings — so when WPF recreates the
+        // SettingsView (e.g. user tabs away and back), this UC is fresh while the
+        // VM still holds shader/VAO/VBO/texture IDs minted by the dead context.
+        // Render()-ing those IDs in the new context writes 0 pixels, and the user
+        // sees an empty viewport. HandleGlContextLoss drops the dead IDs without
+        // issuing GL.Delete* against the dead context, clears scene-tracking state,
+        // and arms a one-shot rebuild so the next load re-uploads. The companion
+        // GlContextReset event triggers VM_InternalMugshotPreview to re-fire its
+        // last load so the user doesn't have to click Reload.
+        if (!_firstRenderProcessed && _viewer.IsGlInitialized)
+        {
+            _viewer.HandleGlContextLoss();
+        }
+
         if (!_viewer.IsGlInitialized)
         {
             try
@@ -311,6 +332,7 @@ public partial class UC_InternalMugshotPreview : UserControl
             }
         }
 
+        _firstRenderProcessed = true;
         _viewer.ProcessPendingScene();
 
         // Device-pixel viewport size for high-DPI correctness.

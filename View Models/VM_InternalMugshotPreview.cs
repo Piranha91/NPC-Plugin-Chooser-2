@@ -60,6 +60,24 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         ReloadCommand = ReactiveCommand.CreateFromTask(ReloadAsync,
             this.WhenAnyValue(x => x.CurrentNpcFormKey, fk => !fk.IsNull)).DisposeWith(_disposables);
         ResetCommand = ReactiveCommand.Create(ResetSettingsToDefaults).DisposeWith(_disposables);
+
+        // When the host UC's GL context is reset (WPF recreated the UC; see
+        // UC_InternalMugshotPreview.GlControl_OnRender), the renderer drops all
+        // GL IDs and the previously-loaded scene with them. Re-fire the last
+        // load so the user sees their NPC instead of an empty viewport — they
+        // shouldn't need to click Reload after every tab switch.
+        Viewer.GlContextReset += OnViewerGlContextReset;
+    }
+
+    private async void OnViewerGlContextReset()
+    {
+        if (CurrentNpcFormKey.IsNull) return;
+        try { await LoadAsync(CurrentNpcFormKey).ConfigureAwait(false); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "VM_InternalMugshotPreview: re-load after GlContextReset failed: " + ex.Message);
+        }
     }
 
     /// <summary>Loads the NPC currently highlighted in the NPC list (if any).</summary>
@@ -131,6 +149,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
 
     public void Dispose()
     {
+        Viewer.GlContextReset -= OnViewerGlContextReset;
         _disposables.Dispose();
         Viewer.Dispose();
     }
