@@ -274,6 +274,9 @@ public partial class UC_InternalMugshotPreview : UserControl
             // Wheel doesn't generate a MouseUp; persist Distance immediately.
             _settings.InternalMugshot.ManualDistance = _viewer.Camera.Distance;
         }
+        // Stop the event bubbling to the parent ScrollViewer in SettingsView —
+        // otherwise zooming the camera also scrolls the settings page.
+        e.Handled = true;
     }
 
     // -------- GL init --------
