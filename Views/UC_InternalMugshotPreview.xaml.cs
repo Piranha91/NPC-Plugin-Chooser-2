@@ -8,6 +8,7 @@ using CharacterViewer.Rendering;
 using CharacterViewer.Rendering.Offscreen;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
+using OpenTK.Graphics.OpenGL4;
 using OpenTK.Wpf;
 using Splat;
 
@@ -29,6 +30,18 @@ public partial class UC_InternalMugshotPreview : UserControl
     private bool _glStarted;
     private bool _manualHandlersAttached;
     private CameraModeWatcher? _cameraModeWatcher;
+
+    // Multisampled FBO for the live preview viewport. GLWpfControl 4.3.3
+    // doesn't expose a Samples / MSAA setting, so we render the scene into
+    // our own 4x multisampled FBO and blit the resolve down to GLWpfControl's
+    // backbuffer. Without this, alpha-tested cutout edges (hair, eyebrows)
+    // look pixel-jagged. Recreated when the viewport resizes or the
+    // host's GL context resets.
+    private int _msaaFbo = -1;
+    private int _msaaColorRbo = -1;
+    private int _msaaDepthRbo = -1;
+    private (int W, int H) _msaaSize = (0, 0);
+    private const int LivePreviewMsaaSamples = 4;
 
     /// <summary>Visibility of the top toolbar (Load Selected NPC / Reload /
     /// Reset). Defaults to true for the Settings panel; the per-tile 3D
@@ -428,6 +441,12 @@ public partial class UC_InternalMugshotPreview : UserControl
         if (!_firstRenderProcessed && _viewer.IsGlInitialized)
         {
             _viewer.HandleGlContextLoss();
+            // Drop our private MSAA FBO IDs without issuing GL.Delete*
+            // against the dead context — same idea as VM-side context loss.
+            _msaaFbo = -1;
+            _msaaColorRbo = -1;
+            _msaaDepthRbo = -1;
+            _msaaSize = (0, 0);
         }
 
         if (!_viewer.IsGlInitialized)
@@ -453,14 +472,100 @@ public partial class UC_InternalMugshotPreview : UserControl
         int w = Math.Max(1, (int)(GlControl.ActualWidth * scaleX));
         int h = Math.Max(1, (int)(GlControl.ActualHeight * scaleY));
 
+        // Capture GLWpfControl's currently-bound framebuffer so we can blit
+        // the MSAA-resolved image back into it after rendering. The control
+        // sets up its own internal FBO before this callback fires.
+        GL.GetInteger(GetPName.DrawFramebufferBinding, out int gwpfFbo);
+
         try
         {
-            _viewer.Renderer.Render(_viewer.Camera, w, h);
+            EnsureLivePreviewMsaaFbo(w, h);
+
+            if (_msaaFbo > 0)
+            {
+                // Render into our private MSAA FBO. SAMPLE_ALPHA_TO_COVERAGE
+                // in GlRenderer's Pass 1 turns hard cutout edges into smooth
+                // ones when the bound target is multisampled — that's the
+                // smoothness win for hairline alpha edges.
+                GL.BindFramebuffer(FramebufferTarget.Framebuffer, _msaaFbo);
+                GL.Enable(EnableCap.Multisample);
+                _viewer.Renderer.Render(_viewer.Camera, w, h);
+
+                // Resolve MSAA → GLWpfControl's backbuffer.
+                GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _msaaFbo);
+                GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, gwpfFbo);
+                GL.BlitFramebuffer(
+                    0, 0, w, h,
+                    0, 0, w, h,
+                    ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
+            }
+            else
+            {
+                // MSAA setup failed (FBO incomplete on this driver / size).
+                // Fall back to a direct render into GLWpfControl's
+                // backbuffer — alpha edges won't be smoothed but at least
+                // the preview still draws.
+                _viewer.Renderer.Render(_viewer.Camera, w, h);
+            }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine("Viewer.Render failed: " + ex.Message);
         }
+        finally
+        {
+            // Restore GLWpfControl's framebuffer binding so its post-render
+            // present sees the surface bound as expected.
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, gwpfFbo);
+        }
+    }
+
+    /// <summary>Lazily creates / resizes the live-preview multisampled FBO.
+    /// Color + depth are renderbuffers (no Texture2D needed since we never
+    /// sample from them — just blit-resolve to the GLWpfControl backbuffer).</summary>
+    private void EnsureLivePreviewMsaaFbo(int width, int height)
+    {
+        if (_msaaFbo != -1 && _msaaSize == (width, height)) return;
+
+        DestroyLivePreviewMsaaFbo();
+
+        _msaaFbo = GL.GenFramebuffer();
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, _msaaFbo);
+
+        _msaaColorRbo = GL.GenRenderbuffer();
+        GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _msaaColorRbo);
+        GL.RenderbufferStorageMultisample(RenderbufferTarget.Renderbuffer,
+            LivePreviewMsaaSamples, RenderbufferStorage.Rgba8, width, height);
+        GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer,
+            FramebufferAttachment.ColorAttachment0,
+            RenderbufferTarget.Renderbuffer, _msaaColorRbo);
+
+        _msaaDepthRbo = GL.GenRenderbuffer();
+        GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _msaaDepthRbo);
+        GL.RenderbufferStorageMultisample(RenderbufferTarget.Renderbuffer,
+            LivePreviewMsaaSamples, RenderbufferStorage.Depth24Stencil8, width, height);
+        GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer,
+            FramebufferAttachment.DepthStencilAttachment,
+            RenderbufferTarget.Renderbuffer, _msaaDepthRbo);
+
+        var status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+        if (status != FramebufferErrorCode.FramebufferComplete)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"UC_InternalMugshotPreview: live-preview MSAA FBO incomplete: {status} ({width}x{height}, samples={LivePreviewMsaaSamples}). Falling back to direct GLWpfControl render.");
+            DestroyLivePreviewMsaaFbo();
+            return;
+        }
+
+        _msaaSize = (width, height);
+    }
+
+    private void DestroyLivePreviewMsaaFbo()
+    {
+        if (_msaaDepthRbo != -1) { GL.DeleteRenderbuffer(_msaaDepthRbo); _msaaDepthRbo = -1; }
+        if (_msaaColorRbo != -1) { GL.DeleteRenderbuffer(_msaaColorRbo); _msaaColorRbo = -1; }
+        if (_msaaFbo != -1) { GL.DeleteFramebuffer(_msaaFbo); _msaaFbo = -1; }
+        _msaaSize = (0, 0);
     }
 
     // -------- Yellow crop overlay --------
