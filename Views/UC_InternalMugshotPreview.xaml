@@ -5,6 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vm="clr-namespace:NPC_Plugin_Chooser_2.View_Models"
              xmlns:glWpf="clr-namespace:OpenTK.Wpf;assembly=GLWpfControl"
+             xmlns:cvrv="clr-namespace:CharacterViewer.Rendering.Views;assembly=CharacterViewer.Rendering"
              mc:Ignorable="d"
              d:DesignHeight="540" d:DesignWidth="600"
              d:DataContext="{d:DesignInstance Type=vm:VM_InternalMugshotPreview}">
@@ -14,6 +15,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>     <!-- Toolbar -->
+            <RowDefinition Height="Auto"/>     <!-- Lighting panel (shared with SynthEBD) -->
             <RowDefinition Height="*"/>        <!-- Viewport -->
             <RowDefinition Height="Auto"/>     <!-- Status -->
         </Grid.RowDefinitions>
@@ -24,27 +26,21 @@
                 <Button Content="Load Selected NPC" Command="{Binding LoadSelectedNpcCommand}" Padding="6,2" Margin="0,0,6,0"/>
                 <Button Content="Reload" Command="{Binding ReloadCommand}" Padding="6,2" Margin="0,0,12,0"/>
 
-                <TextBlock Text="Lighting:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                <ComboBox x:Name="LightingLayoutCombo"
-                          ItemsSource="{Binding Viewer.LightingLayouts}"
-                          SelectedItem="{Binding Viewer.SelectedLightingLayout, Mode=TwoWay}"
-                          Width="160" Margin="0,0,8,0"
-                          ToolTip="Lighting preset (built-in + your saved presets)."/>
-
-                <TextBlock Text="Colors:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                <ComboBox x:Name="LightingColorCombo"
-                          ItemsSource="{Binding Viewer.LightingColorSchemes}"
-                          SelectedItem="{Binding Viewer.SelectedLightingColorScheme, Mode=TwoWay}"
-                          Width="140" Margin="0,0,12,0"
-                          ToolTip="Lighting color scheme."/>
-
                 <Button Content="Reset" Command="{Binding ResetCommand}" Padding="6,2" Margin="0,0,6,0"
                         ToolTip="Restore Internal-renderer settings to defaults."/>
             </StackPanel>
         </Border>
 
+        <!-- Shared lighting panel (CharacterViewer.Rendering 2.2.0+):
+             layout / color scheme presets, ambient + Key/Fill/Rim toggles,
+             Show-Lights gizmo gate, and per-light editor (intensity / azimuth /
+             elevation / color picker). Click an arrow gizmo in the viewport to
+             open that light's editor — handler in code-behind. -->
+        <cvrv:UC_CharacterViewerLightingPanel Grid.Row="1"
+                                              DataContext="{Binding Viewer}"/>
+
         <!-- Viewport with yellow crop overlay -->
-        <Grid Grid.Row="1" x:Name="ViewportRoot" ClipToBounds="True" Background="#222">
+        <Grid Grid.Row="2" x:Name="ViewportRoot" ClipToBounds="True" Background="#222">
             <glWpf:GLWpfControl x:Name="GlControl" Render="GlControl_OnRender"/>
 
             <!-- Yellow crop rectangle: positioned by code-behind -->
@@ -65,7 +61,7 @@
         </Grid>
 
         <!-- Status -->
-        <Border Grid.Row="2" Padding="6,4" BorderBrush="Gray" BorderThickness="0,1,0,0">
+        <Border Grid.Row="3" Padding="6,4" BorderBrush="Gray" BorderThickness="0,1,0,0">
             <TextBlock Text="{Binding StatusText}" Opacity="0.8" TextTrimming="CharacterEllipsis"/>
         </Border>
     </Grid>

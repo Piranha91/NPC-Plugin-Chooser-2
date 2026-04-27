@@ -44,6 +44,7 @@ public partial class UC_InternalMugshotPreview : UserControl
         Unloaded += (_, _) =>
         {
             DetachManualHandlers();
+            GlControl.MouseDown -= GlControl_MouseDown;
             if (_viewer != null) _viewer.SceneCommitted -= OnSceneCommitted;
             _cameraModeWatcher?.Dispose();
             _cameraModeWatcher = null;
@@ -54,6 +55,13 @@ public partial class UC_InternalMugshotPreview : UserControl
             TryStartGl();
             UpdateCropOverlay();
         };
+
+        // MouseDown is attached permanently so light-arrow picking works in
+        // both Auto and Manual camera modes — the gizmos render in either
+        // mode whenever Show Lights is on, and a click should pick. The
+        // remaining handlers (Move / Up / Wheel) only matter for the
+        // camera-orbit drag and stay manual-only.
+        GlControl.MouseDown += GlControl_MouseDown;
     }
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -212,7 +220,9 @@ public partial class UC_InternalMugshotPreview : UserControl
     private void AttachManualHandlers()
     {
         if (_manualHandlersAttached) return;
-        GlControl.MouseDown += GlControl_MouseDown;
+        // MouseDown is permanently attached in the constructor (for light
+        // picking in either mode). These three drive the orbit drag and only
+        // need to be live in Manual mode.
         GlControl.MouseMove += GlControl_MouseMove;
         GlControl.MouseUp += GlControl_MouseUp;
         GlControl.MouseWheel += GlControl_MouseWheel;
@@ -222,7 +232,6 @@ public partial class UC_InternalMugshotPreview : UserControl
     private void DetachManualHandlers()
     {
         if (!_manualHandlersAttached) return;
-        GlControl.MouseDown -= GlControl_MouseDown;
         GlControl.MouseMove -= GlControl_MouseMove;
         GlControl.MouseUp -= GlControl_MouseUp;
         GlControl.MouseWheel -= GlControl_MouseWheel;
@@ -233,10 +242,37 @@ public partial class UC_InternalMugshotPreview : UserControl
     {
         if (_viewer == null) return;
         var pos = e.GetPosition(GlControl);
-        _viewer.Camera.OnMouseDown((float)pos.X, (float)pos.Y,
-            e.LeftButton == MouseButtonState.Pressed,
-            e.MiddleButton == MouseButtonState.Pressed);
-        GlControl.CaptureMouse();
+
+        // Light-arrow picking: when the gizmos are visible, a left-click that
+        // hits an arrow selects that light for editing in the lighting panel
+        // and short-circuits the camera orbit. DPI scaling matters because
+        // the GL viewport is in physical pixels but pos is in WPF DIPs.
+        if (e.ChangedButton == MouseButton.Left && _viewer.ShowLightControls)
+        {
+            var source = PresentationSource.FromVisual(GlControl);
+            double dpiScaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+            double dpiScaleY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+            int w = (int)(GlControl.ActualWidth * dpiScaleX);
+            int h = (int)(GlControl.ActualHeight * dpiScaleY);
+            int hit = _viewer.HitTestLightArrow(
+                (float)(pos.X * dpiScaleX), (float)(pos.Y * dpiScaleY), w, h);
+            if (hit > 0)
+            {
+                _viewer.SelectedLightIndex = hit;
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // Camera orbit: Manual mode only. Auto-mode camera is mesh-fitted by
+        // MeshAwareCameraFitter on load; we don't want a click to perturb it.
+        if (_settings?.InternalMugshot.CameraMode == InternalMugshotCameraMode.Manual)
+        {
+            _viewer.Camera.OnMouseDown((float)pos.X, (float)pos.Y,
+                e.LeftButton == MouseButtonState.Pressed,
+                e.MiddleButton == MouseButtonState.Pressed);
+            GlControl.CaptureMouse();
+        }
     }
 
     private void GlControl_MouseMove(object sender, MouseEventArgs e)
