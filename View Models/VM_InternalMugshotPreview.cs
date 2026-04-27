@@ -140,6 +140,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             // so per-load state can't leak into the next load.
             // AdditionalScopes (1.2.0+) supersedes AdditionalDataFolders.
             Viewer.AdditionalScopes = _resolver.BuildResolutionScopesForActiveSelection(formKey);
+            ApplyAdvancedResolutionToggles();
             // The viewer's INpcMeshDataSource adapter parses CacheKey as a FormKey;
             // DisplayLabel is purely diagnostic.
             var identity = new NpcIdentity(formKey.ToString(), formKey.ToString());
@@ -182,6 +183,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         {
             StatusText = $"Loading {formKey}…";
             Viewer.AdditionalScopes = _resolver.BuildResolutionScopes(modSetting);
+            ApplyAdvancedResolutionToggles();
             var paths = _resolver.Resolve(formKey, modSetting);
             if (paths == null)
             {
@@ -202,6 +204,16 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             StatusText = $"Load failed: {ex.Message}";
             System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: " + ExceptionLogger.GetExceptionStack(ex));
         }
+    }
+
+    /// <summary>Pushes the user's current advanced asset-resolution toggles
+    /// onto the underlying viewer VM so the next render sees them. Pulled
+    /// out so both <see cref="LoadAsync(FormKey)"/> overloads stay
+    /// in sync.</summary>
+    private void ApplyAdvancedResolutionToggles()
+    {
+        Viewer.VanillaLooseOverridesBsa = _settings.InternalMugshot.VanillaLooseOverridesBsa;
+        Viewer.VanillaLooseOverridesModLoose = _settings.InternalMugshot.VanillaLooseOverridesModLoose;
     }
 
     private void ResetSettingsToDefaults()

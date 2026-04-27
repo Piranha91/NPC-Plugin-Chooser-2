@@ -56,6 +56,8 @@ public static class InternalMugshotMetadata
             ["pitch"] = cfg.Pitch,
             ["hair_above_padding"] = cfg.HairAbovePadding,
             ["include_accessories"] = cfg.IncludeAccessories,
+            ["vanilla_loose_overrides_bsa"] = cfg.VanillaLooseOverridesBsa,
+            ["vanilla_loose_overrides_mod_loose"] = cfg.VanillaLooseOverridesModLoose,
         };
 
         if (cfg.CameraMode == InternalMugshotCameraMode.Manual)
@@ -95,7 +97,12 @@ public static class InternalMugshotMetadata
         sb.Append(cfg.LightingLayoutName ?? "").Append('|');
         sb.Append(cfg.LightingColorSchemeName ?? "").Append('|');
         sb.Append(cfg.BackgroundR).Append(',').Append(cfg.BackgroundG).Append(',').Append(cfg.BackgroundB).Append('|');
-        sb.Append(cfg.OutputWidth).Append('x').Append(cfg.OutputHeight);
+        sb.Append(cfg.OutputWidth).Append('x').Append(cfg.OutputHeight).Append('|');
+        // Advanced asset-resolution toggles (renderer 2.3.0+). Folded into
+        // the hash so flipping either invalidates auto-generated PNGs and
+        // MugshotStalenessChecker regenerates them on next access.
+        sb.Append(cfg.VanillaLooseOverridesBsa ? '1' : '0').Append(',');
+        sb.Append(cfg.VanillaLooseOverridesModLoose ? '1' : '0');
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         var hex = new StringBuilder(bytes.Length * 2);

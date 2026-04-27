@@ -336,6 +336,19 @@
                                          DataObject.Pasting="IntegerTextBox_Pasting"/>
                             </StackPanel>
 
+                            <!-- Advanced asset-resolution toggles. Both feed into
+                                 OffscreenRenderRequest / VM_CharacterViewer for the
+                                 next render so changes take effect immediately. -->
+                            <TextBlock Text="Advanced Asset Resolution:" Margin="0,12,0,2" FontWeight="SemiBold"/>
+                            <CheckBox Content="Overwrite BSA contents with loose files"
+                                      IsChecked="{Binding InternalVanillaLooseOverridesBsa, Mode=TwoWay}"
+                                      Margin="0,2,0,0"
+                                      ToolTip="When on (default), a loose copy of an asset under your Skyrim Data folder takes precedence over any BSA copy of the same path — including BSAs scoped to a non-vanilla mod. Mirrors the engine's actual rule that loose Data files override BSA-packed ones. Turn off for strict-BSA mode (preview the original mod content without your installed loose-file overrides)."/>
+                            <CheckBox Content="Overwrite mod loose files with Data loose files"
+                                      IsChecked="{Binding InternalVanillaLooseOverridesModLoose, Mode=TwoWay}"
+                                      Margin="0,2,0,0"
+                                      ToolTip="When on, a loose copy of an asset in your Skyrim Data folder takes precedence over the same path in any mod folder, letting your installed body / skin / texture replacers leak into mod-specific previews. FaceGen NIFs and FaceTint DDS are excluded so the mod's actual face overrides aren't replaced by vanilla copies. Off by default."/>
+
                             <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
                                                               Height="540" Margin="0,12,0,0"/>
                         </StackPanel>

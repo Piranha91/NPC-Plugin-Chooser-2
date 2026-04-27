@@ -105,6 +105,9 @@ public sealed class InternalMugshotGenerator
                 // around in %TEMP%\SynthEBD_ViewerCache between renders
                 // would just balloon disk usage across a session.
                 ClearExtractionCacheAfterRender = true,
+                // Advanced asset-resolution toggles (CharacterViewer.Rendering 2.3.0+).
+                VanillaLooseOverridesBsa = cfg.VanillaLooseOverridesBsa,
+                VanillaLooseOverridesModLoose = cfg.VanillaLooseOverridesModLoose,
             };
 
             long preRender = sw.ElapsedMilliseconds;

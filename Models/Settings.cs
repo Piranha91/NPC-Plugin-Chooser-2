@@ -293,6 +293,19 @@ public sealed class InternalMugshotSettings
     // Verbose log toggle bound through the settings adapter.
     public bool VerboseLog { get; set; } = false;
 
+    // Advanced asset-resolution toggles. Pushed onto every OffscreenRenderRequest
+    // and per-load on VM_CharacterViewer (CharacterViewer.Rendering 2.3.0+).
+    // VanillaLooseOverridesBsa: default true, mirrors Skyrim's actual rule that
+    // a loose Data file overrides any BSA copy. Off = strict-BSA (preview the
+    // original mod content without the user's installed loose-file overrides).
+    // VanillaLooseOverridesModLoose: default false. On, vanilla LOOSE files
+    // (never vanilla BSA) preempt mod-folder loose files for non-FaceGen paths,
+    // letting the user's installed body/skin/texture replacers leak into
+    // mod-specific previews. The FaceGenData tree is excluded regardless so the
+    // mod's actual face overrides aren't defeated by vanilla copies.
+    public bool VanillaLooseOverridesBsa { get; set; } = true;
+    public bool VanillaLooseOverridesModLoose { get; set; } = false;
+
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.
     public List<CharacterViewerLightingLayout> UserLightingLayouts { get; set; } = new();

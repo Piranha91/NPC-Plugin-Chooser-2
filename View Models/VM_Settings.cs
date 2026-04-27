@@ -88,6 +88,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public byte InternalBackgroundB { get; set; }
     [Reactive] public int InternalOutputWidth { get; set; }
     [Reactive] public int InternalOutputHeight { get; set; }
+    [Reactive] public bool InternalVanillaLooseOverridesBsa { get; set; }
+    [Reactive] public bool InternalVanillaLooseOverridesModLoose { get; set; }
 
     /// <summary>Live preview view-model for the Internal renderer's mugshot
     /// preview UC. Lazily resolved from the Splat container — the GLWpfControl
@@ -321,6 +323,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalBackgroundB = _model.InternalMugshot.BackgroundB;
         InternalOutputWidth = _model.InternalMugshot.OutputWidth;
         InternalOutputHeight = _model.InternalMugshot.OutputHeight;
+        InternalVanillaLooseOverridesBsa = _model.InternalMugshot.VanillaLooseOverridesBsa;
+        InternalVanillaLooseOverridesModLoose = _model.InternalMugshot.VanillaLooseOverridesModLoose;
 
         this.WhenAnyValue(x => x.SelectedRenderer)
             .Select(r => r == MugshotRenderer.Internal)
@@ -543,6 +547,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(i => _model.InternalMugshot.OutputWidth = i).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalOutputHeight).Skip(1)
             .Subscribe(i => _model.InternalMugshot.OutputHeight = i).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalVanillaLooseOverridesBsa).Skip(1)
+            .Subscribe(b => _model.InternalMugshot.VanillaLooseOverridesBsa = b).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalVanillaLooseOverridesModLoose).Skip(1)
+            .Subscribe(b => _model.InternalMugshot.VanillaLooseOverridesModLoose = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
@@ -1117,6 +1125,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalBackgroundB = c.BackgroundB;
         InternalOutputWidth = c.OutputWidth;
         InternalOutputHeight = c.OutputHeight;
+        InternalVanillaLooseOverridesBsa = c.VanillaLooseOverridesBsa;
+        InternalVanillaLooseOverridesModLoose = c.VanillaLooseOverridesModLoose;
     }
 
     public void SaveSettings()
