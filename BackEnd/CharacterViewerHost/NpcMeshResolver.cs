@@ -427,7 +427,11 @@ public class NpcMeshResolver
     }
 
     /// <summary>Returns true if the asset wasn't found anywhere (so callers
-    /// can roll up "any missing" for the summary line).</summary>
+    /// can roll up "any missing" for the summary line). Mirrors the
+    /// renderer's strict two-phase scope iteration (Phase 1 loose, Phase 2
+    /// scoped BSA — both walked highest-priority-first) so the diagnostic
+    /// reports what the renderer will actually pick, not what a broadcast
+    /// BSA lookup would happen to find first.</summary>
     private bool LogAssetCheck(string label, string? path, NpcResolutionContext? context)
     {
         if (string.IsNullOrEmpty(path)) return false; // not requested
@@ -446,45 +450,99 @@ public class NpcMeshResolver
             return true;
         }
 
-        // Game-relative: the renderer will check vanilla data folder, then BSAs.
-        // Check both ourselves and report back what it'll find.
-        string dataFolder = _env.DataFolderPath.ToString();
-        string vanillaFull = Path.Combine(dataFolder, path);
-        if (File.Exists(vanillaFull))
+        var scopes = BuildDiagnosticScopes(context);
+
+        // Phase 1: loose files, walked highest-priority-first (last scope wins).
+        for (int i = scopes.Count - 1; i >= 0; i--)
         {
-            WriteTrace($"[AssetResolution]   [{label}] OK (vanilla loose): {vanillaFull}");
-            return false;
+            var scope = scopes[i];
+            if (string.IsNullOrWhiteSpace(scope.FolderPath)) continue;
+            string candidate;
+            try { candidate = Path.Combine(scope.FolderPath, path); }
+            catch { continue; }
+            if (File.Exists(candidate))
+            {
+                string sourceLabel = (i == 0) ? "vanilla loose" : "mod loose";
+                WriteTrace($"[AssetResolution]   [{label}] OK ({sourceLabel}): {candidate}");
+                return false;
+            }
         }
 
-        string? bsaPath = null;
-        var indexedKeys = _bsaHandler.GetIndexedModKeys();
-        if (indexedKeys.Count > 0 && _bsaHandler.FileExists(path, indexedKeys, out _, out bsaPath) && bsaPath != null)
+        // Phase 2: scoped BSAs, walked highest-priority-first. Within a scope,
+        // any BSA owned by one of its plugin filenames AT that folder counts.
+        for (int i = scopes.Count - 1; i >= 0; i--)
         {
-            WriteTrace($"[AssetResolution]   [{label}] OK (BSA): {bsaPath} :: {path}");
-            return false;
+            var scope = scopes[i];
+            if (string.IsNullOrWhiteSpace(scope.FolderPath)) continue;
+            foreach (var keyName in scope.ModKeyFileNames)
+            {
+                if (!ModKey.TryFromNameAndExtension(keyName, out var modKey)) continue;
+                if (_bsaHandler.FileExistsInArchiveAtFolder(path, modKey, scope.FolderPath, out var bsaPath) && bsaPath != null)
+                {
+                    string sourceLabel = (i == 0) ? "vanilla BSA" : "mod BSA";
+                    WriteTrace($"[AssetResolution]   [{label}] OK ({sourceLabel}): {bsaPath} :: {path}");
+                    return false;
+                }
+            }
         }
 
-        // Truly missing — dump every path the renderer would have checked, so
-        // the user can quickly spot which mod is supposed to ship the asset
-        // and verify whether it's actually installed.
+        // Truly missing — dump every loose path and BSA scope the renderer
+        // would have checked, in the same highest-priority-first order, so
+        // the user can quickly see which mod was expected to ship the asset.
         var missSb = new System.Text.StringBuilder();
         missSb.Append("[AssetResolution]   [").Append(label).Append("] !! MISSING\n");
         missSb.Append("    game-relative: ").Append(path).Append('\n');
-        missSb.Append("    vanilla disk:  ").Append(vanillaFull).Append('\n');
-        if (context != null && context.PreferredFolderPaths.Count > 0)
+        missSb.Append("    loose paths checked (highest-priority first):\n");
+        for (int i = scopes.Count - 1; i >= 0; i--)
         {
-            missSb.Append("    mod folders checked (last wins):\n");
-            for (int i = context.PreferredFolderPaths.Count - 1; i >= 0; i--)
+            var scope = scopes[i];
+            if (string.IsNullOrWhiteSpace(scope.FolderPath)) continue;
+            string candidate;
+            try { candidate = Path.Combine(scope.FolderPath, path); }
+            catch { continue; }
+            missSb.Append("      ").Append(candidate).Append('\n');
+        }
+        missSb.Append("    BSA scopes checked (highest-priority first):\n");
+        for (int i = scopes.Count - 1; i >= 0; i--)
+        {
+            var scope = scopes[i];
+            if (string.IsNullOrWhiteSpace(scope.FolderPath)) continue;
+            foreach (var keyName in scope.ModKeyFileNames)
             {
-                var folder = context.PreferredFolderPaths[i];
-                if (string.IsNullOrWhiteSpace(folder)) continue;
-                var modCandidate = Path.Combine(folder, path);
-                missSb.Append("      ").Append(modCandidate).Append('\n');
+                missSb.Append("      ").Append(scope.FolderPath).Append(" :: ").Append(keyName).Append('\n');
             }
         }
-        missSb.Append("    BSAs scanned:  ").Append(indexedKeys.Count).Append(" indexed mod key(s)");
         WriteTrace(missSb.ToString());
         return true;
+    }
+
+    /// <summary>Builds the same scope chain as <see cref="BuildResolutionScopes"/>
+    /// but driven from <see cref="NpcResolutionContext"/> so the diagnostic can
+    /// mirror the renderer's strict resolution without re-needing the original
+    /// <see cref="ModSetting"/>. Order: [vanilla, modFolder1, modFolder2, ...]
+    /// — the last entry is the highest-priority scope under last-to-first
+    /// iteration.</summary>
+    private List<RenderScope> BuildDiagnosticScopes(NpcResolutionContext? context)
+    {
+        var scopes = new List<RenderScope>();
+
+        var vanillaModKeyNames = new List<string>();
+        foreach (var mk in _env.BaseGamePlugins) vanillaModKeyNames.Add(mk.FileName.String);
+        foreach (var mk in _env.CreationClubPlugins) vanillaModKeyNames.Add(mk.FileName.String);
+        scopes.Add(new RenderScope(_env.DataFolderPath.ToString(), vanillaModKeyNames));
+
+        if (context != null && context.PreferredFolderPaths.Count > 0)
+        {
+            var modKeyNames = context.PreferredModKeys
+                .Select(mk => mk.FileName.String)
+                .ToList();
+            foreach (var folder in context.PreferredFolderPaths)
+            {
+                if (string.IsNullOrWhiteSpace(folder)) continue;
+                scopes.Add(new RenderScope(folder, modKeyNames));
+            }
+        }
+        return scopes;
     }
 
     private static void WriteTrace(string message)

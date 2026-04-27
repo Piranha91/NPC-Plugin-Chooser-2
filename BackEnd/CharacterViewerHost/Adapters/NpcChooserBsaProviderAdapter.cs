@@ -112,13 +112,26 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider
         return hit;
     }
 
-    public bool TryExtractToDisk(string subpath, string destPath)
+    public bool TryExtractToDisk(string containingBsaPath, string subpath, string destPath)
     {
-        if (!TryLocateInBsa(subpath, out var bsa) || bsa == null) return false;
-        bool ok = _bsa.ExtractFileAsync(bsa, subpath, destPath).GetAwaiter().GetResult();
+        // Extract from the EXACT BSA the caller specified — never re-broadcast.
+        // The previous broadcast version silently leaked vanilla content into
+        // mod-scoped renders when both shipped the same relative path: the
+        // renderer's strict scope chain would correctly identify (e.g.) FF's
+        // BSA as the source via TryLocateInScopedBsa, but the broadcast extract
+        // would then pull the file from whichever BSA the index happened to
+        // hit first (vanilla, since it's always indexed early). Keying the
+        // resolver's extraction cache per source-BSA didn't help because the
+        // cache stored the wrong content.
+        if (string.IsNullOrEmpty(containingBsaPath))
+        {
+            Trace($"TryExtractToDisk: REJECTED — empty containingBsaPath, file=[{subpath}] dest=[{destPath}]");
+            return false;
+        }
+        bool ok = _bsa.ExtractFileAsync(containingBsaPath, subpath, destPath).GetAwaiter().GetResult();
         if (!ok)
         {
-            Trace($"TryExtractToDisk: FAILED — file=[{subpath}] from bsa=[{bsa}] dest=[{destPath}]");
+            Trace($"TryExtractToDisk: FAILED — file=[{subpath}] from bsa=[{containingBsaPath}] dest=[{destPath}]");
         }
         return ok;
     }
