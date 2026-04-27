@@ -261,6 +261,8 @@ public class NpcMeshResolver
         string? bodyPath = null;
         string? handsPath = null;
         string? feetPath = null;
+        string? hairPath = null;
+        string? tailPath = null;
         var chains = new Dictionary<string, string>();
         var txstTextures = new Dictionary<string, Dictionary<int, string>>();
         string sexLabel = sex == Sex.Female ? "Female" : "Male";
@@ -310,6 +312,29 @@ public class NpcMeshResolver
                     LogVerbose("CharacterViewer: Armature[Feet]=" + armaLink.FormKey + ", WorldModel=" + meshPath);
                     if (txstPaths.Count > 0) txstTextures["Feet"] = txstPaths;
                 }
+                // Hair (biped slot 31): NPC overhauls like High Poly NPC
+                // Overhaul ship a "bald" FaceGen scalp + a wig ARMO whose
+                // ARMA occupies this slot. Without picking it up here the
+                // NPC renders hairless.
+                if (hairPath == null && flags.HasFlag(BipedObjectFlag.Hair))
+                {
+                    hairPath = meshPath;
+                    chains["Hair"] = npcName + " → " + armorSource + " → Armature(Hair):" + armaLink.FormKey +
+                        " → " + sexLabel + " → " + meshFileName;
+                    LogVerbose("CharacterViewer: Armature[Hair]=" + armaLink.FormKey + ", WorldModel=" + meshPath);
+                    if (txstPaths.Count > 0) txstTextures["Hair"] = txstPaths;
+                }
+                // Tail (biped slot 40): required for Khajiit / Argonian
+                // races whose tails are armatures rather than shapes baked
+                // into a body NIF.
+                if (tailPath == null && flags.HasFlag(BipedObjectFlag.Tail))
+                {
+                    tailPath = meshPath;
+                    chains["Tail"] = npcName + " → " + armorSource + " → Armature(Tail):" + armaLink.FormKey +
+                        " → " + sexLabel + " → " + meshFileName;
+                    LogVerbose("CharacterViewer: Armature[Tail]=" + armaLink.FormKey + ", WorldModel=" + meshPath);
+                    if (txstPaths.Count > 0) txstTextures["Tail"] = txstPaths;
+                }
             }
         }
 
@@ -352,6 +377,8 @@ public class NpcMeshResolver
         bodyPath = RebaseToAbsoluteIfPresent(bodyPath, context);
         handsPath = RebaseToAbsoluteIfPresent(handsPath, context);
         feetPath = RebaseToAbsoluteIfPresent(feetPath, context);
+        hairPath = RebaseToAbsoluteIfPresent(hairPath, context);
+        tailPath = RebaseToAbsoluteIfPresent(tailPath, context);
         string finalHeadPath = RebaseToAbsoluteIfPresent(headPath, context) ?? headPath;
         string? finalFaceTintPath = RebaseToAbsoluteIfPresent(faceTintPath, context);
         skeletonPath = RebaseToAbsoluteIfPresent(skeletonPath, context);
@@ -372,7 +399,7 @@ public class NpcMeshResolver
         // logs internally only when CharacterViewerLogGate.Verbose is on, and
         // that doesn't tell us about absolute paths it never resolves.
         TraceAssetResolution(npcFormKey, npcName, context, bodyPath, handsPath, feetPath,
-            finalHeadPath, skeletonPath, finalFaceTintPath, txstTextures);
+            finalHeadPath, skeletonPath, finalFaceTintPath, hairPath, tailPath, txstTextures);
 
         return new ResolvedNpcMeshPaths
         {
@@ -380,6 +407,8 @@ public class NpcMeshResolver
             HandsMeshPath = handsPath,
             FeetMeshPath = feetPath,
             HeadMeshPath = finalHeadPath,
+            HairMeshPath = hairPath,
+            TailMeshPath = tailPath,
             Sex = sex,
             SkeletonPath = skeletonPath,
             ResolutionChains = chains,
@@ -398,6 +427,7 @@ public class NpcMeshResolver
 
     private void TraceAssetResolution(FormKey npcFormKey, string npcName, NpcResolutionContext? context,
         string? body, string? hands, string? feet, string head, string? skeleton, string? faceTint,
+        string? hair, string? tail,
         Dictionary<string, Dictionary<int, string>> txstTextures)
     {
         var sb = new System.Text.StringBuilder();
@@ -414,6 +444,8 @@ public class NpcMeshResolver
         anyMissing |= LogAssetCheck("Hands", hands, context);
         anyMissing |= LogAssetCheck("Feet", feet, context);
         anyMissing |= LogAssetCheck("Head", head, context);
+        anyMissing |= LogAssetCheck("Hair", hair, context);
+        anyMissing |= LogAssetCheck("Tail", tail, context);
         anyMissing |= LogAssetCheck("Skeleton", skeleton, context);
         anyMissing |= LogAssetCheck("FaceTint", faceTint, context);
         foreach (var (bodyPart, slotMap) in txstTextures)
