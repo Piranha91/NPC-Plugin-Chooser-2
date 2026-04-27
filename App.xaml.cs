@@ -237,6 +237,7 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<VM_ModSetting>().AsSelf();
             builder.RegisterType<VM_ModFaceFinderLinker>().AsSelf();
             builder.RegisterType<VM_InternalMugshotPreview>().AsSelf();
+            builder.RegisterType<VM_FullScreen3DPreview>().AsSelf();
             builder.RegisterType<ImagePacker>().AsSelf().SingleInstance();
             
             builder.RegisterType<EventLogger>().AsSelf().SingleInstance();
@@ -249,6 +250,7 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<SummaryView>().As<IViewFor<VM_Summary>>();
             builder.RegisterType<ModsView>().As<IViewFor<VM_Mods>>();
             builder.RegisterType<FullScreenImageView>().As<IViewFor<VM_FullScreenImage>>();
+            builder.RegisterType<FullScreen3DPreviewView>().As<IViewFor<VM_FullScreen3DPreview>>();
             builder.RegisterType<MultiImageDisplayView>().As<IViewFor<VM_MultiImageDisplay>>();
 
 
@@ -267,6 +269,7 @@ namespace NPC_Plugin_Chooser_2
             Locator.CurrentMutable.Register(() => new SummaryView(), typeof(IViewFor<VM_Summary>));
             Locator.CurrentMutable.Register(() => new ModsView(), typeof(IViewFor<VM_Mods>));
             Locator.CurrentMutable.Register(() => new FullScreenImageView(), typeof(IViewFor<VM_FullScreenImage>));
+            Locator.CurrentMutable.Register(() => new FullScreen3DPreviewView(), typeof(IViewFor<VM_FullScreen3DPreview>));
             Locator.CurrentMutable.Register(() => new MultiImageDisplayView(), typeof(IViewFor<VM_MultiImageDisplay>));
 
             splashVM.UpdateProgress(60, "Building DI container...");

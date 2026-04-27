@@ -693,8 +693,9 @@
                                     <Border.ContextMenu>
                                         <ContextMenu> 
                                                <MenuItem  Header="Jump to NPC in List" Command="{Binding JumpToNpcCommand}"/> 
-                                               <MenuItem Header="View Full Screen (Ctrl+RClick)" Command="{Binding ToggleFullScreenCommand}"/> 
-                                               <Separator /> 
+                                               <MenuItem Header="View Full Screen (Ctrl+RClick)" Command="{Binding ToggleFullScreenCommand}"/>
+                                               <MenuItem Header="Show 3D Preview (Ctrl+Shift+RClick)" Command="{Binding Show3DPreviewCommand}"/>
+                                               <Separator />
                                                <MenuItem Command="{Binding AddToFavoritesCommand}"> 
                                                    <MenuItem.Style> 
                                                        <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}"> 

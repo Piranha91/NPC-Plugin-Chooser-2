@@ -30,6 +30,25 @@ public partial class UC_InternalMugshotPreview : UserControl
     private bool _manualHandlersAttached;
     private CameraModeWatcher? _cameraModeWatcher;
 
+    /// <summary>Visibility of the top toolbar (Load Selected NPC / Reload /
+    /// Reset). Defaults to true for the Settings panel; the per-tile 3D
+    /// preview popup sets false because Load/Reload/Reset don't make sense
+    /// in a one-shot single-NPC popup, and the global Reset would clobber
+    /// the user's whole Internal-renderer settings from inside a preview.</summary>
+    public bool ShowSettingsControls
+    {
+        get => SettingsToolbar.Visibility == Visibility.Visible;
+        set => SettingsToolbar.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>When true, the UC ignores
+    /// <c>Settings.InternalMugshot.CameraMode</c> and runs in
+    /// "show whole NPC + free orbit" mode: full-body framing on first
+    /// scene load, mouse handlers always attached for orbit/zoom, no
+    /// persistence of drag state to settings, and the yellow mugshot-crop
+    /// overlay is hidden. Used by the per-tile 3D preview popup.</summary>
+    public bool IsFullBodyOrbitMode { get; set; }
+
     // Reset on every UC instance — false until this instance has run its first
     // OnRender. Used to detect the "WPF recreated the UC but the persistent VM
     // still holds GL IDs from the dead context" case (see GlControl_OnRender).
@@ -139,12 +158,22 @@ public partial class UC_InternalMugshotPreview : UserControl
     }
 
     /// <summary>If Auto mode: apply MeshAware framing now. If Manual: attach handlers
-    /// and seed Camera with the persisted Manual* values.</summary>
+    /// and seed Camera with the persisted Manual* values. If
+    /// <see cref="IsFullBodyOrbitMode"/>: ignore both modes and apply
+    /// full-body orbit defaults — popup-only, no persistence.</summary>
     private void ApplyCameraModeImmediately()
     {
         if (_viewer == null || _settings == null) return;
-        var cfg = _settings.InternalMugshot;
 
+        if (IsFullBodyOrbitMode)
+        {
+            ApplyFullBodyOrbit();
+            AttachManualHandlers();
+            UpdateCropOverlay();
+            return;
+        }
+
+        var cfg = _settings.InternalMugshot;
         if (cfg.CameraMode == InternalMugshotCameraMode.Auto)
         {
             DetachManualHandlers();
@@ -159,6 +188,43 @@ public partial class UC_InternalMugshotPreview : UserControl
             _viewer.Camera.Target = new OpenTK.Mathematics.Vector3(
                 cfg.ManualTargetX, cfg.ManualTargetY, cfg.ManualTargetZ);
             AttachManualHandlers();
+        }
+    }
+
+    /// <summary>Full-body framing for the per-tile 3D preview popup. Asks
+    /// <see cref="MeshAwareCameraFitter"/> to tightly fit every loaded
+    /// mesh shape (head + body + accessories) so the camera distance
+    /// matches the actual model's bounds rather than a fixed multiplier
+    /// of nominal Skyrim height. Front-facing, level pitch — the user
+    /// can orbit and zoom from there; nothing persists.</summary>
+    private void ApplyFullBodyOrbit()
+    {
+        if (_viewer == null) return;
+        if (!_viewer.IsSceneReady) return; // Will retry on next load completion.
+
+        var framing = new CameraFraming.MeshAware(
+            new List<FramingShape>
+            {
+                new() { Selector = FramingShapeSelector.AllLoaded.Instance },
+            },
+            FrameTopFraction: 0.97f,
+            FrameBottomFraction: 0.03f,
+            // 180° = front of the model. Yaw is camera-relative, and Skyrim
+            // NPCs sit at world origin facing -Z; mugshot Settings.Yaw
+            // defaults to 180 for the same reason.
+            Yaw: 180f,
+            Pitch: 0f);
+
+        int w = Math.Max(1, (int)GlControl.ActualWidth);
+        int h = Math.Max(1, (int)GlControl.ActualHeight);
+        try
+        {
+            MeshAwareCameraFitter.ApplyTo(_viewer, framing, w, h);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "MeshAwareCameraFitter.ApplyTo (full body) failed: " + ex.Message);
         }
     }
 
@@ -264,9 +330,12 @@ public partial class UC_InternalMugshotPreview : UserControl
             }
         }
 
-        // Camera orbit: Manual mode only. Auto-mode camera is mesh-fitted by
-        // MeshAwareCameraFitter on load; we don't want a click to perturb it.
-        if (_settings?.InternalMugshot.CameraMode == InternalMugshotCameraMode.Manual)
+        // Camera orbit: Manual mode only (or any mode in the popup's full-body
+        // orbit setup). Auto-mode camera is mesh-fitted by MeshAwareCameraFitter
+        // on load and we don't want a click to perturb it.
+        bool orbitAllowed = IsFullBodyOrbitMode
+            || _settings?.InternalMugshot.CameraMode == InternalMugshotCameraMode.Manual;
+        if (orbitAllowed)
         {
             _viewer.Camera.OnMouseDown((float)pos.X, (float)pos.Y,
                 e.LeftButton == MouseButtonState.Pressed,
@@ -289,7 +358,10 @@ public partial class UC_InternalMugshotPreview : UserControl
         GlControl.ReleaseMouseCapture();
         // Persist the new orbit state to settings so it survives a restart and
         // the offscreen renderer reads the same values via CameraFraming.OrbitState.
-        if (_settings != null)
+        // Skipped in popup mode — the popup is a transient view, not a settings
+        // editor, and writing here would silently change the user's saved
+        // Manual-mode camera state every time they orbited a preview.
+        if (_settings != null && !IsFullBodyOrbitMode)
         {
             var cfg = _settings.InternalMugshot;
             cfg.ManualDistance = _viewer.Camera.Distance;
@@ -305,7 +377,7 @@ public partial class UC_InternalMugshotPreview : UserControl
     {
         if (_viewer == null) return;
         _viewer.Camera.OnMouseWheel(e.Delta);
-        if (_settings != null)
+        if (_settings != null && !IsFullBodyOrbitMode)
         {
             // Wheel doesn't generate a MouseUp; persist Distance immediately.
             _settings.InternalMugshot.ManualDistance = _viewer.Camera.Distance;
@@ -402,6 +474,14 @@ public partial class UC_InternalMugshotPreview : UserControl
     private void UpdateCropOverlay()
     {
         if (_settings == null) return;
+        // The yellow crop rect previews where the saved mugshot PNG will be
+        // framed. Irrelevant in the per-tile popup (which is a free-orbit
+        // viewer, not a mugshot composer).
+        if (IsFullBodyOrbitMode)
+        {
+            CropRect.Visibility = Visibility.Collapsed;
+            return;
+        }
         double prevW = ViewportRoot.ActualWidth;
         double prevH = ViewportRoot.ActualHeight;
         if (prevW <= 0 || prevH <= 0)

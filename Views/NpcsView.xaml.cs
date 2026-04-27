@@ -470,21 +470,37 @@ namespace NPC_Plugin_Chooser_2.Views
 
         private void Image_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
+            if (sender is not FrameworkElement element || element.DataContext is not VM_NpcsMenuMugshot vm)
+                return;
+
+            // Ctrl+Shift+RClick → 3D preview popup. Checked first so the
+            // more specific shortcut wins over plain Ctrl+RClick (the
+            // modifier check is equality, not bitwise containment).
+            if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+            {
+                vm.Show3DPreviewCommand.CanExecute.Take(1).Subscribe(canExecute =>
+                {
+                    if (canExecute)
+                    {
+                        vm.Show3DPreviewCommand.Execute(Unit.Default).Subscribe()
+                            .DisposeWith(_viewBindings);
+                    }
+                }).DisposeWith(_viewBindings);
+                e.Handled = true;
+                return;
+            }
+
             if (Keyboard.Modifiers == ModifierKeys.Control)
             {
-                if (sender is FrameworkElement element && element.DataContext is VM_NpcsMenuMugshot vm)
+                vm.ToggleFullScreenCommand.CanExecute.Take(1).Subscribe(canExecute =>
                 {
-                    // Check if command can execute before invoking
-                    vm.ToggleFullScreenCommand.CanExecute.Take(1).Subscribe(canExecute =>
+                    if (canExecute)
                     {
-                        if (canExecute)
-                        {
-                            vm.ToggleFullScreenCommand.Execute(Unit.Default).Subscribe()
-                                .DisposeWith(_viewBindings); // Or manage disposal per click
-                        }
-                    }).DisposeWith(_viewBindings); // Ensure this outer subscription is also managed
-                    e.Handled = true;
-                }
+                        vm.ToggleFullScreenCommand.Execute(Unit.Default).Subscribe()
+                            .DisposeWith(_viewBindings);
+                    }
+                }).DisposeWith(_viewBindings);
+                e.Handled = true;
             }
         }
 

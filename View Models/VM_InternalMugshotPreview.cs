@@ -37,6 +37,11 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     [Reactive] public string CurrentNpcDisplayLabel { get; private set; } = "(no NPC loaded)";
     [Reactive] public string StatusText { get; private set; } = "";
 
+    // Last explicit ModSetting for the "Show 3D Preview" popup path. When
+    // non-null, GL-context-reset re-fires re-uses this scope; when null,
+    // the re-fire falls back to the active selection (Settings-panel path).
+    private ModSetting? _lastExplicitModSetting;
+
     public ReactiveCommand<Unit, Unit> LoadSelectedNpcCommand { get; }
     public ReactiveCommand<Unit, Unit> ReloadCommand { get; }
     public ReactiveCommand<Unit, Unit> ResetCommand { get; }
@@ -76,7 +81,21 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     private async void OnViewerGlContextReset()
     {
         if (CurrentNpcFormKey.IsNull) return;
-        try { await LoadAsync(CurrentNpcFormKey).ConfigureAwait(false); }
+        try
+        {
+            // If the last load came through the per-tile popup path, re-fire
+            // with the same ModSetting; otherwise fall back to active-selection
+            // resolution. Without this branch, the popup would silently switch
+            // to the user's globally-selected mod after a context reset.
+            if (_lastExplicitModSetting != null)
+            {
+                await LoadAsync(CurrentNpcFormKey, _lastExplicitModSetting).ConfigureAwait(false);
+            }
+            else
+            {
+                await LoadAsync(CurrentNpcFormKey).ConfigureAwait(false);
+            }
+        }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine(
@@ -111,6 +130,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             return;
         }
 
+        _lastExplicitModSetting = null;
         try
         {
             StatusText = $"Loading {formKey}…";
@@ -124,6 +144,53 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             // DisplayLabel is purely diagnostic.
             var identity = new NpcIdentity(formKey.ToString(), formKey.ToString());
             await Viewer.LoadByIdentityAsync(identity);
+
+            CurrentNpcFormKey = formKey;
+            CurrentNpcDisplayLabel = formKey.ToString();
+            StatusText = $"Loaded {formKey}";
+            PreviewLoaded?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Load failed: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: " + ExceptionLogger.GetExceptionStack(ex));
+        }
+    }
+
+    /// <summary>
+    /// Loads <paramref name="formKey"/> rendered through the explicit
+    /// <paramref name="modSetting"/>'s plugins + folders rather than the
+    /// user's globally-selected appearance mod. Used by the per-tile
+    /// "Show 3D Preview" popup so each mugshot tile renders the appearance
+    /// owned by its own source mod, regardless of the user's active
+    /// selection. Bypasses the <see cref="INpcMeshDataSource"/> adapter
+    /// (which reads from the consistency provider) by resolving paths +
+    /// scopes directly via <see cref="NpcMeshResolver"/> and feeding them
+    /// into the underlying viewer's path-accepting <c>LoadAsync</c>.
+    /// </summary>
+    public async Task LoadAsync(FormKey formKey, ModSetting? modSetting)
+    {
+        if (formKey.IsNull) return;
+        if (_env.LinkCache == null)
+        {
+            StatusText = "Environment not ready yet.";
+            return;
+        }
+
+        _lastExplicitModSetting = modSetting;
+        try
+        {
+            StatusText = $"Loading {formKey}…";
+            Viewer.AdditionalScopes = _resolver.BuildResolutionScopes(modSetting);
+            var paths = _resolver.Resolve(formKey, modSetting);
+            if (paths == null)
+            {
+                StatusText = $"Could not resolve mesh paths for {formKey}";
+                return;
+            }
+
+            var identity = new NpcIdentity(formKey.ToString(), formKey.ToString());
+            await Viewer.LoadAsync(identity, paths);
 
             CurrentNpcFormKey = formKey;
             CurrentNpcDisplayLabel = formKey.ToString();

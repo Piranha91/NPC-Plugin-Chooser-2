@@ -898,7 +898,8 @@
                                                     ToolTip="For all other ambiguous NPCs in this mod, sets their source to this source plugin if it contains the NPC."/>
                                         <Separator Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                          
-                                         <MenuItem Header="Show Full Image" Command="{Binding ToggleFullScreenCommand}"/>
+                                         <MenuItem Header="Show Full Image (Ctrl+RClick)" Command="{Binding ToggleFullScreenCommand}"/>
+                                         <MenuItem Header="Show 3D Preview (Ctrl+Shift+RClick)" Command="{Binding Show3DPreviewCommand}"/>
                                          <Separator/>
                                          <MenuItem Command="{Binding ShareWithNpcCommand}"
                                                    ToolTip="Make this appearance available for another NPC.">

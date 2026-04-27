@@ -48,6 +48,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     private readonly InternalMugshotGenerator _internalMugshotGenerator;
     private readonly MugshotStalenessChecker _stalenessChecker;
     private readonly ImagePacker _imagePacker;
+    private readonly Func<VM_InternalMugshotPreview> _internalPreviewFactory;
     private readonly CancellationToken _cancellationToken;
     private readonly CompositeDisposable _disposables = new();
 
@@ -97,6 +98,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     [ObservableAsProperty] public bool HasSingleModPage { get; }
 
     public ReactiveCommand<Unit, Unit> ToggleFullScreenCommand { get; }
+    public ReactiveCommand<Unit, Unit> Show3DPreviewCommand { get; }
     public ReactiveCommand<Unit, Unit> JumpToNpcCommand { get; }
     public ReactiveCommand<ModKey, Unit> SetNpcSourcePluginCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectSameSourcePluginWherePossibleCommand { get; }
@@ -130,7 +132,8 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         PortraitCreator portraitCreator,
         InternalMugshotGenerator internalMugshotGenerator,
         MugshotStalenessChecker stalenessChecker,
-        ImagePacker imagePacker
+        ImagePacker imagePacker,
+        Func<VM_InternalMugshotPreview> internalPreviewFactory
     )
     {
         _parentVMMaster = parentVMMaster;
@@ -143,6 +146,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         _internalMugshotGenerator = internalMugshotGenerator;
         _stalenessChecker = stalenessChecker;
         _imagePacker = imagePacker;
+        _internalPreviewFactory = internalPreviewFactory;
         _cancellationToken = cancellationToken;
 
         ImagePath = imagePath; // Store the given path (could be real or placeholder)
@@ -223,11 +227,26 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         }
 
 
-        // ToggleFullScreenCommand can now operate on the placeholder too.
+        // ToggleFullScreenCommand can now operate on the placeholder too. Also
+        // accept an in-memory MugshotSource (auto-generated tiles populate it
+        // without going through ImagePath/File.Exists).
         var canToggleFullScreen =
-            this.WhenAnyValue(x => x.ImagePath, path => !string.IsNullOrEmpty(path) && File.Exists(path));
+            this.WhenAnyValue(x => x.ImagePath, x => x.MugshotSource,
+                (path, src) => src != null
+                    || (!string.IsNullOrWhiteSpace(path) && File.Exists(path)));
         ToggleFullScreenCommand =
             ReactiveCommand.Create(ToggleFullScreen, canToggleFullScreen).DisposeWith(_disposables);
+
+        // 3D preview: any non-mugshot-only entry. Base Game ships with empty
+        // CorrespondingFolderPaths (records + assets come from the vanilla
+        // data folder and BSAs, which the renderer's vanilla scope already
+        // covers), so we don't gate on folder count here.
+        var canShow3DPreview = Observable.Return(
+            !_parentVMModSetting.IsMugshotOnlyEntry
+            && !npcFormKey.IsNull);
+        Show3DPreviewCommand =
+            ReactiveCommand.Create(Show3DPreview, canShow3DPreview).DisposeWith(_disposables);
+
         JumpToNpcCommand = ReactiveCommand.Create(JumpToNpc).DisposeWith(_disposables);
 
         var canSetNpcSource = this.WhenAnyValue(x => x.IsAmbiguousSource).Select(isAmbiguous => isAmbiguous);
@@ -352,6 +371,57 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         else
         {
             ScrollableMessageBox.ShowError("Could not create FullScreenImageView.");
+        }
+    }
+
+    /// <summary>
+    /// Launches the per-tile 3D preview popup scoped to this tile's source
+    /// mod (records + assets resolved against
+    /// <see cref="_parentVMModSetting"/>'s plugins / folders rather than
+    /// the user's currently-selected appearance mod). The popup hosts
+    /// <see cref="UC_InternalMugshotPreview"/> in a fresh
+    /// <see cref="VM_InternalMugshotPreview"/> instance — its own GL
+    /// context, independent of the Settings-panel preview, so the two can
+    /// coexist without trampling each other's scene state.
+    /// </summary>
+    private void Show3DPreview()
+    {
+        try
+        {
+            var inner = _internalPreviewFactory();
+            var modSetting = _parentVMModSetting.SaveToModel();
+            var title = $"3D Preview — {NpcDisplayName} ({_parentVMModSetting.DisplayName})";
+            var fsVm = new VM_FullScreen3DPreview(inner, _settings, title);
+
+            if (Locator.Current.GetService<IViewFor<VM_FullScreen3DPreview>>() is not Window window)
+            {
+                ScrollableMessageBox.ShowError("Could not create FullScreen3DPreviewView.");
+                return;
+            }
+            window.DataContext = fsVm;
+            // Trigger the load AFTER the window's UC has been initialized so
+            // its GLWpfControl is attached and ready to consume the queued
+            // scene rebuild. Fire-and-forget — exceptions surface in the
+            // inner VM's StatusText, no need to block here.
+            window.Loaded += async (_, _) =>
+            {
+                try { await inner.LoadAsync(NpcFormKey, modSetting); }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Show3DPreview: LoadAsync failed: {ExceptionLogger.GetExceptionStack(ex)}");
+                }
+            };
+            window.ShowDialog();
+            // The inner VM's Dispose tears down its VM_CharacterViewer +
+            // GL state. Without this the renderer thread holds resources
+            // until the GC runs, which could collide with a subsequent
+            // Show3DPreview from the same tile.
+            inner.Dispose();
+        }
+        catch (Exception ex)
+        {
+            ScrollableMessageBox.ShowError(
+                $"Failed to open 3D preview:\n{ExceptionLogger.GetExceptionStack(ex)}");
         }
     }
 

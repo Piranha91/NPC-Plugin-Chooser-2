@@ -314,16 +314,29 @@ namespace NPC_Plugin_Chooser_2.Views
 
          private void MugshotItem_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
          {
+             if (sender is not FrameworkElement element || element.DataContext is not VM_ModsMenuMugshot vm)
+                 return;
+
+             // Ctrl+Shift+RClick → 3D preview popup. Must be checked BEFORE the
+             // bare-Ctrl branch so the more specific shortcut wins (modifier
+             // equality treats Control|Shift as distinct from Control alone).
+             if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+             {
+                 if (vm.Show3DPreviewCommand.CanExecute.FirstAsync().Wait())
+                 {
+                     vm.Show3DPreviewCommand.Execute(Unit.Default).Subscribe().DisposeWith(_viewBindings);
+                 }
+                 e.Handled = true;
+                 return;
+             }
+
              if (Keyboard.Modifiers == ModifierKeys.Control)
              {
-                 if (sender is FrameworkElement element && element.DataContext is VM_ModsMenuMugshot vm)
+                 if (vm.ToggleFullScreenCommand.CanExecute.FirstAsync().Wait())
                  {
-                      if (vm.ToggleFullScreenCommand.CanExecute.FirstAsync().Wait())
-                      {
-                          vm.ToggleFullScreenCommand.Execute(Unit.Default).Subscribe().DisposeWith(_viewBindings);
-                      }
-                      e.Handled = true; 
+                     vm.ToggleFullScreenCommand.Execute(Unit.Default).Subscribe().DisposeWith(_viewBindings);
                  }
+                 e.Handled = true;
              }
          }
          

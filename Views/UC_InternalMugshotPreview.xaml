@@ -20,8 +20,10 @@
             <RowDefinition Height="Auto"/>     <!-- Status -->
         </Grid.RowDefinitions>
 
-        <!-- Toolbar -->
-        <Border Grid.Row="0" Padding="6" BorderBrush="Gray" BorderThickness="0,0,0,1">
+        <!-- Toolbar — Load/Reload/Reset only meaningful in the Settings panel.
+             The per-tile 3D preview popup hides the whole row via the UC's
+             ShowSettingsControls property (set false from FullScreen3DPreviewView). -->
+        <Border x:Name="SettingsToolbar" Grid.Row="0" Padding="6" BorderBrush="Gray" BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal">
                 <Button Content="Load Selected NPC" Command="{Binding LoadSelectedNpcCommand}" Padding="6,2" Margin="0,0,6,0"/>
                 <Button Content="Reload" Command="{Binding ReloadCommand}" Padding="6,2" Margin="0,0,12,0"/>
