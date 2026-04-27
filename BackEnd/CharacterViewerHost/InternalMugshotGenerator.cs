@@ -100,6 +100,11 @@ public sealed class InternalMugshotGenerator
                 // AdditionalDataFolders.
                 AdditionalScopes = _resolver.BuildResolutionScopes(modSetting),
                 Cancellation = token,
+                // Each mugshot tile is generated once per (NPC, mod) and
+                // never re-rendered — keeping extracted source NIFs / DDS
+                // around in %TEMP%\SynthEBD_ViewerCache between renders
+                // would just balloon disk usage across a session.
+                ClearExtractionCacheAfterRender = true,
             };
 
             long preRender = sw.ElapsedMilliseconds;
