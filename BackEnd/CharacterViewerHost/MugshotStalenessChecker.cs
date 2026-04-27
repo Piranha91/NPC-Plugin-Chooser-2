@@ -158,6 +158,26 @@ public sealed class MugshotStalenessChecker
             return true;
         }
 
+        // Resolution drift — UNGATED. A PNG at the wrong dimensions is a
+        // structural mismatch, not a stylistic preference, so it shouldn't
+        // share the AutoUpdateStaleMugshots gate with lighting / framing /
+        // camera tweaks. (settings_hash also folds in resolution, but that
+        // comparison only fires when AutoUpdateStaleMugshots is on; this
+        // check ensures even users who've opted out of auto-update
+        // regeneration get correctly-sized mugshots.)
+        if (root["output_size"] is JArray sizeArr && sizeArr.Count >= 2)
+        {
+            int? pngW = sizeArr[0].Value<int?>();
+            int? pngH = sizeArr[1].Value<int?>();
+            int curW = _settings.InternalMugshot.OutputWidth;
+            int curH = _settings.InternalMugshot.OutputHeight;
+            if (pngW != curW || pngH != curH)
+            {
+                Trace($"  Internal: resolution drift png={pngW}x{pngH} current={curW}x{curH}");
+                return true;
+            }
+        }
+
         // Version drift (gated like the legacy path on AutoUpdateOldMugshots).
         if (_settings.AutoUpdateOldMugshots)
         {

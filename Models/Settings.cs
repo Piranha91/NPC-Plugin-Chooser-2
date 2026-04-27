@@ -287,8 +287,8 @@ public sealed class InternalMugshotSettings
     public byte BackgroundB { get; set; } = 105;
 
     // Saved PNG dimensions.
-    public int OutputWidth { get; set; } = 512;
-    public int OutputHeight { get; set; } = 512;
+    public int OutputWidth { get; set; } = 750;
+    public int OutputHeight { get; set; } = 750;
 
     // Verbose log toggle bound through the settings adapter.
     public bool VerboseLog { get; set; } = false;
