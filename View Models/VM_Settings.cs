@@ -530,36 +530,42 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
         this.WhenAnyValue(x => x.SelectedRenderer).Skip(1)
             .Subscribe(r => _model.SelectedRenderer = r).DisposeWith(_disposables);
+        // Internal-renderer settings: write through to the model AND schedule
+        // a throttled save so each edit persists within ~1.5s, independent of
+        // the app-exit save path. Without RequestThrottledSave the value lives
+        // in the in-memory model only, and any path that bypasses
+        // OnApplicationExit (crash, OS shutdown, env going invalid mid-session)
+        // would lose the edit even though the live preview reflected it.
         this.WhenAnyValue(x => x.InternalCameraMode).Skip(1)
-            .Subscribe(m => _model.InternalMugshot.CameraMode = m).DisposeWith(_disposables);
+            .Subscribe(m => { _model.InternalMugshot.CameraMode = m; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalHeadTopFraction).Skip(1)
-            .Subscribe(f => _model.InternalMugshot.HeadTopFraction = f).DisposeWith(_disposables);
+            .Subscribe(f => { _model.InternalMugshot.HeadTopFraction = f; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalHeadBottomFraction).Skip(1)
-            .Subscribe(f => _model.InternalMugshot.HeadBottomFraction = f).DisposeWith(_disposables);
+            .Subscribe(f => { _model.InternalMugshot.HeadBottomFraction = f; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalYaw).Skip(1)
-            .Subscribe(f => _model.InternalMugshot.Yaw = f).DisposeWith(_disposables);
+            .Subscribe(f => { _model.InternalMugshot.Yaw = f; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalPitch).Skip(1)
-            .Subscribe(f => _model.InternalMugshot.Pitch = f).DisposeWith(_disposables);
+            .Subscribe(f => { _model.InternalMugshot.Pitch = f; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalHairAbovePadding).Skip(1)
-            .Subscribe(f => _model.InternalMugshot.HairAbovePadding = f).DisposeWith(_disposables);
+            .Subscribe(f => { _model.InternalMugshot.HairAbovePadding = f; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalIncludeAccessories).Skip(1)
-            .Subscribe(b => _model.InternalMugshot.IncludeAccessories = b).DisposeWith(_disposables);
+            .Subscribe(b => { _model.InternalMugshot.IncludeAccessories = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalBackgroundR).Skip(1)
-            .Subscribe(v => _model.InternalMugshot.BackgroundR = v).DisposeWith(_disposables);
+            .Subscribe(v => { _model.InternalMugshot.BackgroundR = v; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalBackgroundG).Skip(1)
-            .Subscribe(v => _model.InternalMugshot.BackgroundG = v).DisposeWith(_disposables);
+            .Subscribe(v => { _model.InternalMugshot.BackgroundG = v; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalBackgroundB).Skip(1)
-            .Subscribe(v => _model.InternalMugshot.BackgroundB = v).DisposeWith(_disposables);
+            .Subscribe(v => { _model.InternalMugshot.BackgroundB = v; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalOutputWidth).Skip(1)
-            .Subscribe(i => _model.InternalMugshot.OutputWidth = i).DisposeWith(_disposables);
+            .Subscribe(i => { _model.InternalMugshot.OutputWidth = i; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalOutputHeight).Skip(1)
-            .Subscribe(i => _model.InternalMugshot.OutputHeight = i).DisposeWith(_disposables);
+            .Subscribe(i => { _model.InternalMugshot.OutputHeight = i; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalVanillaLooseOverridesBsa).Skip(1)
-            .Subscribe(b => _model.InternalMugshot.VanillaLooseOverridesBsa = b).DisposeWith(_disposables);
+            .Subscribe(b => { _model.InternalMugshot.VanillaLooseOverridesBsa = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalVanillaLooseOverridesModLoose).Skip(1)
-            .Subscribe(b => _model.InternalMugshot.VanillaLooseOverridesModLoose = b).DisposeWith(_disposables);
+            .Subscribe(b => { _model.InternalMugshot.VanillaLooseOverridesModLoose = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalRenderMissingTextureAsWireframe).Skip(1)
-            .Subscribe(b => _model.InternalMugshot.RenderMissingTextureAsWireframe = b).DisposeWith(_disposables);
+            .Subscribe(b => { _model.InternalMugshot.RenderMissingTextureAsWireframe = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
