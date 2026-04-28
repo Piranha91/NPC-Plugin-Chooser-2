@@ -30,9 +30,11 @@ public class Settings
     /// <item>0 → 1: 2.5.9 added <c>InternalMugshot.EnableToneMapping</c>.
     /// Migration sets it to <c>false</c> so pre-2.5.9 tiles keep matching
     /// the regenerated output.</item>
+    /// <item>1 → 2: 2.5.10 added <c>InternalMugshot.EnableShadows</c>.
+    /// Migration sets it to <c>false</c> for the same reason.</item>
     /// </list>
     /// </para></summary>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
     public int SchemaVersion { get; set; } = -1;
     // Mod Environment
     public string ModsFolder { get; set; } = string.Empty;
@@ -338,6 +340,13 @@ public sealed class InternalMugshotSettings
     // flips them to false to preserve the pre-upgrade look on existing
     // autogen tiles.
     public bool EnableToneMapping { get; set; } = true;
+
+    // Shadow-map toggle (CharacterViewer.Rendering 2.5.10+). Enables a
+    // depth-only render pass from the key light's POV, sampled with PCF
+    // in the main fragment shader to cast real shadows from brow / nose /
+    // hair onto the face. Single-largest portrait-quality jump after
+    // tone-mapping.
+    public bool EnableShadows { get; set; } = true;
 
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.

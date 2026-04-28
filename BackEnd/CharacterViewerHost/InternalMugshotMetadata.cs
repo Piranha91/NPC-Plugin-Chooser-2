@@ -51,9 +51,10 @@ public static class InternalMugshotMetadata
     /// <list type="bullet">
     /// <item>0 (absent <c>pipeline_schema</c> field): pre-2.5.9 PNGs.</item>
     /// <item>1: 2.5.9 added <c>EnableToneMapping</c>.</item>
+    /// <item>2: 2.5.10 added <c>EnableShadows</c>.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 1;
+    public const int PipelineSchemaVersion = 2;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -90,6 +91,7 @@ public static class InternalMugshotMetadata
             ["vanilla_loose_overrides_mod_loose"] = cfg.VanillaLooseOverridesModLoose,
             ["render_missing_texture_as_wireframe"] = cfg.RenderMissingTextureAsWireframe,
             ["enable_tone_mapping"] = cfg.EnableToneMapping,
+            ["enable_shadows"] = cfg.EnableShadows,
         };
 
         if (cfg.CameraMode == InternalMugshotCameraMode.Manual)
@@ -209,6 +211,12 @@ public static class InternalMugshotMetadata
         if (schemaVersion >= 1)
         {
             sb.Append('|').Append(cfg.EnableToneMapping ? '1' : '0');
+        }
+
+        // === schema v2 fields (2.5.10: shadow maps) ===
+        if (schemaVersion >= 2)
+        {
+            sb.Append('|').Append(cfg.EnableShadows ? '1' : '0');
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

@@ -362,6 +362,10 @@
                                       IsChecked="{Binding InternalEnableToneMapping, Mode=TwoWay}"
                                       Margin="0,2,0,0"
                                       ToolTip="Applies an ACES filmic tone-mapper, sRGB framebuffer, and a mild saturation boost at the end of the pixel pipeline. Compresses HDR highlights, lifts shadows into perceptual space, and adds the warmth / contrast that makes the output read as a portrait rather than a flat render. Off: legacy linear-to-display output (matches pre-2.5.9 look)."/>
+                            <CheckBox Content="Cast shadows from the key light"
+                                      IsChecked="{Binding InternalEnableShadows, Mode=TwoWay}"
+                                      Margin="0,2,0,0"
+                                      ToolTip="Renders a shadow-map pass from the key directional light's POV and samples it with PCF in the main fragment shader, so the brow ridge casts a shadow on the eye sockets, the nose casts on the cheek, and hair casts on the forehead. Single-largest portrait-quality jump after tone-mapping. Off: every directional light is treated as occlusion-free (matches pre-2.5.10 look)."/>
 
                             <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
                                                               Height="540" Margin="0,12,0,0"/>

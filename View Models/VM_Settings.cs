@@ -92,6 +92,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool InternalVanillaLooseOverridesModLoose { get; set; }
     [Reactive] public bool InternalRenderMissingTextureAsWireframe { get; set; }
     [Reactive] public bool InternalEnableToneMapping { get; set; }
+    [Reactive] public bool InternalEnableShadows { get; set; }
 
     /// <summary>Live preview view-model for the Internal renderer's mugshot
     /// preview UC. Lazily resolved from the Splat container — the GLWpfControl
@@ -329,6 +330,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalVanillaLooseOverridesModLoose = _model.InternalMugshot.VanillaLooseOverridesModLoose;
         InternalRenderMissingTextureAsWireframe = _model.InternalMugshot.RenderMissingTextureAsWireframe;
         InternalEnableToneMapping = _model.InternalMugshot.EnableToneMapping;
+        InternalEnableShadows = _model.InternalMugshot.EnableShadows;
 
         this.WhenAnyValue(x => x.SelectedRenderer)
             .Select(r => r == MugshotRenderer.Internal)
@@ -570,6 +572,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => { _model.InternalMugshot.RenderMissingTextureAsWireframe = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalEnableToneMapping).Skip(1)
             .Subscribe(b => { _model.InternalMugshot.EnableToneMapping = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalEnableShadows).Skip(1)
+            .Subscribe(b => { _model.InternalMugshot.EnableShadows = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
@@ -1134,6 +1138,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             // their stamped settings hash.
             loadedSettings.InternalMugshot.EnableToneMapping = false;
         }
+        if (loadedSettings.SchemaVersion < 2)
+        {
+            // 2.5.10 introduced shadow maps for the key light behind
+            // EnableShadows. Default-true for fresh installs; off for
+            // upgrades so existing autogen tiles aren't invalidated.
+            loadedSettings.InternalMugshot.EnableShadows = false;
+        }
         loadedSettings.SchemaVersion = Settings.CurrentSchemaVersion;
 
         return loadedSettings;
@@ -1178,6 +1189,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalVanillaLooseOverridesModLoose = c.VanillaLooseOverridesModLoose;
         InternalRenderMissingTextureAsWireframe = c.RenderMissingTextureAsWireframe;
         InternalEnableToneMapping = c.EnableToneMapping;
+        InternalEnableShadows = c.EnableShadows;
     }
 
     public void SaveSettings()

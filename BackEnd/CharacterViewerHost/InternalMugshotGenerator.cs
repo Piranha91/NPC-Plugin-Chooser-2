@@ -129,6 +129,7 @@ public sealed class InternalMugshotGenerator
                 VanillaLooseOverridesModLoose = cfg.VanillaLooseOverridesModLoose,
                 RenderMissingTextureAsWireframe = cfg.RenderMissingTextureAsWireframe,
                 EnableToneMapping = cfg.EnableToneMapping,
+                EnableShadows = cfg.EnableShadows,
             };
 
             long preRender = sw.ElapsedMilliseconds;
