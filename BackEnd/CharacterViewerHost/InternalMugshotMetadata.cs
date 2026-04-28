@@ -58,6 +58,7 @@ public static class InternalMugshotMetadata
             ["include_accessories"] = cfg.IncludeAccessories,
             ["vanilla_loose_overrides_bsa"] = cfg.VanillaLooseOverridesBsa,
             ["vanilla_loose_overrides_mod_loose"] = cfg.VanillaLooseOverridesModLoose,
+            ["render_missing_texture_as_wireframe"] = cfg.RenderMissingTextureAsWireframe,
         };
 
         if (cfg.CameraMode == InternalMugshotCameraMode.Manual)
@@ -74,9 +75,19 @@ public static class InternalMugshotMetadata
         return obj.ToString(Newtonsoft.Json.Formatting.None);
     }
 
-    /// <summary>SHA256 over every field that affects pixel output. Order is
-    /// fixed; keep it stable across releases — changing the byte layout
-    /// invalidates every previously-stamped mugshot.</summary>
+    /// <summary>SHA256 over every InternalMugshotSettings field that affects
+    /// pixel output. Order is fixed; keep it stable across releases —
+    /// changing the byte layout invalidates every previously-stamped
+    /// mugshot. When adding a new pixel-affecting setting, append it at
+    /// the end (don't reorder) so old PNGs stay loadable / hashable.
+    ///
+    /// <para>Top-level Settings fields that affect rendering (e.g.
+    /// <c>EnableNormalMapHack</c>, <c>UseModdedFallbackTextures</c>) are
+    /// NOT folded in here yet because the in-process renderer documents
+    /// them as unused (cf. OffscreenRenderRequest XML doc). When those
+    /// get wired into the renderer, fold them in by adding new
+    /// <c>sb.Append(...)</c> calls at the bottom of this method and
+    /// updating the JSON in <see cref="Build"/> in parallel.</para></summary>
     public static string ComputeSettingsHash(InternalMugshotSettings cfg)
     {
         var sb = new StringBuilder();
@@ -102,7 +113,13 @@ public static class InternalMugshotMetadata
         // the hash so flipping either invalidates auto-generated PNGs and
         // MugshotStalenessChecker regenerates them on next access.
         sb.Append(cfg.VanillaLooseOverridesBsa ? '1' : '0').Append(',');
-        sb.Append(cfg.VanillaLooseOverridesModLoose ? '1' : '0');
+        sb.Append(cfg.VanillaLooseOverridesModLoose ? '1' : '0').Append('|');
+        // Wireframe-fallback toggle (renderer 2.5.8+). When off, alpha
+        // shapes with missing diffuse are silently culled instead of
+        // drawn as a green wireframe — the saved PNG differs in pixels
+        // wherever an affected shape would have been, so flipping the
+        // toggle must invalidate the stamped mugshot.
+        sb.Append(cfg.RenderMissingTextureAsWireframe ? '1' : '0');
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         var hex = new StringBuilder(bytes.Length * 2);
