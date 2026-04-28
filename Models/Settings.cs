@@ -265,7 +265,7 @@ public sealed class InternalMugshotSettings
     public float HeadTopFraction { get; set; } = 0.95f;
     public float HeadBottomFraction { get; set; } = 0.10f;
     public float Yaw { get; set; } = 180f;
-    public float Pitch { get; set; } = 0f;
+    public float Pitch { get; set; } = 3f;
     public float HairAbovePadding { get; set; } = 0f;
     public bool IncludeAccessories { get; set; } = true;
 
