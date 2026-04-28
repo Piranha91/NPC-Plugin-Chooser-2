@@ -7,6 +7,7 @@ using Hjg.Pngcs.Chunks;
 using System.Security.Cryptography;
 using Mutagen.Bethesda.Skyrim;
 using Newtonsoft.Json.Linq;
+using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 using NPC_Plugin_Chooser_2.View_Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
@@ -22,21 +23,23 @@ public class PortraitCreator
     private readonly Settings _settings;
     private readonly EnvironmentStateProvider _environmentProvider;
     private readonly BsaHandler _bsaHandler;
+    private readonly GeneratedMugshotTracker _tracker;
     private readonly string _executablePath;
     private string _executableVersion = "0.0.0"; // Default if query fails
     private readonly SemaphoreSlim _renderSemaphore;
     private static readonly ConcurrentDictionary<(string, string), Task<bool>> _renderTasks = new();
-    
+
     private static readonly ConcurrentQueue<string> _outputBuffer = new ConcurrentQueue<string>();
     private const int MaxBufferedRuns = 2;
-    
+
     public readonly string TempExtractionPath = Path.Combine(AppContext.BaseDirectory, "tmpExtraction");
 
-    public PortraitCreator(Settings settings, EnvironmentStateProvider environmentProvider, BsaHandler bsaHandler)
+    public PortraitCreator(Settings settings, EnvironmentStateProvider environmentProvider, BsaHandler bsaHandler, GeneratedMugshotTracker tracker)
     {
         _settings = settings;
         _environmentProvider = environmentProvider;
         _bsaHandler = bsaHandler;
+        _tracker = tracker;
         _executablePath = Path.Combine(AppContext.BaseDirectory, "NPC Portrait Creator", "NPCPortraitCreator.exe");
 
         // Initialize the semaphore with the value from settings.
@@ -696,19 +699,27 @@ public class PortraitCreator
                 process.Kill();
                 Debug.WriteLine($"[NPC Creator]: Process for '{Path.GetFileName(nifPath)}' cancelled and terminated.");
             }
+            // The subprocess may have completed its PNG write before the kill
+            // landed. If a file is on disk, track it so Fast-mode delete can
+            // find it later — otherwise it's an orphan the user can't purge.
+            _tracker.TrackIfFileExists(outputPath);
             throw; // Re-throw the exception so the calling task knows it was cancelled.
         }
-            
+
         if (process.ExitCode != 0)
         {
             Debug.WriteLine($"[NPC Creator ERROR]: Process exited with code {process.ExitCode}.");
+            // Non-zero exit may still have left a partial / failed PNG; track
+            // it so the user can clean it up via Fast-mode delete.
+            _tracker.TrackIfFileExists(outputPath);
         }
         else
         {
-            // SUCCESS: Add to cache
+            // SUCCESS: Add to cache + immediate throttled save so an abnormal
+            // exit between now and OnApplicationExit doesn't lose the entry.
             if (File.Exists(outputPath))
             {
-                _settings.GeneratedMugshotPaths.Add(outputPath);
+                _tracker.Track(outputPath);
                 Debug.WriteLine($"[NPC Creator]: Successfully generated and cached: {outputPath}");
             }
         }

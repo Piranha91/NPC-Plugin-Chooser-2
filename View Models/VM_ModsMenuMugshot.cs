@@ -46,6 +46,8 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     private readonly FaceFinderClient _faceFinderClient;
     private readonly PortraitCreator _portraitCreator;
     private readonly InternalMugshotGenerator _internalMugshotGenerator;
+    private readonly GeneratedMugshotTracker _tracker;
+    private readonly FaceFinderCacheTracker _faceFinderTracker;
     private readonly MugshotStalenessChecker _stalenessChecker;
     private readonly ImagePacker _imagePacker;
     private readonly Func<VM_InternalMugshotPreview> _internalPreviewFactory;
@@ -136,7 +138,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         InternalMugshotGenerator internalMugshotGenerator,
         MugshotStalenessChecker stalenessChecker,
         ImagePacker imagePacker,
-        Func<VM_InternalMugshotPreview> internalPreviewFactory
+        Func<VM_InternalMugshotPreview> internalPreviewFactory,
+        GeneratedMugshotTracker tracker,
+        FaceFinderCacheTracker faceFinderTracker
     )
     {
         _parentVMMaster = parentVMMaster;
@@ -150,6 +154,8 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         _stalenessChecker = stalenessChecker;
         _imagePacker = imagePacker;
         _internalPreviewFactory = internalPreviewFactory;
+        _tracker = tracker;
+        _faceFinderTracker = faceFinderTracker;
         _cancellationToken = cancellationToken;
 
         ImagePath = imagePath; // Store the given path (could be real or placeholder)
@@ -531,8 +537,25 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             finalImagePath = $"{baseSavePath}.{extension}";
 
             Directory.CreateDirectory(Path.GetDirectoryName(finalImagePath)!);
-            await File.WriteAllBytesAsync(finalImagePath, imageData, token);
-            await _faceFinderClient.WriteMetadataAsync(finalImagePath, faceData);
+            try
+            {
+                await File.WriteAllBytesAsync(finalImagePath, imageData, token);
+                // WriteMetadataAsync also adds the path to CachedFaceFinderPaths
+                // on its own, but goes via a bare HashSet.Add — wrap with the
+                // FaceFinder tracker afterwards so the addition fires
+                // RequestThrottledSave for crash-safe persistence.
+                await _faceFinderClient.WriteMetadataAsync(finalImagePath, faceData);
+                _faceFinderTracker.Track(finalImagePath);
+            }
+            catch
+            {
+                // Partial-write defense scoped to the FaceFinder cache (NOT
+                // GeneratedMugshotPaths — these two cache buckets are
+                // deliberately disjoint so "Delete All Auto-Generated" and
+                // "Delete Cached FaceFinder Images" don't cross-delete).
+                _faceFinderTracker.TrackIfFileExists(finalImagePath);
+                throw;
+            }
 
             SetImageSource(finalImagePath, isPlaceholder: false);
             Debug.WriteLine($"Downloaded and cached mugshot for {NpcFormKey} as .{extension}");

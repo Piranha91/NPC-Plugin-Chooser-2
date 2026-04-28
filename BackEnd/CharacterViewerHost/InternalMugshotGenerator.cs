@@ -24,6 +24,7 @@ public sealed class InternalMugshotGenerator
     private readonly ICharacterViewerSettings _viewerSettings;
     private readonly EnvironmentStateProvider _env;
     private readonly IBsaArchiveProvider _bsa;
+    private readonly GeneratedMugshotTracker _tracker;
 
     public InternalMugshotGenerator(
         NpcMeshResolver resolver,
@@ -31,7 +32,8 @@ public sealed class InternalMugshotGenerator
         Settings settings,
         ICharacterViewerSettings viewerSettings,
         EnvironmentStateProvider env,
-        IBsaArchiveProvider bsa)
+        IBsaArchiveProvider bsa,
+        GeneratedMugshotTracker tracker)
     {
         _resolver = resolver;
         _renderer = renderer;
@@ -39,6 +41,7 @@ public sealed class InternalMugshotGenerator
         _viewerSettings = viewerSettings;
         _env = env;
         _bsa = bsa;
+        _tracker = tracker;
     }
 
     /// <summary>
@@ -154,18 +157,30 @@ public sealed class InternalMugshotGenerator
             }
 
             // Mirror the legacy renderer's behavior so the "Fast" search modes
-            // know this PNG was auto-generated.
-            _settings.GeneratedMugshotPaths.Add(outputPath);
+            // know this PNG was auto-generated. Track + immediate throttled
+            // save so a subsequent abnormal exit (debugger stop, crash, OS
+            // shutdown) doesn't lose the cache entry.
+            _tracker.Track(outputPath);
             Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} ok totalElapsed={sw.ElapsedMilliseconds}ms");
             return true;
         }
         catch (OperationCanceledException)
         {
+            // Cancellation may have fired mid-write or after the file landed
+            // on disk but before we got to track it. Either way, the partial
+            // / complete PNG is now an orphan unless we track it — Fast-mode
+            // delete would never see it. Track-if-exists handles both cases.
+            _tracker.TrackIfFileExists(outputPath);
             Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} cancelled totalElapsed={sw.ElapsedMilliseconds}ms");
             return false;
         }
         catch (Exception ex)
         {
+            // Same fallback for non-cancellation errors that fired after the
+            // write succeeded (e.g. metadata-injection IO error, post-write
+            // disk thrash). The PNG itself may still be valid; track so the
+            // user can purge it later via Fast-mode delete.
+            _tracker.TrackIfFileExists(outputPath);
             System.Diagnostics.Debug.WriteLine(
                 $"InternalMugshotGenerator failed for {npcFormKey}: {ExceptionLogger.GetExceptionStack(ex)}");
             Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} ERROR totalElapsed={sw.ElapsedMilliseconds}ms err={ex.Message}");

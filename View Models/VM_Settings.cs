@@ -1440,6 +1440,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                             {
                                 _model.CachedFaceFinderPaths.Remove(file);
                             }
+                            // Persist the FaceFinder cache pruning immediately
+                            // (parallel to the Generated-cache pruning above)
+                            // so an abnormal exit doesn't leave stale-on-disk
+                            // entries.
+                            RequestThrottledSave();
                             Debug.WriteLine($"Removed {nonExistentFiles.Count} non-existent FaceFinder files from cache.");
                         });
                     }
@@ -1653,10 +1658,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                             File.Delete(metadataPath);
                         }
 
-                        // Remove from cache
+                        // Remove from cache + immediate throttled save so the
+                        // entry doesn't survive the next session as a stale
+                        // pointer to a now-deleted file.
                         Application.Current.Dispatcher.Invoke(() =>
                         {
                             _model.CachedFaceFinderPaths.Remove(imageFile);
+                            RequestThrottledSave();
                         });
 
                         // Clean up empty parent directories
@@ -1722,6 +1730,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                         Application.Current.Dispatcher.Invoke(() =>
                         {
                             _model.CachedFaceFinderPaths.Remove(imageFile);
+                            RequestThrottledSave();
                         });
                     }
                 }
@@ -1923,6 +1932,10 @@ Options:
                             {
                                 _model.GeneratedMugshotPaths.Remove(file);
                             }
+                            // Persist the cache pruning immediately so an
+                            // abnormal exit doesn't leave stale-on-disk
+                            // entries that no longer exist.
+                            RequestThrottledSave();
                             Debug.WriteLine($"Removed {nonExistentFiles.Count} non-existent files from cache.");
                         });
                     }
@@ -2109,10 +2122,13 @@ Options:
                         File.Delete(pngFile);
                         deletedCount++;
 
-                        // Remove from cache
+                        // Remove from cache + immediate throttled save so the
+                        // entry doesn't survive the next session as a stale
+                        // pointer to a now-deleted file.
                         Application.Current.Dispatcher.Invoke(() =>
                         {
                             _model.GeneratedMugshotPaths.Remove(pngFile);
+                            RequestThrottledSave();
                         });
 
                         // Clean up empty parent directories
@@ -2178,6 +2194,7 @@ Options:
                         Application.Current.Dispatcher.Invoke(() =>
                         {
                             _model.GeneratedMugshotPaths.Remove(pngFile);
+                            RequestThrottledSave();
                         });
                     }
                 }
