@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -37,7 +38,17 @@ public static class InternalMugshotMetadata
 {
     public const string RendererName = "Internal";
 
-    public static string Build(FormKey npcFormKey, InternalMugshotSettings cfg)
+    // JSON keys for the missing-asset arrays embedded in the "Parameters"
+    // tEXt chunk. Kept as constants so the read path in
+    // TryReadMissingAssets can match on the same names without drift.
+    private const string MissingMeshesKey = "missing_meshes";
+    private const string MissingTexturesKey = "missing_textures";
+
+    public static string Build(
+        FormKey npcFormKey,
+        InternalMugshotSettings cfg,
+        IReadOnlyList<string>? missingMeshes = null,
+        IReadOnlyList<string>? missingTextures = null)
     {
         var obj = new JObject
         {
@@ -72,7 +83,61 @@ public static class InternalMugshotMetadata
             };
         }
 
+        // Per-render diagnostic arrays so the tile's missing-asset overlay
+        // can persist across app restarts. NOT folded into the settings
+        // hash — these are outputs of the render, not inputs that drive it.
+        // Omit empty lists to keep the JSON small for the common success
+        // case (most renders have neither array populated).
+        if (missingMeshes != null && missingMeshes.Count > 0)
+        {
+            obj[MissingMeshesKey] = new JArray(missingMeshes);
+        }
+        if (missingTextures != null && missingTextures.Count > 0)
+        {
+            obj[MissingTexturesKey] = new JArray(missingTextures);
+        }
+
         return obj.ToString(Newtonsoft.Json.Formatting.None);
+    }
+
+    /// <summary>Parses the missing-mesh / missing-texture arrays out of a
+    /// previously-stamped "Parameters" JSON. Either or both lists may be
+    /// empty (or absent from the JSON) — older PNGs stamped before this
+    /// field existed simply yield two empty lists, which the host treats
+    /// as "no overlay needed". Robust to malformed JSON / missing keys —
+    /// returns empty lists rather than throwing.</summary>
+    public static void TryReadMissingAssets(
+        string parametersJson,
+        out List<string> missingMeshes,
+        out List<string> missingTextures)
+    {
+        missingMeshes = new List<string>();
+        missingTextures = new List<string>();
+        if (string.IsNullOrWhiteSpace(parametersJson)) return;
+
+        try
+        {
+            var obj = JObject.Parse(parametersJson);
+            ReadStringArray(obj, MissingMeshesKey, missingMeshes);
+            ReadStringArray(obj, MissingTexturesKey, missingTextures);
+        }
+        catch
+        {
+            // Malformed JSON or unexpected schema — treat as "no missing
+            // assets recorded" rather than propagating the parse error.
+        }
+    }
+
+    private static void ReadStringArray(JObject obj, string key, List<string> dest)
+    {
+        if (obj.TryGetValue(key, out var token) && token is JArray arr)
+        {
+            foreach (var entry in arr)
+            {
+                var s = entry?.Value<string>();
+                if (!string.IsNullOrWhiteSpace(s)) dest.Add(s);
+            }
+        }
     }
 
     /// <summary>SHA256 over every InternalMugshotSettings field that affects
