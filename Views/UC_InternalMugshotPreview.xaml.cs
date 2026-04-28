@@ -77,7 +77,11 @@ public partial class UC_InternalMugshotPreview : UserControl
         {
             DetachManualHandlers();
             GlControl.MouseDown -= GlControl_MouseDown;
-            if (_viewer != null) _viewer.SceneCommitted -= OnSceneCommitted;
+            if (_viewer != null)
+            {
+                _viewer.SceneCommitted -= OnSceneCommitted;
+                _viewer.ReframeRequested -= OnReframeRequested;
+            }
             _cameraModeWatcher?.Dispose();
             _cameraModeWatcher = null;
         };
@@ -106,6 +110,7 @@ public partial class UC_InternalMugshotPreview : UserControl
         if (_viewer != null)
         {
             _viewer.SceneCommitted -= OnSceneCommitted;
+            _viewer.ReframeRequested -= OnReframeRequested;
         }
         _cameraModeWatcher?.Dispose();
         _cameraModeWatcher = null;
@@ -124,6 +129,13 @@ public partial class UC_InternalMugshotPreview : UserControl
             // signal that vm.Renderer.Meshes is populated, which MeshAwareCameraFitter
             // requires — LoadByIdentityAsync returns before the mesh upload completes.
             _viewer.SceneCommitted += OnSceneCommitted;
+
+            // ReframeRequested fires when the FOV slider moves so the character
+            // stays the same on-screen size across FOV changes (mesh-aware
+            // distance compensates). Manual mode handles this naturally — the
+            // re-apply path just re-seeds Camera from the persisted Manual*
+            // values, leaving the orbit untouched while picking up the new FOV.
+            _viewer.ReframeRequested += OnReframeRequested;
         }
 
         // The Settings instance is shared; pull it from the current Application
@@ -155,6 +167,34 @@ public partial class UC_InternalMugshotPreview : UserControl
         // SceneCommitted may be raised from the inline marshaller (UI thread for
         // the live preview path) but route through the dispatcher anyway so we
         // can't accidentally clobber an in-progress drag callback.
+        if (Dispatcher.CheckAccess())
+        {
+            ApplyCameraModeImmediately();
+            UpdateCropOverlay();
+        }
+        else
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                ApplyCameraModeImmediately();
+                UpdateCropOverlay();
+            }));
+        }
+    }
+
+    private void OnReframeRequested()
+    {
+        // Only re-apply framing in Auto mode, where MeshAwareCameraFitter
+        // recomputes Camera.Distance from FieldOfView so the character stays
+        // the same size on-screen across FOV changes (matching Portrait
+        // Creator's slider behavior). In Manual mode the user has explicitly
+        // set Distance/Az/El — respect that and let FOV act as a real lens
+        // zoom. In Full-Body-Orbit popup mode the user may have orbited /
+        // zoomed already; preserving that state is the right call.
+        if (_settings == null || _viewer == null) return;
+        if (IsFullBodyOrbitMode) return;
+        if (_settings.InternalMugshot.CameraMode != InternalMugshotCameraMode.Auto) return;
+
         if (Dispatcher.CheckAccess())
         {
             ApplyCameraModeImmediately();
