@@ -38,11 +38,29 @@ public static class InternalMugshotMetadata
 {
     public const string RendererName = "Internal";
 
+    /// <summary>Pipeline schema version stamped into each PNG's "Parameters"
+    /// JSON. Bumped whenever a new pixel-affecting toggle is added. The
+    /// staleness checker reads the stamped value and compares the PNG's
+    /// hash against the corresponding-version hash computed from current
+    /// settings, so a PNG stamped at v0 isn't invalidated by the addition
+    /// of v1 toggles — its hash only included the v0 fields, and the
+    /// current-cfg-at-v0 hash will match it as long as none of the v0
+    /// fields changed. Stamped PNGs at older schemas keep their look
+    /// across upgrades; user can manually regen to upgrade them.
+    /// <para>History:
+    /// <list type="bullet">
+    /// <item>0 (absent <c>pipeline_schema</c> field): pre-2.5.9 PNGs.</item>
+    /// <item>1: 2.5.9 added <c>EnableToneMapping</c>.</item>
+    /// </list>
+    /// </para></summary>
+    public const int PipelineSchemaVersion = 1;
+
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
     // TryReadMissingAssets can match on the same names without drift.
     private const string MissingMeshesKey = "missing_meshes";
     private const string MissingTexturesKey = "missing_textures";
+    public const string PipelineSchemaKey = "pipeline_schema";
 
     public static string Build(
         FormKey npcFormKey,
@@ -54,8 +72,9 @@ public static class InternalMugshotMetadata
         {
             ["renderer"] = RendererName,
             ["renderer_version"] = CharacterViewerRendering.Version.ToString(),
+            [PipelineSchemaKey] = PipelineSchemaVersion,
             ["npc_form_key"] = npcFormKey.ToString(),
-            ["settings_hash"] = ComputeSettingsHash(cfg),
+            ["settings_hash"] = ComputeSettingsHashAtSchema(cfg, PipelineSchemaVersion),
             ["camera_mode"] = cfg.CameraMode.ToString(),
             ["background_color"] = new JArray(cfg.BackgroundR, cfg.BackgroundG, cfg.BackgroundB),
             ["output_size"] = new JArray(cfg.OutputWidth, cfg.OutputHeight),
@@ -70,6 +89,7 @@ public static class InternalMugshotMetadata
             ["vanilla_loose_overrides_bsa"] = cfg.VanillaLooseOverridesBsa,
             ["vanilla_loose_overrides_mod_loose"] = cfg.VanillaLooseOverridesModLoose,
             ["render_missing_texture_as_wireframe"] = cfg.RenderMissingTextureAsWireframe,
+            ["enable_tone_mapping"] = cfg.EnableToneMapping,
         };
 
         if (cfg.CameraMode == InternalMugshotCameraMode.Manual)
@@ -140,23 +160,30 @@ public static class InternalMugshotMetadata
         }
     }
 
+    /// <summary>Convenience: hash at the current pipeline schema. Equivalent to
+    /// <c>ComputeSettingsHashAtSchema(cfg, PipelineSchemaVersion)</c>.</summary>
+    public static string ComputeSettingsHash(InternalMugshotSettings cfg)
+        => ComputeSettingsHashAtSchema(cfg, PipelineSchemaVersion);
+
     /// <summary>SHA256 over every InternalMugshotSettings field that affects
-    /// pixel output. Order is fixed; keep it stable across releases —
-    /// changing the byte layout invalidates every previously-stamped
-    /// mugshot. When adding a new pixel-affecting setting, append it at
-    /// the end (don't reorder) so old PNGs stay loadable / hashable.
+    /// pixel output AT THE GIVEN SCHEMA VERSION. Order is fixed and
+    /// append-only: each schema-version step appends new fields at the
+    /// bottom so older versions can still be reproduced bit-for-bit by
+    /// stopping at the appropriate boundary. The staleness checker uses
+    /// this to validate a stamped PNG against the schema it was generated
+    /// at, so adding a new toggle in v(N+1) doesn't invalidate v(N) PNGs
+    /// (their hash was computed without the new field, and we recompute
+    /// against current cfg the same way).
     ///
     /// <para>Top-level Settings fields that affect rendering (e.g.
     /// <c>EnableNormalMapHack</c>, <c>UseModdedFallbackTextures</c>) are
     /// NOT folded in here yet because the in-process renderer documents
-    /// them as unused (cf. OffscreenRenderRequest XML doc). When those
-    /// get wired into the renderer, fold them in by adding new
-    /// <c>sb.Append(...)</c> calls at the bottom of this method and
-    /// updating the JSON in <see cref="Build"/> in parallel.</para></summary>
-    public static string ComputeSettingsHash(InternalMugshotSettings cfg)
+    /// them as unused (cf. OffscreenRenderRequest XML doc).</para></summary>
+    public static string ComputeSettingsHashAtSchema(InternalMugshotSettings cfg, int schemaVersion)
     {
         var sb = new StringBuilder();
         var inv = CultureInfo.InvariantCulture;
+        // === schema v0 fields (everything from before pipeline_schema existed) ===
         sb.Append(cfg.CameraMode).Append('|');
         sb.Append(cfg.HeadTopFraction.ToString("R", inv)).Append('|');
         sb.Append(cfg.HeadBottomFraction.ToString("R", inv)).Append('|');
@@ -174,17 +201,15 @@ public static class InternalMugshotMetadata
         sb.Append(cfg.LightingColorSchemeName ?? "").Append('|');
         sb.Append(cfg.BackgroundR).Append(',').Append(cfg.BackgroundG).Append(',').Append(cfg.BackgroundB).Append('|');
         sb.Append(cfg.OutputWidth).Append('x').Append(cfg.OutputHeight).Append('|');
-        // Advanced asset-resolution toggles (renderer 2.3.0+). Folded into
-        // the hash so flipping either invalidates auto-generated PNGs and
-        // MugshotStalenessChecker regenerates them on next access.
         sb.Append(cfg.VanillaLooseOverridesBsa ? '1' : '0').Append(',');
         sb.Append(cfg.VanillaLooseOverridesModLoose ? '1' : '0').Append('|');
-        // Wireframe-fallback toggle (renderer 2.5.8+). When off, alpha
-        // shapes with missing diffuse are silently culled instead of
-        // drawn as a green wireframe — the saved PNG differs in pixels
-        // wherever an affected shape would have been, so flipping the
-        // toggle must invalidate the stamped mugshot.
         sb.Append(cfg.RenderMissingTextureAsWireframe ? '1' : '0');
+
+        // === schema v1 fields (2.5.9: portrait-quality toggles) ===
+        if (schemaVersion >= 1)
+        {
+            sb.Append('|').Append(cfg.EnableToneMapping ? '1' : '0');
+        }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         var hex = new StringBuilder(bytes.Length * 2);

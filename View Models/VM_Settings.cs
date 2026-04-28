@@ -91,6 +91,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool InternalVanillaLooseOverridesBsa { get; set; }
     [Reactive] public bool InternalVanillaLooseOverridesModLoose { get; set; }
     [Reactive] public bool InternalRenderMissingTextureAsWireframe { get; set; }
+    [Reactive] public bool InternalEnableToneMapping { get; set; }
 
     /// <summary>Live preview view-model for the Internal renderer's mugshot
     /// preview UC. Lazily resolved from the Splat container — the GLWpfControl
@@ -327,6 +328,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalVanillaLooseOverridesBsa = _model.InternalMugshot.VanillaLooseOverridesBsa;
         InternalVanillaLooseOverridesModLoose = _model.InternalMugshot.VanillaLooseOverridesModLoose;
         InternalRenderMissingTextureAsWireframe = _model.InternalMugshot.RenderMissingTextureAsWireframe;
+        InternalEnableToneMapping = _model.InternalMugshot.EnableToneMapping;
 
         this.WhenAnyValue(x => x.SelectedRenderer)
             .Select(r => r == MugshotRenderer.Internal)
@@ -566,6 +568,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => { _model.InternalMugshot.VanillaLooseOverridesModLoose = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalRenderMissingTextureAsWireframe).Skip(1)
             .Subscribe(b => { _model.InternalMugshot.RenderMissingTextureAsWireframe = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalEnableToneMapping).Skip(1)
+            .Subscribe(b => { _model.InternalMugshot.EnableToneMapping = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
@@ -1101,6 +1105,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         else
         {
             loadedSettings = new Settings(); // Use defaults if file doesn't exist
+            // Fresh install: stamp the current schema version so we don't run
+            // upgrade migrations on first launch.
+            loadedSettings.SchemaVersion = Settings.CurrentSchemaVersion;
         }
 
         // Ensure defaults for new/potentially missing fields after loading old file
@@ -1112,6 +1119,22 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         loadedSettings.ImportFromLoadOrderExclusions ??= new();
         loadedSettings.BatFilePreCommands ??= string.Empty;
         loadedSettings.BatFilePostCommands ??= string.Empty;
+
+        // Schema-version migrations. SchemaVersion's C# initializer is -1
+        // (sentinel) so a pre-upgrade Settings.json (which lacks the field)
+        // deserializes to -1. Each migration step here flips newly-added
+        // pixel-affecting toggles to their "legacy" values so existing
+        // autogen mugshot tiles aren't invalidated by the upgrade — the
+        // user opts in to the new look via the settings UI.
+        if (loadedSettings.SchemaVersion < 1)
+        {
+            // 2.5.9 introduced ACES tone-mapping + sRGB framebuffer behind
+            // EnableToneMapping. Default-true for fresh installs; off for
+            // upgrades so the user's pre-2.5.9 autogen tiles stay matching
+            // their stamped settings hash.
+            loadedSettings.InternalMugshot.EnableToneMapping = false;
+        }
+        loadedSettings.SchemaVersion = Settings.CurrentSchemaVersion;
 
         return loadedSettings;
     }
@@ -1154,6 +1177,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalVanillaLooseOverridesBsa = c.VanillaLooseOverridesBsa;
         InternalVanillaLooseOverridesModLoose = c.VanillaLooseOverridesModLoose;
         InternalRenderMissingTextureAsWireframe = c.RenderMissingTextureAsWireframe;
+        InternalEnableToneMapping = c.EnableToneMapping;
     }
 
     public void SaveSettings()

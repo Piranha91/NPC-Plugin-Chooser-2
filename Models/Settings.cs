@@ -16,6 +16,24 @@ public class Settings
 {
     public string ProgramVersion { get; set; } = string.Empty;
     public bool HasBeenLaunched { get; set; } = false;
+
+    /// <summary>Bumped whenever a pixel-affecting render toggle is added that
+    /// would otherwise invalidate every existing autogen mugshot. The C#
+    /// initializer is -1 (sentinel) so deserializing from a pre-upgrade
+    /// JSON (which has no SchemaVersion field) leaves it at -1; LoadSettings
+    /// detects that and runs a one-shot migration that flips newly-added
+    /// toggles to "legacy" defaults so the user's existing tiles aren't
+    /// invalidated. Fresh installs (no Settings.json) bypass deserialize
+    /// and are stamped with the current value directly.
+    /// <para>Migration history:
+    /// <list type="bullet">
+    /// <item>0 → 1: 2.5.9 added <c>InternalMugshot.EnableToneMapping</c>.
+    /// Migration sets it to <c>false</c> so pre-2.5.9 tiles keep matching
+    /// the regenerated output.</item>
+    /// </list>
+    /// </para></summary>
+    public const int CurrentSchemaVersion = 1;
+    public int SchemaVersion { get; set; } = -1;
     // Mod Environment
     public string ModsFolder { get; set; } = string.Empty;
     public string MugshotsFolder { get; set; } = string.Empty;
@@ -311,6 +329,15 @@ public sealed class InternalMugshotSettings
     // is visible alongside the missing-asset overlay. Off: those shapes are
     // silently culled (cleaner preview at the cost of hiding the failure).
     public bool RenderMissingTextureAsWireframe { get; set; } = true;
+
+    // Portrait-quality rendering toggles (CharacterViewer.Rendering 2.5.9+).
+    // Each gates a feature in the in-process renderer that improves the
+    // "looks-like-a-portrait vs. looks-like-a-render" perception. Defaults
+    // to true for NEW installs; on upgrade we detect the absence of these
+    // fields via Settings.SchemaVersion and run a one-shot migration that
+    // flips them to false to preserve the pre-upgrade look on existing
+    // autogen tiles.
+    public bool EnableToneMapping { get; set; } = true;
 
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.

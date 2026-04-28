@@ -353,6 +353,16 @@
                                       Margin="0,2,0,0"
                                       ToolTip="When on (default), an alpha-tested or alpha-blended shape whose diffuse texture failed to load (path missing or DDS unreadable) is drawn as a green wireframe placeholder so the missing-texture state is visible alongside the missing-asset overlay. Off: those shapes are silently culled — cleaner look at the cost of hiding the failure. The overlay tooltip lists the unresolved paths regardless."/>
 
+                            <!-- Portrait-quality rendering toggles. Each gates a renderer feature
+                                 that pushes the autogen output closer to the Natural Lighting
+                                 Mugshots reference look. New installs default these on; upgrades
+                                 keep them off so existing tiles aren't invalidated. -->
+                            <TextBlock Text="Portrait Quality:" Margin="0,12,0,2" FontWeight="SemiBold"/>
+                            <CheckBox Content="Tone-mapping &amp; color grade"
+                                      IsChecked="{Binding InternalEnableToneMapping, Mode=TwoWay}"
+                                      Margin="0,2,0,0"
+                                      ToolTip="Applies an ACES filmic tone-mapper, sRGB framebuffer, and a mild saturation boost at the end of the pixel pipeline. Compresses HDR highlights, lifts shadows into perceptual space, and adds the warmth / contrast that makes the output read as a portrait rather than a flat render. Off: legacy linear-to-display output (matches pre-2.5.9 look)."/>
+
                             <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
                                                               Height="540" Margin="0,12,0,0"/>
                         </StackPanel>

@@ -191,14 +191,24 @@ public sealed class MugshotStalenessChecker
             }
         }
 
-        // Settings drift (gated on AutoUpdateStaleMugshots).
+        // Settings drift (gated on AutoUpdateStaleMugshots). The hash is
+        // schema-versioned: each pipeline_schema bump is append-only, so
+        // a v0 PNG's hash can be reproduced from current cfg by stopping
+        // at the v0 boundary. This lets us add new toggles in v(N+1)
+        // without invalidating v(N) PNGs — their stamped hash includes
+        // only v(N) fields and the comparison hash is recomputed at
+        // matching v(N), so the toggle flip in v(N+1) doesn't drift the
+        // comparison. Older PNGs stay "in spec at the time they were
+        // generated" until the user manually regenerates them.
         if (_settings.AutoUpdateStaleMugshots)
         {
+            int pngSchema = root[InternalMugshotMetadata.PipelineSchemaKey]?.Value<int?>() ?? 0;
             var pngHash = root["settings_hash"]?.Value<string>() ?? "";
-            var currentHash = InternalMugshotMetadata.ComputeSettingsHash(_settings.InternalMugshot);
+            var currentHash = InternalMugshotMetadata.ComputeSettingsHashAtSchema(
+                _settings.InternalMugshot, pngSchema);
             if (!string.Equals(pngHash, currentHash, StringComparison.OrdinalIgnoreCase))
             {
-                Trace($"  Internal: settings-hash drift png={pngHash[..Math.Min(8, pngHash.Length)]}.. current={currentHash[..Math.Min(8, currentHash.Length)]}..");
+                Trace($"  Internal: settings-hash drift schema={pngSchema} png={pngHash[..Math.Min(8, pngHash.Length)]}.. current={currentHash[..Math.Min(8, currentHash.Length)]}..");
                 return true;
             }
         }
