@@ -236,6 +236,21 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     /// refresh its bound flat properties from the new InternalMugshotSettings.</summary>
     public event Action? ResetRequested;
 
+    /// <summary>Raised while the user drags-to-rotate the model in Auto
+    /// camera mode. Carries the new yaw/elevation. The host
+    /// <c>VM_Settings</c> subscribes and forwards to its bound
+    /// <c>InternalYaw</c>/<c>InternalPitch</c> properties so the Yaw and
+    /// Pitch textboxes live-update during the drag (and the model gets
+    /// written through via the existing WhenAnyValue subscription).</summary>
+    public event Action<float, float>? AutoFramingYawPitchDragged;
+
+    /// <summary>Invoked by <see cref="UC_InternalMugshotPreview"/> after each
+    /// throttled refit during a drag. See <see cref="AutoFramingYawPitchDragged"/>.</summary>
+    public void RaiseAutoFramingYawPitchDragged(float yaw, float pitch)
+    {
+        AutoFramingYawPitchDragged?.Invoke(yaw, pitch);
+    }
+
     public void Dispose()
     {
         Viewer.GlContextReset -= OnViewerGlContextReset;

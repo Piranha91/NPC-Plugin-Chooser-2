@@ -31,6 +31,27 @@ public partial class UC_InternalMugshotPreview : UserControl
     private bool _manualHandlersAttached;
     private CameraModeWatcher? _cameraModeWatcher;
 
+    // Auto-mode drag-to-rotate throttle. WPF MouseMove can fire 100+ Hz; the
+    // refit is cheap but visible camera "jitter" can creep in if Distance
+    // updates outpace the render loop. Capping refits to ~30 Hz during the
+    // drag keeps the orbit smooth without lag (camera Az/El still mutate at
+    // full mouse-event rate; only the bbox refit is throttled). A final
+    // refit fires unconditionally on MouseUp so the resting state is exact.
+    private DateTime _lastAutoRefit;
+    private const int AutoRefitMinIntervalMs = 33;
+
+    // Suppresses the CameraModeWatcher's react-to-tunables loop while an
+    // Auto-mode drag is in flight. The drag's MouseMove handler writes
+    // cfg.Yaw/Pitch (so the textboxes live-update), but the watcher polls
+    // those same fields every 250 ms and would otherwise call
+    // ApplyAutoFraming() with preserveCameraOrientation=false — which
+    // overwrites Camera.Az/El with the slightly-stale cfg values, snapping
+    // the camera back ~250 ms and causing visible flicker. The drag's own
+    // refit (preserveCameraOrientation=true) is the source of truth while
+    // the user is dragging; the watcher resumes its normal duty (e.g.
+    // typed-into-textbox edits) after MouseUp.
+    private bool _isAutoDragging;
+
     // Multisampled FBO for the live preview viewport. GLWpfControl 4.3.3
     // doesn't expose a Samples / MSAA setting, so we render the scene into
     // our own 4x multisampled FBO and blit the resolve down to GLWpfControl's
@@ -229,7 +250,11 @@ public partial class UC_InternalMugshotPreview : UserControl
         var cfg = _settings.InternalMugshot;
         if (cfg.CameraMode == InternalMugshotCameraMode.Auto)
         {
-            DetachManualHandlers();
+            // Auto mode now supports drag-to-rotate. The mouse handlers run
+            // in both modes; the per-handler branches below check
+            // CameraMode to decide whether to refit (Auto) or persist
+            // ManualDistance / ManualAzimuth / ManualElevation (Manual).
+            AttachManualHandlers();
             ApplyAutoFraming();
         }
         else
@@ -281,7 +306,7 @@ public partial class UC_InternalMugshotPreview : UserControl
         }
     }
 
-    private void ApplyAutoFraming()
+    private void ApplyAutoFraming(bool preserveCameraOrientation = false)
     {
         if (_viewer == null || _settings == null) return;
         if (!_viewer.IsSceneReady) return; // Will retry on next load completion.
@@ -292,7 +317,7 @@ public partial class UC_InternalMugshotPreview : UserControl
         int h = Math.Max(1, (int)GlControl.ActualHeight);
         try
         {
-            MeshAwareCameraFitter.ApplyTo(_viewer, framing, w, h);
+            MeshAwareCameraFitter.ApplyTo(_viewer, framing, w, h, preserveCameraOrientation);
         }
         catch (Exception ex)
         {
@@ -326,6 +351,14 @@ public partial class UC_InternalMugshotPreview : UserControl
 
     private void OnAutoTunablesChanged()
     {
+        // Skip while a drag is in flight: the drag is already calling
+        // ApplyAutoFraming(preserveCameraOrientation=true) at ~30 Hz, and
+        // calling it again with preserve=false here would snap Camera.Az/El
+        // back to the slightly-stale cfg.Yaw/Pitch on every watcher tick
+        // (visible flicker as the live drag and the watcher fight). After
+        // MouseUp the flag clears, the next tick fires through, and any
+        // genuine textbox edit picks up the right behavior.
+        if (_isAutoDragging) return;
         if (_settings?.InternalMugshot.CameraMode == InternalMugshotCameraMode.Auto)
         {
             ApplyAutoFraming();
@@ -383,17 +416,31 @@ public partial class UC_InternalMugshotPreview : UserControl
             }
         }
 
-        // Camera orbit: Manual mode only (or any mode in the popup's full-body
-        // orbit setup). Auto-mode camera is mesh-fitted by MeshAwareCameraFitter
-        // on load and we don't want a click to perturb it.
+        // Camera orbit. Allowed in:
+        //   - Manual mode: full orbit + pan (matches saved ManualTarget).
+        //   - Full-body orbit popup: full orbit + pan (transient view).
+        //   - Auto mode: orbit only (left-button); pan is suppressed because
+        //     MeshAwareCameraFitter re-anchors Camera.Target on every refit,
+        //     so any panned target would be immediately undone. The drag
+        //     rotates the camera around the bbox center and the move handler
+        //     re-fits distance for the new orientation (see MouseMove below).
+        bool isAutoMode = !IsFullBodyOrbitMode
+            && _settings?.InternalMugshot.CameraMode == InternalMugshotCameraMode.Auto;
         bool orbitAllowed = IsFullBodyOrbitMode
-            || _settings?.InternalMugshot.CameraMode == InternalMugshotCameraMode.Manual;
+            || _settings?.InternalMugshot.CameraMode == InternalMugshotCameraMode.Manual
+            || isAutoMode;
         if (orbitAllowed)
         {
             _viewer.Camera.OnMouseDown((float)pos.X, (float)pos.Y,
                 e.LeftButton == MouseButtonState.Pressed,
-                e.MiddleButton == MouseButtonState.Pressed);
+                // Block middle-button panning in Auto mode — the framer would
+                // immediately stomp Camera.Target on the next refit anyway.
+                middleButton: !isAutoMode && e.MiddleButton == MouseButtonState.Pressed);
             GlControl.CaptureMouse();
+            // Engages the watcher-suppression flag for the duration of the
+            // drag; cleared in MouseUp.
+            if (isAutoMode && e.LeftButton == MouseButtonState.Pressed)
+                _isAutoDragging = true;
         }
     }
 
@@ -402,6 +449,24 @@ public partial class UC_InternalMugshotPreview : UserControl
         if (_viewer == null) return;
         var pos = e.GetPosition(GlControl);
         _viewer.Camera.OnMouseMove((float)pos.X, (float)pos.Y);
+
+        // Auto mode: re-fit distance for the new camera angle so the
+        // character stays inside the framing band as the user rotates.
+        // Throttled — see _lastAutoRefit comment for rationale. The same
+        // throttle gate also drives the Yaw/Pitch textbox live-update so
+        // the textbox redraw rate matches the refit rate.
+        if (!IsFullBodyOrbitMode
+            && _settings?.InternalMugshot.CameraMode == InternalMugshotCameraMode.Auto)
+        {
+            var now = DateTime.UtcNow;
+            if ((now - _lastAutoRefit).TotalMilliseconds >= AutoRefitMinIntervalMs)
+            {
+                _lastAutoRefit = now;
+                ApplyAutoFraming(preserveCameraOrientation: true);
+                _vm?.RaiseAutoFramingYawPitchDragged(
+                    _viewer.Camera.Azimuth, _viewer.Camera.Elevation);
+            }
+        }
     }
 
     private void GlControl_MouseUp(object sender, MouseButtonEventArgs e)
@@ -409,14 +474,27 @@ public partial class UC_InternalMugshotPreview : UserControl
         if (_viewer == null) return;
         _viewer.Camera.OnMouseUp();
         GlControl.ReleaseMouseCapture();
-        // Persist the new orbit state to settings so it survives a restart and
-        // the offscreen renderer reads the same values via CameraFraming.OrbitState.
-        // Skipped in popup mode — the popup is a transient view, not a settings
-        // editor, and writing here would silently change the user's saved
-        // Manual-mode camera state every time they orbited a preview.
-        if (_settings != null && !IsFullBodyOrbitMode)
+        _isAutoDragging = false;
+
+        if (_settings == null || IsFullBodyOrbitMode) return;
+
+        var cfg = _settings.InternalMugshot;
+        if (cfg.CameraMode == InternalMugshotCameraMode.Auto)
         {
-            var cfg = _settings.InternalMugshot;
+            // Final unthrottled refit so the resting state matches exactly
+            // where the user released the mouse, then push the new
+            // orientation through VM_Settings so both the bound Yaw/Pitch
+            // textboxes and the underlying InternalMugshot.Yaw/Pitch land
+            // on the dragged values.
+            ApplyAutoFraming(preserveCameraOrientation: true);
+            _vm?.RaiseAutoFramingYawPitchDragged(
+                _viewer.Camera.Azimuth, _viewer.Camera.Elevation);
+        }
+        else
+        {
+            // Manual: persist the full orbit state — distance, az/el, and the
+            // panned target — so the offscreen renderer reads the same values
+            // via CameraFraming.OrbitState.
             cfg.ManualDistance = _viewer.Camera.Distance;
             cfg.ManualAzimuth = _viewer.Camera.Azimuth;
             cfg.ManualElevation = _viewer.Camera.Elevation;
@@ -429,6 +507,17 @@ public partial class UC_InternalMugshotPreview : UserControl
     private void GlControl_MouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (_viewer == null) return;
+
+        // Auto mode: distance is auto-managed by MeshAwareCameraFitter, so
+        // wheel-zoom would be immediately undone on the next refit. Swallow
+        // the event so it doesn't bubble to the parent ScrollViewer either.
+        if (!IsFullBodyOrbitMode
+            && _settings?.InternalMugshot.CameraMode == InternalMugshotCameraMode.Auto)
+        {
+            e.Handled = true;
+            return;
+        }
+
         _viewer.Camera.OnMouseWheel(e.Delta);
         if (_settings != null && !IsFullBodyOrbitMode)
         {

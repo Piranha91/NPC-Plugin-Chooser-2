@@ -347,6 +347,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                     if (InternalMugshotPreviewVM != null)
                     {
                         InternalMugshotPreviewVM.ResetRequested += RefreshInternalFromModel;
+                        // Drag-to-rotate in Auto mode: live-update the Yaw/Pitch
+                        // textboxes. Writing the bound VM properties triggers
+                        // INPC for the textbox and the existing WhenAnyValue
+                        // subscriptions write back to InternalMugshot.Yaw/Pitch.
+                        InternalMugshotPreviewVM.AutoFramingYawPitchDragged += OnAutoFramingYawPitchDragged;
                     }
                 }
                 catch (Exception ex)
@@ -1104,6 +1109,17 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public void RequestThrottledSave()
     {
         _saveRequestSubject.OnNext(Unit.Default);
+    }
+
+    /// <summary>Bridges the live drag from the preview UC into the bound
+    /// Yaw/Pitch textboxes. Setting the [Reactive] properties fires INPC
+    /// (so the TextBoxes refresh in real time) and the WhenAnyValue
+    /// subscriptions write through to <see cref="Settings.InternalMugshot"/>,
+    /// so we don't have to update the model separately.</summary>
+    private void OnAutoFramingYawPitchDragged(float yaw, float pitch)
+    {
+        InternalYaw = yaw;
+        InternalPitch = pitch;
     }
 
     /// <summary>Re-pulls the Internal-renderer flat properties from the model.
