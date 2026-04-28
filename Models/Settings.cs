@@ -306,6 +306,12 @@ public sealed class InternalMugshotSettings
     public bool VanillaLooseOverridesBsa { get; set; } = true;
     public bool VanillaLooseOverridesModLoose { get; set; } = false;
 
+    // When true (default), shapes whose diffuse texture failed to load are
+    // rendered as a green wireframe placeholder so the missing-texture state
+    // is visible alongside the missing-asset overlay. Off: those shapes are
+    // silently culled (cleaner preview at the cost of hiding the failure).
+    public bool RenderMissingTextureAsWireframe { get; set; } = true;
+
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.
     public List<CharacterViewerLightingLayout> UserLightingLayouts { get; set; } = new();

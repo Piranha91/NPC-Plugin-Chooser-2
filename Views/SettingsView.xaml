@@ -348,6 +348,10 @@
                                       IsChecked="{Binding InternalVanillaLooseOverridesModLoose, Mode=TwoWay}"
                                       Margin="0,2,0,0"
                                       ToolTip="When on, a loose copy of an asset in your Skyrim Data folder takes precedence over the same path in any mod folder, letting your installed body / skin / texture replacers leak into mod-specific previews. FaceGen NIFs and FaceTint DDS are excluded so the mod's actual face overrides aren't replaced by vanilla copies. Off by default."/>
+                            <CheckBox Content="Render shapes with missing textures as wireframe"
+                                      IsChecked="{Binding InternalRenderMissingTextureAsWireframe, Mode=TwoWay}"
+                                      Margin="0,2,0,0"
+                                      ToolTip="When on (default), an alpha-tested or alpha-blended shape whose diffuse texture failed to load (path missing or DDS unreadable) is drawn as a green wireframe placeholder so the missing-texture state is visible alongside the missing-asset overlay. Off: those shapes are silently culled — cleaner look at the cost of hiding the failure. The overlay tooltip lists the unresolved paths regardless."/>
 
                             <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
                                                               Height="540" Margin="0,12,0,0"/>

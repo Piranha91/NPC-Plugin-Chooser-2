@@ -85,6 +85,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     [Reactive] public bool IsLoading { get; private set; }
     [Reactive] public double LoadingIconRadiusModifier { get; set; } = 0.2;
 
+    [Reactive] public bool HasMissingAssets { get; set; } = false;
+    [Reactive] public string MissingAssetNotificationText { get; set; } = string.Empty;
+
     public VM_ModSetting ParentVMModSetting => _parentVMModSetting;
     public bool CanOpenModFolder => _parentVMModSetting.CorrespondingFolderPaths.Any();
     public bool CanOpenMugshotFolder => HasMugshot;
@@ -640,7 +643,12 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                     // Tile's source mod — every tile must render its own mod's
                     // appearance (not the user's currently-selected mod).
                     var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == _parentVMModSetting.DisplayName);
-                    generated = await _internalMugshotGenerator.GenerateAsync(NpcFormKey, sourceMod, pngSavePath, _cancellationToken);
+                    var missingMeshes = new List<string>();
+                    var missingTextures = new List<string>();
+                    generated = await _internalMugshotGenerator.GenerateAsync(
+                        NpcFormKey, sourceMod, pngSavePath, _cancellationToken,
+                        missingMeshes, missingTextures);
+                    ApplyMissingAssetNotifications(missingMeshes, missingTextures);
                 }
                 else if (!string.IsNullOrWhiteSpace(nifPath))
                 {
@@ -670,6 +678,41 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         {
             IsLoading = false;
         }
+    }
+
+    /// <summary>Sets the unified missing-asset overlay state from the two
+    /// lists the internal mugshot generator populated. Both empty clears
+    /// the overlay; otherwise the overlay shows and the tooltip lists
+    /// each kind under its own heading, omitting any section with no
+    /// entries so the tooltip stays compact.</summary>
+    private void ApplyMissingAssetNotifications(
+        IReadOnlyList<string> missingMeshes,
+        IReadOnlyList<string> missingTextures)
+    {
+        bool hasMeshes = missingMeshes != null && missingMeshes.Count > 0;
+        bool hasTextures = missingTextures != null && missingTextures.Count > 0;
+        if (!hasMeshes && !hasTextures)
+        {
+            HasMissingAssets = false;
+            MissingAssetNotificationText = string.Empty;
+            return;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        if (hasMeshes)
+        {
+            sb.Append("The following expected mesh paths could not be found:");
+            foreach (var p in missingMeshes) sb.Append('\n').Append(p);
+        }
+        if (hasTextures)
+        {
+            if (hasMeshes) sb.Append("\n\n");
+            sb.Append("The following expected texture paths could not be found:");
+            foreach (var p in missingTextures) sb.Append('\n').Append(p);
+        }
+
+        HasMissingAssets = true;
+        MissingAssetNotificationText = sb.ToString();
     }
 
     private void SetImageSource(string path, bool isPlaceholder)

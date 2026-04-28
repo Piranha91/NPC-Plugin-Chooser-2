@@ -214,6 +214,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     {
         Viewer.VanillaLooseOverridesBsa = _settings.InternalMugshot.VanillaLooseOverridesBsa;
         Viewer.VanillaLooseOverridesModLoose = _settings.InternalMugshot.VanillaLooseOverridesModLoose;
+        Viewer.RenderMissingTextureAsWireframe = _settings.InternalMugshot.RenderMissingTextureAsWireframe;
     }
 
     private void ResetSettingsToDefaults()

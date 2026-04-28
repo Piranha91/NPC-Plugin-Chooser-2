@@ -687,6 +687,17 @@
                                                 <Image Source="/NPC Plugin Chooser 2;component/Resources/Multiple Plugins for NPC.png" />
                                             </Viewbox>
                                         </Grid>
+
+                                        <!-- Missing Asset Indicator (Top-Center) — meshes OR textures -->
+                                        <Grid HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0 0 0 0"
+                                              Visibility="{Binding HasMissingAssets, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                              ToolTip="{Binding MissingAssetNotificationText}"
+                                              Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                              Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+                                            <Viewbox Stretch="Uniform">
+                                                <Image Source="/NPC Plugin Chooser 2;component/Resources/Missing Asset.png" />
+                                            </Viewbox>
+                                        </Grid>
                                                             
                                     </Grid>
                                     

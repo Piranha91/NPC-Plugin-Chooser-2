@@ -713,6 +713,21 @@
                                          </Viewbox>
                                      </Grid>
                                      
+                                     <!-- Outer Container for Missing Asset Indicator (Top-Center).
+                                          Fires for unresolved meshes OR textures; the tooltip
+                                          enumerates each category under its own heading. -->
+                                     <Grid HorizontalAlignment="Center"
+                                           VerticalAlignment="Top"
+                                           Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                           Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}"
+                                           Visibility="{Binding HasMissingAssets, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                           ToolTip="{Binding MissingAssetNotificationText}"
+                                           Margin="0,0,0,0">
+                                         <Viewbox Stretch="Uniform">
+                                             <Image Source="/NPC Plugin Chooser 2;component/Resources/Missing Asset.png" />
+                                         </Viewbox>
+                                     </Grid>
+
                                      <!-- Outer Container for No Data Notification Indicator (Bottom-Left) -->
                                      <Grid x:Name="NoDataIndicatorContainerGrid"
                                            HorizontalAlignment="Left" 

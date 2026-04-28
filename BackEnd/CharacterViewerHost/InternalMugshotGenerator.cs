@@ -49,8 +49,22 @@ public sealed class InternalMugshotGenerator
     /// mods render distinct appearances. Returns false if mesh resolution
     /// fails or the renderer throws; the caller can fall back to FaceFinder
     /// / Legacy.
+    /// <para>Pass <paramref name="missingMeshPathsOut"/> as a fresh
+    /// <c>List&lt;string&gt;</c> to receive any host-expected mesh game-paths
+    /// the resolver could not locate during the load. Non-empty after a
+    /// successful return means the saved PNG is missing one or more shapes.
+    /// Pass <paramref name="missingTexturePathsOut"/> the same way to
+    /// receive texture game-paths the NIFs referenced that couldn't be
+    /// decoded — those shapes render as a wireframe placeholder and the
+    /// list drives a parallel "missing texture" tile overlay.</para>
     /// </summary>
-    public async Task<bool> GenerateAsync(FormKey npcFormKey, ModSetting? modSetting, string outputPath, CancellationToken token = default)
+    public async Task<bool> GenerateAsync(
+        FormKey npcFormKey,
+        ModSetting? modSetting,
+        string outputPath,
+        CancellationToken token = default,
+        List<string>? missingMeshPathsOut = null,
+        List<string>? missingTexturePathsOut = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int tid = Environment.CurrentManagedThreadId;
@@ -100,6 +114,8 @@ public sealed class InternalMugshotGenerator
                 // AdditionalDataFolders.
                 AdditionalScopes = _resolver.BuildResolutionScopes(modSetting),
                 Cancellation = token,
+                MissingMeshPathsOut = missingMeshPathsOut,
+                MissingTexturePathsOut = missingTexturePathsOut,
                 // Each mugshot tile is generated once per (NPC, mod) and
                 // never re-rendered — keeping extracted source NIFs / DDS
                 // around in %TEMP%\SynthEBD_ViewerCache between renders
@@ -108,6 +124,7 @@ public sealed class InternalMugshotGenerator
                 // Advanced asset-resolution toggles (CharacterViewer.Rendering 2.3.0+).
                 VanillaLooseOverridesBsa = cfg.VanillaLooseOverridesBsa,
                 VanillaLooseOverridesModLoose = cfg.VanillaLooseOverridesModLoose,
+                RenderMissingTextureAsWireframe = cfg.RenderMissingTextureAsWireframe,
             };
 
             long preRender = sw.ElapsedMilliseconds;
