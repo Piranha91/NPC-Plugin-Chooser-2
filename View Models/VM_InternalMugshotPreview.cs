@@ -12,6 +12,7 @@ using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 using NPC_Plugin_Chooser_2.Models;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
+using Splat;
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
@@ -43,7 +44,6 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     private ModSetting? _lastExplicitModSetting;
 
     public ReactiveCommand<Unit, Unit> LoadSelectedNpcCommand { get; }
-    public ReactiveCommand<Unit, Unit> ReloadCommand { get; }
     public ReactiveCommand<Unit, Unit> ResetCommand { get; }
 
     /// <summary>
@@ -66,8 +66,6 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         _resolver = resolver;
 
         LoadSelectedNpcCommand = ReactiveCommand.CreateFromTask(LoadSelectedNpcAsync).DisposeWith(_disposables);
-        ReloadCommand = ReactiveCommand.CreateFromTask(ReloadAsync,
-            this.WhenAnyValue(x => x.CurrentNpcFormKey, fk => !fk.IsNull)).DisposeWith(_disposables);
         ResetCommand = ReactiveCommand.Create(ResetSettingsToDefaults).DisposeWith(_disposables);
 
         // When the host UC's GL context is reset (WPF recreated the UC; see
@@ -76,6 +74,93 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         // load so the user sees their NPC instead of an empty viewport — they
         // shouldn't need to click Reload after every tab switch.
         Viewer.GlContextReset += OnViewerGlContextReset;
+
+        // Push saved render-pipeline params into the lib viewer once so the
+        // shared UC_CharacterViewerRenderPanel (bound to Viewer) shows the
+        // user's persisted values from app start, not the lib defaults.
+        SyncSettingsToViewer();
+
+        // Mirror edits back: any WhenAnyValue tick on a render-pipeline
+        // property writes through to _settings.InternalMugshot.* and asks
+        // VM_Settings to throttled-save. Skip(1) so the initial value
+        // emission doesn't spam saves before the user has touched anything.
+        Viewer.WhenAnyValue(x => x.RenderMissingTextureAsWireframe).Skip(1)
+            .Subscribe(b => { _settings.InternalMugshot.RenderMissingTextureAsWireframe = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.EnableToneMapping).Skip(1)
+            .Subscribe(b => { _settings.InternalMugshot.EnableToneMapping = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.EnableShadows).Skip(1)
+            .Subscribe(b => { _settings.InternalMugshot.EnableShadows = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.EnableAmbientOcclusion).Skip(1)
+            .Subscribe(b => { _settings.InternalMugshot.EnableAmbientOcclusion = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.SsaoRadius).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.SsaoRadius = v; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.SsaoBias).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.SsaoBias = v; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.SsaoIntensity).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.SsaoIntensity = v; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.EnableEyeCatchlight).Skip(1)
+            .Subscribe(b => { _settings.InternalMugshot.EnableEyeCatchlight = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.SubsurfaceStrength).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.SubsurfaceStrength = v; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.VignetteRadius).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.VignetteRadius = v; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.VignetteIntensity).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.VignetteIntensity = v; PersistThrottled(); }).DisposeWith(_disposables);
+
+        // RenderMissingTextureAsWireframe is consumed at mesh-upload time, so
+        // the lib raises ReloadRequested when it changes. Re-load the current
+        // NPC so the new wireframe-vs-cull decision applies to already-loaded
+        // shapes. Hosts call their own load path here since the lib doesn't
+        // know how to resolve scopes / mod settings.
+        Viewer.ReloadRequested += OnViewerReloadRequested;
+    }
+
+    /// <summary>Pushes every persisted render-pipeline param from
+    /// <c>_settings.InternalMugshot</c> into <see cref="Viewer"/>. Called once
+    /// at construction (so the shared render panel binds to current values
+    /// from the start) and again from VM_Settings.RefreshInternalFromModel
+    /// after a Reset so the panel updates without reloading the UC.</summary>
+    public void SyncSettingsToViewer()
+    {
+        var c = _settings.InternalMugshot;
+        Viewer.RenderMissingTextureAsWireframe = c.RenderMissingTextureAsWireframe;
+        Viewer.EnableToneMapping = c.EnableToneMapping;
+        Viewer.EnableShadows = c.EnableShadows;
+        Viewer.EnableAmbientOcclusion = c.EnableAmbientOcclusion;
+        Viewer.SsaoRadius = c.SsaoRadius;
+        Viewer.SsaoBias = c.SsaoBias;
+        Viewer.SsaoIntensity = c.SsaoIntensity;
+        Viewer.EnableEyeCatchlight = c.EnableEyeCatchlight;
+        Viewer.SubsurfaceStrength = c.SubsurfaceStrength;
+        Viewer.VignetteRadius = c.VignetteRadius;
+        Viewer.VignetteIntensity = c.VignetteIntensity;
+    }
+
+    /// <summary>Calls VM_Settings.RequestThrottledSave via Splat. Resolved
+    /// lazily because VM_Settings -> VM_InternalMugshotPreview is already a
+    /// dependency edge; resolving the reverse via the container instead of
+    /// a constructor parameter keeps the cycle implicit.</summary>
+    private void PersistThrottled()
+    {
+        var vmSettings = Locator.Current.GetService<VM_Settings>();
+        vmSettings?.RequestThrottledSave();
+    }
+
+    private async void OnViewerReloadRequested()
+    {
+        if (CurrentNpcFormKey.IsNull) return;
+        try
+        {
+            if (_lastExplicitModSetting != null)
+                await LoadAsync(CurrentNpcFormKey, _lastExplicitModSetting).ConfigureAwait(false);
+            else
+                await LoadAsync(CurrentNpcFormKey).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "VM_InternalMugshotPreview: re-load after ReloadRequested failed: " + ex.Message);
+        }
     }
 
     private async void OnViewerGlContextReset()
@@ -113,12 +198,6 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             return;
         }
         await LoadAsync(fk);
-    }
-
-    private async Task ReloadAsync()
-    {
-        if (CurrentNpcFormKey.IsNull) return;
-        await LoadAsync(CurrentNpcFormKey);
     }
 
     public async Task LoadAsync(FormKey formKey)
@@ -212,19 +291,13 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     /// in sync.</summary>
     private void ApplyAdvancedResolutionToggles()
     {
+        // Asset-resolution toggles: still pushed at LoadAsync entry because
+        // they only matter when the resolver runs. Render-pipeline params
+        // are kept in sync continuously by the bridge subscriptions in the
+        // constructor (lib UC -> Viewer -> _settings.InternalMugshot.*),
+        // so they don't need to be re-pushed here.
         Viewer.VanillaLooseOverridesBsa = _settings.InternalMugshot.VanillaLooseOverridesBsa;
         Viewer.VanillaLooseOverridesModLoose = _settings.InternalMugshot.VanillaLooseOverridesModLoose;
-        Viewer.RenderMissingTextureAsWireframe = _settings.InternalMugshot.RenderMissingTextureAsWireframe;
-        Viewer.EnableToneMapping = _settings.InternalMugshot.EnableToneMapping;
-        Viewer.EnableShadows = _settings.InternalMugshot.EnableShadows;
-        Viewer.EnableAmbientOcclusion = _settings.InternalMugshot.EnableAmbientOcclusion;
-        Viewer.SsaoRadius = _settings.InternalMugshot.SsaoRadius;
-        Viewer.SsaoBias = _settings.InternalMugshot.SsaoBias;
-        Viewer.SsaoIntensity = _settings.InternalMugshot.SsaoIntensity;
-        Viewer.EnableEyeCatchlight = _settings.InternalMugshot.EnableEyeCatchlight;
-        Viewer.SubsurfaceStrength = _settings.InternalMugshot.SubsurfaceStrength;
-        Viewer.VignetteRadius = _settings.InternalMugshot.VignetteRadius;
-        Viewer.VignetteIntensity = _settings.InternalMugshot.VignetteIntensity;
     }
 
     private void ResetSettingsToDefaults()
@@ -236,7 +309,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         defaults.UserLightingLayouts = current.UserLightingLayouts;
         defaults.UserLightingColorSchemes = current.UserLightingColorSchemes;
         _settings.InternalMugshot = defaults;
-        StatusText = "Reset to defaults — toggle the panel or reload the preview to refresh.";
+        StatusText = "Reset to defaults.";
         // The VM_Settings flat properties drive the underlying model; we also
         // need to push these defaults back into them for the UI to reflect.
         // The host VM_Settings owns those properties, so it watches a reset signal.

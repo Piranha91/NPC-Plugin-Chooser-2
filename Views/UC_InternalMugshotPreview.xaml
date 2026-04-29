@@ -16,17 +16,20 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>     <!-- Toolbar -->
             <RowDefinition Height="Auto"/>     <!-- Lighting panel (shared with SynthEBD) -->
+            <RowDefinition Height="Auto"/>     <!-- Render panel (shared with SynthEBD) -->
             <RowDefinition Height="*"/>        <!-- Viewport -->
             <RowDefinition Height="Auto"/>     <!-- Status -->
         </Grid.RowDefinitions>
 
-        <!-- Toolbar — Load/Reload/Reset only meaningful in the Settings panel.
+        <!-- Toolbar - Load/Reset only meaningful in the Settings panel.
              The per-tile 3D preview popup hides the whole row via the UC's
-             ShowSettingsControls property (set false from FullScreen3DPreviewView). -->
+             ShowSettingsControls property (set false from FullScreen3DPreviewView).
+             Reload was removed in 2.5.16 since render-pipeline edits in the
+             render panel below now apply on the next frame, and the wireframe-
+             missing-texture toggle auto-fires a re-load via ReloadRequested. -->
         <Border x:Name="SettingsToolbar" Grid.Row="0" Padding="6" BorderBrush="Gray" BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal">
-                <Button Content="Load Selected NPC" Command="{Binding LoadSelectedNpcCommand}" Padding="6,2" Margin="0,0,6,0"/>
-                <Button Content="Reload" Command="{Binding ReloadCommand}" Padding="6,2" Margin="0,0,12,0"/>
+                <Button Content="Load Selected NPC" Command="{Binding LoadSelectedNpcCommand}" Padding="6,2" Margin="0,0,12,0"/>
 
                 <Button Content="Reset" Command="{Binding ResetCommand}" Padding="6,2" Margin="0,0,6,0"
                         ToolTip="Restore Internal-renderer settings to defaults."/>
@@ -37,12 +40,22 @@
              layout / color scheme presets, ambient + Key/Fill/Rim toggles,
              Show-Lights gizmo gate, and per-light editor (intensity / azimuth /
              elevation / color picker). Click an arrow gizmo in the viewport to
-             open that light's editor — handler in code-behind. -->
+             open that light's editor - handler in code-behind. -->
         <cvrv:UC_CharacterViewerLightingPanel Grid.Row="1"
                                               DataContext="{Binding Viewer}"/>
 
+        <!-- Shared render panel (CharacterViewer.Rendering 2.5.16+):
+             tone-mapping, shadows, SSAO + tunables, eye catch-light, SSS
+             strength, vignette radius / intensity, missing-texture wireframe
+             fallback. Edits two-way-bind to VM_CharacterViewer; the existing
+             WhenAnyValue subscriptions push to GlRenderer on the next frame.
+             VM_InternalMugshotPreview's bridge mirrors edits back to
+             _settings.InternalMugshot.* with throttled save. -->
+        <cvrv:UC_CharacterViewerRenderPanel Grid.Row="2"
+                                            DataContext="{Binding Viewer}"/>
+
         <!-- Viewport with yellow crop overlay -->
-        <Grid Grid.Row="2" x:Name="ViewportRoot" ClipToBounds="True" Background="#222">
+        <Grid Grid.Row="3" x:Name="ViewportRoot" ClipToBounds="True" Background="#222">
             <glWpf:GLWpfControl x:Name="GlControl" Render="GlControl_OnRender"/>
 
             <!-- Yellow crop rectangle: positioned by code-behind -->
@@ -63,7 +76,7 @@
         </Grid>
 
         <!-- Status -->
-        <Border Grid.Row="3" Padding="6,4" BorderBrush="Gray" BorderThickness="0,1,0,0">
+        <Border Grid.Row="4" Padding="6,4" BorderBrush="Gray" BorderThickness="0,1,0,0">
             <TextBlock Text="{Binding StatusText}" Opacity="0.8" TextTrimming="CharacterEllipsis"/>
         </Border>
     </Grid>

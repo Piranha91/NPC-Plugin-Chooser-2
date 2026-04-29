@@ -90,17 +90,15 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public int InternalOutputHeight { get; set; }
     [Reactive] public bool InternalVanillaLooseOverridesBsa { get; set; }
     [Reactive] public bool InternalVanillaLooseOverridesModLoose { get; set; }
-    [Reactive] public bool InternalRenderMissingTextureAsWireframe { get; set; }
-    [Reactive] public bool InternalEnableToneMapping { get; set; }
-    [Reactive] public bool InternalEnableShadows { get; set; }
-    [Reactive] public bool InternalEnableAmbientOcclusion { get; set; }
-    [Reactive] public float InternalSsaoRadius { get; set; }
-    [Reactive] public float InternalSsaoBias { get; set; }
-    [Reactive] public float InternalSsaoIntensity { get; set; }
-    [Reactive] public bool InternalEnableEyeCatchlight { get; set; }
-    [Reactive] public float InternalSubsurfaceStrength { get; set; }
-    [Reactive] public float InternalVignetteRadius { get; set; }
-    [Reactive] public float InternalVignetteIntensity { get; set; }
+
+    // Render-pipeline params (RenderMissingTextureAsWireframe, EnableToneMapping,
+    // EnableShadows, EnableAmbientOcclusion + SSAO tunables, EnableEyeCatchlight,
+    // SubsurfaceStrength, VignetteRadius, VignetteIntensity) used to be flat
+    // [Reactive] props on this VM. They're now bound directly to VM_CharacterViewer
+    // via the lib's UC_CharacterViewerRenderPanel embedded in the live-preview
+    // toolbar - VM_InternalMugshotPreview owns the persistence bridge. The model
+    // fields on InternalMugshotSettings stay (consumed by the staleness hash and
+    // the offscreen render request) but the host-side VM mirrors are gone.
 
     /// <summary>Live preview view-model for the Internal renderer's mugshot
     /// preview UC. Lazily resolved from the Splat container — the GLWpfControl
@@ -336,17 +334,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalOutputHeight = _model.InternalMugshot.OutputHeight;
         InternalVanillaLooseOverridesBsa = _model.InternalMugshot.VanillaLooseOverridesBsa;
         InternalVanillaLooseOverridesModLoose = _model.InternalMugshot.VanillaLooseOverridesModLoose;
-        InternalRenderMissingTextureAsWireframe = _model.InternalMugshot.RenderMissingTextureAsWireframe;
-        InternalEnableToneMapping = _model.InternalMugshot.EnableToneMapping;
-        InternalEnableShadows = _model.InternalMugshot.EnableShadows;
-        InternalEnableAmbientOcclusion = _model.InternalMugshot.EnableAmbientOcclusion;
-        InternalSsaoRadius = _model.InternalMugshot.SsaoRadius;
-        InternalSsaoBias = _model.InternalMugshot.SsaoBias;
-        InternalSsaoIntensity = _model.InternalMugshot.SsaoIntensity;
-        InternalEnableEyeCatchlight = _model.InternalMugshot.EnableEyeCatchlight;
-        InternalSubsurfaceStrength = _model.InternalMugshot.SubsurfaceStrength;
-        InternalVignetteRadius = _model.InternalMugshot.VignetteRadius;
-        InternalVignetteIntensity = _model.InternalMugshot.VignetteIntensity;
+        // Render-pipeline params are owned by VM_InternalMugshotPreview now -
+        // it pushes saved values into VM_CharacterViewer at construction and
+        // mirrors edits back to _model.InternalMugshot.* with throttled save.
 
         this.WhenAnyValue(x => x.SelectedRenderer)
             .Select(r => r == MugshotRenderer.Internal)
@@ -584,28 +574,6 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => { _model.InternalMugshot.VanillaLooseOverridesBsa = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalVanillaLooseOverridesModLoose).Skip(1)
             .Subscribe(b => { _model.InternalMugshot.VanillaLooseOverridesModLoose = b; RequestThrottledSave(); }).DisposeWith(_disposables);
-        this.WhenAnyValue(x => x.InternalRenderMissingTextureAsWireframe).Skip(1)
-            .Subscribe(b => { _model.InternalMugshot.RenderMissingTextureAsWireframe = b; RequestThrottledSave(); }).DisposeWith(_disposables);
-        this.WhenAnyValue(x => x.InternalEnableToneMapping).Skip(1)
-            .Subscribe(b => { _model.InternalMugshot.EnableToneMapping = b; RequestThrottledSave(); }).DisposeWith(_disposables);
-        this.WhenAnyValue(x => x.InternalEnableShadows).Skip(1)
-            .Subscribe(b => { _model.InternalMugshot.EnableShadows = b; RequestThrottledSave(); }).DisposeWith(_disposables);
-        this.WhenAnyValue(x => x.InternalEnableAmbientOcclusion).Skip(1)
-            .Subscribe(b => { _model.InternalMugshot.EnableAmbientOcclusion = b; RequestThrottledSave(); }).DisposeWith(_disposables);
-        this.WhenAnyValue(x => x.InternalSsaoRadius).Skip(1)
-            .Subscribe(v => { _model.InternalMugshot.SsaoRadius = v; RequestThrottledSave(); }).DisposeWith(_disposables);
-        this.WhenAnyValue(x => x.InternalSsaoBias).Skip(1)
-            .Subscribe(v => { _model.InternalMugshot.SsaoBias = v; RequestThrottledSave(); }).DisposeWith(_disposables);
-        this.WhenAnyValue(x => x.InternalSsaoIntensity).Skip(1)
-            .Subscribe(v => { _model.InternalMugshot.SsaoIntensity = v; RequestThrottledSave(); }).DisposeWith(_disposables);
-        this.WhenAnyValue(x => x.InternalEnableEyeCatchlight).Skip(1)
-            .Subscribe(b => { _model.InternalMugshot.EnableEyeCatchlight = b; RequestThrottledSave(); }).DisposeWith(_disposables);
-        this.WhenAnyValue(x => x.InternalSubsurfaceStrength).Skip(1)
-            .Subscribe(v => { _model.InternalMugshot.SubsurfaceStrength = v; RequestThrottledSave(); }).DisposeWith(_disposables);
-        this.WhenAnyValue(x => x.InternalVignetteRadius).Skip(1)
-            .Subscribe(v => { _model.InternalMugshot.VignetteRadius = v; RequestThrottledSave(); }).DisposeWith(_disposables);
-        this.WhenAnyValue(x => x.InternalVignetteIntensity).Skip(1)
-            .Subscribe(v => { _model.InternalMugshot.VignetteIntensity = v; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
@@ -1254,17 +1222,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalOutputHeight = c.OutputHeight;
         InternalVanillaLooseOverridesBsa = c.VanillaLooseOverridesBsa;
         InternalVanillaLooseOverridesModLoose = c.VanillaLooseOverridesModLoose;
-        InternalRenderMissingTextureAsWireframe = c.RenderMissingTextureAsWireframe;
-        InternalEnableToneMapping = c.EnableToneMapping;
-        InternalEnableShadows = c.EnableShadows;
-        InternalEnableAmbientOcclusion = c.EnableAmbientOcclusion;
-        InternalSsaoRadius = c.SsaoRadius;
-        InternalSsaoBias = c.SsaoBias;
-        InternalSsaoIntensity = c.SsaoIntensity;
-        InternalEnableEyeCatchlight = c.EnableEyeCatchlight;
-        InternalSubsurfaceStrength = c.SubsurfaceStrength;
-        InternalVignetteRadius = c.VignetteRadius;
-        InternalVignetteIntensity = c.VignetteIntensity;
+        // Render-pipeline params re-pushed into VM_CharacterViewer by
+        // VM_InternalMugshotPreview.SyncSettingsToViewer (called on Reset).
+        InternalMugshotPreviewVM?.SyncSettingsToViewer();
     }
 
     public void SaveSettings()
