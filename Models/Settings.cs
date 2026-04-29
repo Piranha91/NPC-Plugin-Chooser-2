@@ -50,9 +50,15 @@ public class Settings
     /// matching their stamped hash. Fresh installs get 2.0 (a noticeable
     /// boost matching the pronounced SSS in professional portrait
     /// reference).</item>
+    /// <item>6 → 7: 2.5.15 made the tone-mapping vignette tunable via
+    /// <c>InternalMugshot.VignetteRadius</c> + <c>VignetteIntensity</c>.
+    /// Migration forces VignetteIntensity to 0 on upgrade so the
+    /// vignette has no visible effect on existing v6 tiles when they
+    /// re-render. Fresh installs default to Radius 0.7 / Intensity 0.3
+    /// (approximates the pre-2.5.15 hardcoded vignette visual).</item>
     /// </list>
     /// </para></summary>
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 7;
     public int SchemaVersion { get; set; } = -1;
     // Mod Environment
     public string ModsFolder { get; set; } = string.Empty;
@@ -411,6 +417,20 @@ public sealed class InternalMugshotSettings
     // boosts the warm-flesh look toward the more pronounced SSS in
     // professional portrait reference.
     public float SubsurfaceStrength { get; set; } = 2.0f;
+
+    // Vignette params (2.5.15+) for the tone-mapping path's subtle
+    // radial darkening. Folded under EnableToneMapping (no separate
+    // toggle), so toggling tone-mapping off bypasses the vignette
+    // regardless of these values. Intensity = 0 turns the vignette off
+    // even when tone-mapping is on.
+    //   Radius (NDC, ~0..1.4): pixels within this distance of screen
+    //     center are unaffected; falloff smoothsteps from here out to
+    //     the corner. Lower = vignette closes in toward the center.
+    //   Intensity (0..1): how dark the corner pixels go. 0 = off,
+    //     1 = corners to black. Pre-2.5.15 hardcoded behavior is
+    //     approximately Radius 0.7 / Intensity 0.3.
+    public float VignetteRadius { get; set; } = 0.7f;
+    public float VignetteIntensity { get; set; } = 0.3f;
 
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.

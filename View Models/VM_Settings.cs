@@ -99,6 +99,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public float InternalSsaoIntensity { get; set; }
     [Reactive] public bool InternalEnableEyeCatchlight { get; set; }
     [Reactive] public float InternalSubsurfaceStrength { get; set; }
+    [Reactive] public float InternalVignetteRadius { get; set; }
+    [Reactive] public float InternalVignetteIntensity { get; set; }
 
     /// <summary>Live preview view-model for the Internal renderer's mugshot
     /// preview UC. Lazily resolved from the Splat container — the GLWpfControl
@@ -343,6 +345,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalSsaoIntensity = _model.InternalMugshot.SsaoIntensity;
         InternalEnableEyeCatchlight = _model.InternalMugshot.EnableEyeCatchlight;
         InternalSubsurfaceStrength = _model.InternalMugshot.SubsurfaceStrength;
+        InternalVignetteRadius = _model.InternalMugshot.VignetteRadius;
+        InternalVignetteIntensity = _model.InternalMugshot.VignetteIntensity;
 
         this.WhenAnyValue(x => x.SelectedRenderer)
             .Select(r => r == MugshotRenderer.Internal)
@@ -598,6 +602,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => { _model.InternalMugshot.EnableEyeCatchlight = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalSubsurfaceStrength).Skip(1)
             .Subscribe(v => { _model.InternalMugshot.SubsurfaceStrength = v; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalVignetteRadius).Skip(1)
+            .Subscribe(v => { _model.InternalMugshot.VignetteRadius = v; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalVignetteIntensity).Skip(1)
+            .Subscribe(v => { _model.InternalMugshot.VignetteIntensity = v; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
@@ -1196,6 +1204,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             // raising the slider above 0.
             loadedSettings.InternalMugshot.SubsurfaceStrength = 0f;
         }
+        if (loadedSettings.SchemaVersion < 7)
+        {
+            // 2.5.15 made the tone-mapping vignette tunable. Force
+            // intensity to 0 on upgrade so the vignette has no visible
+            // effect on existing tiles when they re-render. User opts
+            // into the vignette by raising intensity in the settings UI.
+            loadedSettings.InternalMugshot.VignetteIntensity = 0f;
+        }
         loadedSettings.SchemaVersion = Settings.CurrentSchemaVersion;
 
         return loadedSettings;
@@ -1247,6 +1263,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalSsaoIntensity = c.SsaoIntensity;
         InternalEnableEyeCatchlight = c.EnableEyeCatchlight;
         InternalSubsurfaceStrength = c.SubsurfaceStrength;
+        InternalVignetteRadius = c.VignetteRadius;
+        InternalVignetteIntensity = c.VignetteIntensity;
     }
 
     public void SaveSettings()

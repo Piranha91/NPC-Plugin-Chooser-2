@@ -223,6 +223,8 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Viewer.SsaoIntensity = _settings.InternalMugshot.SsaoIntensity;
         Viewer.EnableEyeCatchlight = _settings.InternalMugshot.EnableEyeCatchlight;
         Viewer.SubsurfaceStrength = _settings.InternalMugshot.SubsurfaceStrength;
+        Viewer.VignetteRadius = _settings.InternalMugshot.VignetteRadius;
+        Viewer.VignetteIntensity = _settings.InternalMugshot.VignetteIntensity;
     }
 
     private void ResetSettingsToDefaults()

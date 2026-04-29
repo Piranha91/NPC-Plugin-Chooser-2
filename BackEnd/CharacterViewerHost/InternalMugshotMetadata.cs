@@ -60,9 +60,15 @@ public static class InternalMugshotMetadata
     /// no separate hash entry for fresnel).</item>
     /// <item>6: 2.5.14 corrected SSS math + added
     /// <c>SubsurfaceStrength</c> multiplier.</item>
+    /// <item>7: 2.5.15 made the tone-mapping vignette tunable via
+    /// <c>VignetteRadius</c> + <c>VignetteIntensity</c>. Both are
+    /// included in the v7 hash so a user changing either flags the
+    /// affected tiles stale, but the staleness checker continues to
+    /// skip these fields when comparing pre-v7 PNGs (those were
+    /// stamped under the hardcoded vignette).</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 6;
+    public const int PipelineSchemaVersion = 7;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -106,6 +112,8 @@ public static class InternalMugshotMetadata
             ["ssao_intensity"] = cfg.SsaoIntensity,
             ["enable_eye_catchlight"] = cfg.EnableEyeCatchlight,
             ["subsurface_strength"] = cfg.SubsurfaceStrength,
+            ["vignette_radius"] = cfg.VignetteRadius,
+            ["vignette_intensity"] = cfg.VignetteIntensity,
         };
 
         if (cfg.CameraMode == InternalMugshotCameraMode.Manual)
@@ -263,6 +271,17 @@ public static class InternalMugshotMetadata
         if (schemaVersion >= 6)
         {
             sb.Append('|').Append(cfg.SubsurfaceStrength.ToString("R", inv));
+        }
+
+        // === schema v7 fields (2.5.15: tunable vignette) ===
+        // Both radius + intensity contribute to the final pixel values
+        // when EnableToneMapping is on, so both must hash. Pre-v7 PNGs
+        // are compared at schemaVersion=6 (no entry here), preserving
+        // their stamped hash under the legacy hardcoded vignette.
+        if (schemaVersion >= 7)
+        {
+            sb.Append('|').Append(cfg.VignetteRadius.ToString("R", inv));
+            sb.Append('|').Append(cfg.VignetteIntensity.ToString("R", inv));
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

@@ -422,6 +422,27 @@
                                            VerticalAlignment="Center" FontStyle="Italic"/>
                             </StackPanel>
 
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <TextBlock Text="Vignette radius:" Width="110" VerticalAlignment="Center"/>
+                                <TextBox Text="{Binding InternalVignetteRadius, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="60"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"
+                                         ToolTip="Distance from screen center (in NDC units, 0 = center, ~1.4 = corner) where the vignette darkening starts. Pixels closer to the center than this radius are unaffected; falloff smoothsteps from this radius out to the corner. Lower = vignette closes in toward the center; higher = vignette stays wide. Only takes effect when tone-mapping is on (the vignette is folded into that finishing-stage pipeline). Default 0.7."/>
+                                <TextBlock Text="(0 - 1.4, smaller = tighter)" Margin="6,0,0,0" Foreground="Gray"
+                                           VerticalAlignment="Center" FontStyle="Italic"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <TextBlock Text="Vignette intensity:" Width="110" VerticalAlignment="Center"/>
+                                <TextBox Text="{Binding InternalVignetteIntensity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="60"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"
+                                         ToolTip="How dark the corner pixels go relative to the center. 0 = vignette off (no darkening anywhere), 1 = corners go fully to black. The pre-2.5.15 hardcoded vignette was approximately Radius 0.7 / Intensity 0.3. Only takes effect when tone-mapping is on."/>
+                                <TextBlock Text="(0 = off, 1 = corners to black)" Margin="6,0,0,0" Foreground="Gray"
+                                           VerticalAlignment="Center" FontStyle="Italic"/>
+                            </StackPanel>
+
                             <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
                                                               Height="540" Margin="0,12,0,0"/>
                         </StackPanel>
