@@ -452,10 +452,17 @@ public partial class UC_InternalMugshotPreview : UserControl
 
         // Auto mode: re-fit distance for the new camera angle so the
         // character stays inside the framing band as the user rotates.
-        // Throttled — see _lastAutoRefit comment for rationale. The same
+        // Throttled - see _lastAutoRefit comment for rationale. The same
         // throttle gate also drives the Yaw/Pitch textbox live-update so
         // the textbox redraw rate matches the refit rate.
-        if (!IsFullBodyOrbitMode
+        //
+        // Gate on _isAutoDragging so plain cursor hover (no button held)
+        // doesn't fire the writeback. Without this gate, hovering the
+        // viewport while the scene was still mid-load would push
+        // Camera.Elevation (default 15) back into cfg.Pitch, clobbering
+        // the user's saved value before SceneCommitted ran.
+        if (_isAutoDragging
+            && !IsFullBodyOrbitMode
             && _settings?.InternalMugshot.CameraMode == InternalMugshotCameraMode.Auto)
         {
             var now = DateTime.UtcNow;
@@ -474,12 +481,18 @@ public partial class UC_InternalMugshotPreview : UserControl
         if (_viewer == null) return;
         _viewer.Camera.OnMouseUp();
         GlControl.ReleaseMouseCapture();
+        // Snapshot before clearing so the post-drag writeback below can
+        // distinguish "real drag just ended" from "non-drag click ended"
+        // (e.g. a light-arrow gizmo pick). Without this gate the writeback
+        // fires for every click and clobbers cfg.Yaw/Pitch with the
+        // current Camera.Az/El even when the user never orbited.
+        bool wasDragging = _isAutoDragging;
         _isAutoDragging = false;
 
         if (_settings == null || IsFullBodyOrbitMode) return;
 
         var cfg = _settings.InternalMugshot;
-        if (cfg.CameraMode == InternalMugshotCameraMode.Auto)
+        if (wasDragging && cfg.CameraMode == InternalMugshotCameraMode.Auto)
         {
             // Final unthrottled refit so the resting state matches exactly
             // where the user released the mouse, then push the new
@@ -490,7 +503,7 @@ public partial class UC_InternalMugshotPreview : UserControl
             _vm?.RaiseAutoFramingYawPitchDragged(
                 _viewer.Camera.Azimuth, _viewer.Camera.Elevation);
         }
-        else
+        else if (cfg.CameraMode == InternalMugshotCameraMode.Manual)
         {
             // Manual: persist the full orbit state — distance, az/el, and the
             // panned target — so the offscreen renderer reads the same values
