@@ -217,6 +217,10 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Viewer.RenderMissingTextureAsWireframe = _settings.InternalMugshot.RenderMissingTextureAsWireframe;
         Viewer.EnableToneMapping = _settings.InternalMugshot.EnableToneMapping;
         Viewer.EnableShadows = _settings.InternalMugshot.EnableShadows;
+        Viewer.EnableAmbientOcclusion = _settings.InternalMugshot.EnableAmbientOcclusion;
+        Viewer.SsaoRadius = _settings.InternalMugshot.SsaoRadius;
+        Viewer.SsaoBias = _settings.InternalMugshot.SsaoBias;
+        Viewer.SsaoIntensity = _settings.InternalMugshot.SsaoIntensity;
     }
 
     private void ResetSettingsToDefaults()

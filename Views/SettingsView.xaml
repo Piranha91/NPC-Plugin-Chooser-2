@@ -366,6 +366,45 @@
                                       IsChecked="{Binding InternalEnableShadows, Mode=TwoWay}"
                                       Margin="0,2,0,0"
                                       ToolTip="Renders a shadow-map pass from the key directional light's POV and samples it with PCF in the main fragment shader, so the brow ridge casts a shadow on the eye sockets, the nose casts on the cheek, and hair casts on the forehead. Single-largest portrait-quality jump after tone-mapping. Off: every directional light is treated as occlusion-free (matches pre-2.5.10 look)."/>
+                            <CheckBox Content="Screen-space ambient occlusion"
+                                      IsChecked="{Binding InternalEnableAmbientOcclusion, Mode=TwoWay}"
+                                      Margin="0,2,0,0"
+                                      ToolTip="Adds soft shadowing in concave crevices (eye sockets, nostrils, lip line, ear creases) by sampling depth in a hemisphere around each fragment in screen space. Smaller individual visual jump than shadow maps but fills in the micro-detail darkening that real photography has plenty of and a flat render lacks. Off: no occlusion-based crevice darkening (matches pre-2.5.11 look)."/>
+
+                            <!-- SSAO tunables. Visible whenever SSAO is on; greyed out when off. -->
+                            <StackPanel Orientation="Horizontal" Margin="20,4,0,0"
+                                        IsEnabled="{Binding InternalEnableAmbientOcclusion}">
+                                <TextBlock Text="Radius:" Width="70" VerticalAlignment="Center"/>
+                                <TextBox Text="{Binding InternalSsaoRadius, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="60"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"
+                                         ToolTip="Sample radius in world units. Larger = softer / broader AO; smaller = tight crevice-only AO. Skyrim NPC heads are ~22 units tall, so values 2-8 work well. Default 4."/>
+                                <TextBlock Text="(world units, e.g. 2-8)" Margin="6,0,0,0" Foreground="Gray"
+                                           VerticalAlignment="Center" FontStyle="Italic"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="20,4,0,0"
+                                        IsEnabled="{Binding InternalEnableAmbientOcclusion}">
+                                <TextBlock Text="Bias:" Width="70" VerticalAlignment="Center"/>
+                                <TextBox Text="{Binding InternalSsaoBias, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="60"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"
+                                         ToolTip="Minimum depth difference (world units) before a sample counts as occluded. Higher reduces self-shadowing on flat surfaces; too high erases real AO. Default 0.05."/>
+                                <TextBlock Text="(world units, e.g. 0.01-0.2)" Margin="6,0,0,0" Foreground="Gray"
+                                           VerticalAlignment="Center" FontStyle="Italic"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="20,4,0,0"
+                                        IsEnabled="{Binding InternalEnableAmbientOcclusion}">
+                                <TextBlock Text="Intensity:" Width="70" VerticalAlignment="Center"/>
+                                <TextBox Text="{Binding InternalSsaoIntensity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="60"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"
+                                         ToolTip="Power-curve exponent. Higher = harder darkening in deep crevices, more subtle elsewhere; lower = uniformly darker AO. Default 1.5."/>
+                                <TextBlock Text="(power curve, e.g. 0.5-4)" Margin="6,0,0,0" Foreground="Gray"
+                                           VerticalAlignment="Center" FontStyle="Italic"/>
+                            </StackPanel>
 
                             <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
                                                               Height="540" Margin="0,12,0,0"/>

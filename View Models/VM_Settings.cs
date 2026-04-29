@@ -93,6 +93,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool InternalRenderMissingTextureAsWireframe { get; set; }
     [Reactive] public bool InternalEnableToneMapping { get; set; }
     [Reactive] public bool InternalEnableShadows { get; set; }
+    [Reactive] public bool InternalEnableAmbientOcclusion { get; set; }
+    [Reactive] public float InternalSsaoRadius { get; set; }
+    [Reactive] public float InternalSsaoBias { get; set; }
+    [Reactive] public float InternalSsaoIntensity { get; set; }
 
     /// <summary>Live preview view-model for the Internal renderer's mugshot
     /// preview UC. Lazily resolved from the Splat container — the GLWpfControl
@@ -331,6 +335,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalRenderMissingTextureAsWireframe = _model.InternalMugshot.RenderMissingTextureAsWireframe;
         InternalEnableToneMapping = _model.InternalMugshot.EnableToneMapping;
         InternalEnableShadows = _model.InternalMugshot.EnableShadows;
+        InternalEnableAmbientOcclusion = _model.InternalMugshot.EnableAmbientOcclusion;
+        InternalSsaoRadius = _model.InternalMugshot.SsaoRadius;
+        InternalSsaoBias = _model.InternalMugshot.SsaoBias;
+        InternalSsaoIntensity = _model.InternalMugshot.SsaoIntensity;
 
         this.WhenAnyValue(x => x.SelectedRenderer)
             .Select(r => r == MugshotRenderer.Internal)
@@ -574,6 +582,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => { _model.InternalMugshot.EnableToneMapping = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalEnableShadows).Skip(1)
             .Subscribe(b => { _model.InternalMugshot.EnableShadows = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalEnableAmbientOcclusion).Skip(1)
+            .Subscribe(b => { _model.InternalMugshot.EnableAmbientOcclusion = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalSsaoRadius).Skip(1)
+            .Subscribe(v => { _model.InternalMugshot.SsaoRadius = v; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalSsaoBias).Skip(1)
+            .Subscribe(v => { _model.InternalMugshot.SsaoBias = v; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalSsaoIntensity).Skip(1)
+            .Subscribe(v => { _model.InternalMugshot.SsaoIntensity = v; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
@@ -1145,6 +1161,16 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             // upgrades so existing autogen tiles aren't invalidated.
             loadedSettings.InternalMugshot.EnableShadows = false;
         }
+        if (loadedSettings.SchemaVersion < 3)
+        {
+            // 2.5.11 introduced screen-space ambient occlusion behind
+            // EnableAmbientOcclusion. Same upgrade-preserves-old-look
+            // reasoning as the prior steps.
+            loadedSettings.InternalMugshot.EnableAmbientOcclusion = false;
+        }
+        // 3 -> 4: SSAO radius/bias/intensity exposed via UI. No
+        // migration step - the float defaults match the hardcoded
+        // values 2.5.11 used, so existing v3 PNGs stay valid.
         loadedSettings.SchemaVersion = Settings.CurrentSchemaVersion;
 
         return loadedSettings;
@@ -1190,6 +1216,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalRenderMissingTextureAsWireframe = c.RenderMissingTextureAsWireframe;
         InternalEnableToneMapping = c.EnableToneMapping;
         InternalEnableShadows = c.EnableShadows;
+        InternalEnableAmbientOcclusion = c.EnableAmbientOcclusion;
+        InternalSsaoRadius = c.SsaoRadius;
+        InternalSsaoBias = c.SsaoBias;
+        InternalSsaoIntensity = c.SsaoIntensity;
     }
 
     public void SaveSettings()

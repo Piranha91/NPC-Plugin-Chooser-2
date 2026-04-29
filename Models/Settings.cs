@@ -32,9 +32,16 @@ public class Settings
     /// the regenerated output.</item>
     /// <item>1 → 2: 2.5.10 added <c>InternalMugshot.EnableShadows</c>.
     /// Migration sets it to <c>false</c> for the same reason.</item>
+    /// <item>2 → 3: 2.5.11 added <c>InternalMugshot.EnableAmbientOcclusion</c>.
+    /// Migration sets it to <c>false</c> for the same reason.</item>
+    /// <item>3 → 4: 2.5.12 added <c>InternalMugshot.SsaoRadius/Bias/Intensity</c>.
+    /// No migration needed - the C# defaults match the hardcoded values
+    /// 2.5.11 used, so v3-stamped tiles validate against v3 hash (which
+    /// doesn't include these fields) regardless of what the user picks
+    /// from the new UI sliders.</item>
     /// </list>
     /// </para></summary>
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 4;
     public int SchemaVersion { get; set; } = -1;
     // Mod Environment
     public string ModsFolder { get; set; } = string.Empty;
@@ -347,6 +354,34 @@ public sealed class InternalMugshotSettings
     // hair onto the face. Single-largest portrait-quality jump after
     // tone-mapping.
     public bool EnableShadows { get; set; } = true;
+
+    // Screen-space ambient occlusion toggle (2.5.11+). Adds soft shadowing
+    // in concave crevices (eye sockets, nostrils, lip line, ear creases)
+    // by sampling depth in a hemisphere around each fragment. Smaller
+    // visual impact than shadow maps but fills in micro-detail darkening
+    // that real photography has plenty of and a flat render lacks.
+    public bool EnableAmbientOcclusion { get; set; } = true;
+
+    // SSAO tunables (2.5.12+). All three only matter when
+    // EnableAmbientOcclusion is on. Defaults match the hardcoded
+    // values that shipped in 2.5.11; existing v3-stamped tiles
+    // (which baked these defaults implicitly) stay valid because the
+    // schema-versioned hash for v3 doesn't include these fields.
+    //
+    // - Radius: how far away (world units) an occluder can be and
+    //   still contribute to the sample. Larger = softer, broader
+    //   AO; smaller = tight crevice-only AO. Skyrim NPC heads are
+    //   ~22 units tall, so values ~2-8 are typical.
+    // - Bias: minimum depth difference (world units) before a sample
+    //   counts as occluded. Higher values reduce self-shadowing
+    //   artifacts on flat surfaces; too high erases real AO.
+    // - Intensity: power-curve exponent on the final occlusion
+    //   factor. Higher = harder darkening in deep crevices, more
+    //   subtle elsewhere; lower = uniformly darker AO. Typical
+    //   range 0.5-4.0.
+    public float SsaoRadius { get; set; } = 4.0f;
+    public float SsaoBias { get; set; } = 0.05f;
+    public float SsaoIntensity { get; set; } = 1.5f;
 
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.

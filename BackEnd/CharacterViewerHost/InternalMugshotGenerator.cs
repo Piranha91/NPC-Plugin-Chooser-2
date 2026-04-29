@@ -130,6 +130,10 @@ public sealed class InternalMugshotGenerator
                 RenderMissingTextureAsWireframe = cfg.RenderMissingTextureAsWireframe,
                 EnableToneMapping = cfg.EnableToneMapping,
                 EnableShadows = cfg.EnableShadows,
+                EnableAmbientOcclusion = cfg.EnableAmbientOcclusion,
+                SsaoRadius = cfg.SsaoRadius,
+                SsaoBias = cfg.SsaoBias,
+                SsaoIntensity = cfg.SsaoIntensity,
             };
 
             long preRender = sw.ElapsedMilliseconds;
