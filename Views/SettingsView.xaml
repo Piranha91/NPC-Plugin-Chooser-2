@@ -411,6 +411,17 @@
                                       Margin="0,6,0,0"
                                       ToolTip="Adds a tight, bright specular spot from the key light to eye shapes - the small reflection that makes eyes look alive in real portraits. Layered on top of the eye's regular Blinn-Phong specular so material settings still drive the broad highlight; this only adds the small bright catch-light dot. Off: eyes use only their normal specular (matches pre-2.5.13 look)."/>
 
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <TextBlock Text="SSS strength:" Width="90" VerticalAlignment="Center"/>
+                                <TextBox Text="{Binding InternalSubsurfaceStrength, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="60"
+                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                         DataObject.Pasting="FloatTextBox_Pasting"
+                                         ToolTip="Subsurface scattering strength multiplier. 0 disables SSS (matches pre-2.5.14 look); 1.0 is honest SSS at the source NIF rolloff values; 1.5-2.0 boosts toward the more pronounced warm-flesh look in professional portrait reference. Real skin has visible SSS in cheeks, ears, nose tip, and lit edges of thin features - turning this above 1.0 brings that out."/>
+                                <TextBlock Text="(0 = off, 1 = honest, 1.5-2 = portrait look)" Margin="6,0,0,0" Foreground="Gray"
+                                           VerticalAlignment="Center" FontStyle="Italic"/>
+                            </StackPanel>
+
                             <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
                                                               Height="540" Margin="0,12,0,0"/>
                         </StackPanel>

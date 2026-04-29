@@ -58,9 +58,11 @@ public static class InternalMugshotMetadata
     /// <item>5: 2.5.13 added <c>EnableEyeCatchlight</c> + fresnel
     /// contour darkening (folded under <c>EnableToneMapping</c>, so
     /// no separate hash entry for fresnel).</item>
+    /// <item>6: 2.5.14 corrected SSS math + added
+    /// <c>SubsurfaceStrength</c> multiplier.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 5;
+    public const int PipelineSchemaVersion = 6;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -103,6 +105,7 @@ public static class InternalMugshotMetadata
             ["ssao_bias"] = cfg.SsaoBias,
             ["ssao_intensity"] = cfg.SsaoIntensity,
             ["enable_eye_catchlight"] = cfg.EnableEyeCatchlight,
+            ["subsurface_strength"] = cfg.SubsurfaceStrength,
         };
 
         if (cfg.CameraMode == InternalMugshotCameraMode.Manual)
@@ -250,6 +253,16 @@ public static class InternalMugshotMetadata
         if (schemaVersion >= 5)
         {
             sb.Append('|').Append(cfg.EnableEyeCatchlight ? '1' : '0');
+        }
+
+        // === schema v6 fields (2.5.14: SSS math correction + strength) ===
+        // The math correction itself doesn't get a hash bit - the
+        // SubsurfaceStrength multiplier captures the user-facing dial.
+        // At strength=0 the corrected pipeline contributes zero SSS, so
+        // upgrades hash-match v5 tiles after the migration sets it to 0.
+        if (schemaVersion >= 6)
+        {
+            sb.Append('|').Append(cfg.SubsurfaceStrength.ToString("R", inv));
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

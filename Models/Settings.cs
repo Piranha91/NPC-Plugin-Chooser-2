@@ -42,9 +42,17 @@ public class Settings
     /// <item>4 → 5: 2.5.13 added <c>InternalMugshot.EnableEyeCatchlight</c>.
     /// Migration sets it to <c>false</c> on upgrade so existing autogen
     /// tiles aren't invalidated.</item>
+    /// <item>5 → 6: 2.5.14 corrected the SSS math (proper wrap parameter,
+    /// extracted baseColor multiplier, added back-scatter / translucency)
+    /// AND added <c>InternalMugshot.SubsurfaceStrength</c>. Migration
+    /// sets the strength to 0 on upgrade so the corrected pipeline
+    /// produces zero SSS contribution - existing v5 tiles stay
+    /// matching their stamped hash. Fresh installs get 2.0 (a noticeable
+    /// boost matching the pronounced SSS in professional portrait
+    /// reference).</item>
     /// </list>
     /// </para></summary>
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
     public int SchemaVersion { get; set; } = -1;
     // Mod Environment
     public string ModsFolder { get; set; } = string.Empty;
@@ -392,6 +400,17 @@ public sealed class InternalMugshotSettings
     // always has a visible catch-light in the iris - it's the single
     // biggest "alive vs. dead" cue for eyes.
     public bool EnableEyeCatchlight { get; set; } = true;
+
+    // Subsurface scattering strength multiplier (2.5.14+). The renderer's
+    // SSS math now uses subsurfaceRolloff as the proper wrap parameter
+    // (per Bethesda BSLighting spec) and adds a back-scatter / translucency
+    // term for thin-area light transmission (ear edges, nostril rims,
+    // backlit cheeks). This multiplier lets users dial the visible
+    // strength up or down without needing to override per-NIF rolloff
+    // values. 1.0 is "honest" SSS at the source values; 2.0 (the default)
+    // boosts the warm-flesh look toward the more pronounced SSS in
+    // professional portrait reference.
+    public float SubsurfaceStrength { get; set; } = 2.0f;
 
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.

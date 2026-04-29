@@ -98,6 +98,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public float InternalSsaoBias { get; set; }
     [Reactive] public float InternalSsaoIntensity { get; set; }
     [Reactive] public bool InternalEnableEyeCatchlight { get; set; }
+    [Reactive] public float InternalSubsurfaceStrength { get; set; }
 
     /// <summary>Live preview view-model for the Internal renderer's mugshot
     /// preview UC. Lazily resolved from the Splat container — the GLWpfControl
@@ -341,6 +342,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalSsaoBias = _model.InternalMugshot.SsaoBias;
         InternalSsaoIntensity = _model.InternalMugshot.SsaoIntensity;
         InternalEnableEyeCatchlight = _model.InternalMugshot.EnableEyeCatchlight;
+        InternalSubsurfaceStrength = _model.InternalMugshot.SubsurfaceStrength;
 
         this.WhenAnyValue(x => x.SelectedRenderer)
             .Select(r => r == MugshotRenderer.Internal)
@@ -594,6 +596,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(v => { _model.InternalMugshot.SsaoIntensity = v; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalEnableEyeCatchlight).Skip(1)
             .Subscribe(b => { _model.InternalMugshot.EnableEyeCatchlight = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalSubsurfaceStrength).Skip(1)
+            .Subscribe(v => { _model.InternalMugshot.SubsurfaceStrength = v; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
@@ -1183,6 +1187,15 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             // stamped settings hash.
             loadedSettings.InternalMugshot.EnableEyeCatchlight = false;
         }
+        if (loadedSettings.SchemaVersion < 6)
+        {
+            // 2.5.14 corrected the SSS math. Setting strength to 0 on
+            // upgrade means the corrected pipeline contributes zero SSS,
+            // so existing v5-stamped tiles match their stamped hash
+            // when re-rendered. User opts in to the new SSS look by
+            // raising the slider above 0.
+            loadedSettings.InternalMugshot.SubsurfaceStrength = 0f;
+        }
         loadedSettings.SchemaVersion = Settings.CurrentSchemaVersion;
 
         return loadedSettings;
@@ -1233,6 +1246,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalSsaoBias = c.SsaoBias;
         InternalSsaoIntensity = c.SsaoIntensity;
         InternalEnableEyeCatchlight = c.EnableEyeCatchlight;
+        InternalSubsurfaceStrength = c.SubsurfaceStrength;
     }
 
     public void SaveSettings()
