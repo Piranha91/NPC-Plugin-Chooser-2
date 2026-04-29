@@ -39,9 +39,12 @@ public class Settings
     /// 2.5.11 used, so v3-stamped tiles validate against v3 hash (which
     /// doesn't include these fields) regardless of what the user picks
     /// from the new UI sliders.</item>
+    /// <item>4 → 5: 2.5.13 added <c>InternalMugshot.EnableEyeCatchlight</c>.
+    /// Migration sets it to <c>false</c> on upgrade so existing autogen
+    /// tiles aren't invalidated.</item>
     /// </list>
     /// </para></summary>
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
     public int SchemaVersion { get; set; } = -1;
     // Mod Environment
     public string ModsFolder { get; set; } = string.Empty;
@@ -382,6 +385,13 @@ public sealed class InternalMugshotSettings
     public float SsaoRadius { get; set; } = 4.0f;
     public float SsaoBias { get; set; } = 0.05f;
     public float SsaoIntensity { get; set; } = 1.5f;
+
+    // Eye catch-light toggle (2.5.13+). When on, eye shapes get a tight,
+    // bright specular highlight from the key light layered on top of
+    // their normal Blinn-Phong specular. Real portrait photography
+    // always has a visible catch-light in the iris - it's the single
+    // biggest "alive vs. dead" cue for eyes.
+    public bool EnableEyeCatchlight { get; set; } = true;
 
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.

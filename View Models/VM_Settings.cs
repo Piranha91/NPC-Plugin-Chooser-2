@@ -97,6 +97,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public float InternalSsaoRadius { get; set; }
     [Reactive] public float InternalSsaoBias { get; set; }
     [Reactive] public float InternalSsaoIntensity { get; set; }
+    [Reactive] public bool InternalEnableEyeCatchlight { get; set; }
 
     /// <summary>Live preview view-model for the Internal renderer's mugshot
     /// preview UC. Lazily resolved from the Splat container — the GLWpfControl
@@ -339,6 +340,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalSsaoRadius = _model.InternalMugshot.SsaoRadius;
         InternalSsaoBias = _model.InternalMugshot.SsaoBias;
         InternalSsaoIntensity = _model.InternalMugshot.SsaoIntensity;
+        InternalEnableEyeCatchlight = _model.InternalMugshot.EnableEyeCatchlight;
 
         this.WhenAnyValue(x => x.SelectedRenderer)
             .Select(r => r == MugshotRenderer.Internal)
@@ -590,6 +592,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(v => { _model.InternalMugshot.SsaoBias = v; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalSsaoIntensity).Skip(1)
             .Subscribe(v => { _model.InternalMugshot.SsaoIntensity = v; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalEnableEyeCatchlight).Skip(1)
+            .Subscribe(b => { _model.InternalMugshot.EnableEyeCatchlight = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
@@ -1171,6 +1175,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         // 3 -> 4: SSAO radius/bias/intensity exposed via UI. No
         // migration step - the float defaults match the hardcoded
         // values 2.5.11 used, so existing v3 PNGs stay valid.
+        if (loadedSettings.SchemaVersion < 5)
+        {
+            // 2.5.13 introduced EnableEyeCatchlight (eye specular spot
+            // from the key light). Default-true for fresh installs;
+            // off for upgrades so existing tiles stay matching their
+            // stamped settings hash.
+            loadedSettings.InternalMugshot.EnableEyeCatchlight = false;
+        }
         loadedSettings.SchemaVersion = Settings.CurrentSchemaVersion;
 
         return loadedSettings;
@@ -1220,6 +1232,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalSsaoRadius = c.SsaoRadius;
         InternalSsaoBias = c.SsaoBias;
         InternalSsaoIntensity = c.SsaoIntensity;
+        InternalEnableEyeCatchlight = c.EnableEyeCatchlight;
     }
 
     public void SaveSettings()

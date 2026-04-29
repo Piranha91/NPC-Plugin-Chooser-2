@@ -221,6 +221,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Viewer.SsaoRadius = _settings.InternalMugshot.SsaoRadius;
         Viewer.SsaoBias = _settings.InternalMugshot.SsaoBias;
         Viewer.SsaoIntensity = _settings.InternalMugshot.SsaoIntensity;
+        Viewer.EnableEyeCatchlight = _settings.InternalMugshot.EnableEyeCatchlight;
     }
 
     private void ResetSettingsToDefaults()

@@ -406,6 +406,11 @@
                                            VerticalAlignment="Center" FontStyle="Italic"/>
                             </StackPanel>
 
+                            <CheckBox Content="Eye catch-light"
+                                      IsChecked="{Binding InternalEnableEyeCatchlight, Mode=TwoWay}"
+                                      Margin="0,6,0,0"
+                                      ToolTip="Adds a tight, bright specular spot from the key light to eye shapes - the small reflection that makes eyes look alive in real portraits. Layered on top of the eye's regular Blinn-Phong specular so material settings still drive the broad highlight; this only adds the small bright catch-light dot. Off: eyes use only their normal specular (matches pre-2.5.13 look)."/>
+
                             <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
                                                               Height="540" Margin="0,12,0,0"/>
                         </StackPanel>

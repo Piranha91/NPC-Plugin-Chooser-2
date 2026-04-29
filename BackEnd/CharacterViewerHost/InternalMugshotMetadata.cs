@@ -55,9 +55,12 @@ public static class InternalMugshotMetadata
     /// <item>3: 2.5.11 added <c>EnableAmbientOcclusion</c>.</item>
     /// <item>4: 2.5.12 added <c>SsaoRadius</c>, <c>SsaoBias</c>,
     /// <c>SsaoIntensity</c>.</item>
+    /// <item>5: 2.5.13 added <c>EnableEyeCatchlight</c> + fresnel
+    /// contour darkening (folded under <c>EnableToneMapping</c>, so
+    /// no separate hash entry for fresnel).</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 4;
+    public const int PipelineSchemaVersion = 5;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -99,6 +102,7 @@ public static class InternalMugshotMetadata
             ["ssao_radius"] = cfg.SsaoRadius,
             ["ssao_bias"] = cfg.SsaoBias,
             ["ssao_intensity"] = cfg.SsaoIntensity,
+            ["enable_eye_catchlight"] = cfg.EnableEyeCatchlight,
         };
 
         if (cfg.CameraMode == InternalMugshotCameraMode.Manual)
@@ -238,6 +242,14 @@ public static class InternalMugshotMetadata
             sb.Append('|').Append(cfg.SsaoRadius.ToString("R", inv));
             sb.Append('|').Append(cfg.SsaoBias.ToString("R", inv));
             sb.Append('|').Append(cfg.SsaoIntensity.ToString("R", inv));
+        }
+
+        // === schema v5 fields (2.5.13: eye catch-light + fresnel) ===
+        // Fresnel folds under EnableToneMapping (no separate hash bit),
+        // so v5 only adds the eye-catchlight toggle.
+        if (schemaVersion >= 5)
+        {
+            sb.Append('|').Append(cfg.EnableEyeCatchlight ? '1' : '0');
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

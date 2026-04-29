@@ -134,6 +134,7 @@ public sealed class InternalMugshotGenerator
                 SsaoRadius = cfg.SsaoRadius,
                 SsaoBias = cfg.SsaoBias,
                 SsaoIntensity = cfg.SsaoIntensity,
+                EnableEyeCatchlight = cfg.EnableEyeCatchlight,
             };
 
             long preRender = sw.ElapsedMilliseconds;
