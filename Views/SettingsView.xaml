@@ -257,16 +257,22 @@
                             </Style>
                         </Border.Style>
                         <StackPanel>
-                            <!-- Header row: title + Show/Hide Preview toggle. Plain Button
-                                 (rather than ToggleButton) so the system "checked-state"
-                                 styling - which paints a light-blue highlight that fights
-                                 the host's dark theme and crushes contrast on the white
-                                 label - never kicks in. State is conveyed via the Content
-                                 swap below. -->
+                            <!-- Header row: title + Show/Hide Preview toggle + Reset
+                                 Settings. Plain Button (rather than ToggleButton) for the
+                                 toggle so the system "checked-state" styling - which paints
+                                 a light-blue highlight that fights the host's dark theme
+                                 and crushes contrast on the white label - never kicks in.
+                                 State is conveyed via the Content swap below. Reset Settings
+                                 lives here (rather than in the preview UC's toolbar) so it
+                                 stays reachable when the preview is hidden. -->
                             <DockPanel LastChildFill="False" Margin="0,0,0,5">
                                 <TextBlock Text="Internal Renderer (in-process CharacterViewer)"
                                            FontWeight="Bold" VerticalAlignment="Center"
                                            DockPanel.Dock="Left"/>
+                                <Button Content="Reset Settings"
+                                        Command="{Binding InternalMugshotPreviewVM.ResetCommand}"
+                                        Padding="10,3" DockPanel.Dock="Right" Margin="6,0,0,0"
+                                        ToolTip="Restore Internal-renderer settings to defaults. Preserves your saved lighting layouts / color schemes."/>
                                 <Button Command="{Binding ToggleInternalShowPreviewCommand}"
                                         Padding="10,3" DockPanel.Dock="Right"
                                         ToolTip="Toggle the live preview viewport's visibility. Hide it to claw back vertical space when you're tweaking framing / asset-resolution settings without needing to see the rendered output.">

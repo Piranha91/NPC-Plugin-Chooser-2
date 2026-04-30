@@ -21,18 +21,18 @@
             <RowDefinition Height="Auto"/>     <!-- Status -->
         </Grid.RowDefinitions>
 
-        <!-- Toolbar - Load/Reset only meaningful in the Settings panel.
-             The per-tile 3D preview popup hides the whole row via the UC's
-             ShowSettingsControls property (set false from FullScreen3DPreviewView).
-             Reload was removed in 2.5.16 since render-pipeline edits in the
-             render panel below now apply on the next frame, and the wireframe-
-             missing-texture toggle auto-fires a re-load via ReloadRequested. -->
+        <!-- Toolbar - "Load Selected NPC" only meaningful in the Settings
+             panel. The per-tile 3D preview popup hides the whole row via the
+             UC's ShowSettingsControls property (set false from
+             FullScreen3DPreviewView). Reset Settings was hoisted to the
+             host's panel header in 2.5.17 so it stays reachable when the
+             preview UC itself is hidden; Reload was removed in 2.5.16 since
+             render-pipeline edits in the render panel below now apply on
+             the next frame and the wireframe-missing-texture toggle auto-
+             fires a re-load via ReloadRequested. -->
         <Border x:Name="SettingsToolbar" Grid.Row="0" Padding="6" BorderBrush="Gray" BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal">
                 <Button Content="Load Selected NPC" Command="{Binding LoadSelectedNpcCommand}" Padding="6,2" Margin="0,0,12,0"/>
-
-                <Button Content="Reset" Command="{Binding ResetCommand}" Padding="6,2" Margin="0,0,6,0"
-                        ToolTip="Restore Internal-renderer settings to defaults."/>
             </StackPanel>
         </Border>
 
