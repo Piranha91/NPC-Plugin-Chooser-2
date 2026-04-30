@@ -91,6 +91,17 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool InternalVanillaLooseOverridesBsa { get; set; }
     [Reactive] public bool InternalVanillaLooseOverridesModLoose { get; set; }
 
+    /// <summary>Session-only toggle for the live-preview UC's visibility in
+    /// the Settings panel. Starts false on each app open so the panel loads
+    /// in its compact form (preview is heavyweight - GLWpfControl + scene
+    /// upload - and most users edit non-preview settings far more often).
+    /// The Show Preview button flips it on when the user wants to render.</summary>
+    [Reactive] public bool InternalShowPreview { get; set; } = false;
+
+    /// <summary>Toggles <see cref="InternalShowPreview"/>. Bound to the
+    /// Show/Hide Preview button in the Internal renderer panel.</summary>
+    public ReactiveCommand<Unit, Unit> ToggleInternalShowPreviewCommand { get; }
+
     // Render-pipeline params (RenderMissingTextureAsWireframe, EnableToneMapping,
     // EnableShadows, EnableAmbientOcclusion + SSAO tunables, EnableEyeCatchlight,
     // SubsurfaceStrength, VignetteRadius, VignetteIntensity) used to be flat
@@ -461,6 +472,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SelectMugshotsFolderCommand =
             ReactiveCommand.CreateFromTask(SelectMugshotsFolderAsync).DisposeWith(_disposables);
         SelectMO2ModlistCommand = ReactiveCommand.Create(SelectMO2Modlist).DisposeWith(_disposables);
+        ToggleInternalShowPreviewCommand = ReactiveCommand.Create(
+            () => { InternalShowPreview = !InternalShowPreview; }).DisposeWith(_disposables);
         SelectOutputDirectoryCommand =
             ReactiveCommand.CreateFromTask(SelectOutputDirectoryAsync).DisposeWith(_disposables);
         ShowPatchingModeHelpCommand = ReactiveCommand.Create(ShowPatchingModeHelp).DisposeWith(_disposables);

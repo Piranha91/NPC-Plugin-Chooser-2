@@ -257,16 +257,91 @@
                             </Style>
                         </Border.Style>
                         <StackPanel>
-                            <TextBlock Text="Internal Renderer (in-process CharacterViewer)" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <!-- Header row: title + Show/Hide Preview toggle. Plain Button
+                                 (rather than ToggleButton) so the system "checked-state"
+                                 styling - which paints a light-blue highlight that fights
+                                 the host's dark theme and crushes contrast on the white
+                                 label - never kicks in. State is conveyed via the Content
+                                 swap below. -->
+                            <DockPanel LastChildFill="False" Margin="0,0,0,5">
+                                <TextBlock Text="Internal Renderer (in-process CharacterViewer)"
+                                           FontWeight="Bold" VerticalAlignment="Center"
+                                           DockPanel.Dock="Left"/>
+                                <Button Command="{Binding ToggleInternalShowPreviewCommand}"
+                                        Padding="10,3" DockPanel.Dock="Right"
+                                        ToolTip="Toggle the live preview viewport's visibility. Hide it to claw back vertical space when you're tweaking framing / asset-resolution settings without needing to see the rendered output.">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                            <Setter Property="Content" Value="Show Preview"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding InternalShowPreview}" Value="True">
+                                                    <Setter Property="Content" Value="Hide Preview"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </DockPanel>
 
-                            <TextBlock Text="Camera Mode:" Margin="0,5,0,2"/>
-                            <ComboBox ItemsSource="{Binding InternalCameraModeChoices}"
-                                      SelectedItem="{Binding InternalCameraMode, Mode=TwoWay}"
-                                      Width="200" HorizontalAlignment="Left"
-                                      ToolTip="Auto: hair-aware framing (head + hair-above-head). Manual: use the saved orbit camera state from the live preview."/>
+                            <!-- Camera mode + auto-mode tunables on a single horizontal line that wraps. -->
+                            <WrapPanel Orientation="Horizontal" ItemHeight="28">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                                    <TextBlock Text="Camera Mode:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <ComboBox ItemsSource="{Binding InternalCameraModeChoices}"
+                                              SelectedItem="{Binding InternalCameraMode, Mode=TwoWay}"
+                                              Width="100" VerticalAlignment="Center"
+                                              ToolTip="Auto: hair-aware framing (head + hair-above-head). Manual: use the saved orbit camera state from the live preview."/>
+                                </StackPanel>
 
-                            <!-- Auto-mode tunables -->
-                            <StackPanel>
+                                <!-- Auto-mode tunables - same row, hidden when Manual is selected. -->
+                                <StackPanel Orientation="Horizontal">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding InternalCameraMode}" Value="Auto">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+
+                                    <TextBlock Text="Frame Top:" VerticalAlignment="Center" Margin="0,0,4,0"
+                                               ToolTip="Top of the head bounding box mapped to this fraction of the frame height. 0.95 = head top sits 5% below the frame top."/>
+                                    <TextBox Text="{Binding InternalHeadTopFraction, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="55" VerticalAlignment="Center"
+                                             PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                             DataObject.Pasting="FloatTextBox_Pasting"/>
+
+                                    <TextBlock Text="Bottom:" VerticalAlignment="Center" Margin="10,0,4,0"/>
+                                    <TextBox Text="{Binding InternalHeadBottomFraction, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="55" VerticalAlignment="Center"
+                                             PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                             DataObject.Pasting="FloatTextBox_Pasting"/>
+
+                                    <TextBlock Text="Yaw:" VerticalAlignment="Center" Margin="10,0,4,0"
+                                               ToolTip="Camera yaw in degrees. 180 = facing camera."/>
+                                    <TextBox Text="{Binding InternalYaw, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="55" VerticalAlignment="Center"
+                                             PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                             DataObject.Pasting="FloatTextBox_Pasting"/>
+
+                                    <TextBlock Text="Pitch:" VerticalAlignment="Center" Margin="10,0,4,0"/>
+                                    <TextBox Text="{Binding InternalPitch, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="55" VerticalAlignment="Center"
+                                             PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                             DataObject.Pasting="FloatTextBox_Pasting"/>
+
+                                    <TextBlock Text="Hair pad:" VerticalAlignment="Center" Margin="10,0,4,0"/>
+                                    <TextBox Text="{Binding InternalHairAbovePadding, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="55" VerticalAlignment="Center"
+                                             PreviewTextInput="FloatTextBox_PreviewTextInput"
+                                             DataObject.Pasting="FloatTextBox_Pasting"
+                                             ToolTip="Hair-above-head padding (world units)."/>
+                                </StackPanel>
+                            </WrapPanel>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                 <StackPanel.Style>
                                     <Style TargetType="StackPanel">
                                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -277,85 +352,71 @@
                                         </Style.Triggers>
                                     </Style>
                                 </StackPanel.Style>
-
-                                <TextBlock Text="Frame Top Fraction (0–1):" Margin="0,8,0,2"/>
-                                <TextBox Text="{Binding InternalHeadTopFraction, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left"
-                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
-                                         DataObject.Pasting="FloatTextBox_Pasting"
-                                         ToolTip="Top of the head bounding box mapped to this fraction of the frame height. 0.95 = head top sits 5% below the frame top."/>
-
-                                <TextBlock Text="Frame Bottom Fraction (0–1):" Margin="0,5,0,2"/>
-                                <TextBox Text="{Binding InternalHeadBottomFraction, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left"
-                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
-                                         DataObject.Pasting="FloatTextBox_Pasting"/>
-
-                                <TextBlock Text="Yaw (degrees, 180 = facing camera):" Margin="0,5,0,2"/>
-                                <TextBox Text="{Binding InternalYaw, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left"
-                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
-                                         DataObject.Pasting="FloatTextBox_Pasting"/>
-
-                                <TextBlock Text="Pitch (degrees):" Margin="0,5,0,2"/>
-                                <TextBox Text="{Binding InternalPitch, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left"
-                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
-                                         DataObject.Pasting="FloatTextBox_Pasting"/>
-
                                 <CheckBox Content="Include hair / brows / mouth in framing"
                                           IsChecked="{Binding InternalIncludeAccessories, Mode=TwoWay}"
-                                          Margin="0,8,0,0"
-                                          ToolTip="When enabled, hair-above-head and other facial accessories help frame the shot — but floor-length braids are clipped at the head's lower bound so they don't blow out the frame."/>
-
-                                <TextBlock Text="Hair-Above Padding:" Margin="0,5,0,2"/>
-                                <TextBox Text="{Binding InternalHairAbovePadding, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left"
-                                         PreviewTextInput="FloatTextBox_PreviewTextInput"
-                                         DataObject.Pasting="FloatTextBox_Pasting"/>
+                                          ToolTip="When enabled, hair-above-head and other facial accessories help frame the shot - but floor-length braids are clipped at the head's lower bound so they don't blow out the frame."/>
                             </StackPanel>
 
-                            <TextBlock Text="Background Color (RGB 0–255):" Margin="0,10,0,2"/>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBox Text="{Binding InternalBackgroundR, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"
-                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
-                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
-                                <TextBlock Text=" / " VerticalAlignment="Center" Margin="3,0"/>
-                                <TextBox Text="{Binding InternalBackgroundG, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"
-                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
-                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
-                                <TextBlock Text=" / " VerticalAlignment="Center" Margin="3,0"/>
-                                <TextBox Text="{Binding InternalBackgroundB, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="50"
-                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
-                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
-                            </StackPanel>
+                            <!-- Background RGB + Output resolution share a single wrap row. -->
+                            <WrapPanel Orientation="Horizontal" Margin="0,8,0,0" ItemHeight="28">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                                    <TextBlock Text="Background RGB:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBox Text="{Binding InternalBackgroundR, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="40" VerticalAlignment="Center"
+                                             PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                             DataObject.Pasting="IntegerTextBox_Pasting"/>
+                                    <TextBlock Text=" / " VerticalAlignment="Center" Margin="2,0"/>
+                                    <TextBox Text="{Binding InternalBackgroundG, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="40" VerticalAlignment="Center"
+                                             PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                             DataObject.Pasting="IntegerTextBox_Pasting"/>
+                                    <TextBlock Text=" / " VerticalAlignment="Center" Margin="2,0"/>
+                                    <TextBox Text="{Binding InternalBackgroundB, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="40" VerticalAlignment="Center"
+                                             PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                             DataObject.Pasting="IntegerTextBox_Pasting"/>
+                                </StackPanel>
 
-                            <TextBlock Text="Output Resolution:" Margin="0,10,0,2"/>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBox Text="{Binding InternalOutputWidth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="60"
-                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
-                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
-                                <TextBlock Text=" x " VerticalAlignment="Center" Margin="5,0"/>
-                                <TextBox Text="{Binding InternalOutputHeight, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="60"
-                                         PreviewTextInput="IntegerTextBox_PreviewTextInput"
-                                         DataObject.Pasting="IntegerTextBox_Pasting"/>
-                            </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Output:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <TextBox Text="{Binding InternalOutputWidth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="55" VerticalAlignment="Center"
+                                             PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                             DataObject.Pasting="IntegerTextBox_Pasting"/>
+                                    <TextBlock Text=" x " VerticalAlignment="Center" Margin="3,0"/>
+                                    <TextBox Text="{Binding InternalOutputHeight, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="55" VerticalAlignment="Center"
+                                             PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                             DataObject.Pasting="IntegerTextBox_Pasting"/>
+                                </StackPanel>
+                            </WrapPanel>
 
-                            <!-- Asset-resolution toggles. Both feed into
-                                 OffscreenRenderRequest / VM_CharacterViewer for the
-                                 next render so changes take effect immediately.
-                                 The wireframe-fallback toggle and all render-pipeline
-                                 toggles (tone-mapping, shadows, SSAO, eye catch-light,
-                                 SSS strength, vignette) live in the renderer's
-                                 UC_CharacterViewerRenderPanel inside the live-preview
-                                 toolbar below - shared with SynthEBD, applies on edit. -->
-                            <TextBlock Text="Asset Resolution:" Margin="0,12,0,2" FontWeight="SemiBold"/>
-                            <CheckBox Content="Overwrite BSA contents with loose files"
-                                      IsChecked="{Binding InternalVanillaLooseOverridesBsa, Mode=TwoWay}"
-                                      Margin="0,2,0,0"
-                                      ToolTip="When on (default), a loose copy of an asset under your Skyrim Data folder takes precedence over any BSA copy of the same path - including BSAs scoped to a non-vanilla mod. Mirrors the engine's actual rule that loose Data files override BSA-packed ones. Turn off for strict-BSA mode (preview the original mod content without your installed loose-file overrides)."/>
-                            <CheckBox Content="Overwrite mod loose files with Data loose files"
-                                      IsChecked="{Binding InternalVanillaLooseOverridesModLoose, Mode=TwoWay}"
-                                      Margin="0,2,0,0"
-                                      ToolTip="When on, a loose copy of an asset in your Skyrim Data folder takes precedence over the same path in any mod folder, letting your installed body / skin / texture replacers leak into mod-specific previews. FaceGen NIFs and FaceTint DDS are excluded so the mod's actual face overrides aren't replaced by vanilla copies. Off by default."/>
+                            <!-- Asset-resolution toggles - feed into OffscreenRenderRequest /
+                                 VM_CharacterViewer for the next render so changes take effect
+                                 immediately. Render-pipeline toggles (tone-mapping, shadows,
+                                 SSAO, eye catch-light, SSS strength, vignette, missing-tex
+                                 wireframe) live in the renderer's UC_CharacterViewerRenderPanel
+                                 inside the live-preview toolbar - shared with SynthEBD. -->
+                            <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="Asset Resolution:" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <CheckBox Content="BSA &lt; loose"
+                                          IsChecked="{Binding InternalVanillaLooseOverridesBsa, Mode=TwoWay}"
+                                          VerticalAlignment="Center" Margin="0,0,12,0"
+                                          ToolTip="When on (default), a loose copy of an asset under your Skyrim Data folder takes precedence over any BSA copy of the same path - including BSAs scoped to a non-vanilla mod. Mirrors the engine's actual rule that loose Data files override BSA-packed ones. Turn off for strict-BSA mode (preview the original mod content without your installed loose-file overrides)."/>
+                                <CheckBox Content="Mod loose &lt; Data loose"
+                                          IsChecked="{Binding InternalVanillaLooseOverridesModLoose, Mode=TwoWay}"
+                                          VerticalAlignment="Center"
+                                          ToolTip="When on, a loose copy of an asset in your Skyrim Data folder takes precedence over the same path in any mod folder, letting your installed body / skin / texture replacers leak into mod-specific previews. FaceGen NIFs and FaceTint DDS are excluded so the mod's actual face overrides aren't replaced by vanilla copies. Off by default."/>
+                            </WrapPanel>
 
-                            <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
-                                                              Height="540" Margin="0,12,0,0"/>
+                            <!-- Live preview - wrapped in a Grid so its Visibility binding
+                                 reads InternalShowPreview off the inherited VM_Settings
+                                 DataContext rather than the UC's overridden one. -->
+                            <Grid Margin="0,12,0,0"
+                                  Visibility="{Binding InternalShowPreview, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
+                                                                  Height="540"/>
+                            </Grid>
                         </StackPanel>
                     </Border>
 
