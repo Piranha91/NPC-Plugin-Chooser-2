@@ -134,6 +134,8 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Viewer.SubsurfaceStrength = c.SubsurfaceStrength;
         Viewer.VignetteRadius = c.VignetteRadius;
         Viewer.VignetteIntensity = c.VignetteIntensity;
+        Viewer.BackgroundColor = System.Windows.Media.Color.FromRgb(
+            c.BackgroundR, c.BackgroundG, c.BackgroundB);
     }
 
     /// <summary>Calls VM_Settings.RequestThrottledSave via Splat. Resolved
