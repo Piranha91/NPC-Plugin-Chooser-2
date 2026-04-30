@@ -10,6 +10,7 @@
              xmlns:models="clr-namespace:NPC_Plugin_Chooser_2.Models"
              xmlns:plugins="clr-namespace:Mutagen.Bethesda.WPF.Plugins;assembly=Mutagen.Bethesda.WPF"
              xmlns:reactiveui="http://reactiveui.net"
+             xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
              xmlns:System="clr-namespace:System;assembly=mscorlib"
              mc:Ignorable="d"
              x:TypeArguments="vm:VM_Settings"
@@ -242,6 +243,23 @@
 
                     <!-- Internal renderer settings panel -->
                     <Border Margin="15,5,0,5" Padding="10" BorderBrush="Gray" BorderThickness="1" CornerRadius="3">
+                        <Border.Resources>
+                            <!-- Theme-aware default for every xctk:DoubleUpDown
+                                 inside this panel. The toolkit's default template
+                                 inherits the system-light Windows theme (white
+                                 textbox interior) which renders as invisible /
+                                 fighting-the-theme against the host's dark
+                                 background. Setting Background + Foreground +
+                                 BorderBrush + CaretBrush at the spinner root
+                                 propagates through the embedded TextBox and
+                                 increment/decrement glyphs. -->
+                            <Style TargetType="{x:Type xctk:DoubleUpDown}">
+                                <Setter Property="Background" Value="{DynamicResource TextBoxBackground}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                                <Setter Property="CaretBrush" Value="{DynamicResource PrimaryForeground}"/>
+                            </Style>
+                        </Border.Resources>
                         <Border.Style>
                             <Style TargetType="Border">
                                 <Setter Property="Visibility" Value="Collapsed"/>
@@ -313,17 +331,20 @@
                                     </StackPanel.Style>
 
                                     <TextBlock Text="Frame Top:" VerticalAlignment="Center" Margin="0,0,4,0"
-                                               ToolTip="Top of the head bounding box mapped to this fraction of the frame height. 0.95 = head top sits 5% below the frame top."/>
-                                    <TextBox Text="{Binding InternalHeadTopFraction, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                             Width="55" VerticalAlignment="Center"
-                                             PreviewTextInput="FloatTextBox_PreviewTextInput"
-                                             DataObject.Pasting="FloatTextBox_Pasting"/>
+                                               ToolTip="Vertical position the TOP of the head bounding box is mapped to, expressed as a fraction of the rendered frame height (1.0 = frame top edge, 0.0 = frame bottom edge). Examples: 0.95 leaves a 5% margin above the head top; 1.0 puts the head top exactly at the frame's top edge; values above 1.0 push the head top above the frame for an ultra-tight crop where the top of the head is clipped."/>
+                                    <xctk:DoubleUpDown Width="70" Minimum="-0.5" Maximum="1.5" Increment="0.05"
+                                                       Value="{Binding InternalHeadTopFraction, Mode=TwoWay}"
+                                                       VerticalAlignment="Center"
+                                                       FormatString="0.00"
+                                                       ToolTip="Vertical position the TOP of the head bounding box is mapped to, expressed as a fraction of the rendered frame height (1.0 = frame top edge, 0.0 = frame bottom edge). Examples: 0.95 leaves a 5% margin above the head top; 1.0 puts the head top exactly at the frame's top edge; values above 1.0 push the head top above the frame for an ultra-tight crop where the top of the head is clipped."/>
 
-                                    <TextBlock Text="Bottom:" VerticalAlignment="Center" Margin="10,0,4,0"/>
-                                    <TextBox Text="{Binding InternalHeadBottomFraction, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                             Width="55" VerticalAlignment="Center"
-                                             PreviewTextInput="FloatTextBox_PreviewTextInput"
-                                             DataObject.Pasting="FloatTextBox_Pasting"/>
+                                    <TextBlock Text="Bottom:" VerticalAlignment="Center" Margin="10,0,4,0"
+                                               ToolTip="Vertical position the BOTTOM of the head bounding box is mapped to, expressed as a fraction of the rendered frame height (1.0 = frame top edge, 0.0 = frame bottom edge). Examples: 0.10 leaves a 10% margin below the head bottom; 0.0 puts the head bottom exactly at the frame's bottom edge; negative values (e.g. -0.1) push the head bottom below the frame for an ultra-tight crop where the chin / neck is clipped. Values above the Frame Top setting are nonsensical (head bottom above head top)."/>
+                                    <xctk:DoubleUpDown Width="70" Minimum="-0.5" Maximum="1.5" Increment="0.05"
+                                                       Value="{Binding InternalHeadBottomFraction, Mode=TwoWay}"
+                                                       VerticalAlignment="Center"
+                                                       FormatString="0.00"
+                                                       ToolTip="Vertical position the BOTTOM of the head bounding box is mapped to, expressed as a fraction of the rendered frame height (1.0 = frame top edge, 0.0 = frame bottom edge). Examples: 0.10 leaves a 10% margin below the head bottom; 0.0 puts the head bottom exactly at the frame's bottom edge; negative values (e.g. -0.1) push the head bottom below the frame for an ultra-tight crop where the chin / neck is clipped."/>
 
                                     <TextBlock Text="Yaw:" VerticalAlignment="Center" Margin="10,0,4,0"
                                                ToolTip="Camera yaw in degrees. 180 = facing camera."/>
