@@ -306,10 +306,10 @@ public sealed class InternalMugshotSettings
     public InternalMugshotCameraMode CameraMode { get; set; } = InternalMugshotCameraMode.Auto;
 
     // Auto-mode tunables (mirror Portrait Creator's existing knobs).
-    public float HeadTopFraction { get; set; } = 0.95f;
-    public float HeadBottomFraction { get; set; } = 0.10f;
+    public float HeadTopFraction { get; set; } = 1.0f;
+    public float HeadBottomFraction { get; set; } = 0.0f;
     public float Yaw { get; set; } = 180f;
-    public float Pitch { get; set; } = 3f;
+    public float Pitch { get; set; } = 4.5f;
     public float HairAbovePadding { get; set; } = 0f;
     public bool IncludeAccessories { get; set; } = true;
 
