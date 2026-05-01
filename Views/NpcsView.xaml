@@ -112,7 +112,7 @@
         <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="5">
             <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <GroupBox Header="NPC Groups" VerticalAlignment="Center" Margin="0,2,5,2" Padding="2">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,10,2">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
                         <TextBlock Text="Group:" VerticalAlignment="Center" Margin="0,0,5,0"/>
                         <ComboBox MinWidth="120" MaxWidth="200" Margin="0,0,5,0" VerticalAlignment="Center"
                                   IsEditable="True"
@@ -153,7 +153,7 @@
                                 Command="{Binding ExportChoicesCommand}" ToolTip="Export the current list of selected appearance mods for each NPC to a .json file."/>
                         <Button Content="Import" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
                                 Command="{Binding ImportChoicesCommand}" ToolTip="Import a list of NPC appearance selections from a .json file, overwriting current choices."/>
-                        <Button Content="Clear" Margin="0,2,15,2" Padding="5,2" VerticalAlignment="Center"
+                        <Button Content="Clear" Margin="0,2,0,2" Padding="5,2" VerticalAlignment="Center"
                                 Command="{Binding ClearChoicesCommand}" ToolTip="Clear all selections you have made."/>
                     </StackPanel>
                 </GroupBox>
