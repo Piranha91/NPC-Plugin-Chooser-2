@@ -147,6 +147,8 @@
                     <StackPanel Orientation="Horizontal">
                         <Button Content="Get from Load Order" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
                                 Command="{Binding ImportChoicesFromLoadOrderCommand}" ToolTip="Automatically select appearance mods for NPCs based on your current load order and loose file overrides."/>
+                        <Button Content="Randomize" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
+                                Command="{Binding RandomizeChoicesCommand}" ToolTip="Pick a random appearance mod for each NPC in the current (filtered) list. Only mods with associated data are eligible; mugshot-only entries are skipped. If a chosen mod fails template validation, another is tried."/>
                         <Button Content="Export" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
                                 Command="{Binding ExportChoicesCommand}" ToolTip="Export the current list of selected appearance mods for each NPC to a .json file."/>
                         <Button Content="Import" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
