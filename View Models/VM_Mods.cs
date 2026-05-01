@@ -1122,6 +1122,16 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             await AnalyzeModSettingsAsync(splashReporter, faceGenCache);
 
+            // Mirror the 2.1.6 migration sweep for first-time scans. Inside
+            // ProcessNewModFolderForParallelScanAsync, FindAndAddMissingMasters runs against
+            // a freshly-created temp VM whose NpcFormKeys is still empty, which means
+            // npcSourcePluginKeys is empty and foundation-mod folders (e.g. "Song of the
+            // Green") get attached as resources to replacers (e.g. "Auri-Replacer.esp")
+            // even though the foundation's NPCs are the very ones being templated by the
+            // replacer. AnalyzeModSettingsAsync has now run RefreshNpcLists, so NpcFormKeys
+            // is populated and CleanupCorrespondingFolders will produce the correct result.
+            await CleanupNewlyCreatedCorrespondingFoldersAsync(splashReporter);
+
             // Phase 4: Run final UI-dependent work
             splashReporter?.UpdateStep("Finalizing mod settings...");
             await FinalizeAndApplySettingsOnUI(warnings);
@@ -2533,6 +2543,90 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             Debug.WriteLine($"CleanupCorrespondingFolders: '{vm.DisplayName}' dropped {removed.Count} stale folder(s): " +
                             string.Join(", ", removed.Select(Path.GetFileName)));
+        }
+    }
+
+    /// <summary>
+    /// Initial-scan equivalent of the 2.1.6 migration sweep. Re-runs <see cref="CleanupCorrespondingFolders"/>
+    /// and <see cref="VM_ModSetting.RecomputeResourceOnlyPlugins"/> on every mod that was newly created during
+    /// this <see cref="PopulateModSettingsAsync"/> call, after analysis has populated <c>NpcFormKeys</c>.
+    ///
+    /// Why this lives here instead of being fixed inside <see cref="ProcessNewModFolderForParallelScanAsync"/>:
+    ///
+    /// The original "bug" surfaces because <see cref="FindAndAddMissingMasters"/> consults
+    /// <c>vm.NpcFormKeys</c> to build <c>npcSourcePluginKeys</c> — the set of plugins whose NPCs are templated
+    /// by this mod and therefore must NOT be re-attached as resource folders. During the initial parallel scan
+    /// the temp VM has no NPCs yet (NpcFormKeys is populated later by <c>RefreshNpcLists</c> inside
+    /// <see cref="AnalyzeModSettingsAsync"/>), so foundation-mod folders (e.g. "Song of the Green") get
+    /// attached to replacers (e.g. "Auri-Replacer.esp") even though they should be excluded.
+    ///
+    /// Three options were considered:
+    ///
+    ///   1. Populate <c>NpcFormKeys</c> on the temp VM before calling <see cref="FindAndAddMissingMasters"/>.
+    ///      This requires a full <c>RefreshNpcLists</c> per mod inside the parallel scan, which duplicates the
+    ///      heavy work that <see cref="AnalyzeModSettingsAsync"/> already does once with caching, race
+    ///      validation, FaceGen reconciliation, and parallelism control. Doing it twice would noticeably slow
+    ///      the first-launch path and create two sources of truth for NPC enumeration.
+    ///
+    ///   2. Inline a lightweight NPC-source extraction (read NPC FormKeys directly from the loaded plugins)
+    ///      and pass them into <see cref="FindAndAddMissingMasters"/> via a new parameter. This works but
+    ///      forks the missing-master logic between two slightly different code paths, and quietly diverges
+    ///      from the well-tested behaviour the 2.1.6 migration relies on. Future fixes to either path would
+    ///      have to be mirrored carefully.
+    ///
+    ///   3. (Chosen) Re-use <see cref="CleanupCorrespondingFolders"/> after analysis, exactly as the 2.1.6
+    ///      migration does. The cleanup is intentionally cheap (folder reset + a single re-scan per mod, which
+    ///      reuses the plugin provider's cache), it operates on the fully-analysed VM, and — crucially — it is
+    ///      the same code that runs on subsequent launches. First-launch users now converge on the same state
+    ///      that returning users already get, with no second source of truth.
+    ///
+    /// The 2.1.6 entry in <see cref="UpdateHandler"/> is intentionally left in place: it still needs to fix
+    /// users whose persisted <c>CorrespondingFolderPaths</c> were polluted by older builds before this fix
+    /// existed. Once a user's settings have been rewritten by either path, both paths become idempotent.
+    /// </summary>
+    private async Task CleanupNewlyCreatedCorrespondingFoldersAsync(VM_SplashScreen? splashReporter)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder))
+        {
+            return;
+        }
+
+        var newlyCreated = _allModSettingsInternal.Where(vm => vm.IsNewlyCreated).ToList();
+        if (!newlyCreated.Any())
+        {
+            return;
+        }
+
+        splashReporter?.UpdateStep($"Pruning stale corresponding folders for {newlyCreated.Count} new mod(s)...");
+
+        var warnings = new ConcurrentBag<string>();
+
+        await Task.Run(() =>
+        {
+            int processed = 0;
+            foreach (var vm in newlyCreated)
+            {
+                try
+                {
+                    CleanupCorrespondingFolders(vm, warnings);
+                    vm.RecomputeResourceOnlyPlugins();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine(
+                        $"CleanupNewlyCreatedCorrespondingFoldersAsync: failed for {vm.DisplayName}: {ex.Message}");
+                }
+
+                processed++;
+                splashReporter?.UpdateProgress((double)processed / newlyCreated.Count * 100,
+                    $"Cleaning {vm.DisplayName}...");
+            }
+        });
+
+        if (!warnings.IsEmpty)
+        {
+            Debug.WriteLine("Initial corresponding-folder cleanup warnings:" + Environment.NewLine +
+                            string.Join(Environment.NewLine, warnings));
         }
     }
 
