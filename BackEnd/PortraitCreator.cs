@@ -99,8 +99,16 @@ public class PortraitCreator
     public async Task<string> FindNpcNifPath(FormKey npcFormKey, VM_ModSetting modSetting)
     {
         HashSet<string> folderToSearch = new(modSetting.CorrespondingFolderPaths);
-        if (!folderToSearch.Any() && (modSetting.DisplayName == VM_Mods.BaseGameModSettingName ||
-            modSetting.DisplayName == VM_Mods.CreationClubModsettingName))
+        // Base Game / Creation Club tiles ship no mod folders of their own, so
+        // we point folderToSearch at the Data folder purely so the loop below
+        // has a place to consult base-game BSAs. The matching loose-file probe
+        // is skipped (see isVanillaScope below) — otherwise a mod-manager VFS
+        // overlay of an NPC appearance mod's loose NIF in Data would win and
+        // the staleness hash would lock onto the wrong file.
+        bool isVanillaScope = !folderToSearch.Any() &&
+            (modSetting.DisplayName == VM_Mods.BaseGameModSettingName ||
+             modSetting.DisplayName == VM_Mods.CreationClubModsettingName);
+        if (isVanillaScope)
         {
             folderToSearch.Add(_environmentProvider.DataFolderPath);
         }
@@ -135,12 +143,14 @@ public class PortraitCreator
             if (string.IsNullOrWhiteSpace(modFolder)) continue;
 
             string fullPath = Path.Combine(modFolder, relativeNifPath);
-            if (File.Exists(fullPath))
+            if (!isVanillaScope && File.Exists(fullPath))
             {
                 // Found a loose file. This is a candidate for the winning path.
                 winningPath = fullPath;
             }
-            // 3. If no loose file, check associated BSAs.
+            // 3. If no loose file (or vanilla scope, which never trusts loose
+            //    Data for the reasons in the FindNpcNifPath header), check
+            //    associated BSAs.
             else
             {
                 var modSettingModel = modSetting.SaveToModel();

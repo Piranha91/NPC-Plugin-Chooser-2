@@ -149,6 +149,7 @@ public class NpcMeshResolver
     public IReadOnlyList<RenderScope> BuildResolutionScopesForActiveSelection(FormKey targetNpcFormKey)
         => BuildResolutionScopes(LookupSelectedModSetting(targetNpcFormKey, out _));
 
+
     /// <summary>
     /// Resolves the NPC's mesh paths scoped to a specific
     /// <paramref name="modSetting"/>. Used by per-tile mugshot generators
@@ -483,10 +484,19 @@ public class NpcMeshResolver
         }
 
         var scopes = BuildDiagnosticScopes(context);
+        // Mirror the renderer's hard-coded Phase 1 skip at the vanilla scope
+        // (i==0) for FaceGen paths — FaceGeom NIFs and FaceTint DDS are NPC-
+        // keyed (FormID-named under <plugin>\), so a vanilla loose copy must
+        // never preempt the BSA-packed canonical asset. Without this skip the
+        // diagnostic would log "OK (vanilla loose)" for a Bijin / Pandorable
+        // override deployed into Data via VFS even though the renderer itself
+        // ignores it and uses the vanilla BSA.
+        bool isFaceGen = path.IndexOf("FaceGenData", StringComparison.OrdinalIgnoreCase) >= 0;
 
         // Phase 1: loose files, walked highest-priority-first (last scope wins).
         for (int i = scopes.Count - 1; i >= 0; i--)
         {
+            if (i == 0 && isFaceGen) continue;
             var scope = scopes[i];
             if (string.IsNullOrWhiteSpace(scope.FolderPath)) continue;
             string candidate;
@@ -527,6 +537,7 @@ public class NpcMeshResolver
         missSb.Append("    loose paths checked (highest-priority first):\n");
         for (int i = scopes.Count - 1; i >= 0; i--)
         {
+            if (i == 0 && isFaceGen) continue;
             var scope = scopes[i];
             if (string.IsNullOrWhiteSpace(scope.FolderPath)) continue;
             string candidate;
@@ -581,6 +592,7 @@ public class NpcMeshResolver
     {
         System.Diagnostics.Debug.WriteLine(message);
         System.Diagnostics.Trace.WriteLine(message);
+        RenderLogCapture.Write(message);
     }
 
     /// <summary>

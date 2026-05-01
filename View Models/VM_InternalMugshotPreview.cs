@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
@@ -29,6 +30,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     private readonly Lazy<VM_NpcSelectionBar> _npcSelectionBar;
     private readonly EnvironmentStateProvider _env;
     private readonly NpcMeshResolver _resolver;
+    private readonly CharacterViewerLogGate _logGate;
     private readonly CompositeDisposable _disposables = new();
 
     public VM_CharacterViewer Viewer { get; }
@@ -57,13 +59,15 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Settings settings,
         Lazy<VM_NpcSelectionBar> npcSelectionBar,
         EnvironmentStateProvider env,
-        NpcMeshResolver resolver)
+        NpcMeshResolver resolver,
+        CharacterViewerLogGate logGate)
     {
         Viewer = viewer;
         _settings = settings;
         _npcSelectionBar = npcSelectionBar;
         _env = env;
         _resolver = resolver;
+        _logGate = logGate;
 
         LoadSelectedNpcCommand = ReactiveCommand.CreateFromTask(LoadSelectedNpcAsync).DisposeWith(_disposables);
         ResetCommand = ReactiveCommand.Create(ResetSettingsToDefaults).DisposeWith(_disposables);
@@ -212,6 +216,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         }
 
         _lastExplicitModSetting = null;
+        using var captureScope = MaybeStartRenderLogCapture(formKey, modName: "ActiveSelection");
         try
         {
             StatusText = $"Loading {formKey}…";
@@ -260,6 +265,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         }
 
         _lastExplicitModSetting = modSetting;
+        using var captureScope = MaybeStartRenderLogCapture(formKey, modSetting?.DisplayName ?? "Unscoped");
         try
         {
             StatusText = $"Loading {formKey}…";
@@ -285,6 +291,66 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             StatusText = $"Load failed: {ex.Message}";
             System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: " + ExceptionLogger.GetExceptionStack(ex));
         }
+    }
+
+    /// <summary>If <see cref="InternalMugshotSettings.LogRenderLogic"/> is on,
+    /// opens a per-render capture session writing to
+    /// <c>&lt;ExeDir&gt;\RenderLogs\&lt;modName&gt;_&lt;FormKey&gt;.txt</c> and forces the
+    /// shared <see cref="CharacterViewerLogGate.Verbose"/> flag on for the
+    /// session's duration. Disposing the returned scope flushes the file and
+    /// restores the prior verbose state. When the toggle is off, returns a
+    /// no-op disposable so callers can <c>using var</c> unconditionally.</summary>
+    private IDisposable MaybeStartRenderLogCapture(FormKey formKey, string modName)
+    {
+        if (!_settings.InternalMugshot.LogRenderLogic) return EmptyDisposable.Instance;
+
+        // Sanitize both fields — FormKey.ToString() is "xxxxxxxx:Plugin.esp",
+        // the colon is illegal in Windows filenames; mod display names can
+        // legitimately contain slashes / colons too.
+        string safeModName = SanitizeForFileName(modName);
+        string safeFormKey = SanitizeForFileName(formKey.ToString());
+        string folder = Path.Combine(AppContext.BaseDirectory, "RenderLogs");
+        // "Preview_" prefix mirrors the offscreen mugshot path's "Mugshot_"
+        // prefix so the two render paths' files for the same NPC sort next to
+        // each other and are easy to diff when debugging tile-vs-preview
+        // discrepancies.
+        string filePath = Path.Combine(folder, $"Preview_{safeModName}_{safeFormKey}.txt");
+
+        bool prevVerbose = _logGate.Verbose;
+        _logGate.Verbose = true;
+        var capture = RenderLogCapture.BeginCapture(filePath,
+            $"NPC2 Preview Render Log — Mod=[{modName}] NPC=[{formKey}]");
+
+        return new ActionDisposable(() =>
+        {
+            try { capture.Dispose(); }
+            finally { _logGate.Verbose = prevVerbose; }
+        });
+    }
+
+    private static string SanitizeForFileName(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return "_";
+        var invalid = Path.GetInvalidFileNameChars();
+        var chars = s.ToCharArray();
+        for (int i = 0; i < chars.Length; i++)
+        {
+            if (Array.IndexOf(invalid, chars[i]) >= 0) chars[i] = '_';
+        }
+        return new string(chars);
+    }
+
+    private sealed class ActionDisposable : IDisposable
+    {
+        private Action? _action;
+        public ActionDisposable(Action action) { _action = action; }
+        public void Dispose() { var a = _action; _action = null; a?.Invoke(); }
+    }
+
+    private sealed class EmptyDisposable : IDisposable
+    {
+        public static readonly EmptyDisposable Instance = new();
+        public void Dispose() { }
     }
 
     /// <summary>Pushes the user's current advanced asset-resolution toggles

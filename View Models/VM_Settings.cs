@@ -94,6 +94,12 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool InternalVanillaLooseOverridesBsa { get; set; }
     [Reactive] public bool InternalVanillaLooseOverridesModLoose { get; set; }
 
+    /// <summary>Per-render diagnostic capture toggle. When on, the next
+    /// live-preview load writes the full [AssetResolution] + renderer trace
+    /// to <c>&lt;ExeDir&gt;\RenderLogs\&lt;ModName&gt;_&lt;FormKey&gt;.txt</c>.
+    /// See <see cref="InternalMugshotSettings.LogRenderLogic"/>.</summary>
+    [Reactive] public bool InternalLogRenderLogic { get; set; }
+
     /// <summary>Session-only toggle for the live-preview UC's visibility in
     /// the Settings panel. Starts false on each app open so the panel loads
     /// in its compact form (preview is heavyweight - GLWpfControl + scene
@@ -350,6 +356,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalOutputHeight = _model.InternalMugshot.OutputHeight;
         InternalVanillaLooseOverridesBsa = _model.InternalMugshot.VanillaLooseOverridesBsa;
         InternalVanillaLooseOverridesModLoose = _model.InternalMugshot.VanillaLooseOverridesModLoose;
+        InternalLogRenderLogic = _model.InternalMugshot.LogRenderLogic;
         // Render-pipeline params are owned by VM_InternalMugshotPreview now -
         // it pushes saved values into VM_CharacterViewer at construction and
         // mirrors edits back to _model.InternalMugshot.* with throttled save.
@@ -603,6 +610,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => { _model.InternalMugshot.VanillaLooseOverridesBsa = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalVanillaLooseOverridesModLoose).Skip(1)
             .Subscribe(b => { _model.InternalMugshot.VanillaLooseOverridesModLoose = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalLogRenderLogic).Skip(1)
+            .Subscribe(b => { _model.InternalMugshot.LogRenderLogic = b; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateOldMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
@@ -1249,6 +1258,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalOutputHeight = c.OutputHeight;
         InternalVanillaLooseOverridesBsa = c.VanillaLooseOverridesBsa;
         InternalVanillaLooseOverridesModLoose = c.VanillaLooseOverridesModLoose;
+        InternalLogRenderLogic = c.LogRenderLogic;
         // Render-pipeline params re-pushed into VM_CharacterViewer by
         // VM_InternalMugshotPreview.SyncSettingsToViewer (called on Reset).
         InternalMugshotPreviewVM?.SyncSettingsToViewer();

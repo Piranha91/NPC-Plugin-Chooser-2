@@ -337,6 +337,14 @@ public sealed class InternalMugshotSettings
     // Verbose log toggle bound through the settings adapter.
     public bool VerboseLog { get; set; } = false;
 
+    // When true, the next live-preview load in the Settings panel captures the
+    // full asset-resolution + renderer trace into a per-render text file under
+    // <ExeDir>\RenderLogs\<ModName>_<FormKey>.txt. Diagnostic-only — used when
+    // a mugshot tile fails to render but the live preview shows the same NPC
+    // fine, so the two traces can be diffed. Off by default; the toggle lives
+    // next to "Reset Settings" in the Internal-renderer panel header.
+    public bool LogRenderLogic { get; set; } = false;
+
     // Advanced asset-resolution toggles. Pushed onto every OffscreenRenderRequest
     // and per-load on VM_CharacterViewer (CharacterViewer.Rendering 2.3.0+).
     // VanillaLooseOverridesBsa: default true, mirrors Skyrim's actual rule that

@@ -14,17 +14,23 @@ public sealed class NpcChooserViewerLoggerAdapter : ICharacterViewerLogger
 {
     public void LogMessage(string message)
     {
-        System.Diagnostics.Debug.WriteLine("[CharacterViewer] " + message);
+        string line = "[CharacterViewer] " + message;
+        System.Diagnostics.Debug.WriteLine(line);
+        RenderLogCapture.Write(line);
     }
 
     public void LogError(string message)
     {
-        System.Diagnostics.Debug.WriteLine("[CharacterViewer:ERROR] " + message);
+        string line = "[CharacterViewer:ERROR] " + message;
+        System.Diagnostics.Debug.WriteLine(line);
+        RenderLogCapture.Write(line);
     }
 
     public void LogError(string message, Exception ex)
     {
-        System.Diagnostics.Debug.WriteLine("[CharacterViewer:ERROR] " + message + ": " +
-            ExceptionLogger.GetExceptionStack(ex));
+        string line = "[CharacterViewer:ERROR] " + message + ": " +
+            ExceptionLogger.GetExceptionStack(ex);
+        System.Diagnostics.Debug.WriteLine(line);
+        RenderLogCapture.Write(line);
     }
 }

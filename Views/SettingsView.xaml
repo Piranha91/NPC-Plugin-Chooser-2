@@ -287,6 +287,14 @@
                                 <TextBlock Text="Internal Renderer (in-process CharacterViewer)"
                                            FontWeight="Bold" VerticalAlignment="Center"
                                            DockPanel.Dock="Left"/>
+                                <!-- "Log Render Logic" docks first so it ends up at
+                                     the rightmost edge (DockPanel right-docks in
+                                     declaration order: first child = rightmost). -->
+                                <CheckBox Content="Log Render Logic"
+                                          IsChecked="{Binding InternalLogRenderLogic, Mode=TwoWay}"
+                                          DockPanel.Dock="Right"
+                                          VerticalAlignment="Center" Margin="6,0,0,0"
+                                          ToolTip="When checked, every Internal-renderer load writes its full asset-resolution + renderer trace to &lt;ExeDir&gt;\RenderLogs\: live previews go to Preview_&lt;ModName&gt;_&lt;FormKey&gt;.txt, mugshot tile generations go to Mugshot_&lt;ModName&gt;_&lt;FormKey&gt;.txt. Use to diff a working preview against a tile that fails to render. Forces verbose logging on for the duration of the captured render."/>
                                 <Button Content="Reset Settings"
                                         Command="{Binding InternalMugshotPreviewVM.ResetCommand}"
                                         Padding="10,3" DockPanel.Dock="Right" Margin="6,0,0,0"

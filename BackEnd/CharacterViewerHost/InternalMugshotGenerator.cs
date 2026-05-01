@@ -25,6 +25,7 @@ public sealed class InternalMugshotGenerator
     private readonly EnvironmentStateProvider _env;
     private readonly IBsaArchiveProvider _bsa;
     private readonly GeneratedMugshotTracker _tracker;
+    private readonly CharacterViewerLogGate _logGate;
 
     public InternalMugshotGenerator(
         NpcMeshResolver resolver,
@@ -33,7 +34,8 @@ public sealed class InternalMugshotGenerator
         ICharacterViewerSettings viewerSettings,
         EnvironmentStateProvider env,
         IBsaArchiveProvider bsa,
-        GeneratedMugshotTracker tracker)
+        GeneratedMugshotTracker tracker,
+        CharacterViewerLogGate logGate)
     {
         _resolver = resolver;
         _renderer = renderer;
@@ -42,6 +44,7 @@ public sealed class InternalMugshotGenerator
         _env = env;
         _bsa = bsa;
         _tracker = tracker;
+        _logGate = logGate;
     }
 
     /// <summary>
@@ -71,6 +74,13 @@ public sealed class InternalMugshotGenerator
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int tid = Environment.CurrentManagedThreadId;
+        // Per-render diagnostic capture. Flow-scoped via AsyncLocal so parallel
+        // tile generations each get their own file (mugshots are rendered with
+        // up to MaxParallelPortraitRenders concurrency and a single global
+        // session would interleave them into one unreadable log). Forces
+        // CharacterViewerLogGate.Verbose on for the duration so the renderer
+        // emits its own [CharacterViewer] verbose lines.
+        using var captureScope = MaybeStartRenderLogCapture(npcFormKey, modSetting);
         Trace($"ENTER tid={tid} npc={npcFormKey} mod=[{modSetting?.DisplayName ?? "(none)"}]");
         try
         {
@@ -125,6 +135,13 @@ public sealed class InternalMugshotGenerator
                 // would just balloon disk usage across a session.
                 ClearExtractionCacheAfterRender = true,
                 // Advanced asset-resolution toggles (CharacterViewer.Rendering 2.3.0+).
+                // FaceGen NIFs / FaceTint DDS at the vanilla scope (i=0) are
+                // hard-skipped by the renderer's Phase 1 loose walk regardless
+                // of these toggles, so Base Game / Creation Club tiles always
+                // get vanilla FaceGen from base-game BSAs. Non-FaceGen paths
+                // (body / skin / hair textures) still honor the user's toggle —
+                // a CBBE / skin replacer in Data legitimately leaks into the
+                // Base Game preview when VanillaLooseOverridesBsa is true.
                 VanillaLooseOverridesBsa = cfg.VanillaLooseOverridesBsa,
                 VanillaLooseOverridesModLoose = cfg.VanillaLooseOverridesModLoose,
                 RenderMissingTextureAsWireframe = cfg.RenderMissingTextureAsWireframe,
@@ -200,8 +217,69 @@ public sealed class InternalMugshotGenerator
 
     private static void Trace(string message)
     {
-        System.Diagnostics.Debug.WriteLine($"[InternalMugshotGenerator] {message}");
-        System.Diagnostics.Trace.WriteLine($"[InternalMugshotGenerator] {message}");
+        string line = $"[InternalMugshotGenerator] {message}";
+        System.Diagnostics.Debug.WriteLine(line);
+        System.Diagnostics.Trace.WriteLine(line);
+        RenderLogCapture.Write(line);
+    }
+
+    /// <summary>If <see cref="InternalMugshotSettings.LogRenderLogic"/> is on,
+    /// opens a per-render flow-scoped capture writing to
+    /// <c>&lt;ExeDir&gt;\RenderLogs\Mugshot_&lt;ModName&gt;_&lt;FormKey&gt;.txt</c> and
+    /// forces <see cref="CharacterViewerLogGate.Verbose"/> on for the
+    /// session's duration so the renderer's verbose lines are emitted.
+    /// Disposing the scope flushes the file and restores the prior verbose
+    /// state. AsyncLocal scoping isolates parallel tile renders into
+    /// separate files (host-side messages on each render's async flow land
+    /// in that flow's file). Returns a no-op disposable when the toggle is
+    /// off so callers can <c>using var</c> unconditionally.</summary>
+    private IDisposable MaybeStartRenderLogCapture(FormKey formKey, ModSetting? modSetting)
+    {
+        if (!_settings.InternalMugshot.LogRenderLogic) return EmptyDisposable.Instance;
+
+        // Sanitize both fields — FormKey.ToString() is "xxxxxxxx:Plugin.esp",
+        // the colon is illegal in Windows filenames.
+        string modName = modSetting?.DisplayName ?? "Unscoped";
+        string safeModName = SanitizeForFileName(modName);
+        string safeFormKey = SanitizeForFileName(formKey.ToString());
+        string folder = Path.Combine(AppContext.BaseDirectory, "RenderLogs");
+        string filePath = Path.Combine(folder, $"Mugshot_{safeModName}_{safeFormKey}.txt");
+
+        bool prevVerbose = _logGate.Verbose;
+        _logGate.Verbose = true;
+        var capture = RenderLogCapture.BeginScopedCapture(filePath,
+            $"NPC2 Mugshot Render Log — Mod=[{modName}] NPC=[{formKey}]");
+
+        return new ActionDisposable(() =>
+        {
+            try { capture.Dispose(); }
+            finally { _logGate.Verbose = prevVerbose; }
+        });
+    }
+
+    private static string SanitizeForFileName(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return "_";
+        var invalid = Path.GetInvalidFileNameChars();
+        var chars = s.ToCharArray();
+        for (int i = 0; i < chars.Length; i++)
+        {
+            if (Array.IndexOf(invalid, chars[i]) >= 0) chars[i] = '_';
+        }
+        return new string(chars);
+    }
+
+    private sealed class ActionDisposable : IDisposable
+    {
+        private Action? _action;
+        public ActionDisposable(Action action) { _action = action; }
+        public void Dispose() { var a = _action; _action = null; a?.Invoke(); }
+    }
+
+    private sealed class EmptyDisposable : IDisposable
+    {
+        public static readonly EmptyDisposable Instance = new();
+        public void Dispose() { }
     }
 
     private CharacterViewerLightingLayout? ResolveLayout(string? name)
