@@ -319,14 +319,15 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         HideCommand = ReactiveCommand.Create(HideThisMod).DisposeWith(Disposables);
         UnhideCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnhideSelectedMod(this))
             .DisposeWith(Disposables);
-        SelectAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.SelectAllFromMod(this, false))
+        SelectAllFromThisModCommand = ReactiveCommand
+            .CreateFromTask(() => _vmNpcSelectionBar.SelectAllFromMod(this, false))
             .DisposeWith(Disposables);
         SelectAvailableFromThisModCommand = ReactiveCommand
-            .Create(() => _vmNpcSelectionBar.SelectAllFromMod(this, true)).DisposeWith(Disposables);
+            .CreateFromTask(() => _vmNpcSelectionBar.SelectAllFromMod(this, true)).DisposeWith(Disposables);
         SelectVisibleFromThisModCommand = ReactiveCommand
-            .Create(() => _vmNpcSelectionBar.SelectVisibleFromMod(this, false)).DisposeWith(Disposables);
+            .CreateFromTask(() => _vmNpcSelectionBar.SelectVisibleFromMod(this, false)).DisposeWith(Disposables);
         SelectVisibleAndAvailableFromThisModCommand = ReactiveCommand
-            .Create(() => _vmNpcSelectionBar.SelectVisibleFromMod(this, true)).DisposeWith(Disposables);
+            .CreateFromTask(() => _vmNpcSelectionBar.SelectVisibleFromMod(this, true)).DisposeWith(Disposables);
         UnselectAllFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnselectAllFromMod(this))
             .DisposeWith(Disposables);
         UnselectVisibleFromThisModCommand = ReactiveCommand.Create(() => _vmNpcSelectionBar.UnselectVisibleFromMod(this))

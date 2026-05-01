@@ -3229,7 +3229,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         return (true, string.Empty, wasValidated, affectedNpcs);
     }
 
-    public void SelectAllFromMod(VM_NpcsMenuMugshot referenceMod, bool onlyAvailable)
+    // Show the splash screen / progress bar once a bulk-select operation has more
+    // than this many NPCs queued for template-chain validation.
+    private const int BulkSelectionSplashThreshold = 200;
+    // How often (in NPCs processed) to yield the dispatcher so the splash can repaint.
+    private const int BulkSelectionYieldInterval = 25;
+
+    public async Task SelectAllFromMod(VM_NpcsMenuMugshot referenceMod, bool onlyAvailable)
     {
         if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName))
         {
@@ -3261,7 +3267,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             confirmationMessage += $"Since only mugshots for '{referenceMod.ModName}' are installed, without the actual mod, validation can't be performed. If the mod contains templated NPCs, their appearances may get bugged without validation. It is safer to install the mod and then batch-apply it so that validation can be performed. Continue anyway?" + "\n\n";
         }
         confirmationMessage += "Are you sure you want to proceed?";
-        
+
         if (!ScrollableMessageBox.Confirm(confirmationMessage, "Confirm Bulk Selection"))
         {
             return;
@@ -3273,34 +3279,61 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         var validationFailures = new List<string>();
         var processedNpcs = new HashSet<FormKey>(); // Avoid double-processing templates
 
-        // Process each applicable NPC
-        foreach (var npcVM in applicableNpcs)
+        VM_SplashScreen? splash = null;
+        if (applicableNpcs.Count > BulkSelectionSplashThreshold)
         {
-            if (processedNpcs.Contains(npcVM.NpcFormKey))
+            splash = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, isModal: true);
+            splash.UpdateStep("Analyzing Selections", applicableNpcs.Count);
+            // Give the splash window a chance to render before we start the synchronous work.
+            await Task.Yield();
+        }
+
+        try
+        {
+            int processedCount = 0;
+            // Process each applicable NPC
+            foreach (var npcVM in applicableNpcs)
             {
-                continue; // Already processed as part of another NPC's template chain
+                if (!processedNpcs.Contains(npcVM.NpcFormKey))
+                {
+                    // Validate and handle template chains
+                    var (isValid, failureReason, wasValidated, affectedNpcs) = ValidateAndHandleTemplatesForBatch(
+                        npcVM.NpcFormKey,
+                        referenceMod.AssociatedModSetting);
+
+                    if (!isValid)
+                    {
+                        validationFailures.Add(failureReason);
+                    }
+                    else
+                    {
+                        // Set the selection for the primary NPC (templates were already set by the helper)
+                        _consistencyProvider.SetSelectedMod(npcVM.NpcFormKey, targetModName, npcVM.NpcFormKey);
+                        successCount++;
+                        totalAffectedCount += affectedNpcs.Count;
+
+                        // Mark all affected NPCs (including templates) as processed
+                        foreach (var affectedKey in affectedNpcs)
+                        {
+                            processedNpcs.Add(affectedKey);
+                        }
+                    }
+                }
+
+                splash?.IncrementProgress(string.Empty);
+                processedCount++;
+                if (splash != null && processedCount % BulkSelectionYieldInterval == 0)
+                {
+                    // Let the dispatcher pump pending splash/throttled-progress updates.
+                    await Task.Yield();
+                }
             }
-
-            // Validate and handle template chains
-            var (isValid, failureReason, wasValidated, affectedNpcs) = ValidateAndHandleTemplatesForBatch(
-                npcVM.NpcFormKey, 
-                referenceMod.AssociatedModSetting);
-
-            if (!isValid)
+        }
+        finally
+        {
+            if (splash != null)
             {
-                validationFailures.Add(failureReason);
-                continue;
-            }
-
-            // Set the selection for the primary NPC (templates were already set by the helper)
-            _consistencyProvider.SetSelectedMod(npcVM.NpcFormKey, targetModName, npcVM.NpcFormKey);
-            successCount++;
-            totalAffectedCount += affectedNpcs.Count;
-
-            // Mark all affected NPCs (including templates) as processed
-            foreach (var affectedKey in affectedNpcs)
-            {
-                processedNpcs.Add(affectedKey);
+                await splash.CloseSplashScreenAsync();
             }
         }
 
@@ -3334,7 +3367,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
     }
     
-    public void SelectVisibleFromMod(VM_NpcsMenuMugshot referenceMod, bool onlyAvailable)
+    public async Task SelectVisibleFromMod(VM_NpcsMenuMugshot referenceMod, bool onlyAvailable)
     {
         if (referenceMod == null || string.IsNullOrWhiteSpace(referenceMod.ModName))
         {
@@ -3382,33 +3415,58 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         var validationFailures = new List<string>();
         var processedNpcs = new HashSet<FormKey>(); // Avoid double-processing templates
 
-        foreach (var npcVM in applicableNpcs)
+        VM_SplashScreen? splash = null;
+        if (applicableNpcs.Count > BulkSelectionSplashThreshold)
         {
-            if (processedNpcs.Contains(npcVM.NpcFormKey))
+            splash = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, isModal: true);
+            splash.UpdateStep("Analyzing Selections", applicableNpcs.Count);
+            await Task.Yield();
+        }
+
+        try
+        {
+            int processedCount = 0;
+            foreach (var npcVM in applicableNpcs)
             {
-                continue; // Already processed as part of another NPC's template chain
+                if (!processedNpcs.Contains(npcVM.NpcFormKey))
+                {
+                    // Validate and handle template chains
+                    var (isValid, failureReason, wasValidated, affectedNpcs) = ValidateAndHandleTemplatesForBatch(
+                        npcVM.NpcFormKey,
+                        referenceMod.AssociatedModSetting);
+
+                    if (!isValid)
+                    {
+                        validationFailures.Add(failureReason);
+                    }
+                    else
+                    {
+                        // Set the selection for the primary NPC (templates were already set by the helper)
+                        _consistencyProvider.SetSelectedMod(npcVM.NpcFormKey, targetModName, npcVM.NpcFormKey);
+                        successCount++;
+                        totalAffectedCount += affectedNpcs.Count;
+
+                        // Mark all affected NPCs (including templates) as processed
+                        foreach (var affectedKey in affectedNpcs)
+                        {
+                            processedNpcs.Add(affectedKey);
+                        }
+                    }
+                }
+
+                splash?.IncrementProgress(string.Empty);
+                processedCount++;
+                if (splash != null && processedCount % BulkSelectionYieldInterval == 0)
+                {
+                    await Task.Yield();
+                }
             }
-
-            // Validate and handle template chains
-            var (isValid, failureReason, wasValidated, affectedNpcs) = ValidateAndHandleTemplatesForBatch(
-                npcVM.NpcFormKey, 
-                referenceMod.AssociatedModSetting);
-
-            if (!isValid)
+        }
+        finally
+        {
+            if (splash != null)
             {
-                validationFailures.Add(failureReason);
-                continue;
-            }
-
-            // Set the selection for the primary NPC (templates were already set by the helper)
-            _consistencyProvider.SetSelectedMod(npcVM.NpcFormKey, targetModName, npcVM.NpcFormKey);
-            successCount++;
-            totalAffectedCount += affectedNpcs.Count;
-
-            // Mark all affected NPCs (including templates) as processed
-            foreach (var affectedKey in affectedNpcs)
-            {
-                processedNpcs.Add(affectedKey);
+                await splash.CloseSplashScreenAsync();
             }
         }
 
