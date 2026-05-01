@@ -63,7 +63,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private readonly AppearanceModFactory _appearanceModFactory;
     private readonly VM_FavoriteFaces.Factory _favoriteFacesFactory;
     private readonly VM_ModSetting.FromModelFactory _modSettingFromModelFactory;
-    
+    private readonly PluginProvider _pluginProvider;
+
     [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
     private static extern int StrCmpLogicalW(string x, string y);
 
@@ -268,7 +269,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         Lazy<VM_MainWindow> lazyMainWindowVm,
         AppearanceModFactory appearanceModFactory,
         VM_FavoriteFaces.Factory favoriteFacesFactory,
-        VM_ModSetting.FromModelFactory modSettingFromModelFactory)
+        VM_ModSetting.FromModelFactory modSettingFromModelFactory,
+        PluginProvider pluginProvider)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -283,6 +285,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         _appearanceModFactory = appearanceModFactory;
         _favoriteFacesFactory = favoriteFacesFactory;
         _modSettingFromModelFactory = modSettingFromModelFactory;
+        _pluginProvider = pluginProvider;
 
         _hiddenModNames = _settings.HiddenModNames ?? new(StringComparer.OrdinalIgnoreCase);
         _hiddenModsPerNpc = _settings.HiddenModsPerNpc ?? new();
@@ -1336,6 +1339,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         var fullyExhausted = new List<string>();
         var processedNpcs = new HashSet<FormKey>();
 
+        // Snapshot of the active load order, used by the master-availability check
+        // to mirror what Validator.cs enforces during patching.
+        var loadOrderKeys = _environmentStateProvider.LoadOrder?.ListedOrder
+            .Select(x => x.ModKey).ToHashSet() ?? new HashSet<ModKey>();
+        var masterCache = new Dictionary<ModKey, HashSet<ModKey>>();
+
         VM_SplashScreen? splash = null;
         if (applicableNpcs.Count > BulkSelectionSplashThreshold)
         {
@@ -1347,24 +1356,44 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         try
         {
-            // Run the validation/selection loop on a background thread so the splash
-            // can keep repainting while the work runs. The throttled progress subject
-            // never gets a quiet period to fire on the UI thread otherwise.
-            await Task.Run(() =>
+            // Loop runs on the UI thread because Mutagen's binary overlays (touched by
+            // ValidateTemplateChain → sourcePlugin.Npcs) aren't thread-safe and were
+            // first opened from this thread during init. Task.Delay(1) — not Task.Yield —
+            // is what lets the splash repaint and progress fire: Yield's continuation
+            // is scheduled at Normal priority, ahead of WPF's Render pass, and the
+            // 100ms-Throttle on _progressSubject never clears its quiet window if we
+            // emit faster than that. Task.Delay yields real wall-clock time.
+            int processedCount = 0;
+            foreach (var npcVM in applicableNpcs)
             {
-                foreach (var npcVM in applicableNpcs)
+                if (!processedNpcs.Contains(npcVM.NpcFormKey))
                 {
-                    if (!processedNpcs.Contains(npcVM.NpcFormKey))
-                    {
-                        var pool = new List<VM_ModSetting>(eligibleByNpc[npcVM.NpcFormKey]);
-                        bool succeeded = false;
-                        string lastFailure = string.Empty;
+                    var pool = new List<VM_ModSetting>(eligibleByNpc[npcVM.NpcFormKey]);
+                    bool succeeded = false;
+                    string lastFailure = string.Empty;
 
-                        while (pool.Count > 0 && !succeeded)
+                    while (pool.Count > 0 && !succeeded)
+                    {
+                        int idx = rng.Next(pool.Count);
+                        var candidate = pool[idx];
+                        pool.RemoveAt(idx);
+
+                        // Each Mutagen call below can throw on a malformed plugin
+                        // (we've seen ExtractGroupMemory bail with "argument out of
+                        // range" on at least one user's mod). Treat it as a per-
+                        // candidate failure so one bad plugin can't kill the run.
+                        try
                         {
-                            int idx = rng.Next(pool.Count);
-                            var candidate = pool[idx];
-                            pool.RemoveAt(idx);
+                            // Check masters first — cheaper than template validation,
+                            // and template validation has side-effects (applies template-
+                            // chain selections on success) we'd have to undo on a master
+                            // failure.
+                            if (!CandidateMastersAreAvailable(npcVM.NpcFormKey, candidate,
+                                    loadOrderKeys, masterCache, out var masterFailure))
+                            {
+                                lastFailure = masterFailure;
+                                continue;
+                            }
 
                             var (isValid, failureReason, _, affectedNpcs) =
                                 ValidateAndHandleTemplatesForBatch(npcVM.NpcFormKey, candidate);
@@ -1385,18 +1414,34 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                                 lastFailure = failureReason;
                             }
                         }
-
-                        if (!succeeded)
+                        catch (Exception ex)
                         {
-                            fullyExhausted.Add(string.IsNullOrWhiteSpace(lastFailure)
-                                ? $"{npcVM.DisplayName} ({npcVM.NpcFormKeyString})"
-                                : $"{npcVM.DisplayName} ({npcVM.NpcFormKeyString}) — last reason: {lastFailure}");
+                            lastFailure = $"candidate '{candidate.DisplayName}' threw while parsing its plugin ({ex.GetType().Name}: {ex.Message})";
+                            Debug.WriteLine($"Randomize: skipping {candidate.DisplayName} for {npcVM.NpcFormKeyString} — {ex}");
                         }
                     }
 
-                    splash?.IncrementProgress(string.Empty);
+                    if (!succeeded)
+                    {
+                        fullyExhausted.Add(string.IsNullOrWhiteSpace(lastFailure)
+                            ? $"{npcVM.DisplayName} ({npcVM.NpcFormKeyString})"
+                            : $"{npcVM.DisplayName} ({npcVM.NpcFormKeyString}) — last reason: {lastFailure}");
+                    }
                 }
-            });
+
+                splash?.IncrementProgress(string.Empty);
+                processedCount++;
+                if (splash != null && processedCount % BulkSelectionYieldInterval == 0)
+                {
+                    // Bypass the splash's 100ms Throttle: continuous UI-thread emissions
+                    // never clear its quiet window, so the bar would otherwise jump
+                    // straight from 0 → 100. UpdateProgress writes ProgressValue
+                    // synchronously; Task.Delay then gives WPF time to render.
+                    var pct = (double)processedCount / applicableNpcs.Count * 100.0;
+                    splash.UpdateProgress(pct, string.Empty);
+                    await Task.Delay(1);
+                }
+            }
         }
         finally
         {
@@ -3395,6 +3440,61 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
 
         return (true, string.Empty, wasValidated, affectedNpcs);
+    }
+
+    /// <summary>
+    /// Mirrors Validator.cs's master-availability check so randomize doesn't pick
+    /// candidates that will later fail screening. A master is available if it's in
+    /// the load order or bundled inside the candidate's own ModSetting.
+    /// </summary>
+    private bool CandidateMastersAreAvailable(
+        FormKey npcFormKey,
+        VM_ModSetting candidate,
+        HashSet<ModKey> loadOrderKeys,
+        Dictionary<ModKey, HashSet<ModKey>> masterCache,
+        out string failureReason)
+    {
+        failureReason = string.Empty;
+
+        // Replicates Validator.cs's source-plugin resolution logic.
+        ModKey? sourcePlugin = null;
+        if (candidate.IsFaceGenOnlyEntry)
+        {
+            sourcePlugin = npcFormKey.ModKey;
+        }
+        else if (candidate.NpcPluginDisambiguation != null &&
+                 candidate.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var disambiguatedPlugin))
+        {
+            sourcePlugin = disambiguatedPlugin;
+        }
+        else if (candidate.AvailablePluginsForNpcs != null &&
+                 candidate.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var availablePlugins) &&
+                 availablePlugins.Any())
+        {
+            sourcePlugin = availablePlugins.FirstOrDefault();
+        }
+
+        if (!sourcePlugin.HasValue || sourcePlugin.Value.IsNull)
+        {
+            return true; // Nothing plugin-backed to check.
+        }
+
+        if (!masterCache.TryGetValue(sourcePlugin.Value, out var masters))
+        {
+            masters = _pluginProvider.GetMasterPlugins(sourcePlugin.Value, candidate.CorrespondingFolderPaths);
+            masterCache[sourcePlugin.Value] = masters;
+        }
+
+        foreach (var master in masters)
+        {
+            if (!loadOrderKeys.Contains(master) && !candidate.CorrespondingModKeys.Contains(master))
+            {
+                failureReason = $"plugin '{sourcePlugin.Value.FileName}' is missing required master '{master.FileName}'";
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // Show the splash screen / progress bar once a bulk-select operation has more
