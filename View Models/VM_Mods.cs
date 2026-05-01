@@ -161,6 +161,27 @@ public class VM_Mods : ReactiveObject
 
     // Concurrency management
     private bool _isPopulatingModSettings = false;
+
+    // -------------------------------------------------------------------------
+    // Targeted cleanup tracing: when a specific mod is suspected of pulling in a
+    // foundation folder it shouldn't, set the display name below to that mod and
+    // the [CLEANUP-TRACE] lines fire only for it. Empty string disables tracing
+    // entirely (current default). Output goes to Debug.WriteLine so it shows up
+    // in the IDE Output window without needing the StartupLogger trigger file.
+    private const string CleanupTraceTarget = "";
+
+    private static bool ShouldTraceCleanup(VM_ModSetting vm) =>
+        !string.IsNullOrEmpty(CleanupTraceTarget) &&
+        string.Equals(vm.DisplayName, CleanupTraceTarget, StringComparison.OrdinalIgnoreCase);
+
+    private static void CleanupTrace(VM_ModSetting vm, string message)
+    {
+        if (ShouldTraceCleanup(vm))
+        {
+            Debug.WriteLine($"[CLEANUP-TRACE] '{vm.DisplayName}' {message}");
+        }
+    }
+    // -------------------------------------------------------------------------
     
     public bool SuppressPopupWarnings => _settings.SuppressPopupWarnings;
 
@@ -1293,6 +1314,12 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 AddGuestAppearanceToSettings(target, source, modDisplayName, npcDisplayName);
             }
 
+            // Mirror the analysis-time cache so a subsequent CleanupCorrespondingFolders
+            // call recognises SkyPatcher-targeted foundations as NPC sources to exclude.
+            // Widened lookup catches foundations on disk but not in the user's LO.
+            vmToRefresh.SkyPatcherTargetModKeys =
+                await vmToRefresh.GetSkyPatcherTargetModKeysAsync(environmentEditorIdMap, modEditorIdMap);
+
             // 5. Update UI-dependent properties
             RecalculateMugshotValidity(vmToRefresh);
 
@@ -2032,6 +2059,15 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                             {
                                 allSkyPatcherGuests.Add(guest);
                             }
+
+                            // Cache target ModKeys for the cleanup pass: SkyPatcher templates
+                            // don't override foundation NPCs at the record level, so without
+                            // this signal FindAndAddMissingMasters would re-attach the
+                            // foundation folder during CleanupCorrespondingFolders. Use the
+                            // widened lookup (env→mod fallback) because the foundation may
+                            // be attached as a VM resource without being in the user's LO.
+                            vm.SkyPatcherTargetModKeys =
+                                await vm.GetSkyPatcherTargetModKeysAsync(environmentEditorIdMap, modEditorIdMap);
                         }
                     }
                     finally
@@ -2360,20 +2396,35 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         // Optional: source plugins of NPCs in this VM. When excludeNpcSourcePlugins is true,
         // these are skipped as candidate missing masters since they are the NPC-providing
-        // plugins themselves rather than resources to be pulled in.
+        // plugins themselves rather than resources to be pulled in. Augmented with
+        // SkyPatcherTargetModKeys so SkyPatcher-style replacers (which don't override the
+        // foundation's NPC records, but do patch them at runtime via INI) get the same
+        // exclusion. SkyPatcherTargetModKeys is empty during the initial parallel scan and
+        // is only populated by AnalyzeModSettingsAsync, which means the initial run still
+        // attaches the foundation folder so Mutagen can resolve masters; the subsequent
+        // CleanupCorrespondingFolders pass then prunes it because the targets are now known.
         var npcSourcePluginKeys = excludeNpcSourcePlugins
-            ? vm.NpcFormKeys.Select(fk => fk.ModKey).ToHashSet()
+            ? vm.NpcFormKeys.Select(fk => fk.ModKey)
+                .Concat(vm.SkyPatcherTargetModKeys)
+                .ToHashSet()
             : new HashSet<ModKey>();
 
-        StartupLogger.Log($"{LogTag} '{vm.DisplayName}' enter; excludeNpcSourcePlugins={excludeNpcSourcePlugins}, NpcFormKeys.Count={vm.NpcFormKeys.Count}");
+        StartupLogger.Log($"{LogTag} '{vm.DisplayName}' enter; excludeNpcSourcePlugins={excludeNpcSourcePlugins}, NpcFormKeys.Count={vm.NpcFormKeys.Count}, SkyPatcherTargets.Count={vm.SkyPatcherTargetModKeys.Count}");
         StartupLogger.Log($"{LogTag} '{vm.DisplayName}' currentFolders=[{string.Join(", ", currentFoldersInVm.Select(Path.GetFileName))}]");
         StartupLogger.Log($"{LogTag} '{vm.DisplayName}' knownPluginKeysInVm=[{string.Join(", ", knownPluginKeysInVm.Select(k => k.FileName.String))}]");
         StartupLogger.Log($"{LogTag} '{vm.DisplayName}' npcSourcePluginKeys ({npcSourcePluginKeys.Count})=[{string.Join(", ", npcSourcePluginKeys.Select(k => k.FileName.String))}]");
+
+        CleanupTrace(vm, $"FindAndAddMissingMasters enter; excludeNpcSourcePlugins={excludeNpcSourcePlugins}, NpcFormKeys.Count={vm.NpcFormKeys.Count}, SkyPatcherTargets.Count={vm.SkyPatcherTargetModKeys.Count}");
+        CleanupTrace(vm, $"  currentFolders=[{string.Join(", ", currentFoldersInVm.Select(Path.GetFileName))}]");
+        CleanupTrace(vm, $"  knownPluginKeysInVm=[{string.Join(", ", knownPluginKeysInVm.Select(k => k.FileName.String))}]");
+        CleanupTrace(vm, $"  SkyPatcherTargetModKeys ({vm.SkyPatcherTargetModKeys.Count})=[{string.Join(", ", vm.SkyPatcherTargetModKeys.Select(k => k.FileName.String))}]");
+        CleanupTrace(vm, $"  npcSourcePluginKeys ({npcSourcePluginKeys.Count})=[{string.Join(", ", npcSourcePluginKeys.Select(k => k.FileName.String))}]");
 
         var missingMastersToFind = new HashSet<ModKey>();
 
         // Step 1: Find all missing masters from the VM's current set of plugins.
         var plugins = _pluginProvider.LoadPlugins(vm.CorrespondingModKeys, currentFoldersInVm);
+        CleanupTrace(vm, $"  loaded {plugins.Count} plugin(s) for master scan: [{string.Join(", ", plugins.Select(p => p.ModKey.FileName.String))}]");
         foreach (var plugin in plugins)
         {
             foreach (var masterRef in plugin.ModHeader.MasterReferences)
@@ -2390,6 +2441,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 else classification = "MISSING -> will search";
 
                 StartupLogger.Log($"{LogTag} '{vm.DisplayName}'   plugin={plugin.ModKey.FileName} master={masterKey.FileName} -> {classification}");
+                CleanupTrace(vm, $"    plugin={plugin.ModKey.FileName} master={masterKey.FileName} -> {classification} (inLoadOrder={inLoadOrder}, inKnown={inKnown}, inNpcSources={inNpcSources})");
 
                 if (!inLoadOrder && !inKnown && !inNpcSources)
                 {
@@ -2401,10 +2453,12 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         if (!missingMastersToFind.Any())
         {
             StartupLogger.Log($"{LogTag} '{vm.DisplayName}' no missing masters; exiting.");
+            CleanupTrace(vm, "  no missing masters; FindAndAddMissingMasters exits without changes");
             return; // Nothing to do
         }
 
         StartupLogger.Log($"{LogTag} '{vm.DisplayName}' missingMastersToFind=[{string.Join(", ", missingMastersToFind.Select(k => k.FileName.String))}]");
+        CleanupTrace(vm, $"  missingMastersToFind=[{string.Join(", ", missingMastersToFind.Select(k => k.FileName.String))}]");
 
         // Step 2: Find potential source folders for the missing masters.
         var foldersToSearch = allModDirectories.Where(d => !currentFoldersInVm.Contains(d)).ToList();
@@ -2426,6 +2480,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             {
                 var winner = candidates.OrderByDescending(c => c.LastWrite).First();
                 StartupLogger.Log($"{LogTag} '{vm.DisplayName}'   master '{master.FileName}' -> chose folder '{Path.GetFileName(winner.Path)}' from {candidates.Count} candidate(s): [{string.Join(", ", candidates.Select(c => Path.GetFileName(c.Path)))}]");
+                CleanupTrace(vm, $"    master '{master.FileName}' candidates ({candidates.Count})=[{string.Join(", ", candidates.Select(c => $"{Path.GetFileName(c.Path)}@{c.LastWrite:o}"))}], winner='{Path.GetFileName(winner.Path)}'");
                 if (candidates.Count > 1)
                 {
                     var sources = string.Join(", ", candidates.Select(c => Path.GetFileName(c.Path)));
@@ -2438,12 +2493,14 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 {
                     var pluginsInWinnerFolder = _aux.GetModKeysInDirectory(winner.Path, new List<string>(), false);
                     newResourceFoldersToAdd[winner.Path] = pluginsInWinnerFolder;
+                    CleanupTrace(vm, $"      will add folder '{Path.GetFileName(winner.Path)}' bringing plugins=[{string.Join(", ", pluginsInWinnerFolder.Select(k => k.FileName.String))}]");
                 }
             }
             else
             {
                 StartupLogger.Log(
                     $"{LogTag} '{vm.DisplayName}'   master '{master.FileName}' -> no local source found.");
+                CleanupTrace(vm, $"    master '{master.FileName}' -> no local source found");
             }
         }
 
@@ -2493,11 +2550,40 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// </summary>
     public void CleanupCorrespondingFolders(VM_ModSetting vm, ConcurrentBag<string>? warnings = null)
     {
-        if (vm.IsAutoGenerated) return;
-        if (vm.CorrespondingFolderPaths.Count <= 1) return;
-        if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder)) return;
+        if (vm.IsAutoGenerated)
+        {
+            CleanupTrace(vm, "exit early: IsAutoGenerated=true");
+            return;
+        }
+        if (vm.CorrespondingFolderPaths.Count <= 1)
+        {
+            CleanupTrace(vm, $"exit early: only {vm.CorrespondingFolderPaths.Count} folder(s)");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder))
+        {
+            CleanupTrace(vm, "exit early: ModsFolder unset or missing");
+            return;
+        }
 
         StartupLogger.Log($"[CleanupCorrespondingFolders] '{vm.DisplayName}' enter; folders=[{string.Join(", ", vm.CorrespondingFolderPaths.Select(Path.GetFileName))}]");
+
+        if (ShouldTraceCleanup(vm))
+        {
+            CleanupTrace(vm, $"enter; folders=[{string.Join(", ", vm.CorrespondingFolderPaths.Select(Path.GetFileName))}]");
+            CleanupTrace(vm, $"CorrespondingModKeys=[{string.Join(", ", vm.CorrespondingModKeys.Select(k => k.FileName.String))}]");
+            CleanupTrace(vm, $"NpcFormKeys.Count={vm.NpcFormKeys.Count}");
+
+            var npcSourceModKeys = vm.NpcFormKeys.Select(fk => fk.ModKey).Distinct().ToList();
+            CleanupTrace(vm, $"NpcFormKeys distinct ModKeys ({npcSourceModKeys.Count})=[{string.Join(", ", npcSourceModKeys.Select(k => k.FileName.String))}]");
+
+            var loadOrder = _environmentStateProvider.LoadOrderModKeys.ToHashSet();
+            CleanupTrace(vm, $"LoadOrder.Count={loadOrder.Count}");
+            foreach (var mk in vm.CorrespondingModKeys)
+            {
+                CleanupTrace(vm, $"  CMK '{mk.FileName}' inLoadOrder={loadOrder.Contains(mk)}");
+            }
+        }
 
         // Identify the primary folder by name match against DisplayName.
         var primary = vm.CorrespondingFolderPaths.FirstOrDefault(p =>
@@ -2508,9 +2594,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         if (primary == null)
         {
             StartupLogger.Log($"[CleanupCorrespondingFolders] '{vm.DisplayName}' skipped — no folder name matches the mod name.");
+            CleanupTrace(vm, "exit: no folder name matched DisplayName, cleanup skipped");
             return;
         }
         StartupLogger.Log($"[CleanupCorrespondingFolders] '{vm.DisplayName}' primary='{Path.GetFileName(primary)}'");
+        CleanupTrace(vm, $"primary='{Path.GetFileName(primary)}'");
 
         var originalFolders = vm.CorrespondingFolderPaths.ToList();
         if (originalFolders.Count == 1) return;
@@ -2522,6 +2610,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             vm.CorrespondingFolderPaths.Clear();
             vm.CorrespondingFolderPaths.Add(primary);
             vm.UpdateCorrespondingModKeys();
+            CleanupTrace(vm, $"after reset: folders=[{string.Join(", ", vm.CorrespondingFolderPaths.Select(Path.GetFileName))}], CorrespondingModKeys=[{string.Join(", ", vm.CorrespondingModKeys.Select(k => k.FileName.String))}]");
 
             // Re-add only what the current detector says is genuinely needed.
             var allModDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
@@ -2532,6 +2621,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // implicitly via the additions) already re-derives ResourceOnlyModKeys via the wiring
             // added in v2 — but call again to be safe in case the additions skipped that path.
             vm.UpdateCorrespondingModKeys();
+            CleanupTrace(vm, $"after FindAndAddMissingMasters: folders=[{string.Join(", ", vm.CorrespondingFolderPaths.Select(Path.GetFileName))}], CorrespondingModKeys=[{string.Join(", ", vm.CorrespondingModKeys.Select(k => k.FileName.String))}]");
         }
         finally
         {
@@ -2544,6 +2634,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             Debug.WriteLine($"CleanupCorrespondingFolders: '{vm.DisplayName}' dropped {removed.Count} stale folder(s): " +
                             string.Join(", ", removed.Select(Path.GetFileName)));
         }
+        CleanupTrace(vm, $"exit; final folders=[{string.Join(", ", vm.CorrespondingFolderPaths.Select(Path.GetFileName))}]");
     }
 
     /// <summary>

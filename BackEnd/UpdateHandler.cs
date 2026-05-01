@@ -123,31 +123,51 @@ public class UpdateHandler
 
         if (settingsVersion < "2.1.6")
         {
-            await UpdateTo2_1_6_Final(modsVm, splashReporter);
+            await UpdateTo2_1_6_Final(modsVm, pluginProvider, environmentStateProvider, splashReporter);
         }
 
         Debug.WriteLine("Settings update process complete.");
     }
 
     /// <summary>
-    /// 2.1.6 migration. Two passes over every mod setting:
-    ///   1. <see cref="VM_Mods.CleanupCorrespondingFolders"/> — drops stale entries from
+    /// 2.1.6 migration. Three passes over every mod setting:
+    ///   1. Populate <see cref="VM_ModSetting.SkyPatcherTargetModKeys"/> by re-parsing the
+    ///      mod's SkyPatcher INIs against the live load order + the plugins currently
+    ///      attached to the VM. SkyPatcher template replacers (e.g. <c>t_Amalee_Replacer.esp</c>
+    ///      patching Amalee in <c>3DNPC.esp</c>) don't override the foundation's NPC records,
+    ///      so without this signal step 2 can't recognise the foundation and would re-attach
+    ///      its folder. <see cref="VM_Mods.AnalyzeModSettingsAsync"/> populates this set for
+    ///      mods that pass full analysis, but cache-hit mods come into the migration with it
+    ///      empty — hence the explicit population here.
+    ///   2. <see cref="VM_Mods.CleanupCorrespondingFolders"/> — drops stale entries from
     ///      <c>CorrespondingFolderPaths</c> that the current missing-master detector would
     ///      not re-add. Older versions of that detector attached foundation-mod folders
     ///      (e.g. "Interesting NPCs SE") to replacers (e.g. "Amalee Replacer - by Taranis")
-    ///      even when the master plugin was already in the load order.
-    ///   2. <see cref="VM_ModSetting.RecomputeResourceOnlyPlugins"/> — re-derives
+    ///      even when the master plugin was already in the load order, or when the replacer
+    ///      patched it via SkyPatcher rather than via record overrides.
+    ///   3. <see cref="VM_ModSetting.RecomputeResourceOnlyPlugins"/> — re-derives
     ///      <c>ResourceOnlyModKeys</c> from master relationships and folder co-residence,
     ///      so multi-ESP foundations (e.g. 3DNPC.esp + 3DNPC0.esp + 3DNPC1.esp) are all
-    ///      flagged together. Belt-and-suspenders for mods skipped by step 1.
+    ///      flagged together. Belt-and-suspenders for mods skipped by step 2.
     /// Together these prevent the NPC-base-plugin records from being duplicated into the
     /// output patch during dependency merge.
     /// </summary>
-    private async Task UpdateTo2_1_6_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
+    private async Task UpdateTo2_1_6_Final(VM_Mods modsVm, PluginProvider pluginProvider,
+        EnvironmentStateProvider environmentStateProvider, VM_SplashScreen? splashReporter)
     {
         splashReporter?.UpdateStep("Updating to 2.1.6: cleaning up resource-only plugins and stale folders...");
 
         var warnings = new System.Collections.Concurrent.ConcurrentBag<string>();
+
+        // Built once and reused across all mods. Captures the user's actual load order so
+        // EditorID-based filterByNpcs entries (e.g. "Amalee3DNPC") that don't include a
+        // plugin scope can still resolve when the foundation is enabled in the LO.
+        var environmentEditorIdMap = environmentStateProvider.LoadOrder.PriorityOrder.Npc().WinningOverrides()
+            .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
+            .GroupBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key,
+                g => g.Select(npc => npc.FormKey).ToHashSet(),
+                StringComparer.OrdinalIgnoreCase);
 
         await Task.Run(() =>
         {
@@ -157,6 +177,8 @@ public class UpdateHandler
             {
                 try
                 {
+                    PopulateSkyPatcherTargetsForMigration(modVm, pluginProvider, environmentEditorIdMap);
+
                     modsVm.CleanupCorrespondingFolders(modVm, warnings);
                     modVm.RecomputeResourceOnlyPlugins();
                 }
@@ -177,6 +199,49 @@ public class UpdateHandler
         }
 
         Debug.WriteLine("2.1.6 resource-only / corresponding-folder cleanup complete.");
+    }
+
+    /// <summary>
+    /// Loads the plugins currently associated with <paramref name="vm"/>, builds a per-VM
+    /// editor-id map from them, and uses it to resolve the SkyPatcher INI targets so
+    /// <see cref="VM_ModSetting.SkyPatcherTargetModKeys"/> reflects the foundation plugins
+    /// the mod patches. Must run BEFORE <see cref="VM_Mods.CleanupCorrespondingFolders"/>
+    /// so the cleanup pass sees the targets and excludes them from missing-master discovery.
+    /// </summary>
+    private static void PopulateSkyPatcherTargetsForMigration(
+        VM_ModSetting vm,
+        PluginProvider pluginProvider,
+        IReadOnlyDictionary<string, HashSet<FormKey>> environmentEditorIdMap)
+    {
+        if (vm.IsMugshotOnlyEntry || vm.IsAutoGenerated) return;
+        if (vm.CorrespondingFolderPaths.Count == 0 || vm.CorrespondingModKeys.Count == 0) return;
+
+        var modFolderPaths = vm.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var plugins = pluginProvider.LoadPlugins(vm.CorrespondingModKeys, modFolderPaths, out var loadedPaths);
+        try
+        {
+            // Per-VM map mirrors AnalyzeModSettingsAsync: gives EditorID lookups access to the
+            // foundation's NPCs while the foundation folder is still attached (which it is at
+            // this point — that's exactly the polluted state we're about to clean up).
+            var modEditorIdMap = plugins.SelectMany(x => x.Npcs)
+                .Where(npc => !string.IsNullOrWhiteSpace(npc.EditorID))
+                .GroupBy(npc => npc.EditorID!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key,
+                    g => g.Select(npc => npc.FormKey).ToHashSet(),
+                    StringComparer.OrdinalIgnoreCase);
+
+            // .Result is acceptable here: we're already on a Task.Run thread, and
+            // GetSkyPatcherTargetModKeysAsync's only async work is File.ReadAllLinesAsync.
+            // Widened lookup (env→mod fallback) catches foundations that exist on disk but
+            // aren't enabled in the user's LO — exactly the polluted-state case the
+            // migration is designed to clean up.
+            vm.SkyPatcherTargetModKeys = vm
+                .GetSkyPatcherTargetModKeysAsync(environmentEditorIdMap, modEditorIdMap).Result;
+        }
+        finally
+        {
+            pluginProvider.UnloadPlugins(loadedPaths);
+        }
     }
 
     private void UpdateTo2_0_4_Initial()

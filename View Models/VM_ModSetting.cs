@@ -112,6 +112,21 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     public HashSet<FormKey> NpcFormKeys { get; set; } = new();
     public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
 
+    /// <summary>
+    /// ModKeys of NPCs that this mod patches via SkyPatcher templates (the "target" NPC
+    /// in <c>filterByNpcs=...</c>). Populated during AnalyzeModSettingsAsync from
+    /// <see cref="GetSkyPatcherImportsAsync"/>'s guest list. Used by
+    /// <see cref="VM_Mods.FindAndAddMissingMasters"/> to treat the foundation plugin as an
+    /// effective NPC source so the cleanup pass doesn't re-attach the foundation folder
+    /// for SkyPatcher-style replacers (e.g. <c>t_Amalee_Replacer.esp</c> → <c>3DNPC.esp</c>).
+    ///
+    /// Intentionally NOT persisted: it's only consulted by the cleanup pass that runs
+    /// inside the same <c>PopulateModSettingsAsync</c> call that populates it. On
+    /// subsequent launches the persisted folder list is already correct, so an empty
+    /// transient set is fine.
+    /// </summary>
+    public HashSet<ModKey> SkyPatcherTargetModKeys { get; set; } = new();
+
     public Dictionary<FormKey, List<ModKey>> AvailablePluginsForNpcs { get; set; } =
         new(); // tracks which plugins contain which Npc entry
 
@@ -2246,6 +2261,69 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         }
 
         return guestAppearances;
+    }
+
+    /// <summary>
+    /// Lightweight variant of <see cref="GetSkyPatcherImportsAsync"/> that returns just the
+    /// distinct <see cref="ModKey"/>s this mod targets via SkyPatcher INIs (the
+    /// <c>filterByNpcs=...</c> side). Unlike the full importer — which only resolves targets
+    /// against the load order so guest-appearance entries in <c>_settings.SelectedAppearanceMods</c>
+    /// don't accumulate FormKeys that aren't reachable in-game — this method falls back to
+    /// <paramref name="modEditorIdMap"/> when the env map misses, so foundations that exist
+    /// on disk but aren't enabled in the load order can still be identified.
+    ///
+    /// That fallback is exactly what <see cref="VM_Mods.CleanupCorrespondingFolders"/> needs:
+    /// the polluted state has the foundation folder attached as a VM resource, so its plugins
+    /// ARE loaded and ARE in the per-VM map even though the LO doesn't include them. Without
+    /// this widened lookup, SkyPatcher-template replacers (e.g. <c>t_Amalee_Replacer.esp</c>
+    /// → <c>3DNPC.esp</c>) would slip through the cleanup whenever the user hasn't enabled
+    /// the foundation in their LO.
+    /// </summary>
+    public async Task<HashSet<ModKey>> GetSkyPatcherTargetModKeysAsync(
+        IReadOnlyDictionary<string, HashSet<FormKey>> environmentEditorIdMap,
+        IReadOnlyDictionary<string, HashSet<FormKey>> modEditorIdMap)
+    {
+        var targetModKeys = new HashSet<ModKey>();
+        var iniFiles = new List<string>();
+
+        foreach (var modPath in CorrespondingFolderPaths)
+        {
+            var skyPatcherNpcDir = Path.Combine(modPath, "SKSE", "Plugins", "SkyPatcher", "npc");
+            if (Directory.Exists(skyPatcherNpcDir))
+            {
+                iniFiles.AddRange(Directory.EnumerateFiles(skyPatcherNpcDir, "*.ini", SearchOption.AllDirectories));
+            }
+        }
+
+        if (!iniFiles.Any()) return targetModKeys;
+
+        foreach (var iniFile in iniFiles)
+        {
+            var lines = await File.ReadAllLinesAsync(iniFile);
+            foreach (var line in lines)
+            {
+                var trimmedLine = line.Trim();
+                if (!trimmedLine.StartsWith("filterByNpcs=", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var parts = trimmedLine.Split(':');
+                if (parts.Length == 0) continue;
+
+                var targetNpcStr = parts[0].Substring("filterByNpcs=".Length);
+
+                // env first (foundation in LO), mod fallback (foundation only on disk).
+                if (!TryParseSkyPatcherNpc(targetNpcStr, environmentEditorIdMap, out var targetNpcKeys))
+                {
+                    if (!TryParseSkyPatcherNpc(targetNpcStr, modEditorIdMap, out targetNpcKeys)) continue;
+                }
+
+                foreach (var fk in targetNpcKeys)
+                {
+                    targetModKeys.Add(fk.ModKey);
+                }
+            }
+        }
+
+        return targetModKeys;
     }
 
     private bool TryParseSkyPatcherNpc(string npcStr, IReadOnlyDictionary<string, HashSet<FormKey>> editorIdMap,
