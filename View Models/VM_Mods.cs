@@ -1143,7 +1143,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             await AnalyzeModSettingsAsync(splashReporter, faceGenCache);
 
-            PruneEmptyNewlyCreatedAppearanceMods();
+            PruneEmptyNewlyCreatedAppearanceMods(splashReporter);
 
             // Mirror the 2.1.6 migration sweep for first-time scans. Inside
             // ProcessNewModFolderForParallelScanAsync, FindAndAddMissingMasters runs against
@@ -1510,7 +1510,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         bool FoundInjectedRecords, // Result from CheckForInjectedRecords
         string InjectedTooltip,     // Result from CheckForInjectedRecords
         List<string> AllFolderPaths, // The final list of all paths
-        HashSet<ModKey> ResourceOnlyKeys // The final set of resource keys
+        HashSet<ModKey> ResourceOnlyKeys, // The final set of resource keys
+        List<string> UnresolvedMastersAtScan // Master plugins not found in any mod folder during FindAndAddMissingMasters
     ) : ModFolderScanResult;
 
     #endregion
@@ -1709,9 +1710,12 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                         newVm.CorrespondingModKeys.Add(modKey);
                     }
 
-                    
+
                     newVm.ResourceOnlyModKeys = newData.ResourceOnlyKeys;
                     newVm.IsNewlyCreated = true;
+                    // Carry the unresolved-master record forward so PruneEmptyNewlyCreatedAppearanceMods
+                    // can encode the "missing master" reason in CachedMissingMasterMods + the warnings popup.
+                    newVm.UnresolvedMastersAtScan = newData.UnresolvedMastersAtScan.ToList();
 
                     // Apply the pre-calculated analysis results from the DTO
                     if (newData.ShouldDisableMergeIn)
@@ -1821,7 +1825,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 FoundInjectedRecords: injectedFound,
                 InjectedTooltip: tempVmForAnalysis.HandleInjectedOverridesToolTip,
                 AllFolderPaths: tempVmForAnalysis.CorrespondingFolderPaths.ToList(),
-                ResourceOnlyKeys: new HashSet<ModKey>(tempVmForAnalysis.ResourceOnlyModKeys)
+                ResourceOnlyKeys: new HashSet<ModKey>(tempVmForAnalysis.ResourceOnlyModKeys),
+                UnresolvedMastersAtScan: tempVmForAnalysis.UnresolvedMastersAtScan.ToList()
             );
         }
         
@@ -1858,7 +1863,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             FoundInjectedRecords: false,
             InjectedTooltip: tempVmForAnalysis.HandleInjectedOverridesToolTip,
             AllFolderPaths: tempVmForAnalysis.CorrespondingFolderPaths.ToList(),
-            ResourceOnlyKeys: new HashSet<ModKey>(tempVmForAnalysis.ResourceOnlyModKeys)
+            ResourceOnlyKeys: new HashSet<ModKey>(tempVmForAnalysis.ResourceOnlyModKeys),
+            UnresolvedMastersAtScan: tempVmForAnalysis.UnresolvedMastersAtScan.ToList()
         );
     }
 
@@ -2111,7 +2117,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// user mods are preserved even if currently empty, since they may be in a
     /// transient bad state due to load-order drift.
     /// </summary>
-    private void PruneEmptyNewlyCreatedAppearanceMods()
+    private void PruneEmptyNewlyCreatedAppearanceMods(VM_SplashScreen? splashReporter)
     {
         var emptyVms = _allModSettingsInternal
             .Where(vm => vm.IsNewlyCreated
@@ -2123,25 +2129,43 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         if (!emptyVms.Any()) return;
 
-        const string failureReason = "All NPCs were rejected during analysis (e.g. custom race not in load order, no FaceGen, or template chain terminates in a Leveled NPC). See Rejected NPCs/<mod>.txt for per-NPC reasons.";
-
         foreach (var vm in emptyVms)
         {
+            bool hasUnresolvedMasters = vm.UnresolvedMastersAtScan.Any();
+
+            string failureReason = hasUnresolvedMasters
+                ? $"Could not be analyzed because the following masters were not found in any mod folder: {string.Join(", ", vm.UnresolvedMastersAtScan)}. Install the missing masters as separate mod folders and click the refresh button next to this entry to re-scan."
+                : "All NPCs were rejected during analysis (e.g. no FaceGen, or template chain terminates in a Leveled NPC). See Rejected NPCs/<mod>.txt for per-NPC reasons.";
+
             Debug.WriteLine(
-                $"Discarded appearance mod '{vm.DisplayName}' [{string.Join(", ", vm.CorrespondingModKeys)}] -- all NPCs rejected during analysis. See 'Rejected NPCs/{vm.DisplayName}.txt'.");
+                $"Discarded appearance mod '{vm.DisplayName}' [{string.Join(", ", vm.CorrespondingModKeys)}] -- "
+                + (hasUnresolvedMasters
+                    ? $"missing masters: {string.Join(", ", vm.UnresolvedMastersAtScan)}"
+                    : "all NPCs rejected during analysis"));
+
+            if (hasUnresolvedMasters)
+            {
+                // Routed to the splash screen's catch-all "Initialization Warning" popup
+                // so missing-master cases share the same surface as other init warnings
+                // (e.g. multi-source-master notices) rather than spawning a separate dialog.
+                splashReporter?.ShowMessagesOnClose(
+                    $"'{vm.DisplayName}' was skipped because the following masters are not installed in any mod folder: {string.Join(", ", vm.UnresolvedMastersAtScan)}.");
+            }
 
             foreach (var path in vm.CorrespondingFolderPaths)
             {
-                if (!string.IsNullOrWhiteSpace(path))
+                if (string.IsNullOrWhiteSpace(path)) continue;
+                _settings.CachedNonAppearanceMods.TryAdd(path, failureReason);
+                if (hasUnresolvedMasters)
                 {
-                    _settings.CachedNonAppearanceMods.TryAdd(path, failureReason);
+                    _settings.CachedMissingMasterMods[path] = vm.UnresolvedMastersAtScan.ToList();
                 }
             }
 
             _allModSettingsInternal.Remove(vm);
         }
     }
-
+    
     public async Task<(bool Success, string FailureReason)> RescanSingleModFolderAsync(string modFolderPath)
     {
         if (string.IsNullOrWhiteSpace(modFolderPath) || !Directory.Exists(modFolderPath))
@@ -2439,6 +2463,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         var knownPluginKeysInVm = new HashSet<ModKey>(vm.CorrespondingModKeys);
         var currentFoldersInVm = vm.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        // Reset transient unresolved-masters bookkeeping for this scan; consumed by
+        // PruneEmptyNewlyCreatedAppearanceMods to drive the missing-master UX.
+        vm.UnresolvedMastersAtScan.Clear();
+
         // Optional: source plugins of NPCs in this VM. When excludeNpcSourcePlugins is true,
         // these are skipped as candidate missing masters since they are the NPC-providing
         // plugins themselves rather than resources to be pulled in. Augmented with
@@ -2546,6 +2574,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 StartupLogger.Log(
                     $"{LogTag} '{vm.DisplayName}'   master '{master.FileName}' -> no local source found.");
                 CleanupTrace(vm, $"    master '{master.FileName}' -> no local source found");
+                vm.UnresolvedMastersAtScan.Add(master.FileName.String);
             }
         }
 

@@ -883,6 +883,14 @@
                 <StackPanel>
                     <TextBlock Text="Non-Appearance Mods:" Margin="0,0,0,2"/>
 
+                    <TextBlock Text="The highlighted mods could not be scanned due to missing masters. Install the listed masters as separate mod folders and click the refresh button to re-scan."
+                               Foreground="{DynamicResource StatusErrorForeground}"
+                               TextWrapping="Wrap"
+                               FontStyle="Italic"
+                               FontSize="10"
+                               Margin="0,0,0,4"
+                               Visibility="{Binding HasMissingMasterMods, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
                     <TextBox Text="{Binding NonAppearanceModFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,3" ToolTip="Filter the list of non-appearance mods below."/>
 
                           <ListBox ItemsSource="{Binding FilteredNonAppearanceMods}" Height="150" HorizontalContentAlignment="Stretch" BorderThickness="1">
@@ -894,16 +902,26 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            
-                            <TextBlock Grid.Column="0" 
-                                       Text="{Binding Key, Converter={StaticResource FullPathToFolderNameConverter}}" 
-                                       ToolTip="{Binding Value}"
-                                       VerticalAlignment="Center"/>
 
-                            <Button Grid.Column="1" 
-                                    Content="🔄" 
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding Path, Converter={StaticResource FullPathToFolderNameConverter}}"
+                                       ToolTip="{Binding TooltipText}"
+                                       VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMissingMasters}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource StatusErrorForeground}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <Button Grid.Column="1"
+                                    Content="🔄"
                                     Command="{Binding DataContext.RescanCachedModCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                    CommandParameter="{Binding Key}"
+                                    CommandParameter="{Binding Path}"
                                     ToolTip="Re-scan this folder to check if it is now an appearance mod"
                                     FontWeight="Bold"
                                     Cursor="Hand"
@@ -923,11 +941,11 @@
                                     </Style>
                                 </Button.Style>
                             </Button>
-                             <Button Grid.Column="2" 
-                                    Content="X" 
+                             <Button Grid.Column="2"
+                                    Content="X"
                                     Command="{Binding DataContext.RemoveCachedModCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                    CommandParameter="{Binding Key}"
-                                    Foreground="{DynamicResource StatusErrorForeground}" 
+                                    CommandParameter="{Binding Path}"
+                                    Foreground="{DynamicResource StatusErrorForeground}"
                                     FontWeight="Bold"
                                     Cursor="Hand"
                                     Margin="5,0,0,0"

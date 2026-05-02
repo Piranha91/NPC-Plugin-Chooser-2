@@ -36,6 +36,41 @@ public enum MugshotSearchMode
     Comprehensive
 }
 
+/// <summary>
+/// Row VM for the "Non-Appearance Mods" list in the Settings view. Wraps the
+/// path/reason pair from <see cref="Settings.CachedNonAppearanceMods"/> with
+/// the optional missing-master annotation from
+/// <see cref="Settings.CachedMissingMasterMods"/> so the row can render red and
+/// surface a tooltip telling the user which masters to install.
+/// </summary>
+public class CachedNonAppearanceModEntry
+{
+    public string Path { get; }
+    public string Reason { get; }
+    public bool IsMissingMasters { get; }
+    public IReadOnlyList<string> MissingMasterNames { get; }
+    public string TooltipText { get; }
+
+    public CachedNonAppearanceModEntry(string path, string reason, IReadOnlyList<string>? missingMasters)
+    {
+        Path = path;
+        Reason = reason;
+        MissingMasterNames = missingMasters ?? System.Array.Empty<string>();
+        IsMissingMasters = MissingMasterNames.Count > 0;
+
+        if (IsMissingMasters)
+        {
+            TooltipText =
+                "Missing masters at scan time:\n  • " + string.Join("\n  • ", MissingMasterNames)
+                + "\n\nInstall these masters as separate mod folders, then click the refresh button to re-scan this entry.";
+        }
+        else
+        {
+            TooltipText = reason;
+        }
+    }
+}
+
 public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
@@ -201,10 +236,17 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
     // --- NEW: Properties for Non-Appearance Mod Filtering ---
     [Reactive] public string NonAppearanceModFilterText { get; set; } = string.Empty;
-    public ObservableCollection<KeyValuePair<string, string>> FilteredNonAppearanceMods { get; } = new();
+    public ObservableCollection<CachedNonAppearanceModEntry> FilteredNonAppearanceMods { get; } = new();
 
     // MODIFIED: Type changed to handle dictionary from model
-    public ObservableCollection<KeyValuePair<string, string>> CachedNonAppearanceMods { get; private set; }
+    public ObservableCollection<CachedNonAppearanceModEntry> CachedNonAppearanceMods { get; private set; }
+
+    // True when at least one entry in CachedNonAppearanceMods has missing masters.
+    // Drives the red banner above the list in the Settings view. Updated explicitly
+    // by the few code paths that mutate the collection (constructor, refresh, rescan,
+    // remove); a reactive composition over the non-reactive collection property is
+    // brittle and was failing to fire on initial population.
+    [Reactive] public bool HasMissingMasterMods { get; private set; }
 
     // --- Properties for Ignored Mods ---
     [Reactive] public string IgnoredModFilterText { get; set; } = string.Empty;
@@ -468,9 +510,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
 
         // Initialize the collection from the model, ordered by folder name for consistent display.
-        CachedNonAppearanceMods = new ObservableCollection<KeyValuePair<string, string>>(
-            _model.CachedNonAppearanceMods.OrderBy(kvp => Path.GetFileName(kvp.Key) ?? kvp.Key,
-                StringComparer.OrdinalIgnoreCase));
+        CachedNonAppearanceMods = new ObservableCollection<CachedNonAppearanceModEntry>(
+            _model.CachedNonAppearanceMods
+                .OrderBy(kvp => Path.GetFileName(kvp.Key) ?? kvp.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(kvp => new CachedNonAppearanceModEntry(
+                    kvp.Key,
+                    kvp.Value,
+                    _model.CachedMissingMasterMods.TryGetValue(kvp.Key, out var missing) ? missing : null)));
 
         // Initialize the ignored mods collection from the model.
         foreach (var path in _model.IgnoredMods.OrderBy(p => Path.GetFileName(p) ?? p, StringComparer.OrdinalIgnoreCase))
@@ -500,16 +546,18 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         {
             if (string.IsNullOrWhiteSpace(path)) return;
 
-            // Remove from the underlying model dictionary
+            // Remove from both underlying dictionaries
             _model.CachedNonAppearanceMods.Remove(path);
+            _model.CachedMissingMasterMods.Remove(path);
 
-            // Find and remove the KeyValuePair from the view model collections
-            var itemToRemove = CachedNonAppearanceMods.FirstOrDefault(kvp => kvp.Key == path);
-            if (!itemToRemove.Equals(default(KeyValuePair<string, string>)))
+            var itemToRemove = CachedNonAppearanceMods.FirstOrDefault(e => e.Path == path);
+            if (itemToRemove != null)
             {
                 CachedNonAppearanceMods.Remove(itemToRemove);
                 FilteredNonAppearanceMods.Remove(itemToRemove);
             }
+
+            UpdateHasMissingMasterMods();
         }).DisposeWith(_disposables);
         RescanCachedModCommand =
             ReactiveCommand.CreateFromTask<string>(RescanCachedModAsync).DisposeWith(_disposables);
@@ -945,6 +993,9 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => { ApplyNonAppearanceFilter(); })
             .DisposeWith(_disposables);
+
+        // Initial value for the banner-visibility flag.
+        UpdateHasMissingMasterMods();
 
         this.WhenAnyValue(x => x.IgnoredModFilterText)
             .Select(_ => Unit.Default)
@@ -2375,10 +2426,20 @@ Options:
     
     private void RefreshNonAppearanceMods()
     {
-        CachedNonAppearanceMods = new ObservableCollection<KeyValuePair<string, string>>(
-            _model.CachedNonAppearanceMods.OrderBy(kvp => Path.GetFileName(kvp.Key) ?? kvp.Key,
-                StringComparer.OrdinalIgnoreCase));
+        CachedNonAppearanceMods = new ObservableCollection<CachedNonAppearanceModEntry>(
+            _model.CachedNonAppearanceMods
+                .OrderBy(kvp => Path.GetFileName(kvp.Key) ?? kvp.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(kvp => new CachedNonAppearanceModEntry(
+                    kvp.Key,
+                    kvp.Value,
+                    _model.CachedMissingMasterMods.TryGetValue(kvp.Key, out var missing) ? missing : null)));
         ApplyNonAppearanceFilter();
+        UpdateHasMissingMasterMods();
+    }
+
+    private void UpdateHasMissingMasterMods()
+    {
+        HasMissingMasterMods = CachedNonAppearanceMods?.Any(e => e.IsMissingMasters) ?? false;
     }
 
     /// <summary>
@@ -2393,7 +2454,7 @@ Options:
         var filter = NonAppearanceModFilterText;
         var sourceList = CachedNonAppearanceMods;
 
-        IEnumerable<KeyValuePair<string, string>> itemsToDisplay;
+        IEnumerable<CachedNonAppearanceModEntry> itemsToDisplay;
 
         if (string.IsNullOrWhiteSpace(filter))
         {
@@ -2401,9 +2462,9 @@ Options:
         }
         else
         {
-            // Filter is applied to the Key (the path)
-            itemsToDisplay = sourceList.Where(kvp =>
-                (Path.GetFileName(kvp.Key) ?? kvp.Key).Contains(filter, StringComparison.OrdinalIgnoreCase));
+            // Filter is applied to the Path
+            itemsToDisplay = sourceList.Where(entry =>
+                (Path.GetFileName(entry.Path) ?? entry.Path).Contains(filter, StringComparison.OrdinalIgnoreCase));
         }
 
         foreach (var item in itemsToDisplay)
@@ -2499,15 +2560,18 @@ Options:
         if (wasReimported)
         {
             _model.CachedNonAppearanceMods.Remove(path);
+            _model.CachedMissingMasterMods.Remove(path);
 
-            var itemToRemove = CachedNonAppearanceMods.FirstOrDefault(kvp => kvp.Key == path);
-            if (!itemToRemove.Equals(default(KeyValuePair<string, string>)))
+            var itemToRemove = CachedNonAppearanceMods.FirstOrDefault(e => e.Path == path);
+            if (itemToRemove != null)
             {
                 CachedNonAppearanceMods.Remove(itemToRemove);
 
-                // FIX: Explicitly remove from the filtered list bound to the UI
+                // Also remove from the filtered list bound to the UI
                 FilteredNonAppearanceMods.Remove(itemToRemove);
             }
+
+            UpdateHasMissingMasterMods();
 
             ScrollableMessageBox.Show(
                 $"Successfully re-imported '{Path.GetFileName(path)}' as an appearance mod. You can now find it in the Mods menu.",

@@ -66,6 +66,11 @@ public class Settings
     public bool FilterByActiveModsMO2 { get; set; } = false;
     public string MO2ModlistPath { get; set; } = string.Empty;
     public Dictionary<string, string> CachedNonAppearanceMods { get; set; } = new(); // These have been examined and determined to not have NPC mods. Used to speed up startup
+    // Path -> list of master plugin filenames that were not found in any mod folder
+    // at scan time. Subset of CachedNonAppearanceMods (every key here is also a key
+    // there). Drives the red-highlight + warning UX for actionable scan failures
+    // (user can install the master and click refresh to retry).
+    public Dictionary<string, List<string>> CachedMissingMasterMods { get; set; } = new();
     public HashSet<string> IgnoredMods { get; set; } = new(); // Manually specified mod folders to skip during import
 
     // Game Environment

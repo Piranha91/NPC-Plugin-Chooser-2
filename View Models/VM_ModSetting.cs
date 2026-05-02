@@ -199,6 +199,12 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     // Property control if additional expensive checks are performed the first time a mod is discovered
     public bool IsNewlyCreated { get; set; } = false;
 
+    // Populated by VM_Mods.FindAndAddMissingMasters when a master listed in a plugin
+    // header could not be located in any mod folder. Read by
+    // PruneEmptyNewlyCreatedAppearanceMods to encode the "missing master" reason
+    // in Settings.CachedMissingMasterMods. Not persisted -- recomputed on every scan.
+    public List<string> UnresolvedMastersAtScan { get; set; } = new();
+
     // --- Commands ---
     public ReactiveCommand<Unit, Unit> AddFolderPathCommand { get; }
     public ReactiveCommand<string, Unit> BrowseFolderPathCommand { get; }
@@ -1465,7 +1471,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
         RefreshNpcCount();
     }
-    
+
     public void RefreshNpcCount() => NpcCount = NpcFormKeys.Count;
 
     /// <summary>
