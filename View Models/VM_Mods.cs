@@ -1143,6 +1143,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             await AnalyzeModSettingsAsync(splashReporter, faceGenCache);
 
+            PruneEmptyNewlyCreatedAppearanceMods();
+
             // Mirror the 2.1.6 migration sweep for first-time scans. Inside
             // ProcessNewModFolderForParallelScanAsync, FindAndAddMissingMasters runs against
             // a freshly-created temp VM whose NpcFormKeys is still empty, which means
@@ -2096,7 +2098,50 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             await ResolveAndApplySkyPatcherGuests(allSkyPatcherGuests.ToList());
         }
     }
-    
+
+    /// <summary>
+    /// Removes newly-discovered plugin-based appearance mods that ended up with zero
+    /// usable NPCs after <see cref="AnalyzeModSettingsAsync"/>. RefreshNpcLists may
+    /// reject every NPC in a plugin (e.g. all NPCs use a custom race whose definition
+    /// is not in the active load order), leaving an empty VM that confuses the UI and
+    /// produces a left-panel entry with no mugshots. Caches the folders as
+    /// non-appearance so the next launch doesn't re-scan them; the user can clear the
+    /// cache from settings if the situation changes (e.g. a missing master is added
+    /// to the load order). Only newly-created VMs are eligible -- previously-saved
+    /// user mods are preserved even if currently empty, since they may be in a
+    /// transient bad state due to load-order drift.
+    /// </summary>
+    private void PruneEmptyNewlyCreatedAppearanceMods()
+    {
+        var emptyVms = _allModSettingsInternal
+            .Where(vm => vm.IsNewlyCreated
+                         && !vm.IsFaceGenOnlyEntry
+                         && !vm.IsMugshotOnlyEntry
+                         && vm.CorrespondingModKeys.Any()
+                         && vm.NpcFormKeysToDisplayName.Count == 0)
+            .ToList();
+
+        if (!emptyVms.Any()) return;
+
+        const string failureReason = "All NPCs were rejected during analysis (e.g. custom race not in load order, no FaceGen, or template chain terminates in a Leveled NPC). See Rejected NPCs/<mod>.txt for per-NPC reasons.";
+
+        foreach (var vm in emptyVms)
+        {
+            Debug.WriteLine(
+                $"Discarded appearance mod '{vm.DisplayName}' [{string.Join(", ", vm.CorrespondingModKeys)}] -- all NPCs rejected during analysis. See 'Rejected NPCs/{vm.DisplayName}.txt'.");
+
+            foreach (var path in vm.CorrespondingFolderPaths)
+            {
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    _settings.CachedNonAppearanceMods.TryAdd(path, failureReason);
+                }
+            }
+
+            _allModSettingsInternal.Remove(vm);
+        }
+    }
+
     public async Task<(bool Success, string FailureReason)> RescanSingleModFolderAsync(string modFolderPath)
     {
         if (string.IsNullOrWhiteSpace(modFolderPath) || !Directory.Exists(modFolderPath))
