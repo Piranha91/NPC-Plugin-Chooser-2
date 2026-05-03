@@ -295,7 +295,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
 
     /// <summary>If <see cref="InternalMugshotSettings.LogRenderLogic"/> is on,
     /// opens a per-render capture session writing to
-    /// <c>&lt;ExeDir&gt;\RenderLogs\&lt;modName&gt;_&lt;FormKey&gt;.txt</c> and forces the
+    /// <c>&lt;ExeDir&gt;\RenderLogs\&lt;modName&gt;_&lt;NpcLabel&gt;_Preview.txt</c> and forces the
     /// shared <see cref="CharacterViewerLogGate.Verbose"/> flag on for the
     /// session's duration. Disposing the returned scope flushes the file and
     /// restores the prior verbose state. When the toggle is off, returns a
@@ -304,17 +304,19 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     {
         if (!_settings.InternalMugshot.LogRenderLogic) return EmptyDisposable.Instance;
 
-        // Sanitize both fields — FormKey.ToString() is "xxxxxxxx:Plugin.esp",
-        // the colon is illegal in Windows filenames; mod display names can
-        // legitimately contain slashes / colons too.
+        // Sanitize all fields — FormKey.ToString() is "xxxxxxxx:Plugin.esp",
+        // the colon is illegal in Windows filenames; mod display names and
+        // NPC display names can legitimately contain slashes / colons too.
+        string npcLabel = _npcSelectionBar.Value?.AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(formKey))?.DisplayName
+                          ?? formKey.ToString();
         string safeModName = SanitizeForFileName(modName);
-        string safeFormKey = SanitizeForFileName(formKey.ToString());
+        string safeNpcLabel = SanitizeForFileName(npcLabel);
         string folder = Path.Combine(AppContext.BaseDirectory, "RenderLogs");
-        // "Preview_" prefix mirrors the offscreen mugshot path's "Mugshot_"
-        // prefix so the two render paths' files for the same NPC sort next to
+        // "_Preview" suffix mirrors the offscreen mugshot path's "_Mugshot"
+        // suffix so the two render paths' files for the same NPC sort next to
         // each other and are easy to diff when debugging tile-vs-preview
         // discrepancies.
-        string filePath = Path.Combine(folder, $"Preview_{safeModName}_{safeFormKey}.txt");
+        string filePath = Path.Combine(folder, $"{safeModName}_{safeNpcLabel}_Preview.txt");
 
         bool prevVerbose = _logGate.Verbose;
         _logGate.Verbose = true;

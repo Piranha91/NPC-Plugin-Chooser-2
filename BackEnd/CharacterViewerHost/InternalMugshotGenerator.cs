@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CharacterViewer.Rendering;
 using CharacterViewer.Rendering.Offscreen;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.Models;
+using NPC_Plugin_Chooser_2.View_Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 
@@ -26,6 +28,7 @@ public sealed class InternalMugshotGenerator
     private readonly IBsaArchiveProvider _bsa;
     private readonly GeneratedMugshotTracker _tracker;
     private readonly CharacterViewerLogGate _logGate;
+    private readonly Lazy<VM_NpcSelectionBar> _npcSelectionBar;
 
     public InternalMugshotGenerator(
         NpcMeshResolver resolver,
@@ -35,7 +38,8 @@ public sealed class InternalMugshotGenerator
         EnvironmentStateProvider env,
         IBsaArchiveProvider bsa,
         GeneratedMugshotTracker tracker,
-        CharacterViewerLogGate logGate)
+        CharacterViewerLogGate logGate,
+        Lazy<VM_NpcSelectionBar> npcSelectionBar)
     {
         _resolver = resolver;
         _renderer = renderer;
@@ -45,6 +49,7 @@ public sealed class InternalMugshotGenerator
         _bsa = bsa;
         _tracker = tracker;
         _logGate = logGate;
+        _npcSelectionBar = npcSelectionBar;
     }
 
     /// <summary>
@@ -225,7 +230,7 @@ public sealed class InternalMugshotGenerator
 
     /// <summary>If <see cref="InternalMugshotSettings.LogRenderLogic"/> is on,
     /// opens a per-render flow-scoped capture writing to
-    /// <c>&lt;ExeDir&gt;\RenderLogs\Mugshot_&lt;ModName&gt;_&lt;FormKey&gt;.txt</c> and
+    /// <c>&lt;ExeDir&gt;\RenderLogs\&lt;ModName&gt;_&lt;NpcLabel&gt;_Mugshot.txt</c> and
     /// forces <see cref="CharacterViewerLogGate.Verbose"/> on for the
     /// session's duration so the renderer's verbose lines are emitted.
     /// Disposing the scope flushes the file and restores the prior verbose
@@ -237,13 +242,16 @@ public sealed class InternalMugshotGenerator
     {
         if (!_settings.InternalMugshot.LogRenderLogic) return EmptyDisposable.Instance;
 
-        // Sanitize both fields — FormKey.ToString() is "xxxxxxxx:Plugin.esp",
-        // the colon is illegal in Windows filenames.
+        // Sanitize all fields — FormKey.ToString() is "xxxxxxxx:Plugin.esp",
+        // the colon is illegal in Windows filenames; mod and NPC display
+        // names can legitimately contain slashes / colons too.
         string modName = modSetting?.DisplayName ?? "Unscoped";
+        string npcLabel = _npcSelectionBar.Value?.AllNpcs.FirstOrDefault(n => n.NpcFormKey.Equals(formKey))?.DisplayName
+                          ?? formKey.ToString();
         string safeModName = SanitizeForFileName(modName);
-        string safeFormKey = SanitizeForFileName(formKey.ToString());
+        string safeNpcLabel = SanitizeForFileName(npcLabel);
         string folder = Path.Combine(AppContext.BaseDirectory, "RenderLogs");
-        string filePath = Path.Combine(folder, $"Mugshot_{safeModName}_{safeFormKey}.txt");
+        string filePath = Path.Combine(folder, $"{safeModName}_{safeNpcLabel}_Mugshot.txt");
 
         bool prevVerbose = _logGate.Verbose;
         _logGate.Verbose = true;
