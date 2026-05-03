@@ -297,7 +297,7 @@ public partial class UC_InternalMugshotPreview : UserControl
         int h = Math.Max(1, (int)GlControl.ActualHeight);
         try
         {
-            MeshAwareCameraFitter.ApplyTo(_viewer, framing, w, h);
+            MeshAwareCameraFitter.ApplyTo(_viewer, framing, w, h, log: BuildFramingLogger());
         }
         catch (Exception ex)
         {
@@ -317,12 +317,26 @@ public partial class UC_InternalMugshotPreview : UserControl
         int h = Math.Max(1, (int)GlControl.ActualHeight);
         try
         {
-            MeshAwareCameraFitter.ApplyTo(_viewer, framing, w, h, preserveCameraOrientation);
+            MeshAwareCameraFitter.ApplyTo(_viewer, framing, w, h, preserveCameraOrientation,
+                log: BuildFramingLogger());
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine("MeshAwareCameraFitter.ApplyTo failed: " + ex.Message);
         }
+    }
+
+    /// <summary>Routes <see cref="MeshAwareCameraFitter"/>'s diagnostic
+    /// messages into the active <see cref="BackEnd.CharacterViewerHost.RenderLogCapture"/>
+    /// session so the live-preview's <c>_Preview.txt</c> file gains
+    /// per-shape bbox + final-distance lines (matching what the offscreen
+    /// renderer emits into the parallel <c>_Mugshot.txt</c>). Returns null
+    /// when no capture session is active so the fitter elides all the
+    /// log-message construction.</summary>
+    private static Action<string>? BuildFramingLogger()
+    {
+        if (!BackEnd.CharacterViewerHost.RenderLogCapture.IsCapturing) return null;
+        return msg => BackEnd.CharacterViewerHost.RenderLogCapture.Write("[CharacterViewer] " + msg);
     }
 
     private static CameraFraming.MeshAware BuildAutoFramingSpec(InternalMugshotSettings cfg)

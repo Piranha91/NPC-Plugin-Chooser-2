@@ -160,6 +160,13 @@ public sealed class InternalMugshotGenerator
                 SubsurfaceStrength = cfg.SubsurfaceStrength,
                 VignetteRadius = cfg.VignetteRadius,
                 VignetteIntensity = cfg.VignetteIntensity,
+                // Snapshot the active flow-scoped writer NOW (still on the
+                // host's logical call context). The renderer's dedicated
+                // render thread doesn't inherit this AsyncLocal, so we hand
+                // it a thread-agnostic closure instead. Null when LogRenderLogic
+                // is off (no capture scope active) — the renderer skips the
+                // diagnostic emission entirely.
+                DiagnosticLog = BuildRenderDiagnosticLog(),
             };
 
             long preRender = sw.ElapsedMilliseconds;
@@ -226,6 +233,19 @@ public sealed class InternalMugshotGenerator
         System.Diagnostics.Debug.WriteLine(line);
         System.Diagnostics.Trace.WriteLine(line);
         RenderLogCapture.Write(line);
+    }
+
+    /// <summary>Captures the active <see cref="RenderLogCapture"/> writer
+    /// into a thread-agnostic closure, prefixing each line with
+    /// <c>[CharacterViewer]</c> so the framing diagnostics interleave
+    /// cleanly with the rest of the lib's verbose trace in the log file.
+    /// Returns null when no capture session is active so the renderer
+    /// short-circuits the diagnostic build-up entirely.</summary>
+    private static Action<string>? BuildRenderDiagnosticLog()
+    {
+        var snapshot = RenderLogCapture.SnapshotWriter();
+        if (snapshot == null) return null;
+        return msg => snapshot("[CharacterViewer] " + msg);
     }
 
     /// <summary>If <see cref="InternalMugshotSettings.LogRenderLogic"/> is on,

@@ -95,6 +95,43 @@ public static class RenderLogCapture
         }
     }
 
+    /// <summary>Snapshots the active writer (flow-scoped if present, else
+    /// global) into a thread-agnostic <see cref="Action{T}"/> closure. Lets
+    /// the caller pass the resulting delegate to code paths that run on a
+    /// thread which doesn't inherit the calling AsyncLocal context — e.g.
+    /// the offscreen renderer's dedicated render thread, which would
+    /// otherwise see <see cref="_flowWriter"/>'s null on its own logical
+    /// call context and silently drop log lines.
+    ///
+    /// <para>Returns null when no session is active. The returned closure
+    /// keeps the writer alive as long as the closure does — disposing the
+    /// owning capture scope makes subsequent writes no-ops (they catch
+    /// internally), so closures from a since-disposed session are safe to
+    /// keep around.</para></summary>
+    public static Action<string>? SnapshotWriter()
+    {
+        var flow = _flowWriter.Value;
+        if (flow != null)
+        {
+            return msg =>
+            {
+                try { lock (flow) flow.WriteLine(msg); }
+                catch { /* writer may be closing */ }
+            };
+        }
+        StreamWriter? global;
+        lock (_globalLock) global = _globalWriter;
+        if (global != null)
+        {
+            return msg =>
+            {
+                try { lock (_globalLock) { if (_globalWriter == global) global.WriteLine(msg); } }
+                catch { /* writer may be closing */ }
+            };
+        }
+        return null;
+    }
+
     private static StreamWriter? TryOpen(string filePath, string headerLine)
     {
         try
