@@ -134,11 +134,15 @@ public sealed class InternalMugshotGenerator
                 Cancellation = token,
                 MissingMeshPathsOut = missingMeshPathsOut,
                 MissingTexturePathsOut = missingTexturePathsOut,
-                // Each mugshot tile is generated once per (NPC, mod) and
-                // never re-rendered — keeping extracted source NIFs / DDS
-                // around in %TEMP%\SynthEBD_ViewerCache between renders
-                // would just balloon disk usage across a session.
-                ClearExtractionCacheAfterRender = true,
+                // Per-render extraction cache clearing was removed: it raced
+                // with concurrent interactive 3D-preview loads (both share the
+                // resolver's extraction directory), causing the preview to lose
+                // mid-load extracted files and render wireframes. The cache
+                // now lives at <exe-dir>\CharacterViewerCache\ and accumulates
+                // across the session — bounded by |unique BSAs| × |unique
+                // touched paths|, and intentionally reusable across runs via
+                // the resolver's per-BSA SHA token. Surface a manual clear
+                // action if disk pressure becomes a real concern.
                 // Advanced asset-resolution toggles (CharacterViewer.Rendering 2.3.0+).
                 // FaceGen NIFs / FaceTint DDS at the vanilla scope (i=0) are
                 // hard-skipped by the renderer's Phase 1 loose walk regardless
