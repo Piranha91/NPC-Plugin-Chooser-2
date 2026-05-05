@@ -661,3 +661,8 @@ Overall, Gemini was great for coding the UI and more or less did exactly what I 
 On the back end, where the coding was more specialized and required knowledge of the Mutagen API for Bethesda games, the changes Gemini made to my N.P.C.1 code were largely destructive, sometimes in ways that I didn’t realize until I started looking through its code in fine detail. Its code would usually compile with few or no fixes, but the changes it made resulted in horrible things like patching runs that took 4 hours, or startup initialization that ate 19 GB of RAM. Furthermore, once these behaviors were pointed out, the LLMs were pretty useless at fixing the behavior - every time they would suggest “this is happening because of X; here’s how to fix it…” and their fix would be completely wrong, so I’d always end up having to investigate and fix myself. In retrospect I could have saved at least a month by ditching the LLMs and coding the back end by hand (which, by the end, is largely what happened anyway).
 
 Therefore, while the tools were genuinely helpful (and I don’t think I would have ever launched the project without their help, as after SynthEBD I never want to code another UI unassisted), I really don’t buy the hype about how they’re going to put most programmers out of work. They’re a productivity aid, not a replacement.
+
+
+## License
+
+NPC Plugin Chooser 2 is licensed under the **GNU General Public License v3.0 or later** — see [LICENSE](LICENSE) for the full text. This matches the upstream license of the project's core dependencies (Mutagen.Bethesda, nifly), and is required to be GPL-compatible because of them.
