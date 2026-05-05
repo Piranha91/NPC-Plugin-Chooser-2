@@ -6,7 +6,9 @@ using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Interop;
+using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
 using NPC_Plugin_Chooser_2.Themes;
@@ -35,9 +37,16 @@ namespace NPC_Plugin_Chooser_2.Views
             }
             
             _appSettings = Locator.Current.GetService<Settings>(); // Resolve settings instance
-            
+
             // --- Apply Stored Window Settings on Load ---
             ApplyWindowSettings();
+
+            // Hidden diagnostic shortcut: Ctrl+Alt+Shift+M opens the mesh-
+            // survey dialog. Deliberately non-obvious — only meant for the
+            // developer when validating heuristic changes (primary-head
+            // election, biped-slot filter, FaceGen-NIF detection) against
+            // the user's full mod library.
+            PreviewKeyDown += OnMainWindowPreviewKeyDown;
 
             // All bindings & subscriptions live here
             this.WhenActivated(disposables =>
@@ -190,6 +199,27 @@ namespace NPC_Plugin_Chooser_2.Views
             Debug.WriteLine($"Applied Window Settings: L:{Left} T:{Top} W:{Width} H:{Height} S:{WindowState}");
         }
         
+        private void OnMainWindowPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            // Ctrl+Alt+Shift+M — using all three modifiers + a non-prominent
+            // letter to avoid clashing with platform / IME shortcuts.
+            if (e.Key != Key.M) return;
+            const ModifierKeys required = ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift;
+            if ((Keyboard.Modifiers & required) != required) return;
+
+            e.Handled = true;
+            var runner = Locator.Current.GetService<MeshSurveyRunner>();
+            if (runner == null)
+            {
+                MessageBox.Show(this,
+                    "MeshSurveyRunner is not registered in the container.",
+                    "Mesh Survey", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            var dlg = new MeshSurveyDialog(runner) { Owner = this };
+            dlg.ShowDialog();
+        }
+
         private void SaveWindowSettings()
         {
             if (_appSettings == null) return;
