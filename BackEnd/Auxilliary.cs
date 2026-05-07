@@ -463,6 +463,63 @@ public class Auxilliary : IDisposable
         }
     }
 
+    /// <summary>
+    /// Sortable key over NPC-record fields that predict which renderer assets
+    /// will overlap between adjacent renders (skeleton/body/skin/head). Sorting
+    /// a list of NPCs by this key — without parsing any NIF — clusters NPCs
+    /// that share the same race/skin/worn-armor/head-parts/hair so the renderer
+    /// reuses meshes and textures across consecutive frames. Used by the
+    /// "Generate All Mugshots" batch flow.
+    /// </summary>
+    public readonly record struct NpcGroupingKey(
+        bool IsFemale,
+        string Race,
+        string WornArmor,
+        string HeadPartsHash,
+        string HairColor) : IComparable<NpcGroupingKey>
+    {
+        public int CompareTo(NpcGroupingKey other)
+        {
+            int c = IsFemale.CompareTo(other.IsFemale);
+            if (c != 0) return c;
+            c = string.CompareOrdinal(Race, other.Race);
+            if (c != 0) return c;
+            c = string.CompareOrdinal(WornArmor, other.WornArmor);
+            if (c != 0) return c;
+            c = string.CompareOrdinal(HeadPartsHash, other.HeadPartsHash);
+            if (c != 0) return c;
+            return string.CompareOrdinal(HairColor, other.HairColor);
+        }
+    }
+
+    public static NpcGroupingKey BuildNpcGroupingKey(INpcGetter npc)
+    {
+        string race = npc.Race.IsNull ? string.Empty : npc.Race.FormKey.ToString();
+        string wornArmor = npc.WornArmor.IsNull ? string.Empty : npc.WornArmor.FormKey.ToString();
+        string hairColor = npc.HairColor.IsNull ? string.Empty : npc.HairColor.FormKey.ToString();
+
+        string headPartsHash;
+        if (npc.HeadParts == null || npc.HeadParts.Count == 0)
+        {
+            headPartsHash = string.Empty;
+        }
+        else
+        {
+            // Sort so re-orderings of the same set produce the same key. Join
+            // on a separator that can't appear inside a FormKey string so the
+            // hash is collision-free over the input set.
+            var keys = new List<string>(npc.HeadParts.Count);
+            foreach (var link in npc.HeadParts)
+            {
+                if (!link.IsNull) keys.Add(link.FormKey.ToString());
+            }
+            keys.Sort(StringComparer.Ordinal);
+            headPartsHash = string.Join("|", keys);
+        }
+
+        return new NpcGroupingKey(IsFemale(npc), race, wornArmor, headPartsHash, hairColor);
+    }
+
     public static bool HasTraitsFlag(INpcGetter npc)
     {
         return npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits);

@@ -16,7 +16,6 @@ using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Splat;
 using System.Linq;
-using System.Net.Http;
 using GongSolutions.Wpf.DragDrop;
 using System.Text;
 using System.Windows.Media;
@@ -43,6 +42,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     private readonly GeneratedMugshotTracker _tracker;
     private readonly FaceFinderCacheTracker _faceFinderTracker;
     private readonly MugshotStalenessChecker _stalenessChecker;
+    private readonly BatchMugshotGenerator _batchGenerator;
     private readonly EventLogger _eventLogger;
     private readonly Func<VM_InternalMugshotPreview> _internalPreviewFactory;
     private readonly CompositeDisposable Disposables = new();
@@ -166,6 +166,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         PortraitCreator portraitCreator,
         InternalMugshotGenerator internalMugshotGenerator,
         MugshotStalenessChecker stalenessChecker,
+        BatchMugshotGenerator batchGenerator,
         EventLogger eventLogger,
         Func<VM_InternalMugshotPreview> internalPreviewFactory,
         GeneratedMugshotTracker tracker,
@@ -188,6 +189,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         _portraitCreator = portraitCreator;
         _internalMugshotGenerator = internalMugshotGenerator;
         _stalenessChecker = stalenessChecker;
+        _batchGenerator = batchGenerator;
         _eventLogger = eventLogger;
         _internalPreviewFactory = internalPreviewFactory;
         _tracker = tracker;
@@ -941,164 +943,94 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         try
         {
             _eventLogger.Log($"Loading mugshot for {SourceNpcFormKey} from {ModName}", "Load_START");
-            
+
             // First, ensure the initial placeholder image is loaded and visible.
             await LoadInitialImageAsync();
             if (token.IsCancellationRequested) return;
-    
+
             IsLoading = true;
-    
-            // --- 1. Prioritize FaceFinder API ---
-            // This block can run even if the mod doesn't exist locally.
+
+            // --- 1. Prioritize FaceFinder API (file-producing logic in BatchMugshotGenerator) ---
             if (_settings.UseFaceFinderFallback)
             {
-                // Define base path for saving cached images
-                var baseCacheFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
-                    ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FaceFinder Cache")
-                    : _settings.MugshotsFolder;
-                var saveFolder = Path.Combine(baseCacheFolder, this.ModName);
-                var baseSavePath = Path.Combine(saveFolder, SourceNpcFormKey.ModKey.ToString(), $"{SourceNpcFormKey.ID:X8}");
-    
-                // Check cache first
-                var existingCachedFile = Auxilliary.FindExistingCachedImage(baseSavePath);
-                if (_settings.CacheFaceFinderImages && existingCachedFile != null)
+                var ffResult = await _batchGenerator.TryFaceFinderAsync(SourceNpcFormKey, ModName, token);
+
+                if (ffResult.Source == GenerationSource.FaceFinderCache)
                 {
-                    var metadata = await _faceFinderClient.ReadMetadataAsync(existingCachedFile);
-                    if (metadata?.ExternalUrl != null && ModPageUrls.All(p => p.Url != metadata.ExternalUrl))
-                    {
-                        ModPageUrls.Add(new ModPageInfo("FaceFinder", metadata.ExternalUrl));
-                    }
-                    
-                    bool isStale = await _faceFinderClient.IsCacheStaleAsync(existingCachedFile, SourceNpcFormKey, ModName);
-                    if (!isStale)
-                    {
-                        Debug.WriteLine($"Using cached mugshot for {SourceNpcFormKey} from FaceFinder.");
-                        _eventLogger.Log($"FaceFinder cache hit for {SourceNpcFormKey}", "FACEFINDER");
-                        SetImageSource(existingCachedFile);
-                        _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, existingCachedFile);
-                        return; // Found in cache, we're done.
-                    }
+                    Debug.WriteLine($"Using cached mugshot for {SourceNpcFormKey} from FaceFinder.");
+                    _eventLogger.Log($"FaceFinder cache hit for {SourceNpcFormKey}", "FACEFINDER");
+                    SetImageSource(ffResult.OutputPath!);
+                    _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, ffResult.OutputPath!);
+                    AddFaceFinderExternalUrl(ffResult.FaceFinderExternalUrl);
+                    return;
                 }
-    
-                var faceData = await _faceFinderClient.GetFaceDataAsync(SourceNpcFormKey, ModName);
-                if (faceData != null && !string.IsNullOrWhiteSpace(faceData.ImageUrl))
+
+                if (ffResult.Source == GenerationSource.FaceFinderDownload && ffResult.ProducedAnything)
                 {
-                    using var client = new HttpClient();
-                    var imageData = await client.GetByteArrayAsync(faceData.ImageUrl, token);
-                    
-                    if (_settings.CacheFaceFinderImages)
+                    if (ffResult.ProducedFile)
                     {
-                        var format = Image.DetectFormat(imageData);
-                        var extension = format?.FileExtensions.FirstOrDefault() ?? "png";
-                        var finalSavePath = $"{baseSavePath}.{extension}";
-
-                        Directory.CreateDirectory(Path.GetDirectoryName(finalSavePath)!);
-                        try
-                        {
-                            await File.WriteAllBytesAsync(finalSavePath, imageData, token);
-                            // WriteMetadataAsync adds to CachedFaceFinderPaths
-                            // via a bare HashSet.Add; wrap with the FaceFinder
-                            // tracker so the addition fires RequestThrottledSave
-                            // for crash-safe persistence.
-                            await _faceFinderClient.WriteMetadataAsync(finalSavePath, faceData);
-                            _faceFinderTracker.Track(finalSavePath);
-                        }
-                        catch
-                        {
-                            // Partial-write defense scoped to the FaceFinder
-                            // cache. The two buckets (FaceFinder vs
-                            // auto-generated) are deliberately disjoint so
-                            // "Delete Cached FaceFinder Images" and
-                            // "Delete All Auto-Generated Mugshots" don't
-                            // cross-delete each other's content.
-                            _faceFinderTracker.TrackIfFileExists(finalSavePath);
-                            throw;
-                        }
-
-                        SetImageSource(finalSavePath);
+                        SetImageSource(ffResult.OutputPath!);
                     }
-                    else
+                    else if (ffResult.InMemoryImageBytes != null)
                     {
-                        SetImageSourceFromMemory(imageData);
+                        SetImageSourceFromMemory(ffResult.InMemoryImageBytes);
                     }
-    
+
                     _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, this.ImagePath);
                     _eventLogger.Log($"FaceFinder download successful for {SourceNpcFormKey}: {ModName}", "FACEFINDER");
-                    
-                    // Add the URL from the API response if it exists
-                    if (!string.IsNullOrWhiteSpace(faceData.ExternalUrl) && ModPageUrls.All(p => p.Url != faceData.ExternalUrl))
-                    {
-                        ModPageUrls.Add(new ModPageInfo("FaceFinder", faceData.ExternalUrl));
-                    }
-                    
-                    return; // Download successful, we're done.
+                    AddFaceFinderExternalUrl(ffResult.FaceFinderExternalUrl);
+                    return;
                 }
             }
-    
+
             // --- 2. Fallback to in-process renderer or legacy NPC Portrait Creator ---
             if (_settings.UsePortraitCreatorFallback)
             {
+                if (AssociatedModSetting == null)
+                {
+                    // Legacy path requires a local mod for the FaceGen NIF lookup;
+                    // Internal can render against a model-side ModSetting, but the
+                    // tile's saveFolder bookkeeping below still needs the VM. If
+                    // the VM is missing we can't bind the produced PNG back to a
+                    // mod entry, so bail out the same way the old per-tile code did.
+                    Debug.WriteLine($"Cannot generate mugshot locally for {ModName}; AssociatedModSetting not found.");
+                    _eventLogger.Log($"Cannot generate portrait locally for {ModName}; Mod not found", "PORTRAIT_GEN_ERROR");
+                    return;
+                }
+
                 _eventLogger.Log($"Falling back to {_settings.SelectedRenderer} renderer for {SourceNpcFormKey}", "PORTRAIT_GEN");
 
-                var baseAutoGenFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
-                    ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoGen Mugshots")
-                    : _settings.MugshotsFolder;
-                var saveFolder = Path.Combine(baseAutoGenFolder, this.ModName);
-                var savePath = Path.Combine(saveFolder, SourceNpcFormKey.ModKey.ToString(), $"{SourceNpcFormKey.ID:X8}.png");
+                var rendererResult = await _batchGenerator.RunSelectedRendererAsync(
+                    SourceNpcFormKey, AssociatedModSetting, token);
 
-                bool generated = false;
-
-                if (_settings.SelectedRenderer == MugshotRenderer.Internal)
+                // The Internal renderer reports per-render missing-asset paths
+                // even on success; surface them via the tile overlay so the
+                // user can see which shapes rendered as wireframes.
+                if (rendererResult.Source == GenerationSource.InternalRenderer)
                 {
-                    // Look up the persisted ModSetting for THIS tile's source mod.
-                    // The render is scoped to it — every tile for the same NPC
-                    // across different mods must produce distinct mugshots.
-                    var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == ModName);
-                    if (_stalenessChecker.NeedsRegeneration(savePath, SourceNpcFormKey))
-                    {
-                        var missingMeshes = new List<string>();
-                        var missingTextures = new List<string>();
-                        generated = await _internalMugshotGenerator.GenerateAsync(
-                            SourceNpcFormKey, sourceMod, savePath, token,
-                            missingMeshes, missingTextures);
-                        ApplyMissingAssetNotifications(missingMeshes, missingTextures);
-                    }
-                }
-                else
-                {
-                    // Legacy path requires a local mod for the FaceGen NIF lookup.
-                    if (AssociatedModSetting == null)
-                    {
-                        Debug.WriteLine($"Cannot generate mugshot locally for {ModName}; AssociatedModSetting not found.");
-                        _eventLogger.Log($"Cannot generate portrait locally for {ModName}; Mod not found", "PORTRAIT_GEN_ERROR");
-                        return;
-                    }
-
-                    string nifPath = await _portraitCreator.FindNpcNifPath(this.SourceNpcFormKey, AssociatedModSetting);
-                    bool autoGenerated =
-                        ModName == VM_Mods.BaseGameModSettingName || ModName == VM_Mods.CreationClubModsettingName;
-                    if (!string.IsNullOrWhiteSpace(nifPath) &&
-                        _stalenessChecker.NeedsRegeneration(savePath, SourceNpcFormKey, nifPath, AssociatedModSetting.CorrespondingFolderPaths, autoGenerated))
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
-                        generated = await _portraitCreator.GeneratePortraitAsync(nifPath, AssociatedModSetting.CorrespondingFolderPaths, savePath, token);
-                    }
+                    ApplyMissingAssetNotifications(rendererResult.MissingMeshes, rendererResult.MissingTextures);
                 }
 
-                if (generated)
+                if (rendererResult.Generated && rendererResult.OutputPath != null)
                 {
                     Debug.WriteLine($"Generated mugshot for {SourceNpcFormKey}.");
                     _eventLogger.Log($"Portrait generation successful for {SourceNpcFormKey}", "PORTRAIT_GEN");
-                    SetImageSource(savePath);
-                    _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, savePath);
-                    if (AssociatedModSetting != null && !AssociatedModSetting.MugShotFolderPaths.Contains(saveFolder))
+                    SetImageSource(rendererResult.OutputPath);
+                    _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, rendererResult.OutputPath);
+
+                    var modFolder = BatchMugshotGenerator.GetAutoGenModFolder(_settings, this.ModName);
+                    if (!AssociatedModSetting.MugShotFolderPaths.Contains(modFolder))
                     {
-                        AssociatedModSetting.MugShotFolderPaths.Add(saveFolder);
+                        AssociatedModSetting.MugShotFolderPaths.Add(modFolder);
                     }
                 }
             }
         }
         catch (TaskCanceledException)
+        {
+            /* Swallow cancellation */
+        }
+        catch (OperationCanceledException)
         {
             /* Swallow cancellation */
         }
@@ -1110,6 +1042,15 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    private void AddFaceFinderExternalUrl(string? externalUrl)
+    {
+        if (string.IsNullOrWhiteSpace(externalUrl)) return;
+        if (ModPageUrls.All(p => p.Url != externalUrl))
+        {
+            ModPageUrls.Add(new ModPageInfo("FaceFinder", externalUrl));
         }
     }
 

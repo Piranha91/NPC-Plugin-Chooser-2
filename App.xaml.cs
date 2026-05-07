@@ -203,6 +203,7 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<VM_CharacterViewer>().AsSelf();  // transient — one per preview window
 
             builder.RegisterType<InternalMugshotGenerator>().AsSelf().SingleInstance();
+            builder.RegisterType<BatchMugshotGenerator>().AsSelf().SingleInstance();
             builder.RegisterType<MugshotStalenessChecker>().AsSelf().SingleInstance();
             builder.RegisterType<GeneratedMugshotTracker>().AsSelf().SingleInstance();
             builder.RegisterType<FaceFinderCacheTracker>().AsSelf().SingleInstance();
