@@ -8,10 +8,13 @@ namespace NPC_Plugin_Chooser_2.Views;
 /// <summary>
 /// Modal popup hosting <see cref="UC_InternalMugshotPreview"/> bound to a
 /// per-tile <see cref="VM_FullScreen3DPreview"/>. ESC closes; on close, if
-/// the user changed the lighting layout / color scheme via the embedded
-/// shared lighting panel (which writes back to global settings live), the
-/// window prompts whether to keep the changes globally or revert to the
-/// snapshot captured at popup-open.
+/// the user changed any render-affecting field (lighting selection, render
+/// quality flags, SSAO/SSS/vignette tunables, skin saturation, background)
+/// via the embedded shared panels — all of which write back to global
+/// settings live — the window prompts whether to keep the changes globally
+/// or revert to the snapshot captured at popup-open. Camera state (auto-
+/// mode framing + manual-mode pose) is excluded so per-preview pose
+/// adjustments don't trigger the prompt.
 /// </summary>
 public partial class FullScreen3DPreviewView : ReactiveWindow<VM_FullScreen3DPreview>
 {
@@ -35,17 +38,17 @@ public partial class FullScreen3DPreviewView : ReactiveWindow<VM_FullScreen3DPre
     {
         var vm = DataContext as VM_FullScreen3DPreview;
         if (vm == null) return;
-        if (!vm.LightingChanged()) return;
+        if (!vm.RenderSettingsChanged()) return;
 
         bool keep = ScrollableMessageBox.Confirm(
-            "You changed the lighting setup while previewing this NPC.\n\n" +
-            "Save these lighting changes as your global lighting settings?\n\n" +
+            "You changed render settings while previewing this NPC.\n\n" +
+            "Save these changes as your global render defaults?\n\n" +
             "Yes — keep changes globally.\n" +
-            "No — revert to the lighting that was active before the preview opened.",
-            title: "Save Lighting Changes?");
+            "No — revert to the settings that were active before the preview opened.",
+            title: "Save Render Changes?");
         if (!keep)
         {
-            vm.RevertLightingToSnapshot();
+            vm.RevertRenderSettingsToSnapshot();
         }
     }
 }

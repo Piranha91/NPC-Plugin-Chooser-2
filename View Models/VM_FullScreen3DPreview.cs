@@ -9,18 +9,48 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 /// <summary>
 /// Wraps a transient <see cref="VM_InternalMugshotPreview"/> for the per-tile
 /// "Show 3D Preview" popup launched from the mugshot context menus. Carries
-/// the title text and a snapshot of the lighting selection at popup-open so
-/// the host view can prompt the user on close if they edited the dropdowns
-/// (the shared lighting panel writes layout / scheme name changes back to
-/// <see cref="Settings.InternalMugshot"/> live).
+/// the title text and a snapshot of every render-affecting field at popup-open
+/// so the host view can prompt the user on close if they edited anything via
+/// the embedded shared lighting / render panel (which writes back to global
+/// settings live).
+///
+/// Camera state (auto-mode framing fields, manual-mode distance/azimuth/
+/// elevation/target) is intentionally excluded from the snapshot — those are
+/// transient per-preview adjustments that persist on every drag-end and
+/// shouldn't trigger a "save changes globally?" prompt at close.
 /// </summary>
 public class VM_FullScreen3DPreview : ReactiveObject
 {
     private readonly Settings _settings;
+
+    // --- Lighting selection (dropdowns + user-saved presets) ---
     private readonly string _initialLayoutName;
     private readonly string _initialColorSchemeName;
     private readonly List<CharacterViewer.Rendering.CharacterViewerLightingLayout> _initialUserLayouts;
     private readonly List<CharacterViewer.Rendering.CharacterViewerLightingColorScheme> _initialUserColorSchemes;
+
+    // --- Background ---
+    private readonly byte _initialBackgroundR;
+    private readonly byte _initialBackgroundG;
+    private readonly byte _initialBackgroundB;
+
+    // --- Render-quality flags ---
+    private readonly bool _initialEnableToneMapping;
+    private readonly bool _initialEnableShadows;
+    private readonly bool _initialEnableAmbientOcclusion;
+    private readonly bool _initialEnableEyeCatchlight;
+    private readonly bool _initialRenderMissingTextureAsWireframe;
+
+    // --- SSAO tunables ---
+    private readonly float _initialSsaoRadius;
+    private readonly float _initialSsaoBias;
+    private readonly float _initialSsaoIntensity;
+
+    // --- Other render params ---
+    private readonly float _initialSubsurfaceStrength;
+    private readonly float _initialVignetteRadius;
+    private readonly float _initialVignetteIntensity;
+    private readonly float _initialSkinSaturationBoost;
 
     public VM_InternalMugshotPreview Inner { get; }
 
@@ -32,44 +62,110 @@ public class VM_FullScreen3DPreview : ReactiveObject
         Title = title;
         _settings = settings;
 
-        // Snapshot every lighting field that the panel can mutate live so the
-        // close-time revert prompt has something to roll back to. Names cover
-        // the dropdown selections; the user-preset lists cover Save / Delete
-        // commands inside the panel that mutate
-        // Settings.InternalMugshot.UserLighting* directly.
+        // Snapshot every render-affecting field that the lighting / render
+        // panel can mutate live. The close-time revert prompt rolls these back
+        // if the user declines. Camera state (auto-mode framing + manual-mode
+        // distance/azimuth/target) is deliberately excluded so per-preview
+        // pose adjustments don't trigger the prompt.
         var cfg = settings.InternalMugshot;
+
         _initialLayoutName = cfg.LightingLayoutName ?? string.Empty;
         _initialColorSchemeName = cfg.LightingColorSchemeName ?? string.Empty;
         _initialUserLayouts = cfg.UserLightingLayouts.ToList();
         _initialUserColorSchemes = cfg.UserLightingColorSchemes.ToList();
+
+        _initialBackgroundR = cfg.BackgroundR;
+        _initialBackgroundG = cfg.BackgroundG;
+        _initialBackgroundB = cfg.BackgroundB;
+
+        _initialEnableToneMapping = cfg.EnableToneMapping;
+        _initialEnableShadows = cfg.EnableShadows;
+        _initialEnableAmbientOcclusion = cfg.EnableAmbientOcclusion;
+        _initialEnableEyeCatchlight = cfg.EnableEyeCatchlight;
+        _initialRenderMissingTextureAsWireframe = cfg.RenderMissingTextureAsWireframe;
+
+        _initialSsaoRadius = cfg.SsaoRadius;
+        _initialSsaoBias = cfg.SsaoBias;
+        _initialSsaoIntensity = cfg.SsaoIntensity;
+
+        _initialSubsurfaceStrength = cfg.SubsurfaceStrength;
+        _initialVignetteRadius = cfg.VignetteRadius;
+        _initialVignetteIntensity = cfg.VignetteIntensity;
+        _initialSkinSaturationBoost = cfg.SkinSaturationBoost;
     }
 
-    /// <summary>True if any persisted lighting field changed while the popup
-    /// was open — selection name change OR user-preset add/delete. The view's
-    /// closing handler uses this to decide whether to prompt.</summary>
-    public bool LightingChanged()
+    /// <summary>True if any persisted render-affecting field changed while
+    /// the popup was open. The view's closing handler uses this to decide
+    /// whether to prompt the user to save the changes globally or revert.</summary>
+    public bool RenderSettingsChanged()
     {
         var cfg = _settings.InternalMugshot;
+
+        // Lighting selection
         if ((cfg.LightingLayoutName ?? string.Empty) != _initialLayoutName) return true;
         if ((cfg.LightingColorSchemeName ?? string.Empty) != _initialColorSchemeName) return true;
         if (!UserListsEqual(cfg.UserLightingLayouts, _initialUserLayouts,
                 (a, b) => a.Name == b.Name)) return true;
         if (!UserListsEqual(cfg.UserLightingColorSchemes, _initialUserColorSchemes,
                 (a, b) => a.Name == b.Name)) return true;
+
+        // Background
+        if (cfg.BackgroundR != _initialBackgroundR) return true;
+        if (cfg.BackgroundG != _initialBackgroundG) return true;
+        if (cfg.BackgroundB != _initialBackgroundB) return true;
+
+        // Render-quality flags
+        if (cfg.EnableToneMapping != _initialEnableToneMapping) return true;
+        if (cfg.EnableShadows != _initialEnableShadows) return true;
+        if (cfg.EnableAmbientOcclusion != _initialEnableAmbientOcclusion) return true;
+        if (cfg.EnableEyeCatchlight != _initialEnableEyeCatchlight) return true;
+        if (cfg.RenderMissingTextureAsWireframe != _initialRenderMissingTextureAsWireframe) return true;
+
+        // SSAO tunables
+        if (cfg.SsaoRadius != _initialSsaoRadius) return true;
+        if (cfg.SsaoBias != _initialSsaoBias) return true;
+        if (cfg.SsaoIntensity != _initialSsaoIntensity) return true;
+
+        // Other render params
+        if (cfg.SubsurfaceStrength != _initialSubsurfaceStrength) return true;
+        if (cfg.VignetteRadius != _initialVignetteRadius) return true;
+        if (cfg.VignetteIntensity != _initialVignetteIntensity) return true;
+        if (cfg.SkinSaturationBoost != _initialSkinSaturationBoost) return true;
+
         return false;
     }
 
     /// <summary>Restore the snapshot. Called when the user declines the
-    /// "Save these lighting changes globally?" prompt on close.</summary>
-    public void RevertLightingToSnapshot()
+    /// "Save these render changes globally?" prompt on close.</summary>
+    public void RevertRenderSettingsToSnapshot()
     {
         var cfg = _settings.InternalMugshot;
+
         cfg.LightingLayoutName = _initialLayoutName;
         cfg.LightingColorSchemeName = _initialColorSchemeName;
         cfg.UserLightingLayouts.Clear();
         foreach (var layout in _initialUserLayouts) cfg.UserLightingLayouts.Add(layout);
         cfg.UserLightingColorSchemes.Clear();
         foreach (var scheme in _initialUserColorSchemes) cfg.UserLightingColorSchemes.Add(scheme);
+
+        cfg.BackgroundR = _initialBackgroundR;
+        cfg.BackgroundG = _initialBackgroundG;
+        cfg.BackgroundB = _initialBackgroundB;
+
+        cfg.EnableToneMapping = _initialEnableToneMapping;
+        cfg.EnableShadows = _initialEnableShadows;
+        cfg.EnableAmbientOcclusion = _initialEnableAmbientOcclusion;
+        cfg.EnableEyeCatchlight = _initialEnableEyeCatchlight;
+        cfg.RenderMissingTextureAsWireframe = _initialRenderMissingTextureAsWireframe;
+
+        cfg.SsaoRadius = _initialSsaoRadius;
+        cfg.SsaoBias = _initialSsaoBias;
+        cfg.SsaoIntensity = _initialSsaoIntensity;
+
+        cfg.SubsurfaceStrength = _initialSubsurfaceStrength;
+        cfg.VignetteRadius = _initialVignetteRadius;
+        cfg.VignetteIntensity = _initialVignetteIntensity;
+        cfg.SkinSaturationBoost = _initialSkinSaturationBoost;
     }
 
     private static bool UserListsEqual<T>(IList<T> a, IList<T> b, System.Func<T, T, bool> eq)
