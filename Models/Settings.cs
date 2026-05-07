@@ -448,6 +448,13 @@ public sealed class InternalMugshotSettings
     public float VignetteRadius { get; set; } = 0.7f;
     public float VignetteIntensity { get; set; } = 0.3f;
 
+    // Skin-only saturation multiplier applied post-tint, pre-lighting on
+    // shapes flagged as skin (BSLSP_FACE / BSLSP_SKINTINT). 1.0 is no-op.
+    // >1 boosts chroma, restoring race-distinguishing skin character that
+    // the downstream pipeline (SSS + tonemap) tends to compress toward
+    // neutral. Hair / eyes / brows are excluded from the boost.
+    public float SkinSaturationBoost { get; set; } = 1.0f;
+
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.
     public List<CharacterViewerLightingLayout> UserLightingLayouts { get; set; } = new();

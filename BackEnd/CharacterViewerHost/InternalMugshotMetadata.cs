@@ -66,9 +66,15 @@ public static class InternalMugshotMetadata
     /// affected tiles stale, but the staleness checker continues to
     /// skip these fields when comparing pre-v7 PNGs (those were
     /// stamped under the hardcoded vignette).</item>
+    /// <item>8: added <c>SkinSaturationBoost</c> — skin-only chroma
+    /// multiplier applied post-tint, pre-lighting on shapes flagged as
+    /// skin (BSLSP_FACE / BSLSP_SKINTINT). Default 1.0 is no-op, so v7
+    /// tiles compared at schemaVersion=7 (no SkinSaturationBoost entry)
+    /// continue to hash-match a v8 cfg whose user hasn't changed the
+    /// new field.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 7;
+    public const int PipelineSchemaVersion = 8;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -114,6 +120,7 @@ public static class InternalMugshotMetadata
             ["subsurface_strength"] = cfg.SubsurfaceStrength,
             ["vignette_radius"] = cfg.VignetteRadius,
             ["vignette_intensity"] = cfg.VignetteIntensity,
+            ["skin_saturation_boost"] = cfg.SkinSaturationBoost,
         };
 
         if (cfg.CameraMode == InternalMugshotCameraMode.Manual)
@@ -282,6 +289,16 @@ public static class InternalMugshotMetadata
         {
             sb.Append('|').Append(cfg.VignetteRadius.ToString("R", inv));
             sb.Append('|').Append(cfg.VignetteIntensity.ToString("R", inv));
+        }
+
+        // === schema v8 fields (skin saturation boost) ===
+        // Skin-only chroma multiplier applied post-tint, pre-lighting.
+        // Default 1.0 is no-op, so a v7 tile compared at schemaVersion=7
+        // (which excludes this entry) continues to match a v8 cfg whose
+        // user hasn't changed the field.
+        if (schemaVersion >= 8)
+        {
+            sb.Append('|').Append(cfg.SkinSaturationBoost.ToString("R", inv));
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

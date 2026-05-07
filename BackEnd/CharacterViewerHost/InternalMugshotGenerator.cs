@@ -164,6 +164,7 @@ public sealed class InternalMugshotGenerator
                 SubsurfaceStrength = cfg.SubsurfaceStrength,
                 VignetteRadius = cfg.VignetteRadius,
                 VignetteIntensity = cfg.VignetteIntensity,
+                SkinSaturationBoost = cfg.SkinSaturationBoost,
                 // Snapshot the active flow-scoped writer NOW (still on the
                 // host's logical call context). The renderer's dedicated
                 // render thread doesn't inherit this AsyncLocal, so we hand
