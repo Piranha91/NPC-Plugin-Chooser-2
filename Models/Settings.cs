@@ -421,15 +421,18 @@ public sealed class InternalMugshotSettings
     public bool EnableEyeCatchlight { get; set; } = true;
 
     // Subsurface scattering strength multiplier (2.5.14+). The renderer's
-    // SSS math now uses subsurfaceRolloff as the proper wrap parameter
-    // (per Bethesda BSLighting spec) and adds a back-scatter / translucency
+    // SSS math uses subsurfaceRolloff as the proper wrap parameter (per
+    // Bethesda BSLighting spec) and adds a back-scatter / translucency
     // term for thin-area light transmission (ear edges, nostril rims,
     // backlit cheeks). This multiplier lets users dial the visible
     // strength up or down without needing to override per-NIF rolloff
-    // values. 1.0 is "honest" SSS at the source values; 2.0 (the default)
-    // boosts the warm-flesh look toward the more pronounced SSS in
-    // professional portrait reference.
-    public float SubsurfaceStrength { get; set; } = 2.0f;
+    // values. 1.0 is "honest" SSS at the source values.
+    //
+    // Default is 0 (off). Higher values currently desaturate skin instead
+    // of producing the warm-flesh look they're meant to (high-chroma races
+    // like Orcs go olive, dark-skinned races go Mediterranean) — likely an
+    // implementation or lighting-setup interaction issue to revisit.
+    public float SubsurfaceStrength { get; set; } = 0f;
 
     // Vignette params (2.5.15+) for the tone-mapping path's subtle
     // radial darkening. Folded under EnableToneMapping (no separate

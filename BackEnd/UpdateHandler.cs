@@ -60,6 +60,11 @@ public class UpdateHandler
             UpdateTo2_0_7_Initial();
         }
 
+        if (settingsVersion < "2.1.7")
+        {
+            UpdateTo2_1_7_Initial();
+        }
+
         Debug.WriteLine("Settings update process complete.");
     }
 
@@ -339,6 +344,32 @@ public class UpdateHandler
 
         // Always mark as updated, even if user declined the reset
         _settings.HasUpdatedTo2_0_7 = true;
+    }
+
+    /// <summary>
+    /// 2.1.7 migration: silently switch <c>SubsurfaceStrength</c> from the prior 2.0
+    /// default to 0 for users who never touched it.
+    ///
+    /// The 2.0 default introduced earlier was meant to push skin toward a more
+    /// pronounced "warm-flesh" portrait look, but in practice it desaturates
+    /// high-chroma races (Orcs go olive, Redguards go Mediterranean) — likely an
+    /// SSS implementation or lighting-setup interaction issue to revisit later.
+    /// Until then, the default is 0 (off).
+    ///
+    /// Strict equality at 2.0f is the "untouched" signal: the prior default was
+    /// literal <c>2.0f</c>, JSON serialization preserves it exactly, and any user
+    /// who tuned it (1.5, 0.5, etc.) keeps their value. The migration is silent
+    /// and idempotent — after first run the value is 0, so the equality check
+    /// fails on every subsequent run until the program version is bumped.
+    /// </summary>
+    private void UpdateTo2_1_7_Initial()
+    {
+        const float priorDefault = 2.0f;
+        if (_settings.InternalMugshot.SubsurfaceStrength == priorDefault)
+        {
+            _settings.InternalMugshot.SubsurfaceStrength = 0f;
+            Debug.WriteLine("2.1.7 Update: SubsurfaceStrength was at the prior default of 2.0; reverted to 0.");
+        }
     }
 
     private async Task UpdateTo2_0_4_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
