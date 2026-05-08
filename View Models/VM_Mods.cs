@@ -1188,11 +1188,23 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     {
         if (vmToRefresh == null) return (false, "VM is null");
 
+        var dbgTag = $"[Refresh:{vmToRefresh.DisplayName}]";
+        Debug.WriteLine($"{dbgTag} === Refresh start ===");
+        Debug.WriteLine($"{dbgTag} Folder paths ({vmToRefresh.CorrespondingFolderPaths.Count}): {string.Join(" | ", vmToRefresh.CorrespondingFolderPaths)}");
+        Debug.WriteLine($"{dbgTag} Mugshot paths ({vmToRefresh.MugShotFolderPaths.Count}): {string.Join(" | ", vmToRefresh.MugShotFolderPaths)}");
+        Debug.WriteLine($"{dbgTag} ModKeys before update ({vmToRefresh.CorrespondingModKeys.Count}): {string.Join(", ", vmToRefresh.CorrespondingModKeys.Select(k => k.FileName))}");
+        Debug.WriteLine($"{dbgTag} ResourceOnlyModKeys before update ({vmToRefresh.ResourceOnlyModKeys.Count}): {string.Join(", ", vmToRefresh.ResourceOnlyModKeys.Select(k => k.FileName))}");
+
         // 1. Generate caches for the specific mod being refreshed.
         var faceGenCache = await CacheFaceGenPathsOnLoadAsync(new[] { vmToRefresh }, null); // No splash screen
+        var faceGenLooseCount = faceGenCache.allFaceGenLooseFiles.Sum(kvp => kvp.Value.Count);
+        var faceGenBsaCount = faceGenCache.allFaceGenBsaFiles.TryGetValue(vmToRefresh.DisplayName, out var bsaSet) ? bsaSet.Count : 0;
+        Debug.WriteLine($"{dbgTag} FaceGen cache: loose={faceGenLooseCount}, bsa={faceGenBsaCount}");
 
         // 2. Update the mod keys based on current folder contents
         vmToRefresh.UpdateCorrespondingModKeys();
+        Debug.WriteLine($"{dbgTag} ModKeys after update ({vmToRefresh.CorrespondingModKeys.Count}): {string.Join(", ", vmToRefresh.CorrespondingModKeys.Select(k => k.FileName))}");
+        Debug.WriteLine($"{dbgTag} ResourceOnlyModKeys after update ({vmToRefresh.ResourceOnlyModKeys.Count}): {string.Join(", ", vmToRefresh.ResourceOnlyModKeys.Select(k => k.FileName))}");
 
         // Find and add any missing masters before proceeding with analysis.
         if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
@@ -1210,6 +1222,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         // 3. Load the necessary plugins for this mod
         var modFolderPathsForVm = vmToRefresh.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var plugins = _pluginProvider.LoadPlugins(vmToRefresh.CorrespondingModKeys, modFolderPathsForVm, out var loadedPluginPaths);
+        Debug.WriteLine($"{dbgTag} Loaded {plugins.Count} plugin(s): {string.Join(", ", plugins.Select(p => $"{p.ModKey.FileName}(npcs={p.Npcs.Count})"))}");
+        Debug.WriteLine($"{dbgTag} Loaded plugin paths: {string.Join(" | ", loadedPluginPaths)}");
 
         try
         {
@@ -1229,22 +1243,26 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             bool hasFaceGen = faceGenCache.allFaceGenLooseFiles.Any() ||
                               (faceGenCache.allFaceGenBsaFiles.TryGetValue(vmToRefresh.DisplayName, out var bsaFiles) &&
                                bsaFiles.Any());
+            Debug.WriteLine($"{dbgTag} Type checks: hasAppearancePlugins={hasAppearancePlugins}, hasFaceGen={hasFaceGen}");
 
             // Step 3: Branching Logic
             if (hasAppearancePlugins)
             {
                 // It is a valid plugin-based appearance mod
                 vmToRefresh.IsFaceGenOnlyEntry = false;
+                Debug.WriteLine($"{dbgTag} Classified as: plugin-based appearance mod");
             }
             else if (hasFaceGen)
             {
                 // It has no valid appearance plugins, but has FaceGen. Treat as FaceGen-Only.
                 vmToRefresh.IsFaceGenOnlyEntry = true;
+                Debug.WriteLine($"{dbgTag} Classified as: FaceGen-only entry");
             }
             else
             {
                 // Neither valid plugins nor FaceGen. It's no longer an appearance mod.
                 string failureReason = "No FaceGen files found";
+                Debug.WriteLine($"{dbgTag} REMOVING mod: no appearance plugins and no FaceGen. Reason='{failureReason}'");
 
                 // Cache the folder paths as non-appearance so they aren't automatically re-scanned next launch.
                 foreach (var path in vmToRefresh.CorrespondingFolderPaths)
@@ -1281,6 +1299,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // 4b. Re-run the core analysis functions
             vmToRefresh.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins,
                 _settings.LocalizationLanguage);
+            Debug.WriteLine($"{dbgTag} After RefreshNpcLists: NpcFormKeys.Count={vmToRefresh.NpcFormKeys.Count}, FaceGenOnlyNpcFormKeys.Count={vmToRefresh.FaceGenOnlyNpcFormKeys.Count}, AvailablePluginsForNpcs.Count={vmToRefresh.AvailablePluginsForNpcs.Count}");
 
             var analysisTasks = new List<Task>
             {
@@ -1321,6 +1340,25 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // Widened lookup catches foundations on disk but not in the user's LO.
             vmToRefresh.SkyPatcherTargetModKeys =
                 await vmToRefresh.GetSkyPatcherTargetModKeysAsync(environmentEditorIdMap, modEditorIdMap);
+
+            // Prune dependency folders that FindAndAddMissingMasters would not re-add now that
+            // NpcFormKeys reflects the post-Refresh state (so plugins whose NPCs this mod patches
+            // are correctly classified as NPC source plugins and excluded). This is the same
+            // post-analysis cleanup the initial scan runs via CleanupNewlyCreatedCorrespondingFoldersAsync.
+            var cleanupWarnings = new ConcurrentBag<string>();
+            var foldersBeforeCleanup = vmToRefresh.CorrespondingFolderPaths.ToList();
+            CleanupCorrespondingFolders(vmToRefresh, cleanupWarnings);
+            var droppedFolders = foldersBeforeCleanup
+                .Except(vmToRefresh.CorrespondingFolderPaths, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (droppedFolders.Any())
+            {
+                Debug.WriteLine($"{dbgTag} CleanupCorrespondingFolders dropped {droppedFolders.Count} folder(s): {string.Join(", ", droppedFolders.Select(Path.GetFileName))}");
+            }
+            if (cleanupWarnings.Any())
+            {
+                Debug.WriteLine($"{dbgTag} CleanupCorrespondingFolders warnings: {string.Join(" | ", cleanupWarnings)}");
+            }
 
             // 5. Update UI-dependent properties
             RecalculateMugshotValidity(vmToRefresh);
