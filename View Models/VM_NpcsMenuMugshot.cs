@@ -961,6 +961,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                     _eventLogger.Log($"FaceFinder cache hit for {SourceNpcFormKey}", "FACEFINDER");
                     SetImageSource(ffResult.OutputPath!);
                     _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, ffResult.OutputPath!);
+                    RegisterFaceFinderModFolder();
                     AddFaceFinderExternalUrl(ffResult.FaceFinderExternalUrl);
                     return;
                 }
@@ -977,6 +978,14 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                     }
 
                     _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, this.ImagePath);
+                    // Only register the folder when a file was actually
+                    // persisted (i.e., CacheFaceFinderImages on). In-memory
+                    // bytes vanish at session end, so binding the folder to
+                    // the mod would be a lie on next launch.
+                    if (ffResult.ProducedFile)
+                    {
+                        RegisterFaceFinderModFolder();
+                    }
                     _eventLogger.Log($"FaceFinder download successful for {SourceNpcFormKey}: {ModName}", "FACEFINDER");
                     AddFaceFinderExternalUrl(ffResult.FaceFinderExternalUrl);
                     return;
@@ -1004,17 +1013,34 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                     SourceNpcFormKey, AssociatedModSetting, token);
 
                 // The Internal renderer reports per-render missing-asset paths
-                // even on success; surface them via the tile overlay so the
-                // user can see which shapes rendered as wireframes.
-                if (rendererResult.Source == GenerationSource.InternalRenderer)
+                // on a fresh render; surface them via the tile overlay so the
+                // user can see which shapes rendered as wireframes. Skip on
+                // AlreadyCurrent — the result carries empty arrays there
+                // (nothing was rendered this call), and overwriting would
+                // wipe the missing-asset state that LoadInitialImageAsync
+                // restored from the PNG's stamped JSON metadata.
+                if (rendererResult.Source == GenerationSource.InternalRenderer && rendererResult.Generated)
                 {
                     ApplyMissingAssetNotifications(rendererResult.MissingMeshes, rendererResult.MissingTextures);
                 }
 
-                if (rendererResult.Generated && rendererResult.OutputPath != null)
+                // ProducedFile covers both Generated == true (just rendered)
+                // and AlreadyCurrent == true (existing PNG was fresh). The
+                // AlreadyCurrent branch is the one that fails after relaunch
+                // when MugshotsFolder is blank and the tile was constructed
+                // with an empty ImagePath: without this we'd leave the
+                // placeholder up even though a valid PNG sits on disk.
+                if (rendererResult.ProducedFile && rendererResult.OutputPath != null)
                 {
-                    Debug.WriteLine($"Generated mugshot for {SourceNpcFormKey}.");
-                    _eventLogger.Log($"Portrait generation successful for {SourceNpcFormKey}", "PORTRAIT_GEN");
+                    if (rendererResult.Generated)
+                    {
+                        Debug.WriteLine($"Generated mugshot for {SourceNpcFormKey}.");
+                        _eventLogger.Log($"Portrait generation successful for {SourceNpcFormKey}", "PORTRAIT_GEN");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"Reused existing mugshot for {SourceNpcFormKey}.");
+                    }
                     SetImageSource(rendererResult.OutputPath);
                     _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, rendererResult.OutputPath);
 
@@ -1042,6 +1068,16 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    private void RegisterFaceFinderModFolder()
+    {
+        if (AssociatedModSetting == null) return;
+        var modFolder = BatchMugshotGenerator.GetFaceFinderModFolder(_settings, this.ModName);
+        if (!AssociatedModSetting.MugShotFolderPaths.Contains(modFolder))
+        {
+            AssociatedModSetting.MugShotFolderPaths.Add(modFolder);
         }
     }
 

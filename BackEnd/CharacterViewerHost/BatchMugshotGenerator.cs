@@ -134,13 +134,27 @@ public sealed class BatchMugshotGenerator
             $"{npcFormKey.ID:X8}.png");
     }
 
-    private static string GetFaceFinderBaseSavePath(Settings settings, string modName, FormKey npcFormKey)
+    /// <summary>
+    /// Per-mod FaceFinder cache root (one level above the FormKey-named
+    /// PNG/WEBP). Used by the per-NPC VM to register the folder on the
+    /// associated mod's MugShotFolderPaths after a successful download or
+    /// cache hit, so the file is discoverable by the mugshot lookup on the
+    /// next NPC switch and on subsequent app launches.
+    /// </summary>
+    public static string GetFaceFinderModFolder(Settings settings, string modName)
     {
         var baseCacheFolder = string.IsNullOrWhiteSpace(settings.MugshotsFolder)
             ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FaceFinder Cache")
             : settings.MugshotsFolder;
+        return Path.Combine(baseCacheFolder, modName);
+    }
+
+    private static string GetFaceFinderBaseSavePath(Settings settings, string modName, FormKey npcFormKey)
+    {
         return Path.Combine(
-            baseCacheFolder, modName, npcFormKey.ModKey.ToString(), $"{npcFormKey.ID:X8}");
+            GetFaceFinderModFolder(settings, modName),
+            npcFormKey.ModKey.ToString(),
+            $"{npcFormKey.ID:X8}");
     }
 
     /// <summary>

@@ -1890,17 +1890,49 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         VM_SplashScreen? splashReporter)
     {
         var results = new Dictionary<FormKey, List<(string ModName, string ImagePath)>>();
-        if (string.IsNullOrWhiteSpace(_settings.MugshotsFolder) || !Directory.Exists(_settings.MugshotsFolder))
-            return results;
 
-        System.Diagnostics.Debug.WriteLine($"Scanning mugshot directory: {_settings.MugshotsFolder}");
-        string expectedParentPath =
-            _settings.MugshotsFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        // Mugshots can live in three places: the user's configured
+        // MugshotsFolder, and — when that is blank — the default fallback
+        // roots that FaceFinder downloads and auto-generated mugshots write to.
+        // Without scanning the fallbacks, files saved during a session vanish
+        // from `_mugshotData` on next launch and tiles show "No Mugshot".
+        var rootsToScan = new List<string>();
+        void AddRoot(string? candidate)
+        {
+            if (string.IsNullOrWhiteSpace(candidate) || !Directory.Exists(candidate)) return;
+            string full = Path.GetFullPath(candidate);
+            if (rootsToScan.Any(r => string.Equals(Path.GetFullPath(r), full, StringComparison.OrdinalIgnoreCase)))
+                return;
+            rootsToScan.Add(candidate);
+        }
+        AddRoot(_settings.MugshotsFolder);
+        AddRoot(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FaceFinder Cache"));
+        AddRoot(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoGen Mugshots"));
+
+        if (rootsToScan.Count == 0) return results;
+
+        foreach (var root in rootsToScan)
+        {
+            ScanMugshotRoot(root, results, splashReporter);
+        }
+
+        System.Diagnostics.Debug.WriteLine(
+            $"Mugshot scan complete. Found entries for {results.Count} unique FormKeys.");
+        return results;
+    }
+
+    private void ScanMugshotRoot(
+        string root,
+        Dictionary<FormKey, List<(string ModName, string ImagePath)>> results,
+        VM_SplashScreen? splashReporter)
+    {
+        System.Diagnostics.Debug.WriteLine($"Scanning mugshot directory: {root}");
+        string expectedParentPath = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
         try
         {
             var potentialFiles = Directory
-                .EnumerateFiles(_settings.MugshotsFolder, "*.*", SearchOption.AllDirectories)
+                .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
                 .Where(f => HexFileRegex.IsMatch(Path.GetFileName(f)));
 
             int fileCount = potentialFiles.Count();
@@ -1912,7 +1944,6 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     scannedFileCount++;
                     if (scannedFileCount % 200 == 0)
                     {
-                        // *** MODIFY progress calculation to be a self-contained 0-100% run ***
                         var progress = (double)scannedFileCount / fileCount * 100.0;
                         splashReporter?.UpdateProgress(progress, $"Scanning mugshot files: {scannedFileCount} / {fileCount}");
                     }
@@ -1965,12 +1996,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error scanning mugshot directory '{_settings.MugshotsFolder}': {ExceptionLogger.GetExceptionStack(ex)}");
+            Debug.WriteLine($"Error scanning mugshot directory '{root}': {ExceptionLogger.GetExceptionStack(ex)}");
         }
-
-        System.Diagnostics.Debug.WriteLine(
-            $"Mugshot scan complete. Found entries for {results.Count} unique FormKeys.");
-        return results;
     }
 
     // This used to safely transfer processed data from the background thread to the UI thread.
