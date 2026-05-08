@@ -89,8 +89,8 @@
                                     </ContextMenu>
                                 </Border.ContextMenu>
 
-                                <Grid Background="WhiteSmoke">
-                                    <Image x:Name="MugshotImage" 
+                                <Grid Background="Black">
+                                    <Image x:Name="MugshotImage"
                                            Source="{Binding MugshotSource}" Stretch="UniformToFill" UseLayoutRounding="True" SnapsToDevicePixels="True">
                                     </Image>
                                     <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Background="{DynamicResource MugshotCaptionBackground}" Padding="3,1">
