@@ -47,9 +47,12 @@ public class Settings
     /// AND added <c>InternalMugshot.SubsurfaceStrength</c>. Migration
     /// sets the strength to 0 on upgrade so the corrected pipeline
     /// produces zero SSS contribution - existing v5 tiles stay
-    /// matching their stamped hash. Fresh installs get 2.0 (a noticeable
-    /// boost matching the pronounced SSS in professional portrait
-    /// reference).</item>
+    /// matching their stamped hash. Fresh installs originally defaulted
+    /// to 2.0 (a noticeable boost matching pronounced SSS in professional
+    /// portrait reference), but 2.0 desaturates high-chroma races; the
+    /// 2.1.7 program-version migration in <c>UpdateHandler</c> revised
+    /// the default to 0.1 (faint warmth). The schema-side upgrade target
+    /// stays 0 — it's a hash-stability anchor, not a user-facing default.</item>
     /// <item>6 → 7: 2.5.15 made the tone-mapping vignette tunable via
     /// <c>InternalMugshot.VignetteRadius</c> + <c>VignetteIntensity</c>.
     /// Migration forces VignetteIntensity to 0 on upgrade so the
@@ -428,11 +431,12 @@ public sealed class InternalMugshotSettings
     // strength up or down without needing to override per-NIF rolloff
     // values. 1.0 is "honest" SSS at the source values.
     //
-    // Default is 0 (off). Higher values currently desaturate skin instead
-    // of producing the warm-flesh look they're meant to (high-chroma races
-    // like Orcs go olive, dark-skinned races go Mediterranean) — likely an
-    // implementation or lighting-setup interaction issue to revisit.
-    public float SubsurfaceStrength { get; set; } = 0f;
+    // Default is 0.1 — a faint SSS contribution that gives skin a hint
+    // of warmth without the desaturation that higher values produce on
+    // high-chroma races (Orcs going olive, dark-skinned races going
+    // Mediterranean — likely an implementation or lighting-setup
+    // interaction issue to revisit).
+    public float SubsurfaceStrength { get; set; } = 0.1f;
 
     // Vignette params (2.5.15+) for the tone-mapping path's subtle
     // radial darkening. Folded under EnableToneMapping (no separate

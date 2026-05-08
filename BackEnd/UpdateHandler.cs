@@ -348,18 +348,19 @@ public class UpdateHandler
 
     /// <summary>
     /// 2.1.7 migration: silently switch <c>SubsurfaceStrength</c> from the prior 2.0
-    /// default to 0 for users who never touched it.
+    /// default to 0.1 for users who never touched it.
     ///
     /// The 2.0 default introduced earlier was meant to push skin toward a more
     /// pronounced "warm-flesh" portrait look, but in practice it desaturates
     /// high-chroma races (Orcs go olive, Redguards go Mediterranean) — likely an
     /// SSS implementation or lighting-setup interaction issue to revisit later.
-    /// Until then, the default is 0 (off).
+    /// Until then, the default is a faint 0.1 — enough warmth to be visible
+    /// without the desaturation 2.0 produced.
     ///
     /// Strict equality at 2.0f is the "untouched" signal: the prior default was
     /// literal <c>2.0f</c>, JSON serialization preserves it exactly, and any user
     /// who tuned it (1.5, 0.5, etc.) keeps their value. The migration is silent
-    /// and idempotent — after first run the value is 0, so the equality check
+    /// and idempotent — after first run the value is 0.1, so the equality check
     /// fails on every subsequent run until the program version is bumped.
     /// </summary>
     private void UpdateTo2_1_7_Initial()
@@ -367,8 +368,8 @@ public class UpdateHandler
         const float priorDefault = 2.0f;
         if (_settings.InternalMugshot.SubsurfaceStrength == priorDefault)
         {
-            _settings.InternalMugshot.SubsurfaceStrength = 0f;
-            Debug.WriteLine("2.1.7 Update: SubsurfaceStrength was at the prior default of 2.0; reverted to 0.");
+            _settings.InternalMugshot.SubsurfaceStrength = 0.1f;
+            Debug.WriteLine("2.1.7 Update: SubsurfaceStrength was at the prior default of 2.0; reverted to 0.1.");
         }
     }
 
