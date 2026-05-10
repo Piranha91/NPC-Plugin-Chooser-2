@@ -213,6 +213,19 @@ public class Settings
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate), DefaultValue(false)]
     public bool UsePortraitCreatorFallback { get; set; } = false;
 
+    // Order in which the three mugshot sources are tried at resolution time.
+    // The list is user-rearrangeable via a drag-and-drop widget in the settings
+    // menu. Disabled sources (UseFaceFinderFallback off / UsePortraitCreatorFallback
+    // off / no curated MugshotsFolder) are skipped in-place rather than reordered,
+    // so re-enabling restores the user's previous priority choice. LoadSettings
+    // back-fills missing entries so old JSONs lacking the field load cleanly.
+    public List<MugshotSourceType> MugshotSourcePriority { get; set; } = new()
+    {
+        MugshotSourceType.DownloadedMugshots,
+        MugshotSourceType.FaceFinder,
+        MugshotSourceType.AutoGeneration,
+    };
+
     // Which mugshot renderer to use when UsePortraitCreatorFallback fires.
     // Internal = in-process .NET CharacterViewer; Legacy = NPC Portrait Creator subprocess.
     public MugshotRenderer SelectedRenderer { get; set; } = MugshotRenderer.Internal;

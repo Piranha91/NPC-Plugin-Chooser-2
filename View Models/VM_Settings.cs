@@ -108,6 +108,15 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool UsePortraitCreatorFallback { get; set; }
     [Reactive] public int MaxParallelPortraitRenders { get; set; }
 
+    /// <summary>Ordered, user-rearrangeable list of mugshot sources tried at
+    /// resolution time. Backed by <see cref="Settings.MugshotSourcePriority"/>;
+    /// reordering this collection (via gong-wpf-dragdrop on the settings
+    /// ListBox) immediately writes the new order back to the model. Each item
+    /// carries an <see cref="VM_MugshotSourcePriorityItem.IsEnabled"/> flag
+    /// driven by the matching feature toggle / folder check, so disabled
+    /// sources render greyed-out but stay draggable.</summary>
+    public ObservableCollection<VM_MugshotSourcePriorityItem> MugshotSourcePriority { get; } = new();
+
     // --- Renderer Selection ---
     [Reactive] public MugshotRenderer SelectedRenderer { get; set; }
     public IEnumerable<MugshotRenderer> RendererChoices { get; } = Enum.GetValues(typeof(MugshotRenderer)).Cast<MugshotRenderer>();
@@ -398,6 +407,15 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         UsePortraitCreatorFallback = _model.UsePortraitCreatorFallback;
         MaxParallelPortraitRenders = _model.MaxParallelPortraitRenders;
 
+        // Seed the priority-list VMs from the persisted order. LoadSettings
+        // back-fills missing entries, so the model list is guaranteed to
+        // contain all three sources at this point.
+        foreach (var src in _model.MugshotSourcePriority)
+        {
+            MugshotSourcePriority.Add(new VM_MugshotSourcePriorityItem(src));
+        }
+        RefreshMugshotSourceEnabledStates();
+
         // --- Internal Renderer Initialization ---
         SelectedRenderer = _model.SelectedRenderer;
         InternalCameraMode = _model.InternalMugshot.CameraMode;
@@ -667,6 +685,26 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => _model.UsePortraitCreatorFallback = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MaxParallelPortraitRenders).Skip(1)
             .Subscribe(value => _model.MaxParallelPortraitRenders = value).DisposeWith(_disposables);
+
+        // Re-evaluate each priority item's IsEnabled whenever an upstream
+        // toggle/folder changes. Keeping this logic in a single helper means
+        // the UI's greyed-out state and the runtime "is this source eligible?"
+        // check derive from the same predicate.
+        this.WhenAnyValue(
+                x => x.MugshotsFolder,
+                x => x.UseFaceFinderFallback,
+                x => x.UsePortraitCreatorFallback)
+            .Subscribe(_ => RefreshMugshotSourceEnabledStates())
+            .DisposeWith(_disposables);
+
+        // Persist any reorder (gong-wpf-dragdrop mutates the ObservableCollection
+        // in place; CollectionChanged fires on Move). Cheap enough to do on
+        // every change rather than throttling.
+        MugshotSourcePriority.CollectionChanged += (_, _) =>
+        {
+            _model.MugshotSourcePriority =
+                MugshotSourcePriority.Select(i => i.Source).ToList();
+        };
 
         this.WhenAnyValue(x => x.SelectedRenderer).Skip(1)
             .Subscribe(r => _model.SelectedRenderer = r).DisposeWith(_disposables);
@@ -1269,6 +1307,28 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         loadedSettings.BatFilePreCommands ??= string.Empty;
         loadedSettings.BatFilePostCommands ??= string.Empty;
 
+        // MugshotSourcePriority was added after the initial release. Old
+        // Settings.json files lack the field, deserializing as null. Empty or
+        // partial lists would silently drop a source, so back-fill missing
+        // entries (in default order) at the tail rather than dropping them.
+        if (loadedSettings.MugshotSourcePriority == null || loadedSettings.MugshotSourcePriority.Count == 0)
+        {
+            loadedSettings.MugshotSourcePriority = new List<MugshotSourceType>
+            {
+                MugshotSourceType.DownloadedMugshots,
+                MugshotSourceType.FaceFinder,
+                MugshotSourceType.AutoGeneration,
+            };
+        }
+        else
+        {
+            foreach (MugshotSourceType src in Enum.GetValues(typeof(MugshotSourceType)))
+            {
+                if (!loadedSettings.MugshotSourcePriority.Contains(src))
+                    loadedSettings.MugshotSourcePriority.Add(src);
+            }
+        }
+
         // Schema-version migrations. SchemaVersion's C# initializer is -1
         // (sentinel) so a pre-upgrade Settings.json (which lacks the field)
         // deserializes to -1. Each migration step here flips newly-added
@@ -1369,6 +1429,50 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         // Render-pipeline params re-pushed into VM_CharacterViewer by
         // VM_InternalMugshotPreview.SyncSettingsToViewer (called on Reset).
         InternalMugshotPreviewVM?.SyncSettingsToViewer();
+    }
+
+    /// <summary>Re-derive each priority item's IsEnabled + DisabledReason from
+    /// the current toggle/folder state. Drives the greyed-out styling in the
+    /// settings ListBox only — the runtime resolution loop performs its own
+    /// per-source eligibility check (file-exists / feature-flag) inside each
+    /// TryXxxAsync branch.</summary>
+    private void RefreshMugshotSourceEnabledStates()
+    {
+        foreach (var item in MugshotSourcePriority)
+        {
+            switch (item.Source)
+            {
+                case MugshotSourceType.DownloadedMugshots:
+                    if (string.IsNullOrWhiteSpace(MugshotsFolder))
+                    {
+                        item.IsEnabled = false;
+                        item.DisabledReason = "Set a Mugshots Folder above.";
+                    }
+                    else if (!Directory.Exists(MugshotsFolder))
+                    {
+                        item.IsEnabled = false;
+                        item.DisabledReason = "Mugshots Folder does not exist on disk.";
+                    }
+                    else
+                    {
+                        item.IsEnabled = true;
+                        item.DisabledReason = string.Empty;
+                    }
+                    break;
+                case MugshotSourceType.FaceFinder:
+                    item.IsEnabled = UseFaceFinderFallback;
+                    item.DisabledReason = UseFaceFinderFallback
+                        ? string.Empty
+                        : "Enable 'Use FaceFinder API for missing mugshots' below.";
+                    break;
+                case MugshotSourceType.AutoGeneration:
+                    item.IsEnabled = UsePortraitCreatorFallback;
+                    item.DisabledReason = UsePortraitCreatorFallback
+                        ? string.Empty
+                        : "Enable 'Auto-Generate missing mugshots' below.";
+                    break;
+            }
+        }
     }
 
     public void SaveSettings()

@@ -11,6 +11,7 @@
              xmlns:plugins="clr-namespace:Mutagen.Bethesda.WPF.Plugins;assembly=Mutagen.Bethesda.WPF"
              xmlns:reactiveui="http://reactiveui.net"
              xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
+             xmlns:dd="urn:gong-wpf-dragdrop"
              xmlns:System="clr-namespace:System;assembly=mscorlib"
              mc:Ignorable="d"
              x:TypeArguments="vm:VM_Settings"
@@ -19,6 +20,7 @@
     <UserControl.Resources>
         <local:FullPathToFolderNameConverter x:Key="FullPathToFolderNameConverter"/>
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <local:BooleanToOpacityConverter x:Key="BooleanToOpacityConverter"/>
         <ObjectDataProvider x:Key="SkyrimReleaseEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="bsky:SkyrimRelease"/>
@@ -165,7 +167,37 @@
                     </Grid>
                     <TextBlock Text="Folder containing subfolders for each mod's NPC preview images."
                                FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="0,0,0,10"/>
-                    
+
+                    <!-- Mugshot Source Priority: drag-to-reorder. Disabled sources stay in the
+                         list but are greyed out via BooleanToOpacityConverter and skipped at
+                         runtime. Persistence is wired in VM_Settings via CollectionChanged. -->
+                    <TextBlock Text="Mugshot Source Priority:" Margin="0,0,0,2"/>
+                    <TextBlock Text="Drag to reorder. Disabled sources are skipped at runtime."
+                               FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="0,0,0,4"/>
+                    <ListBox ItemsSource="{Binding MugshotSourcePriority}"
+                             dd:DragDrop.IsDragSource="True"
+                             dd:DragDrop.IsDropTarget="True"
+                             BorderBrush="{DynamicResource BorderBrush}"
+                             BorderThickness="1"
+                             Margin="0,0,0,10"
+                             HorizontalAlignment="Left"
+                             MinWidth="220">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ToolTip="{Binding DisabledReason}"
+                                      Opacity="{Binding IsEnabled, Converter={StaticResource BooleanToOpacityConverter}}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="≡  "
+                                               Foreground="{DynamicResource HintForeground}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding DisplayName}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
                     <CheckBox Content="Use FaceFinder API for missing mugshots"
                               IsChecked="{Binding UseFaceFinderFallback, Mode=TwoWay}"
                               Margin="0,0,0,5"/>

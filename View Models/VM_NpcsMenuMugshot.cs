@@ -945,111 +945,33 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             _eventLogger.Log($"Loading mugshot for {SourceNpcFormKey} from {ModName}", "Load_START");
 
             // First, ensure the initial placeholder image is loaded and visible.
+            // This also pulls the user-curated mugshot from MugshotsFolder when one
+            // exists and sets HasMugshot=true; that flag is the "Downloaded Mugshots"
+            // source's contribution to the priority loop below.
             await LoadInitialImageAsync();
             if (token.IsCancellationRequested) return;
 
             IsLoading = true;
 
-            // --- 1. Prioritize FaceFinder API (file-producing logic in BatchMugshotGenerator) ---
-            if (_settings.UseFaceFinderFallback)
+            // Walk the user's mugshot-source priority order. The first source that
+            // produces a result wins; disabled sources (UseFaceFinderFallback off,
+            // UsePortraitCreatorFallback off, no curated mugshot loaded) report
+            // "not handled" so the loop falls through to the next source.
+            foreach (var source in _settings.MugshotSourcePriority)
             {
-                var ffResult = await _batchGenerator.TryFaceFinderAsync(SourceNpcFormKey, ModName, token);
+                if (token.IsCancellationRequested) return;
 
-                if (ffResult.Source == GenerationSource.FaceFinderCache)
+                bool handled = source switch
                 {
-                    Debug.WriteLine($"Using cached mugshot for {SourceNpcFormKey} from FaceFinder.");
-                    _eventLogger.Log($"FaceFinder cache hit for {SourceNpcFormKey}", "FACEFINDER");
-                    SetImageSource(ffResult.OutputPath!);
-                    _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, ffResult.OutputPath!);
-                    RegisterFaceFinderModFolder();
-                    AddFaceFinderExternalUrl(ffResult.FaceFinderExternalUrl);
-                    return;
-                }
+                    MugshotSourceType.DownloadedMugshots => HasMugshot,
+                    MugshotSourceType.FaceFinder         => _settings.UseFaceFinderFallback
+                                                            && await TryFaceFinderSourceAsync(token),
+                    MugshotSourceType.AutoGeneration     => _settings.UsePortraitCreatorFallback
+                                                            && await TryAutoGenerationSourceAsync(token),
+                    _ => false,
+                };
 
-                if (ffResult.Source == GenerationSource.FaceFinderDownload && ffResult.ProducedAnything)
-                {
-                    if (ffResult.ProducedFile)
-                    {
-                        SetImageSource(ffResult.OutputPath!);
-                    }
-                    else if (ffResult.InMemoryImageBytes != null)
-                    {
-                        SetImageSourceFromMemory(ffResult.InMemoryImageBytes);
-                    }
-
-                    _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, this.ImagePath);
-                    // Only register the folder when a file was actually
-                    // persisted (i.e., CacheFaceFinderImages on). In-memory
-                    // bytes vanish at session end, so binding the folder to
-                    // the mod would be a lie on next launch.
-                    if (ffResult.ProducedFile)
-                    {
-                        RegisterFaceFinderModFolder();
-                    }
-                    _eventLogger.Log($"FaceFinder download successful for {SourceNpcFormKey}: {ModName}", "FACEFINDER");
-                    AddFaceFinderExternalUrl(ffResult.FaceFinderExternalUrl);
-                    return;
-                }
-            }
-
-            // --- 2. Fallback to in-process renderer or legacy NPC Portrait Creator ---
-            if (_settings.UsePortraitCreatorFallback)
-            {
-                if (AssociatedModSetting == null)
-                {
-                    // Legacy path requires a local mod for the FaceGen NIF lookup;
-                    // Internal can render against a model-side ModSetting, but the
-                    // tile's saveFolder bookkeeping below still needs the VM. If
-                    // the VM is missing we can't bind the produced PNG back to a
-                    // mod entry, so bail out the same way the old per-tile code did.
-                    Debug.WriteLine($"Cannot generate mugshot locally for {ModName}; AssociatedModSetting not found.");
-                    _eventLogger.Log($"Cannot generate portrait locally for {ModName}; Mod not found", "PORTRAIT_GEN_ERROR");
-                    return;
-                }
-
-                _eventLogger.Log($"Falling back to {_settings.SelectedRenderer} renderer for {SourceNpcFormKey}", "PORTRAIT_GEN");
-
-                var rendererResult = await _batchGenerator.RunSelectedRendererAsync(
-                    SourceNpcFormKey, AssociatedModSetting, token);
-
-                // The Internal renderer reports per-render missing-asset paths
-                // on a fresh render; surface them via the tile overlay so the
-                // user can see which shapes rendered as wireframes. Skip on
-                // AlreadyCurrent — the result carries empty arrays there
-                // (nothing was rendered this call), and overwriting would
-                // wipe the missing-asset state that LoadInitialImageAsync
-                // restored from the PNG's stamped JSON metadata.
-                if (rendererResult.Source == GenerationSource.InternalRenderer && rendererResult.Generated)
-                {
-                    ApplyMissingAssetNotifications(rendererResult.MissingMeshes, rendererResult.MissingTextures);
-                }
-
-                // ProducedFile covers both Generated == true (just rendered)
-                // and AlreadyCurrent == true (existing PNG was fresh). The
-                // AlreadyCurrent branch is the one that fails after relaunch
-                // when MugshotsFolder is blank and the tile was constructed
-                // with an empty ImagePath: without this we'd leave the
-                // placeholder up even though a valid PNG sits on disk.
-                if (rendererResult.ProducedFile && rendererResult.OutputPath != null)
-                {
-                    if (rendererResult.Generated)
-                    {
-                        Debug.WriteLine($"Generated mugshot for {SourceNpcFormKey}.");
-                        _eventLogger.Log($"Portrait generation successful for {SourceNpcFormKey}", "PORTRAIT_GEN");
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"Reused existing mugshot for {SourceNpcFormKey}.");
-                    }
-                    SetImageSource(rendererResult.OutputPath);
-                    _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, rendererResult.OutputPath);
-
-                    var modFolder = BatchMugshotGenerator.GetAutoGenModFolder(_settings, this.ModName);
-                    if (!AssociatedModSetting.MugShotFolderPaths.Contains(modFolder))
-                    {
-                        AssociatedModSetting.MugShotFolderPaths.Add(modFolder);
-                    }
-                }
+                if (handled) return;
             }
         }
         catch (TaskCanceledException)
@@ -1069,6 +991,117 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         {
             IsLoading = false;
         }
+    }
+
+    /// <summary>FaceFinder branch of the priority loop. Returns true when a
+    /// cache hit or successful download produced a visible image, false when
+    /// FaceFinder had nothing to offer (so the next priority source runs).</summary>
+    private async Task<bool> TryFaceFinderSourceAsync(CancellationToken token)
+    {
+        var ffResult = await _batchGenerator.TryFaceFinderAsync(SourceNpcFormKey, ModName, token);
+
+        if (ffResult.Source == GenerationSource.FaceFinderCache)
+        {
+            Debug.WriteLine($"Using cached mugshot for {SourceNpcFormKey} from FaceFinder.");
+            _eventLogger.Log($"FaceFinder cache hit for {SourceNpcFormKey}", "FACEFINDER");
+            SetImageSource(ffResult.OutputPath!);
+            _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, ffResult.OutputPath!);
+            RegisterFaceFinderModFolder();
+            AddFaceFinderExternalUrl(ffResult.FaceFinderExternalUrl);
+            return true;
+        }
+
+        if (ffResult.Source == GenerationSource.FaceFinderDownload && ffResult.ProducedAnything)
+        {
+            if (ffResult.ProducedFile)
+            {
+                SetImageSource(ffResult.OutputPath!);
+            }
+            else if (ffResult.InMemoryImageBytes != null)
+            {
+                SetImageSourceFromMemory(ffResult.InMemoryImageBytes);
+            }
+
+            _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, this.ImagePath);
+            // Only register the folder when a file was actually persisted
+            // (i.e., CacheFaceFinderImages on). In-memory bytes vanish at
+            // session end, so binding the folder to the mod would be a lie
+            // on next launch.
+            if (ffResult.ProducedFile)
+            {
+                RegisterFaceFinderModFolder();
+            }
+            _eventLogger.Log($"FaceFinder download successful for {SourceNpcFormKey}: {ModName}", "FACEFINDER");
+            AddFaceFinderExternalUrl(ffResult.FaceFinderExternalUrl);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Auto-generation branch of the priority loop. Runs the
+    /// selected renderer (Internal in-process or Legacy NPC Portrait Creator).
+    /// Returns true when a file was produced or reused, false when the
+    /// preconditions weren't met or the renderer produced nothing.</summary>
+    private async Task<bool> TryAutoGenerationSourceAsync(CancellationToken token)
+    {
+        if (AssociatedModSetting == null)
+        {
+            // Legacy path requires a local mod for the FaceGen NIF lookup;
+            // Internal can render against a model-side ModSetting, but the
+            // tile's saveFolder bookkeeping below still needs the VM. If
+            // the VM is missing we can't bind the produced PNG back to a
+            // mod entry, so this source cannot run for this tile - report
+            // "not handled" so the next priority source still gets a turn.
+            Debug.WriteLine($"Cannot generate mugshot locally for {ModName}; AssociatedModSetting not found.");
+            _eventLogger.Log($"Cannot generate portrait locally for {ModName}; Mod not found", "PORTRAIT_GEN_ERROR");
+            return false;
+        }
+
+        _eventLogger.Log($"Falling back to {_settings.SelectedRenderer} renderer for {SourceNpcFormKey}", "PORTRAIT_GEN");
+
+        var rendererResult = await _batchGenerator.RunSelectedRendererAsync(
+            SourceNpcFormKey, AssociatedModSetting, token);
+
+        // The Internal renderer reports per-render missing-asset paths on a
+        // fresh render; surface them via the tile overlay so the user can
+        // see which shapes rendered as wireframes. Skip on AlreadyCurrent —
+        // the result carries empty arrays there (nothing was rendered this
+        // call), and overwriting would wipe the missing-asset state that
+        // LoadInitialImageAsync restored from the PNG's stamped JSON metadata.
+        if (rendererResult.Source == GenerationSource.InternalRenderer && rendererResult.Generated)
+        {
+            ApplyMissingAssetNotifications(rendererResult.MissingMeshes, rendererResult.MissingTextures);
+        }
+
+        // ProducedFile covers both Generated == true (just rendered) and
+        // AlreadyCurrent == true (existing PNG was fresh). The AlreadyCurrent
+        // branch is the one that fails after relaunch when MugshotsFolder is
+        // blank and the tile was constructed with an empty ImagePath: without
+        // this we'd leave the placeholder up even though a valid PNG sits on disk.
+        if (rendererResult.ProducedFile && rendererResult.OutputPath != null)
+        {
+            if (rendererResult.Generated)
+            {
+                Debug.WriteLine($"Generated mugshot for {SourceNpcFormKey}.");
+                _eventLogger.Log($"Portrait generation successful for {SourceNpcFormKey}", "PORTRAIT_GEN");
+            }
+            else
+            {
+                Debug.WriteLine($"Reused existing mugshot for {SourceNpcFormKey}.");
+            }
+            SetImageSource(rendererResult.OutputPath);
+            _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, rendererResult.OutputPath);
+
+            var modFolder = BatchMugshotGenerator.GetAutoGenModFolder(_settings, this.ModName);
+            if (!AssociatedModSetting.MugShotFolderPaths.Contains(modFolder))
+            {
+                AssociatedModSetting.MugShotFolderPaths.Add(modFolder);
+            }
+            return true;
+        }
+
+        return false;
     }
 
     private void RegisterFaceFinderModFolder()
