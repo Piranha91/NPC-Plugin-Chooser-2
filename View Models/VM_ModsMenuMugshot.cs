@@ -596,9 +596,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             // Snippet from LoadRealImageAsync in VM_ModsMenuMugshot.cs
 
             // 1. SETUP: Define paths and find any existing local file
-            var baseCacheFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
-                ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FaceFinder Cache")
-                : _settings.MugshotsFolder;
+            var baseCacheFolder = Settings.GetEffectiveFaceFinderMugshotsFolder(_settings);
             var saveFolder = Path.Combine(baseCacheFolder, _parentVMModSetting.DisplayName);
             var baseSavePath = Path.Combine(saveFolder, NpcFormKey.ModKey.ToString(), $"{NpcFormKey.ID:X8}");
 
@@ -664,9 +662,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 
             // 4. FALLBACK 2: Try NPC Portrait Creator
 
-            var baseAutoGenFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
-                ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoGen Mugshots")
-                : _settings.MugshotsFolder;
+            var baseAutoGenFolder = Settings.GetEffectiveAutogenMugshotsFolder(_settings);
             saveFolder = Path.Combine(baseAutoGenFolder, ParentVMModSetting.DisplayName);
             var pngSavePath = Path.Combine(saveFolder, NpcFormKey.ModKey.ToString(), $"{NpcFormKey.ID:X8}.png");
 

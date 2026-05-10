@@ -95,6 +95,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     // --- Existing & Modified Properties ---
     [Reactive] public string ModsFolder { get; set; }
     [Reactive] public string MugshotsFolder { get; set; }
+    [Reactive] public string FaceFinderMugshotsFolder { get; set; }
+    [Reactive] public string AutogenMugshotsFolder { get; set; }
     [Reactive] public bool FilterByActiveModsMO2 { get; set; }
     [Reactive] public string MO2ModlistPath { get; set; }
     [Reactive] public SkyrimRelease SkyrimRelease { get; set; }
@@ -299,6 +301,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public ReactiveCommand<Unit, Unit> SelectGameFolderCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectModsFolderCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectMugshotsFolderCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectFaceFinderMugshotsFolderCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectAutogenMugshotsFolderCommand { get; }
+    public ReactiveCommand<Unit, Unit> ResetFaceFinderMugshotsFolderCommand { get; }
+    public ReactiveCommand<Unit, Unit> ResetAutogenMugshotsFolderCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectOutputDirectoryCommand { get; } // New
     public ReactiveCommand<Unit, Unit> ShowPatchingModeHelpCommand { get; } // New
     public ReactiveCommand<Unit, Unit> ImportEasyNpcCommand { get; } // New
@@ -375,6 +381,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         // Initialize other VM properties from the model
         ModsFolder = _model.ModsFolder;
         MugshotsFolder = _model.MugshotsFolder;
+        // Show the effective path so the user sees the actual folder being used.
+        // The user-set value lives on the model; the VM displays the resolved
+        // path (model value if non-empty, default fallback otherwise).
+        FaceFinderMugshotsFolder = Settings.GetEffectiveFaceFinderMugshotsFolder(_model);
+        AutogenMugshotsFolder = Settings.GetEffectiveAutogenMugshotsFolder(_model);
         FilterByActiveModsMO2 = _model.FilterByActiveModsMO2;
         MO2ModlistPath = _model.MO2ModlistPath;
 
@@ -535,6 +546,18 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SelectModsFolderCommand = ReactiveCommand.CreateFromTask(SelectModsFolderAsync).DisposeWith(_disposables);
         SelectMugshotsFolderCommand =
             ReactiveCommand.CreateFromTask(SelectMugshotsFolderAsync).DisposeWith(_disposables);
+        SelectFaceFinderMugshotsFolderCommand =
+            ReactiveCommand.CreateFromTask(SelectFaceFinderMugshotsFolderAsync).DisposeWith(_disposables);
+        SelectAutogenMugshotsFolderCommand =
+            ReactiveCommand.CreateFromTask(SelectAutogenMugshotsFolderAsync).DisposeWith(_disposables);
+        ResetFaceFinderMugshotsFolderCommand = ReactiveCommand.Create(() =>
+        {
+            FaceFinderMugshotsFolder = Settings.GetDefaultFaceFinderMugshotsFolder();
+        }).DisposeWith(_disposables);
+        ResetAutogenMugshotsFolderCommand = ReactiveCommand.Create(() =>
+        {
+            AutogenMugshotsFolder = Settings.GetDefaultAutogenMugshotsFolder();
+        }).DisposeWith(_disposables);
         SelectMO2ModlistCommand = ReactiveCommand.Create(SelectMO2Modlist).DisposeWith(_disposables);
         ToggleInternalShowPreviewCommand = ReactiveCommand.Create(
             () => { InternalShowPreview = !InternalShowPreview; }).DisposeWith(_disposables);
@@ -602,6 +625,29 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MugshotsFolder).Skip(1).Subscribe(s => _model.MugshotsFolder = s)
             .DisposeWith(_disposables);
+        // FaceFinder/Autogen folder write-through: persist to the model only
+        // when the displayed value differs from the computed default. This way
+        // the user's "use default" intent stays empty in Settings.json instead
+        // of being stamped with an absolute path that would go stale if the
+        // install relocates.
+        this.WhenAnyValue(x => x.FaceFinderMugshotsFolder).Skip(1).Subscribe(s =>
+        {
+            _model.FaceFinderMugshotsFolder =
+                string.Equals(s ?? string.Empty,
+                    Settings.GetDefaultFaceFinderMugshotsFolder(),
+                    StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty
+                    : (s ?? string.Empty);
+        }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.AutogenMugshotsFolder).Skip(1).Subscribe(s =>
+        {
+            _model.AutogenMugshotsFolder =
+                string.Equals(s ?? string.Empty,
+                    Settings.GetDefaultAutogenMugshotsFolder(),
+                    StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty
+                    : (s ?? string.Empty);
+        }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.FilterByActiveModsMO2).Skip(1)
             .Subscribe(b => _model.FilterByActiveModsMO2 = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MO2ModlistPath).Skip(1)
@@ -1489,6 +1535,40 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 await splashScreen.CloseSplashScreenAsync();
             }
         }
+    }
+
+    private Task SelectFaceFinderMugshotsFolderAsync()
+    {
+        var dialog = new CommonOpenFileDialog
+        {
+            IsFolderPicker = true,
+            Title = "Select FaceFinder Cache Folder",
+            InitialDirectory = GetSafeInitialDirectory(FaceFinderMugshotsFolder,
+                Settings.GetDefaultFaceFinderMugshotsFolder())
+        };
+
+        if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
+        {
+            FaceFinderMugshotsFolder = dialog.FileName;
+        }
+        return Task.CompletedTask;
+    }
+
+    private Task SelectAutogenMugshotsFolderAsync()
+    {
+        var dialog = new CommonOpenFileDialog
+        {
+            IsFolderPicker = true,
+            Title = "Select Auto-Generated Mugshots Folder",
+            InitialDirectory = GetSafeInitialDirectory(AutogenMugshotsFolder,
+                Settings.GetDefaultAutogenMugshotsFolder())
+        };
+
+        if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
+        {
+            AutogenMugshotsFolder = dialog.FileName;
+        }
+        return Task.CompletedTask;
     }
 
     private async Task SelectOutputDirectoryAsync() // Renamed for consistency

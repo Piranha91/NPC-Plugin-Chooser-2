@@ -272,9 +272,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             // --- Internal renderer / Legacy PortraitCreator Fallback ---
             if (_settings.UsePortraitCreatorFallback)
             {
-                var baseAutoGenFolder = string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
-                    ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoGen Mugshots")
-                    : _settings.MugshotsFolder;
+                var baseAutoGenFolder = Settings.GetEffectiveAutogenMugshotsFolder(_settings);
                 var saveFolder = Path.Combine(baseAutoGenFolder, this.ModDisplayName);
                 var savePath = Path.Combine(saveFolder, SourceNpcFormKey.ModKey.ToString(), $"{SourceNpcFormKey.ID:X8}.png");
 

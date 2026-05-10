@@ -66,6 +66,42 @@ public class Settings
     // Mod Environment
     public string ModsFolder { get; set; } = string.Empty;
     public string MugshotsFolder { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Dedicated folder for FaceFinder downloads/cache. When empty, falls back
+    /// to <see cref="GetDefaultFaceFinderMugshotsFolder"/> (<c>&lt;BaseDir&gt;/FaceFinder Cache</c>).
+    /// Decoupled from <see cref="MugshotsFolder"/> as of 2026 so the user-curated
+    /// mugshot library and the FaceFinder cache can live in separate roots.
+    /// </summary>
+    public string FaceFinderMugshotsFolder { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Dedicated folder for auto-generated mugshots (Internal renderer + Legacy
+    /// Portrait Creator output). When empty, falls back to
+    /// <see cref="GetDefaultAutogenMugshotsFolder"/> (<c>&lt;BaseDir&gt;/AutoGen Mugshots</c>).
+    /// </summary>
+    public string AutogenMugshotsFolder { get; set; } = string.Empty;
+
+    /// <summary>Default fallback path for the FaceFinder cache folder.</summary>
+    public static string GetDefaultFaceFinderMugshotsFolder() =>
+        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FaceFinder Cache");
+
+    /// <summary>Default fallback path for the auto-generated mugshots folder.</summary>
+    public static string GetDefaultAutogenMugshotsFolder() =>
+        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoGen Mugshots");
+
+    /// <summary>Returns the configured FaceFinder folder, or the default if unset.</summary>
+    public static string GetEffectiveFaceFinderMugshotsFolder(Settings s) =>
+        string.IsNullOrWhiteSpace(s.FaceFinderMugshotsFolder)
+            ? GetDefaultFaceFinderMugshotsFolder()
+            : s.FaceFinderMugshotsFolder;
+
+    /// <summary>Returns the configured Autogen folder, or the default if unset.</summary>
+    public static string GetEffectiveAutogenMugshotsFolder(Settings s) =>
+        string.IsNullOrWhiteSpace(s.AutogenMugshotsFolder)
+            ? GetDefaultAutogenMugshotsFolder()
+            : s.AutogenMugshotsFolder;
+
     public bool FilterByActiveModsMO2 { get; set; } = false;
     public string MO2ModlistPath { get; set; } = string.Empty;
     public Dictionary<string, string> CachedNonAppearanceMods { get; set; } = new(); // These have been examined and determined to not have NPC mods. Used to speed up startup

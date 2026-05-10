@@ -120,10 +120,7 @@ public sealed class BatchMugshotGenerator
     /// </summary>
     public static string GetAutoGenModFolder(Settings settings, string modName)
     {
-        var baseAutoGenFolder = string.IsNullOrWhiteSpace(settings.MugshotsFolder)
-            ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoGen Mugshots")
-            : settings.MugshotsFolder;
-        return Path.Combine(baseAutoGenFolder, modName);
+        return Path.Combine(Settings.GetEffectiveAutogenMugshotsFolder(settings), modName);
     }
 
     public static string GetAutoGenSavePath(Settings settings, string modName, FormKey npcFormKey)
@@ -143,10 +140,7 @@ public sealed class BatchMugshotGenerator
     /// </summary>
     public static string GetFaceFinderModFolder(Settings settings, string modName)
     {
-        var baseCacheFolder = string.IsNullOrWhiteSpace(settings.MugshotsFolder)
-            ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FaceFinder Cache")
-            : settings.MugshotsFolder;
-        return Path.Combine(baseCacheFolder, modName);
+        return Path.Combine(Settings.GetEffectiveFaceFinderMugshotsFolder(settings), modName);
     }
 
     private static string GetFaceFinderBaseSavePath(Settings settings, string modName, FormKey npcFormKey)

@@ -1891,11 +1891,13 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     {
         var results = new Dictionary<FormKey, List<(string ModName, string ImagePath)>>();
 
-        // Mugshots can live in three places: the user's configured
-        // MugshotsFolder, and — when that is blank — the default fallback
-        // roots that FaceFinder downloads and auto-generated mugshots write to.
-        // Without scanning the fallbacks, files saved during a session vanish
-        // from `_mugshotData` on next launch and tiles show "No Mugshot".
+        // Mugshots live in up to three roots: the user-curated MugshotsFolder
+        // (hand-collected images), the FaceFinder cache folder, and the
+        // auto-generated mugshot folder. The latter two have dedicated paths
+        // (configurable in Settings, defaulting to <BaseDir>/FaceFinder Cache
+        // and <BaseDir>/AutoGen Mugshots) so generated content never bleeds
+        // into the user's curated library. All three are scanned on startup
+        // so files saved during a prior session are discoverable on relaunch.
         var rootsToScan = new List<string>();
         void AddRoot(string? candidate)
         {
@@ -1906,8 +1908,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             rootsToScan.Add(candidate);
         }
         AddRoot(_settings.MugshotsFolder);
-        AddRoot(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FaceFinder Cache"));
-        AddRoot(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AutoGen Mugshots"));
+        AddRoot(Settings.GetEffectiveFaceFinderMugshotsFolder(_settings));
+        AddRoot(Settings.GetEffectiveAutogenMugshotsFolder(_settings));
 
         if (rootsToScan.Count == 0) return results;
 
