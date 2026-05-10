@@ -604,6 +604,20 @@ public class NpcMeshResolver
     private T? ResolveRecord<T>(IFormLinkGetter<T> link, ILinkCache linkCache, NpcResolutionContext? context)
         where T : class, IMajorRecordGetter
     {
+        bool capturing = RenderLogCapture.IsCapturing;
+        if (capturing)
+        {
+            string ctxSummary;
+            if (context == null) ctxSummary = "(no context)";
+            else
+            {
+                ctxSummary = $"PreferredModKeys=[{string.Join(", ", context.PreferredModKeys.Select(k => k.FileName.String))}]"
+                             + $", PreferredFolderPaths=[{string.Join(", ", context.PreferredFolderPaths)}]"
+                             + $", DisambiguationModKey={(context.DisambiguationModKey?.FileName.String ?? "(none)")}";
+            }
+            WriteTrace($"[ResolveRecord] type={typeof(T).Name} fk={link.FormKey} {ctxSummary}");
+        }
+
         if (context != null && context.PreferredModKeys.Count > 0)
         {
             // Disambiguation key wins when the mod's plugin set spans multiple
@@ -613,6 +627,7 @@ public class NpcMeshResolver
                     RecordHandler.RecordLookupFallBack.None, out var disRec) &&
                 disRec is T disT)
             {
+                if (capturing) WriteTrace($"[ResolveRecord] resolved via DisambiguationModKey={disKey.FileName}");
                 return disT;
             }
 
@@ -623,13 +638,17 @@ public class NpcMeshResolver
                     RecordHandler.RecordLookupFallBack.Winner, out var rec, reverseOrder: true) &&
                 rec is T t)
             {
+                if (capturing) WriteTrace("[ResolveRecord] resolved via TryGetRecordFromMods (mod-scoped or Winner fallback)");
                 return t;
             }
+            if (capturing) WriteTrace("[ResolveRecord] mod-scoped path (incl. Winner fallback) returned no match");
         }
         if (linkCache.TryResolve<T>(link.FormKey, out var lcRec))
         {
+            if (capturing) WriteTrace("[ResolveRecord] resolved via outer linkCache.TryResolve");
             return lcRec;
         }
+        if (capturing) WriteTrace($"[ResolveRecord] FAILED to resolve fk={link.FormKey} type={typeof(T).Name}");
         return null;
     }
 

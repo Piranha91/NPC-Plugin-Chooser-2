@@ -7,6 +7,7 @@ using Mutagen.Bethesda.Plugins.Cache.Internals.Implementations;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
+using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 using NPC_Plugin_Chooser_2.Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
@@ -21,6 +22,19 @@ public class RecordHandler
     
     // For converting plugins into linkcaches and avoiding having to resolve all contexts to get mod-specific records
     private ConcurrentDictionary<ModKey, ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>> _modLinkCaches = new();
+
+    // Plugin instance backing each entry in _modLinkCaches. Held so the
+    // deferred-warmup path can prime the SAME instance the link cache wraps
+    // (PluginProvider.TryGetPlugin doesn't cache standalone, so a fresh
+    // TryGetPlugin call would return a different — still cold — instance).
+    private ConcurrentDictionary<ModKey, ISkyrimModGetter> _modLinkCachePlugins = new();
+
+    // Per-ModKey memo of the cold-ESL warmup outcome. Presence = warmup
+    // attempted; value = true on successful Npcs.Count, false on throw.
+    // Used by TryWarmPlugin to skip repeat work after either outcome.
+    // Cleared by ClearLinkCachesFor so a re-loaded plugin instance is
+    // re-evaluated.
+    private ConcurrentDictionary<ModKey, bool> _warmedPlugins = new();
 
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private PluginProvider _pluginProvider;
@@ -47,6 +61,7 @@ public class RecordHandler
 
             if (_pluginProvider.TryGetPlugin(modKey, fallBackModFolderNames, out var plugin) && plugin != null)
             {
+                _modLinkCachePlugins.TryAdd(modKey, plugin);
                 _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences()));
             }
         }
@@ -57,29 +72,188 @@ public class RecordHandler
         foreach (var modKey in modKeys)
         {
             _modLinkCaches.TryRemove(modKey, out _);
+            _modLinkCachePlugins.TryRemove(modKey, out _);
+            _warmedPlugins.TryRemove(modKey, out _);
         }
+    }
+
+    /// <summary>Diagnostic trace that lands in the active mugshot/preview
+    /// RenderLogCapture flow file when one is bound, and is a no-op otherwise.
+    /// Used to surface where mod-scoped record resolution decides a record
+    /// "doesn't exist" — analysis-time vs render-time disagreements that the
+    /// boolean return values alone can't pinpoint.</summary>
+    private static void TraceLookup(string message)
+    {
+        if (!RenderLogCapture.IsCapturing) return;
+        RenderLogCapture.Write("[RecordHandler] " + message);
+    }
+
+    /// <summary>On-demand workaround for a Mutagen 0.53-alpha overlay-reader
+    /// bug where the first cold access to a freshly loaded ESL plugin's NPC
+    /// group throws <see cref="ArgumentOutOfRangeException"/> from
+    /// <c>Npcs.Count</c> / <c>Npcs.GetEnumerator()</c>, and
+    /// <see cref="ImmutableModLinkCache{TMod,TModGetter}.TryResolve"/>
+    /// swallows that throw internally and returns <c>false</c> — making the
+    /// plugin silently look "empty" of records that are actually present.
+    /// Symptom: SkyPatcher template-replacer mugshots fail with "Could not
+    /// resolve NPC" even though analysis-time scanning found the same
+    /// FormKey just fine.
+    ///
+    /// <para>Calling <c>Npcs.Count</c> primes the plugin's lazy parser state;
+    /// after that, link-cache resolution on the same instance behaves
+    /// correctly. We deliberately do NOT prime proactively at link-cache
+    /// construction time — when many tiles render simultaneously, eagerly
+    /// walking the NPC GRUP of every loaded plugin contended on disk I/O
+    /// and froze the UI for ~20s. Instead, this is invoked lazily from
+    /// <see cref="TryGetRecordGetterFromMod"/> only when a "missing"
+    /// verdict is suspicious (the record's natural ModKey matches the
+    /// queried plugin, so the plugin should own it as a new entry rather
+    /// than as a master override).</para>
+    ///
+    /// <para>Result is memoized per-ModKey in <see cref="_warmedPlugins"/>
+    /// so each plugin pays the warmup cost at most once per session, even
+    /// across many legitimately-missing queries. Returns <c>true</c> if
+    /// the plugin was successfully primed (or already had been); returns
+    /// <c>false</c> if the warmup threw (the plugin is likely structurally
+    /// invalid; the caller should not bother retrying resolution).</para>
+    ///
+    /// <para>Why analysis-time wasn't affected: <c>RefreshNpcLists</c>
+    /// already iterates <c>plugin.Npcs</c> eagerly inside its own
+    /// <c>foreach</c>, priming the lazy state before anything else touches
+    /// it. The mugshot resolver path bypassed that priming and exposed
+    /// the bug.</para>
+    /// </summary>
+    private bool TryWarmPlugin(ModKey modKey)
+    {
+        if (_warmedPlugins.TryGetValue(modKey, out var prev)) return prev;
+        if (!_modLinkCachePlugins.TryGetValue(modKey, out var plugin) || plugin == null) return false;
+
+        bool success;
+        try
+        {
+            _ = plugin.Npcs.Count;
+            success = true;
+        }
+        catch (Exception ex)
+        {
+            if (RenderLogCapture.IsCapturing)
+            {
+                TraceLookup($"  TryWarmPlugin {modKey.FileName} threw: {ex.GetType().Name}: {ex.Message}");
+            }
+            success = false;
+        }
+        _warmedPlugins.TryAdd(modKey, success);
+        return success;
     }
 
     private bool TryAddPluginToCaches(ModKey modKey, HashSet<string> fallBackModFolderNames)
     {
+        bool capturing = RenderLogCapture.IsCapturing;
+        bool wasCached = capturing && _modLinkCaches.ContainsKey(modKey);
+
         // Use GetOrAdd for an atomic "get or create" operation.
         // The value factory (the second argument) is only executed if the key is not already present.
+        bool factoryRan = false;
+        bool loBranch = false;
+        bool pluginProviderBranch = false;
+        bool pluginProviderFailed = false;
+        ISkyrimModGetter? loadedPlugin = null;
         var linkCache = _modLinkCaches.GetOrAdd(modKey, key =>
         {
+            factoryRan = true;
             // Logic to create the link cache if it doesn't exist.
             var modListing = _environmentStateProvider.LoadOrder?.TryGetValue(key);
             if (modListing != null && modListing.Mod != null)
             {
+                loBranch = true;
+                loadedPlugin = modListing.Mod;
+                _modLinkCachePlugins.TryAdd(key, modListing.Mod);
                 return new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences());
             }
 
             if (_pluginProvider.TryGetPlugin(key, fallBackModFolderNames, out var plugin) && plugin != null)
             {
+                pluginProviderBranch = true;
+                loadedPlugin = plugin;
+                _modLinkCachePlugins.TryAdd(key, plugin);
                 return new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences());
             }
 
+            pluginProviderFailed = true;
             return null; // Return null if it can't be created.
         });
+
+        if (capturing)
+        {
+            string folders = fallBackModFolderNames == null
+                ? "(null)"
+                : "[" + string.Join(", ", fallBackModFolderNames) + "]";
+            string outcome;
+            if (wasCached)
+            {
+                outcome = linkCache != null ? "CACHED-OK" : "CACHED-NULL (poisoned)";
+            }
+            else if (factoryRan)
+            {
+                if (loBranch) outcome = "LOAD-FROM-LO";
+                else if (pluginProviderBranch) outcome = "LOAD-FROM-PROVIDER";
+                else if (pluginProviderFailed) outcome = "LOAD-FAILED (provider could not resolve path)";
+                else outcome = "LOAD-FACTORY-RAN-UNKNOWN";
+            }
+            else
+            {
+                outcome = linkCache != null ? "CACHED-OK (raced)" : "CACHED-NULL (raced, poisoned)";
+            }
+            TraceLookup($"TryAddPluginToCaches mk={modKey.FileName} fallback={folders} → {outcome}");
+
+            // Probe the SAME plugin instance the link cache wraps so we know
+            // whether enumeration throws on the very instance the resolver
+            // queries — independent of any fresh re-load via TryGetPlugin.
+            // Reports masters list, NPC count + sample, and a full exception
+            // chain (type/message/stack head) when enumeration throws.
+            if (loadedPlugin != null)
+            {
+                try
+                {
+                    var masters = loadedPlugin.ModHeader.MasterReferences
+                        .Select(m => m.Master.FileName.String).ToList();
+                    TraceLookup($"  loadedPlugin masters=[{string.Join(", ", masters)}], flags={loadedPlugin.ModHeader.Flags}");
+                }
+                catch (Exception ex)
+                {
+                    TraceLookup($"  loadedPlugin masters=THREW({ex.GetType().Name}: {ex.Message})");
+                }
+
+                try
+                {
+                    int npcCount = loadedPlugin.Npcs.Count;
+                    var sample = loadedPlugin.Npcs.Take(8).Select(n => n.FormKey.ToString()).ToList();
+                    TraceLookup($"  loadedPlugin Npcs.Count={npcCount}, firstKeys=[{string.Join(", ", sample)}]");
+                }
+                catch (Exception ex)
+                {
+                    var exChain = new System.Text.StringBuilder();
+                    var cur = ex;
+                    int depth = 0;
+                    while (cur != null && depth < 4)
+                    {
+                        exChain.Append("    [").Append(depth).Append("] ").Append(cur.GetType().FullName)
+                               .Append(": ").Append(cur.Message).Append('\n');
+                        if (!string.IsNullOrEmpty(cur.StackTrace))
+                        {
+                            var lines = cur.StackTrace.Split('\n');
+                            foreach (var line in lines.Take(6))
+                            {
+                                exChain.Append("        ").Append(line.Trim()).Append('\n');
+                            }
+                        }
+                        cur = cur.InnerException;
+                        depth++;
+                    }
+                    TraceLookup($"  loadedPlugin Npcs enumeration threw:\n{exChain}");
+                }
+            }
+        }
 
         // The method succeeds if the linkCache is not null (either it existed before or was successfully created).
         return linkCache != null;
@@ -708,31 +882,99 @@ public class RecordHandler
     
     public bool TryGetRecordGetterFromMod(IFormLinkGetter formLink, ModKey modKey, HashSet<string> fallBackModFolderNames, RecordLookupFallBack fallbackMode, out IMajorRecordGetter? record)
     {
-        if (TryAddPluginToCaches(modKey, fallBackModFolderNames) && _modLinkCaches[modKey].TryResolve(formLink, out var modRecord) && modRecord is not null)
+        bool capturing = RenderLogCapture.IsCapturing;
+        if (TryAddPluginToCaches(modKey, fallBackModFolderNames))
         {
-            record = modRecord;
-            return true;
+            bool resolved = _modLinkCaches[modKey].TryResolve(formLink, out var modRecord) && modRecord is not null;
+
+            // Cold-ESL recovery: if the lookup missed but the FormKey's
+            // natural origin IS this plugin (so the plugin should own this
+            // record as a new entry, not as an override of a master), the
+            // miss may be the Mutagen lazy-parse bug rather than a true
+            // absence. Prime the plugin's NPC group via TryWarmPlugin and
+            // retry once. Memoized per-ModKey, so this incurs at most one
+            // NPC-GRUP walk per buggy plugin per session — and never runs
+            // for queries whose ModKey doesn't match the queried plugin
+            // (those misses are expected and shouldn't trigger work).
+            if (!resolved && formLink.FormKey.ModKey == modKey)
+            {
+                if (TryWarmPlugin(modKey))
+                {
+                    bool retryResolved = _modLinkCaches[modKey].TryResolve(formLink, out modRecord) && modRecord is not null;
+                    if (capturing && retryResolved && !resolved)
+                    {
+                        TraceLookup($"  recovered fk={formLink.FormKey} via post-warmup retry on {modKey.FileName}");
+                    }
+                    resolved = retryResolved;
+                }
+            }
+
+            if (capturing)
+            {
+                int? recordCount = null;
+                string? probeError = null;
+                List<string>? sampleNpcKeys = null;
+                try
+                {
+                    // Probe NPC count to confirm Mutagen actually parsed the plugin's
+                    // contents — a loaded-but-empty link cache would resolve nothing
+                    // and look identical to a true "not present" miss otherwise.
+                    // Sample a few FormKeys so we can detect ESL key-storage drift
+                    // (the lookup FormKey vs. how Mutagen actually keyed the record).
+                    if (_pluginProvider.TryGetPlugin(modKey, fallBackModFolderNames, out var probe) && probe != null)
+                    {
+                        recordCount = probe.Npcs.Count;
+                        sampleNpcKeys = probe.Npcs.Take(8).Select(n => n.FormKey.ToString()).ToList();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    probeError = ex.GetType().Name + ": " + ex.Message;
+                }
+                string countLabel;
+                if (recordCount.HasValue) countLabel = recordCount.Value.ToString();
+                else if (probeError != null) countLabel = "THREW(" + probeError + ")";
+                else countLabel = "?";
+                TraceLookup($"  TryGetRecordGetterFromMod mk={modKey.FileName} fk={formLink.FormKey} → TryResolve={resolved}, npcsInPlugin={countLabel}");
+                if (sampleNpcKeys != null && sampleNpcKeys.Count > 0)
+                {
+                    TraceLookup($"    NPC keys actually in plugin (first {sampleNpcKeys.Count}): [{string.Join(", ", sampleNpcKeys)}]");
+                }
+            }
+            if (resolved)
+            {
+                record = modRecord;
+                return true;
+            }
         }
-        
+        else if (capturing)
+        {
+            TraceLookup($"  TryGetRecordGetterFromMod mk={modKey.FileName} fk={formLink.FormKey} → plugin not loadable");
+        }
+
         // fallbacks
+        IMajorRecordGetter? fallbackRecord = null;
         switch (fallbackMode)
         {
             case RecordLookupFallBack.Origin:
-                if (TryAddPluginToCaches(formLink.FormKey.ModKey, fallBackModFolderNames) && _modLinkCaches[formLink.FormKey.ModKey].TryResolve(formLink, out modRecord) && modRecord is not null)
+                if (TryAddPluginToCaches(formLink.FormKey.ModKey, fallBackModFolderNames) && _modLinkCaches[formLink.FormKey.ModKey].TryResolve(formLink, out fallbackRecord) && fallbackRecord is not null)
                 {
-                    record = modRecord;
+                    if (capturing) TraceLookup($"  TryGetRecordGetterFromMod[Origin] mk={formLink.FormKey.ModKey.FileName} fk={formLink.FormKey} → resolved");
+                    record = fallbackRecord;
                     return true;
                 }
                 break;
-            
+
             case RecordLookupFallBack.Winner:
-                if (_environmentStateProvider.LinkCache.TryResolve(formLink, out modRecord) && modRecord is not null)
+                if (_environmentStateProvider.LinkCache.TryResolve(formLink, out fallbackRecord) && fallbackRecord is not null)
                 {
-                    record = modRecord;
+                    if (capturing) TraceLookup($"  TryGetRecordGetterFromMod[Winner] fk={formLink.FormKey} → resolved via global LinkCache");
+                    record = fallbackRecord;
                     return true;
                 }
+                if (capturing) TraceLookup($"  TryGetRecordGetterFromMod[Winner] fk={formLink.FormKey} → global LinkCache miss");
                 break;
-            
+
             case RecordLookupFallBack.None:
                 default:
                     break;
@@ -750,43 +992,55 @@ public class RecordHandler
         {
             return false;
         }
-        
+
         var toSearch = modKeys.Reverse().ToArray();
         if (!reverseOrder)
         {
             toSearch = modKeys.ToArray();
         }
 
+        bool capturing = RenderLogCapture.IsCapturing;
+        if (capturing)
+        {
+            TraceLookup($"TryGetRecordFromMods fk={formLink.FormKey} fallback={fallbackMode} reverseOrder={reverseOrder} keys=[{string.Join(", ", toSearch.Select(k => k.FileName.String))}]");
+        }
+
         foreach (var mk in toSearch)
         {
             if (TryGetRecordGetterFromMod(formLink, mk, fallBackModFolderNames, RecordLookupFallBack.None, out record) && record != null)
             {
+                if (capturing) TraceLookup($"  → MATCHED via {mk.FileName}");
                 return true;
             }
         }
-        
+
         // fallbacks
         switch (fallbackMode)
         {
             case RecordLookupFallBack.Origin:
                 if (TryGetRecordGetterFromMod(formLink, formLink.FormKey.ModKey, fallBackModFolderNames, RecordLookupFallBack.None,  out record) && record != null)
                 {
+                    if (capturing) TraceLookup($"  → MATCHED via Origin fallback {formLink.FormKey.ModKey.FileName}");
                     return true;
                 }
+                if (capturing) TraceLookup("  → Origin fallback miss");
                 break;
-            
+
             case RecordLookupFallBack.Winner:
                 if (_environmentStateProvider.LinkCache.TryResolve(formLink, out record) && record is not null)
                 {
+                    if (capturing) TraceLookup("  → MATCHED via Winner fallback (global LinkCache)");
                     return true;
                 }
+                if (capturing) TraceLookup("  → Winner fallback miss (global LinkCache)");
                 break;
-            
+
             case RecordLookupFallBack.None:
             default:
                 break;
         }
-        
+
+        if (capturing) TraceLookup($"TryGetRecordFromMods fk={formLink.FormKey} → MISS");
         return false;
     }
 
