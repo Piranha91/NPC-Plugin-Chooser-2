@@ -88,6 +88,50 @@ public class RecordHandler
         RenderLogCapture.Write("[RecordHandler] " + message);
     }
 
+    /// <summary>Workaround for a Mutagen 0.53-alpha overlay-reader bug where
+    /// the first cold access to a freshly-loaded ESL plugin's NPC group
+    /// throws <see cref="ArgumentOutOfRangeException"/>, and any
+    /// <see cref="ImmutableModLinkCache{TMod,TModGetter}.TryResolve"/> that
+    /// runs before the plugin is primed leaves the link cache in a state
+    /// from which it can't recover — even after a subsequent successful
+    /// <c>Npcs.Count</c> on the same plugin and rebuilding the link cache.
+    /// Symptom: SkyPatcher template-replacer mugshots fail to resolve the
+    /// donor NPC even though analysis-time scanning found it just fine.
+    ///
+    /// <para>Calling <c>plugin.Npcs.Count</c> before the link cache is wrapped
+    /// around the plugin sidesteps the bug entirely. Gated on the
+    /// LightMaster (Small) flag because the bug is ESL-specific in practice
+    /// and unconditional priming here would walk the NPC GRUP of every
+    /// loaded full-master appearance plugin, which contended on disk I/O
+    /// and froze the UI for ~20s when many tiles render simultaneously.
+    /// ESLs cap at 4096 records and are typically much smaller, so priming
+    /// every ESL the resolver touches is bounded and fast.</para>
+    ///
+    /// <para>The deferred warmup in <see cref="TryGetRecordGetterFromMod"/>
+    /// remains as a safety net for any non-ESL plugin that ever surfaces
+    /// the same failure mode. Throws are swallowed: a corrupt plugin
+    /// returns a link cache that resolves nothing — same observable
+    /// behavior as today's cold-state failure — and the trace surfaces
+    /// the exception when capture is active.</para>
+    /// </summary>
+    private static void PrimeIfEsl(ISkyrimModGetter plugin)
+    {
+        try
+        {
+            if (!plugin.ModHeader.Flags.HasFlag(SkyrimModHeader.HeaderFlag.Small)) return;
+            _ = plugin.Npcs.Count;
+        }
+        catch (Exception ex)
+        {
+            if (RenderLogCapture.IsCapturing)
+            {
+                TraceLookup($"  PrimeIfEsl threw on '{plugin.ModKey.FileName}' " +
+                            $"({ex.GetType().Name}: {ex.Message}); link cache will likely " +
+                            $"resolve nothing for this plugin.");
+            }
+        }
+    }
+
     /// <summary>On-demand workaround for a Mutagen 0.53-alpha overlay-reader
     /// bug where the first cold access to a freshly loaded ESL plugin's NPC
     /// group throws <see cref="ArgumentOutOfRangeException"/> from
@@ -125,23 +169,81 @@ public class RecordHandler
     /// </summary>
     private bool TryWarmPlugin(ModKey modKey)
     {
-        if (_warmedPlugins.TryGetValue(modKey, out var prev)) return prev;
-        if (!_modLinkCachePlugins.TryGetValue(modKey, out var plugin) || plugin == null) return false;
+        bool capturing = RenderLogCapture.IsCapturing;
+
+        if (_warmedPlugins.TryGetValue(modKey, out var prev))
+        {
+            if (capturing) TraceLookup($"  TryWarmPlugin {modKey.FileName}: memoized prev={prev}");
+            return prev;
+        }
+
+        // First-choice source: the plugin instance our factory stashed when
+        // this ModKey's link cache was created. Same instance the link cache
+        // wraps, so priming it primes the cache's view too.
+        ISkyrimModGetter? plugin;
+        bool fromStash = _modLinkCachePlugins.TryGetValue(modKey, out plugin) && plugin != null;
+
+        if (!fromStash)
+        {
+            // Fallback: pull the plugin out of the link cache itself. Covers
+            // the case where _modLinkCaches was populated by some code path
+            // we didn't update to mirror into _modLinkCachePlugins. For an
+            // ImmutableModLinkCache built from a single plugin, PriorityOrder
+            // returns that plugin in slot 0.
+            if (_modLinkCaches.TryGetValue(modKey, out var existingCache) && existingCache != null)
+            {
+                plugin = existingCache.PriorityOrder.FirstOrDefault() as ISkyrimModGetter;
+                if (capturing)
+                {
+                    TraceLookup($"  TryWarmPlugin {modKey.FileName}: plugin missing from " +
+                                $"_modLinkCachePlugins; pulled from linkCache.PriorityOrder " +
+                                $"(plugin={(plugin?.ModKey.FileName.String ?? "(null)")}).");
+                }
+                if (plugin != null)
+                {
+                    _modLinkCachePlugins.TryAdd(modKey, plugin);
+                }
+            }
+        }
+        if (plugin == null)
+        {
+            if (capturing) TraceLookup($"  TryWarmPlugin {modKey.FileName}: no plugin reference available; aborting warmup");
+            return false;
+        }
+
+        if (capturing)
+        {
+            TraceLookup($"  TryWarmPlugin {modKey.FileName}: priming Npcs (plugin source={(fromStash ? "stash" : "PriorityOrder fallback")})");
+        }
 
         bool success;
         try
         {
-            _ = plugin.Npcs.Count;
+            int count = plugin.Npcs.Count;
             success = true;
+            if (capturing) TraceLookup($"  TryWarmPlugin {modKey.FileName}: Npcs.Count={count} (warmup ok)");
         }
         catch (Exception ex)
         {
-            if (RenderLogCapture.IsCapturing)
+            if (capturing)
             {
                 TraceLookup($"  TryWarmPlugin {modKey.FileName} threw: {ex.GetType().Name}: {ex.Message}");
             }
             success = false;
         }
+
+        if (success)
+        {
+            // Replace the existing link cache with a fresh one wrapping the
+            // now-primed plugin. The original cache may have already walked
+            // the plugin in its cold state during an earlier TryResolve and
+            // built a partial / corrupt index — priming alone doesn't undo
+            // that, so we hand the caller a clean cache to retry against.
+            var freshCache = new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences());
+            _modLinkCaches[modKey] = freshCache;
+            if (capturing) TraceLookup($"  TryWarmPlugin {modKey.FileName}: rebuilt link cache around primed plugin");
+        }
+
         _warmedPlugins.TryAdd(modKey, success);
         return success;
     }
@@ -168,6 +270,7 @@ public class RecordHandler
                 loBranch = true;
                 loadedPlugin = modListing.Mod;
                 _modLinkCachePlugins.TryAdd(key, modListing.Mod);
+                PrimeIfEsl(modListing.Mod);
                 return new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences());
             }
 
@@ -176,6 +279,7 @@ public class RecordHandler
                 pluginProviderBranch = true;
                 loadedPlugin = plugin;
                 _modLinkCachePlugins.TryAdd(key, plugin);
+                PrimeIfEsl(plugin);
                 return new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences());
             }
 
@@ -681,6 +785,7 @@ public class RecordHandler
                 var parentListing = _environmentStateProvider.LoadOrder.TryGetValue(parentmod);
                 if (parentListing != null && parentListing.Mod != null)
                 {
+                    _modLinkCachePlugins[parentListing.ModKey] = parentListing.Mod;
                     _modLinkCaches[parentListing.ModKey] = new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(parentListing.Mod, new LinkCachePreferences());
                 }
             }
@@ -690,7 +795,7 @@ public class RecordHandler
                 _modLinkCaches[parentmod].TryResolve(formLinkGetter, out modRecord);
             }
         }
-        
+
         if (modRecord != null)
         {
             var sublinks = modRecord.EnumerateFormLinks();
@@ -803,6 +908,7 @@ public class RecordHandler
                 var parentListing = _environmentStateProvider.LoadOrder.TryGetValue(parentmod);
                 if (parentListing != null && parentListing.Mod != null)
                 {
+                    _modLinkCachePlugins[parentListing.ModKey] = parentListing.Mod;
                     _modLinkCaches[parentListing.ModKey] = new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(parentListing.Mod, new LinkCachePreferences());
                 }
             }
@@ -898,15 +1004,26 @@ public class RecordHandler
             // (those misses are expected and shouldn't trigger work).
             if (!resolved && formLink.FormKey.ModKey == modKey)
             {
-                if (TryWarmPlugin(modKey))
+                if (capturing) TraceLookup($"  triggering deferred warmup for {modKey.FileName} (suspicious miss)");
+                bool warmed = TryWarmPlugin(modKey);
+                if (warmed)
                 {
                     bool retryResolved = _modLinkCaches[modKey].TryResolve(formLink, out modRecord) && modRecord is not null;
-                    if (capturing && retryResolved && !resolved)
+                    if (capturing) TraceLookup($"  post-warmup retry on {modKey.FileName}: TryResolve={retryResolved}");
+                    if (retryResolved && !resolved)
                     {
                         TraceLookup($"  recovered fk={formLink.FormKey} via post-warmup retry on {modKey.FileName}");
                     }
                     resolved = retryResolved;
                 }
+                else if (capturing)
+                {
+                    TraceLookup($"  warmup failed for {modKey.FileName}; not retrying TryResolve");
+                }
+            }
+            else if (!resolved && capturing)
+            {
+                TraceLookup($"  not triggering warmup: formLink.FormKey.ModKey={formLink.FormKey.ModKey.FileName}, modKey={modKey.FileName}, equal={formLink.FormKey.ModKey == modKey}");
             }
 
             if (capturing)
