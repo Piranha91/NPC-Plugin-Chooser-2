@@ -191,6 +191,28 @@ public sealed class MugshotStalenessChecker
             }
         }
 
+        // Missing-asset drift (gated on AutoUpdateStaleMugshots). When the
+        // render couldn't resolve some meshes/textures, the stamped arrays
+        // record them — the resulting PNG depicts an incomplete model
+        // (wireframe shapes / placeholder textures). Treating it as stale
+        // gives the user's next session a chance to pick up newly-installed
+        // assets automatically. If the assets are still missing on re-render
+        // the arrays get re-stamped and we flag stale again next session;
+        // user can stop the loop by disabling AutoUpdateStaleMugshots or by
+        // fixing the load order.
+        if (_settings.AutoUpdateStaleMugshots)
+        {
+            InternalMugshotMetadata.TryReadMissingAssets(
+                parametersJson,
+                out var missingMeshes,
+                out var missingTextures);
+            if (missingMeshes.Count > 0 || missingTextures.Count > 0)
+            {
+                Trace($"  Internal: missing-asset drift meshes={missingMeshes.Count} textures={missingTextures.Count}");
+                return true;
+            }
+        }
+
         // Settings drift (gated on AutoUpdateStaleMugshots). The hash is
         // schema-versioned: each pipeline_schema bump is append-only, so
         // a v0 PNG's hash can be reproduced from current cfg by stopping
