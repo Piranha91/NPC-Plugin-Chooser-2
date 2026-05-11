@@ -21,6 +21,7 @@
         <local:FullPathToFolderNameConverter x:Key="FullPathToFolderNameConverter"/>
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         <local:BooleanToOpacityConverter x:Key="BooleanToOpacityConverter"/>
+        <local:EnumToVisibilityConverter x:Key="EnumToVisibilityConverter"/>
         <ObjectDataProvider x:Key="SkyrimReleaseEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="bsky:SkyrimRelease"/>
@@ -756,6 +757,97 @@
                                  Width="50"
                                  ToolTip="The maximum number of mugshots to fit on-screen when auto-sizing. A lower number results in larger images."/>
                     </StackPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- FaceGen Analysis: opt-in per-mugshot polycount / size overlay.
+                 Off by default; turning it on triggers a NIF parse on every
+                 visible tile that lacks cached stats — first view of each
+                 mod's FaceGen costs ~10 ms. Subsequent views hit the
+                 SHA-keyed cache in Settings.json. -->
+            <GroupBox Header="FaceGen Analysis" Margin="0,0,0,10" Padding="5">
+                <StackPanel>
+                    <CheckBox Content="Enable FaceGen Analysis"
+                              IsChecked="{Binding EnableFaceGenAnalysis, Mode=TwoWay}"
+                              ToolTip="Analyze each tile's FaceGen NIF to show polycount / vertex / size info on the mugshot. First view of each FaceGen costs ~10ms; results are cached SHA-keyed across runs."/>
+                    <TextBlock Text="When enabled, each mugshot's FaceGen NIF is parsed (or just stat'd for size-only) to surface authoring metrics. Useful for spotting absurdly heavy hair / head meshes."
+                               FontSize="10" Foreground="{DynamicResource HintForeground}"
+                               TextWrapping="Wrap" Margin="0,2,0,5"/>
+
+                    <Border Margin="15,5,0,5" Padding="10" BorderBrush="Gray" BorderThickness="1" CornerRadius="3"
+                            Visibility="{Binding EnableFaceGenAnalysis, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <TextBlock Text="Reporting Metrics" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <CheckBox Content="File Size" IsChecked="{Binding ReportFaceGenSize, Mode=TwoWay}" Margin="0,0,16,0"/>
+                                <CheckBox Content="Polygons" IsChecked="{Binding ReportFaceGenPolys, Mode=TwoWay}" Margin="0,0,16,0"
+                                          ToolTip="Triangle count summed across all shapes in the FaceGen NIF."/>
+                                <CheckBox Content="Vertices" IsChecked="{Binding ReportFaceGenVerts, Mode=TwoWay}"
+                                          ToolTip="Vertex count summed across all shapes."/>
+                            </WrapPanel>
+
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Display Mode:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox ItemsSource="{Binding FaceGenDisplayModes}"
+                                          SelectedItem="{Binding FaceGenDisplayMode, Mode=TwoWay}"
+                                          MinWidth="130"
+                                          ToolTip="Text Overlay draws the numbers directly on the mugshot. Tooltip shows a small dot — hover for the same info."/>
+                            </WrapPanel>
+
+                            <!-- Text-overlay only: text-height % of mugshot height. -->
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                       Visibility="{Binding FaceGenDisplayMode, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=TextOverlay}">
+                                <TextBlock Text="Text Height (% of mugshot):" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <xctk:DoubleUpDown Value="{Binding FaceGenTextHeightPercent, Mode=TwoWay}"
+                                                   Minimum="3" Maximum="30" Increment="0.5" FormatString="0.#" Width="70"/>
+                            </WrapPanel>
+
+                            <!-- Tooltip only: indicator position. -->
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                       Visibility="{Binding FaceGenDisplayMode, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Tooltip}">
+                                <TextBlock Text="Indicator Position:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox ItemsSource="{Binding FaceGenTooltipPositions}"
+                                          SelectedItem="{Binding FaceGenTooltipPosition, Mode=TwoWay}"
+                                          MinWidth="130"/>
+                            </WrapPanel>
+
+                            <TextBlock Text="Highlight Criterion" FontWeight="SemiBold" Margin="0,4,0,4"/>
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <ComboBox ItemsSource="{Binding FaceGenHighlightCriteria}"
+                                          SelectedItem="{Binding FaceGenHighlightCriterion, Mode=TwoWay}"
+                                          MinWidth="130" Margin="0,0,8,0"
+                                          ToolTip="Top % marks the heaviest N% of visible tiles per metric. Std Dev marks tiles whose value exceeds mean + N*stddev."/>
+                                <xctk:DoubleUpDown Value="{Binding FaceGenHighlightThreshold, Mode=TwoWay}"
+                                                   Minimum="0" Maximum="100" Increment="1" FormatString="0.##" Width="70"/>
+                            </WrapPanel>
+
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                                    <TextBlock Text="Highlight color:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <Border BorderBrush="Black" BorderThickness="1" Width="60" Height="22"
+                                            Background="{Binding FaceGenHighlightColor}" CornerRadius="2"
+                                            VerticalAlignment="Center"/>
+                                    <Button Content="Change..." Margin="6,0,0,0" Padding="6,1"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding SelectFaceGenHighlightColorCommand}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Normal color:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <Border BorderBrush="Black" BorderThickness="1" Width="60" Height="22"
+                                            Background="{Binding FaceGenNoHighlightColor}" CornerRadius="2"
+                                            VerticalAlignment="Center"/>
+                                    <Button Content="Change..." Margin="6,0,0,0" Padding="6,1"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding SelectFaceGenNoHighlightColorCommand}"/>
+                                </StackPanel>
+                            </WrapPanel>
+
+                            <Button Content="Clear FaceGen Analysis Cache"
+                                    Command="{Binding ClearFaceGenAnalysisCacheCommand}"
+                                    Padding="10,3" HorizontalAlignment="Left"
+                                    ToolTip="Forgets every cached FaceGen stat. Next view of each tile will re-parse its NIF."/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </GroupBox>
 

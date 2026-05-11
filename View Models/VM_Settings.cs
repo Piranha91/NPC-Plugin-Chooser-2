@@ -204,6 +204,32 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public IEnumerable<MugshotSearchMode> MugshotSearchModes { get; } = Enum.GetValues(typeof(MugshotSearchMode)).Cast<MugshotSearchMode>();
 
 
+    // --- FaceGen Analysis (per-mugshot polycount / size overlay) ---
+    [Reactive] public bool EnableFaceGenAnalysis { get; set; }
+    [Reactive] public bool ReportFaceGenSize { get; set; }
+    [Reactive] public bool ReportFaceGenPolys { get; set; }
+    [Reactive] public bool ReportFaceGenVerts { get; set; }
+    [Reactive] public FaceGenAnalysisDisplayMode FaceGenDisplayMode { get; set; }
+    public IEnumerable<FaceGenAnalysisDisplayMode> FaceGenDisplayModes { get; } =
+        Enum.GetValues(typeof(FaceGenAnalysisDisplayMode)).Cast<FaceGenAnalysisDisplayMode>();
+    [Reactive] public double FaceGenTextHeightPercent { get; set; }
+    [Reactive] public FaceGenTooltipPosition FaceGenTooltipPosition { get; set; }
+    public IEnumerable<FaceGenTooltipPosition> FaceGenTooltipPositions { get; } =
+        Enum.GetValues(typeof(FaceGenTooltipPosition)).Cast<FaceGenTooltipPosition>();
+    [Reactive] public FaceGenHighlightCriterion FaceGenHighlightCriterion { get; set; }
+    public IEnumerable<FaceGenHighlightCriterion> FaceGenHighlightCriteria { get; } =
+        Enum.GetValues(typeof(FaceGenHighlightCriterion)).Cast<FaceGenHighlightCriterion>();
+    [Reactive] public double FaceGenHighlightThreshold { get; set; }
+    /// <summary>SolidColorBrush wrappers around the model's Color fields.
+    /// Mirrors the InternalBackgroundColor pattern — the WhenAnyValue
+    /// subscription in the constructor decomposes the brush back to a Color
+    /// so persistence stays the same shape as MugshotBackgroundColor.</summary>
+    [Reactive] public SolidColorBrush FaceGenHighlightColor { get; set; } = new SolidColorBrush(Colors.Red);
+    [Reactive] public SolidColorBrush FaceGenNoHighlightColor { get; set; } = new SolidColorBrush(Colors.White);
+    public ReactiveCommand<Unit, Unit> SelectFaceGenHighlightColorCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectFaceGenNoHighlightColorCommand { get; }
+    public ReactiveCommand<Unit, Unit> ClearFaceGenAnalysisCacheCommand { get; }
+
     // TargetPluginName now maps to the conceptual name in the model
     [Reactive] public string TargetPluginName { get; set; }
 
@@ -335,6 +361,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public ReactiveCommand<Unit, Unit> AddIgnoredModCommand { get; }
     public ReactiveCommand<string, Unit> RemoveIgnoredModCommand { get; }
 
+    private readonly FaceGenAnalysisCache _faceGenAnalysisCache;
+
     public VM_Settings(
         EnvironmentStateProvider environmentStateProvider,
         Auxilliary aux,
@@ -347,9 +375,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         PortraitCreator portraitCreator,
         BatchMugshotGenerator batchMugshotGenerator,
         FaceFinderClient faceFinderClient,
-        EventLogger eventLogger)
+        EventLogger eventLogger,
+        FaceGenAnalysisCache faceGenAnalysisCache)
     {
         _model = settingsModel;
+        _faceGenAnalysisCache = faceGenAnalysisCache;
         
         _environmentStateProvider = environmentStateProvider;
         _environmentStateProvider.OnEnvironmentUpdated
@@ -524,6 +554,21 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         FixGarbledText = _model.FixGarbledText;
         IsDarkMode = _model.IsDarkMode;
 
+        // --- FaceGen Analysis ---
+        EnableFaceGenAnalysis = _model.EnableFaceGenAnalysis;
+        ReportFaceGenSize = _model.ReportFaceGenSize;
+        ReportFaceGenPolys = _model.ReportFaceGenPolys;
+        ReportFaceGenVerts = _model.ReportFaceGenVerts;
+        FaceGenDisplayMode = _model.FaceGenDisplayMode;
+        FaceGenTextHeightPercent = _model.FaceGenTextHeightPercent;
+        FaceGenTooltipPosition = _model.FaceGenTooltipPosition;
+        FaceGenHighlightCriterion = _model.FaceGenHighlightCriterion;
+        FaceGenHighlightThreshold = _model.FaceGenHighlightThreshold;
+        FaceGenHighlightColor = new SolidColorBrush(_model.FaceGenHighlightColor);
+        if (FaceGenHighlightColor.CanFreeze) FaceGenHighlightColor.Freeze();
+        FaceGenNoHighlightColor = new SolidColorBrush(_model.FaceGenNoHighlightColor);
+        if (FaceGenNoHighlightColor.CanFreeze) FaceGenNoHighlightColor.Freeze();
+
         // Populate available themes from the Themes folder
         foreach (var theme in ThemeManager.GetAvailableThemes())
             AvailableThemes.Add(theme);
@@ -586,6 +631,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         ToggleInternalShowPreviewCommand = ReactiveCommand.Create(
             () => { InternalShowPreview = !InternalShowPreview; }).DisposeWith(_disposables);
         SelectInternalBackgroundColorCommand = ReactiveCommand.Create(SelectInternalBackgroundColor).DisposeWith(_disposables);
+        SelectFaceGenHighlightColorCommand = ReactiveCommand.Create(
+            () => PickFaceGenColor(c => FaceGenHighlightColor = c, () => FaceGenHighlightColor.Color))
+            .DisposeWith(_disposables);
+        SelectFaceGenNoHighlightColorCommand = ReactiveCommand.Create(
+            () => PickFaceGenColor(c => FaceGenNoHighlightColor = c, () => FaceGenNoHighlightColor.Color))
+            .DisposeWith(_disposables);
+        ClearFaceGenAnalysisCacheCommand = ReactiveCommand.Create(
+            () => _faceGenAnalysisCache.Clear()).DisposeWith(_disposables);
         SelectOutputDirectoryCommand =
             ReactiveCommand.CreateFromTask(SelectOutputDirectoryAsync).DisposeWith(_disposables);
         ShowPatchingModeHelpCommand = ReactiveCommand.Create(ShowPatchingModeHelp).DisposeWith(_disposables);
@@ -738,6 +791,30 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(f => { _model.InternalMugshot.HairAbovePadding = f; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalIncludeAccessories).Skip(1)
             .Subscribe(b => { _model.InternalMugshot.IncludeAccessories = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+
+        // --- FaceGen Analysis persistence ---
+        this.WhenAnyValue(x => x.EnableFaceGenAnalysis).Skip(1)
+            .Subscribe(b => { _model.EnableFaceGenAnalysis = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.ReportFaceGenSize).Skip(1)
+            .Subscribe(b => { _model.ReportFaceGenSize = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.ReportFaceGenPolys).Skip(1)
+            .Subscribe(b => { _model.ReportFaceGenPolys = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.ReportFaceGenVerts).Skip(1)
+            .Subscribe(b => { _model.ReportFaceGenVerts = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.FaceGenDisplayMode).Skip(1)
+            .Subscribe(m => { _model.FaceGenDisplayMode = m; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.FaceGenTextHeightPercent).Skip(1)
+            .Subscribe(v => { _model.FaceGenTextHeightPercent = v; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.FaceGenTooltipPosition).Skip(1)
+            .Subscribe(p => { _model.FaceGenTooltipPosition = p; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.FaceGenHighlightCriterion).Skip(1)
+            .Subscribe(c => { _model.FaceGenHighlightCriterion = c; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.FaceGenHighlightThreshold).Skip(1)
+            .Subscribe(v => { _model.FaceGenHighlightThreshold = v; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.FaceGenHighlightColor).Skip(1)
+            .Subscribe(b => { if (b != null) { _model.FaceGenHighlightColor = b.Color; RequestThrottledSave(); } }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.FaceGenNoHighlightColor).Skip(1)
+            .Subscribe(b => { if (b != null) { _model.FaceGenNoHighlightColor = b.Color; RequestThrottledSave(); } }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalBackgroundColor).Skip(1)
             .Subscribe(brush =>
             {
@@ -2272,6 +2349,22 @@ Options:
         {
             var newColor = dialog.Color;
             InternalBackgroundColor = new SolidColorBrush(Color.FromRgb(newColor.R, newColor.G, newColor.B));
+        }
+    }
+
+    /// <summary>Generic color-picker plumbing for the FaceGen highlight /
+    /// no-highlight swatches. Wraps <c>System.Windows.Forms.ColorDialog</c>
+    /// the same way SelectInternalBackgroundColor does, but parameterized
+    /// so both color slots share one implementation.</summary>
+    private void PickFaceGenColor(Action<SolidColorBrush> setter, Func<Color> getInitial)
+    {
+        var dialog = new System.Windows.Forms.ColorDialog();
+        var initial = getInitial();
+        dialog.Color = System.Drawing.Color.FromArgb(255, initial.R, initial.G, initial.B);
+        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            var c = dialog.Color;
+            setter(new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)));
         }
     }
 

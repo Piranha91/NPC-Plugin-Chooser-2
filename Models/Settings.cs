@@ -332,6 +332,29 @@ public class Settings
     public int ImageYRes { get; set; } = 750;
     public HashSet<string> GeneratedMugshotPaths { get; set; } = new();
     public MugshotSearchMode SelectedMugshotSearchModePC { get; set; } = MugshotSearchMode.Fast;
+
+    // ── FaceGen Analysis (per-mugshot polycount / size overlay) ───────────────
+    // Opt-in. When on, each tile parses its FaceGen NIF (or just stats its file
+    // size) to surface authoring metrics — chiefly for spotting absurdly heavy
+    // hair / head meshes. Persisted stats live in FaceGenAnalysisCache below,
+    // SHA-keyed so a mod re-install / author update auto-invalidates the entry.
+    public bool EnableFaceGenAnalysis { get; set; } = false;
+    public bool ReportFaceGenSize { get; set; } = true;
+    public bool ReportFaceGenPolys { get; set; } = true;
+    public bool ReportFaceGenVerts { get; set; } = false;
+    public FaceGenAnalysisDisplayMode FaceGenDisplayMode { get; set; } = FaceGenAnalysisDisplayMode.TextOverlay;
+    public double FaceGenTextHeightPercent { get; set; } = 8.0;
+    public FaceGenTooltipPosition FaceGenTooltipPosition { get; set; } = FaceGenTooltipPosition.BottomCenter;
+    public FaceGenHighlightCriterion FaceGenHighlightCriterion { get; set; } = FaceGenHighlightCriterion.TopPercent;
+    public double FaceGenHighlightThreshold { get; set; } = 25.0;
+    [JsonConverter(typeof(ColorJsonConverter))]
+    public Color FaceGenHighlightColor { get; set; } = Colors.Red;
+    [JsonConverter(typeof(ColorJsonConverter))]
+    public Color FaceGenNoHighlightColor { get; set; } = Colors.White;
+    /// <summary>Persisted FaceGen stats keyed by "{ModKey}|{NpcFormKey}". Each
+    /// entry carries the source NIF's SHA256 so a mod author bumping their
+    /// FaceGen geometry auto-invalidates the cached numbers on next view.</summary>
+    public Dictionary<string, CachedFaceGenStats> FaceGenAnalysisCache { get; set; } = new();
     
     // --- Window State Properties ---
     public double MainWindowTop { get; set; } = 100; // Default a reasonable position
@@ -366,6 +389,37 @@ public enum InternalMugshotCameraMode
 {
     Auto,    // CameraFraming.MeshAware — head + hair-above-head's-bottom
     Manual,  // user's saved Distance/Azimuth/Elevation/Target
+}
+
+public enum FaceGenAnalysisDisplayMode
+{
+    TextOverlay,  // numeric stats drawn on the tile itself
+    Tooltip,      // small indicator dot, full stats on hover
+}
+
+public enum FaceGenTooltipPosition
+{
+    BottomCenter,
+    TopCenter,
+}
+
+public enum FaceGenHighlightCriterion
+{
+    TopPercent,    // mark the heaviest N% of visible tiles per metric
+    StdDevAbove,   // mark tiles whose value exceeds mean + N*stddev
+}
+
+/// <summary>Persisted FaceGen stats for a single (mod, NPC) pair. SHA is the
+/// NIF's SHA256 at capture time — checked against the live NIF on the next
+/// load to detect mod-author updates and force a recompute.</summary>
+public sealed class CachedFaceGenStats
+{
+    public string Sha { get; set; } = string.Empty;
+    public int Vertices { get; set; }
+    public int Triangles { get; set; }
+    public int Shapes { get; set; }
+    public long FileSizeBytes { get; set; }
+    public bool MeasuredGeometry { get; set; }
 }
 
 public sealed class InternalMugshotSettings

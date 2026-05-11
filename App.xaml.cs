@@ -208,6 +208,7 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<GeneratedMugshotTracker>().AsSelf().SingleInstance();
             builder.RegisterType<FaceFinderCacheTracker>().AsSelf().SingleInstance();
             builder.RegisterType<MeshSurveyRunner>().AsSelf().SingleInstance();
+            builder.RegisterType<FaceGenAnalysisCache>().AsSelf().SingleInstance();
 
             // Offscreen renderer is a managed singleton — its GameWindow + FBO
             // are amortized across many mugshot renders. The factory must be

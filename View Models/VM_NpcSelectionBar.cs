@@ -257,6 +257,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     [ObservableAsProperty] public bool CanNavigateForward { get; }
 
     // --- Constructor ---
+    private readonly Lazy<VM_Settings> _lazyVmSettings;
+
     public VM_NpcSelectionBar(EnvironmentStateProvider environmentStateProvider,
         Settings settings,
         Auxilliary auxilliary,
@@ -270,8 +272,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         AppearanceModFactory appearanceModFactory,
         VM_FavoriteFaces.Factory favoriteFacesFactory,
         VM_ModSetting.FromModelFactory modSettingFromModelFactory,
-        PluginProvider pluginProvider)
+        PluginProvider pluginProvider,
+        Lazy<VM_Settings> lazyVmSettings)
     {
+        _lazyVmSettings = lazyVmSettings;
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _auxilliary = auxilliary;
@@ -505,7 +509,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         this.WhenAnyValue(x => x.CurrentNpcAppearanceMods)
             // Add a 50ms throttle. This gives the UI thread a moment to complete the
             // layout pass for the newly loaded mugshots before the resize signal is sent.
-            .Throttle(TimeSpan.FromMilliseconds(50), RxApp.MainThreadScheduler) 
+            .Throttle(TimeSpan.FromMilliseconds(50), RxApp.MainThreadScheduler)
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ =>
             {
@@ -513,6 +517,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 _refreshImageSizesSubject.OnNext(Unit.Default);
             })
             .DisposeWith(_disposables);
+
+        InitFaceGenCoordinator();
 
         _consistencyProvider.NpcSelectionChanged
             .ObserveOn(RxApp.MainThreadScheduler)
@@ -4343,6 +4349,161 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         vm.HasTemplateConflict = false;
         vm.TemplateConflictTooltip = string.Empty;
+    }
+
+    /// <summary>
+    /// <summary>Subscribes to the streams that drive the FaceGen-stats
+    /// overlay: tile-set swaps (new NPC selected), per-tile stats arrival
+    /// (analysis completed), and settings changes that affect overlay
+    /// display. Each event triggers a debounced
+    /// <see cref="RecomputeFaceGenOverlays"/>, which iterates the visible
+    /// tiles, refreshes their per-line text + indicator position from the
+    /// current settings, and re-ranks them per metric for the outlier
+    /// highlight.</summary>
+    private void InitFaceGenCoordinator()
+    {
+        var vmSettings = _lazyVmSettings.Value;
+        var triggers = Observable.Merge(
+            this.WhenAnyValue(x => x.CurrentNpcAppearanceMods).Select(_ => Unit.Default),
+            vmSettings.WhenAnyValue(
+                    x => x.EnableFaceGenAnalysis,
+                    x => x.ReportFaceGenSize,
+                    x => x.ReportFaceGenPolys,
+                    x => x.ReportFaceGenVerts,
+                    x => x.FaceGenDisplayMode,
+                    x => x.FaceGenTextHeightPercent,
+                    x => x.FaceGenTooltipPosition)
+                .Select(_ => Unit.Default),
+            vmSettings.WhenAnyValue(
+                    x => x.FaceGenHighlightCriterion,
+                    x => x.FaceGenHighlightThreshold,
+                    x => x.FaceGenHighlightColor,
+                    x => x.FaceGenNoHighlightColor)
+                .Select(_ => Unit.Default));
+
+        triggers
+            .Throttle(TimeSpan.FromMilliseconds(150), RxApp.MainThreadScheduler)
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(_ => RecomputeFaceGenOverlays())
+            .DisposeWith(_disposables);
+
+        // Per-tile stats-arrival stream needs to re-subscribe each time the
+        // collection swaps. A flat InnerSwitch over the visible-tile set's
+        // FaceGenStats observables avoids holding stale subscriptions to
+        // disposed tiles from prior NPCs.
+        this.WhenAnyValue(x => x.CurrentNpcAppearanceMods)
+            .Select(coll => coll == null
+                ? Observable.Empty<Unit>()
+                : coll.Select(t => t.WhenAnyValue(x => x.FaceGenStats).Select(_ => Unit.Default))
+                      .Merge())
+            .Switch()
+            .Throttle(TimeSpan.FromMilliseconds(150), RxApp.MainThreadScheduler)
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(_ => RecomputeFaceGenOverlays())
+            .DisposeWith(_disposables);
+
+        // When the master toggle flips on, kick analysis on any tile that
+        // skipped it during its initial load (toggle was off then). Lazy
+        // analysis for newly-arrived tiles still happens inside their own
+        // LoadInitialImageAsync path.
+        vmSettings.WhenAnyValue(x => x.EnableFaceGenAnalysis)
+            .Skip(1)
+            .Where(on => on)
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(_ =>
+            {
+                if (CurrentNpcAppearanceMods == null) return;
+                foreach (var tile in CurrentNpcAppearanceMods)
+                {
+                    tile.TriggerFaceGenAnalysisAsync();
+                }
+            })
+            .DisposeWith(_disposables);
+    }
+
+    private void RecomputeFaceGenOverlays()
+    {
+        var tiles = CurrentNpcAppearanceMods;
+        if (tiles == null || tiles.Count == 0) return;
+
+        var s = _settings;
+        var highlight = _lazyVmSettings.Value.FaceGenHighlightColor;
+        var normal = _lazyVmSettings.Value.FaceGenNoHighlightColor;
+
+        // Push per-line text / visibility / font-size into every tile (cheap;
+        // these reads are POCO field reads and reactive setters short-circuit
+        // unchanged values).
+        foreach (var tile in tiles)
+        {
+            tile.RefreshFaceGenOverlayState();
+        }
+
+        if (!s.EnableFaceGenAnalysis)
+        {
+            foreach (var tile in tiles)
+                tile.ApplyFaceGenOutlierColors(false, false, false, highlight, normal);
+            return;
+        }
+
+        // Outlier ranks are computed independently per metric over the tiles
+        // that have non-null stats — failed-analysis tiles are excluded so
+        // they don't skew the mean/stddev.
+        var withStats = tiles.Where(t => t.FaceGenStats.HasValue).ToList();
+        if (withStats.Count == 0) return;
+
+        bool[] sizeFlags = FlagOutliers(withStats, t => t.FaceGenStats!.Value.FileSizeBytes, s);
+        bool[] polyFlags = FlagOutliers(withStats, t => t.FaceGenStats!.Value.TotalTriangles, s);
+        bool[] vertFlags = FlagOutliers(withStats, t => t.FaceGenStats!.Value.TotalVertices, s);
+
+        for (int i = 0; i < withStats.Count; i++)
+        {
+            withStats[i].ApplyFaceGenOutlierColors(
+                s.ReportFaceGenSize && sizeFlags[i],
+                s.ReportFaceGenPolys && polyFlags[i],
+                s.ReportFaceGenVerts && vertFlags[i],
+                highlight, normal);
+        }
+
+        // Tiles without stats get the no-highlight color (default text).
+        foreach (var tile in tiles)
+        {
+            if (!tile.FaceGenStats.HasValue)
+                tile.ApplyFaceGenOutlierColors(false, false, false, highlight, normal);
+        }
+    }
+
+    private static bool[] FlagOutliers(List<VM_NpcsMenuMugshot> tiles, Func<VM_NpcsMenuMugshot, double> metric, Settings s)
+    {
+        int n = tiles.Count;
+        var flags = new bool[n];
+        if (n == 0) return flags;
+        var values = new double[n];
+        for (int i = 0; i < n; i++) values[i] = metric(tiles[i]);
+
+        if (s.FaceGenHighlightCriterion == FaceGenHighlightCriterion.TopPercent)
+        {
+            // Mark the top ceil(threshold% * n) tiles. Single tile never
+            // self-highlights — flagging 1-of-1 is just visual noise.
+            if (n < 2) return flags;
+            int topCount = (int)Math.Ceiling(n * (s.FaceGenHighlightThreshold / 100.0));
+            topCount = Math.Clamp(topCount, 0, n);
+            if (topCount == 0) return flags;
+            var sortedIndices = Enumerable.Range(0, n).OrderByDescending(i => values[i]).Take(topCount);
+            foreach (var idx in sortedIndices) flags[idx] = true;
+        }
+        else // StdDevAbove
+        {
+            if (n < 2) return flags;
+            double mean = values.Average();
+            double sumSq = 0;
+            for (int i = 0; i < n; i++) { double d = values[i] - mean; sumSq += d * d; }
+            double std = Math.Sqrt(sumSq / n);
+            if (std <= 0) return flags;
+            double cutoff = mean + s.FaceGenHighlightThreshold * std;
+            for (int i = 0; i < n; i++)
+                if (values[i] > cutoff) flags[i] = true;
+        }
+        return flags;
     }
 
     /// <summary>
