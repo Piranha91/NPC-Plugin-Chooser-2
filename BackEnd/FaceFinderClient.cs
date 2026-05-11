@@ -30,6 +30,19 @@ public class FaceFinderNpcResult
     public DateTime UpdatedAt { get; init; }
 }
 
+/// <summary>One server-side face entry as returned by
+/// <c>/api/public/mod/faces/search?modId=...</c>. Carries the vanilla NPC
+/// form key (string-formatted as the API delivers it), the full-resolution
+/// image URL, the mod's external Nexus link, and the server-side update
+/// timestamp used for staleness comparison.</summary>
+public class FaceFinderModFaceResult
+{
+    public required string FormKey { get; init; }
+    public required string ImageUrl { get; init; }
+    public string? ExternalUrl { get; init; }
+    public DateTime UpdatedAt { get; init; }
+}
+
 public class FaceFinderClient
 {
     private readonly Settings _settings;
@@ -139,6 +152,175 @@ public class FaceFinderClient
         public string? ExternalUrl { get; init; }
     }
     
+    /// <summary>Paginated walk of <c>/api/public/mods/search</c> that returns
+    /// a case-insensitive name → server-id map for every mod the server knows
+    /// about. Used by the FaceFinder batch download to translate the user's
+    /// local mod names into mod IDs in O(1) per lookup, instead of issuing a
+    /// per-mod search request. First occurrence of a duplicated name wins:
+    /// alphabetically-sorted server pages put the canonical "Foo" before
+    /// rename-disambiguated entries like "Foo (deprecated)".
+    /// <para>Mirrors <see cref="GetAllFaceDataForNpcAsync"/>'s implicit/explicit
+    /// page-1 union to defend against the known server quirk where the
+    /// no-page-param response and the <c>?page=1</c> response return
+    /// overlapping-but-not-identical result sets. Deduplication is by mod
+    /// <c>id</c>, so the same mod surfaced under both fetches counts once.
+    /// One extra HTTP round-trip per batch in exchange for not silently
+    /// dropping mods that only show up in one of the two views.</para></summary>
+    public async Task<Dictionary<string, int>> GetAllModsAsync()
+    {
+        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var seenIds = new HashSet<int>();
+
+        int currentPage = 1;
+        while (true)
+        {
+            var urisToFetch = new List<string>();
+            if (currentPage == 1)
+            {
+                urisToFetch.Add($"/api/public/mods/search");
+                urisToFetch.Add($"/api/public/mods/search?page=1");
+            }
+            else
+            {
+                urisToFetch.Add($"/api/public/mods/search?page={currentPage}");
+            }
+
+            bool foundDataOnThisPage = false;
+
+            foreach (var requestUri in urisToFetch)
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
+                request.Headers.Add("X-API-Key", _apiKey);
+
+                HttpResponseMessage? response = null;
+                try
+                {
+                    response = await _httpClient.SendAsync(request);
+                    var content = await response.Content.ReadAsStringAsync();
+                    await LogInteractionAsync(request, response, content);
+
+                    if (!response.IsSuccessStatusCode) continue;
+                    var results = JsonConvert.DeserializeObject<List<dynamic>>(content, new JsonSerializerSettings
+                    {
+                        DateParseHandling = DateParseHandling.None
+                    });
+
+                    if (results == null || !results.Any()) continue;
+
+                    foundDataOnThisPage = true;
+                    foreach (var r in results)
+                    {
+                        int? id = (int?)r.id;
+                        if (!id.HasValue || !seenIds.Add(id.Value)) continue;
+                        string? name = r.name;
+                        if (string.IsNullOrWhiteSpace(name)) continue;
+                        if (!result.ContainsKey(name)) result.Add(name, id.Value);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"FaceFinder GetAllModsAsync error on page {currentPage} ({requestUri}): {ex.Message}");
+                    await LogInteractionAsync(request, response, $"EXCEPTION: {ex.Message}");
+                    _eventLogger.Log($"GetAllModsAsync: FaceFinder API error on page {currentPage}: {ex.Message}");
+                }
+            }
+
+            if (!foundDataOnThisPage) break;
+            currentPage++;
+        }
+        return result;
+    }
+
+    /// <summary>Paginated walk of <c>/api/public/mod/faces/search?modId=...</c>
+    /// returning every face the server has registered for the given mod.
+    /// Pairs with <see cref="GetAllModsAsync"/> in the batch path: the user's
+    /// local NPCs are intersected against this list, avoiding a per-NPC
+    /// availability probe for the typical case where ~90% of NPCs are not on
+    /// the server.
+    /// <para>Like <see cref="GetAllFaceDataForNpcAsync"/>, page 1 is fetched
+    /// twice (implicit + explicit) to defend against the server's
+    /// no-page-param vs <c>?page=1</c> result-set divergence. Faces are
+    /// deduped by their server-side <c>id</c>.</para></summary>
+    public async Task<List<FaceFinderModFaceResult>> GetAllFacesForModAsync(int modId)
+    {
+        var results = new List<FaceFinderModFaceResult>();
+        var seenIds = new HashSet<int>();
+
+        int currentPage = 1;
+        while (true)
+        {
+            var urisToFetch = new List<string>();
+            if (currentPage == 1)
+            {
+                urisToFetch.Add($"/api/public/mod/faces/search?modId={modId}");
+                urisToFetch.Add($"/api/public/mod/faces/search?modId={modId}&page=1");
+            }
+            else
+            {
+                urisToFetch.Add($"/api/public/mod/faces/search?modId={modId}&page={currentPage}");
+            }
+
+            bool foundDataOnThisPage = false;
+
+            foreach (var requestUri in urisToFetch)
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
+                request.Headers.Add("X-API-Key", _apiKey);
+
+                HttpResponseMessage? response = null;
+                try
+                {
+                    response = await _httpClient.SendAsync(request);
+                    var content = await response.Content.ReadAsStringAsync();
+                    await LogInteractionAsync(request, response, content);
+
+                    if (!response.IsSuccessStatusCode) continue;
+                    var page = JsonConvert.DeserializeObject<List<dynamic>>(content, new JsonSerializerSettings
+                    {
+                        DateParseHandling = DateParseHandling.None
+                    });
+
+                    if (page == null || !page.Any()) continue;
+
+                    foundDataOnThisPage = true;
+                    foreach (var entry in page)
+                    {
+                        int? id = (int?)entry.id;
+                        if (!id.HasValue || !seenIds.Add(id.Value)) continue;
+                        string? formKey = entry.npc?.form_key;
+                        string? imageUrl = entry.images?.full;
+                        string? externalUrl = entry.mod?.external_url;
+                        string? updatedAtStr = entry.updated_at;
+                        if (string.IsNullOrWhiteSpace(formKey) ||
+                            string.IsNullOrWhiteSpace(imageUrl) ||
+                            string.IsNullOrWhiteSpace(updatedAtStr) ||
+                            !DateTime.TryParse(updatedAtStr, null, DateTimeStyles.RoundtripKind, out var updatedAt))
+                        {
+                            continue;
+                        }
+                        results.Add(new FaceFinderModFaceResult
+                        {
+                            FormKey = formKey,
+                            ImageUrl = imageUrl,
+                            ExternalUrl = externalUrl,
+                            UpdatedAt = updatedAt,
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"FaceFinder GetAllFacesForModAsync error modId={modId} page={currentPage} ({requestUri}): {ex.Message}");
+                    await LogInteractionAsync(request, response, $"EXCEPTION: {ex.Message}");
+                    _eventLogger.Log($"GetAllFacesForModAsync: API error modId={modId} page={currentPage}: {ex.Message}");
+                }
+            }
+
+            if (!foundDataOnThisPage) break;
+            currentPage++;
+        }
+        return results;
+    }
+
     public async Task<List<string>> GetAllModNamesAsync()
     {
         var allModNames = new List<string>();

@@ -279,6 +279,117 @@ public sealed class BatchMugshotGenerator
         }
     }
 
+    /// <summary>Variant of <see cref="TryFaceFinderAsync"/> for the
+    /// mod-batch path: the caller has already fetched the server-side face
+    /// metadata via <see cref="FaceFinderClient.GetAllFacesForModAsync"/>,
+    /// so we skip the per-NPC API probe and compare the supplied
+    /// <paramref name="serverUpdatedAt"/> directly against the cached
+    /// sidecar's timestamp. Same return-shape contract as TryFaceFinderAsync
+    /// so the batch loop's outcome counters stay symmetric (FaceFinderCache /
+    /// FaceFinderAvailable / FaceFinderDownload).</summary>
+    public async Task<GenerationResult> ProcessKnownFaceAsync(
+        FormKey npcFormKey,
+        string modName,
+        string imageUrl,
+        DateTime serverUpdatedAt,
+        string? externalUrl,
+        bool downloadBytesIfHit,
+        CancellationToken token)
+    {
+        if (!_settings.UseFaceFinderFallback) return GenerationResult.None;
+
+        try
+        {
+            var baseSavePath = GetFaceFinderBaseSavePath(_settings, modName, npcFormKey);
+
+            // Cache check — direct timestamp compare against the metadata
+            // sidecar. Skips the IsCacheStaleAsync HTTP roundtrip since the
+            // caller already has the authoritative server timestamp.
+            string? existingCachedFile = Auxilliary.FindExistingCachedImage(baseSavePath);
+            if (_settings.CacheFaceFinderImages && existingCachedFile != null)
+            {
+                var metadata = await _faceFinderClient.ReadMetadataAsync(existingCachedFile);
+                if (metadata != null && metadata.UpdatedAt >= serverUpdatedAt)
+                {
+                    return new GenerationResult(
+                        Generated: false,
+                        AlreadyCurrent: true,
+                        OutputPath: existingCachedFile,
+                        Source: GenerationSource.FaceFinderCache,
+                        MissingMeshes: Array.Empty<string>(),
+                        MissingTextures: Array.Empty<string>(),
+                        FaceFinderExternalUrl: metadata.ExternalUrl ?? externalUrl,
+                        InMemoryImageBytes: null);
+                }
+            }
+
+            // Availability-only short-circuit — same semantics as
+            // TryFaceFinderAsync: caller asked us to not pay the download
+            // cost. The batch's CacheFaceFinderImages=off branch uses this.
+            if (!downloadBytesIfHit)
+            {
+                return new GenerationResult(
+                    Generated: false,
+                    AlreadyCurrent: false,
+                    OutputPath: null,
+                    Source: GenerationSource.FaceFinderAvailable,
+                    MissingMeshes: Array.Empty<string>(),
+                    MissingTextures: Array.Empty<string>(),
+                    FaceFinderExternalUrl: externalUrl,
+                    InMemoryImageBytes: null);
+            }
+
+            using var client = new HttpClient();
+            var imageData = await client.GetByteArrayAsync(imageUrl, token);
+
+            string? finalSavePath = null;
+            if (_settings.CacheFaceFinderImages)
+            {
+                var format = Image.DetectFormat(imageData);
+                var extension = format?.FileExtensions.FirstOrDefault() ?? "png";
+                finalSavePath = $"{baseSavePath}.{extension}";
+
+                Directory.CreateDirectory(Path.GetDirectoryName(finalSavePath)!);
+                try
+                {
+                    await File.WriteAllBytesAsync(finalSavePath, imageData, token);
+                    await _faceFinderClient.WriteMetadataAsync(finalSavePath, new FaceFinderResult
+                    {
+                        ImageUrl = imageUrl,
+                        UpdatedAt = serverUpdatedAt,
+                        ExternalUrl = externalUrl,
+                    });
+                    _faceFinderTracker.Track(finalSavePath);
+                }
+                catch
+                {
+                    _faceFinderTracker.TrackIfFileExists(finalSavePath);
+                    throw;
+                }
+            }
+
+            return new GenerationResult(
+                Generated: finalSavePath != null,
+                AlreadyCurrent: false,
+                OutputPath: finalSavePath,
+                Source: GenerationSource.FaceFinderDownload,
+                MissingMeshes: Array.Empty<string>(),
+                MissingTextures: Array.Empty<string>(),
+                FaceFinderExternalUrl: externalUrl,
+                InMemoryImageBytes: finalSavePath == null ? imageData : null);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"BatchMugshotGenerator ProcessKnownFace failed for {npcFormKey} ({modName}): {ex.Message}");
+            _eventLogger.Log($"BATCH_GEN ProcessKnownFace error for {npcFormKey}: {ex.Message}", "BATCH_GEN_ERROR");
+            return GenerationResult.None;
+        }
+    }
+
     /// <summary>
     /// Mirrors phase 2 of <c>VM_NpcsMenuMugshot.GenerateMugshotAsync</c>:
     /// dispatches to the user-selected renderer (Internal vs

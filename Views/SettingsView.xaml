@@ -248,6 +248,7 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
 
@@ -276,6 +277,13 @@
                                               MinWidth="120"
                                               ToolTip="Fast: Uses cached list of generated mugshots (recommended). Comprehensive: Scans all mugshot folders and reads metadata."/>
                                 </StackPanel>
+
+                                <Button Grid.Column="2" Content="Batch Download Mugshots"
+                                        Command="{Binding BatchDownloadFaceFinderMugshotsCommand}"
+                                        Padding="10,5"
+                                        Margin="15,0,0,0"
+                                        ToolTip="Iterates every mod's NPCs and queries the FaceFinder API for an available mugshot. When image caching is on, hits are downloaded and persisted; when off, only availability is checked. Independent of the local-renderer 'Generate All Mugshots' batch — neither falls back to the other."
+                                        Visibility="{Binding UseFaceFinderFallback, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -725,10 +733,10 @@
                         </StackPanel>
 
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="15,0,0,0">
-                            <Button Content="Generate All Mugshots"
+                            <Button Content="Batch Generate Mugshots"
                                     Command="{Binding GenerateAllMugshotsCommand}"
                                     Padding="10,5"
-                                    ToolTip="Iterates every mod and generates a mugshot for each NPC that doesn't already have one. NPCs are grouped by sex and shared NPC-record assets (race, worn armor, head parts, hair) so the renderer reuses meshes and textures across consecutive frames. Uses the renderer currently selected above; you'll be prompted whether to also query FaceFinder."/>
+                                    ToolTip="Iterates every mod and generates a mugshot for each local NPC that doesn't already have one, using the renderer selected above. NPCs are grouped by sex and shared NPC-record assets (race, worn armor, head parts, hair) so the renderer reuses meshes and textures across consecutive frames. FaceFinder downloads are handled separately via the FaceFinder section's 'Batch Download Mugshots' button."/>
                             <CheckBox Content="Asset-Validated Only"
                                       IsChecked="{Binding AssetValidatedMugshotsOnly, Mode=TwoWay}"
                                       VerticalAlignment="Center"
