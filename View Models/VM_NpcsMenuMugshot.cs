@@ -861,8 +861,22 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                         $"Show3DPreview: LoadAsync failed: {ExceptionLogger.GetExceptionStack(ex)}");
                 }
             };
-            window.ShowDialog();
-            inner.Dispose();
+            // Non-modal Show() so the main UI stays interactive and the
+            // preview gets its own taskbar entry (ShowInTaskbar=True on the
+            // window). Owner ties the preview to app lifecycle + keeps
+            // CenterOwner positioning. Application.Current.MainWindow is
+            // unreliable here (see VM_ModSetting.ShowMissingPluginsWindow)
+            // and has been observed to return the freshly-resolved preview
+            // itself, so search the live windows and exclude self.
+            var loadedOtherWindows = Application.Current?.Windows
+                .OfType<Window>()
+                .Where(w => w != window && w.IsLoaded)
+                .ToList();
+            window.Owner = loadedOtherWindows?.FirstOrDefault(w => w.IsActive)
+                           ?? loadedOtherWindows?.FirstOrDefault();
+            // Dispose moves to Closed since Show() returns immediately.
+            window.Closed += (_, _) => inner.Dispose();
+            window.Show();
         }
         catch (Exception ex)
         {

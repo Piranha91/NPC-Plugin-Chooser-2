@@ -14,7 +14,7 @@
                            Width="1000" Height="800"
                            MinWidth="640" MinHeight="480"
                            WindowStartupLocation="CenterOwner"
-                           ShowInTaskbar="False"
+                           ShowInTaskbar="True"
                            Style="{DynamicResource ThemedWindowStyle}"
                            d:DataContext="{d:DesignInstance Type=vm:VM_FullScreen3DPreview}">
     <i:Interaction.Behaviors>

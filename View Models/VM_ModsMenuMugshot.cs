@@ -460,12 +460,27 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                     Debug.WriteLine($"Show3DPreview: LoadAsync failed: {ExceptionLogger.GetExceptionStack(ex)}");
                 }
             };
-            window.ShowDialog();
+            // Non-modal Show() so the main UI stays interactive and the
+            // preview gets its own taskbar entry (ShowInTaskbar=True on the
+            // window). Owner ties the preview to app lifecycle + keeps
+            // CenterOwner positioning. Application.Current.MainWindow is
+            // unreliable here (see VM_ModSetting.ShowMissingPluginsWindow)
+            // and has been observed to return the freshly-resolved preview
+            // itself, so search the live windows and exclude self.
+            var loadedOtherWindows = Application.Current?.Windows
+                .OfType<Window>()
+                .Where(w => w != window && w.IsLoaded)
+                .ToList();
+            window.Owner = loadedOtherWindows?.FirstOrDefault(w => w.IsActive)
+                           ?? loadedOtherWindows?.FirstOrDefault();
             // The inner VM's Dispose tears down its VM_CharacterViewer +
             // GL state. Without this the renderer thread holds resources
             // until the GC runs, which could collide with a subsequent
-            // Show3DPreview from the same tile.
-            inner.Dispose();
+            // Show3DPreview from the same tile. Wired to Closed since
+            // Show() returns immediately rather than blocking like
+            // ShowDialog did.
+            window.Closed += (_, _) => inner.Dispose();
+            window.Show();
         }
         catch (Exception ex)
         {
