@@ -344,7 +344,7 @@ public class Settings
     public bool ReportFaceGenVerts { get; set; } = false;
     public FaceGenAnalysisDisplayMode FaceGenDisplayMode { get; set; } = FaceGenAnalysisDisplayMode.TextOverlay;
     public double FaceGenTextHeightPercent { get; set; } = 8.0;
-    public FaceGenTooltipPosition FaceGenTooltipPosition { get; set; } = FaceGenTooltipPosition.BottomCenter;
+    public FaceGenTooltipPosition FaceGenTooltipPosition { get; set; } = FaceGenTooltipPosition.CenterLeft;
     public FaceGenHighlightCriterion FaceGenHighlightCriterion { get; set; } = FaceGenHighlightCriterion.TopPercent;
     public double FaceGenHighlightThreshold { get; set; } = 25.0;
     [JsonConverter(typeof(ColorJsonConverter))]
@@ -399,6 +399,11 @@ public enum FaceGenAnalysisDisplayMode
 
 public enum FaceGenTooltipPosition
 {
+    // CenterLeft / CenterRight are the default-ish picks because they sit on
+    // the side-border space of typical mugshot portraits — less intrusive
+    // than TopCenter (often on hair) or BottomCenter (sometimes on the chin).
+    CenterLeft,
+    CenterRight,
     BottomCenter,
     TopCenter,
 }

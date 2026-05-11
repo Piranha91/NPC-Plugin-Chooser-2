@@ -695,92 +695,124 @@
                                                 FontSize="10" Padding="3,1"
                                                 TextTrimming="CharacterEllipsis" ToolTip="{Binding ModName}"/>
                                      
-                                     <!-- Outer Container for Issue Notification Indicator (Top-Left) -->
-                                     <Grid x:Name="IssueIndicatorContainerGrid"
-                                           HorizontalAlignment="Left" 
-                                           VerticalAlignment="Top"
-                                           Width="{Binding ElementName=CompareCheckBox, Path=ActualWidth}"  
-                                           Height="{Binding ElementName=CompareCheckBox, Path=ActualHeight}" 
-                                           Visibility="{Binding HasIssueNotification, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                           ToolTip="{Binding IssueNotificationText}"
-                                           Margin="0,0,0,0"> 
-                                         
-                                         <!-- Inner Viewbox to scale the "!" and center it -->
-                                         <Viewbox Stretch="Uniform" 
-                                                  HorizontalAlignment="Center" 
-                                                  VerticalAlignment="Center">
-                                             <TextBlock Text="!"
-                                                        FontWeight="Bold"
-                                                        Foreground="Red"/>
-                                         </Viewbox>
-                                     </Grid>
-                                     
-                                     <!-- Missing Asset Indicator. Moved from top-center to
-                                          bottom-right to free the top-center slot for the
-                                          FaceGen-stats tooltip indicator. The existing
-                                          IsAmbiguousSource indicator also sits at bottom-right
-                                          with Margin="0 0 0 10"; rare co-occurrence; if both
-                                          fire we'll get vertical overlap rather than overdraw
-                                          (this one has bottom margin 0). Fires for unresolved
-                                          meshes OR textures; the tooltip enumerates each
-                                          category under its own heading. -->
-                                     <Grid HorizontalAlignment="Right"
-                                           VerticalAlignment="Bottom"
-                                           Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
-                                           Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}"
-                                           Visibility="{Binding HasMissingAssets, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                           ToolTip="{Binding MissingAssetNotificationText}"
-                                           Margin="0,0,0,0">
-                                         <Viewbox Stretch="Uniform">
-                                             <Image Source="/NPC Plugin Chooser 2;component/Resources/Missing Asset.png" />
-                                         </Viewbox>
-                                     </Grid>
+                                     <!-- Top-left vertical stack: issue-notification "!" on top,
+                                          FaceGen-stats text overlay below. Each child controls
+                                          its own Visibility so either can show alone without
+                                          leaving an empty slot. -->
+                                     <StackPanel Orientation="Vertical"
+                                                 HorizontalAlignment="Left"
+                                                 VerticalAlignment="Top">
 
-                                     <!-- FaceGen-stats text overlay (TextOverlay display mode).
-                                          Top-left, stacked TextBlocks, one per enabled metric.
-                                          FontSize binds to TextOverlayFontSize which scales
-                                          with ImageHeight * TextHeightPercent. Per-line color
-                                          is HighlightColor when this tile is an outlier in
-                                          that metric, otherwise NoHighlightColor. -->
-                                     <StackPanel HorizontalAlignment="Left"
-                                                 VerticalAlignment="Top"
-                                                 Margin="3,1,0,0"
-                                                 IsHitTestVisible="False"
-                                                 Visibility="{Binding ShowFaceGenTextOverlay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                         <TextBlock Text="{Binding FaceGenVertText}"
-                                                    FontSize="{Binding FaceGenTextFontSize}"
-                                                    FontWeight="Bold"
-                                                    Foreground="{Binding FaceGenVertColor}"
-                                                    Visibility="{Binding ShowFaceGenVertLine, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                         <TextBlock Text="{Binding FaceGenPolyText}"
-                                                    FontSize="{Binding FaceGenTextFontSize}"
-                                                    FontWeight="Bold"
-                                                    Foreground="{Binding FaceGenPolyColor}"
-                                                    Visibility="{Binding ShowFaceGenPolyLine, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                         <TextBlock Text="{Binding FaceGenSizeText}"
-                                                    FontSize="{Binding FaceGenTextFontSize}"
-                                                    FontWeight="Bold"
-                                                    Foreground="{Binding FaceGenSizeColor}"
-                                                    Visibility="{Binding ShowFaceGenSizeLine, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         <!-- Outer Container for Issue Notification Indicator -->
+                                         <Grid x:Name="IssueIndicatorContainerGrid"
+                                               Width="{Binding ElementName=CompareCheckBox, Path=ActualWidth}"
+                                               Height="{Binding ElementName=CompareCheckBox, Path=ActualHeight}"
+                                               Visibility="{Binding HasIssueNotification, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                               ToolTip="{Binding IssueNotificationText}">
+
+                                             <!-- Inner Viewbox to scale the "!" and center it -->
+                                             <Viewbox Stretch="Uniform"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center">
+                                                 <TextBlock Text="!"
+                                                            FontWeight="Bold"
+                                                            Foreground="Red"/>
+                                             </Viewbox>
+                                         </Grid>
+
+                                         <!-- FaceGen-stats text overlay (TextOverlay display mode).
+                                              Stacked TextBlocks, one per enabled metric. FontSize
+                                              binds to TextOverlayFontSize which scales with
+                                              ImageHeight * TextHeightPercent. Per-line color is
+                                              HighlightColor when this tile is an outlier in that
+                                              metric, otherwise NoHighlightColor. -->
+                                         <StackPanel Margin="3,1,0,0"
+                                                     IsHitTestVisible="False"
+                                                     Visibility="{Binding ShowFaceGenTextOverlay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                             <TextBlock Text="{Binding FaceGenVertText}"
+                                                        FontSize="{Binding FaceGenTextFontSize}"
+                                                        FontWeight="Bold"
+                                                        Foreground="{Binding FaceGenVertColor}"
+                                                        Visibility="{Binding ShowFaceGenVertLine, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                             <TextBlock Text="{Binding FaceGenPolyText}"
+                                                        FontSize="{Binding FaceGenTextFontSize}"
+                                                        FontWeight="Bold"
+                                                        Foreground="{Binding FaceGenPolyColor}"
+                                                        Visibility="{Binding ShowFaceGenPolyLine, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                             <TextBlock Text="{Binding FaceGenSizeText}"
+                                                        FontSize="{Binding FaceGenTextFontSize}"
+                                                        FontWeight="Bold"
+                                                        Foreground="{Binding FaceGenSizeColor}"
+                                                        Visibility="{Binding ShowFaceGenSizeLine, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                         </StackPanel>
+                                     </StackPanel>
+                                     
+                                     <!-- Bottom-right horizontal stack: Missing-asset icon (left)
+                                          and Multi-plugins icon (right), side-by-side. Each
+                                          controls its own Visibility; when only one is visible
+                                          the StackPanel shrinks so the visible icon stays flush
+                                          to the right edge. -->
+                                     <StackPanel Orientation="Horizontal"
+                                                 HorizontalAlignment="Right"
+                                                 VerticalAlignment="Bottom">
+
+                                         <!-- Missing-asset indicator: fires for unresolved meshes
+                                              OR textures; the tooltip enumerates each category
+                                              under its own heading. -->
+                                         <Grid Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                               Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}"
+                                               Visibility="{Binding HasMissingAssets, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                               ToolTip="{Binding MissingAssetNotificationText}">
+                                             <Viewbox Stretch="Uniform">
+                                                 <Image Source="/NPC Plugin Chooser 2;component/Resources/Missing Asset.png" />
+                                             </Viewbox>
+                                         </Grid>
+
+                                         <!-- Multiple-plugins indicator: NPC is defined in
+                                              multiple source plugins; right-click to pick the
+                                              correct source. -->
+                                         <Grid Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                               Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}"
+                                               Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                               ToolTip="This NPC is defined in multiple source plugins. Right-click to select the correct source.">
+                                             <Viewbox Stretch="Uniform">
+                                                 <Image Source="/NPC Plugin Chooser 2;component/Resources/Multiple Plugins for NPC.png" />
+                                             </Viewbox>
+                                         </Grid>
                                      </StackPanel>
 
                                      <!-- FaceGen-stats indicator dot (Tooltip display mode).
-                                          Position flips Top/Bottom-center off the
-                                          FaceGenIndicatorAtTop bool driven by the user's
-                                          tooltip-position setting. ToolTip enumerates all
-                                          enabled stats; fill color uses HighlightColor when
-                                          any metric is an outlier for this tile. -->
-                                     <Grid HorizontalAlignment="Center"
-                                           Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='10'}"
+                                          Position is driven by FaceGenIndicatorPosition (mirror
+                                          of the user's FaceGenTooltipPosition setting): four
+                                          values - CenterLeft / CenterRight / BottomCenter /
+                                          TopCenter. CenterLeft is the default because the side
+                                          border-space is usually free of hair/chin overlap.
+                                          ToolTip enumerates all enabled stats; fill color uses
+                                          HighlightColor when any metric is an outlier. -->
+                                     <Grid Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='10'}"
                                            Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}"
                                            Visibility="{Binding ShowFaceGenIndicator, Converter={StaticResource BooleanToVisibilityConverter}}"
                                            ToolTip="{Binding FaceGenStatsTooltip}">
                                          <Grid.Style>
                                              <Style TargetType="Grid">
-                                                 <Setter Property="VerticalAlignment" Value="Bottom"/>
-                                                 <Setter Property="Margin" Value="0,0,0,18"/>
                                                  <Style.Triggers>
-                                                     <DataTrigger Binding="{Binding FaceGenIndicatorAtTop}" Value="True">
+                                                     <DataTrigger Binding="{Binding FaceGenIndicatorPosition}" Value="CenterLeft">
+                                                         <Setter Property="HorizontalAlignment" Value="Left"/>
+                                                         <Setter Property="VerticalAlignment" Value="Center"/>
+                                                         <Setter Property="Margin" Value="3,0,0,0"/>
+                                                     </DataTrigger>
+                                                     <DataTrigger Binding="{Binding FaceGenIndicatorPosition}" Value="CenterRight">
+                                                         <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                         <Setter Property="VerticalAlignment" Value="Center"/>
+                                                         <Setter Property="Margin" Value="0,0,3,0"/>
+                                                     </DataTrigger>
+                                                     <DataTrigger Binding="{Binding FaceGenIndicatorPosition}" Value="BottomCenter">
+                                                         <Setter Property="HorizontalAlignment" Value="Center"/>
+                                                         <Setter Property="VerticalAlignment" Value="Bottom"/>
+                                                         <Setter Property="Margin" Value="0,0,0,18"/>
+                                                     </DataTrigger>
+                                                     <DataTrigger Binding="{Binding FaceGenIndicatorPosition}" Value="TopCenter">
+                                                         <Setter Property="HorizontalAlignment" Value="Center"/>
                                                          <Setter Property="VerticalAlignment" Value="Top"/>
                                                          <Setter Property="Margin" Value="0,2,0,0"/>
                                                      </DataTrigger>
@@ -806,17 +838,6 @@
                                                   HorizontalAlignment="Center" 
                                                   VerticalAlignment="Center">
                                              <Image Source="/NPC Plugin Chooser 2;component/Resources/No Associated Data.png" />
-                                         </Viewbox>
-                                     </Grid>
-                                     
-                                     <Grid HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0 0 0 10"
-                                           Visibility="{Binding IsAmbiguousSource, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                           ToolTip="This NPC is defined in multiple source plugins. Right-click to select the correct source."
-                                           Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
-                                           Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
-
-                                         <Viewbox Stretch="Uniform">
-                                             <Image Source="/NPC Plugin Chooser 2;component/Resources/Multiple Plugins for NPC.png" />
                                          </Viewbox>
                                      </Grid>
                                      

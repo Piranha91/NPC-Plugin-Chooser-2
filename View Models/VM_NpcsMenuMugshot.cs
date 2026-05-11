@@ -139,10 +139,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     [Reactive] public SolidColorBrush FaceGenIndicatorColor { get; set; } = new(Colors.White);
     [Reactive] public string FaceGenStatsTooltip { get; set; } = string.Empty;
     [Reactive] public double FaceGenTextFontSize { get; set; } = 10.0;
-    /// <summary>True when the user has chosen TopCenter for the indicator
-    /// position. The XAML alignment flips off this single bit via a Style
-    /// trigger; default is false → BottomCenter.</summary>
-    [Reactive] public bool FaceGenIndicatorAtTop { get; set; }
+    /// <summary>Drives the indicator dot's HorizontalAlignment + VerticalAlignment
+    /// + Margin via Style DataTriggers in the XAML. Mirrors the persisted
+    /// FaceGenTooltipPosition setting verbatim; default is CenterLeft.</summary>
+    [Reactive] public FaceGenTooltipPosition FaceGenIndicatorPosition { get; set; } = FaceGenTooltipPosition.CenterLeft;
     [Reactive] public bool IsFaceGenSizeOutlier { get; set; }
     [Reactive] public bool IsFaceGenPolyOutlier { get; set; }
     [Reactive] public bool IsFaceGenVertOutlier { get; set; }
@@ -676,7 +676,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             .Subscribe(_ => RefreshFaceGenOverlayState())
             .DisposeWith(Disposables);
 
-        FaceGenIndicatorAtTop = _settings.FaceGenTooltipPosition == FaceGenTooltipPosition.TopCenter;
+        FaceGenIndicatorPosition = _settings.FaceGenTooltipPosition;
     }
 
     /// <summary>Computes per-line visibility + text + tooltip from current
@@ -698,7 +698,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         ShowFaceGenSizeLine = _settings.ReportFaceGenSize && haveStats;
         ShowFaceGenPolyLine = _settings.ReportFaceGenPolys && haveStats;
         ShowFaceGenVertLine = _settings.ReportFaceGenVerts && haveStats;
-        FaceGenIndicatorAtTop = _settings.FaceGenTooltipPosition == FaceGenTooltipPosition.TopCenter;
+        FaceGenIndicatorPosition = _settings.FaceGenTooltipPosition;
         FaceGenTextFontSize = Math.Max(7.0, ImageHeight * (_settings.FaceGenTextHeightPercent / 100.0));
 
         if (FaceGenStats is { } s)
