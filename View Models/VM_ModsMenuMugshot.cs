@@ -206,8 +206,12 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                                    File.Exists(imagePath) &&
                                    !imagePath.Equals(FullPlaceholderPath, StringComparison.OrdinalIgnoreCase);
         HasMugshot = isActualMugshotFile; // Set HasMugshot based on this check
-        
-        _ = LoadInitialImageAsync();
+
+        // Skip the curated pre-load when AutoGen outranks Downloaded in the
+        // user's priority order — the priority loop in LoadRealImageAsync
+        // should drive AutoGen first, with Downloaded actively loaded on
+        // its turn as a fallback if AutoGen produces nothing.
+        _ = LoadInitialImageAsync(placeholderOnly: ShouldDeferCuratedLoad());
 
         this.WhenAnyValue(x => x.ModPageUrls.Count)
             .Select(count => count > 0)
@@ -298,14 +302,22 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             .DisposeWith(_disposables);
     }
     
-    // --- NEW METHOD: Loads the initial on-disk or placeholder image asynchronously ---
-    public async Task LoadInitialImageAsync()
+    /// <summary>Loads the tile's initial image. Default behavior: load the
+    /// curated file at <see cref="ImagePath"/> if present, otherwise the
+    /// placeholder. When <paramref name="placeholderOnly"/> is true, skips
+    /// the curated load and shows only the placeholder — used when
+    /// AutoGeneration outranks DownloadedMugshots in
+    /// <see cref="Settings.MugshotSourcePriority"/>, so the curated doesn't
+    /// flicker into view before <see cref="LoadRealImageAsync"/>'s priority
+    /// loop decides which source wins.</summary>
+    public async Task LoadInitialImageAsync(bool placeholderOnly = false)
     {
         if (MugshotSource != null) return; // Already loaded
 
-        string pathToLoad = (!string.IsNullOrWhiteSpace(ImagePath) && File.Exists(ImagePath))
-            ? ImagePath
-            : FullPlaceholderPath;
+        string pathToLoad =
+            (!placeholderOnly && !string.IsNullOrWhiteSpace(ImagePath) && File.Exists(ImagePath))
+                ? ImagePath
+                : FullPlaceholderPath;
 
         if (!File.Exists(pathToLoad))
         {
@@ -596,19 +608,25 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             // renderer need it, and FindNpcNifPath is async/cacheable.
             string nifPath = await _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting);
 
+            bool deferCurated = ShouldDeferCuratedLoad();
+
             // Walk the user's mugshot-source priority order. Each branch owns
             // its own cache-lookup / freshness / fetch logic and returns true
-            // when it produced a result. The Downloaded branch is satisfied
-            // by the curated mugshot the constructor wired into ImagePath
-            // (already loaded by LoadInitialImageAsync), so it just reports
-            // HasMugshot — minus auto-generated files, which aren't user-curated.
+            // when it produced a result. The Downloaded branch either:
+            //  - reports the curated mugshot the constructor wired into
+            //    ImagePath (already loaded by LoadInitialImageAsync), or
+            //  - actively loads it when curated was deferred (AutoGen outranks
+            //    Downloaded), so curated still appears as a fallback if higher-
+            //    priority sources produced nothing.
             foreach (var source in _settings.MugshotSourcePriority)
             {
                 if (_cancellationToken.IsCancellationRequested) return;
 
                 bool handled = source switch
                 {
-                    MugshotSourceType.DownloadedMugshots => IsDownloadedMugshotAvailable(),
+                    MugshotSourceType.DownloadedMugshots => deferCurated
+                                                            ? TryLoadCuratedMugshot()
+                                                            : IsDownloadedMugshotAvailable(),
                     MugshotSourceType.FaceFinder         => _settings.UseFaceFinderFallback
                                                             && await TryFaceFinderSourceAsync(),
                     MugshotSourceType.AutoGeneration     => _settings.UsePortraitCreatorFallback
@@ -633,17 +651,45 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         }
     }
 
-    /// <summary>Downloaded-Mugshots branch of the priority loop. Returns true
-    /// when ImagePath points to a real, non-placeholder, non-auto-generated
-    /// file — i.e. a user-curated mugshot the constructor + LoadInitialImageAsync
-    /// already wired up. Bypasses the (possibly not-yet-validated) HasMugshot
-    /// field by re-checking the predicate directly.</summary>
+    /// <summary>Downloaded-Mugshots branch of the priority loop in
+    /// non-deferred mode. Returns true when ImagePath points to a real,
+    /// non-placeholder, non-auto-generated file — i.e. a user-curated mugshot
+    /// the constructor + LoadInitialImageAsync already wired up. Bypasses
+    /// the (possibly not-yet-validated) HasMugshot field by re-checking the
+    /// predicate directly.</summary>
     private bool IsDownloadedMugshotAvailable()
     {
         return !string.IsNullOrWhiteSpace(ImagePath)
                && File.Exists(ImagePath)
                && !ImagePath.Equals(FullPlaceholderPath, StringComparison.OrdinalIgnoreCase)
                && !_portraitCreator.IsAutoGenerated(ImagePath);
+    }
+
+    /// <summary>True when AutoGeneration appears before DownloadedMugshots in
+    /// <see cref="Settings.MugshotSourcePriority"/>. Drives the deferral of
+    /// the curated-image load in <see cref="LoadInitialImageAsync"/> so the
+    /// priority loop renders AutoGen first; the Downloaded branch then
+    /// actively loads curated only if AutoGen (and FaceFinder, if also ahead)
+    /// produce nothing.</summary>
+    private bool ShouldDeferCuratedLoad()
+    {
+        var priority = _settings.MugshotSourcePriority;
+        if (priority == null) return false;
+        int autoGenIdx = priority.IndexOf(MugshotSourceType.AutoGeneration);
+        int downloadedIdx = priority.IndexOf(MugshotSourceType.DownloadedMugshots);
+        return autoGenIdx >= 0 && downloadedIdx >= 0 && autoGenIdx < downloadedIdx;
+    }
+
+    /// <summary>Deferred-mode entry into the Downloaded source. Actively
+    /// loads the curated mugshot from <see cref="ImagePath"/> if it's a
+    /// real, non-placeholder, non-auto-generated file. Returns true on
+    /// successful load. Bypasses LoadInitialImageAsync's "already loaded"
+    /// gate since that already fired in placeholder-only mode and won't re-run.</summary>
+    private bool TryLoadCuratedMugshot()
+    {
+        if (!IsDownloadedMugshotAvailable()) return false;
+        SetImageSource(ImagePath, isPlaceholder: false);
+        return true;
     }
 
     /// <summary>FaceFinder branch of the priority loop. Looks for a fresh
@@ -712,6 +758,24 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     /// true on reuse or successful render.</summary>
     private async Task<bool> TryAutoGenerationSourceAsync(string nifPath)
     {
+        // Mugshot-only / phantom mod entries (e.g. an entry NPC2 synthesized
+        // from a leftover empty subfolder under MugshotsFolder, or a
+        // FaceFinder-discovery entry whose Nexus mod isn't installed locally)
+        // have no CorrespondingFolderPaths. The renderer would still produce
+        // a render against the vanilla scope alone, attributing a generic
+        // base-game face to this mod's name — visually misleading, and the
+        // resulting PNG would be self-registered into the entry's
+        // MugShotFolderPaths, perpetuating the phantom every session.
+        // BaseGame / CC synthesized entries (IsAutoGenerated=true) intentionally
+        // have empty CorrespondingFolderPaths and DO want the vanilla-scoped
+        // render, so allow those through.
+        if (!ParentVMModSetting.CorrespondingFolderPaths.Any()
+            && !ParentVMModSetting.IsAutoGenerated)
+        {
+            Debug.WriteLine($"Skipping autogen for {ParentVMModSetting.DisplayName}; mod has no installable data (no CorrespondingFolderPaths).");
+            return false;
+        }
+
         var baseAutoGenFolder = Settings.GetEffectiveAutogenMugshotsFolder(_settings);
         var saveFolder = Path.Combine(baseAutoGenFolder, ParentVMModSetting.DisplayName);
         var pngSavePath = Path.Combine(saveFolder, NpcFormKey.ModKey.ToString(), $"{NpcFormKey.ID:X8}.png");
