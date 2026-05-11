@@ -539,7 +539,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     }
 
     private async Task HandleSuccessfulDownload(byte[] imageData, FaceFinderResult faceData, string baseSavePath,
-        string saveFolder, CancellationToken token)
+        CancellationToken token)
     {
         string finalImagePath;
         if (_settings.CacheFaceFinderImages)
@@ -579,21 +579,14 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             Debug.WriteLine($"Downloaded mugshot for {NpcFormKey} into memory (no cache).");
         }
 
-        await UpdateUIAfterSuccess(finalImagePath, saveFolder,
-            _settings.CacheFaceFinderImages); // don't set the mugshot folder if image wasn't cached
+        await UpdateUIAfterSuccess();
     }
 
-    private async Task UpdateUIAfterSuccess(string imagePath, string saveFolder, bool addToMugshotFolders)
+    private async Task UpdateUIAfterSuccess()
     {
-        _npcSelectionBar.UpdateMugshotCache(this.NpcFormKey, _parentVMModSetting.DisplayName, imagePath);
-
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
             _parentVMModSetting.HasValidMugshots = true;
-            if (addToMugshotFolders && !_parentVMModSetting.MugShotFolderPaths.Contains(saveFolder))
-            {
-                _parentVMModSetting.MugShotFolderPaths.Add(saveFolder);
-            }
         });
     }
 
@@ -740,7 +733,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 
                 using var client = new HttpClient();
                 var imageData = await client.GetByteArrayAsync(faceData.ImageUrl, _cancellationToken);
-                await HandleSuccessfulDownload(imageData, faceData, baseSavePath, saveFolder, _cancellationToken);
+                await HandleSuccessfulDownload(imageData, faceData, baseSavePath, _cancellationToken);
                 return true;
             }
             catch (Exception ex)
@@ -790,7 +783,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 _parentVMModSetting.CorrespondingFolderPaths, autoGen))
         {
             SetImageSource(pngSavePath, isPlaceholder: false);
-            await UpdateUIAfterSuccess(pngSavePath, saveFolder, true);
+            await UpdateUIAfterSuccess();
             return true;
         }
 
@@ -819,7 +812,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         {
             Debug.WriteLine($"Generated mugshot for {NpcFormKey}.");
             SetImageSource(pngSavePath, isPlaceholder: false);
-            await UpdateUIAfterSuccess(pngSavePath, saveFolder, true);
+            await UpdateUIAfterSuccess();
             return true;
         }
 

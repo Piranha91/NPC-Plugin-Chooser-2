@@ -77,7 +77,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private SolidColorBrush NpcIndicatorRedBrush => Application.Current.Resources["StatusErrorForeground"] as SolidColorBrush ?? _fallbackRedBrush;
     private HashSet<string> _hiddenModNames = new();
     private Dictionary<FormKey, HashSet<string>> _hiddenModsPerNpc = new();
-    private Dictionary<FormKey, List<(string ModName, string ImagePath)>> _mugshotData = new();
+    private Dictionary<FormKey, List<(string ModName, string ImagePath)>> _downloadedMugshotData = new();
     private readonly Subject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
     private CancellationTokenSource? _mugshotGenerationCts;
     
@@ -487,7 +487,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .SelectMany(async selectedNpc =>
             {
                 var mugshotVMs = selectedNpc != null
-                    ? await CreateMugShotViewModelsAsync(selectedNpc, _mugshotData)
+                    ? await CreateMugShotViewModelsAsync(selectedNpc, _downloadedMugshotData)
                     : new ObservableCollection<VM_NpcsMenuMugshot>();
                 return mugshotVMs;
             })
@@ -1891,32 +1891,21 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     {
         var results = new Dictionary<FormKey, List<(string ModName, string ImagePath)>>();
 
-        // Mugshots live in up to three roots: the user-curated MugshotsFolder
-        // (hand-collected images), the FaceFinder cache folder, and the
-        // auto-generated mugshot folder. The latter two have dedicated paths
-        // (configurable in Settings, defaulting to <BaseDir>/FaceFinder Cache
-        // and <BaseDir>/AutoGen Mugshots) so generated content never bleeds
-        // into the user's curated library. All three are scanned on startup
-        // so files saved during a prior session are discoverable on relaunch.
-        var rootsToScan = new List<string>();
-        void AddRoot(string? candidate)
+        // Only the user-curated MugshotsFolder is indexed here. FaceFinder and
+        // AutoGen folders are session-managed by their respective sources
+        // (BatchMugshotGenerator.TryFaceFinderAsync owns its on-disk cache;
+        // the renderer's AlreadyCurrent path owns reuse of existing autogen
+        // PNGs). Folding them into _downloadedMugshotData previously caused
+        // a destructive cache-overwrite when fallback sources ran for a mod
+        // that already had a curated mugshot — the curated entry got displaced,
+        // and the Downloaded priority branch then couldn't find it.
+        if (string.IsNullOrWhiteSpace(_settings.MugshotsFolder)
+            || !Directory.Exists(_settings.MugshotsFolder))
         {
-            if (string.IsNullOrWhiteSpace(candidate) || !Directory.Exists(candidate)) return;
-            string full = Path.GetFullPath(candidate);
-            if (rootsToScan.Any(r => string.Equals(Path.GetFullPath(r), full, StringComparison.OrdinalIgnoreCase)))
-                return;
-            rootsToScan.Add(candidate);
+            return results;
         }
-        AddRoot(_settings.MugshotsFolder);
-        AddRoot(Settings.GetEffectiveFaceFinderMugshotsFolder(_settings));
-        AddRoot(Settings.GetEffectiveAutogenMugshotsFolder(_settings));
 
-        if (rootsToScan.Count == 0) return results;
-
-        foreach (var root in rootsToScan)
-        {
-            ScanMugshotRoot(root, results, splashReporter);
-        }
+        ScanMugshotRoot(_settings.MugshotsFolder, results, splashReporter);
 
         System.Diagnostics.Debug.WriteLine(
             $"Mugshot scan complete. Found entries for {results.Count} unique FormKeys.");
@@ -2045,7 +2034,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             splashReporter?.ShowMessagesOnClose(
                 $"NPC Bar: InitializeAsync: Environment is not valid. You should only see this message if you launch this program and you don't have Skyrim SE/AE installed in your SteamApps directory. Go to your settings and point them at your correct Data folder and Game version.");
 
-            _mugshotData.Clear();
+            _downloadedMugshotData.Clear();
             return;
         }
 
@@ -2055,9 +2044,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         StartupLogger.Log("Scanning mugshot directory");
         using (ContextualPerformanceTracer.Trace("InitializeNpcs.ScanMugshots"))
         {
-            _mugshotData = await Task.Run(() => ScanMugshotDirectory(splashReporter));
+            _downloadedMugshotData = await Task.Run(() => ScanMugshotDirectory(splashReporter));
         }
-        StartupLogger.Log($"Mugshot scan complete, found {_mugshotData.Count} entries");
+        StartupLogger.Log($"Mugshot scan complete, found {_downloadedMugshotData.Count} entries");
 
         await Application.Current.Dispatcher.InvokeAsync(UpdateAvailableNpcGroups);
         splashReporter?.UpdateStep("Analyzing NPC data...");
@@ -2081,7 +2070,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
             }
 
-            foreach (var key in _mugshotData.Keys)
+            foreach (var key in _downloadedMugshotData.Keys)
             {
                 allRequiredNpcKeys.Add(key);
             }
@@ -2121,8 +2110,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             }
 
             // Create placeholder VMs for mugshot-only NPCs that couldn't be resolved in the load order
-            splashReporter?.UpdateStep("Adding Loose Mugshots", _mugshotData.Count);
-            foreach (var mugshotKey in _mugshotData.Keys)
+            splashReporter?.UpdateStep("Adding Loose Mugshots", _downloadedMugshotData.Count);
+            foreach (var mugshotKey in _downloadedMugshotData.Keys)
             {
                 if (!npcViewModelMap.ContainsKey(mugshotKey))
                 {
@@ -2372,7 +2361,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             for (int i = AllNpcs.Count - 1; i >= 0; i--)
             {
                 var currentNpc = AllNpcs[i];
-                if (!currentNpc.AppearanceMods.Any() && !_mugshotData.ContainsKey(currentNpc.NpcFormKey))
+                if (!currentNpc.AppearanceMods.Any() && !_downloadedMugshotData.ContainsKey(currentNpc.NpcFormKey))
                 {
                     AllNpcs.RemoveAt(i);
                 }
@@ -2777,7 +2766,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 return npc =>
                     npc.AppearanceMods.Any(m =>
                         m.DisplayName.Contains(searchText, StringComparison.OrdinalIgnoreCase)) ||
-                    (_mugshotData.TryGetValue(npc.NpcFormKey, out var mugshots) &&
+                    (_downloadedMugshotData.TryGetValue(npc.NpcFormKey, out var mugshots) &&
                      mugshots.Any(m => m.ModName.Contains(searchText, StringComparison.OrdinalIgnoreCase)));
             case NpcSearchType.ChosenInMod:
                 return npc =>
@@ -3096,7 +3085,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             // If no mod setting exists (e.g., a mugshot-only entry not yet linked),
             // we can still try to find a direct match in the raw mugshot data.
-            if (_mugshotData.TryGetValue(npcFormKey, out var mugshots))
+            if (_downloadedMugshotData.TryGetValue(npcFormKey, out var mugshots))
             {
                 var match = mugshots.FirstOrDefault(m => m.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase));
                 if (match != default) return match.ImagePath;
@@ -3106,7 +3095,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         // Use the existing private helper method to get the specific image path,
         // ensuring consistency with the rest of the application.
-        return GetImagePathForNpc(modSetting, npcFormKey, _mugshotData, targetNpcFormKey);
+        return GetImagePathForNpc(modSetting, npcFormKey, _downloadedMugshotData, targetNpcFormKey);
     }
     
     private void TriggerAsyncMugshotGeneration()
@@ -3892,7 +3881,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             return true;
         }
 
-        if (_mugshotData.TryGetValue(npcSelectionVm.NpcFormKey, out var mugshots))
+        if (_downloadedMugshotData.TryGetValue(npcSelectionVm.NpcFormKey, out var mugshots))
         {
             if (mugshots.Any(m => m.ModName.Equals(referenceMod.ModName, StringComparison.OrdinalIgnoreCase)))
             {
@@ -4273,30 +4262,6 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
     }
     
-    public void UpdateMugshotCache(FormKey npcFormKey, string modName, string imagePath)
-    {
-        if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
-        {
-            return;
-        }
-
-        var mugshotInfo = (ModName: modName, ImagePath: imagePath);
-
-        // Update the internal cache dictionary
-        if (_mugshotData.TryGetValue(npcFormKey, out var list))
-        {
-            // Remove any existing entry for this mod to avoid duplicates, then add the new one.
-            list.RemoveAll(i => i.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase));
-            list.Add(mugshotInfo);
-        }
-        else
-        {
-            // If no list exists for this NPC, create one.
-            _mugshotData[npcFormKey] = new List<(string ModName, string ImagePath)> { mugshotInfo };
-        }
-
-        Debug.WriteLine($"Mugshot cache updated for {npcFormKey} with mod '{modName}'.");
-    }
 
     // --- Template Source Indicator Recalculation ---
 
@@ -4476,7 +4441,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         for (int i = AllNpcs.Count - 1; i >= 0; i--)
         {
             var npc = AllNpcs[i];
-            if (!npc.AppearanceMods.Any() && !_mugshotData.ContainsKey(npc.NpcFormKey))
+            if (!npc.AppearanceMods.Any() && !_downloadedMugshotData.ContainsKey(npc.NpcFormKey))
             {
                 _npcVmLookup.Remove(npc.NpcFormKey);
                 AllNpcs.RemoveAt(i);

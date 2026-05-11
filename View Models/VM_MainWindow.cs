@@ -4,6 +4,7 @@ using NPC_Plugin_Chooser_2.Views; // Not strictly needed if using ViewModelViewH
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using System;
+using System.Collections.Specialized;
 using System.Reactive.Linq;
 using System.IO;
 using System.Reactive.Disposables; // Added for Directory.Exists
@@ -23,6 +24,14 @@ public class VM_MainWindow : ReactiveObject, IDisposable
     private readonly Settings _settings;
     
     private readonly CompositeDisposable _disposables = new();
+
+    // Per-tab flags marking that the mugshot-source priority changed since
+    // that view last loaded. Set when the user reorders the Settings priority
+    // list; consumed (and cleared) when the user returns to NPCs/Mods/Summary
+    // so the new ordering is applied without requiring a manual reselect.
+    private bool _npcsNeedsMugshotPriorityRefresh;
+    private bool _modsNeedsMugshotPriorityRefresh;
+    private bool _summaryNeedsMugshotPriorityRefresh;
 
     // The currently displayed ViewModel in the content area
     [Reactive] public ReactiveObject? CurrentViewModel { get; private set; }
@@ -89,12 +98,32 @@ public class VM_MainWindow : ReactiveObject, IDisposable
                 }
             }).DisposeWith(_disposables);
 
+        // Any reorder of the Settings mugshot-source priority list marks all
+        // three consuming tabs dirty. The flags are consumed on tab activation
+        // below so the next visit picks up the new ordering without the user
+        // needing to reselect anything. CollectionChanged fires on Move (which
+        // is what gong-wpf-dragdrop emits), so a drag-reorder is enough.
+        Observable.FromEventPattern<NotifyCollectionChangedEventHandler, NotifyCollectionChangedEventArgs>(
+                h => _settingsViewModel.MugshotSourcePriority.CollectionChanged += h,
+                h => _settingsViewModel.MugshotSourcePriority.CollectionChanged -= h)
+            .Subscribe(_ =>
+            {
+                _npcsNeedsMugshotPriorityRefresh = true;
+                _modsNeedsMugshotPriorityRefresh = true;
+                _summaryNeedsMugshotPriorityRefresh = true;
+            }).DisposeWith(_disposables);
+
         // Change CurrentViewModel based on which tab is selected
         this.WhenAnyValue(x => x.IsNpcsTabSelected)
             .Where(isSelected => isSelected && AreOtherTabsEnabled)
             .Subscribe(_ =>
             {
                 if (CurrentViewModel != _npcsViewModel) CurrentViewModel = _npcsViewModel;
+                if (_npcsNeedsMugshotPriorityRefresh)
+                {
+                    _npcsNeedsMugshotPriorityRefresh = false;
+                    _npcsViewModel.RefreshCurrentNpcAppearanceSources();
+                }
             }).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.IsModsTabSelected)
@@ -102,6 +131,11 @@ public class VM_MainWindow : ReactiveObject, IDisposable
             .Subscribe(_ =>
             {
                 if (CurrentViewModel != _modsViewModel) CurrentViewModel = _modsViewModel;
+                if (_modsNeedsMugshotPriorityRefresh)
+                {
+                    _modsNeedsMugshotPriorityRefresh = false;
+                    _modsViewModel.RefreshCurrentModMugshots();
+                }
             }).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.IsSummaryTabSelected)
@@ -109,6 +143,11 @@ public class VM_MainWindow : ReactiveObject, IDisposable
             .Subscribe(_ =>
             {
                 if (CurrentViewModel != _summaryViewModel) CurrentViewModel = _summaryViewModel;
+                if (_summaryNeedsMugshotPriorityRefresh)
+                {
+                    _summaryNeedsMugshotPriorityRefresh = false;
+                    _summaryViewModel.RefreshDisplay();
+                }
             }).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.IsSettingsTabSelected)

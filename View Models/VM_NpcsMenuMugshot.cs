@@ -1076,8 +1076,6 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             Debug.WriteLine($"Using cached mugshot for {SourceNpcFormKey} from FaceFinder.");
             _eventLogger.Log($"FaceFinder cache hit for {SourceNpcFormKey}", "FACEFINDER");
             SetImageSource(ffResult.OutputPath!);
-            _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, ffResult.OutputPath!);
-            RegisterFaceFinderModFolder();
             AddFaceFinderExternalUrl(ffResult.FaceFinderExternalUrl);
             return true;
         }
@@ -1093,15 +1091,6 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 SetImageSourceFromMemory(ffResult.InMemoryImageBytes);
             }
 
-            _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, this.ImagePath);
-            // Only register the folder when a file was actually persisted
-            // (i.e., CacheFaceFinderImages on). In-memory bytes vanish at
-            // session end, so binding the folder to the mod would be a lie
-            // on next launch.
-            if (ffResult.ProducedFile)
-            {
-                RegisterFaceFinderModFolder();
-            }
             _eventLogger.Log($"FaceFinder download successful for {SourceNpcFormKey}: {ModName}", "FACEFINDER");
             AddFaceFinderExternalUrl(ffResult.FaceFinderExternalUrl);
             return true;
@@ -1181,27 +1170,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 Debug.WriteLine($"Reused existing mugshot for {SourceNpcFormKey}.");
             }
             SetImageSource(rendererResult.OutputPath);
-            _vmNpcSelectionBar.UpdateMugshotCache(this.SourceNpcFormKey, this.ModName, rendererResult.OutputPath);
-
-            var modFolder = BatchMugshotGenerator.GetAutoGenModFolder(_settings, this.ModName);
-            if (!AssociatedModSetting.MugShotFolderPaths.Contains(modFolder))
-            {
-                AssociatedModSetting.MugShotFolderPaths.Add(modFolder);
-            }
             return true;
         }
 
         return false;
-    }
-
-    private void RegisterFaceFinderModFolder()
-    {
-        if (AssociatedModSetting == null) return;
-        var modFolder = BatchMugshotGenerator.GetFaceFinderModFolder(_settings, this.ModName);
-        if (!AssociatedModSetting.MugShotFolderPaths.Contains(modFolder))
-        {
-            AssociatedModSetting.MugShotFolderPaths.Add(modFolder);
-        }
     }
 
     private void AddFaceFinderExternalUrl(string? externalUrl)

@@ -199,13 +199,25 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             this.WhenActivated((CompositeDisposable disposables) =>
             {
                 // InitializeData is now fast, as it does no image I/O
-                InitializeData(); 
-                
+                InitializeData();
+
                 this.RaisePropertyChanged(nameof(ViewMode));
-                
+
                 // UpdateDisplay will create the VMs for the first page
                 UpdateDisplay();
             });
+        }
+
+        /// <summary>
+        /// Forces a rebuild of the summary data + display VMs. Mirrors the
+        /// WhenActivated body so callers (e.g. VM_MainWindow on tab switch
+        /// after a MugshotSourcePriority change) can refresh without waiting
+        /// for the next activation cycle.
+        /// </summary>
+        public void RefreshDisplay()
+        {
+            InitializeData();
+            UpdateDisplay();
         }
 
         private void InitializeData()

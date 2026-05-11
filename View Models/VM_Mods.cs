@@ -23,6 +23,7 @@ using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
 using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views;
 using ReactiveUI;
@@ -738,6 +739,20 @@ public class VM_Mods : ReactiveObject
         // Assuming _npcSelectionBar is the injected instance.
         _npcSelectionBar?.RefreshCurrentNpcAppearanceSources();
     }
+
+    /// <summary>
+    /// Forces the right-hand mugshot panel to rebuild its per-mugshot VMs for
+    /// the currently-selected mod. Each rebuilt VM re-walks
+    /// <see cref="Settings.MugshotSourcePriority"/> at load time, so callers
+    /// use this to make priority changes made on another tab visible on return.
+    /// </summary>
+    public void RefreshCurrentModMugshots()
+    {
+        if (SelectedModForMugshots != null)
+        {
+            ShowMugshotsCommand.Execute(SelectedModForMugshots).Subscribe().DisposeWith(_disposables);
+        }
+    }
     
     // In VM_Mods.cs
 
@@ -773,8 +788,20 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
             var mugshotData = new List<(string ImagePath, FormKey NpcFormKey, string NpcDisplayName)>();
 
             // 1. Pre-scan and cache all existing mugshot file paths for this mod into a lookup dictionary.
+            //    Mods view shows mugshots from any source the user has on disk for this mod:
+            //    user-configured MugShotFolderPaths (curated), plus the per-mod AutoGen and
+            //    FaceFinder cache folders. NPC2's main mugshot index only tracks curated paths;
+            //    the fallback folders are scanned here independently so this view can still
+            //    surface generated images without polluting the user's persisted MugShotFolderPaths.
             var existingMugshots = new Dictionary<FormKey, string>();
-            var validFolders = (selectedModSetting.MugShotFolderPaths ?? Enumerable.Empty<string>())
+            var candidateFolders = (selectedModSetting.MugShotFolderPaths ?? Enumerable.Empty<string>())
+                .Concat(new[]
+                {
+                    BatchMugshotGenerator.GetAutoGenModFolder(_settings, selectedModSetting.DisplayName),
+                    BatchMugshotGenerator.GetFaceFinderModFolder(_settings, selectedModSetting.DisplayName),
+                });
+
+            var validFolders = candidateFolders
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .Select(p => p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
