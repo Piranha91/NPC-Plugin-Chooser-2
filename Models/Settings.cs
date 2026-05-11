@@ -244,7 +244,17 @@ public class Settings
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
     [DefaultValue(true)]
     public bool AutoUpdateStaleMugshots { get; set; } = true;
-    
+
+    /// <summary>Controls the "Generate All Mugshots" batch: when on, NPCs whose
+    /// Internal-renderer render reports any missing meshes or textures are
+    /// skipped (no PNG is written) so the gallery only persists complete
+    /// renders. Off lets the wireframe-placeholder PNG be saved as before.
+    /// Per-tile renders (clicking an NPC) ignore this — the user there wants
+    /// to see the wireframe and the overlay rather than a silent skip.</summary>
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+    [DefaultValue(true)]
+    public bool AssetValidatedMugshotsOnly { get; set; } = true;
+
     [JsonConverter(typeof(PortraitCameraModeConverter))]
     public PortraitCameraMode SelectedCameraMode { get; set; } = PortraitCameraMode.Portrait;
     // These should match the defaults or CLI options in your C++ app

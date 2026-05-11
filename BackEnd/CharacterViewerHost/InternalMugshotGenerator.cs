@@ -68,6 +68,13 @@ public sealed class InternalMugshotGenerator
     /// receive texture game-paths the NIFs referenced that couldn't be
     /// decoded — those shapes render as a wireframe placeholder and the
     /// list drives a parallel "missing texture" tile overlay.</para>
+    /// <para>When <paramref name="assetValidatedOnly"/> is true and the
+    /// renderer reported any missing meshes or textures, the rendered
+    /// bytes are discarded — no PNG is written, no tracker entry is
+    /// added, and the method returns false. Used by the "Generate All
+    /// Mugshots" batch so the gallery only persists complete renders;
+    /// per-tile callers leave the default (false) so the user still
+    /// sees the wireframe + overlay for diagnostic purposes.</para>
     /// </summary>
     public async Task<bool> GenerateAsync(
         FormKey npcFormKey,
@@ -75,7 +82,8 @@ public sealed class InternalMugshotGenerator
         string outputPath,
         CancellationToken token = default,
         List<string>? missingMeshPathsOut = null,
-        List<string>? missingTexturePathsOut = null)
+        List<string>? missingTexturePathsOut = null,
+        bool assetValidatedOnly = false)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int tid = Environment.CurrentManagedThreadId;
@@ -177,6 +185,21 @@ public sealed class InternalMugshotGenerator
             long preRender = sw.ElapsedMilliseconds;
             byte[] png = await _renderer.RenderToPngAsync(request).ConfigureAwait(false);
             Trace($"  RenderToPngAsync tid={Environment.CurrentManagedThreadId} bytes={png.Length} elapsed={sw.ElapsedMilliseconds - preRender}ms");
+
+            // Asset-validation gate (batch only). The renderer doesn't expose
+            // an early-abort hook for missing assets — the lists are populated
+            // during the render, so the bytes already exist. Discard them
+            // before any disk I/O when the caller asked for validated-only
+            // output, so an incomplete render leaves no PNG, no tracker
+            // entry, and no metadata behind.
+            int missingMeshCount = missingMeshPathsOut?.Count ?? 0;
+            int missingTextureCount = missingTexturePathsOut?.Count ?? 0;
+            if (assetValidatedOnly && (missingMeshCount > 0 || missingTextureCount > 0))
+            {
+                Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} skipped-missing-assets meshes={missingMeshCount} textures={missingTextureCount} totalElapsed={sw.ElapsedMilliseconds}ms");
+                return false;
+            }
+
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
             await File.WriteAllBytesAsync(outputPath, png, token).ConfigureAwait(false);
 

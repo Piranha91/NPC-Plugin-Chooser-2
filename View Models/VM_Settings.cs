@@ -181,6 +181,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     // --- NEW: Portrait Creator Camera Properties ---
     [Reactive] public bool AutoUpdateOldMugshots { get; set; }
     [Reactive] public bool AutoUpdateStaleMugshots { get; set; }
+    [Reactive] public bool AssetValidatedMugshotsOnly { get; set; }
     [Reactive] public PortraitCameraMode SelectedCameraMode { get; set; }
     public IEnumerable<PortraitCameraMode> CameraModes { get; } = Enum.GetValues(typeof(PortraitCameraMode)).Cast<PortraitCameraMode>();
     [Reactive] public float VerticalFOV { get; set; }
@@ -475,6 +476,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         // --- NEW: Portrait Creator Initialization ---
         AutoUpdateOldMugshots = _model.AutoUpdateOldMugshots;
         AutoUpdateStaleMugshots = _model.AutoUpdateStaleMugshots;
+        AssetValidatedMugshotsOnly = _model.AssetValidatedMugshotsOnly;
         MugshotBackgroundColor = new SolidColorBrush(_model.MugshotBackgroundColor);
         if (MugshotBackgroundColor.CanFreeze) MugshotBackgroundColor.Freeze(); // Good practice
         DefaultLightingJsonString = _model.DefaultLightingJsonString;
@@ -758,6 +760,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => _model.AutoUpdateOldMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateStaleMugshots).Skip(1)
             .Subscribe(b => _model.AutoUpdateStaleMugshots = b).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.AssetValidatedMugshotsOnly).Skip(1)
+            .Subscribe(b => _model.AssetValidatedMugshotsOnly = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedCameraMode).Skip(1)
             .Subscribe(mode => _model.SelectedCameraMode = mode).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.VerticalFOV).Skip(1).Subscribe(f => _model.VerticalFOV = f).DisposeWith(_disposables);
@@ -2419,6 +2423,17 @@ Options:
         int failedCount = 0;
         int faceFinderDownloadedCount = 0;
         int faceFinderAvailableCount = 0;
+        // Internal renders that completed but were discarded because the
+        // user toggled AssetValidatedMugshotsOnly and the render reported
+        // missing meshes/textures. Counted separately so the summary
+        // distinguishes "no source could render this" (failed) from
+        // "render produced an incomplete image and we suppressed it".
+        int missingAssetSkippedCount = 0;
+        // Snapshot the toggle at batch start: the WhenAnyValue write-through
+        // could theoretically flip the model mid-batch if the user opens
+        // settings while it runs, and we want consistent behavior across the
+        // run rather than half-validated / half-not.
+        bool assetValidatedOnly = AssetValidatedMugshotsOnly;
         // Generation-only timing for the ETA: pre-existing skips return in
         // milliseconds and would crash the average toward zero (then the ETA
         // creeps back up as real renders start). Tracking time spent only on
@@ -2501,7 +2516,7 @@ Options:
                         if (!produced && UsePortraitCreatorFallback)
                         {
                             var rendererResult = await _batchMugshotGenerator.RunSelectedRendererAsync(
-                                npcFormKey, mod, CancellationToken.None);
+                                npcFormKey, mod, CancellationToken.None, assetValidatedOnly);
                             if (rendererResult.AlreadyCurrent)
                             {
                                 produced = true;
@@ -2512,6 +2527,17 @@ Options:
                                 produced = true;
                                 didGenerationWork = true;
                                 generatedCount++;
+                            }
+                            else if (assetValidatedOnly
+                                     && (rendererResult.MissingMeshes.Count > 0
+                                         || rendererResult.MissingTextures.Count > 0))
+                            {
+                                // Render completed but the validated-only gate
+                                // discarded the bytes. Counted as a deliberate
+                                // skip, NOT a failure — the user opted into
+                                // this outcome.
+                                produced = true;
+                                missingAssetSkippedCount++;
                             }
                         }
 
@@ -2570,7 +2596,7 @@ Options:
 
         var summary = new StringBuilder();
         summary.AppendLine(progressVM.IsCancellationRequested
-            ? $"Mugshot generation aborted after {generatedCount + skippedCount + failedCount} of {workList.Count} NPCs."
+            ? $"Mugshot generation aborted after {generatedCount + skippedCount + failedCount + missingAssetSkippedCount} of {workList.Count} NPCs."
             : $"Mugshot generation complete for {workList.Count} NPCs.");
         summary.AppendLine();
         summary.AppendLine($"Generated:    {generatedCount}");
@@ -2582,6 +2608,10 @@ Options:
         if (faceFinderAvailableCount > 0)
         {
             summary.AppendLine($"  (covered by FaceFinder, not downloaded: {faceFinderAvailableCount})");
+        }
+        if (missingAssetSkippedCount > 0)
+        {
+            summary.AppendLine($"Skipped (missing assets): {missingAssetSkippedCount}");
         }
         summary.AppendLine($"Failed / no source: {failedCount}");
         summary.AppendLine();

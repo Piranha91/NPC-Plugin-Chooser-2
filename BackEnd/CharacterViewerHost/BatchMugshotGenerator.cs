@@ -292,7 +292,8 @@ public sealed class BatchMugshotGenerator
     public async Task<GenerationResult> RunSelectedRendererAsync(
         FormKey npcFormKey,
         VM_ModSetting modSetting,
-        CancellationToken token)
+        CancellationToken token,
+        bool assetValidatedOnly = false)
     {
         if (!_settings.UsePortraitCreatorFallback) return GenerationResult.None;
 
@@ -318,7 +319,8 @@ public sealed class BatchMugshotGenerator
                 var missingMeshes = new List<string>();
                 var missingTextures = new List<string>();
                 bool generated = await _internalGenerator.GenerateAsync(
-                    npcFormKey, sourceMod, savePath, token, missingMeshes, missingTextures);
+                    npcFormKey, sourceMod, savePath, token, missingMeshes, missingTextures,
+                    assetValidatedOnly);
                 return new GenerationResult(
                     Generated: generated,
                     AlreadyCurrent: false,

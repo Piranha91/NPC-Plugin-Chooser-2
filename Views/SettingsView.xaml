@@ -724,12 +724,17 @@
                                       ToolTip="Fast: Uses cached list of generated mugshots (recommended). Comprehensive: Scans all mugshot folders and reads metadata."/>
                         </StackPanel>
 
-                        <Button Grid.Column="2"
-                                Content="Generate All Mugshots"
-                                Command="{Binding GenerateAllMugshotsCommand}"
-                                Padding="10,5"
-                                Margin="15,0,0,0"
-                                ToolTip="Iterates every mod and generates a mugshot for each NPC that doesn't already have one. NPCs are grouped by sex and shared NPC-record assets (race, worn armor, head parts, hair) so the renderer reuses meshes and textures across consecutive frames. Uses the renderer currently selected above; you'll be prompted whether to also query FaceFinder."/>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="15,0,0,0">
+                            <Button Content="Generate All Mugshots"
+                                    Command="{Binding GenerateAllMugshotsCommand}"
+                                    Padding="10,5"
+                                    ToolTip="Iterates every mod and generates a mugshot for each NPC that doesn't already have one. NPCs are grouped by sex and shared NPC-record assets (race, worn armor, head parts, hair) so the renderer reuses meshes and textures across consecutive frames. Uses the renderer currently selected above; you'll be prompted whether to also query FaceFinder."/>
+                            <CheckBox Content="Asset-Validated Only"
+                                      IsChecked="{Binding AssetValidatedMugshotsOnly, Mode=TwoWay}"
+                                      VerticalAlignment="Center"
+                                      Margin="10,0,0,0"
+                                      ToolTip="When checked, an Internal-renderer mugshot whose render reports any missing meshes or textures is skipped — no PNG is written — so the batch only persists complete renders. Uncheck to save the wireframe / placeholder-textured result anyway. Per-tile clicks ignore this toggle and always render."/>
+                        </StackPanel>
                     </Grid>
 
                     <CheckBox Content="Normalize Image Dimensions"
