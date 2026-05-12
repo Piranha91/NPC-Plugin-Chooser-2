@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Mutagen.Bethesda.Plugins;
+using Newtonsoft.Json;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
 using SixLabors.ImageSharp;
@@ -169,6 +170,50 @@ public sealed class BatchMugshotGenerator
     /// batch can count the NPC as "FaceFinder will serve this at view time"
     /// and skip the local renderer for it.</para>
     /// </summary>
+    /// <summary>Cheap check used by tile VMs on construction: returns true
+    /// (and the path) when a FaceFinder-cached image exists for this NPC+mod
+    /// AND its sidecar metadata is parseable. Sidecar-less caches are
+    /// treated as fresh — same policy as <see cref="FaceFinderClient.IsCacheStaleAsync"/>'s
+    /// "no metadata = preserve" branch (manually-downloaded files). No HTTP
+    /// call. Used to skip the priority loop's HTTP staleness roundtrip when
+    /// the user revisits an NPC whose FaceFinder image is already cached.
+    /// </summary>
+    public bool TryGetExistingFreshFaceFinderPath(
+        FormKey npcFormKey, string modName, out string? path)
+    {
+        path = null;
+        if (!_settings.UseFaceFinderFallback) return false;
+        if (!_settings.CacheFaceFinderImages) return false;
+
+        var baseSavePath = GetFaceFinderBaseSavePath(_settings, modName, npcFormKey);
+        var existing = Auxilliary.FindExistingCachedImage(baseSavePath);
+        if (existing == null) return false;
+
+        var metadataPath = existing + FaceFinderClient.MetadataFileExtension;
+        if (!File.Exists(metadataPath))
+        {
+            path = existing;
+            return true;
+        }
+
+        try
+        {
+            var json = File.ReadAllText(metadataPath);
+            var metadata = JsonConvert.DeserializeObject<FaceFinderClient.FaceFinderMetadata>(json);
+            if (metadata != null && metadata.Source == "FaceFinder")
+            {
+                path = existing;
+                return true;
+            }
+        }
+        catch
+        {
+            // Corrupt sidecar — fall through and let the priority loop's
+            // API path re-validate.
+        }
+        return false;
+    }
+
     public async Task<GenerationResult> TryFaceFinderAsync(
         FormKey npcFormKey, string modName, CancellationToken token,
         bool downloadBytesIfHit = true)
@@ -400,6 +445,32 @@ public sealed class BatchMugshotGenerator
     /// (which walks <c>CorrespondingFolderPaths</c>). Both are looked up by
     /// display name internally so callers only have to supply the VM.
     /// </summary>
+    /// <summary>Cheap check used by tile VMs on construction: returns true
+    /// (and the path) when a previously-generated autogen PNG exists at the
+    /// canonical save path AND the staleness checker classifies it fresh.
+    /// Lets the tile skip the priority loop on NPC revisit. The staleness
+    /// check only reads PNG metadata + JSON parse — no rendering, no NIF
+    /// lookup, no network. Safe for both Internal and Legacy renderers:
+    /// Legacy's NIF-path input to <see cref="MugshotStalenessChecker.NeedsRegeneration"/>
+    /// is only used for an SHA compare against stamped metadata, not for a
+    /// fresh FaceGen lookup, so passing null still catches every drift case
+    /// (renderer/resolution/version/settings hash).</summary>
+    public bool TryGetExistingFreshAutoGenPath(
+        FormKey npcFormKey, VM_ModSetting modSetting, out string? path)
+    {
+        path = null;
+        if (!_settings.UsePortraitCreatorFallback) return false;
+        if (modSetting == null) return false;
+
+        var savePath = GetAutoGenSavePath(_settings, modSetting.DisplayName, npcFormKey);
+        if (!File.Exists(savePath)) return false;
+
+        if (_stalenessChecker.NeedsRegeneration(savePath, npcFormKey)) return false;
+
+        path = savePath;
+        return true;
+    }
+
     public async Task<GenerationResult> RunSelectedRendererAsync(
         FormKey npcFormKey,
         VM_ModSetting modSetting,
