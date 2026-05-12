@@ -776,6 +776,18 @@
 
                     <Border Margin="15,5,0,5" Padding="10" BorderBrush="Gray" BorderThickness="1" CornerRadius="3"
                             Visibility="{Binding EnableFaceGenAnalysis, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Border.Resources>
+                            <!-- Same theme-aware DoubleUpDown style used by the Internal
+                                 Renderer panel above; toolkit default template otherwise
+                                 paints a system-light textbox interior that clashes with
+                                 dark themes. -->
+                            <Style TargetType="{x:Type xctk:DoubleUpDown}">
+                                <Setter Property="Background" Value="{DynamicResource TextBoxBackground}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                                <Setter Property="CaretBrush" Value="{DynamicResource PrimaryForeground}"/>
+                            </Style>
+                        </Border.Resources>
                         <StackPanel>
                             <TextBlock Text="Reporting Metrics" FontWeight="SemiBold" Margin="0,0,0,4"/>
                             <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
