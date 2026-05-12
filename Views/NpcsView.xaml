@@ -754,7 +754,12 @@
                                           to the right edge. -->
                                      <StackPanel Orientation="Horizontal"
                                                  HorizontalAlignment="Right"
-                                                 VerticalAlignment="Bottom">
+                                                 VerticalAlignment="Bottom"
+                                                 Margin="0,0,0,16">
+
+                                         <!-- Margin's bottom value clears the ModName caption
+                                              (FontSize 10 + 1px vertical padding) so the icons
+                                              sit above the text rather than overlapping it. -->
 
                                          <!-- Missing-asset indicator: fires for unresolved meshes
                                               OR textures; the tooltip enumerates each category
