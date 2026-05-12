@@ -794,6 +794,21 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         FaceGenIndicatorColor = anyOutlier ? highlightBrush : normalBrush;
     }
 
+    /// <summary>Spectrum-mode counterpart to <see cref="ApplyFaceGenOutlierColors"/>:
+    /// the coordinator has already interpolated each metric's gradient color, so we
+    /// just assign. Clears the "outlier" booleans since every tile is colored.</summary>
+    public void ApplyFaceGenSpectrumColors(SolidColorBrush sizeBrush, SolidColorBrush polyBrush,
+        SolidColorBrush vertBrush, SolidColorBrush indicatorBrush)
+    {
+        IsFaceGenSizeOutlier = false;
+        IsFaceGenPolyOutlier = false;
+        IsFaceGenVertOutlier = false;
+        FaceGenSizeColor = sizeBrush;
+        FaceGenPolyColor = polyBrush;
+        FaceGenVertColor = vertBrush;
+        FaceGenIndicatorColor = indicatorBrush;
+    }
+
     /// <summary>Background-thread analysis trigger fired from
     /// <see cref="LoadInitialImageAsync"/>. Skips when analysis is off, when
     /// stats already populated for this tile, or when geometry isn't needed

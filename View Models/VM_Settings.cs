@@ -226,8 +226,15 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     /// so persistence stays the same shape as MugshotBackgroundColor.</summary>
     [Reactive] public SolidColorBrush FaceGenHighlightColor { get; set; } = new SolidColorBrush(Colors.Red);
     [Reactive] public SolidColorBrush FaceGenNoHighlightColor { get; set; } = new SolidColorBrush(Colors.White);
+    [Reactive] public SolidColorBrush FaceGenSpectrumLowColor { get; set; } = new SolidColorBrush(Colors.Blue);
+    [Reactive] public SolidColorBrush FaceGenSpectrumMidColor { get; set; } = new SolidColorBrush(Colors.White);
+    [Reactive] public SolidColorBrush FaceGenSpectrumHighColor { get; set; } = new SolidColorBrush(Colors.Red);
+    [Reactive] public bool IsSpectrumMode { get; private set; }
     public ReactiveCommand<Unit, Unit> SelectFaceGenHighlightColorCommand { get; }
     public ReactiveCommand<Unit, Unit> SelectFaceGenNoHighlightColorCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectFaceGenSpectrumLowColorCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectFaceGenSpectrumMidColorCommand { get; }
+    public ReactiveCommand<Unit, Unit> SelectFaceGenSpectrumHighColorCommand { get; }
     public ReactiveCommand<Unit, Unit> ClearFaceGenAnalysisCacheCommand { get; }
 
     // TargetPluginName now maps to the conceptual name in the model
@@ -568,6 +575,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         if (FaceGenHighlightColor.CanFreeze) FaceGenHighlightColor.Freeze();
         FaceGenNoHighlightColor = new SolidColorBrush(_model.FaceGenNoHighlightColor);
         if (FaceGenNoHighlightColor.CanFreeze) FaceGenNoHighlightColor.Freeze();
+        FaceGenSpectrumLowColor = new SolidColorBrush(_model.FaceGenSpectrumLowColor);
+        if (FaceGenSpectrumLowColor.CanFreeze) FaceGenSpectrumLowColor.Freeze();
+        FaceGenSpectrumMidColor = new SolidColorBrush(_model.FaceGenSpectrumMidColor);
+        if (FaceGenSpectrumMidColor.CanFreeze) FaceGenSpectrumMidColor.Freeze();
+        FaceGenSpectrumHighColor = new SolidColorBrush(_model.FaceGenSpectrumHighColor);
+        if (FaceGenSpectrumHighColor.CanFreeze) FaceGenSpectrumHighColor.Freeze();
+        IsSpectrumMode = _model.FaceGenHighlightCriterion == FaceGenHighlightCriterion.Spectrum;
 
         // Populate available themes from the Themes folder
         foreach (var theme in ThemeManager.GetAvailableThemes())
@@ -636,6 +650,15 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .DisposeWith(_disposables);
         SelectFaceGenNoHighlightColorCommand = ReactiveCommand.Create(
             () => PickFaceGenColor(c => FaceGenNoHighlightColor = c, () => FaceGenNoHighlightColor.Color))
+            .DisposeWith(_disposables);
+        SelectFaceGenSpectrumLowColorCommand = ReactiveCommand.Create(
+            () => PickFaceGenColor(c => FaceGenSpectrumLowColor = c, () => FaceGenSpectrumLowColor.Color))
+            .DisposeWith(_disposables);
+        SelectFaceGenSpectrumMidColorCommand = ReactiveCommand.Create(
+            () => PickFaceGenColor(c => FaceGenSpectrumMidColor = c, () => FaceGenSpectrumMidColor.Color))
+            .DisposeWith(_disposables);
+        SelectFaceGenSpectrumHighColorCommand = ReactiveCommand.Create(
+            () => PickFaceGenColor(c => FaceGenSpectrumHighColor = c, () => FaceGenSpectrumHighColor.Color))
             .DisposeWith(_disposables);
         ClearFaceGenAnalysisCacheCommand = ReactiveCommand.Create(
             () => _faceGenAnalysisCache.Clear()).DisposeWith(_disposables);
@@ -815,6 +838,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => { if (b != null) { _model.FaceGenHighlightColor = b.Color; RequestThrottledSave(); } }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.FaceGenNoHighlightColor).Skip(1)
             .Subscribe(b => { if (b != null) { _model.FaceGenNoHighlightColor = b.Color; RequestThrottledSave(); } }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.FaceGenSpectrumLowColor).Skip(1)
+            .Subscribe(b => { if (b != null) { _model.FaceGenSpectrumLowColor = b.Color; RequestThrottledSave(); } }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.FaceGenSpectrumMidColor).Skip(1)
+            .Subscribe(b => { if (b != null) { _model.FaceGenSpectrumMidColor = b.Color; RequestThrottledSave(); } }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.FaceGenSpectrumHighColor).Skip(1)
+            .Subscribe(b => { if (b != null) { _model.FaceGenSpectrumHighColor = b.Color; RequestThrottledSave(); } }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.FaceGenHighlightCriterion)
+            .Subscribe(c => IsSpectrumMode = (c == FaceGenHighlightCriterion.Spectrum)).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalBackgroundColor).Skip(1)
             .Subscribe(brush =>
             {

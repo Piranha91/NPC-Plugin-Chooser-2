@@ -4427,8 +4427,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         if (tiles == null || tiles.Count == 0) return;
 
         var s = _settings;
-        var highlight = _lazyVmSettings.Value.FaceGenHighlightColor;
-        var normal = _lazyVmSettings.Value.FaceGenNoHighlightColor;
+        var vmSettings = _lazyVmSettings.Value;
+        var highlight = vmSettings.FaceGenHighlightColor;
+        var normal = vmSettings.FaceGenNoHighlightColor;
 
         // Push per-line text / visibility / font-size into every tile (cheap;
         // these reads are POCO field reads and reactive setters short-circuit
@@ -4451,6 +4452,43 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         var withStats = tiles.Where(t => t.FaceGenStats.HasValue).ToList();
         if (withStats.Count == 0) return;
 
+        if (s.FaceGenHighlightCriterion == FaceGenHighlightCriterion.Spectrum)
+        {
+            var lowC = vmSettings.FaceGenSpectrumLowColor.Color;
+            var midC = vmSettings.FaceGenSpectrumMidColor.Color;
+            var highC = vmSettings.FaceGenSpectrumHighColor.Color;
+            var midBrush = vmSettings.FaceGenSpectrumMidColor;
+
+            double[] sizeT = NormalizeMetric(withStats, t => t.FaceGenStats!.Value.FileSizeBytes);
+            double[] polyT = NormalizeMetric(withStats, t => t.FaceGenStats!.Value.TotalTriangles);
+            double[] vertT = NormalizeMetric(withStats, t => t.FaceGenStats!.Value.TotalVertices);
+
+            for (int i = 0; i < withStats.Count; i++)
+            {
+                var sizeBrush = s.ReportFaceGenSize ? InterpolateSpectrumColor(sizeT[i], lowC, midC, highC) : midBrush;
+                var polyBrush = s.ReportFaceGenPolys ? InterpolateSpectrumColor(polyT[i], lowC, midC, highC) : midBrush;
+                var vertBrush = s.ReportFaceGenVerts ? InterpolateSpectrumColor(vertT[i], lowC, midC, highC) : midBrush;
+
+                // Indicator dot = average of the enabled metrics' positions.
+                double sum = 0; int count = 0;
+                if (s.ReportFaceGenSize)  { sum += sizeT[i]; count++; }
+                if (s.ReportFaceGenPolys) { sum += polyT[i]; count++; }
+                if (s.ReportFaceGenVerts) { sum += vertT[i]; count++; }
+                double avg = count > 0 ? sum / count : 0.5;
+                var indicatorBrush = InterpolateSpectrumColor(avg, lowC, midC, highC);
+
+                withStats[i].ApplyFaceGenSpectrumColors(sizeBrush, polyBrush, vertBrush, indicatorBrush);
+            }
+
+            // Tiles without stats get the mid color (no info to place them on the spectrum).
+            foreach (var tile in tiles)
+            {
+                if (!tile.FaceGenStats.HasValue)
+                    tile.ApplyFaceGenSpectrumColors(midBrush, midBrush, midBrush, midBrush);
+            }
+            return;
+        }
+
         bool[] sizeFlags = FlagOutliers(withStats, t => t.FaceGenStats!.Value.FileSizeBytes, s);
         bool[] polyFlags = FlagOutliers(withStats, t => t.FaceGenStats!.Value.TotalTriangles, s);
         bool[] vertFlags = FlagOutliers(withStats, t => t.FaceGenStats!.Value.TotalVertices, s);
@@ -4470,6 +4508,42 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             if (!tile.FaceGenStats.HasValue)
                 tile.ApplyFaceGenOutlierColors(false, false, false, highlight, normal);
         }
+    }
+
+    private static double[] NormalizeMetric(List<VM_NpcsMenuMugshot> tiles, Func<VM_NpcsMenuMugshot, double> metric)
+    {
+        int n = tiles.Count;
+        var values = new double[n];
+        for (int i = 0; i < n; i++) values[i] = metric(tiles[i]);
+        double min = double.PositiveInfinity, max = double.NegativeInfinity;
+        for (int i = 0; i < n; i++)
+        {
+            if (values[i] < min) min = values[i];
+            if (values[i] > max) max = values[i];
+        }
+        double range = max - min;
+        var t = new double[n];
+        if (range <= 0)
+        {
+            for (int i = 0; i < n; i++) t[i] = 0.5;
+            return t;
+        }
+        for (int i = 0; i < n; i++) t[i] = (values[i] - min) / range;
+        return t;
+    }
+
+    private static SolidColorBrush InterpolateSpectrumColor(double t, Color low, Color mid, Color high)
+    {
+        t = Math.Clamp(t, 0.0, 1.0);
+        Color a, b; double localT;
+        if (t < 0.5) { a = low; b = mid; localT = t * 2.0; }
+        else         { a = mid; b = high; localT = (t - 0.5) * 2.0; }
+        byte R = (byte)Math.Round(a.R + (b.R - a.R) * localT);
+        byte G = (byte)Math.Round(a.G + (b.G - a.G) * localT);
+        byte B = (byte)Math.Round(a.B + (b.B - a.B) * localT);
+        var brush = new SolidColorBrush(Color.FromRgb(R, G, B));
+        brush.Freeze();
+        return brush;
     }
 
     private static bool[] FlagOutliers(List<VM_NpcsMenuMugshot> tiles, Func<VM_NpcsMenuMugshot, double> metric, Settings s)

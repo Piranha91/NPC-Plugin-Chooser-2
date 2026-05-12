@@ -345,12 +345,18 @@ public class Settings
     public FaceGenAnalysisDisplayMode FaceGenDisplayMode { get; set; } = FaceGenAnalysisDisplayMode.TextOverlay;
     public double FaceGenTextHeightPercent { get; set; } = 8.0;
     public FaceGenTooltipPosition FaceGenTooltipPosition { get; set; } = FaceGenTooltipPosition.CenterLeft;
-    public FaceGenHighlightCriterion FaceGenHighlightCriterion { get; set; } = FaceGenHighlightCriterion.TopPercent;
+    public FaceGenHighlightCriterion FaceGenHighlightCriterion { get; set; } = FaceGenHighlightCriterion.Spectrum;
     public double FaceGenHighlightThreshold { get; set; } = 25.0;
     [JsonConverter(typeof(ColorJsonConverter))]
     public Color FaceGenHighlightColor { get; set; } = Colors.Red;
     [JsonConverter(typeof(ColorJsonConverter))]
     public Color FaceGenNoHighlightColor { get; set; } = Colors.White;
+    [JsonConverter(typeof(ColorJsonConverter))]
+    public Color FaceGenSpectrumLowColor { get; set; } = Colors.Blue;
+    [JsonConverter(typeof(ColorJsonConverter))]
+    public Color FaceGenSpectrumMidColor { get; set; } = Colors.White;
+    [JsonConverter(typeof(ColorJsonConverter))]
+    public Color FaceGenSpectrumHighColor { get; set; } = Colors.Red;
     /// <summary>Persisted FaceGen stats keyed by "{ModKey}|{NpcFormKey}". Each
     /// entry carries the source NIF's SHA256 so a mod author bumping their
     /// FaceGen geometry auto-invalidates the cached numbers on next view.</summary>
@@ -412,6 +418,7 @@ public enum FaceGenHighlightCriterion
 {
     TopPercent,    // mark the heaviest N% of visible tiles per metric
     StdDevAbove,   // mark tiles whose value exceeds mean + N*stddev
+    Spectrum,      // continuous gradient: each tile mapped along Low→Mid→High by its position between min and max of visible tiles
 }
 
 /// <summary>Persisted FaceGen stats for a single (mod, NPC) pair. SHA is the

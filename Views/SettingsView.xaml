@@ -816,12 +816,14 @@
                                 <ComboBox ItemsSource="{Binding FaceGenHighlightCriteria}"
                                           SelectedItem="{Binding FaceGenHighlightCriterion, Mode=TwoWay}"
                                           MinWidth="130" Margin="0,0,8,0"
-                                          ToolTip="Top % marks the heaviest N% of visible tiles per metric. Std Dev marks tiles whose value exceeds mean + N*stddev."/>
+                                          ToolTip="Top % marks the heaviest N% of visible tiles per metric. Std Dev marks tiles whose value exceeds mean + N*stddev. Spectrum maps every tile along a Low→Mid→High gradient using min/max of visible tiles."/>
                                 <xctk:DoubleUpDown Value="{Binding FaceGenHighlightThreshold, Mode=TwoWay}"
-                                                   Minimum="0" Maximum="100" Increment="1" FormatString="0.##" Width="70"/>
+                                                   Minimum="0" Maximum="100" Increment="1" FormatString="0.##" Width="70"
+                                                   Visibility="{Binding IsSpectrumMode, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}"/>
                             </WrapPanel>
 
-                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                       Visibility="{Binding IsSpectrumMode, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Invert}">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
                                     <TextBlock Text="Highlight color:" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                     <Border BorderBrush="Black" BorderThickness="1" Width="60" Height="22"
@@ -839,6 +841,37 @@
                                     <Button Content="Change..." Margin="6,0,0,0" Padding="6,1"
                                             VerticalAlignment="Center"
                                             Command="{Binding SelectFaceGenNoHighlightColorCommand}"/>
+                                </StackPanel>
+                            </WrapPanel>
+
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                       Visibility="{Binding IsSpectrumMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                                    <TextBlock Text="Low color:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <Border BorderBrush="Black" BorderThickness="1" Width="60" Height="22"
+                                            Background="{Binding FaceGenSpectrumLowColor}" CornerRadius="2"
+                                            VerticalAlignment="Center"/>
+                                    <Button Content="Change..." Margin="6,0,0,0" Padding="6,1"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding SelectFaceGenSpectrumLowColorCommand}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                                    <TextBlock Text="Mid color:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <Border BorderBrush="Black" BorderThickness="1" Width="60" Height="22"
+                                            Background="{Binding FaceGenSpectrumMidColor}" CornerRadius="2"
+                                            VerticalAlignment="Center"/>
+                                    <Button Content="Change..." Margin="6,0,0,0" Padding="6,1"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding SelectFaceGenSpectrumMidColorCommand}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="High color:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <Border BorderBrush="Black" BorderThickness="1" Width="60" Height="22"
+                                            Background="{Binding FaceGenSpectrumHighColor}" CornerRadius="2"
+                                            VerticalAlignment="Center"/>
+                                    <Button Content="Change..." Margin="6,0,0,0" Padding="6,1"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding SelectFaceGenSpectrumHighColorCommand}"/>
                                 </StackPanel>
                             </WrapPanel>
 
