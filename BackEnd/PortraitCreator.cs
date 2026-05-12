@@ -171,7 +171,7 @@ public class PortraitCreator
 
                     // Extract the file synchronously. This is acceptable here as it's part of a
                     // user-initiated action that expects a result before proceeding.
-                    bool extracted = _bsaHandler.ExtractFileAsync(bsaPath, relativeNifPath, tempNifPath).Result;
+                    bool extracted = _bsaHandler.ExtractFileAsync(bsaPath, relativeNifPath, tempNifPath).Result.ok;
 
                     if (extracted)
                     {

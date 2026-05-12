@@ -12,9 +12,26 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 public class BsaHandler : OptionalUIModule
 {
     private Dictionary<ModKey, Dictionary<string, HashSet<string>>> _bsaContents = new();
-    
-    private Dictionary<string, IArchiveReader> _openBsaArchiveReaders = new();
-    
+
+    /// <summary>
+    /// Cache entry for an open <see cref="IArchiveReader"/>. <see cref="RefCount"/>
+    /// tracks how many logical "openers" hold the reader so that
+    /// <see cref="UnloadReadersInFolders"/> only disposes when the last opener
+    /// releases. Without this, <see cref="PortraitCreator.FindNpcNifPath"/>'s
+    /// open/extract/unload sequence could yank a reader that an in-flight
+    /// preview render still needs, producing a stochastic BSA-CACHE-MISS on
+    /// the next extraction (head NIF missing, etc.).
+    /// </summary>
+    private sealed class ReaderEntry
+    {
+        public IArchiveReader Reader = null!;
+        public int RefCount;
+    }
+
+    private Dictionary<string, ReaderEntry> _openBsaArchiveReaders =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _readersLock = new();
+
     private readonly EnvironmentStateProvider _environmentStateProvider;
 
     public BsaHandler(EnvironmentStateProvider environmentStateProvider)
@@ -22,32 +39,69 @@ public class BsaHandler : OptionalUIModule
         _environmentStateProvider = environmentStateProvider;
     }
 
+    /// <summary>
+    /// Hard-wipe: dispose every cached reader and clear the cache regardless of
+    /// outstanding refcounts. Intended for end-of-patcher / shutdown only —
+    /// callers that just want to release a single mod's readers should use
+    /// <see cref="UnloadReadersInFolders"/> so other concurrent users (e.g. an
+    /// in-flight preview render) keep their readers.
+    /// </summary>
     public void UnloadAllBsaReaders()
     {
-        foreach (var reader in _openBsaArchiveReaders.Values)
+        lock (_readersLock)
         {
-            (reader as IDisposable)?.Dispose();
+            foreach (var entry in _openBsaArchiveReaders.Values)
+            {
+                (entry.Reader as IDisposable)?.Dispose();
+            }
+            _openBsaArchiveReaders.Clear();
         }
-        _openBsaArchiveReaders.Clear();
         AppendLog("Unloaded all cached BSA readers.");
     }
 
+    /// <summary>
+    /// Refcount-aware release: decrements the refcount of every cached reader
+    /// whose BSA path lives under one of <paramref name="folderPaths"/>, and
+    /// only disposes+removes the entry when its refcount reaches zero. Pairs
+    /// with <see cref="OpenBsaReadersFor"/> / <see cref="OpenBsaArchiveReaders"/>
+    /// (with <c>cacheReaders=true</c>) which increment on each open call.
+    /// </summary>
     public void UnloadReadersInFolders(IEnumerable<string> folderPaths)
     {
-        var toRemove = new HashSet<string>();
-        foreach (var reader in _openBsaArchiveReaders)
+        var folderList = folderPaths as IList<string> ?? folderPaths.ToList();
+        lock (_readersLock)
         {
-            foreach (var folderPath in folderPaths)
+            var toRelease = new List<string>();
+            foreach (var bsaPath in _openBsaArchiveReaders.Keys)
             {
-                if (reader.Key.StartsWith(folderPath, StringComparison.InvariantCultureIgnoreCase))
+                foreach (var folderPath in folderList)
                 {
-                    toRemove.Add(reader.Key);
+                    if (bsaPath.StartsWith(folderPath, StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        toRelease.Add(bsaPath);
+                        break;
+                    }
                 }
             }
-        }
 
-        foreach (var bsaPath in toRemove)
+            foreach (var bsaPath in toRelease)
+            {
+                ReleaseReader_NoLock(bsaPath);
+            }
+        }
+    }
+
+    /// <summary>Caller MUST hold <see cref="_readersLock"/>.</summary>
+    private void ReleaseReader_NoLock(string bsaPath)
+    {
+        if (!_openBsaArchiveReaders.TryGetValue(bsaPath, out var entry))
         {
+            return;
+        }
+        entry.RefCount--;
+        if (entry.RefCount <= 0)
+        {
+            (entry.Reader as IDisposable)?.Dispose();
             _openBsaArchiveReaders.Remove(bsaPath);
         }
     }
@@ -97,17 +151,25 @@ public class BsaHandler : OptionalUIModule
     
     /// <summary>
     /// Extracts a single file from a specified BSA archive using a cached reader.
-    /// This method now correctly returns a Task<bool> for the asynchronous operation.
+    /// On failure the returned tuple's <c>error</c> carries a diagnostic string
+    /// (BSA-cache miss, file-not-found in archive, or the underlying exception
+    /// stack from the extraction). Callers that only need the success/failure
+    /// boolean can ignore the second tuple element.
     /// </summary>
-    public Task<bool> ExtractFileAsync(string bsaPath, string relativePath, string destinationPath)
+    public Task<(bool ok, string? error)> ExtractFileAsync(string bsaPath, string relativePath, string destinationPath)
     {
-        // This method now directly returns the Task<bool> produced by Task.Run.
-        return Task.Run(() =>
+        return Task.Run<(bool ok, string? error)>(() =>
         {
-            if (!_openBsaArchiveReaders.TryGetValue(new FilePath(bsaPath), out var bsaReader))
+            IArchiveReader? bsaReader;
+            lock (_readersLock)
             {
-                AppendLog($"BSA-CACHE-MISS: The reader for {bsaPath} was not pre-cached. This indicates a logic error.", true, true);
-                return false;
+                if (!_openBsaArchiveReaders.TryGetValue(bsaPath, out var entry))
+                {
+                    string msg = $"BSA-CACHE-MISS: The reader for {bsaPath} was not pre-cached. This indicates a logic error.";
+                    AppendLog(msg, true, true);
+                    return (false, msg);
+                }
+                bsaReader = entry.Reader;
             }
 
             try
@@ -118,14 +180,16 @@ public class BsaHandler : OptionalUIModule
                 }
                 else
                 {
-                    AppendLog($"Could not find {relativePath} within {bsaPath} for extraction.", true, true);
-                    return false;
+                    string msg = $"Could not find {relativePath} within {bsaPath} for extraction.";
+                    AppendLog(msg, true, true);
+                    return (false, msg);
                 }
             }
             catch (Exception ex)
             {
-                AppendLog($"Failed to read from cached BSA reader for {bsaPath}: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
-                return false;
+                string stack = ExceptionLogger.GetExceptionStack(ex);
+                AppendLog($"Failed to read from cached BSA reader for {bsaPath}: {stack}", true, true);
+                return (false, $"Failed to read from cached BSA reader for {bsaPath}: {stack}");
             }
         });
     }
@@ -272,13 +336,14 @@ public class BsaHandler : OptionalUIModule
         return false;
     }
     
-    public bool ExtractFileFromBsa(IArchiveFile file, string destPath)
+    public (bool ok, string? error) ExtractFileFromBsa(IArchiveFile file, string destPath)
     {
         string? dirPath = Path.GetDirectoryName(destPath);
         if (string.IsNullOrEmpty(dirPath)) // Also check for empty string
         {
-            AppendLog($"ERROR: Could not get directory path from destination '{destPath}'", true);
-            return false; // Invalid destination path
+            string msg = $"ERROR: Could not get directory path from destination '{destPath}'";
+            AppendLog(msg, true);
+            return (false, msg);
         }
 
         try
@@ -295,62 +360,96 @@ public class BsaHandler : OptionalUIModule
                     sourceStream.CopyTo(destStream);
                 }
             }
-            return true; // Success
+            return (true, null);
         }
         catch (IOException ioEx) // Catch specific IO errors
         {
-            AppendLog($"IO ERROR extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ioEx)}", true);
+            string msg = $"IO ERROR extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ioEx)}";
+            AppendLog(msg, true);
             // Common issues: File locked, disk full, path too long
-            return false; // Failure
+            return (false, msg);
         }
         catch (UnauthorizedAccessException authEx) // Catch permission errors
         {
-            AppendLog($"ACCESS ERROR extracting BSA file: {file.Path} to {destPath}. Check permissions. Error: {ExceptionLogger.GetExceptionStack(authEx)}", true);
-            return false; // Failure
+            string msg = $"ACCESS ERROR extracting BSA file: {file.Path} to {destPath}. Check permissions. Error: {ExceptionLogger.GetExceptionStack(authEx)}";
+            AppendLog(msg, true);
+            return (false, msg);
         }
         catch (Exception ex) // Catch any other unexpected errors
         {
-            AppendLog($"GENERAL ERROR extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ex)}", true);
-            return false; // Failure
+            string msg = $"GENERAL ERROR extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ex)}";
+            AppendLog(msg, true);
+            return (false, msg);
         }
     }
 
-    // Override for reading specific BSA files which are already assumed to exist
+    // Override for reading specific BSA files which are already assumed to exist.
+    // When cacheReaders=true, every successful open increments the cached
+    // entry's refcount — pair with UnloadReadersInFolders so transient users
+    // (PortraitCreator.FindNpcNifPath, etc.) don't yank readers out from
+    // under longer-lived users (CharacterViewer adapter's
+    // EnsureAllArchivesOpened).
     public Dictionary<string, IArchiveReader> OpenBsaArchiveReaders(IEnumerable<string> bsaPaths, GameRelease gameRelease,
         bool cacheReaders = false)
     {
         var readers = new Dictionary<string, IArchiveReader>();
         foreach (var bsaPath in bsaPaths.Distinct())
         {
-            if (_openBsaArchiveReaders.TryGetValue(bsaPath, out var reader) && reader is not null)
+            if (cacheReaders)
             {
-                readers.Add(bsaPath, reader);
-            }
-            else if (File.Exists(bsaPath))
-            {
-                AppendLog($"Loading BSA archive for {bsaPath}");  // ❷  safe-invoke
-                var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
-                if (bsaReader != null)
+                lock (_readersLock)
                 {
-                    readers.Add(bsaPath, bsaReader);
-                    if (cacheReaders)
+                    if (_openBsaArchiveReaders.TryGetValue(bsaPath, out var existing))
                     {
-                        _openBsaArchiveReaders[bsaPath] = bsaReader;
+                        existing.RefCount++;
+                        readers.Add(bsaPath, existing.Reader);
+                        continue;
                     }
-                }
-                else
-                {
-                    AppendLog(
-                        $"ERROR opening archive '{bsaPath}': Reader is null", true);
+                    if (!File.Exists(bsaPath))
+                    {
+                        AppendLog($"ERROR opening archive '{bsaPath}': Expected file does not exist", true);
+                        continue;
+                    }
+                    AppendLog($"Loading BSA archive for {bsaPath}");
+                    var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
+                    if (bsaReader == null)
+                    {
+                        AppendLog($"ERROR opening archive '{bsaPath}': Reader is null", true);
+                        continue;
+                    }
+                    _openBsaArchiveReaders[bsaPath] = new ReaderEntry { Reader = bsaReader, RefCount = 1 };
+                    readers.Add(bsaPath, bsaReader);
                 }
             }
             else
             {
-                AppendLog(
-                    $"ERROR opening archive '{bsaPath}': Expected file does not exist", true);
+                // Uncached path: read existing cache opportunistically (no
+                // refcount bump — these readers don't belong to us), otherwise
+                // open a one-shot reader the caller is responsible for.
+                lock (_readersLock)
+                {
+                    if (_openBsaArchiveReaders.TryGetValue(bsaPath, out var existing))
+                    {
+                        readers.Add(bsaPath, existing.Reader);
+                        continue;
+                    }
+                }
+                if (!File.Exists(bsaPath))
+                {
+                    AppendLog($"ERROR opening archive '{bsaPath}': Expected file does not exist", true);
+                    continue;
+                }
+                AppendLog($"Loading BSA archive for {bsaPath}");
+                var bsaReader = Archive.CreateReader(gameRelease, bsaPath);
+                if (bsaReader == null)
+                {
+                    AppendLog($"ERROR opening archive '{bsaPath}': Reader is null", true);
+                    continue;
+                }
+                readers.Add(bsaPath, bsaReader);
             }
         }
-        
+
         return readers;
     }
     
@@ -512,13 +611,18 @@ public class BsaHandler : OptionalUIModule
     public string GetStatusReport()
     {
         string output = "";
-        if (!_openBsaArchiveReaders.Any())
+        List<string> snapshot;
+        lock (_readersLock)
+        {
+            snapshot = _openBsaArchiveReaders.Keys.ToList();
+        }
+        if (snapshot.Count == 0)
         {
             output = "No BSA archives currently loaded.";
         }
         else
         {
-            output = "Loaded BSA Archives at: " + Environment.NewLine + string.Join(Environment.NewLine, _openBsaArchiveReaders.Select(x => "\t" + x.Key.ToString()));
+            output = "Loaded BSA Archives at: " + Environment.NewLine + string.Join(Environment.NewLine, snapshot.Select(x => "\t" + x));
         }
 
         output += Environment.NewLine;

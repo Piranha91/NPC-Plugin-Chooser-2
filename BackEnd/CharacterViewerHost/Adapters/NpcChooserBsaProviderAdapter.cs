@@ -112,7 +112,7 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider
         return hit;
     }
 
-    public bool TryExtractToDisk(string containingBsaPath, string subpath, string destPath)
+    public bool TryExtractToDisk(string containingBsaPath, string subpath, string destPath, out string? error)
     {
         // Extract from the EXACT BSA the caller specified — never re-broadcast.
         // The previous broadcast version silently leaked vanilla content into
@@ -125,14 +125,16 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider
         // cache stored the wrong content.
         if (string.IsNullOrEmpty(containingBsaPath))
         {
+            error = "empty containingBsaPath";
             Trace($"TryExtractToDisk: REJECTED — empty containingBsaPath, file=[{subpath}] dest=[{destPath}]");
             return false;
         }
-        bool ok = _bsa.ExtractFileAsync(containingBsaPath, subpath, destPath).GetAwaiter().GetResult();
+        var (ok, extractError) = _bsa.ExtractFileAsync(containingBsaPath, subpath, destPath).GetAwaiter().GetResult();
         if (!ok)
         {
-            Trace($"TryExtractToDisk: FAILED — file=[{subpath}] from bsa=[{containingBsaPath}] dest=[{destPath}]");
+            Trace($"TryExtractToDisk: FAILED — file=[{subpath}] from bsa=[{containingBsaPath}] dest=[{destPath}] :: {extractError}");
         }
+        error = ok ? null : extractError;
         return ok;
     }
 

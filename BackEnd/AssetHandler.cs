@@ -267,7 +267,7 @@ public class AssetHandler : OptionalUIModule
                     case AssetSourceType.BsaFile:
                         // For BSAs, we must extract first, then analyze the extracted file.
                         // The original sequential logic is still best here.
-                        if (await _bsaHandler.ExtractFileAsync(bsaPath, relativePath, destPath) && modSetting.CopyAssets)
+                        if ((await _bsaHandler.ExtractFileAsync(bsaPath, relativePath, destPath)).ok && modSetting.CopyAssets)
                         {
                             await PostProcessNifTextures(destPath, modSetting, outputBasePath, faceTintSubPath);
                         }
