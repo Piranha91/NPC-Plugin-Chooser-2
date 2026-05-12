@@ -55,7 +55,7 @@ public class UpdateHandler
             UpdateTo2_0_4_Initial();
         }
 
-        if (!_settings.HasUpdatedTo2_0_7)
+        if (settingsVersion < "2.0.7" && !_settings.HasUpdatedTo2_0_7)
         {
             UpdateTo2_0_7_Initial();
         }
