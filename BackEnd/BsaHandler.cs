@@ -12,6 +12,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 public class BsaHandler : OptionalUIModule
 {
     private Dictionary<ModKey, Dictionary<string, HashSet<string>>> _bsaContents = new();
+    private readonly object _bsaContentsLock = new();
 
     /// <summary>
     /// Cache entry for an open <see cref="IArchiveReader"/>. <see cref="RefCount"/>
@@ -224,13 +225,16 @@ public class BsaHandler : OptionalUIModule
         {
             path = path.Replace('/', '\\');
         }
-        if (_bsaContents.ContainsKey(modKey) &&
-            _bsaContents[modKey].ContainsKey(bsaPath) &&
-            _bsaContents[modKey][bsaPath].Contains(path))
+        lock (_bsaContentsLock)
         {
-            return true;
+            if (_bsaContents.ContainsKey(modKey) &&
+                _bsaContents[modKey].ContainsKey(bsaPath) &&
+                _bsaContents[modKey][bsaPath].Contains(path))
+            {
+                return true;
+            }
+            return false;
         }
-        return false;
     }
 
     public bool FileExists(string path, ModKey modKey, out string? bsaPath, bool convertSlashes = true)
@@ -241,21 +245,24 @@ public class BsaHandler : OptionalUIModule
             path = path.Replace('/', '\\');
         }
 
-        if (_bsaContents.TryGetValue(modKey, out var bsaFiles))
+        lock (_bsaContentsLock)
         {
-            foreach (var entry in bsaFiles)
+            if (_bsaContents.TryGetValue(modKey, out var bsaFiles))
             {
-                if (entry.Value.Contains(path)) // This is now O(1)
+                foreach (var entry in bsaFiles)
                 {
-                    bsaPath = entry.Key;
-                    return true;
+                    if (entry.Value.Contains(path)) // This is now O(1)
+                    {
+                        bsaPath = entry.Key;
+                        return true;
+                    }
                 }
             }
+            return false;
         }
-        return false;
     }
-    
-    
+
+
     public bool FileExists(string path, IEnumerable<ModKey> modKeys, out ModKey? modKey, out string? bsaPath, bool convertSlashes = true)
     {
         bsaPath = null;
@@ -265,23 +272,25 @@ public class BsaHandler : OptionalUIModule
             path = path.Replace('/', '\\');
         }
 
-        foreach (var candidateModKey in modKeys)
+        lock (_bsaContentsLock)
         {
-            if (_bsaContents.ContainsKey(candidateModKey))
+            foreach (var candidateModKey in modKeys)
             {
-                foreach (var entry in _bsaContents[candidateModKey])
+                if (_bsaContents.ContainsKey(candidateModKey))
                 {
-                    if (entry.Value.Contains(path, StringComparer.OrdinalIgnoreCase))
+                    foreach (var entry in _bsaContents[candidateModKey])
                     {
-                        bsaPath = entry.Key;
-                        modKey = candidateModKey;
-                        return true;
+                        if (entry.Value.Contains(path, StringComparer.OrdinalIgnoreCase))
+                        {
+                            bsaPath = entry.Key;
+                            modKey = candidateModKey;
+                            return true;
+                        }
                     }
                 }
             }
+            return false;
         }
-
-        return false;
     }
 
     public bool TryGetFileFromReaders(string subpath, HashSet<IArchiveReader> bsaReaders, out IArchiveFile? file)
@@ -455,7 +464,10 @@ public class BsaHandler : OptionalUIModule
     
     public bool CacheContainsModKey(ModKey modKey)
     {
-        return _bsaContents.ContainsKey(modKey);
+        lock (_bsaContentsLock)
+        {
+            return _bsaContents.ContainsKey(modKey);
+        }
     }
 
     /// <summary>
@@ -464,7 +476,13 @@ public class BsaHandler : OptionalUIModule
     /// Used by the CharacterViewer BSA adapter to satisfy lookups that don't know
     /// which mod a file belongs to.
     /// </summary>
-    public IReadOnlyCollection<ModKey> GetIndexedModKeys() => _bsaContents.Keys.ToList();
+    public IReadOnlyCollection<ModKey> GetIndexedModKeys()
+    {
+        lock (_bsaContentsLock)
+        {
+            return _bsaContents.Keys.ToList();
+        }
+    }
 
     /// <summary>
     /// Strict-scoped existence check: tests whether <paramref name="path"/>
@@ -480,17 +498,20 @@ public class BsaHandler : OptionalUIModule
         bsaPath = null;
         if (string.IsNullOrEmpty(folderPath)) return false;
         if (convertSlashes) path = path.Replace('/', '\\');
-        if (!_bsaContents.TryGetValue(modKey, out var bsaFiles)) return false;
-        foreach (var entry in bsaFiles)
+        lock (_bsaContentsLock)
         {
-            if (!entry.Key.StartsWith(folderPath, StringComparison.OrdinalIgnoreCase)) continue;
-            if (entry.Value.Contains(path))
+            if (!_bsaContents.TryGetValue(modKey, out var bsaFiles)) return false;
+            foreach (var entry in bsaFiles)
             {
-                bsaPath = entry.Key;
-                return true;
+                if (!entry.Key.StartsWith(folderPath, StringComparison.OrdinalIgnoreCase)) continue;
+                if (entry.Value.Contains(path))
+                {
+                    bsaPath = entry.Key;
+                    return true;
+                }
             }
+            return false;
         }
-        return false;
     }
 
     /// <summary>
@@ -504,11 +525,14 @@ public class BsaHandler : OptionalUIModule
     public IReadOnlyCollection<string> GetIndexedBsaPaths()
     {
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var modEntry in _bsaContents.Values)
+        lock (_bsaContentsLock)
         {
-            foreach (var bsaPath in modEntry.Keys)
+            foreach (var modEntry in _bsaContents.Values)
             {
-                paths.Add(bsaPath);
+                foreach (var bsaPath in modEntry.Keys)
+                {
+                    paths.Add(bsaPath);
+                }
             }
         }
         return paths;
@@ -519,23 +543,26 @@ public class BsaHandler : OptionalUIModule
         BsaContentsDiag.Log($"AddMissingModToCache ENTER mod='{mod.DisplayName}' modKeys=[{string.Join(",", mod.CorrespondingModKeys.Select(k => k.FileName.String))}] folders=[{string.Join("|", mod.CorrespondingFolderPaths)}]");
         bool matched = false;
 
-        foreach (var modKey in mod.CorrespondingModKeys)
+        lock (_bsaContentsLock)
         {
-            if (_bsaContents.TryGetValue(modKey, out var contents))
+            foreach (var modKey in mod.CorrespondingModKeys)
             {
-                foreach (var dataPath in mod.CorrespondingFolderPaths)
+                if (_bsaContents.TryGetValue(modKey, out var contents))
                 {
-                    if (contents.Any(x => x.Key.StartsWith(dataPath, StringComparison.OrdinalIgnoreCase)))
+                    foreach (var dataPath in mod.CorrespondingFolderPaths)
                     {
-                        matched = true;
-                        break;
+                        if (contents.Any(x => x.Key.StartsWith(dataPath, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            matched = true;
+                            break;
+                        }
                     }
                 }
-            }
 
-            if (matched)
-            {
-                break;
+                if (matched)
+                {
+                    break;
+                }
             }
         }
 
@@ -554,8 +581,11 @@ public class BsaHandler : OptionalUIModule
     {
         if (reinitializeCache)
         {
-            BsaContentsDiag.Log($"PopulateBsaContentPathsAsync reinitializeCache=TRUE — clearing _bsaContents (prior count={_bsaContents.Count})");
-            _bsaContents.Clear();
+            lock (_bsaContentsLock)
+            {
+                BsaContentsDiag.Log($"PopulateBsaContentPathsAsync reinitializeCache=TRUE — clearing _bsaContents (prior count={_bsaContents.Count})");
+                _bsaContents.Clear();
+            }
         }
 
         // Snapshot DataFolderPath once so the diag log makes the empty-vs-set
@@ -580,13 +610,19 @@ public class BsaHandler : OptionalUIModule
                 var bsaDict = GetBsaPathsForPluginsInDirs(mod.CorrespondingModKeys, pathsToSearch, gameRelease);
                 foreach (var modkey in mod.CorrespondingModKeys)
                 {
-                    if (_bsaContents.ContainsKey(modkey))
+                    // Pre-I/O short-circuit under the lock: another caller may
+                    // have populated this modkey already.
+                    lock (_bsaContentsLock)
                     {
-                        int existingBsaCount = _bsaContents[modkey].Count;
-                        int existingFileCount = _bsaContents[modkey].Values.Sum(s => s.Count);
-                        BsaContentsDiag.Log($"    SKIP modkey={modkey.FileName.String} — already in _bsaContents (bsaCount={existingBsaCount}, fileCount={existingFileCount})");
-                        continue;
+                        if (_bsaContents.ContainsKey(modkey))
+                        {
+                            int existingBsaCount = _bsaContents[modkey].Count;
+                            int existingFileCount = _bsaContents[modkey].Values.Sum(s => s.Count);
+                            BsaContentsDiag.Log($"    SKIP modkey={modkey.FileName.String} — already in _bsaContents (bsaCount={existingBsaCount}, fileCount={existingFileCount})");
+                            continue;
+                        }
                     }
+
                     var bsaPaths = bsaDict[modkey];
                     var filesInArchives = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
                     var readers = OpenBsaArchiveReaders(bsaPaths, gameRelease, cacheReaders);
@@ -604,10 +640,23 @@ public class BsaHandler : OptionalUIModule
                     {
                         BsaContentsDiag.Log($"    !!! WARNING: ADDING EMPTY ENTRY for modkey={modkey.FileName.String} — this will poison the cache");
                     }
-                    _bsaContents.Add(modkey, filesInArchives);
+
+                    // TryAdd makes a sibling-tile race (another thread populated
+                    // the same modkey between our pre-check and our commit) a
+                    // no-op rather than a crash. First populator wins; we do
+                    // not silently overwrite a populated entry.
+                    lock (_bsaContentsLock)
+                    {
+                        if (!_bsaContents.TryAdd(modkey, filesInArchives))
+                        {
+                            BsaContentsDiag.Log($"    RACE-SKIP modkey={modkey.FileName.String} — already added concurrently between pre-check and commit");
+                        }
+                    }
                 }
             }
-            BsaContentsDiag.Log($"PopulateBsaContentPathsAsync EXIT — _bsaContents.Count now={_bsaContents.Count}");
+            int finalCount;
+            lock (_bsaContentsLock) { finalCount = _bsaContents.Count; }
+            BsaContentsDiag.Log($"PopulateBsaContentPathsAsync EXIT — _bsaContents.Count now={finalCount}");
         });
     }
     
@@ -650,16 +699,21 @@ public class BsaHandler : OptionalUIModule
         }
 
         output += Environment.NewLine;
-        
-        if (!_bsaContents.Any())
+
+        List<string> cachedModKeyLines;
+        lock (_bsaContentsLock)
+        {
+            cachedModKeyLines = _bsaContents.Keys.Select(k => "\t" + k.ToString()).ToList();
+        }
+        if (cachedModKeyLines.Count == 0)
         {
             output += "No BSA contents currently cached";
         }
         else
         {
-            output += "Cached BSA archive contents for plugins: " + Environment.NewLine + string.Join(Environment.NewLine, _bsaContents.Select(x => "\t" + x.Key.ToString()));
+            output += "Cached BSA archive contents for plugins: " + Environment.NewLine + string.Join(Environment.NewLine, cachedModKeyLines);
         }
-        
+
         return output;
     }
 }
