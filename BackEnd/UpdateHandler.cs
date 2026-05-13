@@ -162,7 +162,7 @@ public class UpdateHandler
     {
         splashReporter?.UpdateStep("Updating to 2.1.6: cleaning up resource-only plugins and stale folders...");
 
-        var warnings = new System.Collections.Concurrent.ConcurrentBag<string>();
+        var warnings = new System.Collections.Concurrent.ConcurrentBag<NPC_Plugin_Chooser_2.View_Models.InitializationWarning>();
 
         // Built once and reused across all mods. Captures the user's actual load order so
         // EditorID-based filterByNpcs entries (e.g. "Amalee3DNPC") that don't include a
@@ -390,7 +390,7 @@ public class UpdateHandler
             Parallel.ForEach(modsToScan, modVm =>
             {
                 // .Result is acceptable here as we are already inside a background thread via Task.Run
-                if (modVm.CheckForInjectedRecords(splashReporter == null ? null : splashReporter.ShowMessagesOnClose,
+                if (modVm.CheckForInjectedRecords(splashReporter == null ? null : splashReporter.ReportWarning,
                         _settings.LocalizationLanguage).Result)
                 {
                     modsWithInjectedRecords.Add(modVm);

@@ -1237,7 +1237,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         if (!string.IsNullOrWhiteSpace(_settings.ModsFolder) && Directory.Exists(_settings.ModsFolder))
         {
             var allModDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
-            var warnings = new ConcurrentBag<string>(); // Warnings will be logged to debug output.
+            var warnings = new ConcurrentBag<InitializationWarning>(); // Warnings will be logged to debug output.
             FindAndAddMissingMasters(vmToRefresh, allModDirectories, warnings);
             if (warnings.Any())
             {
@@ -1372,7 +1372,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // NpcFormKeys reflects the post-Refresh state (so plugins whose NPCs this mod patches
             // are correctly classified as NPC source plugins and excluded). This is the same
             // post-analysis cleanup the initial scan runs via CleanupNewlyCreatedCorrespondingFoldersAsync.
-            var cleanupWarnings = new ConcurrentBag<string>();
+            var cleanupWarnings = new ConcurrentBag<InitializationWarning>();
             var foldersBeforeCleanup = vmToRefresh.CorrespondingFolderPaths.ToList();
             CleanupCorrespondingFolders(vmToRefresh, cleanupWarnings);
             var droppedFolders = foldersBeforeCleanup
@@ -1850,13 +1850,13 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         // Find missing masters (Resources)
         StartupLogger.Log($"  [{modFolderName}] Finding missing masters");
-        var warnings = new ConcurrentBag<string>();
+        var warnings = new ConcurrentBag<InitializationWarning>();
         FindAndAddMissingMasters(tempVmForAnalysis, allModDirectories, warnings);
         if (splashReporter != null && !warnings.IsEmpty)
         {
             foreach (var warning in warnings)
             {
-                splashReporter.ShowMessagesOnClose(warning);
+                splashReporter.ReportWarning(warning);
             }
         }
     
@@ -1878,7 +1878,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             bool injectedFound =
                 await tempVmForAnalysis.CheckForInjectedRecords(splashReporter == null
                     ? null
-                    : splashReporter.ShowMessagesOnClose, _settings.LocalizationLanguage);
+                    : splashReporter.ReportWarning, _settings.LocalizationLanguage);
 
             return new NewVmCreationData(
                 modFolderPath,
@@ -2213,8 +2213,9 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 // Routed to the splash screen's catch-all "Initialization Warning" popup
                 // so missing-master cases share the same surface as other init warnings
                 // (e.g. multi-source-master notices) rather than spawning a separate dialog.
-                splashReporter?.ShowMessagesOnClose(
-                    $"'{vm.DisplayName}' was skipped because the following masters are not installed in any mod folder: {string.Join(", ", vm.UnresolvedMastersAtScan)}.");
+                splashReporter?.ReportWarning(new SkippedMissingMasterWarning(
+                    RequestingMod: vm.DisplayName,
+                    UnresolvedMasters: vm.UnresolvedMastersAtScan.ToList()));
             }
 
             foreach (var path in vm.CorrespondingFolderPaths)
@@ -2519,7 +2520,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     private void FindAndAddMissingMasters(
         VM_ModSetting vm,
         IReadOnlyCollection<string> allModDirectories,
-        ConcurrentBag<string> warnings,
+        ConcurrentBag<InitializationWarning> warnings,
         bool excludeNpcSourcePlugins = true)
     {
         const string LogTag = "[FindAndAddMissingMasters]";
@@ -2621,9 +2622,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 CleanupTrace(vm, $"    master '{master.FileName}' candidates ({candidates.Count})=[{string.Join(", ", candidates.Select(c => $"{Path.GetFileName(c.Path)}@{c.LastWrite:o}"))}], winner='{Path.GetFileName(winner.Path)}'");
                 if (candidates.Count > 1)
                 {
-                    var sources = string.Join(", ", candidates.Select(c => Path.GetFileName(c.Path)));
-                    warnings.Add(
-                        $"Found multiple sources for master '{master.FileName}' needed by '{vm.DisplayName}': [{sources}]. Choosing the newest version from '{Path.GetFileName(winner.Path)}'.");
+                    warnings.Add(new MultiSourceMasterWarning(
+                        MasterFileName: master.FileName.String,
+                        CandidateSources: candidates.Select(c => Path.GetFileName(c.Path)).ToList(),
+                        ChosenSource: Path.GetFileName(winner.Path),
+                        RequestingMod: vm.DisplayName));
                 }
 
                 // If we haven't already decided to add this folder, add it now.
@@ -2687,7 +2690,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// mod has only one folder, or for auto-generated entries — these are either safe already
     /// or risky to mutate without user input.
     /// </summary>
-    public void CleanupCorrespondingFolders(VM_ModSetting vm, ConcurrentBag<string>? warnings = null)
+    public void CleanupCorrespondingFolders(VM_ModSetting vm, ConcurrentBag<InitializationWarning>? warnings = null)
     {
         if (vm.IsAutoGenerated)
         {
@@ -2753,7 +2756,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             // Re-add only what the current detector says is genuinely needed.
             var allModDirectories = Directory.EnumerateDirectories(_settings.ModsFolder).ToList();
-            var localWarnings = warnings ?? new ConcurrentBag<string>();
+            var localWarnings = warnings ?? new ConcurrentBag<InitializationWarning>();
             FindAndAddMissingMasters(vm, allModDirectories, localWarnings, true);
 
             // UpdateCorrespondingModKeys (called inside FindAndAddMissingMasters' caller chain or
@@ -2829,7 +2832,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         splashReporter?.UpdateStep($"Pruning stale corresponding folders for {newlyCreated.Count} new mod(s)...");
 
-        var warnings = new ConcurrentBag<string>();
+        var warnings = new ConcurrentBag<InitializationWarning>();
 
         await Task.Run(() =>
         {

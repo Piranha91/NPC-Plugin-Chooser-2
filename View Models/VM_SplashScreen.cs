@@ -1,5 +1,6 @@
 ﻿// ViewModels/VM_SplashScreen.cs
 
+using System.Collections.Concurrent;
 using System.Reactive;
 using System.Reactive.Threading.Tasks;
 using ReactiveUI;
@@ -12,7 +13,8 @@ using System;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
-using System.Text; // Required for TimeSpan
+using System.Text;
+using System.Threading; // Required for TimeSpan
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 
@@ -24,7 +26,9 @@ public class VM_SplashScreen : ReactiveObject, IDisposable
     [Reactive] public string? FooterMessage { get; private set; }
     [Reactive] public string? StepText { get; private set; }
     [Reactive] public string ElapsedTimeString { get; private set; } // New property for the timer
-    [Reactive] public string LogText { get; private set; }
+
+    private readonly ConcurrentBag<(int Seq, InitializationWarning Warning)> _pendingWarnings = new();
+    private int _warningSeq;
 
     public ReactiveCommand<Unit, Unit> OkCommand { get; }
 
@@ -79,7 +83,6 @@ public class VM_SplashScreen : ReactiveObject, IDisposable
         _progressSubject.DisposeWith(_disposables);
         // ---
 
-        LogText = string.Empty;
         OkCommand = ReactiveCommand.CreateFromTask(async () => { await CloseSplashScreenAsync(); })
             .DisposeWith(_disposables);
         ;
@@ -194,9 +197,10 @@ public class VM_SplashScreen : ReactiveObject, IDisposable
     /// </summary>
     public async Task CloseSplashScreenAsync()
     {
-        if (LogText.Any())
+        var rendered = RenderPendingWarnings();
+        if (!string.IsNullOrEmpty(rendered))
         {
-            ScrollableMessageBox.Show(LogText, "Initialization Warning");
+            ScrollableMessageBox.Show(rendered, "Initialization Warning");
         }
 
         Dispose();
@@ -233,19 +237,26 @@ public class VM_SplashScreen : ReactiveObject, IDisposable
     }
 
     /// <summary>
-    /// Keeps the splash screen open and displays the provided messages.
+    /// Queues a structured warning to be displayed (grouped by root cause) when the splash closes.
+    /// </summary>
+    public void ReportWarning(InitializationWarning warning)
+    {
+        if (warning == null) return;
+        int seq = Interlocked.Increment(ref _warningSeq);
+        _pendingWarnings.Add((seq, warning));
+    }
+
+    /// <summary>
+    /// Keeps the splash screen open and displays the provided messages. Each message is
+    /// wrapped as a <see cref="GenericWarning"/> (which never pools with anything else).
     /// </summary>
     public void ShowMessagesOnClose(IEnumerable<string> messages)
     {
-        // Generate the log text
-        var sb = new StringBuilder();
         foreach (var message in messages)
         {
-            sb.AppendLine(message);
+            if (string.IsNullOrEmpty(message)) continue;
+            ReportWarning(new GenericWarning(message));
         }
-
-        LogText += Environment.NewLine + Environment.NewLine + sb.ToString();
-
     }
 
     /// <summary>
@@ -253,7 +264,33 @@ public class VM_SplashScreen : ReactiveObject, IDisposable
     /// </summary>
     public void ShowMessagesOnClose(string message)
     {
-        ShowMessagesOnClose(new[] { message });
+        if (string.IsNullOrEmpty(message)) return;
+        ReportWarning(new GenericWarning(message));
+    }
+
+    /// <summary>
+    /// Groups pending warnings by (concrete type, GroupKey) and renders each group through
+    /// its type-specific renderer. Group order is first-arrival (min seq within group).
+    /// </summary>
+    private string RenderPendingWarnings()
+    {
+        if (_pendingWarnings.IsEmpty) return string.Empty;
+
+        var snapshot = _pendingWarnings.ToList();
+        var groups = snapshot
+            .GroupBy(x => (x.Warning.GetType(), x.Warning.GroupKey))
+            .Select(g =>
+            {
+                var ordered = g.OrderBy(x => x.Seq).ToList();
+                var warnings = ordered.Select(x => x.Warning).ToList();
+                var rendered = warnings[0].Render(warnings);
+                return (MinSeq: ordered[0].Seq, Rendered: rendered);
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x.Rendered))
+            .OrderBy(x => x.MinSeq)
+            .Select(x => x.Rendered);
+
+        return string.Join(Environment.NewLine + Environment.NewLine, groups);
     }
 
     /// <summary>

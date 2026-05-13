@@ -1631,7 +1631,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// Checks that all records expected in master plugins actually exist in those plugins
     /// If one doesn't, the plugin is flagged as having injected records
     /// </summary>
-    public async Task<bool> CheckForInjectedRecords(Action<string>? showMessageAction, Language? language)
+    public async Task<bool> CheckForInjectedRecords(Action<InitializationWarning>? reportWarning, Language? language)
     {
         StartupLogger.Log($"  [{DisplayName}] Checking for injected records");
         foreach (var modKey in CorrespondingModKeys)
@@ -1693,8 +1693,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
                 if (missingMasters.Any())
                 {
-                    showMessageAction?.Invoke(
-                        $"Warning: {plugin.ModKey.FileName} in {this.DisplayName} could not be fully scanned for injected records because its master(s) {string.Join(" and ", missingMasters)} are not in your load order. You can complete the scan by adding the master and clicking the Refresh button for {DisplayName} in the Mods Menu.");
+                    reportWarning?.Invoke(new UnscannedInjectedRecordsWarning(
+                        PluginFileName: plugin.ModKey.FileName.String,
+                        RequestingMod: this.DisplayName,
+                        MissingMasters: missingMasters.Select(m => m.FileName.String).ToList()));
                 }
             }
             catch (Exception e)
@@ -1705,8 +1707,8 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                 string safeDisplayName = Auxilliary.MakeStringPathSafe(this.DisplayName);
                 string logFilePath = Path.Combine(logDirectory, $"{safeDisplayName}_InjectionCheck.txt");
 
-                showMessageAction?.Invoke(
-                    $"An error occurred during mod record injection scanning for {plugin.ModKey.FileName} in {this.DisplayName}. See {logDirectory} for details.");
+                reportWarning?.Invoke(new GenericWarning(
+                    $"An error occurred during mod record injection scanning for {plugin.ModKey.FileName} in {this.DisplayName}. See {logDirectory} for details."));
 
                 string errorMessage =
                     $"An error occurred during mod scanning for {plugin.ModKey.FileName}: {Environment.NewLine}{ExceptionLogger.GetExceptionStack(e)}";
