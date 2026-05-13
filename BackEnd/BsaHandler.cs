@@ -516,8 +516,9 @@ public class BsaHandler : OptionalUIModule
     
     public async Task AddMissingModToCache(ModSetting mod, GameRelease gameRelease)
     {
+        BsaContentsDiag.Log($"AddMissingModToCache ENTER mod='{mod.DisplayName}' modKeys=[{string.Join(",", mod.CorrespondingModKeys.Select(k => k.FileName.String))}] folders=[{string.Join("|", mod.CorrespondingFolderPaths)}]");
         bool matched = false;
-        
+
         foreach (var modKey in mod.CorrespondingModKeys)
         {
             if (_bsaContents.TryGetValue(modKey, out var contents))
@@ -537,10 +538,15 @@ public class BsaHandler : OptionalUIModule
                 break;
             }
         }
-        
+
         if (!matched)
         {
+            BsaContentsDiag.Log($"AddMissingModToCache no match → delegating to PopulateBsaContentPathsAsync mod='{mod.DisplayName}'");
             await PopulateBsaContentPathsAsync(new List<ModSetting>() {mod}, gameRelease, reinitializeCache: false);
+        }
+        else
+        {
+            BsaContentsDiag.Log($"AddMissingModToCache matched mod='{mod.DisplayName}' — no populate needed");
         }
     }
     
@@ -548,8 +554,15 @@ public class BsaHandler : OptionalUIModule
     {
         if (reinitializeCache)
         {
+            BsaContentsDiag.Log($"PopulateBsaContentPathsAsync reinitializeCache=TRUE — clearing _bsaContents (prior count={_bsaContents.Count})");
             _bsaContents.Clear();
         }
+
+        // Snapshot DataFolderPath once so the diag log makes the empty-vs-set
+        // value at the moment of the call obvious. Otherwise we have to
+        // correlate with timestamps in the env trace.
+        string dfp = _environmentStateProvider.DataFolderPath.ToString() ?? "";
+        BsaContentsDiag.Log($"PopulateBsaContentPathsAsync ENTER modsToProcess={mods.Count()} reinit={reinitializeCache} envDataFolderPath=[{dfp}] envDataFolderExists={(string.IsNullOrWhiteSpace(dfp) ? "(empty)" : Directory.Exists(dfp).ToString())}");
 
         // Use Task.Run to offload the blocking I/O of reading BSA headers.
         await Task.Run(() =>
@@ -562,12 +575,16 @@ public class BsaHandler : OptionalUIModule
                 {
                     pathsToSearch.Add(_environmentStateProvider.DataFolderPath);
                 }
-                
+                BsaContentsDiag.Log($"  processing mod='{mod.DisplayName}' pathsToSearch=[{string.Join("|", pathsToSearch)}]");
+
                 var bsaDict = GetBsaPathsForPluginsInDirs(mod.CorrespondingModKeys, pathsToSearch, gameRelease);
                 foreach (var modkey in mod.CorrespondingModKeys)
                 {
                     if (_bsaContents.ContainsKey(modkey))
                     {
+                        int existingBsaCount = _bsaContents[modkey].Count;
+                        int existingFileCount = _bsaContents[modkey].Values.Sum(s => s.Count);
+                        BsaContentsDiag.Log($"    SKIP modkey={modkey.FileName.String} — already in _bsaContents (bsaCount={existingBsaCount}, fileCount={existingFileCount})");
                         continue;
                     }
                     var bsaPaths = bsaDict[modkey];
@@ -581,9 +598,16 @@ public class BsaHandler : OptionalUIModule
                         filesInArchives.Add(bsaPath, containedFiles);
                     }
 
+                    int totalFiles = filesInArchives.Values.Sum(s => s.Count);
+                    BsaContentsDiag.Log($"    ADD modkey={modkey.FileName.String} bsaCount={filesInArchives.Count} fileCount={totalFiles} bsaPaths=[{string.Join("|", bsaPaths)}]");
+                    if (filesInArchives.Count == 0)
+                    {
+                        BsaContentsDiag.Log($"    !!! WARNING: ADDING EMPTY ENTRY for modkey={modkey.FileName.String} — this will poison the cache");
+                    }
                     _bsaContents.Add(modkey, filesInArchives);
                 }
             }
+            BsaContentsDiag.Log($"PopulateBsaContentPathsAsync EXIT — _bsaContents.Count now={_bsaContents.Count}");
         });
     }
     

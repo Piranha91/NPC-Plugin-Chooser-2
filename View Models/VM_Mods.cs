@@ -2968,6 +2968,9 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     // Save Logic
     public void SaveModSettingsToModel()
     {
+        int before = _settings.ModSettings.Count;
+        int internalCount = _allModSettingsInternal.Count;
+        NPC_Plugin_Chooser_2.BackEnd.BsaContentsDiag.Log($"SaveModSettingsToModel ENTER — _settings.ModSettings.Count={before} _allModSettingsInternal.Count={internalCount}");
         _settings.ModSettings.Clear();
         foreach (var vm in _allModSettingsInternal) // Save from the full list
         {
@@ -2980,6 +2983,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 _settings.ModSettings.Add(model);
             }
         }
+        NPC_Plugin_Chooser_2.BackEnd.BsaContentsDiag.Log($"SaveModSettingsToModel EXIT — _settings.ModSettings.Count={_settings.ModSettings.Count} (was {before}, internal source {internalCount})");
 
         System.Diagnostics.Debug.WriteLine(
             $"DEBUG: SaveModSettingsToModel preparing to save {_settings.ModSettings.Count} items.");

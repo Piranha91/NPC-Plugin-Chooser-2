@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using CharacterViewer.Rendering;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
@@ -48,7 +49,40 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider
             var sw = Stopwatch.StartNew();
             int tid = Environment.CurrentManagedThreadId;
             int total = _settings.ModSettings.Count;
-            Trace($"ENTER tid={tid} mods={total}");
+            string baseGameSummary;
+            try
+            {
+                var bg = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == "Base Game");
+                if (bg == null)
+                {
+                    baseGameSummary = "(no Base Game entry in _settings.ModSettings)";
+                }
+                else
+                {
+                    baseGameSummary = $"BaseGame keys=[{string.Join(",", bg.CorrespondingModKeys.Select(k => k.FileName.String))}] folders=[{string.Join("|", bg.CorrespondingFolderPaths)}]";
+                }
+            }
+            catch (Exception ex) { baseGameSummary = $"(summary failed: {ex.Message})"; }
+            Trace($"ENTER tid={tid} mods={total} envStatus={_env.Status} envDataFolderPath=[{_env.DataFolderPath}] {baseGameSummary}");
+
+            // Empty-model safety net. The startup pre-warm at App.xaml.cs is
+            // fired right after VM_Settings.InitializeAsync and ordinarily
+            // sees a populated Settings.ModSettings (either deserialized from
+            // Settings.json on a normal launch, or just synced from VM_Mods
+            // by the fix-A call inserted there for fresh installs). If we
+            // ever do get here with zero mods anyway — a future caller fires
+            // EnsureAllArchivesOpened too early, env-invalid early-returns
+            // strand the model empty, etc. — DO NOT latch _allOpened=true.
+            // Latching would lock out every later call (each gated on
+            // _allOpened) from doing the real indexing once Settings.ModSettings
+            // gets populated, producing the silent "no BSAs indexed all
+            // session, mugshots empty" failure that this whole investigation
+            // was chasing. Bailing without latching lets the next call retry.
+            if (total == 0)
+            {
+                Trace($"EXIT tid={tid} mods=0 — bailing without latching _allOpened so a later call can retry once Settings.ModSettings is populated");
+                return;
+            }
 
             var release = _env.SkyrimVersion.ToGameRelease();
             int i = 0;
@@ -176,5 +210,10 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider
     {
         Debug.WriteLine($"[BsaAdapter] {message}");
         System.Diagnostics.Trace.WriteLine($"[BsaAdapter] {message}");
+        // Mirror into the BSA contents diagnostic so adapter-level events
+        // (ENTER/EXIT of EnsureAllArchivesOpened, per-mod elapsed timings,
+        // TryLocateInBsa/TryLocateInScopedBsa hits and misses) sit on the
+        // same timeline as the _bsaContents Add/Skip lines from BsaHandler.
+        BsaContentsDiag.Log($"[BsaAdapter] {message}");
     }
 }

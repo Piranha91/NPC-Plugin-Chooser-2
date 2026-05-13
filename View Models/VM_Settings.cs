@@ -1408,6 +1408,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                     "Settings Load Error");
                 loadedSettings = new Settings(); // Use defaults on error
             }
+            NPC_Plugin_Chooser_2.BackEnd.BsaContentsDiag.Log($"LoadSettings: file exists at {settingsPath}, deserialized ModSettings.Count={loadedSettings?.ModSettings?.Count ?? -1}, SkyrimGamePath=[{loadedSettings?.SkyrimGamePath}]");
         }
         else
         {
@@ -1415,6 +1416,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             // Fresh install: stamp the current schema version so we don't run
             // upgrade migrations on first launch.
             loadedSettings.SchemaVersion = Settings.CurrentSchemaVersion;
+            NPC_Plugin_Chooser_2.BackEnd.BsaContentsDiag.Log($"LoadSettings: file did NOT exist at {settingsPath}, using defaults (ModSettings empty)");
         }
 
         // Ensure defaults for new/potentially missing fields after loading old file
@@ -1648,8 +1650,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
     public void SaveSettings()
     {
+        NPC_Plugin_Chooser_2.BackEnd.BsaContentsDiag.Log($"SaveSettings ENTER — env.Status={_environmentStateProvider.Status} _model.ModSettings.Count={_model.ModSettings.Count}");
         if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid)
         {
+            NPC_Plugin_Chooser_2.BackEnd.BsaContentsDiag.Log($"SaveSettings EARLY RETURN — env not Valid");
             return;
         }
 
@@ -1718,6 +1722,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             if (_lazyModListVM.IsValueCreated)
             {
                 await _lazyModListVM.Value.PopulateModSettingsAsync(splashScreen);
+
+                // Sync VM_Mods.AllModSettings → Settings.ModSettings. PopulateModSettingsAsync
+                // writes only to _allModSettingsInternal; without this call the model
+                // (which we just cleared at line 1708) stays empty until the next
+                // throttled SaveSettings fires. Same root cause as the fresh-install
+                // BSA pre-warm bug fixed in App.xaml.cs after the initial InitializeAsync.
+                _lazyModListVM.Value.SaveModSettingsToModel();
             }
             StartupLogger.Log("Mod population complete");
 

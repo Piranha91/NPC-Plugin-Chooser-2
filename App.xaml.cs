@@ -47,6 +47,13 @@ namespace NPC_Plugin_Chooser_2
             StartupLogger.InitializeFromFileTrigger();
             StartupLogger.Log("Application starting");
 
+            // Opt-in BSA-contents diagnostic. Off by default — drop a file
+            // named LogBsaDiag.txt next to the exe to re-enable for a repro.
+            // Must run before any code that calls into BsaHandler / the BSA
+            // adapter, since each call site checks IsEnabled and skips
+            // expensive trace-string formatting when off.
+            BsaContentsDiag.InitializeFromFileTrigger();
+
             using (ContextualPerformanceTracer.Trace("App.OnStartup"))
             {
                 base.OnStartup(e);
@@ -294,6 +301,24 @@ namespace NPC_Plugin_Chooser_2
             StartupLogger.Log("Starting VM_Settings.InitializeAsync");
             await settingsViewModel.InitializeAsync(splashVM); // Pass splashVM implicitly if injected, or explicitly if needed
             StartupLogger.Log("VM_Settings.InitializeAsync complete");
+
+            // Sync VM_Mods.AllModSettings into Settings.ModSettings so downstream
+            // services that iterate the model (the BSA pre-warm below, the
+            // Patcher's PreInitializationLogicAsync, etc.) see the data
+            // PopulateModSettingsAsync just discovered. On a fresh install with
+            // no Settings.json yet, the model otherwise stays empty until the
+            // next throttled SaveSettings fires — and the BSA pre-warm runs
+            // against zero mods, sets _allOpened=true, and silently locks out
+            // every later EnsureAllArchivesOpened call from doing real work.
+            try
+            {
+                container.Resolve<VM_Mods>().SaveModSettingsToModel();
+                StartupLogger.Log("VM_Mods → Settings.ModSettings sync complete");
+            }
+            catch (Exception ex)
+            {
+                StartupLogger.Log("VM_Mods → Settings.ModSettings sync failed: " + ex.Message, "WARN");
+            }
 
             StartupLogger.Log("Initializing PortraitCreator");
             var portraitCreator = container.Resolve<PortraitCreator>();
