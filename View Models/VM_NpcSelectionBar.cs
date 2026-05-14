@@ -37,6 +37,12 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 
 public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 {
+    // Shared diagnostic stopwatch — restarted whenever the user picks a new
+    // NPC. Other VMs (notably VM_NpcsMenuMugshot) read it to stamp
+    // "T+<ms-since-selection>" on their own perf log lines so the full
+    // selection timeline can be reconstructed from one filter pass.
+    internal static readonly Stopwatch SelectionPerfSw = new();
+
     // --- Define the Factory Delegate ---
     public delegate VM_NpcsMenuMugshot AppearanceModFactory(
         string modName,
@@ -488,6 +494,14 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SelectedNpc)
+            .Do(npc =>
+            {
+                if (npc != null)
+                {
+                    SelectionPerfSw.Restart();
+                    Debug.WriteLine($"[NpcPerf] T+0ms SelectedNpc -> {npc.DisplayName} [{npc.NpcFormKey}]");
+                }
+            })
             .SelectMany(async selectedNpc =>
             {
                 var mugshotVMs = selectedNpc != null
@@ -496,6 +510,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 return mugshotVMs;
             })
             .ObserveOn(RxApp.MainThreadScheduler)
+            .Do(vms => Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms CurrentNpcAppearanceMods bound (count={vms.Count})"))
             .ToPropertyEx(this, x => x.CurrentNpcAppearanceMods)
             .DisposeWith(_disposables);
         
@@ -2792,7 +2807,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData)
     {
         if (selectionVm == null) return new ObservableCollection<VM_NpcsMenuMugshot>();
-        
+
+        Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms CreateMugShotViewModelsAsync ENTER");
+
         _eventLogger.LogHeader($"Resolving Appearances for: {selectionVm.DisplayName} [{selectionVm.NpcFormKey}]");
 
         var finalModVMs = new Dictionary<(string ModName, FormKey SourceKey), VM_NpcsMenuMugshot>();
@@ -3022,6 +3039,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             }
         }
 
+        Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms CreateMugShotViewModelsAsync EXIT (count={sortedVMs.Count})");
+
         return new ObservableCollection<VM_NpcsMenuMugshot>(sortedVMs);
     }
 
@@ -3119,14 +3138,25 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         Debug.WriteLine("ImagePacker has completed. Triggering background mugshot generation.");
 
         // Asynchronously call GenerateMugshotAsync for all visible items that don't have a real mugshot yet.
+        // Wrapped in Task.Run so the method's synchronous prefix
+        // (RunSelectedRendererAsync's staleness check + renderer setup, ~500ms
+        // per tile when a render is actually needed) runs off the dispatcher.
+        // Without this the foreach blocks the UI thread for ~500ms × N tiles
+        // before each call's first true yield — the freeze users observe right
+        // after the placeholders paint.
+        int kicked = 0;
+        int skippedHasMugshot = 0;
+        int skippedInvisible = 0;
         foreach (var mugshotVM in CurrentNpcAppearanceMods)
         {
-            if (mugshotVM.IsVisible && !mugshotVM.HasMugshot)
-            {
-                // Fire and forget. The VM will update its own image when the task completes.
-                _ = mugshotVM.GenerateMugshotAsync(token);
-            }
+            if (!mugshotVM.IsVisible) { skippedInvisible++; continue; }
+            if (mugshotVM.HasMugshot) { skippedHasMugshot++; continue; }
+            // Fire and forget. The VM will update its own image when the task completes.
+            var vmCapture = mugshotVM;
+            _ = Task.Run(() => vmCapture.GenerateMugshotAsync(token), token);
+            kicked++;
         }
+        Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms TriggerAsyncMugshotGeneration kicked={kicked} skipped-hasMugshot={skippedHasMugshot} skipped-invisible={skippedInvisible}");
     }
 
     private void HandleShareAppearanceRequest(VM_NpcsMenuMugshot mugshotToShare)
