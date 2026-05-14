@@ -2500,6 +2500,26 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         var rootPlugins = _aux.GetModKeysInDirectory(rootFolder, new List<string>(), false).ToHashSet();
         Debug.WriteLine($"{dbgTag} Root folder='{rootFolder}', root plugins ({rootPlugins.Count}): {string.Join(", ", rootPlugins.Select(k => k.FileName))}");
 
+        // Defensive: if the directory enumeration came back empty but we have keys in
+        // CorrespondingModKeys, the only ways that can happen are:
+        //   (a) a transient IO error inside Directory.EnumerateFiles (Vortex deploy,
+        //       antivirus, file lock during system stress) — GetModKeysInDirectory
+        //       swallows the exception and returns []
+        //   (b) someone wiped the mod folder while NPC2 was running
+        // In both cases, flipping every plugin to resource-only and persisting that
+        // would silently delete the mod from the NPC tab on next launch. Preserve
+        // the existing ResourceOnlyModKeys instead.
+        if (rootPlugins.Count == 0 && CorrespondingModKeys.Count > 0)
+        {
+            Debug.WriteLine($"{dbgTag} rootFolder='{rootFolder}' enumerated to 0 plugins, " +
+                            $"but CorrespondingModKeys has {CorrespondingModKeys.Count} entries. " +
+                            $"Suspected transient IO error; preserving existing ResourceOnlyModKeys.");
+            StartupLogger.Log($"[ResourceOnly] {DisplayName}: rootFolder enumeration returned empty " +
+                              $"despite {CorrespondingModKeys.Count} CorrespondingModKeys; " +
+                              $"preserving prior ResourceOnlyModKeys to avoid corruption.");
+            return;
+        }
+
         var existingPluginPaths = CorrespondingFolderPaths.ToHashSet();
         var newResourceOnly = new HashSet<ModKey>();
 

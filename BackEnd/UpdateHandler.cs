@@ -131,6 +131,11 @@ public class UpdateHandler
             await UpdateTo2_1_6_Final(modsVm, pluginProvider, environmentStateProvider, splashReporter);
         }
 
+        if (settingsVersion < "2.1.7")
+        {
+            await UpdateTo2_1_7_Final(modsVm, splashReporter);
+        }
+
         Debug.WriteLine("Settings update process complete.");
     }
 
@@ -204,6 +209,114 @@ public class UpdateHandler
         }
 
         Debug.WriteLine("2.1.6 resource-only / corresponding-folder cleanup complete.");
+    }
+
+    /// <summary>
+    /// 2.1.7 recovery. Repairs mods whose <see cref="VM_ModSetting.ResourceOnlyModKeys"/>
+    /// got corrupted by the transient-IO race fixed in <see cref="VM_ModSetting.RecomputeResourceOnlyPlugins"/>.
+    ///
+    /// Failure shape: every plugin in <c>CorrespondingModKeys</c> ends up in
+    /// <c>ResourceOnlyModKeys</c>, <c>NpcFormKeysToDisplayName</c> is empty, and the mod
+    /// disappears from the NPC tab dropdown even though it's still visible in the Mods tab.
+    /// Root cause was <see cref="Auxilliary.GetModKeysInDirectory"/> swallowing IO errors
+    /// from <c>Directory.EnumerateFiles</c> and returning an empty list; the caller then
+    /// flipped every key to resource-only and the throttled <c>SaveSettings</c> persisted it.
+    ///
+    /// Conservative detection (see <see cref="IsCorruptedAllResourceOnly"/>): only mods that
+    /// have evidence of a prior successful analysis (non-empty <c>PluginsWithOverrideRecords</c>
+    /// or <c>NpcFormKeysToNotifications</c>) qualify, so legitimate all-resource entries
+    /// aren't touched. Recovery clears <c>ResourceOnlyModKeys</c> and delegates the
+    /// re-analysis to <see cref="VM_Mods.RefreshSingleModSettingAsync"/> — the same code
+    /// path the user's "Refresh Mod Data" button uses — so plugin loading, FaceGen cache
+    /// scoping, <c>RefreshNpcLists</c>, and NPC-bar <c>AppearanceMods</c> re-linking stay
+    /// in one place. Once fix #1 is in place, <c>RecomputeResourceOnlyPlugins</c> can't
+    /// re-corrupt the state on a second IO blip.
+    /// </summary>
+    private async Task UpdateTo2_1_7_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
+    {
+        splashReporter?.UpdateStep("Checking for mods left in a corrupted resource-only state...");
+
+        var corrupted = modsVm.AllModSettings.Where(IsCorruptedAllResourceOnly).ToList();
+        if (corrupted.Count == 0)
+        {
+            Debug.WriteLine("2.1.7 recovery: no corrupted mods detected.");
+            return;
+        }
+
+        Debug.WriteLine($"2.1.7 recovery: detected {corrupted.Count} corrupted mod(s): " +
+                        string.Join(", ", corrupted.Select(m => m.DisplayName)));
+
+        int processed = 0;
+        foreach (var vm in corrupted)
+        {
+            try
+            {
+                // Wipe the corrupted set so RefreshSingleModSettingAsync's downstream
+                // RefreshNpcLists no longer skips every plugin. RecomputeResourceOnlyPlugins
+                // (called inside Refresh via UpdateCorrespondingModKeys) will recompute the
+                // correct set from disk — and with the bail-out guard added in 2.1.7,
+                // it can no longer re-corrupt on a second IO blip.
+                vm.ResourceOnlyModKeys.Clear();
+
+                splashReporter?.UpdateStep($"Re-analyzing '{vm.DisplayName}'...");
+                var (ok, reason) = await modsVm.RefreshSingleModSettingAsync(vm);
+                if (!ok)
+                {
+                    Debug.WriteLine($"2.1.7 recovery: re-analysis of '{vm.DisplayName}' returned (false, '{reason}').");
+                }
+                else
+                {
+                    Debug.WriteLine($"2.1.7 recovery: re-analyzed '{vm.DisplayName}'; " +
+                                    $"NpcFormKeysToDisplayName now has {vm.NpcFormKeysToDisplayName.Count} entries, " +
+                                    $"ResourceOnlyModKeys now has {vm.ResourceOnlyModKeys.Count} entries.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"2.1.7 recovery: failed for '{vm.DisplayName}': {ex.Message}");
+            }
+
+            processed++;
+            splashReporter?.UpdateProgress((double)processed / corrupted.Count * 100,
+                $"Recovered: {vm.DisplayName}");
+        }
+
+        // Mirror the existing post-migration save pattern (see App.xaml.cs:315) so the
+        // repaired state is written back through the model before the next throttled
+        // SaveSettings.
+        modsVm.SaveModSettingsToModel();
+
+        Debug.WriteLine("2.1.7 recovery complete.");
+    }
+
+    /// <summary>
+    /// Strong signature for the IO-blip ResourceOnlyModKeys corruption surfaced in
+    /// caracal100's 2.1.6 bug report. Every condition must hold to qualify for
+    /// auto-repair, so legitimate all-resource entries (e.g. master-only dependency
+    /// mods) aren't disturbed.
+    /// </summary>
+    private static bool IsCorruptedAllResourceOnly(VM_ModSetting vm)
+    {
+        if (vm.IsFaceGenOnlyEntry) return false;
+        if (vm.IsMugshotOnlyEntry) return false;
+        if (vm.IsAutoGenerated) return false;
+        if (vm.CorrespondingFolderPaths.Count == 0) return false;
+        if (vm.CorrespondingModKeys.Count == 0) return false;
+
+        // Every plugin in CorrespondingModKeys is flagged as resource-only.
+        if (!vm.CorrespondingModKeys.All(k => vm.ResourceOnlyModKeys.Contains(k)))
+            return false;
+
+        // The NPC dropdown source is empty — i.e. the mod actually disappeared
+        // from the NPC tab from the user's perspective.
+        if (vm.NpcFormKeysToDisplayName.Count != 0) return false;
+
+        // Evidence of prior successful analysis — proves the plugins really did
+        // have appearance content the analyzer recognised. This is what
+        // distinguishes a true IO-corruption victim from a mod that's
+        // legitimately all-resource.
+        return vm.HasPluginWithOverrideRecords
+               || vm.NpcFormKeysToNotifications.Count > 0;
     }
 
     /// <summary>
