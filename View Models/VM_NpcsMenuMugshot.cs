@@ -506,7 +506,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     /// produce nothing.</summary>
     private bool ShouldDeferCuratedLoad()
     {
-        var priority = _settings.MugshotSourcePriority;
+        // Use the effective priority — honours any per-NPC override the user
+        // has set in the NPCs view, so an AutoGen-first override defers the
+        // curated load just like an AutoGen-first Settings configuration.
+        var priority = _vmNpcSelectionBar.GetEffectiveMugshotPriority();
         if (priority == null) return false;
         int autoGenIdx = priority.IndexOf(MugshotSourceType.AutoGeneration);
         int downloadedIdx = priority.IndexOf(MugshotSourceType.DownloadedMugshots);
@@ -1315,11 +1318,14 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
             IsLoading = true;
 
-            // Walk the user's mugshot-source priority order. The first source that
-            // produces a result wins; disabled sources (UseFaceFinderFallback off,
-            // UsePortraitCreatorFallback off, no curated mugshot loaded) report
-            // "not handled" so the loop falls through to the next source.
-            foreach (var source in _settings.MugshotSourcePriority)
+            // Walk the effective mugshot-source priority order — honours any
+            // per-NPC override set via the radio buttons in the NPCs view, then
+            // falls back to Settings.MugshotSourcePriority. The first source
+            // that produces a result wins; disabled sources
+            // (UseFaceFinderFallback off, UsePortraitCreatorFallback off, no
+            // curated mugshot loaded) report "not handled" so the loop falls
+            // through to the next source.
+            foreach (var source in _vmNpcSelectionBar.GetEffectiveMugshotPriority())
             {
                 if (token.IsCancellationRequested) return;
 

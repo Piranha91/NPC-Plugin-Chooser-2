@@ -1446,6 +1446,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         {
             foreach (MugshotSourceType src in Enum.GetValues(typeof(MugshotSourceType)))
             {
+                if (src == MugshotSourceType.None) continue;
                 if (!loadedSettings.MugshotSourcePriority.Contains(src))
                     loadedSettings.MugshotSourcePriority.Add(src);
             }

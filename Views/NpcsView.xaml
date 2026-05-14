@@ -1111,11 +1111,12 @@
             </TextBlock>
         </Grid>
 
-        <!-- Description Panel & Zoom Controls (Grid.Row="2") -->
+        <!-- Description Panel, Mugshot Source Override & Zoom Controls (Grid.Row="2") -->
         <Border Grid.Row="2" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="5">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/> <!-- Description Area -->
+                    <ColumnDefinition Width="Auto"/> <!-- Mugshot Source Override -->
                     <ColumnDefinition Width="Auto"/> <!-- Zoom Controls -->
                 </Grid.ColumnDefinitions>
                 <Border Grid.Column="0" Background="{DynamicResource PrimaryBackground}" Padding="0" VerticalAlignment="Center"
@@ -1139,7 +1140,84 @@
                                    Visibility="{Binding IsLoadingDescription, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     </Grid>
                 </Border>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <!-- Mugshot Source Override: transient per-NPC priority bump.
+                     Click MD/FF/AG to promote that source to the top of the
+                     priority list for the currently-selected NPC; click the
+                     active button again, or switch NPCs, to clear and fall
+                     back to Settings.MugshotSourcePriority. -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedNpc}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="Mugshot Source:" VerticalAlignment="Center" Margin="0,0,5,0"
+                               Foreground="{DynamicResource PrimaryForeground}"/>
+                    <RadioButton Content="MD" GroupName="MugshotSourceOverride" Margin="2,0" VerticalAlignment="Center"
+                                 IsEnabled="{Binding IsManualDownloadSourceAvailable}"
+                                 ToolTipService.ShowOnDisabled="True"
+                                 Command="{Binding ToggleMugshotSourceOverrideCommand}"
+                                 CommandParameter="{x:Static models:MugshotSourceType.DownloadedMugshots}"
+                                 IsChecked="{Binding MugshotSourceOverride, Mode=OneWay,
+                                     Converter={StaticResource EnumMatchToBooleanConverter},
+                                     ConverterParameter=DownloadedMugshots}">
+                        <RadioButton.Style>
+                            <Style TargetType="RadioButton">
+                                <Setter Property="ToolTip" Value="Show Manual-Download mugshots first for this NPC. Click again to clear."/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter Property="ToolTip" Value="Set a valid Mugshots Folder in Settings to use this option."/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </RadioButton.Style>
+                    </RadioButton>
+                    <RadioButton Content="FF" GroupName="MugshotSourceOverride" Margin="2,0" VerticalAlignment="Center"
+                                 IsEnabled="{Binding IsFaceFinderSourceAvailable}"
+                                 ToolTipService.ShowOnDisabled="True"
+                                 Command="{Binding ToggleMugshotSourceOverrideCommand}"
+                                 CommandParameter="{x:Static models:MugshotSourceType.FaceFinder}"
+                                 IsChecked="{Binding MugshotSourceOverride, Mode=OneWay,
+                                     Converter={StaticResource EnumMatchToBooleanConverter},
+                                     ConverterParameter=FaceFinder}">
+                        <RadioButton.Style>
+                            <Style TargetType="RadioButton">
+                                <Setter Property="ToolTip" Value="Show FaceFinder mugshots first for this NPC. Click again to clear."/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter Property="ToolTip" Value="Enable 'Use FaceFinder API for missing mugshots' in Settings to use this option."/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </RadioButton.Style>
+                    </RadioButton>
+                    <RadioButton Content="AG" GroupName="MugshotSourceOverride" Margin="2,0" VerticalAlignment="Center"
+                                 IsEnabled="{Binding IsAutoGenSourceAvailable}"
+                                 ToolTipService.ShowOnDisabled="True"
+                                 Command="{Binding ToggleMugshotSourceOverrideCommand}"
+                                 CommandParameter="{x:Static models:MugshotSourceType.AutoGeneration}"
+                                 IsChecked="{Binding MugshotSourceOverride, Mode=OneWay,
+                                     Converter={StaticResource EnumMatchToBooleanConverter},
+                                     ConverterParameter=AutoGeneration}">
+                        <RadioButton.Style>
+                            <Style TargetType="RadioButton">
+                                <Setter Property="ToolTip" Value="Show Auto-Generated mugshots first for this NPC. Click again to clear."/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter Property="ToolTip" Value="Enable 'Auto-Generate missing mugshots' in Settings to use this option."/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </RadioButton.Style>
+                    </RadioButton>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Button x:Name="ZoomOutButton" Content="-" Width="25" Height="25" Margin="2,0" ToolTip="Zoom Out (Ctrl+Scroll Wheel)"/>
                     <TextBox x:Name="ZoomPercentageTextBox" Width="60" Height="25" Margin="2,0" TextAlignment="Center" VerticalContentAlignment="Center"
                              Text="{Binding NpcsViewZoomLevel, StringFormat='F2', Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"

@@ -187,6 +187,21 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     public ObservableCollection<VM_NpcsMenuSelection> FilteredNpcs { get; } = new();
     [Reactive] public VM_NpcsMenuSelection? SelectedNpc { get; set; }
     [ObservableAsProperty] public ObservableCollection<VM_NpcsMenuMugshot>? CurrentNpcAppearanceMods { get; }
+
+    // Transient per-NPC override of the mugshot source priority. None = use
+    // Settings.MugshotSourcePriority verbatim. When a real source is set, it
+    // becomes index 0 of GetEffectiveMugshotPriority(), with the remaining
+    // settings entries falling through in their original order. Clears
+    // automatically whenever SelectedNpc changes — see constructor wiring.
+    [Reactive] public MugshotSourceType MugshotSourceOverride { get; set; } = MugshotSourceType.None;
+    // Mirrors Settings.MugshotsFolder (existence) /
+    // Settings.UseFaceFinderFallback / Settings.UsePortraitCreatorFallback so
+    // the MD/FF/AG override radio buttons disable live when the corresponding
+    // source becomes unavailable in the Settings menu. The MD check matches
+    // VM_Settings.RefreshMugshotSourceEnabledStates' DownloadedMugshots case.
+    [ObservableAsProperty] public bool IsManualDownloadSourceAvailable { get; }
+    [ObservableAsProperty] public bool IsFaceFinderSourceAvailable { get; }
+    [ObservableAsProperty] public bool IsAutoGenSourceAvailable { get; }
     [Reactive] public string? CurrentNpcDescription { get; private set; }
     public ReactiveCommand<Unit, string?> LoadDescriptionCommand { get; }
     [ObservableAsProperty] public bool IsLoadingDescription { get; }
@@ -241,6 +256,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     // --- End Import/Export Commands ---
     
     public ReactiveCommand<object, Unit> SetNpcOutfitOverrideCommand { get; }
+    // Click toggles the per-NPC mugshot source override: clicking an inactive
+    // source promotes it to top; clicking the active one clears the override.
+    public ReactiveCommand<MugshotSourceType, Unit> ToggleMugshotSourceOverrideCommand { get; }
     public ReactiveCommand<Unit, Unit> ShowFavoritesCommand { get; }
     public ReactiveCommand<VM_NpcsMenuSelection, Unit> AddFavoriteFaceToNpcCommand { get; }
     public ReactiveCommand<FormKey, Unit> JumpToTemplateReferenceCommand { get; }
@@ -456,6 +474,42 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .Subscribe(ex => Debug.WriteLine($"Error ResetZoomNpcsCommand: {ExceptionLogger.GetExceptionStack(ex)}"))
             .DisposeWith(_disposables);
 
+        // Mugshot Source Override — command + availability OAPHs. Wired before
+        // the SelectedNpc rebuild chain below so the override-clear subscription
+        // fires first when the user picks a different NPC.
+        ToggleMugshotSourceOverrideCommand = ReactiveCommand.Create<MugshotSourceType>(src =>
+        {
+            MugshotSourceOverride = (MugshotSourceOverride == src)
+                ? MugshotSourceType.None
+                : src;
+        }).DisposeWith(_disposables);
+        ToggleMugshotSourceOverrideCommand.ThrownExceptions
+            .Subscribe(ex => Debug.WriteLine(
+                $"Error ToggleMugshotSourceOverrideCommand: {ExceptionLogger.GetExceptionStack(ex)}"))
+            .DisposeWith(_disposables);
+
+        // Defer-resolve VM_Settings so we don't trip on a DI cycle if it's
+        // constructed lazily — the OAPHs subscribe on first read (UI binding),
+        // by which time VM_Settings is up.
+        Observable.Defer(() => _lazyVmSettings.Value.WhenAnyValue(x => x.MugshotsFolder)
+                .Select(folder => !string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder)))
+            .ToPropertyEx(this, x => x.IsManualDownloadSourceAvailable)
+            .DisposeWith(_disposables);
+        Observable.Defer(() => _lazyVmSettings.Value.WhenAnyValue(x => x.UseFaceFinderFallback))
+            .ToPropertyEx(this, x => x.IsFaceFinderSourceAvailable)
+            .DisposeWith(_disposables);
+        Observable.Defer(() => _lazyVmSettings.Value.WhenAnyValue(x => x.UsePortraitCreatorFallback))
+            .ToPropertyEx(this, x => x.IsAutoGenSourceAvailable)
+            .DisposeWith(_disposables);
+
+        // Clear the override whenever SelectedNpc changes. Registered before
+        // the combined rebuild chain so the override-clear PropertyChanged
+        // fires first; DistinctUntilChanged on the rebuild chain dedupes the
+        // back-to-back tuple emissions.
+        this.WhenAnyValue(x => x.SelectedNpc)
+            .Subscribe(_ => MugshotSourceOverride = MugshotSourceType.None)
+            .DisposeWith(_disposables);
+
         this.WhenAnyValue(x => x.SelectedNpc)
             .Subscribe(npc =>
             {
@@ -493,17 +547,25 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             })
             .DisposeWith(_disposables);
 
-        this.WhenAnyValue(x => x.SelectedNpc)
-            .Do(npc =>
+        // Rebuild CurrentNpcAppearanceMods whenever EITHER the selected NPC
+        // OR the mugshot source override changes. The override-clear
+        // subscription above runs first when SelectedNpc changes, so this
+        // chain sees a (newNpc, None) tuple. DistinctUntilChanged dedupes the
+        // back-to-back emissions (one for SelectedNpc change, one for the
+        // synchronous override clear).
+        this.WhenAnyValue(x => x.SelectedNpc, x => x.MugshotSourceOverride)
+            .DistinctUntilChanged()
+            .Do(t =>
             {
-                if (npc != null)
+                if (t.Item1 != null)
                 {
                     SelectionPerfSw.Restart();
-                    Debug.WriteLine($"[NpcPerf] T+0ms SelectedNpc -> {npc.DisplayName} [{npc.NpcFormKey}]");
+                    Debug.WriteLine($"[NpcPerf] T+0ms SelectedNpc -> {t.Item1.DisplayName} [{t.Item1.NpcFormKey}] override={t.Item2}");
                 }
             })
-            .SelectMany(async selectedNpc =>
+            .SelectMany(async t =>
             {
+                var selectedNpc = t.Item1;
                 var mugshotVMs = selectedNpc != null
                     ? await CreateMugShotViewModelsAsync(selectedNpc, _downloadedMugshotData)
                     : new ObservableCollection<VM_NpcsMenuMugshot>();
@@ -530,6 +592,14 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 ToggleModVisibility();
                 _refreshImageSizesSubject.OnNext(Unit.Default);
+                // Backstop: kick off the priority-loop generation directly. The
+                // packer-event chain (PackingCompleted -> TriggerAsyncMugshotGeneration)
+                // only fires when ImagePacker.FitOriginalImagesToContainer runs,
+                // which RefreshImageSizes skips when the user has manually zoomed
+                // or locked the zoom. Without this call, an override-only change
+                // (or any rebuild while the packer is bypassed) leaves all tiles
+                // spinning forever waiting on GenerateMugshotAsync.
+                TriggerAsyncMugshotGeneration();
             })
             .DisposeWith(_disposables);
 
@@ -3122,7 +3192,29 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         // ensuring consistency with the rest of the application.
         return GetImagePathForNpc(modSetting, npcFormKey, _downloadedMugshotData, targetNpcFormKey);
     }
-    
+
+    /// <summary>Returns the priority order to walk when resolving a mugshot
+    /// for the currently-selected NPC. When MugshotSourceOverride is None
+    /// (the default), this is Settings.MugshotSourcePriority verbatim. When
+    /// the user has clicked an override radio button, the chosen source is
+    /// promoted to index 0 and the remaining settings entries follow in
+    /// their original relative order.</summary>
+    public List<MugshotSourceType> GetEffectiveMugshotPriority()
+    {
+        var basePriority = _settings.MugshotSourcePriority;
+        if (MugshotSourceOverride == MugshotSourceType.None)
+        {
+            return basePriority;
+        }
+
+        var result = new List<MugshotSourceType>(basePriority.Count) { MugshotSourceOverride };
+        foreach (var src in basePriority)
+        {
+            if (src != MugshotSourceOverride) result.Add(src);
+        }
+        return result;
+    }
+
     private void TriggerAsyncMugshotGeneration()
     {
         // Cancel any generation tasks initiated for the previously selected NPC.
