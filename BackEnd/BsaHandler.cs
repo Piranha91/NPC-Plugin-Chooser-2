@@ -541,39 +541,30 @@ public class BsaHandler : OptionalUIModule
     public async Task AddMissingModToCache(ModSetting mod, GameRelease gameRelease)
     {
         BsaContentsDiag.Log($"AddMissingModToCache ENTER mod='{mod.DisplayName}' modKeys=[{string.Join(",", mod.CorrespondingModKeys.Select(k => k.FileName.String))}] folders=[{string.Join("|", mod.CorrespondingFolderPaths)}]");
-        bool matched = false;
 
+        // Only short-circuit when EVERY modKey for this mod is already indexed.
+        // The previous "any modKey×folder pair already indexed → skip" check was
+        // too lenient: for a mod listing [USSEP.esp, MyMod.esp] with folders
+        // [USSEP folder, MyMod folder], a prior mod that indexed USSEP would
+        // satisfy the check and cause MyMod.esp to never get scanned —
+        // leaving the mod's own BSA invisible to FileExistsInArchiveAtFolder.
+        // Delegating to PopulateBsaContentPathsAsync is safe here: it skips
+        // already-cached modKeys per-key, so the cached USSEP entry isn't
+        // redundantly re-scanned.
+        bool allCached;
         lock (_bsaContentsLock)
         {
-            foreach (var modKey in mod.CorrespondingModKeys)
-            {
-                if (_bsaContents.TryGetValue(modKey, out var contents))
-                {
-                    foreach (var dataPath in mod.CorrespondingFolderPaths)
-                    {
-                        if (contents.Any(x => x.Key.StartsWith(dataPath, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            matched = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (matched)
-                {
-                    break;
-                }
-            }
+            allCached = mod.CorrespondingModKeys.All(_bsaContents.ContainsKey);
         }
 
-        if (!matched)
+        if (!allCached)
         {
-            BsaContentsDiag.Log($"AddMissingModToCache no match → delegating to PopulateBsaContentPathsAsync mod='{mod.DisplayName}'");
+            BsaContentsDiag.Log($"AddMissingModToCache not all modKeys cached → delegating to PopulateBsaContentPathsAsync mod='{mod.DisplayName}'");
             await PopulateBsaContentPathsAsync(new List<ModSetting>() {mod}, gameRelease, reinitializeCache: false);
         }
         else
         {
-            BsaContentsDiag.Log($"AddMissingModToCache matched mod='{mod.DisplayName}' — no populate needed");
+            BsaContentsDiag.Log($"AddMissingModToCache all modKeys already cached mod='{mod.DisplayName}' — no populate needed");
         }
     }
     
