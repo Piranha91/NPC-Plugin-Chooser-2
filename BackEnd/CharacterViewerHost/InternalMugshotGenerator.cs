@@ -117,6 +117,18 @@ public sealed class InternalMugshotGenerator
             await Task.Run(() => _bsa.EnsureAllArchivesOpened(), token).ConfigureAwait(false);
             Trace($"  EnsureAllArchivesOpened tid={Environment.CurrentManagedThreadId} elapsed={sw.ElapsedMilliseconds - preEnsure}ms");
 
+            // Templated NPCs ship no exported FaceGen NIF; rendering them would
+            // produce a headless body since every other mesh (body / hands /
+            // skin) resolves cleanly off the race/armature. Abort here so the
+            // caller leaves the placeholder up instead of writing a misleading
+            // PNG. Mirrors the Legacy path's FindNpcNifPath null-check in
+            // BatchMugshotGenerator.RunSelectedRendererAsync.
+            if (!_resolver.FaceGenExists(npcFormKey, modSetting))
+            {
+                Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} no-facegen totalElapsed={sw.ElapsedMilliseconds}ms");
+                return false;
+            }
+
             var cfg = _settings.InternalMugshot;
             var request = new OffscreenRenderRequest
             {

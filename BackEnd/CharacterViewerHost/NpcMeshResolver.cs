@@ -238,6 +238,59 @@ public class NpcMeshResolver
     }
 
     /// <summary>
+    /// Returns true when a FaceGen head NIF for <paramref name="npcFormKey"/>
+    /// can be located via the same scope-iteration logic the renderer uses:
+    /// loose files under each of <paramref name="modSetting"/>'s folders
+    /// (the vanilla loose scope is skipped, mirroring the renderer's hard
+    /// Phase 1 FaceGen skip), then any scoped BSA owned by the matching
+    /// plugin keys (vanilla BSA last). Callers use this to early-abort
+    /// templated NPCs (no FaceGen on disk) before the renderer would
+    /// otherwise produce a headless body — see
+    /// <see cref="InternalMugshotGenerator"/>'s pre-render gate.
+    /// </summary>
+    public bool FaceGenExists(FormKey npcFormKey, ModSetting? modSetting)
+    {
+        var context = BuildContext(npcFormKey, modSetting);
+        string facegenPath = BuildFaceGenPath(npcFormKey);
+
+        // Loose-file probe under any preferred mod folder rebases to absolute;
+        // if that absolute path lands on disk, we're done.
+        var rebased = RebaseToAbsoluteIfPresent(facegenPath, context);
+        if (rebased != null && Path.IsPathRooted(rebased) && File.Exists(rebased)) return true;
+
+        var scopes = BuildDiagnosticScopes(context);
+
+        // Phase 1: loose files, highest-priority-first. Skip vanilla (i==0)
+        // for FaceGen — same rule the renderer enforces.
+        for (int i = scopes.Count - 1; i >= 1; i--)
+        {
+            var scope = scopes[i];
+            if (string.IsNullOrWhiteSpace(scope.FolderPath)) continue;
+            string candidate;
+            try { candidate = Path.Combine(scope.FolderPath, facegenPath); }
+            catch { continue; }
+            if (File.Exists(candidate)) return true;
+        }
+
+        // Phase 2: scoped BSAs, highest-priority-first (vanilla included).
+        for (int i = scopes.Count - 1; i >= 0; i--)
+        {
+            var scope = scopes[i];
+            if (string.IsNullOrWhiteSpace(scope.FolderPath)) continue;
+            foreach (var keyName in scope.ModKeyFileNames)
+            {
+                if (!ModKey.TryFromNameAndExtension(keyName, out var modKey)) continue;
+                if (_bsaHandler.FileExistsInArchiveAtFolder(facegenPath, modKey, scope.FolderPath, out var bsaPath) &&
+                    bsaPath != null)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Resolves the full set of paths for the NPC. Returns null if the NPC
     /// itself can't be resolved either from the context's plugins or the
     /// link cache.
