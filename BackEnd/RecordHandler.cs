@@ -1,5 +1,6 @@
 ﻿using Microsoft.Build.Tasks;
 using System.Collections.Concurrent;
+using System.IO;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
@@ -29,6 +30,18 @@ public class RecordHandler
     // TryGetPlugin call would return a different — still cold — instance).
     private ConcurrentDictionary<ModKey, ISkyrimModGetter> _modLinkCachePlugins = new();
 
+    // Resolved source path each cache was built from. PluginProvider keys its
+    // own cache by file path, but _modLinkCaches keys by ModKey alone — so
+    // two NPC2 mods that both ship a plugin with the same filename but
+    // different contents (e.g. "Bijin Redux" vs "Bijin Redux - SkyPatched",
+    // both shipping Bijin Redux.esp) would collide here: whichever mod's
+    // render touched the plugin first would populate the cache, and every
+    // later render for the OTHER mod would hit CACHED-OK against the wrong
+    // physical file and silently fail to resolve records only present in
+    // that other file. Tracking the path lets TryAddPluginToCaches detect
+    // the collision and evict before the GetOrAdd factory runs.
+    private ConcurrentDictionary<ModKey, string> _modLinkCacheSourcePaths = new();
+
     // Per-ModKey memo of the cold-ESL warmup outcome. Presence = warmup
     // attempted; value = true on successful Npcs.Count, false on throw.
     // Used by TryWarmPlugin to skip repeat work after either outcome.
@@ -57,13 +70,19 @@ public class RecordHandler
     {
         foreach (var modKey in modKeys)
         {
+            if (!_pluginProvider.TryGetPlugin(modKey, fallBackModFolderNames, out var plugin, out var sourcePath) ||
+                plugin == null || sourcePath == null)
+            {
+                continue;
+            }
+
+            EvictIfSourcePathChanged(modKey, sourcePath);
+
             if (_modLinkCaches.ContainsKey(modKey)) continue;
 
-            if (_pluginProvider.TryGetPlugin(modKey, fallBackModFolderNames, out var plugin) && plugin != null)
-            {
-                _modLinkCachePlugins.TryAdd(modKey, plugin);
-                _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences()));
-            }
+            _modLinkCachePlugins.TryAdd(modKey, plugin);
+            _modLinkCacheSourcePaths.TryAdd(modKey, NormalizePath(sourcePath));
+            _modLinkCaches.TryAdd(modKey, new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences()));
         }
     }
 
@@ -73,8 +92,41 @@ public class RecordHandler
         {
             _modLinkCaches.TryRemove(modKey, out _);
             _modLinkCachePlugins.TryRemove(modKey, out _);
+            _modLinkCacheSourcePaths.TryRemove(modKey, out _);
             _warmedPlugins.TryRemove(modKey, out _);
         }
+    }
+
+    /// <summary>Normalizes a filesystem path for case-insensitive equality
+    /// comparison between paths that may have been produced by different
+    /// code paths (PluginProvider's out param, our own Path.Combine of the
+    /// data folder + modKey filename, etc.).</summary>
+    private static string NormalizePath(string path)
+    {
+        try { return Path.GetFullPath(path).ToUpperInvariant(); }
+        catch { return path.ToUpperInvariant(); }
+    }
+
+    /// <summary>If an existing cache entry for <paramref name="modKey"/> was
+    /// built from a path different from <paramref name="desiredSourcePath"/>,
+    /// evict it so the next <c>GetOrAdd</c> factory call rebuilds the cache
+    /// against the right physical file. Two NPC2 mods can share a plugin
+    /// filename with different contents, and <c>_modLinkCaches</c> is keyed
+    /// by ModKey only — without this check the first mod's render would
+    /// poison every later render that targets the same ModKey from a
+    /// different folder.</summary>
+    private void EvictIfSourcePathChanged(ModKey modKey, string desiredSourcePath)
+    {
+        if (!_modLinkCacheSourcePaths.TryGetValue(modKey, out var existing)) return;
+        string desired = NormalizePath(desiredSourcePath);
+        if (string.Equals(existing, desired, StringComparison.OrdinalIgnoreCase)) return;
+
+        if (RenderLogCapture.IsCapturing)
+        {
+            TraceLookup($"  evicting cache for {modKey.FileName}: cached path '{existing}' " +
+                        $"differs from desired '{desired}' (likely two NPC2 mods sharing this plugin filename).");
+        }
+        ClearLinkCachesFor(new[] { modKey });
     }
 
     /// <summary>Diagnostic trace that lands in the active mugshot/preview
@@ -251,6 +303,21 @@ public class RecordHandler
     private bool TryAddPluginToCaches(ModKey modKey, HashSet<string> fallBackModFolderNames)
     {
         bool capturing = RenderLogCapture.IsCapturing;
+
+        // Resolve the desired source path UP FRONT. PluginProvider checks
+        // fallBackModFolderNames first, then the data folder. We use the
+        // resolved path to (a) detect a stale cache entry built from a
+        // different physical file under the same ModKey and evict it, and
+        // (b) decide inside the factory whether to reuse Mutagen's already-
+        // parsed LoadOrder instance (only when the desired path IS the data
+        // folder path — otherwise the LO instance is the WRONG file).
+        bool resolvedDesired = _pluginProvider.TryGetPlugin(
+            modKey, fallBackModFolderNames, out var providerPlugin, out var resolvedSourcePath);
+        if (resolvedDesired && resolvedSourcePath != null)
+        {
+            EvictIfSourcePathChanged(modKey, resolvedSourcePath);
+        }
+
         bool wasCached = capturing && _modLinkCaches.ContainsKey(modKey);
 
         // Use GetOrAdd for an atomic "get or create" operation.
@@ -263,28 +330,43 @@ public class RecordHandler
         var linkCache = _modLinkCaches.GetOrAdd(modKey, key =>
         {
             factoryRan = true;
-            // Logic to create the link cache if it doesn't exist.
-            var modListing = _environmentStateProvider.LoadOrder?.TryGetValue(key);
-            if (modListing != null && modListing.Mod != null)
+            if (!resolvedDesired || providerPlugin == null || resolvedSourcePath == null)
             {
-                loBranch = true;
-                loadedPlugin = modListing.Mod;
-                _modLinkCachePlugins.TryAdd(key, modListing.Mod);
-                PrimeIfEsl(modListing.Mod);
-                return new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences());
+                pluginProviderFailed = true;
+                return null;
             }
 
-            if (_pluginProvider.TryGetPlugin(key, fallBackModFolderNames, out var plugin) && plugin != null)
+            // Reuse Mutagen's already-parsed LoadOrder instance ONLY when the
+            // desired path is the data folder path. If fallBackModFolderNames
+            // resolved to a mod folder, we MUST use PluginProvider's instance
+            // — the LO instance is parsed from the data folder file and
+            // would have different content than the mod-folder file the
+            // caller is asking about.
+            string dataFolderCandidate = NormalizePath(
+                Path.Combine(_environmentStateProvider.DataFolderPath, key.ToString()));
+            bool desiredIsDataFolder = string.Equals(
+                NormalizePath(resolvedSourcePath), dataFolderCandidate, StringComparison.OrdinalIgnoreCase);
+
+            if (desiredIsDataFolder)
             {
-                pluginProviderBranch = true;
-                loadedPlugin = plugin;
-                _modLinkCachePlugins.TryAdd(key, plugin);
-                PrimeIfEsl(plugin);
-                return new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(plugin, new LinkCachePreferences());
+                var modListing = _environmentStateProvider.LoadOrder?.TryGetValue(key);
+                if (modListing != null && modListing.Mod != null)
+                {
+                    loBranch = true;
+                    loadedPlugin = modListing.Mod;
+                    _modLinkCachePlugins.TryAdd(key, modListing.Mod);
+                    _modLinkCacheSourcePaths.TryAdd(key, NormalizePath(resolvedSourcePath));
+                    PrimeIfEsl(modListing.Mod);
+                    return new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(modListing.Mod, new LinkCachePreferences());
+                }
             }
 
-            pluginProviderFailed = true;
-            return null; // Return null if it can't be created.
+            pluginProviderBranch = true;
+            loadedPlugin = providerPlugin;
+            _modLinkCachePlugins.TryAdd(key, providerPlugin);
+            _modLinkCacheSourcePaths.TryAdd(key, NormalizePath(resolvedSourcePath));
+            PrimeIfEsl(providerPlugin);
+            return new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(providerPlugin, new LinkCachePreferences());
         });
 
         if (capturing)
@@ -308,7 +390,12 @@ public class RecordHandler
             {
                 outcome = linkCache != null ? "CACHED-OK (raced)" : "CACHED-NULL (raced, poisoned)";
             }
-            TraceLookup($"TryAddPluginToCaches mk={modKey.FileName} fallback={folders} → {outcome}");
+            string pathLabel = resolvedSourcePath != null ? resolvedSourcePath : "(unresolved)";
+            string cachedPathLabel = _modLinkCacheSourcePaths.TryGetValue(modKey, out var cachedPath)
+                ? cachedPath
+                : "(none)";
+            TraceLookup($"TryAddPluginToCaches mk={modKey.FileName} fallback={folders} → {outcome} " +
+                        $"desiredPath={pathLabel} cachedPath={cachedPathLabel}");
 
             // Probe the SAME plugin instance the link cache wraps so we know
             // whether enumeration throws on the very instance the resolver
@@ -786,6 +873,8 @@ public class RecordHandler
                 if (parentListing != null && parentListing.Mod != null)
                 {
                     _modLinkCachePlugins[parentListing.ModKey] = parentListing.Mod;
+                    _modLinkCacheSourcePaths[parentListing.ModKey] = NormalizePath(
+                        Path.Combine(_environmentStateProvider.DataFolderPath, parentmod.ToString()));
                     _modLinkCaches[parentListing.ModKey] = new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(parentListing.Mod, new LinkCachePreferences());
                 }
             }
@@ -909,6 +998,8 @@ public class RecordHandler
                 if (parentListing != null && parentListing.Mod != null)
                 {
                     _modLinkCachePlugins[parentListing.ModKey] = parentListing.Mod;
+                    _modLinkCacheSourcePaths[parentListing.ModKey] = NormalizePath(
+                        Path.Combine(_environmentStateProvider.DataFolderPath, parentmod.ToString()));
                     _modLinkCaches[parentListing.ModKey] = new ImmutableModLinkCache<ISkyrimMod, ISkyrimModGetter>(parentListing.Mod, new LinkCachePreferences());
                 }
             }
