@@ -3015,6 +3015,19 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 CurrentModNpcMugshots.Clear();
             }
 
+            // Also prune the now-stale reference from each NPC's per-NPC
+            // AppearanceMods snapshot. CreateMugShotViewModelsAsync's SOURCE 1
+            // iterates that snapshot, so without this cleanup the NPCs view
+            // would re-surface a placeholder tile (no AssociatedModSetting,
+            // no ImagePath) for every NPC the removed mod used to provide.
+            foreach (var npc in _npcSelectionBar.AllNpcs)
+            {
+                if (npc.AppearanceMods.Contains(modSettingToRemove))
+                {
+                    npc.AppearanceMods.Remove(modSettingToRemove);
+                }
+            }
+
             ApplyFilters(); // Refresh the ModSettingsList (left panel)
         }
         else
