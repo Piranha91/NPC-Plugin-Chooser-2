@@ -245,6 +245,16 @@ public class Settings
     [DefaultValue(true)]
     public bool AutoUpdateStaleMugshots { get; set; } = true;
 
+    /// <summary>When on, an Internal-renderer mugshot whose stamped metadata
+    /// records any missing meshes or textures is treated as stale, prompting
+    /// the next session to re-render it (and pick up newly-installed assets).
+    /// Off keeps the wireframe/placeholder PNG in place across sessions.
+    /// Independent of <see cref="AutoUpdateStaleMugshots"/>, which gates the
+    /// settings-hash drift check.</summary>
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+    [DefaultValue(true)]
+    public bool AutoUpdateMugshotsWithMissingAssets { get; set; } = true;
+
     /// <summary>Controls the "Generate All Mugshots" batch: when on, NPCs whose
     /// Internal-renderer render reports any missing meshes or textures are
     /// skipped (no PNG is written) so the gallery only persists complete

@@ -521,6 +521,11 @@
                                           ToolTip="When on, a loose copy of an asset in your Skyrim Data folder takes precedence over the same path in any mod folder, letting your installed body / skin / texture replacers leak into mod-specific previews. FaceGen NIFs and FaceTint DDS are excluded so the mod's actual face overrides aren't replaced by vanilla copies. Off by default."/>
                             </WrapPanel>
 
+                            <CheckBox Content="Re-render mugshots flagged with missing assets"
+                                      IsChecked="{Binding AutoUpdateMugshotsWithMissingAssets, Mode=TwoWay}"
+                                      Margin="0,8,0,0"
+                                      ToolTip="When on (default), a previously-generated mugshot whose stamped metadata records any missing meshes or textures is treated as stale and re-rendered on the next session — giving newly-installed assets a chance to fill in the wireframe / placeholder areas automatically. Turn off to keep the existing PNG in place even when it depicts an incomplete model."/>
+
                             <!-- Live preview - wrapped in a Grid so its Visibility binding
                                  reads InternalShowPreview off the inherited VM_Settings
                                  DataContext rather than the UC's overridden one. -->
