@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.Reactive.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -29,7 +30,7 @@ public class UpdateHandler
     /// Checks the settings version against the current program version and applies any necessary updates.
     /// Runs as soon as the settings are read in
     /// </summary>
-    public void InitialCheckForUpdatesAndPatch()
+    public async Task InitialCheckForUpdatesAndPatch(VM_SplashScreen? splashReporter = null)
     {
         // If the settings version is empty (e.g., a new user), there's nothing to migrate.
         if (string.IsNullOrWhiteSpace(_settings.ProgramVersion))
@@ -63,6 +64,10 @@ public class UpdateHandler
         if (settingsVersion < "2.1.7")
         {
             UpdateTo2_1_7_Initial();
+            // Must run BEFORE the NPCs/Mods VMs are constructed: those VMs auto-load the
+            // previously-selected NPC, which can re-populate the new FaceFinder/AutoGen
+            // roots and collide with the migration's File.Move destinations.
+            await MaybeMoveLegacyMugshotFiles_Initial(splashReporter);
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -234,6 +239,20 @@ public class UpdateHandler
     /// </summary>
     private async Task UpdateTo2_1_7_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
     {
+        await RepairResourceOnlyCorruption_2_1_7(modsVm, splashReporter);
+
+        PurgeLegacyFFAndAutogenMugshotFolderPaths(modsVm);
+
+        StripNowEmptyCuratedMugshotFolderPaths(modsVm);
+
+        // Mirror the existing post-migration save pattern (see App.xaml.cs:315) so the
+        // repaired / cleaned state is written back through the model before the next
+        // throttled SaveSettings.
+        modsVm.SaveModSettingsToModel();
+    }
+
+    private async Task RepairResourceOnlyCorruption_2_1_7(VM_Mods modsVm, VM_SplashScreen? splashReporter)
+    {
         splashReporter?.UpdateStep("Checking for mods left in a corrupted resource-only state...");
 
         var corrupted = modsVm.AllModSettings.Where(IsCorruptedAllResourceOnly).ToList();
@@ -281,12 +300,420 @@ public class UpdateHandler
                 $"Recovered: {vm.DisplayName}");
         }
 
-        // Mirror the existing post-migration save pattern (see App.xaml.cs:315) so the
-        // repaired state is written back through the model before the next throttled
-        // SaveSettings.
-        modsVm.SaveModSettingsToModel();
-
         Debug.WriteLine("2.1.7 recovery complete.");
+    }
+
+    /// <summary>
+    /// Strips every <see cref="VM_ModSetting.MugShotFolderPaths"/> entry whose normalized
+    /// root resolves under the effective AutoGen or FaceFinder roots. Earlier builds
+    /// appended those per-mod cache folders to <c>MugShotFolderPaths</c> after each
+    /// render/cache-hit, turning a user-config field into a dumping ground for ephemeral
+    /// runtime state. As of 2.1.7 <c>MugShotFolderPaths</c> is reserved for curated
+    /// mugshot folders only.
+    /// </summary>
+    private void PurgeLegacyFFAndAutogenMugshotFolderPaths(VM_Mods modsVm)
+    {
+        var autogenRoot = Auxilliary.NormalizeFolderForCompare(
+            Settings.GetEffectiveAutogenMugshotsFolder(_settings));
+        var faceFinderRoot = Auxilliary.NormalizeFolderForCompare(
+            Settings.GetEffectiveFaceFinderMugshotsFolder(_settings));
+
+        int affectedMods = 0;
+        int removedEntries = 0;
+
+        foreach (var vm in modsVm.AllModSettings)
+        {
+            if (vm.MugShotFolderPaths.Count == 0) continue;
+
+            var keep = vm.MugShotFolderPaths
+                .Where(p =>
+                {
+                    var normalized = Auxilliary.NormalizeFolderForCompare(p);
+                    if (string.IsNullOrEmpty(normalized)) return false;
+                    return !Auxilliary.IsUnderRoot(normalized, autogenRoot)
+                        && !Auxilliary.IsUnderRoot(normalized, faceFinderRoot);
+                })
+                .ToList();
+
+            if (keep.Count == vm.MugShotFolderPaths.Count) continue;
+
+            removedEntries += vm.MugShotFolderPaths.Count - keep.Count;
+            affectedMods++;
+
+            // Replace contents of the ObservableCollection in place so the reactive
+            // subscriptions on MugShotFolderPaths fire — the property is `private set`
+            // on the VM, so we can't reassign it.
+            vm.MugShotFolderPaths.Clear();
+            foreach (var p in keep) vm.MugShotFolderPaths.Add(p);
+        }
+
+        if (affectedMods > 0)
+        {
+            Debug.WriteLine($"2.1.7 mugshot-split: stripped {removedEntries} legacy FF/AutoGen entr(ies) " +
+                            $"from MugShotFolderPaths across {affectedMods} mod(s).");
+        }
+    }
+
+    /// <summary>
+    /// Strips entries from each VM's <c>MugShotFolderPaths</c> that point under the
+    /// curated <see cref="Settings.MugshotsFolder"/> at a folder tree that no longer
+    /// holds any files — typically because the Initial-phase migration just moved the
+    /// FF/AutoGen content out. Folders that still hold curated content, or untracked
+    /// leftovers the migration deliberately didn't touch, keep their entry.
+    /// </summary>
+    private void StripNowEmptyCuratedMugshotFolderPaths(VM_Mods modsVm)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.MugshotsFolder)) return;
+
+        var oldRoot = Auxilliary.NormalizeFolderForCompare(_settings.MugshotsFolder);
+        if (string.IsNullOrEmpty(oldRoot)) return;
+
+        int strippedPathEntries = 0, strippedFromMods = 0;
+
+        foreach (var vm in modsVm.AllModSettings)
+        {
+            if (vm.MugShotFolderPaths.Count == 0) continue;
+
+            var keep = vm.MugShotFolderPaths
+                .Where(p =>
+                {
+                    var n = Auxilliary.NormalizeFolderForCompare(p);
+                    if (string.IsNullOrEmpty(n)) return true;
+                    if (!Auxilliary.IsUnderRoot(n, oldRoot)) return true;
+                    return !IsFolderTreeEmptyOfFiles(p);
+                })
+                .ToList();
+
+            if (keep.Count == vm.MugShotFolderPaths.Count) continue;
+
+            strippedPathEntries += vm.MugShotFolderPaths.Count - keep.Count;
+            strippedFromMods++;
+
+            vm.MugShotFolderPaths.Clear();
+            foreach (var p in keep) vm.MugShotFolderPaths.Add(p);
+        }
+
+        if (strippedPathEntries > 0)
+        {
+            Debug.WriteLine(
+                $"2.1.7 mugshot-split: stripped {strippedPathEntries} now-empty curated " +
+                $"MugShotFolderPaths entr(ies) from {strippedFromMods} mod(s).");
+        }
+    }
+
+    /// <summary>
+    /// Asks the user whether to migrate their existing FaceFinder and auto-generated
+    /// mugshots out of the curated <see cref="Settings.MugshotsFolder"/> into the new
+    /// dedicated FF / AutoGen roots. Silently no-ops when the curated folder is unset
+    /// or when both fallbacks are off with empty tracker sets — there is nothing to
+    /// move and no future writes to surprise the user with.
+    ///
+    /// MUST run in the Initial phase (before <c>VM_NpcSelectionBar</c> / <c>VM_Mods</c>
+    /// are constructed). Those VMs auto-load the previously-selected NPC, which can
+    /// trigger fresh FaceFinder downloads into the new cache root and collide with
+    /// this migration's <c>File.Move</c> destinations.
+    /// </summary>
+    private async Task MaybeMoveLegacyMugshotFiles_Initial(VM_SplashScreen? splashReporter)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.MugshotsFolder))
+        {
+            return;
+        }
+
+        bool nothingTracked = _settings.CachedFaceFinderPaths.Count == 0
+                              && _settings.GeneratedMugshotPaths.Count == 0;
+        bool bothFallbacksOff = !_settings.UseFaceFinderFallback
+                                && !_settings.UsePortraitCreatorFallback;
+        if (bothFallbacksOff && nothingTracked)
+        {
+            return;
+        }
+
+        var message =
+            """
+            Starting in 2.1.7, FaceFinder downloads and auto-generated mugshots live in their own dedicated folders instead of sharing the curated Mugshots Folder you set up. This lets you switch between curated, FaceFinder, and auto-generated images per NPC without those sources overwriting each other.
+
+            Defaults:
+              • FaceFinder cache → <install dir>\FaceFinder Cache
+              • Auto-generated   → <install dir>\AutoGen Mugshots
+              • Curated mugshots stay where you set them.
+
+            Would you like NPC2 to move your existing FaceFinder and auto-generated mugshots out of the curated folder into these new locations now? (Recommended)
+            """;
+
+        if (!ScrollableMessageBox.Confirm(message, "2.1.7 Update: Mugshot Folder Split",
+                MessageBoxImage.Information))
+        {
+            Debug.WriteLine("2.1.7 mugshot-split: user declined the file migration.");
+            return;
+        }
+
+        splashReporter?.UpdateStep("Moving legacy FaceFinder and auto-generated mugshots to their new folders...");
+
+        var oldRoot = Auxilliary.NormalizeFolderForCompare(_settings.MugshotsFolder);
+        var ffRoot = Settings.GetEffectiveFaceFinderMugshotsFolder(_settings);
+        var autogenRoot = Settings.GetEffectiveAutogenMugshotsFolder(_settings);
+
+        int ffMoved = 0, ffSkipped = 0, ffFailed = 0;
+        int agMoved = 0, agSkipped = 0, agFailed = 0;
+        // Top-level subdirectories of oldRoot that we moved files out of. We prune each
+        // tree bottom-up after the move so emptied intermediate folders disappear too,
+        // not just the immediate leaf the file lived in.
+        var touchedTopLevelDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var failureLines = new List<string>();
+
+        await Task.Run(() =>
+        {
+            // FaceFinder writes a ".ffmeta.json" sidecar next to each .webp; without
+            // moving it the source folder stays non-empty and the leaf-prune + the
+            // Final-phase MugShotFolderPaths strip both decline to act on it.
+            (ffMoved, ffSkipped, ffFailed) = MoveTrackedFiles(
+                _settings.CachedFaceFinderPaths, oldRoot, ffRoot, touchedTopLevelDirs,
+                failureLines, "FaceFinder",
+                sidecarSuffix: FaceFinderClient.MetadataFileExtension);
+            // AutoGen mugshots embed their metadata inside the PNG (tEXt chunks),
+            // so no sidecar to chase.
+            (agMoved, agSkipped, agFailed) = MoveTrackedFiles(
+                _settings.GeneratedMugshotPaths, oldRoot, autogenRoot, touchedTopLevelDirs,
+                failureLines, "AutoGen",
+                sidecarSuffix: null);
+
+            // Recursively delete empty directory trees we touched. Stops as soon as it
+            // hits any file, so this can never delete curated content.
+            foreach (var dir in touchedTopLevelDirs)
+            {
+                DeleteEmptyDirectoryTree(dir);
+            }
+        });
+
+        string? failureLogPath = null;
+        if (failureLines.Count > 0)
+        {
+            failureLogPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                "2.1.7-mugshot-migration.log");
+            try
+            {
+                var header = new[]
+                {
+                    $"NPC2 2.1.7 mugshot migration — failures recorded {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+                    $"Curated root: {_settings.MugshotsFolder}",
+                    $"FaceFinder destination: {ffRoot}",
+                    $"AutoGen destination: {autogenRoot}",
+                    new string('-', 72),
+                };
+                File.WriteAllLines(failureLogPath, header.Concat(failureLines));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"2.1.7 mugshot-split: could not write failure log: {ex.Message}");
+                failureLogPath = null;
+            }
+        }
+
+        // MugShotFolderPaths cleanup runs in the Final phase (see
+        // StripNowEmptyCuratedMugshotFolderPaths) once the per-mod VMs exist and have
+        // their reactive subscriptions wired up.
+
+        Debug.WriteLine(
+            $"2.1.7 mugshot-split: FaceFinder moved={ffMoved}, skipped={ffSkipped}, failed={ffFailed}; " +
+            $"AutoGen moved={agMoved}, skipped={agSkipped}, failed={agFailed}.");
+
+        ShowMugshotMigrationReport(ffMoved, ffSkipped, ffFailed, agMoved, agSkipped, agFailed,
+            failureLogPath);
+    }
+
+    private static void ShowMugshotMigrationReport(
+        int ffMoved, int ffSkipped, int ffFailed,
+        int agMoved, int agSkipped, int agFailed,
+        string? failureLogPath)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"FaceFinder cache:  moved {ffMoved}, skipped {ffSkipped}, failed {ffFailed}");
+        sb.AppendLine($"Auto-generated:    moved {agMoved}, skipped {agSkipped}, failed {agFailed}");
+
+        if (ffFailed > 0 || agFailed > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine(
+                "Some files could not be moved (in use, locked, or destination already " +
+                "occupied). They remain in the curated Mugshots Folder.");
+            if (!string.IsNullOrEmpty(failureLogPath))
+            {
+                sb.AppendLine();
+                sb.AppendLine($"Failure details written to:");
+                sb.AppendLine(failureLogPath);
+            }
+            ScrollableMessageBox.ShowWarning(sb.ToString(), "2.1.7 Mugshot Migration Complete");
+        }
+        else
+        {
+            ScrollableMessageBox.Show(sb.ToString(), "2.1.7 Mugshot Migration Complete",
+                MessageBoxImage.Information);
+        }
+    }
+
+    /// <summary>True when <paramref name="path"/> doesn't exist, or exists but contains
+    /// no files at any depth (empty subdirectories are allowed). Used to decide whether
+    /// a stale <see cref="VM_ModSetting.MugShotFolderPaths"/> entry can be safely
+    /// dropped after the migration.</summary>
+    private static bool IsFolderTreeEmptyOfFiles(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return true;
+        try
+        {
+            if (!Directory.Exists(path)) return true;
+            return !Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Any();
+        }
+        catch
+        {
+            // Can't enumerate (permissions, etc.) → assume non-empty so we keep the entry.
+            return false;
+        }
+    }
+
+    /// <summary>Recursively deletes empty subdirectories of <paramref name="dir"/>,
+    /// then deletes <paramref name="dir"/> itself if it's empty. Stops at the first
+    /// file encountered, so curated content prevents the prune from biting in.</summary>
+    private static void DeleteEmptyDirectoryTree(string dir)
+    {
+        if (string.IsNullOrWhiteSpace(dir)) return;
+        try
+        {
+            if (!Directory.Exists(dir)) return;
+
+            foreach (var sub in Directory.GetDirectories(dir))
+            {
+                DeleteEmptyDirectoryTree(sub);
+            }
+
+            if (!Directory.EnumerateFileSystemEntries(dir).Any())
+            {
+                Directory.Delete(dir);
+            }
+        }
+        catch
+        {
+            // Best effort — leave behind anything the OS won't let us touch.
+        }
+    }
+
+    /// <summary>Moves files whose tracked absolute paths sit under <paramref name="oldRoot"/>
+    /// into <paramref name="newRoot"/>, preserving their sub-path. Updates the tracker set
+    /// in place: old paths come out, new paths go in. Counts returned as (moved, skipped, failed).
+    /// Skipped covers files that no longer exist on disk and entries already outside
+    /// <paramref name="oldRoot"/>; failed covers IO / access errors during the move.</summary>
+    private static (int moved, int skipped, int failed) MoveTrackedFiles(
+        HashSet<string> trackerSet,
+        string normalizedOldRoot,
+        string newRoot,
+        HashSet<string> touchedTopLevelDirs,
+        List<string> failureLines,
+        string bucketLabel,
+        string? sidecarSuffix)
+    {
+        if (trackerSet.Count == 0) return (0, 0, 0);
+
+        var normalizedNewRoot = Auxilliary.NormalizeFolderForCompare(newRoot);
+        if (string.IsNullOrEmpty(normalizedOldRoot)
+            || normalizedNewRoot.Equals(normalizedOldRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            // Either no curated folder to migrate from, or the user has manually pointed
+            // the new root at the curated folder — nothing to move.
+            return (0, trackerSet.Count, 0);
+        }
+
+        int moved = 0, skipped = 0, failed = 0;
+
+        // Snapshot before mutating, to avoid concurrent-modification on the HashSet.
+        foreach (var oldPath in trackerSet.ToList())
+        {
+            if (string.IsNullOrWhiteSpace(oldPath))
+            {
+                trackerSet.Remove(oldPath);
+                skipped++;
+                continue;
+            }
+
+            var normalizedOldPath = Auxilliary.NormalizeFolderForCompare(oldPath);
+            if (!Auxilliary.IsUnderRoot(normalizedOldPath, normalizedOldRoot))
+            {
+                // Already outside the curated folder — leave it alone.
+                skipped++;
+                continue;
+            }
+
+            if (!File.Exists(oldPath))
+            {
+                // Stale tracker entry — drop it so subsequent "Delete All" sweeps don't
+                // chase phantoms.
+                trackerSet.Remove(oldPath);
+                skipped++;
+                continue;
+            }
+
+            // Preserve sub-path under the curated root when rebasing onto the new root.
+            // normalizedOldPath starts with normalizedOldRoot + separator (IsUnderRoot
+            // returned true), so this slice is always safe.
+            var relative = normalizedOldPath.Substring(normalizedOldRoot.Length)
+                .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var newPath = Path.Combine(newRoot, relative);
+
+            try
+            {
+                Auxilliary.CreateDirectoryIfNeeded(newPath, Auxilliary.PathType.File);
+                File.Move(oldPath, newPath, overwrite: false);
+
+                trackerSet.Remove(oldPath);
+                trackerSet.Add(newPath);
+
+                // Move the metadata sidecar alongside the image (FaceFinder: ".ffmeta.json").
+                // Sidecar issues are not failures — we still count the main file as moved.
+                if (!string.IsNullOrEmpty(sidecarSuffix))
+                {
+                    var oldSidecar = oldPath + sidecarSuffix;
+                    var newSidecar = newPath + sidecarSuffix;
+                    if (File.Exists(oldSidecar))
+                    {
+                        try
+                        {
+                            File.Move(oldSidecar, newSidecar, overwrite: false);
+                        }
+                        catch (Exception sidecarEx) when (sidecarEx is IOException || sidecarEx is UnauthorizedAccessException)
+                        {
+                            var line = $"[{bucketLabel}/sidecar] {oldSidecar} → {newSidecar} : {sidecarEx.Message}";
+                            Debug.WriteLine($"2.1.7 mugshot-split: {line}");
+                            lock (failureLines) failureLines.Add(line);
+                        }
+                    }
+                }
+
+                // Top-level subdirectory under the curated root (e.g. "<oldRoot>/<modName>")
+                // — bottom-up prune at the caller will collapse this whole tree if empty.
+                var firstSegment = relative.Split(
+                    new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+                    2, StringSplitOptions.RemoveEmptyEntries);
+                if (firstSegment.Length > 0)
+                {
+                    touchedTopLevelDirs.Add(Path.Combine(normalizedOldRoot, firstSegment[0]));
+                }
+                else
+                {
+                    var sourceDir = Path.GetDirectoryName(oldPath);
+                    if (!string.IsNullOrEmpty(sourceDir)) touchedTopLevelDirs.Add(sourceDir);
+                }
+
+                moved++;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                var line = $"[{bucketLabel}] {oldPath} → {newPath} : {ex.Message}";
+                Debug.WriteLine($"2.1.7 mugshot-split: {line}");
+                lock (failureLines) failureLines.Add(line);
+                failed++;
+            }
+        }
+
+        return (moved, skipped, failed);
     }
 
     /// <summary>

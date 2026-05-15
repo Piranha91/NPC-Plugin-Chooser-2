@@ -1510,58 +1510,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         }
         loadedSettings.SchemaVersion = Settings.CurrentSchemaVersion;
 
-        // One-shot cleanup of MugShotFolderPaths pollution from prior versions.
-        // Earlier builds appended the per-mod AutoGen / FaceFinder cache folders
-        // to MugShotFolderPaths after each render/cache-hit; that turned a
-        // user-config field into a dumping ground for ephemeral runtime state,
-        // and also let session-time pollution survive a restart. Strip any
-        // entry that resolves under the autogen or FaceFinder roots. The
-        // Mods view scans those roots independently now, so we don't lose
-        // any displayable mugshots — we just unstick user config from runtime
-        // artifacts.
-        var autogenRoot = NormalizeFolderForCompare(
-            Settings.GetEffectiveAutogenMugshotsFolder(loadedSettings));
-        var faceFinderRoot = NormalizeFolderForCompare(
-            Settings.GetEffectiveFaceFinderMugshotsFolder(loadedSettings));
-        foreach (var mod in loadedSettings.ModSettings)
-        {
-            if (mod.MugShotFolderPaths == null || mod.MugShotFolderPaths.Count == 0) continue;
-            mod.MugShotFolderPaths = mod.MugShotFolderPaths
-                .Where(p =>
-                {
-                    var normalized = NormalizeFolderForCompare(p);
-                    if (string.IsNullOrEmpty(normalized)) return false;
-                    return !IsUnderRoot(normalized, autogenRoot)
-                        && !IsUnderRoot(normalized, faceFinderRoot);
-                })
-                .ToList();
-        }
-
         return loadedSettings;
-    }
-
-    private static string NormalizeFolderForCompare(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return string.Empty;
-        try
-        {
-            return Path.GetFullPath(path)
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        }
-        catch
-        {
-            return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        }
-    }
-
-    private static bool IsUnderRoot(string normalizedCandidate, string normalizedRoot)
-    {
-        if (string.IsNullOrEmpty(normalizedRoot)) return false;
-        if (normalizedCandidate.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase))
-            return true;
-        return normalizedCandidate.StartsWith(
-            normalizedRoot + Path.DirectorySeparatorChar,
-            StringComparison.OrdinalIgnoreCase);
     }
 
     public void RequestThrottledSave()

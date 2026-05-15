@@ -166,7 +166,7 @@ namespace NPC_Plugin_Chooser_2
             splashVM.UpdateProgress(16, "Checking for setting updates...");
             StartupLogger.Log("Running update handler");
             var updateHandler = new UpdateHandler(settingsModel);
-            updateHandler.InitialCheckForUpdatesAndPatch();
+            await updateHandler.InitialCheckForUpdatesAndPatch(splashVM);
             builder.RegisterInstance(settingsModel).AsSelf().SingleInstance();
 
             StartupLogger.LogPhase("Dependency Injection Setup");

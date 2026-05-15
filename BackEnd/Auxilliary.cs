@@ -1008,6 +1008,37 @@ public class Auxilliary : IDisposable
         }
     }
 
+    /// <summary>Canonicalises a folder path for case-insensitive root comparison:
+    /// resolves to a full path and strips trailing separators. Returns an empty
+    /// string for null/whitespace input or paths that Path.GetFullPath rejects.</summary>
+    public static string NormalizeFolderForCompare(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return string.Empty;
+        try
+        {
+            return Path.GetFullPath(path)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch
+        {
+            return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+    }
+
+    /// <summary>True when <paramref name="normalizedCandidate"/> equals
+    /// <paramref name="normalizedRoot"/> or is a descendant of it (separator-aware,
+    /// case-insensitive). Both arguments must have been produced by
+    /// <see cref="NormalizeFolderForCompare"/>.</summary>
+    public static bool IsUnderRoot(string normalizedCandidate, string normalizedRoot)
+    {
+        if (string.IsNullOrEmpty(normalizedRoot)) return false;
+        if (normalizedCandidate.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return normalizedCandidate.StartsWith(
+            normalizedRoot + Path.DirectorySeparatorChar,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     public static string AddTopFolderByExtension(string path)
     {
         if (path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase) &&
