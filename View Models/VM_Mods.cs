@@ -374,9 +374,16 @@ public class VM_Mods : ReactiveObject
         // --- END: Source Plugin Disambiguation Logic ---
 
         // --- Setup Filter Reaction ---
+        // Throttle widens when mugshot autogeneration is enabled: intermediate
+        // typed strings would otherwise trigger renders for partial matches
+        // that the final filter result discards.
         this.WhenAnyValue(x => x.NameFilterText, x => x.PluginFilterText, x => x.NpcSearchText,
-                x => x.SelectedNpcSearchType, x => x.ShowMugshotOnlyMods) 
-            .Throttle(TimeSpan.FromMilliseconds(300), RxApp.MainThreadScheduler)
+                x => x.SelectedNpcSearchType, x => x.ShowMugshotOnlyMods)
+            .Throttle(_ => Observable.Timer(
+                _settings.UsePortraitCreatorFallback
+                    ? TimeSpan.FromMilliseconds(500)
+                    : TimeSpan.FromMilliseconds(300),
+                RxApp.MainThreadScheduler))
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => ApplyFilters())
             .DisposeWith(_disposables);

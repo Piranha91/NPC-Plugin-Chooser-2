@@ -774,8 +774,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             x => x.SelectedSortProperty, x => x.IsSortReversed
         ).Select(_ => Unit.Default);
 
+        // Throttle widens when mugshot autogeneration is enabled: the internal
+        // renderer is expensive, so intermediate keystrokes (e.g. "Kat" before
+        // "Katherine") would otherwise queue heavy render work that has to
+        // finish before the final filter result settles.
         Observable.Merge(filter1Changes, filter2Changes, filter3Changes, logicChanges, sortChanges)
-            .Throttle(TimeSpan.FromMilliseconds(100), RxApp.MainThreadScheduler)
+            .Throttle(_ => Observable.Timer(
+                _settings.UsePortraitCreatorFallback
+                    ? TimeSpan.FromMilliseconds(400)
+                    : TimeSpan.FromMilliseconds(100),
+                RxApp.MainThreadScheduler))
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => ApplyFilter(false))
             .DisposeWith(_disposables);
