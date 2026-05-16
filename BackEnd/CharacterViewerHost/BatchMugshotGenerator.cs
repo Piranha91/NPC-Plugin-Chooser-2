@@ -489,11 +489,26 @@ public sealed class BatchMugshotGenerator
                     m => m.DisplayName == modSetting.DisplayName);
                 if (!_stalenessChecker.NeedsRegeneration(savePath, npcFormKey))
                 {
+                    // Surface the previously-stamped missing-asset arrays so the
+                    // tile's overlay survives revisits. Post-2.1.7 the autogen
+                    // folder is no longer in MugShotFolderPaths, so ImagePath is
+                    // empty on a fresh VM and LoadInitialImageAsync's metadata
+                    // read doesn't fire for autogen-only tiles. The caller
+                    // applies these arrays on ProducedFile, matching pre-2.1.7
+                    // behavior where the overlay state was loaded up front.
+                    var json = MugshotPngMetadata.TryRead(savePath);
+                    List<string> existingMeshes = new();
+                    List<string> existingTextures = new();
+                    if (!string.IsNullOrWhiteSpace(json))
+                    {
+                        InternalMugshotMetadata.TryReadMissingAssets(
+                            json, out existingMeshes, out existingTextures);
+                    }
                     return new GenerationResult(
                         Generated: false, AlreadyCurrent: true, OutputPath: savePath,
                         Source: GenerationSource.InternalRenderer,
-                        MissingMeshes: Array.Empty<string>(),
-                        MissingTextures: Array.Empty<string>(),
+                        MissingMeshes: existingMeshes,
+                        MissingTextures: existingTextures,
                         FaceFinderExternalUrl: null,
                         InMemoryImageBytes: null);
                 }

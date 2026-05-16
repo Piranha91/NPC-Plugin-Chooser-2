@@ -1465,13 +1465,17 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         var rendererResult = await _batchGenerator.RunSelectedRendererAsync(
             SourceNpcFormKey, AssociatedModSetting, token);
 
-        // The Internal renderer reports per-render missing-asset paths on a
-        // fresh render; surface them via the tile overlay so the user can
-        // see which shapes rendered as wireframes. Skip on AlreadyCurrent —
-        // the result carries empty arrays there (nothing was rendered this
-        // call), and overwriting would wipe the missing-asset state that
-        // LoadInitialImageAsync restored from the PNG's stamped JSON metadata.
-        if (rendererResult.Source == GenerationSource.InternalRenderer && rendererResult.Generated)
+        // The Internal renderer reports per-render missing-asset paths whether
+        // it just rendered or reused a fresh PNG: in the Generated branch the
+        // arrays come from the renderer pass; in the AlreadyCurrent branch
+        // RunSelectedRendererAsync reads them back from the PNG's stamped JSON
+        // metadata so this call point can apply them either way. Post-2.1.7
+        // the autogen folder is no longer in MugShotFolderPaths, so a
+        // freshly-created VM enters here with ImagePath empty and
+        // LoadInitialImageAsync's metadata-read path can't pre-load the
+        // overlay state — applying on ProducedFile (Generated || AlreadyCurrent)
+        // restores it on every revisit.
+        if (rendererResult.Source == GenerationSource.InternalRenderer && rendererResult.ProducedFile)
         {
             ApplyMissingAssetNotifications(rendererResult.MissingMeshes, rendererResult.MissingTextures);
         }
