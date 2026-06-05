@@ -46,6 +46,14 @@ public class VM_Mods : ReactiveObject
     private readonly BsaHandler _bsaHandler;
     private readonly ImagePacker _imagePacker;
     private readonly ConcurrentDictionary<(string pluginSourcePath, ModKey modKey), bool> _overridesCache = new();
+
+    // Caches the appearance/non-appearance classification of a master plugin by ModKey.
+    // FindAndAddMissingMasters runs per-mod (in parallel during the initial scan), and the same popular
+    // master (e.g. a shared appearance-resource mod) is referenced by many mods, so classifying it once
+    // and reusing avoids repeated record enumeration. Cleared at the start of each full scan / refresh so
+    // it never outlives the load order it describes.
+    private readonly ConcurrentDictionary<ModKey, bool> _masterAppearanceClassificationCache = new();
+
     private CancellationTokenSource? _mugshotLoadingCts;
     private TaskCompletionSource<PackingResult> _packingCompletionSource;
     private IDisposable? _packingCompletedSubscription;
@@ -1222,6 +1230,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     {
         if (vmToRefresh == null) return (false, "VM is null");
 
+        // The appearance classification is keyed by ModKey against the current load order; drop any cached
+        // verdicts so a refresh after an environment change re-evaluates against the live state.
+        _masterAppearanceClassificationCache.Clear();
+
         var dbgTag = $"[Refresh:{vmToRefresh.DisplayName}]";
         Debug.WriteLine($"{dbgTag} === Refresh start ===");
         Debug.WriteLine($"{dbgTag} Folder paths ({vmToRefresh.CorrespondingFolderPaths.Count}): {string.Join(" | ", vmToRefresh.CorrespondingFolderPaths)}");
@@ -1443,6 +1455,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     {
         _allModSettingsInternal.Clear();
         _overridesCache.Clear();
+        _masterAppearanceClassificationCache.Clear(); // load order is re-resolved per scan
         IsLoadingNpcData = true;
         var warnings = new List<string>();
 
@@ -2570,6 +2583,51 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// Scans the masters of a VM's plugins. If any masters are not in the load order or already part of the VM,
     /// it searches all other mod directories to find them, adding the best candidate folder as a resource.
     /// </summary>
+    /// <summary>
+    /// Returns true if the given (in-load-order) master plugin is itself an "appearance mod" by the same
+    /// record-ratio rule that drives the Merge Dependencies default (appearanceCount &gt;= nonAppearanceCount).
+    /// Base-game and Creation Club masters short-circuit to false to avoid enumerating huge vanilla masters.
+    /// Results are cached by ModKey via <see cref="_masterAppearanceClassificationCache"/> for the scan.
+    /// </summary>
+    private bool IsMasterAppearanceMod(ModKey masterKey, HashSet<string> fallbackFolders)
+    {
+        return _masterAppearanceClassificationCache.GetOrAdd(masterKey, key =>
+        {
+            // Never treat base game / CC as an appearance dependency, and never enumerate their records.
+            if (_environmentStateProvider.BaseGamePlugins.Contains(key) ||
+                _environmentStateProvider.CreationClubPlugins.Contains(key))
+            {
+                return false;
+            }
+
+            // Prefer the already-resolved getter from the load order; fall back to the plugin provider.
+            ISkyrimModGetter? mod = _environmentStateProvider.LoadOrder?.PriorityOrder
+                .FirstOrDefault(x => x.ModKey.Equals(key))?.Mod;
+
+            if (mod == null)
+            {
+                _pluginProvider.TryGetPlugin(key, fallbackFolders, out mod);
+            }
+
+            if (mod == null)
+            {
+                // Couldn't load it; conservatively treat as non-appearance so we don't attach folders
+                // we can't justify.
+                return false;
+            }
+
+            try
+            {
+                var (appearanceCount, nonAppearanceCount) = Auxilliary.CountRecordsByAppearance(mod);
+                return appearanceCount >= nonAppearanceCount; // ">=" mirrors "!(non > appearance)"
+            }
+            catch
+            {
+                return false;
+            }
+        });
+    }
+
     private void FindAndAddMissingMasters(
         VM_ModSetting vm,
         IReadOnlyCollection<string> allModDirectories,
@@ -2612,7 +2670,14 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         CleanupTrace(vm, $"  SkyPatcherTargetModKeys ({vm.SkyPatcherTargetModKeys.Count})=[{string.Join(", ", vm.SkyPatcherTargetModKeys.Select(k => k.FileName.String))}]");
         CleanupTrace(vm, $"  npcSourcePluginKeys ({npcSourcePluginKeys.Count})=[{string.Join(", ", npcSourcePluginKeys.Select(k => k.FileName.String))}]");
 
+        // Masters genuinely missing from the load order: if no source folder is found, this is a real
+        // unresolved master and must be surfaced to the missing-master UX.
         var missingMastersToFind = new HashSet<ModKey>();
+
+        // In-load-order masters that are themselves appearance mods: attach their folder if one is found on
+        // disk, but they are already resolvable via the load order, so a missing folder is NOT an error and
+        // must not be flagged unresolved.
+        var appearanceMastersToAttach = new HashSet<ModKey>();
 
         // Step 1: Find all missing masters from the VM's current set of plugins.
         var plugins = _pluginProvider.LoadPlugins(vm.CorrespondingModKeys, currentFoldersInVm);
@@ -2626,23 +2691,39 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 bool inKnown = knownPluginKeysInVm.Contains(masterKey);
                 bool inNpcSources = npcSourcePluginKeys.Contains(masterKey);
 
+                // Ordered so the foundation/NPC-source exclusion wins over the appearance-keep rule, and so
+                // the (relatively expensive) appearance classification is evaluated only for masters that are
+                // in the load order, not already known, and not an NPC source of this mod.
                 string classification;
-                if (inLoadOrder) classification = "in load order";
-                else if (inKnown) classification = "already in VM";
-                else if (inNpcSources) classification = "skipped (NPC source plugin)";
-                else classification = "MISSING -> will search";
+                if (inKnown)
+                {
+                    classification = "already in VM";
+                }
+                else if (inNpcSources)
+                {
+                    classification = "skipped (NPC source plugin)";
+                }
+                else if (!inLoadOrder)
+                {
+                    classification = "MISSING -> will search";
+                    missingMastersToFind.Add(masterKey);
+                }
+                else if (IsMasterAppearanceMod(masterKey, currentFoldersInVm))
+                {
+                    classification = "kept (appearance mod in load order)";
+                    appearanceMastersToAttach.Add(masterKey);
+                }
+                else
+                {
+                    classification = "in load order";
+                }
 
                 StartupLogger.Log($"{LogTag} '{vm.DisplayName}'   plugin={plugin.ModKey.FileName} master={masterKey.FileName} -> {classification}");
                 CleanupTrace(vm, $"    plugin={plugin.ModKey.FileName} master={masterKey.FileName} -> {classification} (inLoadOrder={inLoadOrder}, inKnown={inKnown}, inNpcSources={inNpcSources})");
-
-                if (!inLoadOrder && !inKnown && !inNpcSources)
-                {
-                    missingMastersToFind.Add(masterKey);
-                }
             }
         }
 
-        if (!missingMastersToFind.Any())
+        if (!missingMastersToFind.Any() && !appearanceMastersToAttach.Any())
         {
             StartupLogger.Log($"{LogTag} '{vm.DisplayName}' no missing masters; exiting.");
             CleanupTrace(vm, "  no missing masters; FindAndAddMissingMasters exits without changes");
@@ -2651,12 +2732,17 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         StartupLogger.Log($"{LogTag} '{vm.DisplayName}' missingMastersToFind=[{string.Join(", ", missingMastersToFind.Select(k => k.FileName.String))}]");
         CleanupTrace(vm, $"  missingMastersToFind=[{string.Join(", ", missingMastersToFind.Select(k => k.FileName.String))}]");
+        StartupLogger.Log($"{LogTag} '{vm.DisplayName}' appearanceMastersToAttach=[{string.Join(", ", appearanceMastersToAttach.Select(k => k.FileName.String))}]");
+        CleanupTrace(vm, $"  appearanceMastersToAttach=[{string.Join(", ", appearanceMastersToAttach.Select(k => k.FileName.String))}]");
 
         // Step 2: Find potential source folders for the missing masters.
         var foldersToSearch = allModDirectories.Where(d => !currentFoldersInVm.Contains(d)).ToList();
         var newResourceFoldersToAdd = new Dictionary<string, List<ModKey>>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var master in missingMastersToFind)
+        // Shared per-master folder search. reportUnresolvedIfMissing distinguishes genuinely-missing masters
+        // (flag as unresolved when no folder is found) from in-load-order appearance masters (already
+        // resolvable via the load order, so a missing folder is benign and must not be flagged).
+        void SearchAndStageMaster(ModKey master, bool reportUnresolvedIfMissing)
         {
             var candidates = new List<(string Path, DateTime LastWrite)>();
             foreach (var folder in foldersToSearch)
@@ -2690,14 +2776,24 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     CleanupTrace(vm, $"      will add folder '{Path.GetFileName(winner.Path)}' bringing plugins=[{string.Join(", ", pluginsInWinnerFolder.Select(k => k.FileName.String))}]");
                 }
             }
-            else
+            else if (reportUnresolvedIfMissing)
             {
                 StartupLogger.Log(
                     $"{LogTag} '{vm.DisplayName}'   master '{master.FileName}' -> no local source found.");
                 CleanupTrace(vm, $"    master '{master.FileName}' -> no local source found");
                 vm.UnresolvedMastersAtScan.Add(master.FileName.String);
             }
+            else
+            {
+                // In-load-order appearance master with no separate folder: rely on the load order; not unresolved.
+                StartupLogger.Log(
+                    $"{LogTag} '{vm.DisplayName}'   appearance master '{master.FileName}' -> no local source found; relying on load order (not flagged unresolved).");
+                CleanupTrace(vm, $"    appearance master '{master.FileName}' -> no local source found; relying on load order (not unresolved)");
+            }
         }
+
+        foreach (var master in missingMastersToFind) SearchAndStageMaster(master, reportUnresolvedIfMissing: true);
+        foreach (var master in appearanceMastersToAttach) SearchAndStageMaster(master, reportUnresolvedIfMissing: false);
 
         // Step 3: Apply the newly discovered folders and plugins to the VM.
         if (newResourceFoldersToAdd.Any())

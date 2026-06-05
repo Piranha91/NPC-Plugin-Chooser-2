@@ -901,7 +901,47 @@ public class Auxilliary : IDisposable
         if (!typesToSkip.Contains(typeof(IWordOfPowerGetter))) foreach (var record in mod.WordsOfPower ?? empty) yield return record.ToLink();
         if (!typesToSkip.Contains(typeof(IWorldspaceGetter))) foreach (var record in mod.Worldspaces ?? empty) yield return record.ToLink();
     }
-    
+
+    /// <summary>
+    /// The appearance-related getter interface types whose records are counted as "appearance" by the
+    /// merge-in-suitability / appearance-mod heuristic. Kept here so every caller classifies records
+    /// identically (the Merge Dependencies default and the dependency-folder keep logic must not diverge).
+    /// </summary>
+    public static readonly HashSet<Type> AppearanceRecordTypes = new()
+    {
+        typeof(INpcGetter),
+        typeof(IArmorGetter),
+        typeof(IArmorAddonGetter),
+        typeof(ITextureSetGetter),
+        typeof(IHeadPartGetter),
+        typeof(IHairGetter),
+        typeof(IColorRecordGetter),
+        typeof(IEyesGetter)
+    };
+
+    /// <summary>
+    /// Counts a single plugin's records split into appearance vs non-appearance buckets, using the same
+    /// definition that drives the "Merge Dependencies" default. Appearance counts are O(1) group-count
+    /// lookups; non-appearance is a lazy enumeration that skips the appearance groups. The caller owns
+    /// the threshold decision and any base-game / resource-only exclusions.
+    /// </summary>
+    public static (int appearanceCount, int nonAppearanceCount) CountRecordsByAppearance(ISkyrimModGetter plugin)
+    {
+        int appearanceCount =
+            plugin.Npcs.Count +
+            plugin.Armors.Count +
+            plugin.ArmorAddons.Count +
+            plugin.TextureSets.Count +
+            plugin.HeadParts.Count +
+            plugin.Hairs.Count +
+            plugin.Colors.Count +
+            plugin.Eyes.Count;
+
+        int nonAppearanceCount = LazyEnumerateMajorRecords(plugin, AppearanceRecordTypes).Count();
+
+        return (appearanceCount, nonAppearanceCount);
+    }
+
     /// <summary>
     /// Removes or replaces characters that are invalid in file paths.
     /// </summary>

@@ -1529,19 +1529,6 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         int nonAppearanceRecordCount = 0;
         bool isBaseGame = false;
 
-        // Define the set of appearance-related record types to skip in the main enumeration
-        var appearanceTypesToSkip = new HashSet<Type>()
-        {
-            typeof(INpcGetter),
-            typeof(IArmorGetter),
-            typeof(IArmorAddonGetter),
-            typeof(ITextureSetGetter),
-            typeof(IHeadPartGetter),
-            typeof(IHairGetter),
-            typeof(IColorRecordGetter),
-            typeof(IEyesGetter)
-        };
-
         foreach (var modKey in this.CorrespondingModKeys)
         {
             if (_environmentStateProvider.BaseGamePlugins.Contains(modKey) ||
@@ -1564,22 +1551,14 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                           // import things like headparts, textures, etc.
             }
 
-            // Get counts of appearance records instantly (O(1) operation)
-            appearanceRecordCount += plugin.Npcs.Count;
-            appearanceRecordCount += plugin.Armors.Count;
-            appearanceRecordCount += plugin.ArmorAddons.Count;
-            appearanceRecordCount += plugin.TextureSets.Count;
-            appearanceRecordCount += plugin.HeadParts.Count;
-            appearanceRecordCount += plugin.Hairs.Count;
-            appearanceRecordCount += plugin.Colors.Count;
-            appearanceRecordCount += plugin.Eyes.Count;
-
-            // Lazily enumerate and count ONLY the non-appearance records
+            // Count this plugin's appearance vs non-appearance records via the shared classifier so the
+            // Merge Dependencies default and the dependency-folder keep logic stay in lockstep.
             int nonAppearanceRecordCountForPlugin = 0;
             try
             {
-                nonAppearanceRecordCountForPlugin =
-                    Auxilliary.LazyEnumerateMajorRecords(plugin, appearanceTypesToSkip).Count();
+                var (appearanceForPlugin, nonAppearanceForPlugin) = Auxilliary.CountRecordsByAppearance(plugin);
+                appearanceRecordCount += appearanceForPlugin;
+                nonAppearanceRecordCountForPlugin = nonAppearanceForPlugin;
             }
             catch (Exception e)
             {
