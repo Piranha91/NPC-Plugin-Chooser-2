@@ -42,13 +42,31 @@ public class EnvironmentStateProvider : ReactiveObject
     public string OutputPluginName { get; private set; }
     public string OutputPluginFileName => (OutputPluginName ?? DefaultPluginName) + ".esp";
     
-    // Additional properties (for logging only)
-    public string CreationClubListingsFilePath { get; set; }
-    public string LoadOrderFilePath { get; set; }
+    // Additional properties (for logging and diagnostics)
+    [Reactive] public string CreationClubListingsFilePath { get; set; } = string.Empty;
+    [Reactive] public string LoadOrderFilePath { get; set; } = string.Empty;
     [Reactive] public string EnvironmentBuilderError { get; set; }
     [Reactive] public int NumPlugins { get; set; } = 0;
     [Reactive] public int NumActivePlugins { get; set; } = 0;
     [Reactive] public EnvironmentStatus Status { get; private set; } = EnvironmentStatus.Invalid;
+
+    // Diagnostics surfaced on the Settings → Environment Status panel so users can
+    // tell where Mutagen located plugins.txt / Skyrim.ccc, whether the files exist,
+    // and how many CC plugins (if any) were parsed vs actually present in the
+    // resolved load order. Helpful for non-standard installs (renamed folders,
+    // moved drives) where the default registry-based discovery falls through.
+    [Reactive] public bool LoadOrderFileExists { get; private set; }
+    [Reactive] public bool CreationClubListingsFileExists { get; private set; }
+    [Reactive] public CreationClubListingsSourceKind CreationClubListingsSource { get; private set; } = CreationClubListingsSourceKind.NotFound;
+    [Reactive] public int CreationClubPluginsCount { get; private set; }
+    [Reactive] public int CreationClubPluginsInLoadOrderCount { get; private set; }
+
+    public enum CreationClubListingsSourceKind
+    {
+        NotFound,
+        Mutagen,
+        Fallback
+    }
     
     // Additional fields to help other classes
     private readonly Dictionary<ModKey, string> _modKeyFormIdPrefixCache = new();
@@ -145,17 +163,23 @@ public class EnvironmentStateProvider : ReactiveObject
                 return;
             }
             
-            CreationClubListingsFilePath = _environment.CreationClubListingsFilePath ?? string.Empty;
             LoadOrderFilePath = _environment.LoadOrderFilePath;
+            LoadOrderFileExists = !string.IsNullOrEmpty(LoadOrderFilePath) && File.Exists(LoadOrderFilePath);
             DataFolderPath = _environment.DataFolderPath; // If a custom data folder path was provided it will not change. If no custom data folder path was provided, this will set it to the default path.
 
+            ResolveCreationClubListingsPath();
             CreationClubPlugins = GetCreationClubPlugins();
-            
+            CreationClubPluginsCount = CreationClubPlugins.Count;
+            var listedKeys = LoadOrder.ListedOrder.Select(p => p.ModKey).ToHashSet();
+            CreationClubPluginsInLoadOrderCount = CreationClubPlugins.Count(listedKeys.Contains);
+
             ComputeFormIdPrefixes();
-            
+
             Status = EnvironmentStatus.Valid;
             NumPlugins = LoadOrder.ListedOrder.Count();
             NumActivePlugins = LoadOrder.ListedOrder.Count(p => p.Enabled);
+
+            StartupLogger.Log($"Environment resolved: DataFolder='{DataFolderPath}', LoadOrderFile='{LoadOrderFilePath}' (exists={LoadOrderFileExists}), CreationClubFile='{CreationClubListingsFilePath}' (exists={CreationClubListingsFileExists}, source={CreationClubListingsSource}), CC parsed={CreationClubPluginsCount}, CC in LoadOrder={CreationClubPluginsInLoadOrderCount}, NumPlugins={NumPlugins}, NumActive={NumActivePlugins}");
         }
         catch (Exception ex)
         {
@@ -166,6 +190,49 @@ public class EnvironmentStateProvider : ReactiveObject
         _environmentUpdatedSubject.OnNext(Unit.Default);
     }
     
+    // Mutagen's default Skyrim.ccc discovery uses registry-based game lookup, which
+    // fails for non-standard installs (renamed folder, drive move). When that happens
+    // _environment.CreationClubListingsFilePath is empty / missing, so the manual
+    // parse below returns an empty set, the free CC plugins never appear as implicit
+    // masters, and screening rejects mods that declare them as required. Fall back
+    // to probing the data folder's parent for Skyrim.ccc before giving up.
+    private void ResolveCreationClubListingsPath()
+    {
+        var mutagenPath = _environment.CreationClubListingsFilePath ?? string.Empty;
+        if (!string.IsNullOrEmpty(mutagenPath) && File.Exists(mutagenPath))
+        {
+            CreationClubListingsFilePath = mutagenPath;
+            CreationClubListingsFileExists = true;
+            CreationClubListingsSource = CreationClubListingsSourceKind.Mutagen;
+            return;
+        }
+
+        try
+        {
+            var parent = Directory.GetParent(_environment.DataFolderPath)?.FullName;
+            if (!string.IsNullOrEmpty(parent))
+            {
+                var fallback = Path.Combine(parent, "Skyrim.ccc");
+                if (File.Exists(fallback))
+                {
+                    CreationClubListingsFilePath = fallback;
+                    CreationClubListingsFileExists = true;
+                    CreationClubListingsSource = CreationClubListingsSourceKind.Fallback;
+                    return;
+                }
+            }
+        }
+        catch
+        {
+            // Fall through to NotFound; we don't want path-probing exceptions to
+            // break environment initialization.
+        }
+
+        CreationClubListingsFilePath = mutagenPath;
+        CreationClubListingsFileExists = false;
+        CreationClubListingsSource = CreationClubListingsSourceKind.NotFound;
+    }
+
     public HashSet<ModKey> GetCreationClubPlugins()
     {
         HashSet<ModKey> creationClubModKeys = new ();

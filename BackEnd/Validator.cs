@@ -82,6 +82,15 @@ public class Validator : OptionalUIModule
         // Get the load order once to avoid repeated lookups in the loop
         var loadOrderList = _environmentStateProvider.LoadOrder?.ListedOrder.Select(x => x.ModKey).ToList() ?? new List<ModKey>();
 
+        // Implicitly-active masters (vanilla base masters + Creation Club plugins from
+        // Skyrim.ccc). Skyrim loads these regardless of plugins.txt, so a plugin
+        // declaring them as masters is valid even if Mutagen's load-order discovery
+        // didn't surface them (e.g. non-standard install paths where Skyrim.ccc isn't
+        // found by registry-based lookup). BaseGamePlugins is a fresh-allocating getter,
+        // so snapshot it once outside the screening loop.
+        var implicitMasters = new HashSet<ModKey>(_environmentStateProvider.BaseGamePlugins);
+        implicitMasters.UnionWith(_environmentStateProvider.CreationClubPlugins);
+
         for (int i = 0; i < totalToScreen; i++)
         {
             ct.ThrowIfCancellationRequested();
@@ -205,8 +214,11 @@ public class Validator : OptionalUIModule
                     bool mastersAreValid = true;
                     foreach (var master in masters)
                     {
-                        // A master is valid if it's in the load order OR part of the same ModSetting group.
-                        if (!loadOrderList.Contains(master) && !appearanceModSetting.CorrespondingModKeys.Contains(master))
+                        // A master is valid if it's in the load order, part of the same ModSetting group,
+                        // or an implicitly-active vanilla/CC master that Skyrim loads even without a plugins.txt entry.
+                        if (!loadOrderList.Contains(master)
+                            && !appearanceModSetting.CorrespondingModKeys.Contains(master)
+                            && !implicitMasters.Contains(master))
                         {
                             var errorMsg = $"For NPC {npcIdentifier}, the selected plugin '{sourcePlugin.Value.FileName}' is missing a required master: '{master.FileName}'. This selection is invalid.";
                             AppendLog($"  SCREENING ERROR: {errorMsg}", true);

@@ -93,6 +93,21 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public int NumPluginsInEnvironment => _environmentStateProvider.NumPlugins;
     public int NumActivePluginsInEnvironment => _environmentStateProvider.NumActivePlugins;
 
+    // Environment Status diagnostics. Surfaced under the existing status line in
+    // SettingsView so users on non-standard installs (renamed folders, moved
+    // drives) can see whether Mutagen's plugins.txt / Skyrim.ccc lookup succeeded
+    // and how many CC plugins were detected vs how many actually reached the
+    // resolved load order. All raised together from the OnEnvironmentUpdated
+    // subscription that already fires for NumPluginsInEnvironment.
+    public string EnvironmentDataFolderPath => _environmentStateProvider.DataFolderPath;
+    public string EnvironmentLoadOrderFilePath => _environmentStateProvider.LoadOrderFilePath;
+    public bool EnvironmentLoadOrderFileExists => _environmentStateProvider.LoadOrderFileExists;
+    public string EnvironmentCreationClubListingsFilePath => _environmentStateProvider.CreationClubListingsFilePath;
+    public bool EnvironmentCreationClubListingsFileExists => _environmentStateProvider.CreationClubListingsFileExists;
+    public string EnvironmentCreationClubListingsSource => _environmentStateProvider.CreationClubListingsSource.ToString();
+    public int EnvironmentCreationClubPluginsCount => _environmentStateProvider.CreationClubPluginsCount;
+    public int EnvironmentCreationClubPluginsInLoadOrderCount => _environmentStateProvider.CreationClubPluginsInLoadOrderCount;
+
     // --- Existing & Modified Properties ---
     [Reactive] public string ModsFolder { get; set; }
     [Reactive] public string MugshotsFolder { get; set; }
@@ -396,6 +411,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             {
                 this.RaisePropertyChanged(nameof(NumPluginsInEnvironment));
                 this.RaisePropertyChanged(nameof(NumActivePluginsInEnvironment));
+                this.RaisePropertyChanged(nameof(EnvironmentDataFolderPath));
+                this.RaisePropertyChanged(nameof(EnvironmentLoadOrderFilePath));
+                this.RaisePropertyChanged(nameof(EnvironmentLoadOrderFileExists));
+                this.RaisePropertyChanged(nameof(EnvironmentCreationClubListingsFilePath));
+                this.RaisePropertyChanged(nameof(EnvironmentCreationClubListingsFileExists));
+                this.RaisePropertyChanged(nameof(EnvironmentCreationClubListingsSource));
+                this.RaisePropertyChanged(nameof(EnvironmentCreationClubPluginsCount));
+                this.RaisePropertyChanged(nameof(EnvironmentCreationClubPluginsInLoadOrderCount));
             })
             .DisposeWith(_disposables);
 

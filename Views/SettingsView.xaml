@@ -115,6 +115,72 @@
                             <Run Text="Click to display whole error" FontSize="11"/>
                         </Hyperlink>
                     </TextBlock>
+
+                    <!-- Detailed environment paths / CC detection diagnostics.
+                         Useful for users on non-standard installs (renamed folders,
+                         moved drives) where Mutagen's default game-folder lookup
+                         can't find Skyrim.ccc and CC plugins go missing from the
+                         load order. -->
+                    <StackPanel Margin="0,8,0,0">
+                        <TextBlock FontSize="10" Foreground="{DynamicResource SecondaryForeground}" TextWrapping="Wrap">
+                            <Run Text="Data Folder: " FontWeight="Bold"/>
+                            <Run Text="{Binding EnvironmentDataFolderPath, Mode=OneWay}"/>
+                        </TextBlock>
+                        <TextBlock FontSize="10" Foreground="{DynamicResource SecondaryForeground}" TextWrapping="Wrap">
+                            <Run Text="plugins.txt: " FontWeight="Bold"/>
+                            <Run Text="{Binding EnvironmentLoadOrderFilePath, Mode=OneWay}"/>
+                            <Run Text=" ("/>
+                            <Run>
+                                <Run.Style>
+                                    <Style TargetType="Run">
+                                        <Setter Property="Text" Value="missing"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource StatusErrorForeground}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding EnvironmentLoadOrderFileExists}" Value="True">
+                                                <Setter Property="Text" Value="exists"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource StatusValidForeground}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Run.Style>
+                            </Run>
+                            <Run Text=")"/>
+                        </TextBlock>
+                        <TextBlock FontSize="10" Foreground="{DynamicResource SecondaryForeground}" TextWrapping="Wrap">
+                            <Run Text="Skyrim.ccc: " FontWeight="Bold"/>
+                            <Run Text="{Binding EnvironmentCreationClubListingsFilePath, Mode=OneWay}"/>
+                            <Run Text=" ("/>
+                            <Run>
+                                <Run.Style>
+                                    <Style TargetType="Run">
+                                        <Setter Property="Text" Value="not found"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource StatusErrorForeground}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding EnvironmentCreationClubListingsSource}" Value="Mutagen">
+                                                <Setter Property="Text" Value="from Mutagen"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource StatusValidForeground}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding EnvironmentCreationClubListingsSource}" Value="Fallback">
+                                                <Setter Property="Text" Value="from fallback probe"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource StatusPendingForeground}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Run.Style>
+                            </Run>
+                            <Run Text=")"/>
+                        </TextBlock>
+                        <TextBlock FontSize="10" Foreground="{DynamicResource SecondaryForeground}">
+                            <Run>
+                                <Run.Text>
+                                    <MultiBinding StringFormat="{}CC plugins detected: {0} (of which {1} are in the resolved load order)">
+                                        <Binding Path="EnvironmentCreationClubPluginsCount" Mode="OneWay"/>
+                                        <Binding Path="EnvironmentCreationClubPluginsInLoadOrderCount" Mode="OneWay"/>
+                                    </MultiBinding>
+                                </Run.Text>
+                            </Run>
+                        </TextBlock>
+                    </StackPanel>
                 </StackPanel>
             </GroupBox>
 
