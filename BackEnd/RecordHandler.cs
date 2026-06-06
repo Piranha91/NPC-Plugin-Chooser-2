@@ -550,6 +550,11 @@ public class RecordHandler
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateFromOnlyReferencedGetters");
 
         int exceptionCountBefore = exceptionStrings?.Count ?? 0;
+        // Snapshot the remap table so we can report each newly-duplicated record's
+        // ORIGINAL FormKey (orig -> new), which pinpoints what got pulled in (and
+        // from where) when an undesired record — e.g. an NPC via its Template — is merged.
+        Dictionary<FormKey, FormKey>? mappingBefore =
+            NpcDiagnosticLogger.IsActive ? new Dictionary<FormKey, FormKey>(_currentDuplicateInMappings) : null;
 
         var result = modToDuplicateInto.DuplicateFromOnlyReferencedGetters<TMod, ISkyrimModGetter>(
             recordsToDuplicate,
@@ -569,10 +574,24 @@ public class RecordHandler
         // into the output plugin for the NPC currently being logged.
         if (NpcDiagnosticLogger.IsActive)
         {
+            // Reverse-map (new FormKey -> original FormKey) for entries added by this call.
+            var newToOrig = new Dictionary<FormKey, FormKey>();
+            if (mappingBefore != null)
+            {
+                foreach (var kv in _currentDuplicateInMappings)
+                {
+                    if (!mappingBefore.ContainsKey(kv.Key))
+                    {
+                        newToOrig[kv.Value] = kv.Key;
+                    }
+                }
+            }
+
             NpcDiagnosticLogger.Log($"  Merge-in (DuplicateFromOnlyReferencedGetters): copied {result.Count} referenced record(s) from [{string.Join(", ", modKeysToDuplicateFrom)}] (onlySubRecords={onlySubRecords}, handleInjected={handleInjectedRecords}).");
             foreach (var r in result)
             {
-                NpcDiagnosticLogger.Log($"      + [{r.GetType().Name}] {r.EditorID ?? "(no EditorID)"} {r.FormKey}");
+                string origin = newToOrig.TryGetValue(r.FormKey, out var orig) ? $" (was {orig})" : string.Empty;
+                NpcDiagnosticLogger.Log($"      + [{r.GetType().Name}] {r.EditorID ?? "(no EditorID)"} {r.FormKey}{origin}");
             }
             if (exceptionStrings != null)
             {
