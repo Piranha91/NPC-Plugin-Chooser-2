@@ -352,6 +352,15 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool LogActivity { get; set; }
     [Reactive] public bool LogStartup { get; set; }
 
+    // --- Per-NPC logging (Settings > Logging) ---
+    // Editable list of NPCs the Validator/Patcher write a full trace for. The
+    // search box filters the user's *selected* NPCs by name/EditorID/FormKey;
+    // clicking a match adds it to the list. Backed by Settings.NpcsToLog.
+    [Reactive] public string NpcLogSearchText { get; set; } = string.Empty;
+    [Reactive] public bool HasNpcLogSearchResults { get; set; }
+    public ObservableCollection<VM_LoggedNpc> LoggedNpcs { get; } = new();
+    public ObservableCollection<VM_LoggedNpc> NpcLogSearchResults { get; } = new();
+
     // For throttled saving
     private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
     private readonly CompositeDisposable _disposables = new CompositeDisposable(); // To manage subscriptions
@@ -383,6 +392,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public ReactiveCommand<Unit, Unit> ShowFullEnvironmentErrorCommand { get; }
     public ReactiveCommand<Unit, Unit> AddIgnoredModCommand { get; }
     public ReactiveCommand<string, Unit> RemoveIgnoredModCommand { get; }
+    public ReactiveCommand<VM_LoggedNpc, Unit> AddNpcToLogCommand { get; }
+    public ReactiveCommand<VM_LoggedNpc, Unit> RemoveNpcFromLogCommand { get; }
 
     private readonly FaceGenAnalysisCache _faceGenAnalysisCache;
 
@@ -726,6 +737,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             IgnoredMods.Remove(path);
             FilteredIgnoredMods.Remove(path);
         }).DisposeWith(_disposables);
+        AddNpcToLogCommand = ReactiveCommand.Create<VM_LoggedNpc>(AddNpcToLog).DisposeWith(_disposables);
+        RemoveNpcFromLogCommand = ReactiveCommand.Create<VM_LoggedNpc>(RemoveNpcFromLog).DisposeWith(_disposables);
+        // Re-filter the selected NPCs as the user types (debounced).
+        this.WhenAnyValue(x => x.NpcLogSearchText)
+            .Throttle(TimeSpan.FromMilliseconds(200), RxApp.TaskpoolScheduler)
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(_ => UpdateNpcLogSearchResults())
+            .DisposeWith(_disposables);
         OpenModLinkerCommand = ReactiveCommand.Create(OpenModLinkerWindow);
         DeleteCachedFaceFinderImagesCommand = ReactiveCommand.CreateFromTask(DeleteCachedFaceFinderImagesAsync).DisposeWith(_disposables);
         DeleteCachedFaceFinderImagesCommand.ThrownExceptions
@@ -1281,6 +1300,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
         this.WhenActivated(d =>
         {
+            // Rebuild the "NPCs to log" rows from the model now that the NPC menu
+            // (source of display strings) is populated.
+            LoadLoggedNpcsFromModel();
+
             // Initial load of exclusions (if EnvironmentStatus might already be true from construction)
             if (EnvironmentStatus == EnvironmentStateProvider.EnvironmentStatus.Valid &&
                 AvailablePluginsForExclusion != null && AvailablePluginsForExclusion.Any())
@@ -3486,6 +3509,110 @@ Options:
         {
             FilteredNonAppearanceMods.Add(item);
         }
+    }
+
+    // ---- Per-NPC logging list (Settings > Logging) ----
+
+    /// <summary>The user's selected NPCs, sourced from the main NPC menu so the
+    /// rows carry the same display string / search fields. Empty until the NPC
+    /// menu has been populated.</summary>
+    private IEnumerable<VM_NpcsMenuSelection> GetLoggableNpcSource()
+    {
+        var bar = _lazyNpcSelectionBar.Value;
+        var all = bar?.AllNpcs;
+        if (all == null) return Enumerable.Empty<VM_NpcsMenuSelection>();
+        return all.Where(n => _consistencyProvider.DoesNpcHaveSelection(n.NpcFormKey));
+    }
+
+    private VM_LoggedNpc BuildLoggedNpc(FormKey formKey)
+    {
+        var match = _lazyNpcSelectionBar.Value?.AllNpcs?.FirstOrDefault(n => n.NpcFormKey.Equals(formKey));
+        if (match != null)
+        {
+            return new VM_LoggedNpc(formKey, match.DisplayName, match.NpcName, match.NpcEditorId);
+        }
+        // Selected NPC not present in the menu (e.g. no longer in the load order):
+        // fall back to a FormKey-only row so it can still be seen and removed.
+        return new VM_LoggedNpc(formKey, formKey.ToString(), string.Empty, string.Empty);
+    }
+
+    private void LoadLoggedNpcsFromModel()
+    {
+        LoggedNpcs.Clear();
+        foreach (var loggedNpc in (_model.NpcsToLog ?? new List<FormKey>())
+                 .Select(BuildLoggedNpc)
+                 .OrderBy(n => n.DisplayName, StringComparer.OrdinalIgnoreCase))
+        {
+            LoggedNpcs.Add(loggedNpc);
+        }
+        UpdateNpcLogSearchResults();
+    }
+
+    private void UpdateNpcLogSearchResults()
+    {
+        NpcLogSearchResults.Clear();
+
+        var text = NpcLogSearchText?.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            HasNpcLogSearchResults = false;
+            return;
+        }
+
+        var already = LoggedNpcs.Select(l => l.NpcFormKey).ToHashSet();
+
+        var matches = GetLoggableNpcSource()
+            .Where(n => !already.Contains(n.NpcFormKey))
+            .Where(n =>
+                (n.DisplayName?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (n.NpcName?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (n.NpcEditorId?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (n.NpcFormKeyString?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false))
+            .OrderBy(n => n.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Take(50)
+            .Select(n => new VM_LoggedNpc(n.NpcFormKey, n.DisplayName, n.NpcName, n.NpcEditorId))
+            .ToList();
+
+        foreach (var m in matches)
+        {
+            NpcLogSearchResults.Add(m);
+        }
+
+        HasNpcLogSearchResults = NpcLogSearchResults.Count > 0;
+    }
+
+    private void AddNpcToLog(VM_LoggedNpc npc)
+    {
+        if (npc == null || npc.NpcFormKey.IsNull) return;
+        if (LoggedNpcs.Any(l => l.NpcFormKey.Equals(npc.NpcFormKey))) return;
+
+        // Insert in sorted position to match the search/menu ordering.
+        int insertIndex = 0;
+        while (insertIndex < LoggedNpcs.Count &&
+               string.Compare(LoggedNpcs[insertIndex].DisplayName, npc.DisplayName, StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            insertIndex++;
+        }
+        LoggedNpcs.Insert(insertIndex, npc);
+
+        if (_model.NpcsToLog == null) _model.NpcsToLog = new List<FormKey>();
+        if (!_model.NpcsToLog.Contains(npc.NpcFormKey)) _model.NpcsToLog.Add(npc.NpcFormKey);
+
+        NpcLogSearchText = string.Empty; // collapses the match dropdown
+        UpdateNpcLogSearchResults();
+        RequestThrottledSave();
+    }
+
+    private void RemoveNpcFromLog(VM_LoggedNpc npc)
+    {
+        if (npc == null) return;
+
+        var existing = LoggedNpcs.FirstOrDefault(l => l.NpcFormKey.Equals(npc.NpcFormKey));
+        if (existing != null) LoggedNpcs.Remove(existing);
+        _model.NpcsToLog?.RemoveAll(fk => fk.Equals(npc.NpcFormKey));
+
+        UpdateNpcLogSearchResults(); // removed NPC may re-appear as a match
+        RequestThrottledSave();
     }
 
     private void AddIgnoredMod()

@@ -332,6 +332,11 @@ public class VM_Run : ReactiveObject, IDisposable
             var modSettingsMap = _patcher.BuildModSettingsMap();
             await _patcher.PreInitializationLogicAsync();
 
+            // Arm per-NPC diagnostic logging for the user-selected NPCs. This
+            // overwrites last run's files and stays armed across validation and all
+            // patch batches; the handles are closed in the finally below.
+            NpcDiagnosticLogger.Configure(BuildNpcLogTargets());
+
             ValidationStartTime = DateTime.Now;
 
             var validationReport = await _validator.ScreenSelectionsAsync(modSettingsMap, SelectedNpcGroup, token);
@@ -436,12 +441,44 @@ public class VM_Run : ReactiveObject, IDisposable
         }
         finally
         {
+            // Close per-NPC diagnostic files opened for this run.
+            NpcDiagnosticLogger.Shutdown();
+
             // CRITICAL: Ensure IsRunning is always set back to false,
             // and the CancellationTokenSource is disposed.
             IsRunning = false;
             _patchingCts?.Dispose();
             _patchingCts = null;
         }
+    }
+
+    /// <summary>
+    /// Resolves the user-selected "NPCs to log" (<see cref="Settings.NpcsToLog"/>)
+    /// into (FormKey, display-string) pairs for <see cref="NpcDiagnosticLogger"/>.
+    /// The display string is the NPC's name (falling back to EditorID/FormKey) and
+    /// becomes the per-NPC log filename; the FormKey is appended for uniqueness.
+    /// </summary>
+    private List<(FormKey FormKey, string DisplayString)> BuildNpcLogTargets()
+    {
+        var targets = new List<(FormKey, string)>();
+        var toLog = _settings.NpcsToLog;
+        if (toLog == null || toLog.Count == 0) return targets;
+
+        var lang = _settings.LocalizationLanguage;
+        var linkCache = _environmentStateProvider.LinkCache;
+
+        foreach (var formKey in toLog)
+        {
+            if (formKey.IsNull) continue;
+            string display = formKey.ToString();
+            if (linkCache != null && linkCache.TryResolve<INpcGetter>(formKey, out var npc) && npc != null)
+            {
+                display = Auxilliary.GetLogString(npc, lang);
+            }
+            targets.Add((formKey, display));
+        }
+
+        return targets;
     }
 
     private async Task GenerateSpawnBatFileAsync()

@@ -489,12 +489,16 @@ public class RecordHandler
         
         if (!modKeysToDuplicateFrom.Contains(formLinkToCopy.FormKey.ModKey) && !handleInjectedRecords)
         {
+            if (NpcDiagnosticLogger.IsActive)
+                NpcDiagnosticLogger.Log($"  Merge skip: {formLinkToCopy.FormKey} not provided by appearance mod(s) [{string.Join(", ", modKeysToDuplicateFrom)}]; left FormLink unchanged.");
             targetFormLink.SetTo(formLinkToCopy);
             return mergedInRecords;
         }
 
         if (!TryGetRecordFromMods(formLinkToCopy, modKeysToDuplicateFrom, fallBackModFolderNames, RecordLookupFallBack.None, out var record) || record == null)
         {
+            if (NpcDiagnosticLogger.IsActive)
+                NpcDiagnosticLogger.Log($"  Merge abort: could not resolve {formLinkToCopy.FormKey} in appearance mod(s); left FormLink unchanged.");
             targetFormLink.SetTo(formLinkToCopy);
             return mergedInRecords;
         }
@@ -544,8 +548,10 @@ public class RecordHandler
         where TMod : class, IMod, ISkyrimMod, IModGetter
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateFromOnlyReferencedGetters");
-        
-        return modToDuplicateInto.DuplicateFromOnlyReferencedGetters<TMod, ISkyrimModGetter>(
+
+        int exceptionCountBefore = exceptionStrings?.Count ?? 0;
+
+        var result = modToDuplicateInto.DuplicateFromOnlyReferencedGetters<TMod, ISkyrimModGetter>(
             recordsToDuplicate,
             this,
             modKeysToDuplicateFrom,
@@ -558,6 +564,26 @@ public class RecordHandler
             ref _currenTraversedFormLinks,
             ref exceptionStrings,
             typesToInspect);
+
+        // Per-NPC merge-in detail: the concrete set of referenced records pulled
+        // into the output plugin for the NPC currently being logged.
+        if (NpcDiagnosticLogger.IsActive)
+        {
+            NpcDiagnosticLogger.Log($"  Merge-in (DuplicateFromOnlyReferencedGetters): copied {result.Count} referenced record(s) from [{string.Join(", ", modKeysToDuplicateFrom)}] (onlySubRecords={onlySubRecords}, handleInjected={handleInjectedRecords}).");
+            foreach (var r in result)
+            {
+                NpcDiagnosticLogger.Log($"      + [{r.GetType().Name}] {r.EditorID ?? "(no EditorID)"} {r.FormKey}");
+            }
+            if (exceptionStrings != null)
+            {
+                foreach (var ex in exceptionStrings.Skip(exceptionCountBefore))
+                {
+                    NpcDiagnosticLogger.Log($"      ! merge note: {ex}");
+                }
+            }
+        }
+
+        return result;
     }
 
     // convenience overload for a single ModKey
@@ -650,6 +676,16 @@ public class RecordHandler
             ct.ThrowIfCancellationRequested();
             CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, maxNestedIntervalDepth, 0, searchedFormKeys, ct);
         }
+
+        if (NpcDiagnosticLogger.IsActive)
+        {
+            NpcDiagnosticLogger.Log($"  Override discovery (DeepGetOverriddenDependencyRecords): found {dependencyContexts.Count} overridden dependency record(s) across [{string.Join(", ", relevantContextKeys)}].");
+            foreach (var ctx in dependencyContexts)
+            {
+                NpcDiagnosticLogger.Log($"      * [{ctx.Record.GetType().Name}] {ctx.Record.EditorID ?? "(no EditorID)"} {ctx.Record.FormKey} (override in {ctx.ModKey})");
+            }
+        }
+
         return dependencyContexts.ToHashSet();;
     }
     
@@ -983,6 +1019,8 @@ public class RecordHandler
                     mergedInRecords.Add(duplicate);
                     parentRecordShouldBeMergedIn = true;
                     currentRecordHasBeenMergedIn = true;
+                    if (NpcDiagnosticLogger.IsActive)
+                        NpcDiagnosticLogger.Log($"  Override merged: {formLinkGetter.FormKey} ({modKey}) -> {duplicate.FormKey} [{duplicate.GetType().Name}] EditorID='{duplicate.EditorID}'.");
                 }
                 break;
             }
@@ -1050,6 +1088,8 @@ public class RecordHandler
                 else
                 {
                     exceptionStrings.Add(Auxilliary.GetLogString(traversedModRecord, _settings.LocalizationLanguage) + ": " + exceptionString);
+                    if (NpcDiagnosticLogger.IsActive)
+                        NpcDiagnosticLogger.Log($"  Override merge failed for {formLinkGetter.FormKey}: {exceptionString}");
                 }
             }
         }

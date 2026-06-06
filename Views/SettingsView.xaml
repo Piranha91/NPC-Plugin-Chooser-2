@@ -1368,7 +1368,7 @@ Remove a mod from this list to allow it to be imported again."
                 </StackPanel>
             </GroupBox>
             
-            <GroupBox Header="Troubleshooting" Margin="0,0,0,10" Padding="5">
+            <GroupBox Header="Logging" Margin="0,0,0,10" Padding="5">
                 <StackPanel>
                     <CheckBox Content="Log Activity"
                               IsChecked="{Binding LogActivity, Mode=TwoWay}"
@@ -1377,6 +1377,98 @@ Remove a mod from this list to allow it to be imported again."
                               IsChecked="{Binding LogStartup, Mode=TwoWay}"
                               Margin="0,5,0,0"
                               ToolTip="Logs detailed startup operations to StartupLog.txt on next launch. Useful for diagnosing startup hangs. Can also be triggered by placing a LogStartup.txt file next to the .exe."/>
+
+                    <Separator Margin="0,10,0,8"/>
+
+                    <TextBlock Text="Per-NPC Patch / Validation Logs" FontWeight="Bold"/>
+                    <TextBlock TextWrapping="Wrap" Opacity="0.8" Margin="0,2,0,6"
+                               Text="For each NPC in the list below, the Validator and Patcher write a full activity trace — every change to the NPC record plus the dependency merge-in logic (discovered records, abort conditions) — to 'NPC Logs\{NPC}.txt' next to the application. Files are overwritten at the start of each run. Search the NPCs you've made a selection for (by name, EditorID, or FormKey) and click a result to add it."/>
+
+                    <TextBox Text="{Binding NpcLogSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Type to search NPCs you've made a selection for, by name, EditorID, or FormKey."/>
+
+                    <!-- Clickable search matches -->
+                    <ListBox ItemsSource="{Binding NpcLogSearchResults}"
+                             Visibility="{Binding HasNpcLogSearchResults, Converter={StaticResource BooleanToVisibilityConverter}}"
+                             MaxHeight="160" HorizontalContentAlignment="Stretch"
+                             BorderThickness="1" Margin="0,2,0,0"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Button HorizontalContentAlignment="Left"
+                                        Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                        Padding="2,1"
+                                        Command="{Binding DataContext.AddNpcToLogCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="Click to add this NPC to the per-NPC log list">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                    <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
+                                </Button>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <!-- Editable list of NPCs to log -->
+                    <ListBox ItemsSource="{Binding LoggedNpcs}" Height="150" Margin="0,6,0,0"
+                             HorizontalContentAlignment="Stretch" BorderThickness="1"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding DisplayName}"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center">
+                                        <TextBlock.ToolTip>
+                                            <ToolTip>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding NpcName}"/>
+                                                    <TextBlock Text="{Binding NpcEditorId}"/>
+                                                    <TextBlock Text="{Binding NpcFormKeyString}"/>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </TextBlock.ToolTip>
+                                    </TextBlock>
+
+                                    <Button Grid.Column="1"
+                                            Content="X"
+                                            Command="{Binding DataContext.RemoveNpcFromLogCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                            CommandParameter="{Binding}"
+                                            Foreground="{DynamicResource StatusErrorForeground}"
+                                            FontWeight="Bold"
+                                            Cursor="Hand"
+                                            Margin="5,0,0,0"
+                                            VerticalAlignment="Center"
+                                            ToolTip="Remove this NPC from the per-NPC log list">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="BorderThickness" Value="0"/>
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                 </StackPanel>
             </GroupBox>
         </StackPanel>

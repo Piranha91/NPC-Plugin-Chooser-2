@@ -17,6 +17,12 @@ public class OptionalUIModule
     
     protected void AppendLog(string message, bool isError = false, bool forceLog = false)
     {
+        // Mirror the per-NPC narration into the active NPC's diagnostic file (no-op
+        // unless a BeginNpc context is active for a logged NPC). This captures the
+        // Validator/Patcher trace for the user-selected NPCs without touching every
+        // call site; extra merge-in detail is added directly via NpcDiagnosticLogger.
+        NpcDiagnosticLogger.Log(message);
+
         if (_appendLog == null) return;
         _appendLog(message, isError, forceLog);
     }

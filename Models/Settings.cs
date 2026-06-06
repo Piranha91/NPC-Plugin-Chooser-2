@@ -383,10 +383,15 @@ public class Settings
     public bool HasUpdatedTo2_0_7 { get; set; } = false;
     public bool HasUpdatedTo2_0_7_templates { get; set; } = false;
     
-    // --- Troubleshooting ---
+    // --- Troubleshooting / Logging ---
     public bool LogActivity { get; set; } = false;
     public bool LogStartup { get; set; } = false;
     public bool FixGarbledText { get; set; } = true;
+
+    // NPCs (by FormKey) for which the Validator and Patcher emit a full per-NPC
+    // activity trace to "{exe}\NPC Logs\{display}.txt". Membership in this list is
+    // the on/off switch; an empty list means no per-NPC logging. See NpcDiagnosticLogger.
+    public List<FormKey> NpcsToLog { get; set; } = new();
 }
 
 public enum TemplateIconPosition

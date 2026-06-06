@@ -343,6 +343,14 @@ public class Patcher : OptionalUIModule
                         {
                             using var _ = ContextualPerformanceTracer.Trace("Patcher.MainLoopIteration");
 
+                            // Route this NPC's full patch trace (this AppendLog + every merge-in
+                            // call below) to its per-NPC diagnostic file. AsyncLocal context set
+                            // here flows into the RecordHandler calls made within this task; it is
+                            // isolated to this task, so it does not leak to the next NPC. No-op
+                            // unless the user added this NPC to the logging list.
+                            NpcDiagnosticLogger.BeginNpc(npcFormKey);
+                            NpcDiagnosticLogger.LogSection("PATCHING");
+
                             AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'");
 
                             // Tracks records added to OutputMod on behalf of this NPC, used for rollback if patching fails partway.
@@ -1425,6 +1433,17 @@ public class Patcher : OptionalUIModule
         {
             AppendLog($"      Removing template flag from {targetNpc.FormKey} in patch.");
             targetNpc.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
+        }
+
+        // Concrete record of every appearance field applied to the NPC, for the
+        // per-NPC diagnostic file (only built when this NPC is being logged).
+        if (NpcDiagnosticLogger.IsActive)
+        {
+            NpcDiagnosticLogger.Log($"  NPC record fields applied (source {sourceNpc.FormKey}, mergeInDependencies={mergeInDependencyRecords}):");
+            NpcDiagnosticLogger.Log($"    FaceMorph={(sourceNpc.FaceMorph != null ? "copied" : "null")}, FaceParts={(sourceNpc.FaceParts != null ? "copied" : "null")}, Height={sourceNpc.Height}, Weight={sourceNpc.Weight}, TintLayers={targetNpc.TintLayers.Count}");
+            NpcDiagnosticLogger.Log($"    Race={targetNpc.Race.FormKey}, WornArmor(skin)={targetNpc.WornArmor.FormKey}, HeadTexture={targetNpc.HeadTexture.FormKey}, HairColor={targetNpc.HairColor.FormKey}");
+            NpcDiagnosticLogger.Log($"    HeadParts=[{string.Join(", ", targetNpc.HeadParts.Select(h => h.FormKey.ToString()))}]");
+            if (includeOutfit) NpcDiagnosticLogger.Log($"    DefaultOutfit={targetNpc.DefaultOutfit.FormKey}");
         }
 
         return mergedInRecords;

@@ -101,6 +101,11 @@ public class Validator : OptionalUIModule
             var appearanceNpcFormKey = kvp.Value.AppearanceNpcFormKey;
             string npcIdentifier = npcFormKey.ToString();
 
+            // Route this NPC's screening trace to its per-NPC diagnostic file
+            // (no-op unless the user added this NPC to the logging list).
+            NpcDiagnosticLogger.BeginNpc(npcFormKey);
+            NpcDiagnosticLogger.LogSection("VALIDATION (pre-patch screening)");
+
             bool shouldUpdateUI = (i % 100 == 0) || (i == totalToScreen - 1);
 
             using (ContextualPerformanceTracer.Trace("Validator.ResolveNpcOverride"))
@@ -241,6 +246,8 @@ public class Validator : OptionalUIModule
                 appearanceNpcFormKey
             );
 
+            NpcDiagnosticLogger.Log($"Screening passed for '{npcIdentifier}' -> mod '{selectedModDisplayName}' (appearance source {appearanceNpcFormKey}).");
+
             /*
              * Task.Delay(1) does not pause for exactly one millisecond. It pauses for at least one millisecond, but the actual duration is limited by the OS timer resolution.
              * On Windows, the default timer resolution is typically ~15.6 milliseconds. This means any delay request shorter than that gets rounded up to the next "tick" of the system clock.
@@ -251,7 +258,9 @@ public class Validator : OptionalUIModule
                 await Task.Delay(1, ct);
             }
         }
-        
+
+        NpcDiagnosticLogger.EndNpc();
+
         _masterPluginCache.Clear();;
 
         UpdateProgress(totalToScreen, totalToScreen, "Screening Complete.");
