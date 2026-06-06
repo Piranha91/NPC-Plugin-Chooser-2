@@ -1249,6 +1249,15 @@ public class Patcher : OptionalUIModule
         bool mergeInDependencyRecords, bool includeOutfit)
     {
         using var _ = ContextualPerformanceTracer.Trace("Patcher.CopyAppearanceData");
+
+        // Protect the NPC being patched from being merged in as a new record. Its
+        // winning override frequently lives in an appearance plugin that is in the
+        // duplicate-from set, so without this an internal self-reference (or the
+        // input NPC's own override) gets deep-copied and assigned a new FormKey.
+        // Seeding an identity remap makes any link to it resolve to this output
+        // override instead. (The NPC must never be duplicated.)
+        _recordHandler.ProtectRecordFromDuplication(targetNpc.FormKey);
+
         targetNpc.FaceMorph = sourceNpc.FaceMorph?.DeepCopy();
         targetNpc.FaceParts = sourceNpc.FaceParts?.DeepCopy();
         targetNpc.Height = sourceNpc.Height;

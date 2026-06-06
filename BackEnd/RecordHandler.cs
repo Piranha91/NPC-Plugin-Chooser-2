@@ -66,6 +66,25 @@ public class RecordHandler
         _currenTraversedFormLinks.Clear();
     }
 
+    /// <summary>
+    /// Seeds an identity remap (formKey -> formKey) into the active duplicate-in
+    /// mapping so the merge-in walker treats this record as "already handled" and
+    /// will NOT duplicate it into a new record. Used to stop the NPC being patched
+    /// from being pulled into the output as a brand-new NPC: its own winning
+    /// override often lives in an appearance plugin that is in the duplicate-from
+    /// set, so a self-reference (or the input NPC's own override) would otherwise
+    /// be deep-copied and re-FormKey'd. Any link to this FormKey now resolves to
+    /// the existing output override instead.
+    /// </summary>
+    public void ProtectRecordFromDuplication(FormKey formKey)
+    {
+        if (formKey.IsNull) return;
+        if (!_currentDuplicateInMappings.ContainsKey(formKey))
+        {
+            _currentDuplicateInMappings[formKey] = formKey;
+        }
+    }
+
     public void PrimeLinkCachesFor(IEnumerable<ModKey> modKeys, HashSet<string> fallBackModFolderNames)
     {
         foreach (var modKey in modKeys)
