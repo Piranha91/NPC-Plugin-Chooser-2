@@ -1383,7 +1383,25 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         {
             long genEndMs = VM_NpcSelectionBar.SelectionPerfSw.ElapsedMilliseconds;
             Debug.WriteLine($"[NpcPerf] T+{genEndMs}ms GenerateMugshotAsync EXIT {ModName} took={genEndMs - genStartMs}ms hasMugshot={HasMugshot}");
-            IsLoading = false;
+
+            // Only drop the spinner when this task actually finished its work.
+            // TriggerAsyncMugshotGeneration cancels the entire in-flight batch
+            // every time it re-runs (the 50ms CurrentNpcAppearanceMods backstop
+            // firing just after the 100ms PackingCompleted trigger is the common
+            // case) and then immediately re-kicks a fresh GenerateMugshotAsync
+            // for every still-imageless tile. Clearing IsLoading on the cancelled
+            // task dropped the spinner with no image; the re-kicked render then
+            // painted the image ~5s later — the gap the user observed. Leaving
+            // the spinner up on cancellation hands it off to the successor task,
+            // which clears it when it assigns the image. The HasMugshot guard
+            // covers the race where the image was assigned just as cancellation
+            // fired: clear regardless so a tile that already has an image can
+            // never be left spinning (the re-kick skips imaged tiles).
+            bool cancelled = token.IsCancellationRequested;
+            if (!cancelled || HasMugshot)
+            {
+                IsLoading = false;
+            }
         }
     }
 
