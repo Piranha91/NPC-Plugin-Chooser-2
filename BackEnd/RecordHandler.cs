@@ -702,8 +702,21 @@ public class RecordHandler
     public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
         DeepGetOverriddenDependencyRecords(IMajorRecordGetter majorRecordGetter, List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys, HashSet<string> fallBackModFolderNames, int maxNestedIntervalDepth, CancellationToken ct)
     {
+        return DeepGetOverriddenDependencyRecords(majorRecordGetter.EnumerateFormLinks(), relevantContextKeys,
+            searchedFormKeys, fallBackModFolderNames, maxNestedIntervalDepth, ct);
+    }
+
+    /// <summary>
+    /// Override-discovery variant that traverses an explicit set of FormLinks instead of every
+    /// link on a record. SkyPatcher mode uses this to restrict discovery to the NPC's
+    /// appearance-descended links (skin, head texture, race, hair color, head parts, outfit) so
+    /// non-appearance overrides (packages, factions, items, AI data) are never pulled into the
+    /// output plugin as masters.
+    /// </summary>
+    public HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>>
+        DeepGetOverriddenDependencyRecords(IEnumerable<IFormLinkGetter> containedFormLinks, List<ModKey> relevantContextKeys, HashSet<FormKey> searchedFormKeys, HashSet<string> fallBackModFolderNames, int maxNestedIntervalDepth, CancellationToken ct)
+    {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DeepGetOverriddenDependencyRecords");
-        var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
         foreach (var modKey in relevantContextKeys)
         {
             TryAddPluginToCaches(modKey, fallBackModFolderNames);

@@ -503,6 +503,33 @@ public class Patcher : OptionalUIModule
                                     AppendLog("    Source: Plugin Record Override");
                                 }
 
+                                // Outfit inclusion is independent of the patching mode, so resolve it once
+                                // here for both the Create and Create-and-Patch branches.
+                                bool includeOutfit;
+                                if (_settings.NpcOutfitOverrides.TryGetValue(npcFormKey,
+                                        out var outfitOverrideChoice))
+                                {
+                                    includeOutfit = outfitOverrideChoice switch
+                                    {
+                                        OutfitOverride.No => false,
+                                        OutfitOverride.Yes => true,
+                                        OutfitOverride.UseModSetting => appearanceModSetting.IncludeOutfits,
+                                        _ => appearanceModSetting.IncludeOutfits,
+                                    };
+                                }
+                                else
+                                {
+                                    includeOutfit = appearanceModSetting.IncludeOutfits;
+                                }
+
+                                // In SkyPatcher mode the surrogate is the donor appearance NPC; restrict override
+                                // discovery to its appearance-descended links (computed from the original donor
+                                // record, before CopyAppearanceData redirects them to merged-in output records) so
+                                // non-appearance overrides are never pulled into the output as masters.
+                                List<IFormLinkGetter>? skyPatcherAppearanceLinks = _settings.UseSkyPatcherMode
+                                    ? GetAppearanceFormLinks(appearanceNpcRecord, includeOutfit).ToList()
+                                    : null;
+
                                 switch (_settings.PatchingMode)
                                 {
                                     case PatchingMode.CreateAndPatch:
@@ -511,7 +538,12 @@ public class Patcher : OptionalUIModule
 
                                         if (_settings.UseSkyPatcherMode)
                                         {
-                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(winningNpcOverride);
+                                            // SkyPatcher applies the appearance at runtime; nothing overrides the
+                                            // recipient NPC record in-game, so the surrogate template must be the
+                                            // DONOR appearance record (not the recipient). Building it from
+                                            // winningNpcOverride would drag the recipient's packages/items/factions
+                                            // into the output and master it to every non-appearance data plugin.
+                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(appearanceNpcRecord);
                                         }
                                         else
                                         {
@@ -530,24 +562,6 @@ public class Patcher : OptionalUIModule
                                                 return;
                                             }
                                         }
-
-                                        bool includeOutfit = false;
-                                        if (_settings.NpcOutfitOverrides.TryGetValue(npcFormKey,
-                                                out var outfitOverrideChoice))
-                                        {
-                                            switch (outfitOverrideChoice)
-                                            {
-                                                case OutfitOverride.No: includeOutfit = false; break;
-                                                case OutfitOverride.Yes: includeOutfit = true; break;
-                                                case OutfitOverride.UseModSetting:
-                                                    includeOutfit = appearanceModSetting.IncludeOutfits; break;
-                                            }
-                                        }
-                                        else
-                                        {
-                                            includeOutfit = appearanceModSetting.IncludeOutfits;
-                                        }
-
 
                                         var mergedInAppearanceRecords = CopyAppearanceData(appearanceNpcRecord,
                                             patchNpc,
@@ -578,6 +592,12 @@ public class Patcher : OptionalUIModule
                                             _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                         }
 
+                                        if (_settings.UseSkyPatcherMode)
+                                        {
+                                            ApplySkyPatcherDirectives(npcFormKey, winningNpcOverride, patchNpc,
+                                                includeOutfit);
+                                        }
+
                                         switch (recordOverrideHandlingMode)
                                         {
                                             case RecordOverrideHandlingMode.Ignore:
@@ -605,12 +625,20 @@ public class Patcher : OptionalUIModule
                                                 else
                                                 {
                                                     dependencyContexts = await Task.Run(() =>
-                                                        _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
-                                                            appearanceModSetting.CorrespondingModKeys,
-                                                            searchedOverrideFormKeysForGroup,
-                                                            currentModFolderPaths,
-                                                            maxNestedIntervalDepth,
-                                                            ct));
+                                                        skyPatcherAppearanceLinks != null
+                                                            ? _recordHandler.DeepGetOverriddenDependencyRecords(
+                                                                skyPatcherAppearanceLinks,
+                                                                appearanceModSetting.CorrespondingModKeys,
+                                                                searchedOverrideFormKeysForGroup,
+                                                                currentModFolderPaths,
+                                                                maxNestedIntervalDepth,
+                                                                ct)
+                                                            : _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
+                                                                appearanceModSetting.CorrespondingModKeys,
+                                                                searchedOverrideFormKeysForGroup,
+                                                                currentModFolderPaths,
+                                                                maxNestedIntervalDepth,
+                                                                ct));
                                                 }
 
                                                 List<MajorRecord> deltaPatchedRecords = new();
@@ -838,30 +866,8 @@ public class Patcher : OptionalUIModule
 
                                         if (_settings.UseSkyPatcherMode)
                                         {
-                                            // These calls should always be delayed until after the merge-in functionality
-                                            // Otherwise the referenced FormKeys will be the stale un-merged-in ones.
-                                            // Correspondingly, make sure to call the SkyPatcher functions on patchNpc, not appearanceNpcRecord
-
-                                            if (ShouldChangeGender(winningNpcOverride, patchNpc, out var genderToSet) &&
-                                                genderToSet != null)
-                                            {
-                                                _skyPatcherInterface.ToggleGender(npcFormKey, genderToSet.Value);
-                                            }
-
-                                            if (ShouldChangeRace(winningNpcOverride, patchNpc,
-                                                    out var raceToSet) && raceToSet != null)
-                                            {
-                                                _skyPatcherInterface.ApplyRace(npcFormKey, raceToSet.Value);
-                                            }
-
-                                            if (ShouldChangeTraitsStatus(winningNpcOverride, patchNpc,
-                                                    out bool hasTraitsStatus))
-                                            {
-                                                _skyPatcherInterface.ToggleTemplateTraitsStatus(npcFormKey,
-                                                    hasTraitsStatus);
-                                            }
-
-                                            _skyPatcherInterface.SetOutfit(npcFormKey, patchNpc.DefaultOutfit.FormKey);
+                                            ApplySkyPatcherDirectives(npcFormKey, winningNpcOverride, patchNpc,
+                                                includeOutfit);
                                         }
 
                                         switch (recordOverrideHandlingMode)
@@ -891,12 +897,20 @@ public class Patcher : OptionalUIModule
                                                 else
                                                 {
                                                     dependencyContexts = await Task.Run(() =>
-                                                        _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
-                                                            appearanceModSetting.CorrespondingModKeys,
-                                                            searchedOverrideFormKeysForGroup,
-                                                            currentModFolderPaths,
-                                                            maxNestedIntervalDepth,
-                                                            ct));
+                                                        skyPatcherAppearanceLinks != null
+                                                            ? _recordHandler.DeepGetOverriddenDependencyRecords(
+                                                                skyPatcherAppearanceLinks,
+                                                                appearanceModSetting.CorrespondingModKeys,
+                                                                searchedOverrideFormKeysForGroup,
+                                                                currentModFolderPaths,
+                                                                maxNestedIntervalDepth,
+                                                                ct)
+                                                            : _recordHandler.DeepGetOverriddenDependencyRecords(patchNpc,
+                                                                appearanceModSetting.CorrespondingModKeys,
+                                                                searchedOverrideFormKeysForGroup,
+                                                                currentModFolderPaths,
+                                                                maxNestedIntervalDepth,
+                                                                ct));
                                                 }
 
                                                 foreach (var ctx in dependencyContexts)
@@ -1267,22 +1281,14 @@ public class Patcher : OptionalUIModule
         targetNpc.TintLayers.AddRange(sourceNpc.TintLayers?.Select(t => t.DeepCopy()) ??
                                       Enumerable.Empty<TintLayer>());
 
-        bool useSkyPatcher = false;
-        FormKey skyPatcherOriginalFormKey = FormKey.Null;
-        if (_settings.UseSkyPatcherMode &&
-            _skyPatcherInterface.TryGetOriginalFormKey(targetNpc.FormKey, out skyPatcherOriginalFormKey))
-        {
-            useSkyPatcher = true;
-        }
-
+        // SkyPatcher .ini directives (gender/race/traits/outfit) are NOT emitted here. They are
+        // emitted once, after dependency merge-in, by ApplySkyPatcherDirectives, which compares the
+        // recipient (winningNpcOverride) against the donor surrogate. Emitting them here would be
+        // wrong in SkyPatcher mode because targetNpc IS the donor surrogate, so the comparisons
+        // below are donor-vs-donor and would never detect a delta.
         if (ShouldChangeGender(targetNpc, sourceNpc, out var genderToSet) && genderToSet != null)
         {
             SetGender(targetNpc, genderToSet.Value);
-
-            if (useSkyPatcher)
-            {
-                _skyPatcherInterface.ToggleGender(skyPatcherOriginalFormKey, genderToSet.Value);
-            }
         }
 
         if (ShouldChangeRace(targetNpc, sourceNpc, out var raceToSet) && raceToSet != null)
@@ -1293,11 +1299,6 @@ public class Patcher : OptionalUIModule
         if (ShouldChangeTraitsStatus(targetNpc, sourceNpc, out bool hasTraitsStatus))
         {
             SetTraitsFlag(targetNpc, hasTraitsStatus);
-
-            if (useSkyPatcher)
-            {
-                _skyPatcherInterface.ToggleTemplateTraitsStatus(skyPatcherOriginalFormKey, hasTraitsStatus);
-            }
         }
 
         List<MajorRecord> mergedInRecords = new();
@@ -1349,11 +1350,6 @@ public class Patcher : OptionalUIModule
                             string.Join(Environment.NewLine, raceExceptions), true, true);
                     }
 
-                    if (useSkyPatcher)
-                    {
-                        _skyPatcherInterface.ApplyRace(skyPatcherOriginalFormKey, targetNpc.Race.FormKey);
-                    }
-
                     mergedInRecords.AddRange(raceRecords);
                 }
 
@@ -1402,11 +1398,6 @@ public class Patcher : OptionalUIModule
                             string.Join(Environment.NewLine, outfitExceptions), true, true);
                     }
                     mergedInRecords.AddRange(outfitRecords);
-
-                    if (useSkyPatcher)
-                    {
-                        _skyPatcherInterface.SetOutfit(skyPatcherOriginalFormKey, targetNpc.DefaultOutfit.FormKey);
-                    }
                 }
 
                 AppendLog($"    Completed dependency processing for {npcIdentifier}.");
@@ -1456,6 +1447,47 @@ public class Patcher : OptionalUIModule
         }
 
         return mergedInRecords;
+    }
+
+    // The appearance-descended FormLinks of an NPC — the exact set CopyAppearanceData
+    // transfers from the donor. Used to scope SkyPatcher override discovery so only
+    // appearance records (not packages/factions/items/AI data) can be pulled into the output.
+    private static IEnumerable<IFormLinkGetter> GetAppearanceFormLinks(INpcGetter npc, bool includeOutfit)
+    {
+        if (!npc.WornArmor.IsNull) yield return npc.WornArmor;
+        if (!npc.HeadTexture.IsNull) yield return npc.HeadTexture;
+        if (!npc.Race.IsNull) yield return npc.Race;
+        if (!npc.HairColor.IsNull) yield return npc.HairColor;
+        foreach (var hp in npc.HeadParts.Where(x => !x.IsNull)) yield return hp;
+        if (includeOutfit && !npc.DefaultOutfit.IsNull) yield return npc.DefaultOutfit;
+    }
+
+    // Emits the SkyPatcher .ini directives for the appearance delta between the recipient
+    // (winningNpcOverride) and the donor surrogate (patchNpc). Must be called AFTER dependency
+    // merge-in so the referenced FormKeys are the merged-in ones, not the stale originals.
+    // Shared by both the Create and Create-and-Patch branches.
+    private void ApplySkyPatcherDirectives(FormKey npcFormKey, INpcGetter winningNpcOverride, Npc patchNpc,
+        bool includeOutfit)
+    {
+        if (ShouldChangeGender(winningNpcOverride, patchNpc, out var genderToSet) && genderToSet != null)
+        {
+            _skyPatcherInterface.ToggleGender(npcFormKey, genderToSet.Value);
+        }
+
+        if (ShouldChangeRace(winningNpcOverride, patchNpc, out var raceToSet) && raceToSet != null)
+        {
+            _skyPatcherInterface.ApplyRace(npcFormKey, raceToSet.Value);
+        }
+
+        if (ShouldChangeTraitsStatus(winningNpcOverride, patchNpc, out bool hasTraitsStatus))
+        {
+            _skyPatcherInterface.ToggleTemplateTraitsStatus(npcFormKey, hasTraitsStatus);
+        }
+
+        if (includeOutfit)
+        {
+            _skyPatcherInterface.SetOutfit(npcFormKey, patchNpc.DefaultOutfit.FormKey);
+        }
     }
 
     private bool ShouldChangeRace(INpcGetter targetNpc, INpcGetter appearanceNpc, out FormKey? changeTo)
