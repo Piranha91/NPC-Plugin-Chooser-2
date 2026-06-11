@@ -41,16 +41,26 @@ public class SkyPatcherInterface : OptionalUIModule
         }
     }
 
-    public Npc CreateSkyPatcherNpc(INpcGetter npcGetter)
+    /// <summary>
+    /// Creates the SkyPatcher surrogate "_Template" NPC. Its CONTENT is a deep copy of
+    /// <paramref name="appearanceDonor"/> (the chosen appearance), but it is registered under
+    /// <paramref name="targetNpcFormKey"/> (the NPC being patched in the user's load order). The two
+    /// are deliberately decoupled so that:
+    ///   - the output masters only to the donor's appearance plugins, never the target's data mods, and
+    ///   - the .ini filters by the TARGET NPC (filterByNPCs=target) even when the donor is a DIFFERENT
+    ///     NPC (a cross-NPC appearance swap) — something only SkyPatcher mode can do.
+    /// AssetHandler likewise looks the surrogate up by the target FormKey via TryGetSurrogateFormKey.
+    /// </summary>
+    public Npc CreateSkyPatcherNpc(FormKey targetNpcFormKey, INpcGetter appearanceDonor)
     {
         var npcCopy = _environmentStateProvider.OutputMod.Npcs.AddNew();
-        npcCopy.DeepCopyIn(npcGetter, out _);
-        var edid = npcGetter.EditorID ?? "NoEditorID";
+        npcCopy.DeepCopyIn(appearanceDonor, out _);
+        var edid = appearanceDonor.EditorID ?? "NoEditorID";
         npcCopy.EditorID = edid + "_Template";
-        
-        _keyOriginalValSurrogate.Add(npcGetter.FormKey, npcCopy.FormKey);
-        _keySurrogateValOrriginal.Add(npcCopy.FormKey, npcGetter.FormKey);
-        _outputs.Add(npcGetter.FormKey, new(npcGetter.FormKey));
+
+        _keyOriginalValSurrogate.Add(targetNpcFormKey, npcCopy.FormKey);
+        _keySurrogateValOrriginal.Add(npcCopy.FormKey, targetNpcFormKey);
+        _outputs.Add(targetNpcFormKey, new(targetNpcFormKey));
         return npcCopy;
     }
 

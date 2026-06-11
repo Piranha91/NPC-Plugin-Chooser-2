@@ -131,7 +131,12 @@ public class Validator : OptionalUIModule
             
             using (ContextualPerformanceTracer.Trace("Validator.CheckFaceSwap"))
             {
-                if (_settings.PatchingMode != PatchingMode.CreateAndPatch && !npcFormKey.Equals(appearanceNpcFormKey))
+                // A cross-NPC appearance swap (donor FormKey != target FormKey) is only impossible in
+                // plain Create mode, which can merely forward a single plugin record. SkyPatcher mode
+                // performs the swap at runtime (filterByNPCs=target : copyVisualStyle=donor), so it is
+                // permitted there regardless of PatchingMode.
+                if (_settings.PatchingMode != PatchingMode.CreateAndPatch && !_settings.UseSkyPatcherMode &&
+                    !npcFormKey.Equals(appearanceNpcFormKey))
                 {
                     var appearanceNpcIdenentifier = appearanceNpcFormKey.ToString();
                     if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(appearanceNpcFormKey,

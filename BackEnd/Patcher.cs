@@ -543,7 +543,7 @@ public class Patcher : OptionalUIModule
                                             // DONOR appearance record (not the recipient). Building it from
                                             // winningNpcOverride would drag the recipient's packages/items/factions
                                             // into the output and master it to every non-appearance data plugin.
-                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(appearanceNpcRecord);
+                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(npcFormKey, appearanceNpcRecord);
                                         }
                                         else
                                         {
@@ -823,7 +823,7 @@ public class Patcher : OptionalUIModule
                                             $"      Mode: Create. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"}).");
                                         if (_settings.UseSkyPatcherMode)
                                         {
-                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(appearanceNpcRecord);
+                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(npcFormKey, appearanceNpcRecord);
                                         }
                                         else
                                         {
