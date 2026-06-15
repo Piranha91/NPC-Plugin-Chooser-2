@@ -67,6 +67,49 @@ public class RecordHandler
     }
 
     /// <summary>
+    /// Records the provenance of a record that was deep-copied ("merged in") into
+    /// the output plugin. Captures a snapshot of where each output record came
+    /// from. Unlike <see cref="_currentDuplicateInMappings"/> (which is reset per
+    /// appearance-mod batch), this map persists for the whole patch run so a save
+    /// failure at the very end can still report the original source of a merged-in
+    /// record. See <see cref="TryGetMergedRecordOrigin"/> and the enriched
+    /// "missing master" diagnostics in <c>Patcher.RunPatchingLogic</c>.
+    /// </summary>
+    public readonly struct MergedRecordOrigin
+    {
+        public FormKey SourceFormKey { get; init; }
+        public string? SourceEditorId { get; init; }
+    }
+
+    // Output FormKey -> the source record it was duplicated from. Persists across
+    // per-batch ResetMapping() calls; cleared once per run via ResetMergedRecordTracking().
+    private readonly Dictionary<FormKey, MergedRecordOrigin> _mergedRecordOrigins = new();
+
+    /// <summary>Clears the persistent merged-record provenance map. Call once at the
+    /// start of a patch run (alongside the Patcher's record-ownership maps).</summary>
+    public void ResetMergedRecordTracking()
+    {
+        _mergedRecordOrigins.Clear();
+    }
+
+    /// <summary>Notes that <paramref name="outputFormKey"/> in the output plugin was
+    /// duplicated from <paramref name="sourceFormKey"/>. Output FormKeys are unique,
+    /// so the first (root) source seen is retained.</summary>
+    public void RecordMergedRecordOrigin(FormKey sourceFormKey, FormKey outputFormKey, string? sourceEditorId)
+    {
+        if (outputFormKey.IsNull || sourceFormKey.IsNull) return;
+        _mergedRecordOrigins.TryAdd(outputFormKey,
+            new MergedRecordOrigin { SourceFormKey = sourceFormKey, SourceEditorId = sourceEditorId });
+    }
+
+    /// <summary>Looks up where an output record was merged in from, if it was a
+    /// deep-copied dependency rather than an originally-authored record.</summary>
+    public bool TryGetMergedRecordOrigin(FormKey outputFormKey, out MergedRecordOrigin origin)
+    {
+        return _mergedRecordOrigins.TryGetValue(outputFormKey, out origin);
+    }
+
+    /// <summary>
     /// Seeds an identity remap (formKey -> formKey) into the active duplicate-in
     /// mapping so the merge-in walker treats this record as "already handled" and
     /// will NOT duplicate it into a new record. Used to stop the NPC being patched
@@ -1063,6 +1106,7 @@ public class RecordHandler
                     }
                     
                     var duplicate = modContext.DuplicateIntoAsNewRecord(outputMod);
+                    RecordMergedRecordOrigin(formLinkGetter.FormKey, duplicate.FormKey, traversedModRecord.EditorID);
                     duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + modKey.FileName;
                     traversedModRecord = duplicate;
                     _currentDuplicateInMappings.Add(formLinkGetter.FormKey, duplicate.FormKey);
@@ -1132,6 +1176,7 @@ public class RecordHandler
             {
                 if (Auxilliary.TryDuplicateGenericRecordAsNew(traversedModRecord, outputMod, out var duplicate, out string exceptionString))
                 {
+                    RecordMergedRecordOrigin(formLinkGetter.FormKey, duplicate.FormKey, traversedModRecord.EditorID);
                     duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + formLinkGetter.FormKey.ModKey;
                     remappedSubLinks.Add(formLinkGetter.FormKey, duplicate.FormKey);
                     mergedInRecords.Add(duplicate);

@@ -2579,7 +2579,7 @@ Options:
         // creeps back up as real renders start). Tracking time spent only on
         // items that actually produced new bytes, paired with the running
         // rate-of-generation, keeps the estimate stable across mixed batches.
-        TimeSpan generationTimeAccumulator = TimeSpan.Zero;
+        var etaCalculator = new EtaCalculator();
         var stopwatch = Stopwatch.StartNew();
 
         try
@@ -2602,7 +2602,6 @@ Options:
                     });
 
                     bool produced = false;
-                    bool didGenerationWork = false;
                     var itemStart = stopwatch.Elapsed;
                     try
                     {
@@ -2622,7 +2621,6 @@ Options:
                         else if (rendererResult.Generated)
                         {
                             produced = true;
-                            didGenerationWork = true;
                             generatedCount++;
                         }
                         else if (assetValidatedOnly
@@ -2653,26 +2651,16 @@ Options:
                         _eventLogger.Log($"Generate-all failed for {npcFormKey}: {ex.Message}", "BATCH_GEN_ERROR");
                     }
 
-                    if (didGenerationWork)
-                    {
-                        generationTimeAccumulator += stopwatch.Elapsed - itemStart;
-                    }
+                    // Feed the wall-clock cost of EVERY item (cheap skips/cache hits
+                    // included — the user waits for those too) into a recency-weighted
+                    // estimator. Projecting from recent throughput rather than a
+                    // cumulative average keeps the ETA honest when the heavy renders
+                    // are front- or back-loaded in the work list.
+                    etaCalculator.RecordItem((stopwatch.Elapsed - itemStart).TotalSeconds);
 
                     int processed = i + 1;
                     int remaining = workList.Count - processed;
-                    // ETA only kicks in after a generation has actually
-                    // happened — otherwise the average is undefined. We then
-                    // project the remaining workload by the running rate of
-                    // generations-per-processed, so a long tail of skips
-                    // shrinks the estimate instead of inflating it.
-                    TimeSpan? eta = null;
-                    if (generatedCount > 0 && remaining > 0)
-                    {
-                        double generationRate = (double)generatedCount / processed;
-                        double estimatedRemainingGens = remaining * generationRate;
-                        double avgGenSeconds = generationTimeAccumulator.TotalSeconds / generatedCount;
-                        eta = TimeSpan.FromSeconds(estimatedRemainingGens * avgGenSeconds);
-                    }
+                    TimeSpan? eta = etaCalculator.Estimate(remaining);
 
                     Application.Current.Dispatcher.Invoke(() =>
                     {
@@ -2850,7 +2838,7 @@ Options:
         // Snapshot the caching toggle once so a mid-batch flip can't
         // half-cache the run.
         bool cacheBytes = CacheFaceFinderImages;
-        TimeSpan downloadTimeAccumulator = TimeSpan.Zero;
+        var etaCalculator = new EtaCalculator();
         var stopwatch = Stopwatch.StartNew();
 
         try
@@ -2969,6 +2957,7 @@ Options:
                     if (progressVM.IsCancellationRequested) break;
 
                     var (mod, npcFormKey, displayName, face) = workItems[i];
+                    var itemStart = stopwatch.Elapsed;
 
                     Application.Current.Dispatcher.Invoke(() =>
                     {
@@ -2983,8 +2972,6 @@ Options:
                     }
                     else
                     {
-                        bool didDownloadWork = false;
-                        var itemStart = stopwatch.Elapsed;
                         try
                         {
                             var ffResult = await _batchMugshotGenerator.ProcessKnownFaceAsync(
@@ -3002,7 +2989,6 @@ Options:
                                     if (ffResult.ProducedFile)
                                     {
                                         downloadedCount++;
-                                        didDownloadWork = true;
                                     }
                                     else
                                     {
@@ -3032,22 +3018,17 @@ Options:
                             _eventLogger.Log($"FaceFinder batch failed for {npcFormKey}: {ex.Message}", "FACEFINDER");
                         }
 
-                        if (didDownloadWork)
-                        {
-                            downloadTimeAccumulator += stopwatch.Elapsed - itemStart;
-                        }
                     }
+
+                    // Record the wall-clock cost of every item (instant cache hits and
+                    // "not available" entries included) and estimate from recent
+                    // throughput, so the ETA tracks the real download mix as it unfolds
+                    // instead of lagging behind a cumulative average.
+                    etaCalculator.RecordItem((stopwatch.Elapsed - itemStart).TotalSeconds);
 
                     int processed = i + 1;
                     int remaining = totalNpcs - processed;
-                    TimeSpan? eta = null;
-                    if (downloadedCount > 0 && remaining > 0)
-                    {
-                        double downloadRate = (double)downloadedCount / processed;
-                        double estimatedRemaining = remaining * downloadRate;
-                        double avgDownloadSeconds = downloadTimeAccumulator.TotalSeconds / downloadedCount;
-                        eta = TimeSpan.FromSeconds(estimatedRemaining * avgDownloadSeconds);
-                    }
+                    TimeSpan? eta = etaCalculator.Estimate(remaining);
 
                     Application.Current.Dispatcher.Invoke(() =>
                     {

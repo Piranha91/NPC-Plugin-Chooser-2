@@ -108,6 +108,7 @@ public static class PatcherExtensions
                 dup != null)
             {
                 dup.EditorID = newEdid;
+                recordHandler.RecordMergedRecordOrigin(identifiedLink.FormKey, dup.FormKey, identifiedRec.EditorID);
                 mapping[identifiedLink.FormKey] = dup.FormKey;
                 mergedInRecords.Add(dup);
                 modToDuplicateInto.Remove(identifiedLink.FormKey, identifiedLink.Type);

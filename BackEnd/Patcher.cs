@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.IO;
+using System.Text;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Allocators;
@@ -134,6 +135,120 @@ public class Patcher : OptionalUIModule
         return removedCount;
     }
 
+    /// <summary>
+    /// Scans the finished output plugin for any FormLink that points at a plugin not
+    /// present in the active load order — the condition that makes Mutagen throw at
+    /// master-sort time ("A referenced mod was not present on the load order...").
+    /// For each offending record it reports, where known, the source record it was
+    /// merged in from and the NPC(s) whose patching pulled it in, so the user can see
+    /// the root cause instead of a bare output FormKey. Returns an empty string if no
+    /// dangling reference is found (the failure was something else).
+    /// </summary>
+    private string BuildDanglingMasterDiagnostics()
+    {
+        var outputMod = _environmentStateProvider.OutputMod;
+        if (outputMod == null) return string.Empty;
+
+        // Masters Mutagen will accept: everything in the sorted load order, plus the
+        // output mod's own key (self-references are fine).
+        var allowedMasters = new HashSet<ModKey>(_environmentStateProvider.LoadOrderModKeys) { outputMod.ModKey };
+
+        // Output record FormKey -> the set of missing masters it references.
+        var offenders = new Dictionary<FormKey, (IMajorRecordGetter Record, HashSet<ModKey> Missing)>();
+        var allMissingMasters = new HashSet<ModKey>();
+
+        foreach (var record in outputMod.EnumerateMajorRecords())
+        {
+            foreach (var link in record.EnumerateFormLinks())
+            {
+                if (link.FormKey.IsNull) continue;
+                var refMod = link.FormKey.ModKey;
+                if (allowedMasters.Contains(refMod)) continue;
+
+                if (!offenders.TryGetValue(record.FormKey, out var entry))
+                {
+                    entry = (record, new HashSet<ModKey>());
+                    offenders[record.FormKey] = entry;
+                }
+                entry.Missing.Add(refMod);
+                allMissingMasters.Add(refMod);
+            }
+        }
+
+        if (offenders.Count == 0) return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine("======= Diagnosing missing-master save failure =======");
+        sb.AppendLine(
+            $"The output plugin references {allMissingMasters.Count} plugin(s) that are NOT in your active load order:");
+        sb.AppendLine("    " + string.Join(", ", allMissingMasters.Select(m => m.FileName.ToString())));
+        sb.AppendLine();
+        sb.AppendLine(
+            $"{offenders.Count} record(s) in the output plugin still point at the missing plugin(s). " +
+            "These were merged in as appearance dependencies but a reference was left dangling:");
+        sb.AppendLine();
+
+        foreach (var kvp in offenders)
+        {
+            var record = kvp.Value.Record;
+            sb.AppendLine(
+                $"  • [{record.GetType().Name}] {record.FormKey}" +
+                (string.IsNullOrEmpty(record.EditorID) ? string.Empty : $"  (EditorID: {record.EditorID})"));
+
+            if (_recordHandler.TryGetMergedRecordOrigin(record.FormKey, out var origin))
+            {
+                sb.AppendLine(
+                    $"      Merged in from source record: {origin.SourceFormKey}" +
+                    (string.IsNullOrEmpty(origin.SourceEditorId) ? string.Empty : $" (EditorID: {origin.SourceEditorId})"));
+            }
+            else
+            {
+                sb.AppendLine("      (No merge-in provenance recorded — may be an originally-authored output record.)");
+            }
+
+            if (_patchedRecordOwners.TryGetValue(record.FormKey, out var owners) && owners.Count > 0)
+            {
+                sb.AppendLine("      Pulled in while patching NPC(s):");
+                foreach (var ownerKey in owners)
+                {
+                    sb.AppendLine($"         - {DescribeNpc(ownerKey)}");
+                }
+            }
+
+            sb.AppendLine(
+                "      Dangling reference(s) to missing plugin(s): " +
+                string.Join(", ", kvp.Value.Missing.Select(m => m.FileName.ToString())));
+            sb.AppendLine();
+        }
+
+        sb.AppendLine(
+            "Likely cause: a record copied from one of your appearance mods depends on the plugin(s) above, " +
+            "which are not enabled in your load order. Enable the missing plugin(s), or change the appearance " +
+            "selection for the NPC(s) listed so they no longer pull in records that need a master you don't have.");
+
+        return sb.ToString();
+    }
+
+    /// <summary>Best-effort human-readable label for an NPC FormKey, for diagnostics.</summary>
+    private string DescribeNpc(FormKey npcFormKey)
+    {
+        try
+        {
+            if (_environmentStateProvider.LinkCache != null &&
+                _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npc) && npc != null)
+            {
+                string label = npc.Name?.String ?? npc.EditorID ?? string.Empty;
+                return string.IsNullOrEmpty(label) ? npcFormKey.ToString() : $"{label} ({npcFormKey})";
+            }
+        }
+        catch
+        {
+            // fall through to the bare FormKey
+        }
+        return npcFormKey.ToString();
+    }
+
     public Dictionary<string, ModSetting> BuildModSettingsMap()
     {
         // --- Build Mod Settings Map ---
@@ -184,6 +299,7 @@ public class Patcher : OptionalUIModule
                 GenerateKeywords();
                 _patchedRecordOwners.Clear();
                 _patchedRecordTypes.Clear();
+                _recordHandler.ResetMergedRecordTracking();
             }
 
             _recordDeltaPatcher.Reinitialize(true);
@@ -1132,6 +1248,26 @@ public class Patcher : OptionalUIModule
                         AppendLog(
                             $"FATAL SAVE ERROR: Could not write output plugin: {ExceptionLogger.GetExceptionStack(ex)}",
                             true);
+
+                        // The most common save failure is a dangling master: a record was
+                        // deep-copied ("merged in") as an NPC's dependency but still points at
+                        // a plugin that isn't in the active load order. The raw exception only
+                        // names the output FormKey, which tells the user nothing actionable.
+                        // Enrich it with the source record it came from and the NPC(s) that
+                        // pulled it in, using the provenance maps built during patching.
+                        try
+                        {
+                            string diag = BuildDanglingMasterDiagnostics();
+                            if (!string.IsNullOrEmpty(diag))
+                            {
+                                AppendLog(diag, true, true);
+                            }
+                        }
+                        catch (Exception diagEx)
+                        {
+                            AppendLog($"(Could not build extended save-error diagnostics: {diagEx.Message})", false, true);
+                        }
+
                         ResetProgress();
                         return;
                     }
