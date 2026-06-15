@@ -512,6 +512,21 @@ public sealed class InternalMugshotSettings
     // silently culled (cleaner preview at the cost of hiding the failure).
     public bool RenderMissingTextureAsWireframe { get; set; } = true;
 
+    // Character-preview attire toggles (mesh-override channel; CharacterViewer.Rendering
+    // neutral MeshOverride pipeline). Both resolve Mutagen Armor/Outfit/NPC records
+    // host-side (NpcMeshResolver.ResolveAttireMeshOverrides) and feed the renderer's
+    // ApplyMeshOverrides; slot occupancy makes clothing hide the nude body and a
+    // helmet hide hair automatically.
+    //
+    // IncludeDefaultOutfit: ON renders the NPC's DefaultOutfit attire (Kind=Armor);
+    //   body-covering armor hides the skin it covers. OFF (default) is the plain
+    //   skin preview.
+    // IncludeHeadgear: ON renders worn/outfit head-slot armor (Kind=Headgear) with
+    //   hair hidden, as in game. OFF (default) shows hair/face — the sensible
+    //   default for a face-picking tool.
+    public bool IncludeDefaultOutfit { get; set; } = false;
+    public bool IncludeHeadgear { get; set; } = false;
+
     // Portrait-quality rendering toggles (CharacterViewer.Rendering 2.5.9+).
     // Each gates a feature in the in-process renderer that improves the
     // "looks-like-a-portrait vs. looks-like-a-render" perception. Defaults

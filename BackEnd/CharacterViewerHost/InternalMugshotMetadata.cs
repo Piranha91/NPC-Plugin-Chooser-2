@@ -72,9 +72,13 @@ public static class InternalMugshotMetadata
     /// tiles compared at schemaVersion=7 (no SkinSaturationBoost entry)
     /// continue to hash-match a v8 cfg whose user hasn't changed the
     /// new field.</item>
+    /// <item>9: added <c>IncludeDefaultOutfit</c> + <c>IncludeHeadgear</c> —
+    /// the character-preview attire toggles. Both default false (no extra
+    /// meshes), so a v8 tile compared at schemaVersion=8 (which excludes these
+    /// entries) keeps hash-matching a v9 cfg whose user hasn't enabled either.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 8;
+    public const int PipelineSchemaVersion = 9;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -121,6 +125,8 @@ public static class InternalMugshotMetadata
             ["vignette_radius"] = cfg.VignetteRadius,
             ["vignette_intensity"] = cfg.VignetteIntensity,
             ["skin_saturation_boost"] = cfg.SkinSaturationBoost,
+            ["include_default_outfit"] = cfg.IncludeDefaultOutfit,
+            ["include_headgear"] = cfg.IncludeHeadgear,
         };
 
         if (cfg.CameraMode == InternalMugshotCameraMode.Manual)
@@ -299,6 +305,16 @@ public static class InternalMugshotMetadata
         if (schemaVersion >= 8)
         {
             sb.Append('|').Append(cfg.SkinSaturationBoost.ToString("R", inv));
+        }
+
+        // === schema v9 fields (character-preview attire toggles) ===
+        // Both default false (no extra meshes synthesized), so a v8 tile
+        // compared at schemaVersion=8 (which excludes these entries) keeps
+        // hash-matching a v9 cfg whose user hasn't enabled either toggle.
+        if (schemaVersion >= 9)
+        {
+            sb.Append('|').Append(cfg.IncludeDefaultOutfit ? '1' : '0');
+            sb.Append('|').Append(cfg.IncludeHeadgear ? '1' : '0');
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

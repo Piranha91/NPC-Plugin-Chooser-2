@@ -40,6 +40,78 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     [Reactive] public string CurrentNpcDisplayLabel { get; private set; } = "(no NPC loaded)";
     [Reactive] public string StatusText { get; private set; } = "";
 
+    /// <summary>Attire mesh-override warning surface, mirroring the mugshot
+    /// tile's missing-asset icon pattern (<see cref="VM_NpcsMenuMugshot"/>).
+    /// Set from <see cref="VM_CharacterViewer.MeshOverrideWarnings"/> after each
+    /// attire/headgear apply and again on <c>SceneCommitted</c> (the apply may
+    /// queue behind a load). Covers unrenderable meshes and meshes rendered on
+    /// an incompatible / absent skeleton.</summary>
+    [Reactive] public bool HasMissingAssets { get; private set; }
+    [Reactive] public string MissingAssetNotificationText { get; private set; } = string.Empty;
+
+    // Non-persistent override state for the full-screen popup (see
+    // PersistAttireToggles). Seeded from the persisted defaults at construction.
+    private bool _localIncludeDefaultOutfit;
+    private bool _localIncludeHeadgear;
+
+    /// <summary>When true (default — the Settings-tab embedded preview and the
+    /// mugshot defaults), the attire toggles read/write the persisted
+    /// <see cref="InternalMugshotSettings"/>. When false (the full-screen 3D
+    /// popup), they are NON-persistent overrides seeded from the persisted
+    /// defaults; changes affect only this preview instance and never write back
+    /// to settings.</summary>
+    public bool PersistAttireToggles { get; set; } = true;
+
+    /// <summary>"Include Default Outfit": ON renders the NPC's DefaultOutfit
+    /// attire (body armor hides the nude body it covers); OFF is the plain skin
+    /// preview.</summary>
+    public bool IncludeDefaultOutfit
+    {
+        get => PersistAttireToggles ? _settings.InternalMugshot.IncludeDefaultOutfit : _localIncludeDefaultOutfit;
+        set
+        {
+            if (IncludeDefaultOutfit == value) return;
+            if (PersistAttireToggles)
+            {
+                _settings.InternalMugshot.IncludeDefaultOutfit = value;
+                PersistThrottled();
+            }
+            else _localIncludeDefaultOutfit = value;
+            this.RaisePropertyChanged();
+            ReapplyAttireAfterToggle();
+        }
+    }
+
+    /// <summary>"Include headgear": ON renders worn/outfit head-slot armor with
+    /// hair hidden, as in game; OFF (default) shows hair/face.</summary>
+    public bool IncludeHeadgear
+    {
+        get => PersistAttireToggles ? _settings.InternalMugshot.IncludeHeadgear : _localIncludeHeadgear;
+        set
+        {
+            if (IncludeHeadgear == value) return;
+            if (PersistAttireToggles)
+            {
+                _settings.InternalMugshot.IncludeHeadgear = value;
+                PersistThrottled();
+            }
+            else _localIncludeHeadgear = value;
+            this.RaisePropertyChanged();
+            ReapplyAttireAfterToggle();
+        }
+    }
+
+    /// <summary>Re-applies the attire overrides on the embedded Settings-tab
+    /// preview after the persisted defaults change via the Settings-panel
+    /// checkboxes (whose overlay toggles are hidden there). Raises change
+    /// notification so any bound toggle UI refreshes.</summary>
+    public void ReapplyAttireFromSettings()
+    {
+        this.RaisePropertyChanged(nameof(IncludeDefaultOutfit));
+        this.RaisePropertyChanged(nameof(IncludeHeadgear));
+        ReapplyAttireAfterToggle();
+    }
+
     // Last explicit ModSetting for the "Show 3D Preview" popup path. When
     // non-null, GL-context-reset re-fires re-uses this scope; when null,
     // the re-fire falls back to the active selection (Settings-panel path).
@@ -69,6 +141,12 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         _resolver = resolver;
         _logGate = logGate;
 
+        // Seed the non-persistent popup override state from the persisted
+        // defaults. Harmless for the persistent (Settings-tab) instance, which
+        // reads settings directly via PersistAttireToggles.
+        _localIncludeDefaultOutfit = settings.InternalMugshot.IncludeDefaultOutfit;
+        _localIncludeHeadgear = settings.InternalMugshot.IncludeHeadgear;
+
         LoadSelectedNpcCommand = ReactiveCommand.CreateFromTask(LoadSelectedNpcAsync).DisposeWith(_disposables);
         ResetCommand = ReactiveCommand.Create(ResetSettingsToDefaults).DisposeWith(_disposables);
 
@@ -78,6 +156,12 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         // load so the user sees their NPC instead of an empty viewport — they
         // shouldn't need to click Reload after every tab switch.
         Viewer.GlContextReset += OnViewerGlContextReset;
+
+        // Refresh the attire mesh-override warning surface once the scene commits:
+        // ApplyMeshOverrides (fired right after a load) queues behind the in-flight
+        // rebuild and only drains here, so this is when MeshOverrideWarnings first
+        // reflects the real apply result.
+        Viewer.SceneCommitted += OnViewerSceneCommitted;
 
         // Push saved render-pipeline params into the lib viewer once so the
         // shared UC_CharacterViewerRenderPanel (bound to Viewer) shows the
@@ -153,6 +237,70 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     {
         var vmSettings = Locator.Current.GetService<VM_Settings>();
         vmSettings?.RequestThrottledSave();
+    }
+
+    /// <summary>Pushes the combined attire/headgear override set through the
+    /// renderer's replace-on-reapply mesh channel (one call, full current set),
+    /// then refreshes the warning surface. The apply queues behind an in-flight
+    /// load and drains on <c>SceneCommitted</c>, where the warning is refreshed
+    /// again.</summary>
+    private void ApplyAttireOverrides(IReadOnlyList<MeshOverride> overrides)
+    {
+        Viewer.ApplyMeshOverrides(overrides);
+        UpdateMeshOverrideWarning();
+    }
+
+    /// <summary>Mirrors <see cref="VM_CharacterViewer.MeshOverrideWarnings"/> onto
+    /// the missing-asset surface (icon/tooltip). Called after each apply and on
+    /// scene commit.</summary>
+    private void UpdateMeshOverrideWarning()
+    {
+        var warnings = Viewer.MeshOverrideWarnings;
+        if (warnings == null || warnings.Count == 0)
+        {
+            HasMissingAssets = false;
+            MissingAssetNotificationText = string.Empty;
+            return;
+        }
+        HasMissingAssets = true;
+        MissingAssetNotificationText =
+            "Some attire/headgear preview meshes couldn't be rendered correctly "
+            + "(mesh not found, missing skinning bones, or an incompatible/absent skeleton):"
+            + Environment.NewLine + " - "
+            + string.Join(Environment.NewLine + " - ", warnings);
+    }
+
+    private void OnViewerSceneCommitted()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess())
+            dispatcher.BeginInvoke(new Action(UpdateMeshOverrideWarning));
+        else
+            UpdateMeshOverrideWarning();
+    }
+
+    /// <summary>Re-applies the attire/headgear overrides after a toggle flip.
+    /// Goes through a full reload (the renderer's mesh-override apply does GL work
+    /// and is only safe to run via the queue/drain path that a load triggers), so
+    /// the new toggle state is picked up by <c>LoadAsync</c>'s attire resolve.</summary>
+    private async void ReapplyAttireAfterToggle()
+    {
+        try { await ReloadCurrentAsync().ConfigureAwait(false); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "VM_InternalMugshotPreview: attire re-apply after toggle failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>Reloads the current NPC through the same scope it was last loaded
+    /// with (explicit per-tile mod, else the active selection).</summary>
+    private Task ReloadCurrentAsync()
+    {
+        if (CurrentNpcFormKey.IsNull) return Task.CompletedTask;
+        return _lastExplicitModSetting != null
+            ? LoadAsync(CurrentNpcFormKey, _lastExplicitModSetting)
+            : LoadAsync(CurrentNpcFormKey);
     }
 
     private async void OnViewerReloadRequested()
@@ -238,6 +386,13 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             CurrentNpcFormKey = formKey;
             CurrentNpcDisplayLabel = formKey.ToString();
             StatusText = $"Loaded {formKey}";
+
+            // Attire / headgear (Include Default Outfit / Include headgear). Scoped
+            // to the user's active appearance selection, matching the mesh load.
+            var attire = _resolver.ResolveAttireMeshOverridesForActiveSelection(
+                formKey, IncludeDefaultOutfit, IncludeHeadgear);
+            ApplyAttireOverrides(attire);
+
             PreviewLoaded?.Invoke();
         }
         catch (Exception ex)
@@ -287,6 +442,13 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             CurrentNpcFormKey = formKey;
             CurrentNpcDisplayLabel = formKey.ToString();
             StatusText = $"Loaded {formKey}";
+
+            // Attire / headgear (Include Default Outfit / Include headgear),
+            // resolved through this tile's explicit mod scope.
+            var attire = _resolver.ResolveAttireMeshOverrides(
+                formKey, modSetting, IncludeDefaultOutfit, IncludeHeadgear);
+            ApplyAttireOverrides(attire);
+
             PreviewLoaded?.Invoke();
         }
         catch (Exception ex)
@@ -411,6 +573,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     public void Dispose()
     {
         Viewer.GlContextReset -= OnViewerGlContextReset;
+        Viewer.SceneCommitted -= OnViewerSceneCommitted;
         _disposables.Dispose();
         Viewer.Dispose();
     }

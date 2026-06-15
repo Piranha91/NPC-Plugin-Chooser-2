@@ -73,6 +73,34 @@
                 <TextBlock Text="Loading…" Foreground="White" FontSize="20"
                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
+
+            <!-- Attire toggles (Include Default Outfit / Include headgear).
+                 Overlaid on the viewport so they stay visible in both the
+                 Settings live preview and the full-screen 3D popup. Bind to the
+                 wrapper VM (the UC's DataContext); toggling persists to settings
+                 and re-applies the mesh-override set via a reload. -->
+            <Border x:Name="AttireTogglePanel"
+                    HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6"
+                    Background="#A0000000" CornerRadius="4" Padding="8,6">
+                <StackPanel Orientation="Vertical">
+                    <CheckBox Content="Include Default Outfit" Foreground="White"
+                              IsChecked="{Binding IncludeDefaultOutfit}"
+                              ToolTip="Render the NPC's default outfit. Body-covering armor hides the nude body."/>
+                    <CheckBox Content="Include headgear" Foreground="White" Margin="0,4,0,0"
+                              IsChecked="{Binding IncludeHeadgear}"
+                              ToolTip="Render worn/outfit head gear (helmets/hoods/circlets). Hair is hidden under headgear."/>
+                </StackPanel>
+            </Border>
+
+            <!-- Missing-asset warning (attire/headgear mesh-override failures):
+                 mirrors the mugshot tile's missing-asset icon pattern. -->
+            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6"
+                    Background="#C0703000" CornerRadius="4" Padding="6,3"
+                    ToolTip="{Binding MissingAssetNotificationText}"
+                    Visibility="{Binding HasMissingAssets, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                <TextBlock Text="⚠ Some attire meshes couldn't render" Foreground="White"
+                           FontWeight="SemiBold"/>
+            </Border>
         </Grid>
 
         <!-- Status -->

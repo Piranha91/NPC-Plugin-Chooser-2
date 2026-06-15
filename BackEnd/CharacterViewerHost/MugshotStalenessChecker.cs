@@ -178,6 +178,27 @@ public sealed class MugshotStalenessChecker
             }
         }
 
+        // Attire drift — UNGATED. The Include Default Outfit / Include headgear
+        // toggles change WHAT the mugshot depicts (nude vs. clothed, hair vs.
+        // helmet), so a mismatch is a structural content mismatch like
+        // resolution, not a stylistic tweak that should share the
+        // AutoUpdateStaleMugshots gate. It's also schema-independent: the
+        // settings-hash check below is compared at the PNG's stamped schema, so
+        // a pre-v9 PNG (no attire fields) would never see the v9 toggle entries
+        // and the hash alone could never flag attire drift. A PNG with no attire
+        // metadata was rendered before the feature existed → treat as "no
+        // attire" (both false), so old mugshots only regenerate once the user
+        // actually enables a toggle.
+        bool pngOutfit = root["include_default_outfit"]?.Value<bool?>() ?? false;
+        bool pngHeadgear = root["include_headgear"]?.Value<bool?>() ?? false;
+        bool curOutfit = _settings.InternalMugshot.IncludeDefaultOutfit;
+        bool curHeadgear = _settings.InternalMugshot.IncludeHeadgear;
+        if (pngOutfit != curOutfit || pngHeadgear != curHeadgear)
+        {
+            Trace($"  Internal: attire drift png(outfit={pngOutfit},headgear={pngHeadgear}) current(outfit={curOutfit},headgear={curHeadgear})");
+            return true;
+        }
+
         // Version drift (gated like the legacy path on AutoUpdateOldMugshots).
         if (_settings.AutoUpdateOldMugshots)
         {

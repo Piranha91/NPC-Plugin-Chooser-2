@@ -438,6 +438,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         try
         {
             var inner = _internalPreviewFactory();
+            // Popup attire toggles are non-persistent overrides of the Settings-
+            // tab defaults — seeded from them, but never written back.
+            inner.PersistAttireToggles = false;
             var modSetting = _parentVMModSetting.SaveToModel();
             var title = $"3D Preview — {NpcDisplayName} ({_parentVMModSetting.DisplayName})";
             var fsVm = new VM_FullScreen3DPreview(inner, _settings, title);

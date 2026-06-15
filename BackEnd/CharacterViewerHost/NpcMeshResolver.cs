@@ -476,6 +476,293 @@ public class NpcMeshResolver
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    //  Attire / headgear mesh-override resolution
+    //  ("Include Default Outfit" / "Include headgear" preview features).
+    //  Resolves Mutagen Armor / Outfit / NPC records into neutral
+    //  CharacterViewer.Rendering MeshOverrides fed through
+    //  VM_CharacterViewer.ApplyMeshOverrides. Mutagen stays host-side here, like
+    //  the rest of this resolver; the renderer never sees a Mutagen type. Slot
+    //  occupancy/hiding is the renderer's job — body armor hides the nude body,
+    //  headgear hides hair — so this only has to label each piece with its biped
+    //  slots + Kind. See Part 2 of the Character Preview design.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>Biped-object-flag bits that mark a piece as headgear rather than
+    /// body attire: Head (slot 30 = 0x1) and Circlet (slot 42 = 0x1000). The
+    /// Hair bit (slot 31) is deliberately excluded from this classification —
+    /// a Hair-only armature is a wig/hairpiece, not a helmet, and treating it as
+    /// headgear would wrongly hide the very hair it provides. A real helmet/hood
+    /// occupies slot 30 (and a circlet slot 42); both typically also flag Hair,
+    /// which we fold into <see cref="HairSlotBit"/> for hiding.</summary>
+    private const int HeadSlotMask = 0x1 | 0x1000;
+
+    /// <summary>The Hair biped slot bit (slot 31 = 0x2). Headgear hides this so
+    /// the helmet replaces the NPC's hair the way it does in game.</summary>
+    private const int HairSlotBit = 0x2;
+
+    /// <summary>
+    /// Resolves the user's active appearance selection for
+    /// <paramref name="targetNpcFormKey"/> (via
+    /// <see cref="NpcConsistencyProvider"/>) and builds the attire / headgear
+    /// MeshOverrides for it. Live-preview counterpart to
+    /// <see cref="ResolveAttireMeshOverrides(FormKey, ModSetting?, bool, bool)"/>;
+    /// the per-tile popup calls that overload directly with the tile's own mod.
+    /// </summary>
+    public IReadOnlyList<MeshOverride> ResolveAttireMeshOverridesForActiveSelection(
+        FormKey targetNpcFormKey, bool includeDefaultOutfit, bool includeHeadgear)
+    {
+        var modSetting = LookupSelectedModSetting(targetNpcFormKey, out var sourceFormKey);
+        return ResolveAttireMeshOverrides(sourceFormKey, modSetting, includeDefaultOutfit, includeHeadgear);
+    }
+
+    /// <summary>
+    /// Resolves the NPC's worn attire ("Include Default Outfit") and/or head
+    /// gear ("Include headgear") into neutral <see cref="MeshOverride"/>s for
+    /// <see cref="VM_CharacterViewer.ApplyMeshOverrides"/>. Walks
+    /// <c>NPC.DefaultOutfit → OTFT.Items</c> (ARMO directly, LeveledItem resolved
+    /// deterministically to the first valid armor and logged), plus the worn/skin
+    /// armor for head-slot pieces, and emits one override per applicable
+    /// ArmorAddon (filtered by NPC race). Body pieces are <c>Kind=Armor</c> (hide
+    /// exactly the slots they fill, so clothing hides the nude body); head pieces
+    /// are <c>Kind=Headgear</c> with the hair slot added to <c>HidesSlots</c>.
+    /// Non-apparel outfit items (weapons / ammo / quest items) are skipped.
+    /// Returns an empty list when both flags are off, the NPC can't be resolved,
+    /// or the environment isn't ready.
+    /// </summary>
+    public IReadOnlyList<MeshOverride> ResolveAttireMeshOverrides(
+        FormKey npcFormKey, ModSetting? modSetting, bool includeDefaultOutfit, bool includeHeadgear)
+    {
+        if (!includeDefaultOutfit && !includeHeadgear) return Array.Empty<MeshOverride>();
+        var linkCache = _env.LinkCache;
+        if (linkCache == null) return Array.Empty<MeshOverride>();
+        return ResolveAttireMeshOverrides(npcFormKey, linkCache,
+            BuildContext(npcFormKey, modSetting), includeDefaultOutfit, includeHeadgear);
+    }
+
+    private IReadOnlyList<MeshOverride> ResolveAttireMeshOverrides(
+        FormKey npcFormKey, ILinkCache linkCache, NpcResolutionContext? context,
+        bool includeDefaultOutfit, bool includeHeadgear)
+    {
+        var result = new List<MeshOverride>();
+        if (!includeDefaultOutfit && !includeHeadgear) return result;
+
+        var npcGetter = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
+        if (npcGetter == null)
+        {
+            _logger?.LogError("CharacterViewer: ResolveAttireMeshOverrides could not resolve NPC " + npcFormKey);
+            return result;
+        }
+
+        var sex = Auxilliary.IsFemale(npcGetter) ? Sex.Female : Sex.Male;
+        FormKey? npcRaceKey = (npcGetter.Race != null && !npcGetter.Race.IsNull) ? npcGetter.Race.FormKey : null;
+        string npcName = npcGetter.Name?.String ?? npcGetter.EditorID ?? npcFormKey.ToString();
+
+        // Dedup by override Key (slot(s) + ARMA FormKey) so a piece reachable via
+        // both the outfit and the worn armor is only emitted once.
+        var seenOverrideKeys = new HashSet<string>();
+
+        // Default outfit → apparel armors. Drives both features: a head-slot
+        // piece becomes headgear, everything else body attire.
+        if (npcGetter.DefaultOutfit != null && !npcGetter.DefaultOutfit.IsNull)
+        {
+            var outfit = ResolveRecord<IOutfitGetter>(npcGetter.DefaultOutfit, linkCache, context);
+            if (outfit?.Items != null)
+            {
+                var outfitArmors = new List<(IArmorGetter armor, string source)>();
+                var seenArmorKeys = new HashSet<FormKey>();
+                foreach (var itemLink in outfit.Items)
+                {
+                    if (itemLink == null || itemLink.IsNull) continue;
+                    CollectOutfitItemArmors(itemLink.FormKey, linkCache, context,
+                        "Outfit:" + npcGetter.DefaultOutfit.FormKey, outfitArmors, seenArmorKeys, depth: 0);
+                }
+                foreach (var (armor, source) in outfitArmors)
+                {
+                    AppendArmorMeshOverrides(armor, source, sex, npcRaceKey, linkCache, context,
+                        includeBody: includeDefaultOutfit, includeHeadgear: includeHeadgear,
+                        result, seenOverrideKeys);
+                }
+            }
+            else
+            {
+                LogVerbose("CharacterViewer: ResolveAttireMeshOverrides could not resolve DefaultOutfit "
+                    + npcGetter.DefaultOutfit.FormKey + " for " + npcName);
+            }
+        }
+
+        // Headgear can also be worn via the skin/worn armor (rare, but the design
+        // calls for "worn/outfit"). Scan it for HEAD pieces only — body/hands/
+        // feet/hair ARMAs there are already rendered as base meshes, so we must
+        // not re-add them (includeBody:false).
+        if (includeHeadgear)
+        {
+            var (wornArmor, wornSource) = ResolveWornArmor(npcGetter, linkCache, context, npcName);
+            if (wornArmor != null)
+            {
+                AppendArmorMeshOverrides(wornArmor, wornSource, sex, npcRaceKey, linkCache, context,
+                    includeBody: false, includeHeadgear: true, result, seenOverrideKeys);
+            }
+        }
+
+        LogVerbose("CharacterViewer: ResolveAttireMeshOverrides for " + npcName + " (" + npcFormKey
+            + ") outfit=" + includeDefaultOutfit + " headgear=" + includeHeadgear
+            + " -> " + result.Count + " override(s)");
+        return result;
+    }
+
+    /// <summary>
+    /// Resolves one outfit <c>Items</c> entry to apparel armor(s) and appends
+    /// them to <paramref name="armors"/>. ARMO entries are taken directly;
+    /// LeveledItem entries are resolved DETERMINISTICALLY to the first valid
+    /// armor (in declared entry order, recursing into nested leveled lists) and
+    /// the choice is logged — never random per render. Non-apparel items
+    /// (weapons / ammo / quest items) and unresolvable links are skipped.
+    /// </summary>
+    private void CollectOutfitItemArmors(FormKey itemFormKey, ILinkCache linkCache, NpcResolutionContext? context,
+        string source, List<(IArmorGetter armor, string source)> armors, HashSet<FormKey> seen, int depth)
+    {
+        if (depth > 10) return; // guard against pathological leveled-list cycles
+
+        var armor = ResolveRecord<IArmorGetter>(itemFormKey.ToLink<IArmorGetter>(), linkCache, context);
+        if (armor != null)
+        {
+            if (seen.Add(itemFormKey)) armors.Add((armor, source));
+            return;
+        }
+
+        var lvli = ResolveRecord<ILeveledItemGetter>(itemFormKey.ToLink<ILeveledItemGetter>(), linkCache, context);
+        if (lvli != null)
+        {
+            var chosen = ResolveFirstArmorFromLeveledItem(lvli, linkCache, context, depth);
+            if (chosen != null)
+            {
+                LogVerbose("CharacterViewer: Outfit LeveledItem " + itemFormKey + " -> chose armor "
+                    + chosen.Value.label + " (deterministic: first valid armor in entry order)");
+                if (seen.Add(chosen.Value.armor.FormKey))
+                    armors.Add((chosen.Value.armor, source + " -> LVLI:" + itemFormKey));
+            }
+            else
+            {
+                LogVerbose("CharacterViewer: Outfit LeveledItem " + itemFormKey + " yielded no apparel armor (skipped)");
+            }
+            return;
+        }
+
+        LogVerbose("CharacterViewer: Outfit item " + itemFormKey + " is not Armor/LeveledItem (non-apparel, skipped)");
+    }
+
+    /// <summary>Deterministically picks the first valid armor reachable from
+    /// <paramref name="lvli"/> in declared entry order, recursing into nested
+    /// leveled lists. Returns null when the list contains no apparel armor.</summary>
+    private (IArmorGetter armor, string label)? ResolveFirstArmorFromLeveledItem(
+        ILeveledItemGetter lvli, ILinkCache linkCache, NpcResolutionContext? context, int depth)
+    {
+        if (depth > 10 || lvli.Entries == null) return null;
+        foreach (var entry in lvli.Entries)
+        {
+            var refLink = entry?.Data?.Reference;
+            if (refLink == null || refLink.IsNull) continue;
+            var fk = refLink.FormKey;
+
+            var armor = ResolveRecord<IArmorGetter>(fk.ToLink<IArmorGetter>(), linkCache, context);
+            if (armor != null) return (armor, armor.EditorID ?? fk.ToString());
+
+            var nested = ResolveRecord<ILeveledItemGetter>(fk.ToLink<ILeveledItemGetter>(), linkCache, context);
+            if (nested != null)
+            {
+                var inner = ResolveFirstArmorFromLeveledItem(nested, linkCache, context, depth + 1);
+                if (inner != null) return inner;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Emits one <see cref="MeshOverride"/> per applicable ArmorAddon of
+    /// <paramref name="armor"/> (filtered by NPC race), classifying each by slot
+    /// into body attire (<see cref="MeshOverrideKind.Armor"/>) or headgear
+    /// (<see cref="MeshOverrideKind.Headgear"/>). <paramref name="includeBody"/> /
+    /// <paramref name="includeHeadgear"/> gate which classes are emitted. The Key
+    /// combines slot(s) + ARMA FormKey so it's stable and unique per piece.</summary>
+    private void AppendArmorMeshOverrides(IArmorGetter armor, string source, Sex sex, FormKey? npcRaceKey,
+        ILinkCache linkCache, NpcResolutionContext? context, bool includeBody, bool includeHeadgear,
+        List<MeshOverride> result, HashSet<string> seenKeys)
+    {
+        if (armor.Armature == null) return;
+        foreach (var armaLink in armor.Armature)
+        {
+            if (armaLink == null || armaLink.IsNull) continue;
+            var arma = ResolveRecord<IArmorAddonGetter>(armaLink, linkCache, context);
+            if (arma?.BodyTemplate == null) continue;
+            if (!IsArmatureForRace(arma, npcRaceKey)) continue;
+
+            int slots = (int)arma.BodyTemplate.FirstPersonFlags;
+            if (slots == 0) continue;
+
+            bool isHead = (slots & HeadSlotMask) != 0;
+            if (isHead && !includeHeadgear) continue;
+            if (!isHead && !includeBody) continue;
+
+            string? meshPath = GetWorldModelPath(arma, sex);
+            if (meshPath == null) continue;
+
+            string key = (isHead ? "Headgear:" : "Outfit:") + armaLink.FormKey + ":" + slots;
+            if (!seenKeys.Add(key)) continue;
+
+            // Texture set: §2.6.6 — ArmorAddon.SkinTexture takes precedence. When
+            // present (skin-type addons), use it; rebase to the mod's loose
+            // overrides like the base meshes. Otherwise leave Textures null so the
+            // NIF's own embedded BSShaderTextureSet renders (correct for armor) —
+            // the armature's per-object AlternateTextures can't be expressed
+            // through the renderer's flat per-shape slot channel, so they degrade
+            // to the NIF default (logged for traceability).
+            var txst = ResolveTxstTextures(arma, sex, linkCache, context, armaLink.FormKey);
+            meshPath = RebaseToAbsoluteIfPresent(meshPath, context) ?? meshPath;
+            Dictionary<int, string>? textures = null;
+            if (txst.Count > 0)
+            {
+                foreach (var slot in txst.Keys.ToList())
+                {
+                    var rebased = RebaseToAbsoluteIfPresent(txst[slot], context);
+                    if (rebased != null) txst[slot] = rebased;
+                }
+                textures = txst;
+            }
+            else if (HasAlternateTextures(arma, sex))
+            {
+                LogVerbose("CharacterViewer: ARMA " + armaLink.FormKey + " has AlternateTextures but no SkinTexture; "
+                    + "using the NIF's own texture set (per-object overrides not routable through MeshOverride)");
+            }
+
+            var kind = isHead ? MeshOverrideKind.Headgear : MeshOverrideKind.Armor;
+            // Headgear hides HAIR (slot 31) only — never the FaceGen head/face
+            // (slot 30 bit), even when the helmet itself occupies slot 30, or the
+            // renderer would cull the face under any slot-30 helmet. Body armor
+            // leaves HidesSlots null (defaults to its own BipedSlots) so it hides
+            // exactly the nude-body slots it covers.
+            int? hides = isHead ? HairSlotBit : (int?)null;
+
+            result.Add(new MeshOverride
+            {
+                Key = key,
+                MeshPath = meshPath,
+                BipedSlots = slots,
+                HidesSlots = hides,
+                Kind = kind,
+                Textures = textures,
+            });
+            LogVerbose("CharacterViewer: attire override '" + key + "' mesh=" + meshPath
+                + " slots=" + slots + " kind=" + kind + " src=" + source);
+        }
+    }
+
+    private static bool HasAlternateTextures(IArmorAddonGetter arma, Sex sex)
+    {
+        var model = sex == Sex.Female ? arma.WorldModel?.Female : arma.WorldModel?.Male;
+        var alts = model?.AlternateTextures;
+        return alts != null && alts.Count > 0;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     //  Asset-resolution diagnostics
     // ─────────────────────────────────────────────────────────────────────
 

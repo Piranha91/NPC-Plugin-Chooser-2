@@ -75,6 +75,17 @@ public partial class UC_InternalMugshotPreview : UserControl
         set => SettingsToolbar.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    /// <summary>Visibility of the floating "Include Default Outfit / headgear"
+    /// toggle overlay. Default true (the full-screen 3D popup, where these are
+    /// non-persistent overrides). The Settings-tab embedded preview sets false —
+    /// there the persistent defaults live as labeled checkboxes in the options
+    /// panel, so the floating overlay would be redundant.</summary>
+    public bool ShowAttireToggles
+    {
+        get => AttireTogglePanel.Visibility == Visibility.Visible;
+        set => AttireTogglePanel.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     /// <summary>When true, the UC ignores
     /// <c>Settings.InternalMugshot.CameraMode</c> and runs in
     /// "show whole NPC + free orbit" mode: full-body framing on first

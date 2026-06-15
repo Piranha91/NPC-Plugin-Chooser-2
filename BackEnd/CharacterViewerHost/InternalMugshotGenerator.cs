@@ -130,9 +130,20 @@ public sealed class InternalMugshotGenerator
             }
 
             var cfg = _settings.InternalMugshot;
+
+            // Attire / headgear (Include Default Outfit / Include headgear) — the
+            // persisted Settings-tab defaults. Resolved through this tile's
+            // explicit mod scope so the mugshot matches the preview. The offscreen
+            // renderer loads/skins/hides them like the live preview.
+            var meshOverrides = _resolver.ResolveAttireMeshOverrides(
+                npcFormKey, modSetting, cfg.IncludeDefaultOutfit, cfg.IncludeHeadgear);
+            var meshOverrideWarningsOut = new List<string>();
+
             var request = new OffscreenRenderRequest
             {
                 MeshPaths = paths,
+                MeshOverrides = meshOverrides.Count > 0 ? meshOverrides : null,
+                MeshOverrideWarningsOut = meshOverrideWarningsOut,
                 Width = cfg.OutputWidth,
                 Height = cfg.OutputHeight,
                 BackgroundRgb = (cfg.BackgroundR, cfg.BackgroundG, cfg.BackgroundB),
@@ -210,6 +221,17 @@ public sealed class InternalMugshotGenerator
             {
                 Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} skipped-missing-assets meshes={missingMeshCount} textures={missingTextureCount} totalElapsed={sw.ElapsedMilliseconds}ms");
                 return false;
+            }
+
+            // Attire/headgear override warnings are surfaced for display only,
+            // AFTER the validated-only gate above — a helmet that needs an absent
+            // skeleton shouldn't discard an otherwise-complete face mugshot. Fold
+            // them into the persisted missing-mesh list so the tile's existing
+            // missing-asset overlay (and the cached metadata) shows them.
+            if (meshOverrideWarningsOut.Count > 0)
+            {
+                Trace($"  meshOverrideWarnings tid={Environment.CurrentManagedThreadId} count={meshOverrideWarningsOut.Count}");
+                missingMeshPathsOut?.AddRange(meshOverrideWarningsOut);
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);

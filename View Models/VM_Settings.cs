@@ -148,6 +148,12 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public float InternalPitch { get; set; }
     [Reactive] public float InternalHairAbovePadding { get; set; }
     [Reactive] public bool InternalIncludeAccessories { get; set; }
+
+    /// <summary>Persisted attire defaults: applied to both the mugshot renderer
+    /// and the 3D preview. The full-screen 3D popup exposes the same two toggles
+    /// as non-persistent per-view overrides seeded from these.</summary>
+    [Reactive] public bool InternalIncludeDefaultOutfit { get; set; }
+    [Reactive] public bool InternalIncludeHeadgear { get; set; }
     /// <summary>SolidColorBrush wrapping InternalMugshot.BackgroundR/G/B.
     /// Surfaced as a single property so the SettingsView color-picker swatch
     /// + "Change..." button can mirror the legacy Portrait Creator's UI shape
@@ -502,6 +508,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalPitch = _model.InternalMugshot.Pitch;
         InternalHairAbovePadding = _model.InternalMugshot.HairAbovePadding;
         InternalIncludeAccessories = _model.InternalMugshot.IncludeAccessories;
+        InternalIncludeDefaultOutfit = _model.InternalMugshot.IncludeDefaultOutfit;
+        InternalIncludeHeadgear = _model.InternalMugshot.IncludeHeadgear;
         InternalBackgroundColor = new SolidColorBrush(Color.FromRgb(
             _model.InternalMugshot.BackgroundR,
             _model.InternalMugshot.BackgroundG,
@@ -858,6 +866,25 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(f => { _model.InternalMugshot.HairAbovePadding = f; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.InternalIncludeAccessories).Skip(1)
             .Subscribe(b => { _model.InternalMugshot.IncludeAccessories = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+
+        // Attire defaults: write through, save, and re-apply to the embedded
+        // live preview (its floating overlay toggles are hidden — these panel
+        // checkboxes are the control there). The popup uses its own
+        // non-persistent overrides and isn't affected.
+        this.WhenAnyValue(x => x.InternalIncludeDefaultOutfit).Skip(1)
+            .Subscribe(b =>
+            {
+                _model.InternalMugshot.IncludeDefaultOutfit = b;
+                RequestThrottledSave();
+                InternalMugshotPreviewVM?.ReapplyAttireFromSettings();
+            }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalIncludeHeadgear).Skip(1)
+            .Subscribe(b =>
+            {
+                _model.InternalMugshot.IncludeHeadgear = b;
+                RequestThrottledSave();
+                InternalMugshotPreviewVM?.ReapplyAttireFromSettings();
+            }).DisposeWith(_disposables);
 
         // --- FaceGen Analysis persistence ---
         this.WhenAnyValue(x => x.EnableFaceGenAnalysis).Skip(1)
@@ -1593,6 +1620,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalPitch = c.Pitch;
         InternalHairAbovePadding = c.HairAbovePadding;
         InternalIncludeAccessories = c.IncludeAccessories;
+        InternalIncludeDefaultOutfit = c.IncludeDefaultOutfit;
+        InternalIncludeHeadgear = c.IncludeHeadgear;
         InternalBackgroundColor = new SolidColorBrush(Color.FromRgb(c.BackgroundR, c.BackgroundG, c.BackgroundB));
         InternalOutputWidth = c.OutputWidth;
         InternalOutputHeight = c.OutputHeight;

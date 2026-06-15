@@ -592,12 +592,28 @@
                                       Margin="0,8,0,0"
                                       ToolTip="When on (default), a previously-generated mugshot whose stamped metadata records any missing meshes or textures is treated as stale and re-rendered on the next session — giving newly-installed assets a chance to fill in the wireframe / placeholder areas automatically. Turn off to keep the existing PNG in place even when it depicts an incomplete model."/>
 
+                            <!-- Attire defaults: apply to both the mugshot renderer and
+                                 the 3D preview. The full-screen 3D preview exposes the
+                                 same two toggles as non-persistent per-view overrides. -->
+                            <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="Attire:" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <CheckBox Content="Include default outfit"
+                                          IsChecked="{Binding InternalIncludeDefaultOutfit, Mode=TwoWay}"
+                                          VerticalAlignment="Center" Margin="0,0,12,0"
+                                          ToolTip="When on, render the NPC's default outfit in mugshots and the 3D preview. Body-covering armor hides the nude body underneath. Off by default."/>
+                                <CheckBox Content="Include headgear"
+                                          IsChecked="{Binding InternalIncludeHeadgear, Mode=TwoWay}"
+                                          VerticalAlignment="Center"
+                                          ToolTip="When on, render worn/outfit head gear (helmets/hoods/circlets); hair is hidden under headgear, as in game. Off by default — the sensible choice for a face-picking tool."/>
+                            </WrapPanel>
+
                             <!-- Live preview - wrapped in a Grid so its Visibility binding
                                  reads InternalShowPreview off the inherited VM_Settings
                                  DataContext rather than the UC's overridden one. -->
                             <Grid Margin="0,12,0,0"
                                   Visibility="{Binding InternalShowPreview, Converter={StaticResource BooleanToVisibilityConverter}}">
                                 <local:UC_InternalMugshotPreview DataContext="{Binding InternalMugshotPreviewVM}"
+                                                                  ShowAttireToggles="False"
                                                                   Height="540"/>
                             </Grid>
                         </StackPanel>
