@@ -225,6 +225,48 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public MugshotSearchMode SelectedMugshotSearchModeFF { get; set; }
     public IEnumerable<MugshotSearchMode> MugshotSearchModes { get; } = Enum.GetValues(typeof(MugshotSearchMode)).Cast<MugshotSearchMode>();
 
+    // --- "Batch Generate Mugshots" scope selector ---
+    // Dropdown to the left of the button: "All" plus the display name of each
+    // data-containing (non-mugshot-only) mod that has NPCs to render. Selecting a
+    // specific mod limits the batch to that mod; "All" processes every mod.
+    public const string AllMugshotModsOption = "All";
+    public ObservableCollection<string> MugshotGenerationModOptions { get; } = new() { AllMugshotModsOption };
+    [Reactive] public string SelectedMugshotGenerationMod { get; set; } = AllMugshotModsOption;
+
+    /// <summary>
+    /// Rebuilds <see cref="MugshotGenerationModOptions"/> from the current mod list
+    /// ("All" + each data-containing, non-mugshot-only mod that has NPCs). Called
+    /// when the dropdown opens so it always reflects the live Mods tab. Preserves
+    /// the current selection if it still exists, otherwise falls back to "All".
+    /// </summary>
+    public void RefreshMugshotGenerationModOptions()
+    {
+        var previousSelection = SelectedMugshotGenerationMod;
+
+        var dataModNames = _lazyModListVM.IsValueCreated
+            ? _lazyModListVM.Value.AllModSettings
+                .Where(m => !m.IsMugshotOnlyEntry
+                            && m.NpcFormKeysToDisplayName != null
+                            && m.NpcFormKeysToDisplayName.Count > 0
+                            && !string.IsNullOrWhiteSpace(m.DisplayName))
+                .Select(m => m.DisplayName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : new List<string>();
+
+        MugshotGenerationModOptions.Clear();
+        MugshotGenerationModOptions.Add(AllMugshotModsOption);
+        foreach (var name in dataModNames)
+        {
+            MugshotGenerationModOptions.Add(name);
+        }
+
+        SelectedMugshotGenerationMod = MugshotGenerationModOptions.Contains(previousSelection)
+            ? previousSelection
+            : AllMugshotModsOption;
+    }
+
 
     // --- FaceGen Analysis (per-mugshot polycount / size overlay) ---
     [Reactive] public bool EnableFaceGenAnalysis { get; set; }
@@ -2469,6 +2511,25 @@ Options:
             return;
         }
 
+        // Honor the scope dropdown to the left of the button: "All" (or empty)
+        // processes every mod; otherwise restrict the batch to the chosen mod.
+        string selectedModScope = SelectedMugshotGenerationMod;
+        bool generateForAllMods = string.IsNullOrEmpty(selectedModScope)
+                                  || selectedModScope == AllMugshotModsOption;
+        if (!generateForAllMods)
+        {
+            modSettings = modSettings
+                .Where(m => string.Equals(m.DisplayName, selectedModScope, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (modSettings.Count == 0)
+            {
+                ScrollableMessageBox.Show(
+                    $"The selected mod '{selectedModScope}' was not found. It may have been removed or renamed; choose another option from the dropdown.",
+                    "Mod Not Found");
+                return;
+            }
+        }
+
         if (!UsePortraitCreatorFallback)
         {
             ScrollableMessageBox.ShowWarning(
@@ -2524,7 +2585,7 @@ Options:
 
         var progressVM = new VM_ProgressWindow
         {
-            Title = "Generate All Mugshots",
+            Title = generateForAllMods ? "Generate All Mugshots" : $"Generate Mugshots — {selectedModScope}",
             StatusMessage = $"Preparing to scan {workList.Count} NPC{(workList.Count == 1 ? "" : "s")}...",
             CurrentSubItem = string.Empty,
             EtaText = string.Empty,

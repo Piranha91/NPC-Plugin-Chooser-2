@@ -49,6 +49,14 @@ namespace NPC_Plugin_Chooser_2.Views
             });
         }
         
+        // Rebuild the "Batch Generate Mugshots" scope list each time the dropdown
+        // opens so it reflects the current Mods tab (mods added/removed/renamed
+        // since the view was constructed).
+        private void MugshotGenerationModComboBox_DropDownOpened(object sender, EventArgs e)
+        {
+            ViewModel?.RefreshMugshotGenerationModOptions();
+        }
+
         // Allows only integer values
         private void IntegerTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
         {

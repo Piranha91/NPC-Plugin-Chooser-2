@@ -392,6 +392,30 @@
                                    FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="0,0,0,5"/>
                     </StackPanel>
 
+                    <!-- Batch mugshot generation: scope dropdown ("All" or a single
+                         mod) + the generate button + the asset-validated toggle. -->
+                    <StackPanel Orientation="Horizontal" Margin="15,5,0,5"
+                                Visibility="{Binding UsePortraitCreatorFallback, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Button Content="Batch Generate Mugshots"
+                                Command="{Binding GenerateAllMugshotsCommand}"
+                                Padding="10,5"
+                                Margin="0,0,8,0"
+                                ToolTip="Generates a mugshot for each local NPC that doesn't already have one, using the renderer selected above and the scope chosen in the dropdown to the right. NPCs are grouped by sex and shared NPC-record assets (race, worn armor, head parts, hair) so the renderer reuses meshes and textures across consecutive frames. FaceFinder downloads are handled separately via the FaceFinder section's 'Batch Download Mugshots' button."/>
+                        <ComboBox x:Name="MugshotGenerationModComboBox"
+                                  ItemsSource="{Binding MugshotGenerationModOptions}"
+                                  SelectedItem="{Binding SelectedMugshotGenerationMod, Mode=TwoWay}"
+                                  DropDownOpened="MugshotGenerationModComboBox_DropDownOpened"
+                                  MinWidth="140" MaxWidth="260"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,8,0"
+                                  ToolTip="Choose which mod to generate mugshots for. 'All' processes every data-containing (non-mugshot-only) mod; selecting a specific mod limits the batch to that mod's NPCs."/>
+                        <CheckBox Content="Asset-Validated Only"
+                                  IsChecked="{Binding AssetValidatedMugshotsOnly, Mode=TwoWay}"
+                                  VerticalAlignment="Center"
+                                  Margin="10,0,0,0"
+                                  ToolTip="When checked, an Internal-renderer mugshot whose render reports any missing meshes or textures is skipped — no PNG is written — so the batch only persists complete renders. Uncheck to save the wireframe / placeholder-textured result anyway. Per-tile clicks ignore this toggle and always render."/>
+                    </StackPanel>
+
                     <!-- Internal renderer settings panel -->
                     <Border Margin="15,5,0,5" Padding="10" BorderBrush="Gray" BorderThickness="1" CornerRadius="3">
                         <Border.Resources>
@@ -818,18 +842,6 @@
                                       SelectedItem="{Binding SelectedMugshotSearchModePC, Mode=TwoWay}"
                                       MinWidth="120"
                                       ToolTip="Fast: Uses cached list of generated mugshots (recommended). Comprehensive: Scans all mugshot folders and reads metadata."/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="15,0,0,0">
-                            <Button Content="Batch Generate Mugshots"
-                                    Command="{Binding GenerateAllMugshotsCommand}"
-                                    Padding="10,5"
-                                    ToolTip="Iterates every mod and generates a mugshot for each local NPC that doesn't already have one, using the renderer selected above. NPCs are grouped by sex and shared NPC-record assets (race, worn armor, head parts, hair) so the renderer reuses meshes and textures across consecutive frames. FaceFinder downloads are handled separately via the FaceFinder section's 'Batch Download Mugshots' button."/>
-                            <CheckBox Content="Asset-Validated Only"
-                                      IsChecked="{Binding AssetValidatedMugshotsOnly, Mode=TwoWay}"
-                                      VerticalAlignment="Center"
-                                      Margin="10,0,0,0"
-                                      ToolTip="When checked, an Internal-renderer mugshot whose render reports any missing meshes or textures is skipped — no PNG is written — so the batch only persists complete renders. Uncheck to save the wireframe / placeholder-textured result anyway. Per-tile clicks ignore this toggle and always render."/>
                         </StackPanel>
                     </Grid>
 
