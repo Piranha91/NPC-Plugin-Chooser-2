@@ -550,6 +550,11 @@ public class NpcMeshResolver
         bool includeDefaultOutfit, bool includeHeadgear)
     {
         var result = new List<MeshOverride>();
+        // Outfit is the dominant toggle — headgear is part of the outfit and never
+        // renders on its own, so with the outfit off nothing attire-related is
+        // emitted regardless of the headgear flag. (The UI also hides the headgear
+        // toggle while the outfit is off.)
+        includeHeadgear = includeHeadgear && includeDefaultOutfit;
         if (!includeDefaultOutfit && !includeHeadgear) return result;
 
         var npcGetter = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
@@ -586,7 +591,7 @@ public class NpcMeshResolver
                 {
                     AppendArmorMeshOverrides(armor, source, sex, npcRaceKey, linkCache, context,
                         includeBody: includeDefaultOutfit, includeHeadgear: includeHeadgear,
-                        result, seenOverrideKeys);
+                        hairCountsAsHeadgear: true, result, seenOverrideKeys);
                 }
             }
             else
@@ -599,14 +604,17 @@ public class NpcMeshResolver
         // Headgear can also be worn via the skin/worn armor (rare, but the design
         // calls for "worn/outfit"). Scan it for HEAD pieces only — body/hands/
         // feet/hair ARMAs there are already rendered as base meshes, so we must
-        // not re-add them (includeBody:false).
+        // not re-add them (includeBody:false). hairCountsAsHeadgear:false keeps a
+        // worn slot-31 hair "wig" out of the head class for the same reason: it's
+        // the NPC's base hair, not removable headgear.
         if (includeHeadgear)
         {
             var (wornArmor, wornSource) = ResolveWornArmor(npcGetter, linkCache, context, npcName);
             if (wornArmor != null)
             {
                 AppendArmorMeshOverrides(wornArmor, wornSource, sex, npcRaceKey, linkCache, context,
-                    includeBody: false, includeHeadgear: true, result, seenOverrideKeys);
+                    includeBody: false, includeHeadgear: true,
+                    hairCountsAsHeadgear: false, result, seenOverrideKeys);
             }
         }
 
@@ -691,7 +699,7 @@ public class NpcMeshResolver
     /// combines slot(s) + ARMA FormKey so it's stable and unique per piece.</summary>
     private void AppendArmorMeshOverrides(IArmorGetter armor, string source, Sex sex, FormKey? npcRaceKey,
         ILinkCache linkCache, NpcResolutionContext? context, bool includeBody, bool includeHeadgear,
-        List<MeshOverride> result, HashSet<string> seenKeys)
+        bool hairCountsAsHeadgear, List<MeshOverride> result, HashSet<string> seenKeys)
     {
         if (armor.Armature == null) return;
         foreach (var armaLink in armor.Armature)
@@ -704,7 +712,22 @@ public class NpcMeshResolver
             int slots = (int)arma.BodyTemplate.FirstPersonFlags;
             if (slots == 0) continue;
 
-            bool isHead = (slots & HeadSlotMask) != 0;
+            // A piece is headgear if it occupies the Head (30) or Circlet (42)
+            // slot, or — when hairCountsAsHeadgear is set — the Hair (31) slot,
+            // which is how hoods get flagged (e.g. Wylandriah's MonkVariant hood
+            // is slot 31|41|43, none of which are in HeadSlotMask, so it would
+            // otherwise read as body attire). Only the outfit path sets the flag;
+            // the worn-armor scan leaves it false so a worn hair "wig" (the
+            // bald-FaceGen + slot-31-ARMO pattern) stays the NPC's base hair
+            // rather than being re-added as toggleable headgear.
+            //
+            // Only the Hair slot (31) promotes a hood for now. LongHair (41) and
+            // Ears (43) are plausible head-covering slots too, but left out: it's
+            // unclear what outfit would use LongHair alone, and Ears is commonly
+            // earrings — and the headgear toggle exists to drop hats/hoods, not
+            // jewelry, so folding in Ears would over-hide.
+            int headMask = HeadSlotMask | (hairCountsAsHeadgear ? HairSlotBit : 0);
+            bool isHead = (slots & headMask) != 0;
             if (isHead && !includeHeadgear) continue;
             if (!isHead && !includeBody) continue;
 

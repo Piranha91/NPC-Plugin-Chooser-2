@@ -458,7 +458,7 @@
                                                 <MenuItem Header="Include Headgear"
                                                           IsCheckable="True"
                                                           IsChecked="{Binding RenderIncludeHeadgear, Mode=TwoWay}"
-                                                          IsEnabled="{Binding RenderOverrideGlobal}"
+                                                          IsEnabled="{Binding RenderHeadgearEnabled}"
                                                           ToolTip="Render this NPC wearing its headgear (e.g. a hood or helmet, which hides hair). Uncheck to see the NPC without headgear. Only applies when 'Override Global Setting' is checked."/>
                                             </MenuItem>
                                             <Separator/>

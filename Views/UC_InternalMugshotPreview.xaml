@@ -88,6 +88,7 @@
                               ToolTip="Render the NPC's default outfit. Body-covering armor hides the nude body."/>
                     <CheckBox Content="Include headgear" Foreground="White" Margin="0,4,0,0"
                               IsChecked="{Binding IncludeHeadgear}"
+                              Visibility="{Binding IncludeDefaultOutfit, Converter={StaticResource BooleanToVisibilityConverter}}"
                               ToolTip="Render worn/outfit head gear (helmets/hoods/circlets). Hair is hidden under headgear."/>
                 </StackPanel>
             </Border>

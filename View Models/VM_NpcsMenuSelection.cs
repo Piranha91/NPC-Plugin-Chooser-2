@@ -86,14 +86,14 @@ public class VM_NpcsMenuSelection : ReactiveObject
     public bool RenderOverrideGlobal
     {
         get => _renderOverrideGlobal;
-        set { this.RaiseAndSetIfChanged(ref _renderOverrideGlobal, value); PersistRenderOverride(); }
+        set { this.RaiseAndSetIfChanged(ref _renderOverrideGlobal, value); this.RaisePropertyChanged(nameof(RenderHeadgearEnabled)); PersistRenderOverride(); }
     }
 
     private bool _renderIncludeDefaultOutfit;
     public bool RenderIncludeDefaultOutfit
     {
         get => _renderIncludeDefaultOutfit;
-        set { this.RaiseAndSetIfChanged(ref _renderIncludeDefaultOutfit, value); PersistRenderOverride(); }
+        set { this.RaiseAndSetIfChanged(ref _renderIncludeDefaultOutfit, value); this.RaisePropertyChanged(nameof(RenderHeadgearEnabled)); PersistRenderOverride(); }
     }
 
     private bool _renderIncludeHeadgear;
@@ -102,6 +102,14 @@ public class VM_NpcsMenuSelection : ReactiveObject
         get => _renderIncludeHeadgear;
         set { this.RaiseAndSetIfChanged(ref _renderIncludeHeadgear, value); PersistRenderOverride(); }
     }
+
+    /// <summary>The per-NPC headgear toggle is meaningful only when the override
+    /// is active AND the default outfit is on — outfit is the dominant toggle, so
+    /// headgear renders only as part of the outfit (see
+    /// <see cref="Settings.GetEffectiveAttireFlags"/>). Bound to the menu item's
+    /// IsEnabled so it greys out otherwise; the two input setters raise change
+    /// notification for it.</summary>
+    public bool RenderHeadgearEnabled => _renderOverrideGlobal && _renderIncludeDefaultOutfit;
 
     private void PersistRenderOverride()
     {

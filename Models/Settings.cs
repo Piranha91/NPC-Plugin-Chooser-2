@@ -175,11 +175,21 @@ public class Settings
     /// </summary>
     public (bool IncludeDefaultOutfit, bool IncludeHeadgear) GetEffectiveAttireFlags(FormKey npcFormKey)
     {
+        bool outfit, headgear;
         if (NpcRenderOverrides.TryGetValue(npcFormKey, out var ovr) && ovr != null && ovr.OverrideGlobalAttire)
         {
-            return (ovr.IncludeDefaultOutfit, ovr.IncludeHeadgear);
+            (outfit, headgear) = (ovr.IncludeDefaultOutfit, ovr.IncludeHeadgear);
         }
-        return (InternalMugshot.IncludeDefaultOutfit, InternalMugshot.IncludeHeadgear);
+        else
+        {
+            (outfit, headgear) = (InternalMugshot.IncludeDefaultOutfit, InternalMugshot.IncludeHeadgear);
+        }
+        // Outfit is the dominant toggle: headgear is part of the outfit, so it
+        // never renders on its own (Outfit Off / Headgear On == Outfit Off /
+        // Headgear Off). Normalizing here keeps the renderer, metadata stamp and
+        // staleness checker agreed, and avoids a spurious re-render when the
+        // (inert) headgear flag changes while the outfit is off.
+        return (outfit, headgear && outfit);
     }
     public HashSet<ModKey> ImportFromLoadOrderExclusions { get; set; } = new();
     public HashSet<(FormKey NpcFormKey, string ModName)> FavoriteFaces { get; set; } = new();

@@ -627,6 +627,7 @@
                                           ToolTip="When on, render the NPC's default outfit in mugshots and the 3D preview. Body-covering armor hides the nude body underneath. Off by default."/>
                                 <CheckBox Content="Include headgear"
                                           IsChecked="{Binding InternalIncludeHeadgear, Mode=TwoWay}"
+                                          Visibility="{Binding InternalIncludeDefaultOutfit, Converter={StaticResource BooleanToVisibilityConverter}}"
                                           VerticalAlignment="Center"
                                           ToolTip="When on, render worn/outfit head gear (helmets/hoods/circlets); hair is hidden under headgear, as in game. Off by default — the sensible choice for a face-picking tool."/>
                             </WrapPanel>
