@@ -624,7 +624,7 @@
                                 <CheckBox Content="Include default outfit"
                                           IsChecked="{Binding InternalIncludeDefaultOutfit, Mode=TwoWay}"
                                           VerticalAlignment="Center" Margin="0,0,12,0"
-                                          ToolTip="When on, render the NPC's default outfit in mugshots and the 3D preview. Body-covering armor hides the nude body underneath. Off by default."/>
+                                          ToolTip="When on, render the NPC's default outfit in mugshots and the 3D preview. Body-covering armor hides the nude body underneath. On by default."/>
                                 <CheckBox Content="Include headgear"
                                           IsChecked="{Binding InternalIncludeHeadgear, Mode=TwoWay}"
                                           Visibility="{Binding InternalIncludeDefaultOutfit, Converter={StaticResource BooleanToVisibilityConverter}}"

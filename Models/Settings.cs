@@ -568,13 +568,15 @@ public sealed class InternalMugshotSettings
     // ApplyMeshOverrides; slot occupancy makes clothing hide the nude body and a
     // helmet hide hair automatically.
     //
-    // IncludeDefaultOutfit: ON renders the NPC's DefaultOutfit attire (Kind=Armor);
-    //   body-covering armor hides the skin it covers. OFF (default) is the plain
-    //   skin preview.
+    // IncludeDefaultOutfit: ON (default) renders the NPC's DefaultOutfit attire
+    //   (Kind=Armor); body-covering armor hides the skin it covers. OFF is the
+    //   plain skin preview.
     // IncludeHeadgear: ON renders worn/outfit head-slot armor (Kind=Headgear) with
     //   hair hidden, as in game. OFF (default) shows hair/face — the sensible
-    //   default for a face-picking tool.
-    public bool IncludeDefaultOutfit { get; set; } = false;
+    //   default for a face-picking tool. Only applies with the outfit on (outfit
+    //   is the dominant toggle; see GetEffectiveAttireFlags). The defaults depict
+    //   an NPC clothed but bareheaded.
+    public bool IncludeDefaultOutfit { get; set; } = true;
     public bool IncludeHeadgear { get; set; } = false;
 
     // Portrait-quality rendering toggles (CharacterViewer.Rendering 2.5.9+).
