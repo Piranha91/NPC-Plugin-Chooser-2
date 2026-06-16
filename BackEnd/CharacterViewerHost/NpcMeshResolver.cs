@@ -491,13 +491,19 @@ public class NpcMeshResolver
     /// body attire: Head (slot 30 = 0x1) and Circlet (slot 42 = 0x1000). The
     /// Hair bit (slot 31) is deliberately excluded from this classification —
     /// a Hair-only armature is a wig/hairpiece, not a helmet, and treating it as
-    /// headgear would wrongly hide the very hair it provides. A real helmet/hood
-    /// occupies slot 30 (and a circlet slot 42); both typically also flag Hair,
-    /// which we fold into <see cref="HairSlotBit"/> for hiding.</summary>
+    /// headgear would wrongly hide the very hair it provides.</summary>
     private const int HeadSlotMask = 0x1 | 0x1000;
 
-    /// <summary>The Hair biped slot bit (slot 31 = 0x2). Headgear hides this so
-    /// the helmet replaces the NPC's hair the way it does in game.</summary>
+    /// <summary>The Head/face biped slot bit (slot 30 = 0x1). Never added to a
+    /// piece's hide mask: the FaceGen face (and the eyes/brows/mouth that fall
+    /// back to slot 30) are tagged slot 30, so hiding it would cull the face out
+    /// from under any helmet.</summary>
+    private const int HeadFaceSlotBit = 0x1;
+
+    /// <summary>The Hair biped slot bit (slot 31 = 0x2). A helmet/hood that
+    /// occupies the Head (30) or Hair (31) slot hides this so it replaces the
+    /// NPC's hair the way it does in game; an open circlet (slot 42 only) does
+    /// not occupy either, so it leaves the hair visible.</summary>
     private const int HairSlotBit = 0x2;
 
     /// <summary>
@@ -734,12 +740,23 @@ public class NpcMeshResolver
             }
 
             var kind = isHead ? MeshOverrideKind.Headgear : MeshOverrideKind.Armor;
-            // Headgear hides HAIR (slot 31) only — never the FaceGen head/face
-            // (slot 30 bit), even when the helmet itself occupies slot 30, or the
-            // renderer would cull the face under any slot-30 helmet. Body armor
-            // leaves HidesSlots null (defaults to its own BipedSlots) so it hides
-            // exactly the nude-body slots it covers.
-            int? hides = isHead ? HairSlotBit : (int?)null;
+            // What a piece hides is driven by the biped slots it actually
+            // occupies — matching the engine. Body attire leaves HidesSlots null
+            // (defaults to its own BipedSlots), so it hides exactly the slots it
+            // covers; a hood occupying slot 31 thereby hides the hair. Headgear
+            // is the same with one twist: it never hides the Head slot (30) bit,
+            // or the FaceGen face/eyes/brows (tagged slot 30) would be culled —
+            // but a helmet/hood on the head (slot 30 or 31) still hides the hair
+            // (slot 31). An open circlet (slot 42 only) occupies neither, so it
+            // leaves the hair visible, as in game.
+            int? hides = null;
+            if (isHead)
+            {
+                int headHides = slots & ~HeadFaceSlotBit;
+                if ((slots & (HeadFaceSlotBit | HairSlotBit)) != 0)
+                    headHides |= HairSlotBit;
+                hides = headHides;
+            }
 
             result.Add(new MeshOverride
             {
