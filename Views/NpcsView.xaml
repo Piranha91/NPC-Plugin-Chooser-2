@@ -445,7 +445,7 @@
                                                     </Style>
                                                 </MenuItem.ItemContainerStyle>
                                             </MenuItem>
-                                            <MenuItem Header="Render">
+                                            <MenuItem Header="Render" SubmenuOpened="RenderSubmenu_OnSubmenuOpened">
                                                 <MenuItem Header="Override Global Setting"
                                                           IsCheckable="True"
                                                           IsChecked="{Binding RenderOverrideGlobal, Mode=TwoWay}"

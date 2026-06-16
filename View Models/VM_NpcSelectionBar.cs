@@ -3259,6 +3259,37 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms TriggerAsyncMugshotGeneration kicked={kicked} skipped-hasMugshot={skippedHasMugshot} skipped-invisible={skippedInvisible}");
     }
 
+    /// <summary>Re-renders the currently-displayed NPC's autogen mugshots when it
+    /// matches <paramref name="npcFormKey"/>. Called when that NPC's per-NPC Render
+    /// attire override changes: the existing autogen PNGs are now stale (their
+    /// stamped attire flags differ from the new effective flags).
+    /// <para>A plain <see cref="TriggerAsyncMugshotGeneration"/> won't do it — a
+    /// displayed autogen tile has HasMugshot=true (LoadInitialImageAsync's
+    /// fast-path sets it on revisit), so it's skipped, which is why the re-render
+    /// previously only happened after switching NPCs and back. Calling each
+    /// autogen tile's <see cref="VM_NpcsMenuMugshot.RegenerateAsync"/> clears that
+    /// flag so the priority loop reaches the AutoGeneration source and re-renders.
+    /// Curated / FaceFinder tiles are left untouched; non-displayed NPC = no-op.</para></summary>
+    public void RegenerateAutogenMugshotsIfDisplayed(FormKey npcFormKey)
+    {
+        if (SelectedNpc == null || !SelectedNpc.NpcFormKey.Equals(npcFormKey)) return;
+        var tiles = CurrentNpcAppearanceMods;
+        if (tiles == null) return;
+
+        // Cancel the in-flight batch and start a fresh token, mirroring
+        // TriggerAsyncMugshotGeneration, so a rapid re-toggle doesn't stack renders.
+        _mugshotGenerationCts?.Cancel();
+        _mugshotGenerationCts = new CancellationTokenSource();
+        var token = _mugshotGenerationCts.Token;
+
+        foreach (var tile in tiles)
+        {
+            if (!tile.IsVisible || !tile.IsShowingAutoGenImage) continue;
+            var capture = tile;
+            _ = Task.Run(() => capture.RegenerateAsync(token), token);
+        }
+    }
+
     private void HandleShareAppearanceRequest(VM_NpcsMenuMugshot mugshotToShare)
     {
         var selectorVm = new VM_NpcShareTargetSelector(this.AllNpcs);

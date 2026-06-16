@@ -82,34 +82,99 @@ public class VM_NpcsMenuSelection : ReactiveObject
     // staleness checker. Manual setters (rather than [Reactive]) so each change
     // writes through to the model immediately — this VM is transient and not
     // disposable, so a WhenAnyValue subscription would have no clean teardown.
+    // The displayed checkbox state mirrors what's actually applied (see
+    // Settings.GetEffectiveAttireFlags): with the override OFF the Include* getters
+    // return the live global defaults so the menu opens in sync with them; with it
+    // ON they return the per-NPC values. Enabling the override seeds the per-NPC
+    // values from the current globals so toggling it on doesn't change what's
+    // shown. Each setter re-renders the displayed NPC's autogen mugshots when the
+    // effective attire actually changes.
     private bool _renderOverrideGlobal;
     public bool RenderOverrideGlobal
     {
         get => _renderOverrideGlobal;
-        set { this.RaiseAndSetIfChanged(ref _renderOverrideGlobal, value); this.RaisePropertyChanged(nameof(RenderHeadgearEnabled)); PersistRenderOverride(); }
+        set
+        {
+            if (value == _renderOverrideGlobal) return;
+            var before = _settings.GetEffectiveAttireFlags(NpcFormKey);
+            _renderOverrideGlobal = value;
+            // Seed the per-NPC include flags from the current global defaults when
+            // enabling, so the menu starts in sync with what's being applied; the
+            // user then tweaks from there. (Disabling falls back to the globals via
+            // the getters below.)
+            if (value)
+            {
+                _renderIncludeDefaultOutfit = _settings.InternalMugshot.IncludeDefaultOutfit;
+                _renderIncludeHeadgear = _settings.InternalMugshot.IncludeHeadgear;
+            }
+            PersistRenderOverride();
+            this.RaisePropertyChanged();
+            this.RaisePropertyChanged(nameof(RenderIncludeDefaultOutfit));
+            this.RaisePropertyChanged(nameof(RenderIncludeHeadgear));
+            this.RaisePropertyChanged(nameof(RenderHeadgearEnabled));
+            RerenderAutogenIfAttireChanged(before);
+        }
     }
 
     private bool _renderIncludeDefaultOutfit;
     public bool RenderIncludeDefaultOutfit
     {
-        get => _renderIncludeDefaultOutfit;
-        set { this.RaiseAndSetIfChanged(ref _renderIncludeDefaultOutfit, value); this.RaisePropertyChanged(nameof(RenderHeadgearEnabled)); PersistRenderOverride(); }
+        get => _renderOverrideGlobal ? _renderIncludeDefaultOutfit : _settings.InternalMugshot.IncludeDefaultOutfit;
+        set
+        {
+            if (value == RenderIncludeDefaultOutfit) return;
+            var before = _settings.GetEffectiveAttireFlags(NpcFormKey);
+            _renderIncludeDefaultOutfit = value;
+            PersistRenderOverride();
+            this.RaisePropertyChanged();
+            this.RaisePropertyChanged(nameof(RenderHeadgearEnabled));
+            RerenderAutogenIfAttireChanged(before);
+        }
     }
 
     private bool _renderIncludeHeadgear;
     public bool RenderIncludeHeadgear
     {
-        get => _renderIncludeHeadgear;
-        set { this.RaiseAndSetIfChanged(ref _renderIncludeHeadgear, value); PersistRenderOverride(); }
+        get => _renderOverrideGlobal ? _renderIncludeHeadgear : _settings.InternalMugshot.IncludeHeadgear;
+        set
+        {
+            if (value == RenderIncludeHeadgear) return;
+            var before = _settings.GetEffectiveAttireFlags(NpcFormKey);
+            _renderIncludeHeadgear = value;
+            PersistRenderOverride();
+            this.RaisePropertyChanged();
+            RerenderAutogenIfAttireChanged(before);
+        }
     }
 
     /// <summary>The per-NPC headgear toggle is meaningful only when the override
     /// is active AND the default outfit is on — outfit is the dominant toggle, so
     /// headgear renders only as part of the outfit (see
     /// <see cref="Settings.GetEffectiveAttireFlags"/>). Bound to the menu item's
-    /// IsEnabled so it greys out otherwise; the two input setters raise change
-    /// notification for it.</summary>
-    public bool RenderHeadgearEnabled => _renderOverrideGlobal && _renderIncludeDefaultOutfit;
+    /// IsEnabled so it greys out otherwise.</summary>
+    public bool RenderHeadgearEnabled => _renderOverrideGlobal && RenderIncludeDefaultOutfit;
+
+    /// <summary>Re-reads the Render-menu checkbox state from the live globals.
+    /// With the override off the Include* getters return the current global
+    /// defaults; this VM is long-lived, so the submenu's opening calls this to
+    /// re-sync in case a global default changed since the bindings last read.</summary>
+    public void RefreshRenderMenuFromGlobal()
+    {
+        this.RaisePropertyChanged(nameof(RenderOverrideGlobal));
+        this.RaisePropertyChanged(nameof(RenderIncludeDefaultOutfit));
+        this.RaisePropertyChanged(nameof(RenderIncludeHeadgear));
+        this.RaisePropertyChanged(nameof(RenderHeadgearEnabled));
+    }
+
+    /// <summary>After a Render-override change, re-render the displayed NPC's
+    /// autogen mugshots — but only when the effective attire actually changed, so
+    /// a no-op toggle (e.g. enabling the override when the per-NPC flags were just
+    /// seeded from identical globals) doesn't churn renders.</summary>
+    private void RerenderAutogenIfAttireChanged((bool, bool) before)
+    {
+        if (_settings.GetEffectiveAttireFlags(NpcFormKey) != before)
+            _parentMenu.RegenerateAutogenMugshotsIfDisplayed(NpcFormKey);
+    }
 
     private void PersistRenderOverride()
     {

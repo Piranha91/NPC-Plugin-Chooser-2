@@ -329,6 +329,16 @@ namespace NPC_Plugin_Chooser_2.Views
             }
         }
 
+        // Re-sync the per-NPC Render checkboxes with the live global defaults each
+        // time the submenu opens (with the override off they mirror the globals;
+        // the row VM is long-lived so a global change after the last bind would
+        // otherwise show stale).
+        private void RenderSubmenu_OnSubmenuOpened(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.DataContext is VM_NpcsMenuSelection vm)
+                vm.RefreshRenderMenuFromGlobal();
+        }
+
         private void ScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             if (ViewModel == null) return;

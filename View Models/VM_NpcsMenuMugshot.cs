@@ -1408,6 +1408,27 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         }
     }
 
+    /// <summary>True when this tile is currently displaying an auto-generated
+    /// image (as opposed to a curated mugshot, a FaceFinder cache hit, or a
+    /// placeholder). Lets the host re-render only the autogen tiles after
+    /// something invalidates them (e.g. a per-NPC attire override change).</summary>
+    public bool IsShowingAutoGenImage => IsImageAutoGen();
+
+    /// <summary>Forces this tile to re-run its source-priority loop after the
+    /// existing autogen PNG was invalidated. Clears <see cref="HasMugshot"/> so
+    /// the loop no longer short-circuits on the already-loaded image and reaches
+    /// the AutoGeneration source, whose staleness check now sees the stamped
+    /// attire flags differ and re-renders. Without this a displayed autogen tile
+    /// (HasMugshot=true via LoadInitialImageAsync's fast-path) is skipped by both
+    /// the priority loop and TriggerAsyncMugshotGeneration, so it would only
+    /// refresh on an NPC switch-away-and-back (a fresh rebuild re-probes
+    /// staleness).</summary>
+    public Task RegenerateAsync(CancellationToken token)
+    {
+        HasMugshot = false;
+        return GenerateMugshotAsync(token);
+    }
+
     /// <summary>FaceFinder branch of the priority loop. Returns true when a
     /// cache hit or successful download produced a visible image, false when
     /// FaceFinder had nothing to offer (so the next priority source runs).</summary>
