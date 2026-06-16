@@ -189,10 +189,23 @@ public sealed class MugshotStalenessChecker
         // metadata was rendered before the feature existed → treat as "no
         // attire" (both false), so old mugshots only regenerate once the user
         // actually enables a toggle.
+        // Effective attire flags honor a per-NPC "Render" override keyed by the
+        // stamped NPC FormKey; fall back to the global toggles when the PNG has
+        // no parseable key (older PNGs) or the NPC has no override. Reused below
+        // for the settings-hash recompute so both comparisons agree on what the
+        // mugshot should depict.
+        bool curOutfit, curHeadgear;
+        if (FormKey.TryFactory(root["npc_form_key"]?.Value<string>() ?? string.Empty, out var stampedNpcKey))
+        {
+            (curOutfit, curHeadgear) = _settings.GetEffectiveAttireFlags(stampedNpcKey);
+        }
+        else
+        {
+            curOutfit = _settings.InternalMugshot.IncludeDefaultOutfit;
+            curHeadgear = _settings.InternalMugshot.IncludeHeadgear;
+        }
         bool pngOutfit = root["include_default_outfit"]?.Value<bool?>() ?? false;
         bool pngHeadgear = root["include_headgear"]?.Value<bool?>() ?? false;
-        bool curOutfit = _settings.InternalMugshot.IncludeDefaultOutfit;
-        bool curHeadgear = _settings.InternalMugshot.IncludeHeadgear;
         if (pngOutfit != curOutfit || pngHeadgear != curHeadgear)
         {
             Trace($"  Internal: attire drift png(outfit={pngOutfit},headgear={pngHeadgear}) current(outfit={curOutfit},headgear={curHeadgear})");
@@ -248,7 +261,7 @@ public sealed class MugshotStalenessChecker
             int pngSchema = root[InternalMugshotMetadata.PipelineSchemaKey]?.Value<int?>() ?? 0;
             var pngHash = root["settings_hash"]?.Value<string>() ?? "";
             var currentHash = InternalMugshotMetadata.ComputeSettingsHashAtSchema(
-                _settings.InternalMugshot, pngSchema);
+                _settings.InternalMugshot, pngSchema, curOutfit, curHeadgear);
             if (!string.Equals(pngHash, currentHash, StringComparison.OrdinalIgnoreCase))
             {
                 Trace($"  Internal: settings-hash drift schema={pngSchema} png={pngHash[..Math.Min(8, pngHash.Length)]}.. current={currentHash[..Math.Min(8, currentHash.Length)]}..");

@@ -131,12 +131,17 @@ public sealed class InternalMugshotGenerator
 
             var cfg = _settings.InternalMugshot;
 
-            // Attire / headgear (Include Default Outfit / Include headgear) — the
-            // persisted Settings-tab defaults. Resolved through this tile's
-            // explicit mod scope so the mugshot matches the preview. The offscreen
-            // renderer loads/skins/hides them like the live preview.
+            // Attire / headgear (Include Default Outfit / Include headgear).
+            // Honors a per-NPC override (right-click > Render in the NPC list)
+            // when set, else the persisted Settings-tab defaults. Resolved
+            // through this tile's explicit mod scope so the mugshot matches the
+            // preview; the offscreen renderer loads/skins/hides them like the
+            // live preview. The same effective flags are stamped into the PNG
+            // metadata below so the staleness checker stays consistent.
+            var (effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear) =
+                _settings.GetEffectiveAttireFlags(npcFormKey);
             var meshOverrides = _resolver.ResolveAttireMeshOverrides(
-                npcFormKey, modSetting, cfg.IncludeDefaultOutfit, cfg.IncludeHeadgear);
+                npcFormKey, modSetting, effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear);
             var meshOverrideWarningsOut = new List<string>();
 
             var request = new OffscreenRenderRequest
@@ -246,6 +251,7 @@ public sealed class InternalMugshotGenerator
             {
                 var parametersJson = InternalMugshotMetadata.Build(
                     npcFormKey, _settings.InternalMugshot,
+                    effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear,
                     missingMeshPathsOut, missingTexturePathsOut);
                 MugshotPngMetadata.InjectParameters(outputPath, parametersJson);
             }

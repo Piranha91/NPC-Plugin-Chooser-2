@@ -155,6 +155,32 @@ public class Settings
     public HashSet<FormKey> CachedSkyPatcherTemplates { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> NpcGroupAssignments { get; set; } = new();
     public Dictionary<FormKey, OutfitOverride> NpcOutfitOverrides { get; set; } = new();
+
+    // Per-NPC override of the character-preview / mugshot attire toggles
+    // (Include Default Outfit / Include Headgear). Keyed by the NPC record that
+    // is actually rendered (the appearance source NPC) — for the common case of
+    // a mod overriding the same NPC, that equals the NPC selected in the list.
+    // When an entry exists with OverrideGlobalAttire == true, the renderer,
+    // mugshot generator, metadata stamp, and staleness checker all use the
+    // per-NPC IncludeDefaultOutfit / IncludeHeadgear instead of the global
+    // InternalMugshot values. See GetEffectiveAttireFlags.
+    public Dictionary<FormKey, NpcRenderOverride> NpcRenderOverrides { get; set; } = new();
+
+    /// <summary>
+    /// Returns the effective Include Default Outfit / Include Headgear flags for
+    /// rendering <paramref name="npcFormKey"/>: the per-NPC override when one is
+    /// present and enabled, otherwise the global <see cref="InternalMugshot"/>
+    /// values. Centralized so the renderer, metadata stamp, and staleness checker
+    /// all agree on what a given NPC's mugshot should depict.
+    /// </summary>
+    public (bool IncludeDefaultOutfit, bool IncludeHeadgear) GetEffectiveAttireFlags(FormKey npcFormKey)
+    {
+        if (NpcRenderOverrides.TryGetValue(npcFormKey, out var ovr) && ovr != null && ovr.OverrideGlobalAttire)
+        {
+            return (ovr.IncludeDefaultOutfit, ovr.IncludeHeadgear);
+        }
+        return (InternalMugshot.IncludeDefaultOutfit, InternalMugshot.IncludeHeadgear);
+    }
     public HashSet<ModKey> ImportFromLoadOrderExclusions { get; set; } = new();
     public HashSet<(FormKey NpcFormKey, string ModName)> FavoriteFaces { get; set; } = new();
     public bool NormalizeImageDimensions { get; set; } = false;
@@ -447,6 +473,20 @@ public sealed class CachedFaceGenStats
     public int Shapes { get; set; }
     public long FileSizeBytes { get; set; }
     public bool MeasuredGeometry { get; set; }
+}
+
+/// <summary>
+/// Per-NPC override of the character-preview / mugshot attire toggles. Persisted
+/// in <see cref="Settings.NpcRenderOverrides"/>. Only takes effect when
+/// <see cref="OverrideGlobalAttire"/> is true; otherwise the global
+/// <see cref="InternalMugshotSettings.IncludeDefaultOutfit"/> /
+/// <see cref="InternalMugshotSettings.IncludeHeadgear"/> apply.
+/// </summary>
+public sealed class NpcRenderOverride
+{
+    public bool OverrideGlobalAttire { get; set; } = false;
+    public bool IncludeDefaultOutfit { get; set; } = false;
+    public bool IncludeHeadgear { get; set; } = false;
 }
 
 public sealed class InternalMugshotSettings

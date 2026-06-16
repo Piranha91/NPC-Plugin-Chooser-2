@@ -445,6 +445,22 @@
                                                     </Style>
                                                 </MenuItem.ItemContainerStyle>
                                             </MenuItem>
+                                            <MenuItem Header="Render">
+                                                <MenuItem Header="Override Global Setting"
+                                                          IsCheckable="True"
+                                                          IsChecked="{Binding RenderOverrideGlobal, Mode=TwoWay}"
+                                                          ToolTip="When checked, this NPC's mugshots use the per-NPC Include Default Outfit / Include Headgear options below instead of the global Settings-tab toggles. Persists across sessions."/>
+                                                <MenuItem Header="Include Default Outfit"
+                                                          IsCheckable="True"
+                                                          IsChecked="{Binding RenderIncludeDefaultOutfit, Mode=TwoWay}"
+                                                          IsEnabled="{Binding RenderOverrideGlobal}"
+                                                          ToolTip="Render this NPC wearing its default outfit. Only applies when 'Override Global Setting' is checked."/>
+                                                <MenuItem Header="Include Headgear"
+                                                          IsCheckable="True"
+                                                          IsChecked="{Binding RenderIncludeHeadgear, Mode=TwoWay}"
+                                                          IsEnabled="{Binding RenderOverrideGlobal}"
+                                                          ToolTip="Render this NPC wearing its headgear (e.g. a hood or helmet, which hides hair). Uncheck to see the NPC without headgear. Only applies when 'Override Global Setting' is checked."/>
+                                            </MenuItem>
                                             <Separator/>
                                             <MenuItem Header="Add Face from Favorites"
                                                       Command="{Binding Path=DataContext.AddFavoriteFaceToNpcCommand, Source={StaticResource DataContextProxy}}"

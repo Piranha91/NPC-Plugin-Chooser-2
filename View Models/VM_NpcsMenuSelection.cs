@@ -76,6 +76,54 @@ public class VM_NpcsMenuSelection : ReactiveObject
     [Reactive] public SolidColorBrush? SelectionIndicatorBrush { get; set; }
     [Reactive] public ObservableCollection<VM_ModSetting> AppearanceMods { get; set; } = new();
 
+    // --- Per-NPC "Render" context-menu overrides (attire toggles) ---
+    // Backed by Settings.NpcRenderOverrides; consumed via
+    // Settings.GetEffectiveAttireFlags by the mugshot generator / renderer /
+    // staleness checker. Manual setters (rather than [Reactive]) so each change
+    // writes through to the model immediately — this VM is transient and not
+    // disposable, so a WhenAnyValue subscription would have no clean teardown.
+    private bool _renderOverrideGlobal;
+    public bool RenderOverrideGlobal
+    {
+        get => _renderOverrideGlobal;
+        set { this.RaiseAndSetIfChanged(ref _renderOverrideGlobal, value); PersistRenderOverride(); }
+    }
+
+    private bool _renderIncludeDefaultOutfit;
+    public bool RenderIncludeDefaultOutfit
+    {
+        get => _renderIncludeDefaultOutfit;
+        set { this.RaiseAndSetIfChanged(ref _renderIncludeDefaultOutfit, value); PersistRenderOverride(); }
+    }
+
+    private bool _renderIncludeHeadgear;
+    public bool RenderIncludeHeadgear
+    {
+        get => _renderIncludeHeadgear;
+        set { this.RaiseAndSetIfChanged(ref _renderIncludeHeadgear, value); PersistRenderOverride(); }
+    }
+
+    private void PersistRenderOverride()
+    {
+        // Keep settings tidy: when nothing is set, drop the entry so the common
+        // "no override" case adds no persisted state. Otherwise store all three
+        // (the Include flags are retained even while Override is off so the user
+        // can configure them before enabling the override).
+        if (!_renderOverrideGlobal && !_renderIncludeDefaultOutfit && !_renderIncludeHeadgear)
+        {
+            _settings.NpcRenderOverrides.Remove(NpcFormKey);
+        }
+        else
+        {
+            _settings.NpcRenderOverrides[NpcFormKey] = new NpcRenderOverride
+            {
+                OverrideGlobalAttire = _renderOverrideGlobal,
+                IncludeDefaultOutfit = _renderIncludeDefaultOutfit,
+                IncludeHeadgear = _renderIncludeHeadgear,
+            };
+        }
+    }
+
     // Alternative constructor for NPCs found *only* via mugshots
     public VM_NpcsMenuSelection(FormKey npcFormKey, EnvironmentStateProvider environmentStateProvider,
         VM_NpcSelectionBar parentMenu, Auxilliary aux, Settings settings)
@@ -90,6 +138,16 @@ public class VM_NpcsMenuSelection : ReactiveObject
             NpcFormKeyString = npcFormKey.ToString();
             DisplayName = npcFormKey.ToString();
             NpcData = null; // Initially null, will be populated by UpdateWithData
+
+            // Seed the per-NPC Render override toggles from persisted settings.
+            // Assign backing fields directly so this doesn't write back through
+            // PersistRenderOverride during construction.
+            if (_settings.NpcRenderOverrides.TryGetValue(npcFormKey, out var renderOverride) && renderOverride != null)
+            {
+                _renderOverrideGlobal = renderOverride.OverrideGlobalAttire;
+                _renderIncludeDefaultOutfit = renderOverride.IncludeDefaultOutfit;
+                _renderIncludeHeadgear = renderOverride.IncludeHeadgear;
+            }
         }
 
         using (ContextualPerformanceTracer.Trace("NpcMenuEntry.GetFormID"))

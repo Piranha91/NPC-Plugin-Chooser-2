@@ -90,6 +90,8 @@ public static class InternalMugshotMetadata
     public static string Build(
         FormKey npcFormKey,
         InternalMugshotSettings cfg,
+        bool effectiveIncludeDefaultOutfit,
+        bool effectiveIncludeHeadgear,
         IReadOnlyList<string>? missingMeshes = null,
         IReadOnlyList<string>? missingTextures = null)
     {
@@ -99,7 +101,8 @@ public static class InternalMugshotMetadata
             ["renderer_version"] = CharacterViewerRendering.Version.ToString(),
             [PipelineSchemaKey] = PipelineSchemaVersion,
             ["npc_form_key"] = npcFormKey.ToString(),
-            ["settings_hash"] = ComputeSettingsHashAtSchema(cfg, PipelineSchemaVersion),
+            ["settings_hash"] = ComputeSettingsHashAtSchema(cfg, PipelineSchemaVersion,
+                effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear),
             ["camera_mode"] = cfg.CameraMode.ToString(),
             ["background_color"] = new JArray(cfg.BackgroundR, cfg.BackgroundG, cfg.BackgroundB),
             ["output_size"] = new JArray(cfg.OutputWidth, cfg.OutputHeight),
@@ -125,8 +128,8 @@ public static class InternalMugshotMetadata
             ["vignette_radius"] = cfg.VignetteRadius,
             ["vignette_intensity"] = cfg.VignetteIntensity,
             ["skin_saturation_boost"] = cfg.SkinSaturationBoost,
-            ["include_default_outfit"] = cfg.IncludeDefaultOutfit,
-            ["include_headgear"] = cfg.IncludeHeadgear,
+            ["include_default_outfit"] = effectiveIncludeDefaultOutfit,
+            ["include_headgear"] = effectiveIncludeHeadgear,
         };
 
         if (cfg.CameraMode == InternalMugshotCameraMode.Manual)
@@ -216,7 +219,8 @@ public static class InternalMugshotMetadata
     /// <c>EnableNormalMapHack</c>, <c>UseModdedFallbackTextures</c>) are
     /// NOT folded in here yet because the in-process renderer documents
     /// them as unused (cf. OffscreenRenderRequest XML doc).</para></summary>
-    public static string ComputeSettingsHashAtSchema(InternalMugshotSettings cfg, int schemaVersion)
+    public static string ComputeSettingsHashAtSchema(InternalMugshotSettings cfg, int schemaVersion,
+        bool? effectiveIncludeDefaultOutfit = null, bool? effectiveIncludeHeadgear = null)
     {
         var sb = new StringBuilder();
         var inv = CultureInfo.InvariantCulture;
@@ -313,8 +317,12 @@ public static class InternalMugshotMetadata
         // hash-matching a v9 cfg whose user hasn't enabled either toggle.
         if (schemaVersion >= 9)
         {
-            sb.Append('|').Append(cfg.IncludeDefaultOutfit ? '1' : '0');
-            sb.Append('|').Append(cfg.IncludeHeadgear ? '1' : '0');
+            // Per-NPC override (when present) supersedes the global toggle so a
+            // mugshot pinned hoodless doesn't re-hash stale when the global
+            // setting changes. Callers without a per-NPC context pass null and
+            // fall back to the global cfg values.
+            sb.Append('|').Append((effectiveIncludeDefaultOutfit ?? cfg.IncludeDefaultOutfit) ? '1' : '0');
+            sb.Append('|').Append((effectiveIncludeHeadgear ?? cfg.IncludeHeadgear) ? '1' : '0');
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
