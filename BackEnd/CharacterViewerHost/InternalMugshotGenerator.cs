@@ -30,6 +30,18 @@ public sealed class InternalMugshotGenerator
     private readonly CharacterViewerLogGate _logGate;
     private readonly Lazy<VM_NpcSelectionBar> _npcSelectionBar;
 
+    // Bounds host-side concurrency into the renderer. The offscreen renderer
+    // already serializes the GL render itself (single render thread draining a
+    // queue), but every caller's pre-render work — mesh/attire resolution, BSA
+    // pre-warm, request build — runs on the calling task. Unbounded callers
+    // (notably the Mods-tab per-tile fan-out, which fires one GenerateAsync per
+    // NPC at once) would otherwise pile hundreds of in-flight resolve states
+    // and queued jobs into memory while the single render thread drains them
+    // one at a time. Gating the whole method caps that backlog. Sized from
+    // MaxParallelPortraitRenders to match the Legacy PortraitCreator's own
+    // render semaphore (and the comment in GenerateAsync's diagnostics).
+    private readonly SemaphoreSlim _renderSemaphore;
+
     public InternalMugshotGenerator(
         NpcMeshResolver resolver,
         IOffscreenRenderer renderer,
@@ -50,6 +62,12 @@ public sealed class InternalMugshotGenerator
         _tracker = tracker;
         _logGate = logGate;
         _npcSelectionBar = npcSelectionBar;
+
+        // Math.Max(1, ...) guards a misconfigured 0/negative setting from
+        // deadlocking every render. Captured once at construction (matching
+        // PortraitCreator); a runtime change takes effect on next launch.
+        int maxParallel = Math.Max(1, _settings.MaxParallelPortraitRenders);
+        _renderSemaphore = new SemaphoreSlim(maxParallel, maxParallel);
     }
 
     /// <summary>
@@ -95,8 +113,18 @@ public sealed class InternalMugshotGenerator
         // emits its own [CharacterViewer] verbose lines.
         using var captureScope = MaybeStartRenderLogCapture(npcFormKey, modSetting);
         Trace($"ENTER tid={tid} npc={npcFormKey} mod=[{modSetting?.DisplayName ?? "(none)"}]");
+        bool acquired = false;
         try
         {
+            // Acquire before any resolve/extraction work so the in-flight
+            // backlog (not just the GL render) stays bounded. WaitAsync throws
+            // OCE if cancelled before a slot frees — caught below, returns
+            // false, and the finally skips Release since acquired is still false.
+            long preAcquire = sw.ElapsedMilliseconds;
+            await _renderSemaphore.WaitAsync(token).ConfigureAwait(false);
+            acquired = true;
+            Trace($"  acquired-slot tid={Environment.CurrentManagedThreadId} waited={sw.ElapsedMilliseconds - preAcquire}ms");
+
             var linkCache = _env.LinkCache;
             if (linkCache == null) { Trace($"EXIT tid={tid} npc={npcFormKey} no-linkcache elapsed={sw.ElapsedMilliseconds}ms"); return false; }
 
@@ -292,6 +320,10 @@ public sealed class InternalMugshotGenerator
                 $"InternalMugshotGenerator failed for {npcFormKey}: {ExceptionLogger.GetExceptionStack(ex)}");
             Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} ERROR totalElapsed={sw.ElapsedMilliseconds}ms err={ex.Message}");
             return false;
+        }
+        finally
+        {
+            if (acquired) _renderSemaphore.Release();
         }
     }
 

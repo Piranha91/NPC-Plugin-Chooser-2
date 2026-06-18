@@ -615,10 +615,6 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             IsLoading = true;
             if (_cancellationToken.IsCancellationRequested) return;
 
-            // Resolve once up front; both AutoGen freshness and the legacy
-            // renderer need it, and FindNpcNifPath is async/cacheable.
-            string nifPath = await _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting);
-
             bool deferCurated = ShouldDeferCuratedLoad();
 
             // Walk the user's mugshot-source priority order. Each branch owns
@@ -641,7 +637,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                     MugshotSourceType.FaceFinder         => _settings.UseFaceFinderFallback
                                                             && await TryFaceFinderSourceAsync(),
                     MugshotSourceType.AutoGeneration     => _settings.UsePortraitCreatorFallback
-                                                            && await TryAutoGenerationSourceAsync(nifPath),
+                                                            && await TryAutoGenerationSourceAsync(),
                     _ => false,
                 };
 
@@ -767,7 +763,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     /// fresh PNG at the AutoGen path; otherwise renders via the selected
     /// renderer (Internal in-process or Legacy NPC Portrait Creator). Returns
     /// true on reuse or successful render.</summary>
-    private async Task<bool> TryAutoGenerationSourceAsync(string nifPath)
+    private async Task<bool> TryAutoGenerationSourceAsync()
     {
         // Mugshot-only / phantom mod entries (e.g. an entry NPC2 synthesized
         // from a leftover empty subfolder under MugshotsFolder, or a
@@ -794,6 +790,17 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         bool autoGen =
             ParentVMModSetting.DisplayName == VM_Mods.BaseGameModSettingName ||
             ParentVMModSetting.DisplayName == VM_Mods.CreationClubModsettingName;
+
+        // The Internal renderer consults the FaceGen NIF for neither the
+        // staleness check (MugshotStalenessChecker ignores legacyNifPath unless
+        // the active renderer is Legacy) nor the render itself, so skip the
+        // FindNpcNifPath BSA search/extraction on that path. Fired once per
+        // tile, it was a dominant CPU cost when opening a mod with hundreds of
+        // NPCs — pure wasted work for the (default) Internal renderer. Resolve
+        // it lazily, only for Legacy.
+        string nifPath = _settings.SelectedRenderer == MugshotRenderer.Internal
+            ? string.Empty
+            : await _portraitCreator.FindNpcNifPath(NpcFormKey, _parentVMModSetting);
 
         // Skip regeneration if a fresh PNG already exists for the active renderer.
         if (File.Exists(pngSavePath) &&

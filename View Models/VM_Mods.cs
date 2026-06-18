@@ -659,16 +659,54 @@ public class VM_Mods : ReactiveObject
             return;
         }
 
-        Debug.WriteLine("Mods Menu packer finished. Triggering background image generation.");
-        foreach (var mugshotVM in CurrentModNpcMugshots)
+        // Only placeholder tiles (HasMugshot == false) need a real image.
+        var pending = CurrentModNpcMugshots.Where(vm => !vm.HasMugshot).ToList();
+        if (pending.Count == 0)
         {
-            // If the mugshot is a placeholder (`HasMugshot` is false), start the real image loading.
-            if (!mugshotVM.HasMugshot)
-            {
-                // Fire-and-forget. The VM will update its own image when the task completes.
-                _ = mugshotVM.LoadRealImageAsync();
-            }
+            return;
         }
+
+        // Share the cancellation already used by ShowMugshotsAsync so selecting
+        // a different mod stops the in-flight generation (each tile's
+        // _cancellationToken is this same token).
+        var token = _mugshotLoadingCts?.Token ?? CancellationToken.None;
+
+        Debug.WriteLine($"Mods Menu packer finished. Triggering bounded background image generation for {pending.Count} tiles.");
+
+        // Bound the fan-out. The previous version kicked LoadRealImageAsync for
+        // every placeholder tile at once (fire-and-forget). For a mod with
+        // hundreds of NPCs that set IsLoading=true on all of them — each driving
+        // a perpetual spinner storyboard on the UI thread — and launched
+        // hundreds of concurrent resolve/render pipelines. Acquiring a slot
+        // BEFORE starting a tile caps both: at most MaxParallelPortraitRenders
+        // tiles are "loading" (spinning) and running their pipeline at once; the
+        // rest stay as static placeholders until a slot frees. This is the same
+        // bound the renderer's own queue imposes, surfaced here so the UI-side
+        // cost (animations, in-flight tasks) is bounded too. Throughput is
+        // unchanged — the serialized GL render thread is the real ceiling.
+        _ = Task.Run(async () =>
+        {
+            int maxParallel = Math.Max(1, _settings.MaxParallelPortraitRenders);
+            using var gate = new SemaphoreSlim(maxParallel, maxParallel);
+            var tasks = new List<Task>(pending.Count);
+
+            foreach (var mugshotVM in pending)
+            {
+                if (token.IsCancellationRequested) break;
+                try { await gate.WaitAsync(token); }
+                catch (OperationCanceledException) { break; }
+
+                var vmCapture = mugshotVM;
+                tasks.Add(Task.Run(async () =>
+                {
+                    try { await vmCapture.LoadRealImageAsync(); }
+                    finally { gate.Release(); }
+                }, token));
+            }
+
+            try { await Task.WhenAll(tasks); }
+            catch { /* per-tile failures are handled inside LoadRealImageAsync */ }
+        }, token);
     }
 
     /// <summary>
