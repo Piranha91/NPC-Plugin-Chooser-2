@@ -10,8 +10,17 @@
         <ApplicationIcon>Resources\NPC Logo.ico</ApplicationIcon>
     </PropertyGroup>
 
-    <ItemGroup>
+    <!-- CharacterViewer.Rendering (the offscreen 3D renderer) lives in the SynthEBD
+         repo. If that repo is checked out as a sibling (..\..\SynthEBD), build
+         against its live source so the renderer can be co-developed in place.
+         Otherwise (a fresh clone, or CI without the sibling) restore the published
+         NuGet package so the project builds with no extra setup. Keep the package
+         version in sync with the SynthEBD source / CharacterViewerRendering.Version. -->
+    <ItemGroup Condition="Exists('..\..\SynthEBD\CharacterViewer.Rendering\CharacterViewer.Rendering.csproj')">
       <ProjectReference Include="..\..\SynthEBD\CharacterViewer.Rendering\CharacterViewer.Rendering.csproj" />
+    </ItemGroup>
+    <ItemGroup Condition="!Exists('..\..\SynthEBD\CharacterViewer.Rendering\CharacterViewer.Rendering.csproj')">
+      <PackageReference Include="SynthEBD.CharacterViewer.Rendering" Version="2.5.18" />
     </ItemGroup>
 
     <ItemGroup>

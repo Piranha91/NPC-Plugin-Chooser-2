@@ -25,13 +25,20 @@ the full end-user feature walkthrough and UI semantics.
   manual — launch the app against a real Skyrim install and exercise the
   affected flow. Logs (below) are the primary diagnostic tool.
 
-### External/sibling dependencies that must be present
-- **`CharacterViewer.Rendering`** — sibling project referenced at
-  `../../SynthEBD/CharacterViewer.Rendering`. It is the offscreen OpenGL 3D
-  renderer used for in-app mugshot generation. It is in-scope for edits; change
-  it directly rather than working around it. Its GLSL shaders must be
-  **ASCII-only** (non-ASCII chars in comments break the compiler with a
-  misleading "unexpected $end" error).
+### External/sibling dependencies
+- **`CharacterViewer.Rendering`** — the offscreen OpenGL 3D renderer used for
+  in-app mugshot generation. It lives in the SynthEBD repo and is published to
+  nuget.org as **`SynthEBD.CharacterViewer.Rendering`**. The csproj reference is
+  *conditional*: if the SynthEBD repo is checked out as a sibling
+  (`../../SynthEBD/CharacterViewer.Rendering`) the build uses its live source (so
+  it can be co-developed in place — it is in-scope for edits; change it directly);
+  otherwise it restores the published NuGet package, so a fresh clone builds with
+  no extra setup. When bumping the renderer, keep the csproj `PackageReference`
+  version, the CV.R `<Version>`, and `CharacterViewerRendering.Version` in sync,
+  and publish a new package (SynthEBD `publish-cvr.yml` workflow). Its GLSL
+  shaders ship embedded in the assembly (and copied beside it for local builds)
+  and must be **ASCII-only** (non-ASCII chars in comments break the compiler with
+  a misleading "unexpected $end" error).
 - **NPC Portrait Creator** native binaries (`NPCPortraitCreator.exe`, `glfw3`,
   `libbsarch`, shaders, `lighting.json`) are copied from
   `../../NPC Portrait Creator/out/build/x64-Release` by the csproj; the external
