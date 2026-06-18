@@ -906,9 +906,19 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         OriginalDipWidth = dipWidth;
         OriginalDipHeight = dipHeight;
         OriginalDipDiagonal = Math.Sqrt(dipWidth * dipWidth + dipHeight * dipHeight);
-        ImageWidth = OriginalDipWidth;
-        ImageHeight = OriginalDipHeight;
-        
+        // Preserve the display size the packer already gave the placeholder this
+        // image replaces — otherwise a freshly generated mugshot momentarily
+        // balloons to its native resolution (the tile Border binds Width/Height
+        // to these) until the next packer pass. The Border's UniformToFill makes
+        // the new image fill the existing box cleanly. Original* above is still
+        // updated so the final repack (fired by OnTileGenerationComplete once
+        // generation finishes) computes the correct size from native dims. Only
+        // adopt native dims when no display size has been assigned yet.
+        if (ImageWidth == 0 && ImageHeight == 0)
+        {
+            ImageWidth = OriginalDipWidth;
+            ImageHeight = OriginalDipHeight;
+        }
     }
 
     private void SetImageSourceFromMemory(byte[] imageData)

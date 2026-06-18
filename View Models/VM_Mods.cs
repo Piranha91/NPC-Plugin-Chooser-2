@@ -55,6 +55,9 @@ public class VM_Mods : ReactiveObject
     private readonly ConcurrentDictionary<ModKey, bool> _masterAppearanceClassificationCache = new();
 
     private CancellationTokenSource? _mugshotLoadingCts;
+    // Per-load mugshot-generation state (gate + completion counter + dedupe set).
+    // Recreated by ShowMugshotsAsync; consumed by TriggerAsyncMugshotGeneration.
+    private MugshotGenerationBatch? _mugshotGenerationBatch;
     private TaskCompletionSource<PackingResult> _packingCompletionSource;
     private IDisposable? _packingCompletedSubscription;
 
@@ -654,59 +657,108 @@ public class VM_Mods : ReactiveObject
     
     private void TriggerAsyncMugshotGeneration()
     {
-        if (CurrentModNpcMugshots == null || !CurrentModNpcMugshots.Any())
+        // Always runs on the UI thread (the PackingCompleted subscription is
+        // ObserveOn(MainThreadScheduler)), so the per-load batch state below is
+        // accessed single-threaded — no lock needed except the Interlocked
+        // counter the worker tasks decrement.
+        var batch = _mugshotGenerationBatch;
+        if (batch == null || batch.Token.IsCancellationRequested) return;
+        if (CurrentModNpcMugshots == null || CurrentModNpcMugshots.Count == 0) return;
+
+        // Collect placeholder tiles not already kicked for THIS load. The packer
+        // raises PackingCompleted more than once per load (initial pack, then
+        // again whenever it re-runs — e.g. the vertical scrollbar appearing as a
+        // large mod's tiles fill changes the viewport width), and the large-mod
+        // population path adds tiles in batches after the first pack. The Kicked
+        // set makes each tile fire exactly once while still letting these later
+        // calls pick up newly-added tiles.
+        var newTiles = new List<VM_ModsMenuMugshot>();
+        foreach (var vm in CurrentModNpcMugshots)
         {
+            if (!vm.HasMugshot && batch.Kicked.Add(vm)) newTiles.Add(vm);
+        }
+        if (newTiles.Count == 0)
+        {
+            // Nothing new to generate. If nothing is in flight either (e.g. a
+            // mod whose tiles are all already curated/cached), the load is done
+            // — clear the flag ShowMugshotsAsync set so the Cancel button hides.
+            if (Volatile.Read(ref batch.ActiveCount) == 0) IsLoadingMugshots = false;
             return;
         }
 
-        // Only placeholder tiles (HasMugshot == false) need a real image.
-        var pending = CurrentModNpcMugshots.Where(vm => !vm.HasMugshot).ToList();
-        if (pending.Count == 0)
+        Debug.WriteLine($"Mods Menu: kicking bounded generation for {newTiles.Count} new tile(s).");
+
+        // ActiveCount drives IsLoadingMugshots (and thus the Cancel button's
+        // visibility): it stays up until every kicked tile completes, across all
+        // the repeated trigger calls above — previously the button vanished as
+        // soon as population finished, while generation was still running.
+        Interlocked.Add(ref batch.ActiveCount, newTiles.Count);
+        IsLoadingMugshots = true;
+
+        foreach (var mugshotVM in newTiles)
         {
-            return;
-        }
-
-        // Share the cancellation already used by ShowMugshotsAsync so selecting
-        // a different mod stops the in-flight generation (each tile's
-        // _cancellationToken is this same token).
-        var token = _mugshotLoadingCts?.Token ?? CancellationToken.None;
-
-        Debug.WriteLine($"Mods Menu packer finished. Triggering bounded background image generation for {pending.Count} tiles.");
-
-        // Bound the fan-out. The previous version kicked LoadRealImageAsync for
-        // every placeholder tile at once (fire-and-forget). For a mod with
-        // hundreds of NPCs that set IsLoading=true on all of them — each driving
-        // a perpetual spinner storyboard on the UI thread — and launched
-        // hundreds of concurrent resolve/render pipelines. Acquiring a slot
-        // BEFORE starting a tile caps both: at most MaxParallelPortraitRenders
-        // tiles are "loading" (spinning) and running their pipeline at once; the
-        // rest stay as static placeholders until a slot frees. This is the same
-        // bound the renderer's own queue imposes, surfaced here so the UI-side
-        // cost (animations, in-flight tasks) is bounded too. Throughput is
-        // unchanged — the serialized GL render thread is the real ceiling.
-        _ = Task.Run(async () =>
-        {
-            int maxParallel = Math.Max(1, _settings.MaxParallelPortraitRenders);
-            using var gate = new SemaphoreSlim(maxParallel, maxParallel);
-            var tasks = new List<Task>(pending.Count);
-
-            foreach (var mugshotVM in pending)
+            var vmCapture = mugshotVM;
+            // Per-tile worker. Bound the fan-out via the load's shared gate:
+            // each tile blocks on WaitAsync before LoadRealImageAsync sets
+            // IsLoading=true, so only MaxParallelPortraitRenders tiles spin /
+            // run their pipeline at once even though hundreds are queued. Token
+            // is NOT passed to Task.Run so the body always runs and the finally
+            // decrements the counter even when cancelled before acquiring.
+            _ = Task.Run(async () =>
             {
-                if (token.IsCancellationRequested) break;
-                try { await gate.WaitAsync(token); }
-                catch (OperationCanceledException) { break; }
-
-                var vmCapture = mugshotVM;
-                tasks.Add(Task.Run(async () =>
+                bool acquired = false;
+                try
                 {
-                    try { await vmCapture.LoadRealImageAsync(); }
-                    finally { gate.Release(); }
-                }, token));
-            }
+                    await batch.Gate.WaitAsync(batch.Token);
+                    acquired = true;
+                    await vmCapture.LoadRealImageAsync();
+                }
+                catch (OperationCanceledException) { /* load superseded */ }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Mugshot generation failed: {ExceptionLogger.GetExceptionStack(ex)}");
+                }
+                finally
+                {
+                    if (acquired) batch.Gate.Release();
+                    OnTileGenerationComplete(batch);
+                }
+            });
+        }
+    }
 
-            try { await Task.WhenAll(tasks); }
-            catch { /* per-tile failures are handled inside LoadRealImageAsync */ }
-        }, token);
+    /// <summary>Decrements the batch's in-flight counter; when it reaches zero
+    /// the whole load's generation is done. Clears <see cref="IsLoadingMugshots"/>
+    /// (hiding the Cancel button) and fires one final packer pass so the
+    /// freshly-generated mugshots — displayed at their placeholder's size until
+    /// now (see VM_ModsMenuMugshot.SetImageSource) — adopt their correct packed
+    /// size. Guards on the batch's own token so a superseded load (new mod
+    /// selected) doesn't clobber the current one's loading state.</summary>
+    private void OnTileGenerationComplete(MugshotGenerationBatch batch)
+    {
+        if (Interlocked.Decrement(ref batch.ActiveCount) != 0) return;
+
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            if (batch.Token.IsCancellationRequested) return;
+            // Another trigger may have queued more tiles between our decrement
+            // and this dispatch (staggered large-mod population); if so, leave
+            // the loading state up — that batch will clear it when it finishes.
+            if (Volatile.Read(ref batch.ActiveCount) != 0) return;
+            IsLoadingMugshots = false;
+            _refreshMugshotSizesSubject.OnNext(Unit.Default);
+        });
+    }
+
+    /// <summary>Per-load generation state, recreated by ShowMugshotsAsync. Lets
+    /// in-flight worker tasks from a superseded load operate on their own
+    /// counter/gate/kicked-set instead of corrupting the new load's.</summary>
+    private sealed class MugshotGenerationBatch
+    {
+        public required SemaphoreSlim Gate { get; init; }
+        public required CancellationToken Token { get; init; }
+        public readonly HashSet<VM_ModsMenuMugshot> Kicked = new();
+        public int ActiveCount;
     }
 
     /// <summary>
@@ -827,6 +879,16 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
     SelectedModForMugshots = selectedModSetting;
     CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
     CurrentModNpcMugshots.Clear();
+
+    // Fresh generation batch for this load. Sized to MaxParallelPortraitRenders
+    // (the renderer's effective ceiling). Worker tasks capture this instance, so
+    // a superseded load's stragglers can't corrupt the new load's counter/gate.
+    int maxParallel = Math.Max(1, _settings.MaxParallelPortraitRenders);
+    _mugshotGenerationBatch = new MugshotGenerationBatch
+    {
+        Gate = new SemaphoreSlim(maxParallel, maxParallel),
+        Token = token,
+    };
 
     if (!ModsViewIsZoomLocked)
     {
@@ -992,14 +1054,16 @@ private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
         catch (TaskCanceledException) { /* Suppress cancellation error */ }
         catch (Exception ex)
         {
-            await Application.Current.Dispatcher.InvokeAsync(() => ScrollableMessageBox.ShowWarning($"Failed to load mugshot data for {selectedModSetting.DisplayName}:\n{ExceptionLogger.GetExceptionStack(ex)}", "Mugshot Load Error"));
-        }
-        finally
-        {
+            // Population failed, so TriggerAsyncMugshotGeneration won't run to
+            // clear the flag — clear it here so the Cancel button doesn't hang.
             await Application.Current.Dispatcher.InvokeAsync(() => {
-                if (!token.IsCancellationRequested) IsLoadingMugshots = false;
+                IsLoadingMugshots = false;
+                ScrollableMessageBox.ShowWarning($"Failed to load mugshot data for {selectedModSetting.DisplayName}:\n{ExceptionLogger.GetExceptionStack(ex)}", "Mugshot Load Error");
             });
         }
+        // NOTE: no finally clearing IsLoadingMugshots here. On the success path
+        // generation outlives population — OnTileGenerationComplete clears the
+        // flag (and runs the final repack) once the last tile finishes.
     }, token);
 
     return Task.CompletedTask;
