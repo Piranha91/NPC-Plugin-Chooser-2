@@ -68,6 +68,12 @@ public sealed class InternalMugshotGenerator
         // PortraitCreator); a runtime change takes effect on next launch.
         int maxParallel = Math.Max(1, _settings.MaxParallelPortraitRenders);
         _renderSemaphore = new SemaphoreSlim(maxParallel, maxParallel);
+
+        // On an environment rebuild (game path / load order change) the renderer's
+        // cached resolved paths, decoded pixels, and uploaded GL textures may be
+        // stale — drop them so subsequent renders re-resolve against the new
+        // environment. Singleton, so the subscription lives for the app's life.
+        _env.OnEnvironmentUpdated.Subscribe(_ => _renderer.InvalidateCaches());
     }
 
     /// <summary>
