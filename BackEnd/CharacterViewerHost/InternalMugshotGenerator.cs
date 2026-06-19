@@ -172,6 +172,11 @@ public sealed class InternalMugshotGenerator
                 npcFormKey, modSetting, effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear);
             var meshOverrideWarningsOut = new List<string>();
 
+            // Opt-in per-render phase timing (drop a LogRenderTimings.txt file
+            // next to the exe). Pure data, no logging — so timings are
+            // representative with the verbose render trace OFF.
+            var renderTimings = RenderTimingsEnabled ? new RenderTimings() : null;
+
             var request = new OffscreenRenderRequest
             {
                 MeshPaths = paths,
@@ -236,11 +241,15 @@ public sealed class InternalMugshotGenerator
                 // is off (no capture scope active) — the renderer skips the
                 // diagnostic emission entirely.
                 DiagnosticLog = BuildRenderDiagnosticLog(),
+                TimingsOut = renderTimings,
             };
 
             long preRender = sw.ElapsedMilliseconds;
             byte[] png = await _renderer.RenderToPngAsync(request).ConfigureAwait(false);
-            Trace($"  RenderToPngAsync tid={Environment.CurrentManagedThreadId} bytes={png.Length} elapsed={sw.ElapsedMilliseconds - preRender}ms");
+            long hostRenderMs = sw.ElapsedMilliseconds - preRender;
+            Trace($"  RenderToPngAsync tid={Environment.CurrentManagedThreadId} bytes={png.Length} elapsed={hostRenderMs}ms");
+            if (renderTimings != null)
+                WriteRenderTimingsCsv(npcFormKey, modSetting, renderTimings, hostRenderMs, png.Length);
 
             // Asset-validation gate (batch only). The renderer doesn't expose
             // an early-abort hook for missing assets — the lists are populated
@@ -333,6 +342,60 @@ public sealed class InternalMugshotGenerator
         System.Diagnostics.Debug.WriteLine(line);
         System.Diagnostics.Trace.WriteLine(line);
         RenderLogCapture.Write(line);
+    }
+
+    // --- Lightweight per-render phase profiling (opt-in, verbose-independent) ---
+    // Enabled by dropping a "LogRenderTimings.txt" file next to the exe (checked
+    // once at startup, mirroring BsaContentsDiag). Writes one CSV row per
+    // completed render to RenderLogs/RenderTimings.csv. Deliberately separate
+    // from LogRenderLogic so timings can be collected WITHOUT the verbose
+    // per-asset trace, whose I/O would otherwise inflate the very numbers being
+    // measured.
+    private static readonly bool RenderTimingsEnabled =
+        File.Exists(Path.Combine(AppContext.BaseDirectory, "LogRenderTimings.txt"));
+    private static readonly object _timingsCsvLock = new();
+    private static readonly string _timingsCsvPath =
+        Path.Combine(AppContext.BaseDirectory, "RenderLogs", "RenderTimings.csv");
+
+    private void WriteRenderTimingsCsv(
+        FormKey npcFormKey, ModSetting? modSetting, RenderTimings t, long hostRenderMs, int bytes)
+    {
+        try
+        {
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            string mod = modSetting?.DisplayName ?? "(none)";
+            string npcName = _npcSelectionBar.Value?.AllNpcs
+                .FirstOrDefault(n => n.NpcFormKey.Equals(npcFormKey))?.DisplayName ?? string.Empty;
+            // Escape the two free-text fields for CSV (quote + double inner quotes).
+            string Q(string s) => "\"" + s.Replace("\"", "\"\"") + "\"";
+
+            // installMs includes decodeMs; uploadMs below is the derived
+            // GL-upload remainder (install minus decode).
+            double uploadMs = t.InstallMs - t.DecodeMs;
+            string row = string.Join(",",
+                Q(mod), Q(npcFormKey.ToString()), Q(npcName),
+                t.SetupMs.ToString("F1", ci), t.BuildMs.ToString("F1", ci),
+                t.InstallMs.ToString("F1", ci), t.DecodeMs.ToString("F1", ci),
+                uploadMs.ToString("F1", ci), t.DrawMs.ToString("F1", ci),
+                t.ReadbackMs.ToString("F1", ci), t.EncodeMs.ToString("F1", ci),
+                t.TotalMs.ToString("F1", ci), hostRenderMs.ToString(ci), bytes.ToString(ci));
+
+            lock (_timingsCsvLock)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_timingsCsvPath)!);
+                if (!File.Exists(_timingsCsvPath))
+                {
+                    File.AppendAllText(_timingsCsvPath,
+                        "mod,npcFormKey,npcName,setupMs,buildMs,installMs,decodeMs,uploadMs,drawMs,readbackMs,encodeMs,rendererTotalMs,hostRenderMs,pngBytes\n");
+                }
+                File.AppendAllText(_timingsCsvPath, row + "\n");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Profiling must never disrupt a render.
+            System.Diagnostics.Debug.WriteLine($"WriteRenderTimingsCsv failed: {ex.Message}");
+        }
     }
 
     /// <summary>Captures the active <see cref="RenderLogCapture"/> writer
