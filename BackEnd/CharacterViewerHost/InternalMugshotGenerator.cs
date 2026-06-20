@@ -394,6 +394,7 @@ public sealed class InternalMugshotGenerator
                 Q(mod), Q(npcFormKey.ToString()), Q(npcName),
                 t.SetupMs.ToString("F1", ci), t.BuildMs.ToString("F1", ci),
                 t.ResolveMs.ToString("F1", ci), t.ParseMs.ToString("F1", ci),
+                t.LoadMs.ToString("F1", ci), t.BuildShapesMs.ToString("F1", ci),
                 t.InstallMs.ToString("F1", ci), t.DecodeMs.ToString("F1", ci),
                 uploadMs.ToString("F1", ci), t.DrawMs.ToString("F1", ci),
                 t.ReadbackMs.ToString("F1", ci), t.EncodeMs.ToString("F1", ci),
@@ -405,7 +406,7 @@ public sealed class InternalMugshotGenerator
                 if (!File.Exists(_timingsCsvPath))
                 {
                     File.AppendAllText(_timingsCsvPath,
-                        "mod,npcFormKey,npcName,setupMs,buildMs,resolveMs,parseMs,installMs,decodeMs,uploadMs,drawMs,readbackMs,encodeMs,rendererTotalMs,hostRenderMs,pngBytes\n");
+                        "mod,npcFormKey,npcName,setupMs,buildMs,resolveMs,parseMs,loadMs,buildShapesMs,installMs,decodeMs,uploadMs,drawMs,readbackMs,encodeMs,rendererTotalMs,hostRenderMs,pngBytes\n");
                 }
                 File.AppendAllText(_timingsCsvPath, row + "\n");
             }
