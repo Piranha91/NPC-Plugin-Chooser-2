@@ -1114,9 +1114,17 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 sb.Append('\n').Append(Path.Combine(folder, modKey, $"{fileStem}.png"));
             }
         }
+        else if (!string.IsNullOrWhiteSpace(_settings.MugshotsFolder))
+        {
+            // No curated folder is linked yet (none exists on disk at
+            // <MugshotsFolder>\<ModName>), so show the conventional location NPC2
+            // would discover a curated image at if one were dropped there.
+            sb.Append('\n').Append(Path.Combine(
+                _settings.MugshotsFolder, ModName, modKey, $"{fileStem}.png"));
+        }
         else
         {
-            sb.Append("\n(no mugshot folder assigned for this mod)");
+            sb.Append("\n(no Mugshots folder configured in Settings)");
         }
 
         // FaceFinder cache: <FaceFinderCache>\<ModName>\<Plugin>\<FormID>.<ext>
