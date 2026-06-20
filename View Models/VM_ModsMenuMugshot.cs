@@ -57,7 +57,12 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     public string ImagePath { get; set; }
     public FormKey NpcFormKey { get; }
     public string NpcDisplayName { get; }
-    public string ToolTipText => $"{NpcDisplayName} ({NpcFormKey})";
+
+    // For a real mugshot this is just the NPC name + FormKey. For a placeholder
+    // (HasMugshot == false) it additionally lists the on-disk locations NPC2
+    // checks for each mugshot source, so the user knows where to drop a curated
+    // image or look for a cached / auto-generated one.
+    [ObservableAsProperty] public string ToolTipText { get; }
 
     [Reactive] public double ImageWidth { get; set; }
     [Reactive] public double ImageHeight { get; set; }
@@ -212,6 +217,16 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         // should drive AutoGen first, with Downloaded actively loaded on
         // its turn as a fallback if AutoGen produces nothing.
         _ = LoadInitialImageAsync(placeholderOnly: ShouldDeferCuratedLoad());
+
+        // Placeholder tiles get an expanded tooltip listing the expected image
+        // paths for each source; real mugshots keep the plain name + FormKey.
+        var baseToolTip = $"{NpcDisplayName} ({NpcFormKey})";
+        this.WhenAnyValue(x => x.HasMugshot)
+            .Select(hasMugshot => hasMugshot
+                ? baseToolTip
+                : $"{baseToolTip}\n\n{BuildExpectedPathsTooltip()}")
+            .ToPropertyEx(this, x => x.ToolTipText)
+            .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.ModPageUrls.Count)
             .Select(count => count > 0)
@@ -930,6 +945,50 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 
         HasMissingAssets = true;
         MissingAssetNotificationText = sb.ToString();
+    }
+
+    /// <summary>Builds the placeholder tooltip body listing where NPC2 looks
+    /// for (and writes) this NPC's mugshot under each source. Mirrors the path
+    /// conventions used by the priority loop in <see cref="LoadRealImageAsync"/>
+    /// and <see cref="BatchMugshotGenerator"/>: curated images live under the
+    /// mod's MugShotFolderPaths, FaceFinder images in the FaceFinder cache, and
+    /// auto-generated images in the AutoGen folder — all keyed by
+    /// <c>&lt;Plugin&gt;\{FormID:X8}</c>.</summary>
+    private string BuildExpectedPathsTooltip()
+    {
+        var modKey = NpcFormKey.ModKey.ToString();
+        var fileStem = $"{NpcFormKey.ID:X8}";
+        var sb = new System.Text.StringBuilder();
+
+        sb.Append("Expected image locations:");
+
+        // Curated (user-supplied) mugshots: <MugshotFolder>\<Plugin>\<FormID>.png
+        sb.Append("\n\nCurated:");
+        var mugFolders = _parentVMModSetting.MugShotFolderPaths;
+        if (mugFolders != null && mugFolders.Count > 0)
+        {
+            foreach (var folder in mugFolders)
+            {
+                sb.Append('\n').Append(Path.Combine(folder, modKey, $"{fileStem}.png"));
+            }
+        }
+        else
+        {
+            sb.Append("\n(no mugshot folder assigned for this mod)");
+        }
+
+        // FaceFinder cache: <FaceFinderCache>\<ModName>\<Plugin>\<FormID>.<ext>
+        var faceFinderPath = Path.Combine(
+            BatchMugshotGenerator.GetFaceFinderModFolder(_settings, _parentVMModSetting.DisplayName),
+            modKey, $"{fileStem}.png");
+        sb.Append("\n\nFaceFinder Cache:\n").Append(faceFinderPath);
+
+        // Auto-generated: <AutoGenMugshots>\<ModName>\<Plugin>\<FormID>.png
+        var autoGenPath = BatchMugshotGenerator.GetAutoGenSavePath(
+            _settings, _parentVMModSetting.DisplayName, NpcFormKey);
+        sb.Append("\n\nAuto-Generated:\n").Append(autoGenPath);
+
+        return sb.ToString();
     }
 
     private void SetImageSource(string path, bool isPlaceholder)
