@@ -250,6 +250,18 @@ public sealed class InternalMugshotGenerator
                 TimingsOut = renderTimings,
             };
 
+            // Pre-warm this NPC's NIF parse + DDS decode on a worker thread before
+            // the GL render. The renderer's single GL thread is the serial
+            // bottleneck; with up to MaxParallelPortraitRenders tiles in flight,
+            // this NPC's heavy CPU phases (parse + decode) overlap the render
+            // thread's GL work on the other tiles, so when its own turn comes the
+            // render hits the warm caches and pays only GL upload + draw + readback.
+            // Best-effort and non-throwing — a miss just decodes on the render
+            // thread as before.
+            long prePrewarm = sw.ElapsedMilliseconds;
+            await _renderer.PrewarmAsync(request).ConfigureAwait(false);
+            Trace($"  PrewarmAsync tid={Environment.CurrentManagedThreadId} elapsed={sw.ElapsedMilliseconds - prePrewarm}ms");
+
             long preRender = sw.ElapsedMilliseconds;
             byte[] png = await _renderer.RenderToPngAsync(request).ConfigureAwait(false);
             long hostRenderMs = sw.ElapsedMilliseconds - preRender;
@@ -381,6 +393,7 @@ public sealed class InternalMugshotGenerator
             string row = string.Join(",",
                 Q(mod), Q(npcFormKey.ToString()), Q(npcName),
                 t.SetupMs.ToString("F1", ci), t.BuildMs.ToString("F1", ci),
+                t.ResolveMs.ToString("F1", ci), t.ParseMs.ToString("F1", ci),
                 t.InstallMs.ToString("F1", ci), t.DecodeMs.ToString("F1", ci),
                 uploadMs.ToString("F1", ci), t.DrawMs.ToString("F1", ci),
                 t.ReadbackMs.ToString("F1", ci), t.EncodeMs.ToString("F1", ci),
@@ -392,7 +405,7 @@ public sealed class InternalMugshotGenerator
                 if (!File.Exists(_timingsCsvPath))
                 {
                     File.AppendAllText(_timingsCsvPath,
-                        "mod,npcFormKey,npcName,setupMs,buildMs,installMs,decodeMs,uploadMs,drawMs,readbackMs,encodeMs,rendererTotalMs,hostRenderMs,pngBytes\n");
+                        "mod,npcFormKey,npcName,setupMs,buildMs,resolveMs,parseMs,installMs,decodeMs,uploadMs,drawMs,readbackMs,encodeMs,rendererTotalMs,hostRenderMs,pngBytes\n");
                 }
                 File.AppendAllText(_timingsCsvPath, row + "\n");
             }
