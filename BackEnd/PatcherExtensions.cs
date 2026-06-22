@@ -211,19 +211,43 @@ public static class PatcherExtensions
         modToDuplicateInto.RemapLinks(mapping);
     }
 
+    // Removes this app's own generated plugins (and anything that masters to them,
+    // recursively) from a load order before it is used to build the environment, so a
+    // re-run patches from the original source mods rather than from its own prior output.
+    //
+    // Generated plugins are identified by their stamped header description
+    // (<see cref="Patcher.PluginDescriptionSignature"/>). Because the splitting feature can
+    // emit several plugins per run under different ModKeys (e.g. NPC_Male.esp), the stamp is
+    // the reliable signal; ModKey-based dedup alone would miss the suffixed split plugins.
+    //
+    // <paramref name="outputModKey"/> is an optional safety/fallback: pass a plugin's ModKey
+    // to also exclude it (and its dependents) even if it carries no stamp — e.g. the current
+    // output mod whose on-disk predecessor may have lost or never had the description. It is
+    // optional so the function can be reused by other patchers that decide exclusion targets
+    // differently.
     public static IEnumerable<IModListingGetter<ISkyrimModGetter>> TrimDependentPlugins(
-        this IEnumerable<IModListingGetter<ISkyrimModGetter>> loadOrder)
+        this IEnumerable<IModListingGetter<ISkyrimModGetter>> loadOrder,
+        ModKey? outputModKey = null)
     {
-        List<ModKey> mastersToRemove = loadOrder.Where(x => x.Mod?.ModHeader.Description != null && 
+        List<ModKey> mastersToRemove = loadOrder.Where(x => x.Mod?.ModHeader.Description != null &&
                                                             x.Mod.ModHeader.Description.Equals(Patcher.PluginDescriptionSignature))
             .Select(x => x.ModKey).ToList();
+
+        // Fallback seed: exclude the supplied output mod by ModKey even if it isn't stamped.
+        if (outputModKey.HasValue && !outputModKey.Value.IsNull && !mastersToRemove.Contains(outputModKey.Value))
+        {
+            mastersToRemove.Add(outputModKey.Value);
+        }
 
         List<IModListingGetter<ISkyrimModGetter>> trimmedLoadOrder = new();
         foreach (var listing in loadOrder)
         {
             if (listing.ModKey.IsNull) continue;
             if (mastersToRemove.Contains(listing.ModKey)) continue;
-            if (listing.Mod.ModHeader.MasterReferences.Select(x => x.Master).Intersect(mastersToRemove).Any())
+            // Mod can be null for a listed-but-unreadable plugin; we can't inspect its masters,
+            // so leave it in the trimmed order (we only remove plugins we positively identify).
+            var masters = listing.Mod?.ModHeader.MasterReferences;
+            if (masters != null && masters.Select(x => x.Master).Intersect(mastersToRemove).Any())
             {
                 mastersToRemove.Add(listing.ModKey);
                 continue;

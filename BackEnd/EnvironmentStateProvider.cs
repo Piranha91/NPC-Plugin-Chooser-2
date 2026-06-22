@@ -134,8 +134,8 @@ public class EnvironmentStateProvider : ReactiveObject
             _environment = builder
                 .TransformModListings(x =>
                     x.OnlyEnabledAndExisting()
-                        .TrimDependentPlugins())
-                    .WithOutputMod(OutputMod)
+                        .TrimDependentPlugins(OutputMod.ModKey))
+                    .WithOutputMod(OutputMod, OutputModTrimming.Self)
                 .Build();
 
             if (!Directory.Exists(_environment.DataFolderPath))
