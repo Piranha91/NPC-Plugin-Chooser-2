@@ -63,6 +63,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private readonly FaceFinderClient _faceFinderClient;
     private readonly EventLogger _eventLogger;
     private readonly CompositeDisposable _disposables = new();
+    private readonly Action<bool> _themeChangedHandler;
     private readonly Lazy<VM_Mods> _lazyModsVm;
     private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
     private readonly VM_FavoriteFaces _favoriteFacesVm;
@@ -572,7 +573,27 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 return mugshotVMs;
             })
             .ObserveOn(RxApp.MainThreadScheduler)
-            .Do(vms => Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms CurrentNpcAppearanceMods bound (count={vms.Count})"))
+            .Do(vms =>
+            {
+                // Before the OAPH swaps in the freshly-built collection, dispose the
+                // tiles from the previously-displayed NPC. Each VM_NpcsMenuMugshot
+                // holds a frozen BitmapImage AND a subscription to the SingleInstance
+                // NpcConsistencyProvider.NpcSelectionChanged Subject, which roots the
+                // tile for the life of the app. Without disposing here, every tile
+                // (and its bitmap) from every NPC ever viewed stays resident, which
+                // is the dominant source of the monotonic RAM growth while browsing.
+                // CreateMugShotViewModelsAsync always builds fresh tiles via the
+                // factory, so the outgoing collection is never reused.
+                var previousTiles = CurrentNpcAppearanceMods;
+                if (previousTiles != null)
+                {
+                    foreach (var tile in previousTiles)
+                    {
+                        tile.Dispose();
+                    }
+                }
+                Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms CurrentNpcAppearanceMods bound (count={vms.Count})");
+            })
             .ToPropertyEx(this, x => x.CurrentNpcAppearanceMods)
             .DisposeWith(_disposables);
         
@@ -615,8 +636,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .Subscribe(args => RecalculateTemplateIndicatorsForSelection(args.NpcFormKey))
             .DisposeWith(_disposables);
 
-        // Refresh selection indicator brushes when theme changes
-        ThemeManager.ThemeChanged += _ => RefreshAllSelectionIndicators();
+        // Refresh selection indicator brushes when theme changes. Hold the handler
+        // in a field so Dispose can detach it from the static event (otherwise the
+        // closure roots this VM via ThemeManager for the life of the process).
+        _themeChangedHandler = _ => RefreshAllSelectionIndicators();
+        ThemeManager.ThemeChanged += _themeChangedHandler;
 
         // Listen for the request to share an appearance
         MessageBus.Current.Listen<ShareAppearanceRequest>()
@@ -4853,6 +4877,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     // --- Disposal ---
     public void Dispose()
     {
+        if (_themeChangedHandler != null)
+        {
+            ThemeManager.ThemeChanged -= _themeChangedHandler;
+        }
         _disposables.Dispose();
         ClearAppearanceModViewModels();
     }

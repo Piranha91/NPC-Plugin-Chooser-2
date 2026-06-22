@@ -407,7 +407,7 @@ public class VM_Mods : ReactiveObject
                 if (SelectedModForMugshots != null && !ModSettingsList.Contains(SelectedModForMugshots))
                 {
                     SelectedModForMugshots = null;
-                    CurrentModNpcMugshots.Clear();
+                    DisposeAndClearMugshots();
                 }
             })
             .DisposeWith(_disposables);
@@ -861,24 +861,34 @@ public class VM_Mods : ReactiveObject
     
     // In VM_Mods.cs
 
+    // Disposes every mugshot tile before clearing the collection. Each
+    // VM_ModsMenuMugshot holds a frozen BitmapImage and a subscription to the
+    // SingleInstance NpcConsistencyProvider, so a bare Clear() orphans the tiles
+    // while the singleton keeps them rooted -- leaking the bitmaps. Route every
+    // clear of CurrentModNpcMugshots through here so no site can bypass disposal.
+    private void DisposeAndClearMugshots()
+    {
+        CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
+        CurrentModNpcMugshots.Clear();
+    }
+
 private Task ShowMugshotsAsync(VM_ModSetting selectedModSetting)
 {
     _mugshotLoadingCts?.Cancel();
+    _mugshotLoadingCts?.Dispose(); // workers capture the token/batch, not the source
     _mugshotLoadingCts = new CancellationTokenSource();
     var token = _mugshotLoadingCts.Token;
 
     if (selectedModSetting == null)
     {
         SelectedModForMugshots = null;
-        CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
-        CurrentModNpcMugshots.Clear();
+        DisposeAndClearMugshots();
         return Task.CompletedTask;
     }
 
     IsLoadingMugshots = true;
     SelectedModForMugshots = selectedModSetting;
-    CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
-    CurrentModNpcMugshots.Clear();
+    DisposeAndClearMugshots();
 
     // Fresh generation batch for this load. Sized to MaxParallelPortraitRenders
     // (the renderer's effective ceiling). Worker tasks capture this instance, so
@@ -1095,8 +1105,9 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     public void Dispose() // If VM_Mods needs to be disposable
     {
         _disposables.Dispose();
-        CurrentModNpcMugshots.ForEach(vm => vm.Dispose());
-        CurrentModNpcMugshots.Clear();
+        DisposeAndClearMugshots();
+        _mugshotLoadingCts?.Cancel();
+        _mugshotLoadingCts?.Dispose();
         _requestScrollToModSubject.Dispose(); // Dispose the subject
     }
 
@@ -1555,6 +1566,16 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         List<string> warnings)
         InitializePopulation(VM_SplashScreen? splashReporter)
     {
+        // Dispose the previous population's VMs before dropping them. Each
+        // VM_ModSetting subscribes to the SingleInstance VM_Settings (and other
+        // singletons), which roots it; without disposal every VM from every prior
+        // population (Refresh All / environment change) leaks for the life of the
+        // app. Population always rebuilds fresh VMs via the factory below, so these
+        // instances are never reused. No-op on the first population (empty list).
+        foreach (var oldVm in _allModSettingsInternal)
+        {
+            oldVm.Dispose();
+        }
         _allModSettingsInternal.Clear();
         _overridesCache.Clear();
         _masterAppearanceClassificationCache.Clear(); // load order is re-resolved per scan
@@ -2397,6 +2418,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
 
             _allModSettingsInternal.Remove(vm);
+            vm.Dispose(); // pruned (non-appearance) mod; discarded, so release its subscriptions
         }
     }
     
@@ -3189,7 +3211,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         {
             // It was filtered out, clear the right panel
             SelectedModForMugshots = null;
-            CurrentModNpcMugshots.Clear();
+            DisposeAndClearMugshots();
         }
 
 
@@ -3279,7 +3301,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             if (SelectedModForMugshots == modSettingToRemove)
             {
                 SelectedModForMugshots = null;
-                CurrentModNpcMugshots.Clear();
+                DisposeAndClearMugshots();
             }
 
             // Also prune the now-stale reference from each NPC's per-NPC
@@ -3521,6 +3543,9 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             // 4. Remove Loser VM
             bool removed = _allModSettingsInternal.Remove(loser);
+            // References were redirected to the winner above, so the loser is now
+            // discarded -- dispose it to detach its singleton subscriptions.
+            loser.Dispose();
             Debug.WriteLine($"Removed loser VM '{loserName}': {removed}");
 
             // 5. Refresh UI
@@ -3574,10 +3599,16 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             // c) Clear internal lists to generate a blank slate
             _consistencyProvider.ClearAllSelections();
+            // Dispose before clearing: this reset clears the list before the
+            // repopulation below, so InitializePopulation's disposal won't see these.
+            foreach (var oldVm in _allModSettingsInternal)
+            {
+                oldVm.Dispose();
+            }
             _allModSettingsInternal.Clear();
             ModSettingsList.Clear();
             SelectedModForMugshots = null;
-            CurrentModNpcMugshots.Clear();
+            DisposeAndClearMugshots();
             _settings.ModSettings.Clear(); // Clear from the persistent model
 
             // d) Repopulate all mods from scratch
@@ -3647,6 +3678,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             if (redundantMugshotOnlyVmsToRemove.Any())
             {
                 _allModSettingsInternal.RemoveAll(redundantMugshotOnlyVmsToRemove.Contains);
+                foreach (var redundantVm in redundantMugshotOnlyVmsToRemove)
+                {
+                    redundantVm.Dispose(); // redundant mugshot-only VM; discarded
+                }
                 ApplyFilters(); // Refresh the UI list to reflect the removals
             }
 
