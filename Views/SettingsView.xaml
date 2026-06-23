@@ -1095,6 +1095,13 @@
                             <TextBlock Text="Max # NPCs" VerticalAlignment="Center" Margin="5,0,0,0"/>
                         </StackPanel>
                     </StackPanel>
+
+                    <Separator Margin="0,10,0,8"/>
+                    <Button Content="Validate Output..."
+                            Command="{Binding ValidateOutputCommand}"
+                            HorizontalAlignment="Left"
+                            Padding="12,4"
+                            ToolTip="Checks that your generated output actually wins in-game for each NPC you've selected an appearance for: the conflict-winning record, the deployed FaceGen .nif, and any SkyPatcher overrides. Requires the output to be installed and active in your mod manager first. Findings are shown in a table you can copy to Excel."/>
                 </StackPanel>
             </GroupBox>
             

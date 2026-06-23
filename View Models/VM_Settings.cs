@@ -442,8 +442,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public ReactiveCommand<string, Unit> RemoveIgnoredModCommand { get; }
     public ReactiveCommand<VM_LoggedNpc, Unit> AddNpcToLogCommand { get; }
     public ReactiveCommand<VM_LoggedNpc, Unit> RemoveNpcFromLogCommand { get; }
+    public ReactiveCommand<Unit, Unit> ValidateOutputCommand { get; }
 
     private readonly FaceGenAnalysisCache _faceGenAnalysisCache;
+    private readonly OutputValidator _outputValidator;
 
     public VM_Settings(
         EnvironmentStateProvider environmentStateProvider,
@@ -458,10 +460,12 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         BatchMugshotGenerator batchMugshotGenerator,
         FaceFinderClient faceFinderClient,
         EventLogger eventLogger,
-        FaceGenAnalysisCache faceGenAnalysisCache)
+        FaceGenAnalysisCache faceGenAnalysisCache,
+        OutputValidator outputValidator)
     {
         _model = settingsModel;
         _faceGenAnalysisCache = faceGenAnalysisCache;
+        _outputValidator = outputValidator;
         
         _environmentStateProvider = environmentStateProvider;
         _environmentStateProvider.OnEnvironmentUpdated
@@ -753,6 +757,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         ShowPatchingModeHelpCommand = ReactiveCommand.Create(ShowPatchingModeHelp).DisposeWith(_disposables);
         ShowOverrideHandlingModeHelpCommand =
             ReactiveCommand.Create(ShowOverrideHandlingModeHelp).DisposeWith(_disposables);
+        ValidateOutputCommand = ReactiveCommand.CreateFromTask(ValidateOutputAsync).DisposeWith(_disposables);
         ImportEasyNpcCommand = ReactiveCommand.Create(_easyNpcTranslator.ImportEasyNpc).DisposeWith(_disposables);
         ExportEasyNpcCommand = ReactiveCommand.Create(_easyNpcTranslator.ExportEasyNpc).DisposeWith(_disposables);
         UpdateEasyNpcProfileCommand = ReactiveCommand.CreateFromTask<bool>(_easyNpcTranslator.UpdateEasyNpcProfile)
@@ -1969,6 +1974,145 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             DataContext = linkerViewModel
         };
         linkerView.ShowDialog();
+    }
+
+    // Opens the "choose NPCs" dialog, runs OutputValidator against the real (untrimmed)
+    // deployed load order on a background thread with a cancellable progress window, then
+    // shows the findings table. See OutputValidator for the three checks performed.
+    private async Task ValidateOutputAsync()
+    {
+        if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid)
+        {
+            ScrollableMessageBox.ShowWarning(
+                "The game environment is not valid. Resolve it on this Settings page (a working load order and data folder are required) before validating output.",
+                "Validate Output");
+            return;
+        }
+
+        var selections = _model.SelectedAppearanceMods;
+        if (selections == null || selections.Count == 0)
+        {
+            ScrollableMessageBox.ShowWarning("No appearance selections have been made yet, so there is nothing to validate.", "Validate Output");
+            return;
+        }
+
+        var items = BuildValidationScopeItems(selections);
+
+        var scopeVm = new VM_ValidationScopeWindow(items);
+        var scopeWindow = new ValidationScopeWindow { DataContext = scopeVm };
+        TrySetOwner(scopeWindow);
+        bool? scopeResult = scopeWindow.ShowDialog();
+        var chosen = scopeVm.GetChosenFormKeys();
+        scopeVm.Dispose();
+
+        if (scopeResult != true) return;
+        if (chosen.Count == 0)
+        {
+            ScrollableMessageBox.ShowWarning("No NPCs were selected to validate.", "Validate Output");
+            return;
+        }
+
+        var progressVm = new VM_ProgressWindow
+        {
+            Title = "Validating Output",
+            StatusMessage = "Preparing...",
+            IsIndeterminate = true,
+            ProgressMaximum = chosen.Count
+        };
+        var progressWindow = new ProgressWindow { ViewModel = progressVm };
+        TrySetOwner(progressWindow);
+        progressWindow.Show();
+
+        using var cts = new CancellationTokenSource();
+        using var cancelSub = progressVm.WhenAnyValue(x => x.IsCancellationRequested)
+            .Where(requested => requested)
+            .Subscribe(_ => { try { cts.Cancel(); } catch { /* already disposed */ } });
+
+        var progress = new Progress<(int current, int total, string message)>(p =>
+        {
+            if (p.total > 0)
+            {
+                progressVm.IsIndeterminate = false;
+                progressVm.ProgressMaximum = p.total;
+                progressVm.ProgressValue = p.current;
+            }
+            else
+            {
+                progressVm.IsIndeterminate = true;
+            }
+            progressVm.StatusMessage = p.message;
+        });
+
+        ValidationRunResult? result = null;
+        try
+        {
+            result = await Task.Run(() => _outputValidator.Validate(chosen, progress, cts.Token), cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // User cancelled — fall through and close the progress window.
+        }
+        catch (Exception ex)
+        {
+            progressWindow.Close();
+            progressVm.Dispose();
+            ScrollableMessageBox.ShowError("Validation failed:\n" + ExceptionLogger.GetExceptionStack(ex), "Validate Output");
+            return;
+        }
+
+        progressWindow.Close();
+        progressVm.Dispose();
+
+        if (result == null) return; // cancelled
+
+        if (result.Blocked)
+        {
+            ScrollableMessageBox.ShowWarning(result.BlockReason ?? "Validation could not run.", "Validate Output");
+            return;
+        }
+
+        var resultsVm = new VM_ValidationResultsWindow(result);
+        var resultsWindow = new ValidationResultsWindow { DataContext = resultsVm };
+        resultsWindow.Closed += (_, _) => resultsVm.Dispose(); // modeless: dispose VM subscriptions on close
+        TrySetOwner(resultsWindow);
+        resultsWindow.Show();
+    }
+
+    private List<VM_ValidationScopeItem> BuildValidationScopeItems(
+        Dictionary<FormKey, (string ModName, FormKey NpcFormKey)> selections)
+    {
+        var items = new List<VM_ValidationScopeItem>(selections.Count);
+        var linkCache = _environmentStateProvider.LinkCache;
+        foreach (var kvp in selections)
+        {
+            string displayName;
+            if (linkCache != null && linkCache.TryResolve<INpcGetter>(kvp.Key, out var npc) && npc != null)
+            {
+                displayName = Auxilliary.GetLogString(npc, _model.LocalizationLanguage);
+            }
+            else
+            {
+                displayName = kvp.Key.ToString();
+            }
+            items.Add(new VM_ValidationScopeItem(kvp.Key, displayName, kvp.Value.ModName));
+        }
+        return items;
+    }
+
+    private void TrySetOwner(Window window)
+    {
+        try
+        {
+            var mainWindow = Application.Current?.MainWindow;
+            if (mainWindow != null && mainWindow != window)
+            {
+                window.Owner = mainWindow;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Could not set window owner: {ex.Message}");
+        }
     }
 
     private async Task DeleteCachedFaceFinderImagesAsync()

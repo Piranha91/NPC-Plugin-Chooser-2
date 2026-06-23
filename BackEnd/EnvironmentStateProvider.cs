@@ -321,4 +321,51 @@ public class EnvironmentStateProvider : ReactiveObject
         string allocatorName = "Allocator_" + pluginName;
         return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, allocatorName) + ".txt";
     }
+
+    /// <summary>
+    /// Builds a throwaway environment from the real on-disk load order WITHOUT trimming
+    /// this app's generated output (and without overlaying a fresh in-memory output mod),
+    /// so callers can inspect the true conflict-winning records the game actually sees —
+    /// including a deployed output plugin and anything overriding it. The normal
+    /// environment (<see cref="UpdateEnvironment"/>) deliberately trims the output via
+    /// <c>TrimDependentPlugins</c>, which hides it from validation.
+    ///
+    /// The returned environment is the caller's to dispose. Returns null on failure with
+    /// the reason in <paramref name="error"/>.
+    /// </summary>
+    public IGameEnvironment<ISkyrimMod, ISkyrimModGetter>? TryBuildUntrimmedEnvironment(out string? error)
+    {
+        error = null;
+        try
+        {
+            var builder = GameEnvironment.Typical.Builder<ISkyrimMod, ISkyrimModGetter>(SkyrimVersion.ToGameRelease());
+            if (!_targetDataFolderPath.IsNullOrWhitespace() && Directory.Exists(_targetDataFolderPath))
+            {
+                builder = builder.WithTargetDataFolder(_targetDataFolderPath);
+            }
+
+            // Only OnlyEnabledAndExisting() — the set the game actually loads. No
+            // TrimDependentPlugins, no WithOutputMod: the deployed output plugin and any
+            // overrides of it stay in the link cache so winning records are the real ones.
+            var env = builder
+                .TransformModListings(x => x.OnlyEnabledAndExisting())
+                .Build();
+
+            if (!Directory.Exists(env.DataFolderPath) ||
+                env.LoadOrder?.ListedOrder == null ||
+                !env.LoadOrder.ListedOrder.Any())
+            {
+                error = "Untrimmed environment built with no usable load order or data folder.";
+                env.Dispose();
+                return null;
+            }
+
+            return env;
+        }
+        catch (Exception ex)
+        {
+            error = ExceptionLogger.GetExceptionStack(ex);
+            return null;
+        }
+    }
 }
