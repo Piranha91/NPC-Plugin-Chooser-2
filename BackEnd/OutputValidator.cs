@@ -71,6 +71,12 @@ public class OutputValidator
         log.AppendLine($"Mode: {(_settings.UseSkyPatcherMode ? "SkyPatcher" : _settings.PatchingMode.ToString())}");
         log.AppendLine($"NPCs requested: {npcsToValidate.Count}");
 
+        // Opt-in performance breakdown: phase timings go to the validation log, and a
+        // hierarchical per-check report (aggregated across NPCs) is appended at the end.
+        ContextualPerformanceTracer.Reset();
+        using var _perfCtx = ContextualPerformanceTracer.BeginContext("OutputValidator");
+        var swPhase = System.Diagnostics.Stopwatch.StartNew();
+
         if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid)
         {
             result.Blocked = true;
@@ -93,6 +99,8 @@ public class OutputValidator
         var linkCache = env.LinkCache;
         var listings = env.LoadOrder.ListedOrder.ToList();
         var dataFolder = env.DataFolderPath.Path;
+        log.AppendLine($"[perf] Untrimmed environment built in {swPhase.ElapsedMilliseconds} ms ({listings.Count} plugins).");
+        swPhase.Restart();
 
         // --- Deploy gate (user chose "require deploy first") ---
         // skyPatcherNpcRoot / npc2IniPath are also reused below for the SkyPatcher index + .ini parse.
@@ -112,6 +120,8 @@ public class OutputValidator
         // --- SkyPatcher index (parse all npc configs once) ---
         progress?.Report((0, 0, "Scanning SkyPatcher configs..."));
         var skyIndex = BuildSkyPatcherIndex(skyPatcherNpcRoot, npc2IniPath, log);
+        log.AppendLine($"[perf] SkyPatcher index built in {swPhase.ElapsedMilliseconds} ms.");
+        swPhase.Restart();
         if (skyIndex.BroadFilterLineCount > 0)
         {
             result.Notes.Add(
@@ -149,7 +159,8 @@ public class OutputValidator
 
                 try
                 {
-                    ValidateNpc(npcFk, linkCache, listings, modSettingsByName, skyIndex, npc2IniMap, dataFolder, run, result, log);
+                    using (ContextualPerformanceTracer.Trace("ValidateNpc"))
+                        ValidateNpc(npcFk, linkCache, listings, modSettingsByName, skyIndex, npc2IniMap, dataFolder, run, result, log);
                 }
                 catch (Exception ex)
                 {
@@ -173,6 +184,8 @@ public class OutputValidator
         result.NpcsChecked = total;
         progress?.Report((total, total, "Validation complete."));
         log.AppendLine($"Done. NPCs checked: {total}. Issues: {result.Issues.Count}.");
+        log.AppendLine($"[perf] Per-NPC validation phase: {swPhase.ElapsedMilliseconds} ms for {total} NPC(s).");
+        log.AppendLine(ContextualPerformanceTracer.GenerateDetailedReport("Validate Output"));
         WriteLog(log, result);
         return result;
     }
@@ -316,14 +329,17 @@ public class OutputValidator
         }
         else
         {
-            CheckRecord(npcFk, displayName, selectedModName, donorFk, modSetting, winningRecord, winningModKey, listings, linkCache, result, log);
+            using (ContextualPerformanceTracer.Trace("CheckRecord"))
+                CheckRecord(npcFk, displayName, selectedModName, donorFk, modSetting, winningRecord, winningModKey, listings, linkCache, result, log);
         }
 
         // Check 2: the recipient's deployed FaceGen should match the selected mod's.
-        CheckFaceGen(npcFk, npcFk, donorFk, displayName, selectedModName, modSetting, dataFolder, linkCache, run, result, log);
+        using (ContextualPerformanceTracer.Trace("CheckFaceGen"))
+            CheckFaceGen(npcFk, npcFk, donorFk, displayName, selectedModName, modSetting, dataFolder, linkCache, run, result, log);
 
         // Check 3: any SkyPatcher mod that would override this NPC at runtime.
-        CheckSkyPatcher(npcFk, displayName, selectedModName, winningRecord?.EditorID, skyIndex, result);
+        using (ContextualPerformanceTracer.Trace("CheckSkyPatcher"))
+            CheckSkyPatcher(npcFk, displayName, selectedModName, winningRecord?.EditorID, skyIndex, result);
     }
 
     // ----------------------------------------------------------------------------------
@@ -738,17 +754,22 @@ public class OutputValidator
         // checks below; extending the consistency scan to it is future work).
         if (subjectExists)
         {
-            CheckFaceGenHeadPartConsistency(npcFk, subjectFk, subjectPath, targetMeshRel, displayName, selectedModName, linkCache, result);
+            using (ContextualPerformanceTracer.Trace("FaceGenConsistency"))
+                CheckFaceGenHeadPartConsistency(npcFk, subjectFk, subjectPath, targetMeshRel, displayName, selectedModName, linkCache, result);
         }
 
         // Resolve the expected source: loose first, then the selected mod's BSAs (extract to temp).
-        string? sourcePath = FindLooseInModFolders(modSetting, donorMeshRel);
+        string? sourcePath;
         bool sourceFromBsa = false;
         string? sourceTemp = null;
-        if (sourcePath == null)
+        using (ContextualPerformanceTracer.Trace("FaceGenSourceResolve"))
         {
-            sourceTemp = TryExtractSelectedModBsaFaceGen(modSetting, donorMeshRel, run);
-            if (sourceTemp != null) { sourcePath = sourceTemp; sourceFromBsa = true; }
+            sourcePath = FindLooseInModFolders(modSetting, donorMeshRel);
+            if (sourcePath == null)
+            {
+                sourceTemp = TryExtractSelectedModBsaFaceGen(modSetting, donorMeshRel, run);
+                if (sourceTemp != null) { sourcePath = sourceTemp; sourceFromBsa = true; }
+            }
         }
 
         try
@@ -860,7 +881,10 @@ public class OutputValidator
             }
 
             // Step 1: both exist — does the deployed FaceGen match the selected mod's source?
-            if (FilesEqual(subjectPath, sourcePath!))
+            bool deployedMatchesSource;
+            using (ContextualPerformanceTracer.Trace("FaceGenFilesEqual"))
+                deployedMatchesSource = FilesEqual(subjectPath, sourcePath!);
+            if (deployedMatchesSource)
             {
                 return; // Match.
             }

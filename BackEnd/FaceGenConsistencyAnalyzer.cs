@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using CharacterViewer.Rendering;
 using Mutagen.Bethesda.Plugins;
@@ -40,11 +41,51 @@ public sealed class FaceGenConsistencyAnalyzer
 {
     private readonly NifMeshBuilder _meshBuilder;
 
+    // Session cache of the (expensive) NIF survey, keyed by path + size + mtime so a
+    // re-validation or a mugshot re-generation doesn't re-parse an unchanged FaceGen.
+    // Entries are tiny (a handful of short shape names) and never mutated after creation,
+    // so concurrent readers are safe — ready for a future parallel validation loop.
+    private readonly ConcurrentDictionary<string, CachedSurvey> _surveyCache = new();
+
+    private sealed record CachedSurvey(bool LoadOk, string? PrimaryHeadShapeName, HashSet<string> ShapeNames, string? Error);
+
     public FaceGenConsistencyAnalyzer(CharacterPreviewCache previewCache)
     {
         // Reuse the shared mesh builder the rest of the rendering pipeline uses
         // (same wiring as FaceGenAnalysisCache) rather than constructing a parallel parser.
         _meshBuilder = previewCache.MeshBuilder;
+    }
+
+    /// <summary>Surveys the NIF's baked shape names, memoized by (path, length, mtime).
+    /// On a cache hit no parse happens; a content change (different size/mtime) misses
+    /// and re-parses, so a stale entry can't mask a regenerated FaceGen.</summary>
+    private CachedSurvey GetSurvey(string nifPath)
+    {
+        string key;
+        try
+        {
+            var fi = new System.IO.FileInfo(nifPath);
+            key = fi.Exists
+                ? fi.FullName + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks
+                : nifPath + "|missing";
+        }
+        catch
+        {
+            key = nifPath; // unstat-able path: fall back to path-only (still correct, just less precise)
+        }
+
+        if (_surveyCache.TryGetValue(key, out var hit)) return hit;
+
+        var survey = _meshBuilder.SurveyNif(nifPath);
+        var names = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        if (survey.LoadOk)
+        {
+            foreach (var s in survey.Shapes)
+                if (!string.IsNullOrWhiteSpace(s.ShapeName)) names.Add(s.ShapeName.Trim());
+        }
+        var entry = new CachedSurvey(survey.LoadOk, survey.PrimaryHeadShapeName, names, survey.Error);
+        _surveyCache[key] = entry;
+        return entry;
     }
 
     public readonly record struct HeadPartRef(FormKey FormKey, string EditorId);
@@ -149,17 +190,11 @@ public sealed class FaceGenConsistencyAnalyzer
         System.Func<FormKey, IRaceGetter?> resolveRace,
         string nifPath)
     {
-        // 1. Survey the baked shapes. nifly geometry shapes only (NiShape-derived),
-        //    so node markers like "NPC Head [Head]" don't appear here.
-        var survey = _meshBuilder.SurveyNif(nifPath);
+        // 1. Survey the baked shapes (memoized by path+size+mtime). nifly geometry shapes
+        //    only (NiShape-derived), so node markers like "NPC Head [Head]" don't appear here.
+        var survey = GetSurvey(nifPath);
         bool nifParsed = survey.LoadOk;
-
-        var baked = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-        if (nifParsed)
-        {
-            foreach (var s in survey.Shapes)
-                if (!string.IsNullOrWhiteSpace(s.ShapeName)) baked.Add(s.ShapeName.Trim());
-        }
+        var baked = survey.ShapeNames; // OrdinalIgnoreCase, trimmed; read-only (never mutated here)
 
         // 2. Walk the effective head parts, recursing Extra Parts, collecting resolved
         //    EditorIDs, geometry-bearing parts, null links, and unresolved links.
@@ -234,7 +269,7 @@ public sealed class FaceGenConsistencyAnalyzer
         // 4. Reverse: baked shapes with no matching resolved head part (excluding the
         //    primary head and obvious scene/utility names). Detail only.
         var orphans = nifParsed
-            ? baked.Where(b => !resolvedEditorIds.Contains(b) && !IsGenericNode(b, survey)).ToList()
+            ? baked.Where(b => !resolvedEditorIds.Contains(b) && !IsGenericNode(b, survey.PrimaryHeadShapeName)).ToList()
             : new List<string>();
 
         return new Result
@@ -250,10 +285,10 @@ public sealed class FaceGenConsistencyAnalyzer
         };
     }
 
-    private static bool IsGenericNode(string shapeName, NifMeshBuilder.NifSurveyResult survey)
+    private static bool IsGenericNode(string shapeName, string? primaryHeadShapeName)
     {
-        if (!string.IsNullOrEmpty(survey.PrimaryHeadShapeName) &&
-            string.Equals(shapeName, survey.PrimaryHeadShapeName, System.StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrEmpty(primaryHeadShapeName) &&
+            string.Equals(shapeName, primaryHeadShapeName, System.StringComparison.OrdinalIgnoreCase))
             return true;
         if (shapeName.IndexOf("NPC Head", System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
         if (shapeName.StartsWith("BSFaceGen", System.StringComparison.OrdinalIgnoreCase)) return true;
