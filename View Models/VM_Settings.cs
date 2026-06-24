@@ -1996,6 +1996,17 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             return;
         }
 
+        // Fail fast: confirm this app's output is actually deployed & active BEFORE the user
+        // invests effort picking NPCs in the scope dialog. Building the untrimmed load order
+        // can take a moment, so run it off the UI thread (the command's IsExecuting disables
+        // the button meanwhile). The same gate still runs inside Validate() as a backstop.
+        var readiness = await Task.Run(() => _outputValidator.CheckDeployReadiness());
+        if (!readiness.Ok)
+        {
+            ScrollableMessageBox.ShowWarning(readiness.BlockReason ?? "Validation could not run.", "Validate Output");
+            return;
+        }
+
         var items = BuildValidationScopeItems(selections);
 
         var scopeVm = new VM_ValidationScopeWindow(items);

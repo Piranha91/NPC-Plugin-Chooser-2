@@ -95,38 +95,16 @@ public class OutputValidator
         var dataFolder = env.DataFolderPath.Path;
 
         // --- Deploy gate (user chose "require deploy first") ---
-        string outputPluginFileName = _environmentStateProvider.OutputPluginFileName;
-        bool outputPluginActive = listings.Any(l =>
-        {
-            var desc = l.Mod?.ModHeader.Description;
-            if (desc != null && desc.Equals(Patcher.PluginDescriptionSignature, StringComparison.Ordinal)) return true;
-            return l.ModKey.FileName.String.Equals(outputPluginFileName, StringComparison.OrdinalIgnoreCase);
-        });
-        log.AppendLine($"Output plugin '{outputPluginFileName}' active in load order: {outputPluginActive}");
-
+        // skyPatcherNpcRoot / npc2IniPath are also reused below for the SkyPatcher index + .ini parse.
         string outputModName = Path.GetFileNameWithoutExtension(_environmentStateProvider.OutputPluginName ?? EnvironmentStateProvider.DefaultPluginName);
         string skyPatcherNpcRoot = Path.Combine(dataFolder, "SKSE", "Plugins", "SkyPatcher", "npc");
         string npc2IniPath = Path.Combine(skyPatcherNpcRoot, "NPC Plugin Chooser", outputModName + ".ini");
-        bool npc2IniDeployed = File.Exists(npc2IniPath);
 
-        if (!outputPluginActive)
+        var gateBlock = EvaluateDeployGate(listings, npc2IniPath, log);
+        if (gateBlock != null)
         {
             result.Blocked = true;
-            result.BlockReason =
-                $"This app's output plugin ('{outputPluginFileName}') is not active in your current load order.\n\n" +
-                "Validation checks the real, deployed game state, so the output must be installed and enabled in your " +
-                "mod manager first. Deploy the generated output (and sort/activate the plugin), then re-run Validate Output.";
-            WriteLog(log, result);
-            return result;
-        }
-
-        if (_settings.UseSkyPatcherMode && !npc2IniDeployed)
-        {
-            result.Blocked = true;
-            result.BlockReason =
-                "SkyPatcher mode is selected, but this app's SkyPatcher .ini was not found in the deployed Data folder at:\n" +
-                npc2IniPath + "\n\n" +
-                "Install/activate the generated SkyPatcher output, then re-run Validate Output.";
+            result.BlockReason = gateBlock;
             WriteLog(log, result);
             return result;
         }
@@ -197,6 +175,72 @@ public class OutputValidator
         log.AppendLine($"Done. NPCs checked: {total}. Issues: {result.Issues.Count}.");
         WriteLog(log, result);
         return result;
+    }
+
+    /// <summary>Outcome of the up-front deploy-readiness probe. <see cref="Ok"/> is true
+    /// when validation can proceed; otherwise <see cref="BlockReason"/> explains why.</summary>
+    public sealed record DeployReadiness(bool Ok, string? BlockReason);
+
+    /// <summary>
+    /// Cheaply answers "is this app's output actually installed and active right now?"
+    /// without iterating any NPCs. Lets the UI fail fast — surfacing the block reason the
+    /// instant the user clicks Validate Output, rather than after they pick NPCs. Builds
+    /// the same untrimmed load order <see cref="Validate"/> uses (the normal environment
+    /// trims this app's output out), but resolves nothing, so it stays light.
+    /// </summary>
+    public DeployReadiness CheckDeployReadiness()
+    {
+        if (_environmentStateProvider.Status != EnvironmentStateProvider.EnvironmentStatus.Valid)
+            return new DeployReadiness(false,
+                "The game environment is not valid. Resolve it on the Settings page (a valid load order and data folder are required) and try again.");
+
+        using var env = _environmentStateProvider.TryBuildUntrimmedEnvironment(out var envError);
+        if (env == null)
+            return new DeployReadiness(false, "Could not build a load order to validate against:\n" + envError);
+
+        var listings = env.LoadOrder.ListedOrder.ToList();
+        var dataFolder = env.DataFolderPath.Path;
+        string outputModName = Path.GetFileNameWithoutExtension(_environmentStateProvider.OutputPluginName ?? EnvironmentStateProvider.DefaultPluginName);
+        string npc2IniPath = Path.Combine(dataFolder, "SKSE", "Plugins", "SkyPatcher", "npc", "NPC Plugin Chooser", outputModName + ".ini");
+
+        var block = EvaluateDeployGate(listings, npc2IniPath, log: null);
+        return new DeployReadiness(block == null, block);
+    }
+
+    /// <summary>
+    /// The deploy gate: is this app's output installed and active in the real load order
+    /// (and, in SkyPatcher mode, is its .ini deployed)? Returns null when ready, else a
+    /// human-readable block reason. Shared by <see cref="Validate"/> and
+    /// <see cref="CheckDeployReadiness"/> so both apply identical rules.
+    /// </summary>
+    private string? EvaluateDeployGate(
+        IReadOnlyList<IModListingGetter<ISkyrimModGetter>> listings,
+        string npc2IniPath,
+        StringBuilder? log)
+    {
+        string outputPluginFileName = _environmentStateProvider.OutputPluginFileName;
+        bool outputPluginActive = listings.Any(l =>
+        {
+            var desc = l.Mod?.ModHeader.Description;
+            if (desc != null && desc.Equals(Patcher.PluginDescriptionSignature, StringComparison.Ordinal)) return true;
+            return l.ModKey.FileName.String.Equals(outputPluginFileName, StringComparison.OrdinalIgnoreCase);
+        });
+        log?.AppendLine($"Output plugin '{outputPluginFileName}' active in load order: {outputPluginActive}");
+
+        if (!outputPluginActive)
+        {
+            return $"This app's output plugin ('{outputPluginFileName}') is not active in your current load order.\n\n" +
+                   "Validation checks the real, deployed game state, so the output must be installed and enabled in your " +
+                   "mod manager first. Deploy the generated output (and sort/activate the plugin), then re-run Validate Output.";
+        }
+
+        if (_settings.UseSkyPatcherMode && !File.Exists(npc2IniPath))
+        {
+            return "SkyPatcher mode is selected, but this app's SkyPatcher .ini was not found in the deployed Data folder at:\n" +
+                   npc2IniPath + "\n\n" +
+                   "Install/activate the generated SkyPatcher output, then re-run Validate Output.";
+        }
+        return null;
     }
 
     private void ValidateNpc(
