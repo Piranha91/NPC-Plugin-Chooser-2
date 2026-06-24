@@ -61,6 +61,11 @@ public sealed record GenerationResult(
         FaceFinderExternalUrl: null,
         InMemoryImageBytes: null);
 
+    /// <summary>A FaceGen-vs-records mismatch reason (dark-face risk) detected at
+    /// render time, or read back from a cached PNG's metadata. Null when none.
+    /// Non-positional so the many existing constructor call sites are unaffected.</summary>
+    public string? FaceGenMismatch { get; init; }
+
     public bool ProducedFile => OutputPath != null && (Generated || AlreadyCurrent);
     public bool ProducedAnything => ProducedFile || InMemoryImageBytes != null;
 }
@@ -499,10 +504,12 @@ public sealed class BatchMugshotGenerator
                     var json = MugshotPngMetadata.TryRead(savePath);
                     List<string> existingMeshes = new();
                     List<string> existingTextures = new();
+                    string? existingFaceGenMismatch = null;
                     if (!string.IsNullOrWhiteSpace(json))
                     {
                         InternalMugshotMetadata.TryReadMissingAssets(
                             json, out existingMeshes, out existingTextures);
+                        existingFaceGenMismatch = InternalMugshotMetadata.TryReadFaceGenMismatch(json);
                     }
                     return new GenerationResult(
                         Generated: false, AlreadyCurrent: true, OutputPath: savePath,
@@ -510,14 +517,16 @@ public sealed class BatchMugshotGenerator
                         MissingMeshes: existingMeshes,
                         MissingTextures: existingTextures,
                         FaceFinderExternalUrl: null,
-                        InMemoryImageBytes: null);
+                        InMemoryImageBytes: null)
+                    { FaceGenMismatch = existingFaceGenMismatch };
                 }
 
                 var missingMeshes = new List<string>();
                 var missingTextures = new List<string>();
+                var faceGenMismatch = new List<string>();
                 bool generated = await _internalGenerator.GenerateAsync(
                     npcFormKey, sourceMod, savePath, token, missingMeshes, missingTextures,
-                    assetValidatedOnly);
+                    assetValidatedOnly, faceGenMismatch);
                 return new GenerationResult(
                     Generated: generated,
                     AlreadyCurrent: false,
@@ -526,7 +535,8 @@ public sealed class BatchMugshotGenerator
                     MissingMeshes: missingMeshes,
                     MissingTextures: missingTextures,
                     FaceFinderExternalUrl: null,
-                    InMemoryImageBytes: null);
+                    InMemoryImageBytes: null)
+                { FaceGenMismatch = faceGenMismatch.Count > 0 ? faceGenMismatch[0] : null };
             }
             else
             {

@@ -33,6 +33,7 @@ public class OutputValidator
     private readonly Settings _settings;
     private readonly RecordHandler _recordHandler;
     private readonly BsaHandler _bsaHandler;
+    private readonly FaceGenConsistencyAnalyzer _faceGenConsistency;
 
     private const float FloatEpsilon = 0.0001f;
 
@@ -45,12 +46,13 @@ public class OutputValidator
         "facetextureset", "tintlayers", "facemorph"
     };
 
-    public OutputValidator(EnvironmentStateProvider environmentStateProvider, Settings settings, RecordHandler recordHandler, BsaHandler bsaHandler)
+    public OutputValidator(EnvironmentStateProvider environmentStateProvider, Settings settings, RecordHandler recordHandler, BsaHandler bsaHandler, FaceGenConsistencyAnalyzer faceGenConsistency)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _recordHandler = recordHandler;
         _bsaHandler = bsaHandler;
+        _faceGenConsistency = faceGenConsistency;
     }
 
     /// <summary>
@@ -682,6 +684,19 @@ public class OutputValidator
         string subjectPath = Path.Combine(dataFolder, targetMeshRel);
         bool subjectExists = File.Exists(subjectPath);
 
+        // Independent of the source-matching below: does the deployed FaceGen's baked
+        // geometry actually line up with the head parts this NPC resolves to in the
+        // live load order? A mismatch (wrong plugin version, missing master, a null or
+        // swapped head part, or a mod author shipping a .nif that doesn't match its
+        // plugin) is the classic cause of the in-game dark-face bug — and neither the
+        // renderer nor the patcher surfaces it. Only meaningful when a loose FaceGen is
+        // actually deployed to Data (the BSA-provided case is handled by the order
+        // checks below; extending the consistency scan to it is future work).
+        if (subjectExists)
+        {
+            CheckFaceGenHeadPartConsistency(npcFk, subjectFk, subjectPath, targetMeshRel, displayName, selectedModName, linkCache, result);
+        }
+
         // Resolve the expected source: loose first, then the selected mod's BSAs (extract to temp).
         string? sourcePath = FindLooseInModFolders(modSetting, donorMeshRel);
         bool sourceFromBsa = false;
@@ -838,6 +853,49 @@ public class OutputValidator
         {
             if (sourceTemp != null) TryDelete(sourceTemp);
         }
+    }
+
+    /// <summary>
+    /// Cross-checks the deployed FaceGen .nif's baked shapes against the head parts the
+    /// NPC resolves to in the (untrimmed) live load order. Catches the general class of
+    /// FaceGen/record mismatches that produce the in-game dark-face bug — wrong plugin
+    /// version, missing master, null/swapped head part, or an author-side .nif/plugin
+    /// mismatch — none of which the renderer or patcher can detect.
+    /// </summary>
+    private void CheckFaceGenHeadPartConsistency(
+        FormKey npcFk, FormKey subjectFk, string nifPath, string relMeshPath, string displayName,
+        string selectedModName, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, ValidationRunResult result)
+    {
+        if (!linkCache.TryResolve<INpcGetter>(subjectFk, out var npcGetter))
+            return;
+
+        FaceGenConsistencyAnalyzer.Result analysis;
+        try
+        {
+            // Resolve head parts + race against the live load order — exactly what the engine sees.
+            analysis = _faceGenConsistency.Analyze(
+                npcGetter,
+                fk => linkCache.TryResolve<IHeadPartGetter>(fk, out var hp) ? hp : null,
+                fk => linkCache.TryResolve<IRaceGetter>(fk, out var r) ? r : null,
+                nifPath);
+        }
+        catch
+        {
+            return; // a malformed NIF must never abort the validation run
+        }
+
+        if (!analysis.HasMismatch) return;
+
+        result.Issues.Add(new ValidationIssue
+        {
+            Severity = ValidationSeverity.Warning,
+            Check = ValidationCheckKind.FaceGen,
+            NpcDisplayName = displayName,
+            NpcFormKey = npcFk.ToString(),
+            SelectedMod = selectedModName,
+            Issue = analysis.BuildReason(),
+            Details = relMeshPath,
+        });
     }
 
     private static string? FindLooseInModFolders(ModSetting modSetting, string regularizedRelPath)

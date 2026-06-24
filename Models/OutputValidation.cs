@@ -35,7 +35,10 @@ public enum ValidationCheckKind
     Selection,
     Record,
     Asset,
-    SkyPatcher
+    SkyPatcher,
+
+    /// FaceGen geometry .nif vs. the NPC's resolved head parts (dark-face detection).
+    FaceGen
 }
 
 /// <summary>

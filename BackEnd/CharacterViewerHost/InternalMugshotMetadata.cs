@@ -90,6 +90,11 @@ public static class InternalMugshotMetadata
     // TryReadMissingAssets can match on the same names without drift.
     private const string MissingMeshesKey = "missing_meshes";
     private const string MissingTexturesKey = "missing_textures";
+    // A FaceGen-vs-records mismatch reason (dark-face risk) stamped at render time so
+    // the tile's existing missing-asset overlay can surface it after app restarts,
+    // exactly like the missing-asset arrays. Like those, it's an output of the render
+    // (NOT folded into the settings hash that drives staleness).
+    private const string FaceGenMismatchKey = "facegen_mismatch";
     public const string PipelineSchemaKey = "pipeline_schema";
 
     public static string Build(
@@ -98,7 +103,8 @@ public static class InternalMugshotMetadata
         bool effectiveIncludeDefaultOutfit,
         bool effectiveIncludeHeadgear,
         IReadOnlyList<string>? missingMeshes = null,
-        IReadOnlyList<string>? missingTextures = null)
+        IReadOnlyList<string>? missingTextures = null,
+        string? faceGenMismatch = null)
     {
         var obj = new JObject
         {
@@ -162,6 +168,10 @@ public static class InternalMugshotMetadata
         {
             obj[MissingTexturesKey] = new JArray(missingTextures);
         }
+        if (!string.IsNullOrWhiteSpace(faceGenMismatch))
+        {
+            obj[FaceGenMismatchKey] = faceGenMismatch;
+        }
 
         return obj.ToString(Newtonsoft.Json.Formatting.None);
     }
@@ -192,6 +202,28 @@ public static class InternalMugshotMetadata
             // Malformed JSON or unexpected schema — treat as "no missing
             // assets recorded" rather than propagating the parse error.
         }
+    }
+
+    /// <summary>Parses the FaceGen-mismatch reason out of a previously-stamped
+    /// "Parameters" JSON. Returns null when absent (older PNGs, or renders with no
+    /// detected mismatch) or on any parse error.</summary>
+    public static string? TryReadFaceGenMismatch(string parametersJson)
+    {
+        if (string.IsNullOrWhiteSpace(parametersJson)) return null;
+        try
+        {
+            var obj = JObject.Parse(parametersJson);
+            if (obj.TryGetValue(FaceGenMismatchKey, out var token))
+            {
+                var s = token?.Value<string>();
+                return string.IsNullOrWhiteSpace(s) ? null : s;
+            }
+        }
+        catch
+        {
+            // Malformed JSON / unexpected schema — treat as "no mismatch recorded".
+        }
+        return null;
     }
 
     private static void ReadStringArray(JObject obj, string key, List<string> dest)

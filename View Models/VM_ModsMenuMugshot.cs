@@ -386,16 +386,18 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 
                 List<string> meshes = new();
                 List<string> textures = new();
+                string? faceGenMismatch = null;
                 if (tryReadAssetMeta)
                 {
                     var json = MugshotPngMetadata.TryRead(pathToLoad);
                     if (!string.IsNullOrWhiteSpace(json))
                     {
                         InternalMugshotMetadata.TryReadMissingAssets(json, out meshes, out textures);
+                        faceGenMismatch = InternalMugshotMetadata.TryReadFaceGenMismatch(json);
                     }
                 }
 
-                return (bmp, dimensions, meshes, textures);
+                return (bmp, dimensions, meshes, textures, faceGenMismatch);
             });
 
             // Always apply (even with empty lists) so a re-load of a tile whose
@@ -403,7 +405,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             // overlay state from the in-memory VM.
             if (tryReadAssetMeta)
             {
-                ApplyMissingAssetNotifications(loadResult.meshes, loadResult.textures);
+                ApplyMissingAssetNotifications(loadResult.meshes, loadResult.textures, loadResult.faceGenMismatch);
             }
 
             // Assign results back on the UI thread
@@ -889,10 +891,12 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == _parentVMModSetting.DisplayName);
             var missingMeshes = new List<string>();
             var missingTextures = new List<string>();
+            var faceGenMismatch = new List<string>();
             generated = await _internalMugshotGenerator.GenerateAsync(
                 NpcFormKey, sourceMod, pngSavePath, _cancellationToken,
-                missingMeshes, missingTextures);
-            ApplyMissingAssetNotifications(missingMeshes, missingTextures);
+                missingMeshes, missingTextures, faceGenMismatchOut: faceGenMismatch);
+            ApplyMissingAssetNotifications(missingMeshes, missingTextures,
+                faceGenMismatch.Count > 0 ? faceGenMismatch[0] : null);
         }
         else if (!string.IsNullOrWhiteSpace(nifPath))
         {
@@ -919,11 +923,13 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     /// entries so the tooltip stays compact.</summary>
     private void ApplyMissingAssetNotifications(
         IReadOnlyList<string> missingMeshes,
-        IReadOnlyList<string> missingTextures)
+        IReadOnlyList<string> missingTextures,
+        string? faceGenMismatch = null)
     {
         bool hasMeshes = missingMeshes != null && missingMeshes.Count > 0;
         bool hasTextures = missingTextures != null && missingTextures.Count > 0;
-        if (!hasMeshes && !hasTextures)
+        bool hasFaceGen = !string.IsNullOrWhiteSpace(faceGenMismatch);
+        if (!hasMeshes && !hasTextures && !hasFaceGen)
         {
             HasMissingAssets = false;
             MissingAssetNotificationText = string.Empty;
@@ -941,6 +947,11 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             if (hasMeshes) sb.Append("\n\n");
             sb.Append("The following expected texture paths could not be found:");
             foreach (var p in missingTextures) sb.Append('\n').Append(p);
+        }
+        if (hasFaceGen)
+        {
+            if (hasMeshes || hasTextures) sb.Append("\n\n");
+            sb.Append(faceGenMismatch);
         }
 
         HasMissingAssets = true;

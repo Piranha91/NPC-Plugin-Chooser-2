@@ -679,12 +679,14 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
             List<string> meshes = new();
             List<string> textures = new();
+            string? faceGenMismatch = null;
             if (tryReadAssetMeta)
             {
                 var json = MugshotPngMetadata.TryRead(pathToLoad);
                 if (!string.IsNullOrWhiteSpace(json))
                 {
                     InternalMugshotMetadata.TryReadMissingAssets(json, out meshes, out textures);
+                    faceGenMismatch = InternalMugshotMetadata.TryReadFaceGenMismatch(json);
                 }
             }
 
@@ -694,7 +696,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             // dedup so this is a no-op on cache hits (~sub-ms).
             NifMeshBuilder.FaceGenStats? facegen = FetchFaceGenStatsSync();
 
-            return (bitmap, meshes, textures, facegen);
+            return (bitmap, meshes, textures, facegen, faceGenMismatch);
         });
 
         // Always apply (even with empty lists) so a re-load of a tile whose
@@ -702,7 +704,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         // overlay state from the in-memory VM.
         if (tryReadAssetMeta)
         {
-            ApplyMissingAssetNotifications(loadResult.meshes, loadResult.textures);
+            ApplyMissingAssetNotifications(loadResult.meshes, loadResult.textures, loadResult.faceGenMismatch);
         }
 
         // FaceGen stats (if any) — set after the await so it lands on the
@@ -1586,7 +1588,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         // restores it on every revisit.
         if (rendererResult.Source == GenerationSource.InternalRenderer && rendererResult.ProducedFile)
         {
-            ApplyMissingAssetNotifications(rendererResult.MissingMeshes, rendererResult.MissingTextures);
+            ApplyMissingAssetNotifications(rendererResult.MissingMeshes, rendererResult.MissingTextures, rendererResult.FaceGenMismatch);
         }
 
         // ProducedFile covers both Generated == true (just rendered) and
@@ -1628,11 +1630,13 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     /// entries so the tooltip stays compact.</summary>
     private void ApplyMissingAssetNotifications(
         IReadOnlyList<string> missingMeshes,
-        IReadOnlyList<string> missingTextures)
+        IReadOnlyList<string> missingTextures,
+        string? faceGenMismatch = null)
     {
         bool hasMeshes = missingMeshes != null && missingMeshes.Count > 0;
         bool hasTextures = missingTextures != null && missingTextures.Count > 0;
-        if (!hasMeshes && !hasTextures)
+        bool hasFaceGen = !string.IsNullOrWhiteSpace(faceGenMismatch);
+        if (!hasMeshes && !hasTextures && !hasFaceGen)
         {
             HasMissingAssets = false;
             MissingAssetNotificationText = string.Empty;
@@ -1650,6 +1654,11 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             if (hasMeshes) sb.Append("\n\n");
             sb.Append("The following expected texture paths could not be found:");
             foreach (var p in missingTextures) sb.Append('\n').Append(p);
+        }
+        if (hasFaceGen)
+        {
+            if (hasMeshes || hasTextures) sb.Append("\n\n");
+            sb.Append(faceGenMismatch);
         }
 
         HasMissingAssets = true;

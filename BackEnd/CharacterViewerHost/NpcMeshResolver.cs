@@ -171,6 +171,28 @@ public class NpcMeshResolver
     }
 
     /// <summary>
+    /// Resolves the NPC and returns a head-part resolver bound to the SAME mod scope
+    /// used for mesh resolution (mod plugins first, link cache fallback for shared /
+    /// vanilla parts). Used by the FaceGen-vs-records consistency check so the head
+    /// parts are evaluated against the exact records that produced the rendered NIF,
+    /// rather than the load-order winner (which may be a different mod). Returns
+    /// (null, _ => null) when the environment has no link cache.
+    /// </summary>
+    public (INpcGetter? Npc, Func<FormKey, IHeadPartGetter?> ResolveHeadPart, Func<FormKey, IRaceGetter?> ResolveRace)
+        ResolveNpcForConsistency(FormKey npcFormKey, ModSetting? modSetting)
+    {
+        var linkCache = _env.LinkCache;
+        if (linkCache == null) return (null, _ => null, _ => null);
+        var context = BuildContext(npcFormKey, modSetting);
+        var npc = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
+        Func<FormKey, IHeadPartGetter?> resolveHeadPart =
+            fk => ResolveRecord<IHeadPartGetter>(fk.ToLink<IHeadPartGetter>(), linkCache, context);
+        Func<FormKey, IRaceGetter?> resolveRace =
+            fk => ResolveRecord<IRaceGetter>(fk.ToLink<IRaceGetter>(), linkCache, context);
+        return (npc, resolveHeadPart, resolveRace);
+    }
+
+    /// <summary>
     /// Convenience entry point that consults the user's active appearance-mod
     /// selection (via <see cref="NpcConsistencyProvider"/>) and builds a
     /// <see cref="NpcResolutionContext"/> automatically. When no selection is

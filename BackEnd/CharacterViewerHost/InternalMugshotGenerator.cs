@@ -29,6 +29,7 @@ public sealed class InternalMugshotGenerator
     private readonly GeneratedMugshotTracker _tracker;
     private readonly CharacterViewerLogGate _logGate;
     private readonly Lazy<VM_NpcSelectionBar> _npcSelectionBar;
+    private readonly FaceGenConsistencyAnalyzer _faceGenConsistency;
 
     // Bounds host-side concurrency into the renderer. The offscreen renderer
     // already serializes the GL render itself (single render thread draining a
@@ -51,7 +52,8 @@ public sealed class InternalMugshotGenerator
         IBsaArchiveProvider bsa,
         GeneratedMugshotTracker tracker,
         CharacterViewerLogGate logGate,
-        Lazy<VM_NpcSelectionBar> npcSelectionBar)
+        Lazy<VM_NpcSelectionBar> npcSelectionBar,
+        FaceGenConsistencyAnalyzer faceGenConsistency)
     {
         _resolver = resolver;
         _renderer = renderer;
@@ -62,6 +64,7 @@ public sealed class InternalMugshotGenerator
         _tracker = tracker;
         _logGate = logGate;
         _npcSelectionBar = npcSelectionBar;
+        _faceGenConsistency = faceGenConsistency;
 
         // Math.Max(1, ...) guards a misconfigured 0/negative setting from
         // deadlocking every render. Captured once at construction (matching
@@ -107,7 +110,8 @@ public sealed class InternalMugshotGenerator
         CancellationToken token = default,
         List<string>? missingMeshPathsOut = null,
         List<string>? missingTexturePathsOut = null,
-        bool assetValidatedOnly = false)
+        bool assetValidatedOnly = false,
+        List<string>? faceGenMismatchOut = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int tid = Environment.CurrentManagedThreadId;
@@ -295,6 +299,38 @@ public sealed class InternalMugshotGenerator
                 missingMeshPathsOut?.AddRange(meshOverrideWarningsOut);
             }
 
+            // FaceGen-vs-records consistency. CV.R renders the baked FaceGen geometry
+            // directly, so a perfectly-rendered mugshot can still hide the in-game
+            // dark-face bug (a head part the NPC's records resolve to has no baked
+            // shape — wrong plugin version, missing master, null/swapped part, or an
+            // author .nif/plugin mismatch). Surfaced through the same missing-asset
+            // overlay. Best-effort and non-throwing; only inspectable when the head
+            // NIF resolved to a loose file on disk (the BSA-only case is skipped).
+            string? faceGenMismatch = null;
+            try
+            {
+                string? headNif = paths.HeadMeshPath;
+                if (!string.IsNullOrEmpty(headNif) && Path.IsPathRooted(headNif) && File.Exists(headNif))
+                {
+                    var (npcForCheck, resolveHeadPart, resolveRace) = _resolver.ResolveNpcForConsistency(npcFormKey, modSetting);
+                    if (npcForCheck != null)
+                    {
+                        var analysis = _faceGenConsistency.Analyze(npcForCheck, resolveHeadPart, resolveRace, headNif);
+                        if (analysis.HasMismatch)
+                        {
+                            faceGenMismatch = analysis.BuildReason();
+                            faceGenMismatchOut?.Add(faceGenMismatch);
+                            Trace($"  facegen-mismatch tid={Environment.CurrentManagedThreadId} npc={npcFormKey} missing={analysis.MissingBakedShapes.Count} unresolved={analysis.UnresolvedHeadParts.Count} null={analysis.NullHeadPartLinks} orphans={analysis.OrphanBakedShapes.Count}");
+                        }
+                    }
+                }
+            }
+            catch (Exception fcEx)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"InternalMugshotGenerator: FaceGen consistency check failed for {npcFormKey}: {fcEx.Message}");
+            }
+
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
             await File.WriteAllBytesAsync(outputPath, png, token).ConfigureAwait(false);
 
@@ -308,7 +344,7 @@ public sealed class InternalMugshotGenerator
                 var parametersJson = InternalMugshotMetadata.Build(
                     npcFormKey, _settings.InternalMugshot,
                     effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear,
-                    missingMeshPathsOut, missingTexturePathsOut);
+                    missingMeshPathsOut, missingTexturePathsOut, faceGenMismatch);
                 MugshotPngMetadata.InjectParameters(outputPath, parametersJson);
             }
             catch (Exception metaEx)
