@@ -465,7 +465,17 @@ public class OutputValidator
         ValidationRunResult result,
         StringBuilder log)
     {
-        var sourceRecord = TryResolveSelectedSourceNpc(modSetting, donorFk);
+        // Split CheckRecord into its two sub-steps so the perf report shows which one is hot:
+        // ResolveSourceNpc (loads the selected mod's plugin from its folder — can force a full
+        // NPC-GRUP parse of a huge plugin) vs CompareAppearance (resolves head parts/tints).
+        var swResolve = System.Diagnostics.Stopwatch.StartNew();
+        INpcGetter? sourceRecord;
+        using (ContextualPerformanceTracer.Trace("ResolveSourceNpc"))
+            sourceRecord = TryResolveSelectedSourceNpc(modSetting, donorFk);
+        long resolveMs = swResolve.ElapsedMilliseconds;
+        if (resolveMs > 1000)
+            log.AppendLine($"[perf] SLOW ResolveSourceNpc: {displayName} [{npcFk}] -> '{selectedModName}' (donor {donorFk}) took {resolveMs} ms.");
+
         if (sourceRecord == null)
         {
             if (!modSetting.IsFaceGenOnlyEntry)
@@ -486,7 +496,14 @@ public class OutputValidator
             return;
         }
 
-        var diffs = CompareAppearance(winningRecord, sourceRecord, linkCache, modSetting);
+        var swCompare = System.Diagnostics.Stopwatch.StartNew();
+        List<string> diffs;
+        using (ContextualPerformanceTracer.Trace("CompareAppearance"))
+            diffs = CompareAppearance(winningRecord, sourceRecord, linkCache, modSetting);
+        long compareMs = swCompare.ElapsedMilliseconds;
+        if (compareMs > 1000)
+            log.AppendLine($"[perf] SLOW CompareAppearance: {displayName} [{npcFk}] -> '{selectedModName}' took {compareMs} ms.");
+
         if (diffs.Count == 0)
         {
             return; // Winning record's appearance matches the chosen mod.
@@ -562,17 +579,18 @@ public class OutputValidator
         var src = new SourceModRefs(sourceMod);
         var diffs = new List<string>();
 
-        void CheckLink(string name, FormKey aFk, FormKey bFk)
+        void CheckLink<TGetter>(string name, IFormLinkGetter<TGetter> aLink, IFormLinkGetter<TGetter> bLink)
+            where TGetter : class, IMajorRecordGetter
         {
-            if (!AppearanceLinkEquivalent(aFk, bFk, linkCache, src))
+            if (!AppearanceLinkEquivalent(aLink, bLink, linkCache, src))
             {
-                diffs.Add($"{name}: expected '{FormatLink(bFk, linkCache, src)}', got '{FormatLink(aFk, linkCache, src)}'");
+                diffs.Add($"{name}: expected '{FormatLink(bLink, linkCache, src)}', got '{FormatLink(aLink, linkCache, src)}'");
             }
         }
-        CheckLink("Race", a.Race.FormKey, b.Race.FormKey);
-        CheckLink("Skin(WornArmor)", a.WornArmor.FormKey, b.WornArmor.FormKey);
-        CheckLink("HeadTexture", a.HeadTexture.FormKey, b.HeadTexture.FormKey);
-        CheckLink("HairColor", a.HairColor.FormKey, b.HairColor.FormKey);
+        CheckLink("Race", a.Race, b.Race);
+        CheckLink("Skin(WornArmor)", a.WornArmor, b.WornArmor);
+        CheckLink("HeadTexture", a.HeadTexture, b.HeadTexture);
+        CheckLink("HairColor", a.HairColor, b.HairColor);
 
         var aHead = HeadPartKeySet(a.HeadParts, linkCache, src);
         var bHead = HeadPartKeySet(b.HeadParts, linkCache, src);
@@ -619,11 +637,12 @@ public class OutputValidator
 
     /// <summary>Readable identity for a FormLink: the resolved record's EditorID, else its FormKey,
     /// or "(none)" for a null link.</summary>
-    private string FormatLink(FormKey fk, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
+    private string FormatLink<TGetter>(IFormLinkGetter<TGetter> link, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
+        where TGetter : class, IMajorRecordGetter
     {
-        if (fk.IsNull) return "(none)";
-        var eid = ResolveEditorId(fk, linkCache, src);
-        return !string.IsNullOrEmpty(eid) ? eid : fk.ToString();
+        if (link.IsNull) return "(none)";
+        var eid = ResolveEditorId(link, linkCache, src);
+        return !string.IsNullOrEmpty(eid) ? eid : link.FormKey.ToString();
     }
 
     private static string StripHeadPartPrefix(string token)
@@ -639,11 +658,12 @@ public class OutputValidator
     /// handles records the patcher remapped/duplicated into the output. Falls back to FormKey identity
     /// when an EditorID isn't available on both sides.
     /// </summary>
-    private bool AppearanceLinkEquivalent(FormKey a, FormKey b, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
+    private bool AppearanceLinkEquivalent<TGetter>(IFormLinkGetter<TGetter> a, IFormLinkGetter<TGetter> b, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
+        where TGetter : class, IMajorRecordGetter
     {
         if (a.IsNull && b.IsNull) return true;
         if (a.IsNull != b.IsNull) return false;
-        if (a.Equals(b)) return true;
+        if (a.FormKey.Equals(b.FormKey)) return true;
 
         string? aEid = ResolveEditorId(a, linkCache, src);
         string? bEid = ResolveEditorId(b, linkCache, src);
@@ -668,7 +688,7 @@ public class OutputValidator
         foreach (var hp in headParts)
         {
             if (hp.IsNull) continue;
-            var eid = ResolveEditorId(hp.FormKey, linkCache, src);
+            var eid = ResolveEditorId(hp, linkCache, src);
             set.Add(!string.IsNullOrEmpty(eid) ? "eid:" + eid : "fk:" + hp.FormKey);
         }
         return set;
@@ -683,16 +703,23 @@ public class OutputValidator
     /// (with an origin fallback) resolves both cases — without it a donor link reads back as a bare
     /// FormKey and falsely mismatches the output's remapped-but-EditorID-preserving copy.
     /// </summary>
-    private string? ResolveEditorId(FormKey fk, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
+    private string? ResolveEditorId<TGetter>(IFormLinkGetter<TGetter> link, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
+        where TGetter : class, IMajorRecordGetter
     {
-        if (fk.IsNull) return null;
+        if (link.IsNull) return null;
 
-        if (linkCache.TryResolve<IMajorRecordGetter>(fk, out var rec) && rec != null && !string.IsNullOrEmpty(rec.EditorID))
+        // Resolve by the SPECIFIC record type, not IMajorRecordGetter. Resolving the universal base
+        // forces Mutagen to build the load order's untyped/global record index (every record of every
+        // type across all plugins, incl. the huge NPC groups) on first use — a one-time multi-second
+        // cost on a big load order, observed as ~9s on the first validated NPC. A typed resolve builds
+        // only that type's (small) index. And since we only need the EditorID, resolve the identifier
+        // rather than materializing the record (per Mutagen's overlay best practices).
+        if (linkCache.TryResolveIdentifier<TGetter>(link.FormKey, out var eid) && !string.IsNullOrEmpty(eid))
         {
-            return rec.EditorID;
+            return eid;
         }
 
-        if (_recordHandler.TryGetRecordFromMods(fk.ToLink<IMajorRecordGetter>(), src.ModKeys, src.Folders,
+        if (_recordHandler.TryGetRecordFromMods(link, src.ModKeys, src.Folders,
                 RecordHandler.RecordLookupFallBack.Origin, out var modRec) && modRec != null && !string.IsNullOrEmpty(modRec.EditorID))
         {
             return modRec.EditorID;
