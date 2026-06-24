@@ -76,9 +76,14 @@ public static class InternalMugshotMetadata
     /// the character-preview attire toggles. Both default false (no extra
     /// meshes), so a v8 tile compared at schemaVersion=8 (which excludes these
     /// entries) keeps hash-matching a v9 cfg whose user hasn't enabled either.</item>
+    /// <item>10: 2.5.19 added <c>Exposure</c> — the tone-map exposure
+    /// multiplier. Default 1.0 is no-op (reproduces the pre-2.5.19 hardcoded
+    /// 0.6 baseline), so a v9 tile compared at schemaVersion=9 (which excludes
+    /// this entry) keeps hash-matching a v10 cfg whose user hasn't changed the
+    /// field.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 9;
+    public const int PipelineSchemaVersion = 10;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -128,6 +133,7 @@ public static class InternalMugshotMetadata
             ["vignette_radius"] = cfg.VignetteRadius,
             ["vignette_intensity"] = cfg.VignetteIntensity,
             ["skin_saturation_boost"] = cfg.SkinSaturationBoost,
+            ["exposure"] = cfg.Exposure,
             ["include_default_outfit"] = effectiveIncludeDefaultOutfit,
             ["include_headgear"] = effectiveIncludeHeadgear,
         };
@@ -323,6 +329,16 @@ public static class InternalMugshotMetadata
             // fall back to the global cfg values.
             sb.Append('|').Append((effectiveIncludeDefaultOutfit ?? cfg.IncludeDefaultOutfit) ? '1' : '0');
             sb.Append('|').Append((effectiveIncludeHeadgear ?? cfg.IncludeHeadgear) ? '1' : '0');
+        }
+
+        // === schema v10 fields (tone-map exposure) ===
+        // Scales the tone-mapper's baseline exposure when EnableToneMapping
+        // is on. Default 1.0 is no-op (reproduces the legacy hardcoded 0.6),
+        // so a v9 tile compared at schemaVersion=9 (which excludes this entry)
+        // continues to match a v10 cfg whose user hasn't changed the field.
+        if (schemaVersion >= 10)
+        {
+            sb.Append('|').Append(cfg.Exposure.ToString("R", inv));
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

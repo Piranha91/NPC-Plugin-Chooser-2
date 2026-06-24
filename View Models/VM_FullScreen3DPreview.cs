@@ -51,6 +51,7 @@ public class VM_FullScreen3DPreview : ReactiveObject
     private readonly float _initialVignetteRadius;
     private readonly float _initialVignetteIntensity;
     private readonly float _initialSkinSaturationBoost;
+    private readonly float _initialExposure;
 
     public VM_InternalMugshotPreview Inner { get; }
 
@@ -92,6 +93,7 @@ public class VM_FullScreen3DPreview : ReactiveObject
         _initialVignetteRadius = cfg.VignetteRadius;
         _initialVignetteIntensity = cfg.VignetteIntensity;
         _initialSkinSaturationBoost = cfg.SkinSaturationBoost;
+        _initialExposure = cfg.Exposure;
     }
 
     /// <summary>True if any persisted render-affecting field changed while
@@ -131,6 +133,7 @@ public class VM_FullScreen3DPreview : ReactiveObject
         if (cfg.VignetteRadius != _initialVignetteRadius) return true;
         if (cfg.VignetteIntensity != _initialVignetteIntensity) return true;
         if (cfg.SkinSaturationBoost != _initialSkinSaturationBoost) return true;
+        if (cfg.Exposure != _initialExposure) return true;
 
         return false;
     }
@@ -166,6 +169,7 @@ public class VM_FullScreen3DPreview : ReactiveObject
         cfg.VignetteRadius = _initialVignetteRadius;
         cfg.VignetteIntensity = _initialVignetteIntensity;
         cfg.SkinSaturationBoost = _initialSkinSaturationBoost;
+        cfg.Exposure = _initialExposure;
     }
 
     private static bool UserListsEqual<T>(IList<T> a, IList<T> b, System.Func<T, T, bool> eq)

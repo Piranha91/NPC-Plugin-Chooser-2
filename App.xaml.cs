@@ -342,7 +342,11 @@ namespace NPC_Plugin_Chooser_2
             // IBsaArchiveProvider.TryLocateInScopedBsa) so the active mod's
             // BSAs win over vanilla when both ship the same relative path
             // (e.g. mod-overridden FaceGen NIFs).
-            var requiredViewerVersion = new Version(1, 2, 0);
+            // 2.5.19 added the tone-map Exposure multiplier (u_exposure /
+            // OffscreenRenderRequest.Exposure). It degrades gracefully on an
+            // older renderer (the property is simply absent / defaults), so
+            // this stays a soft warning rather than a hard requirement.
+            var requiredViewerVersion = new Version(2, 5, 19);
             if (CharacterViewerRendering.Version < requiredViewerVersion)
             {
                 StartupLogger.Log(

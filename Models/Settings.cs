@@ -666,6 +666,14 @@ public sealed class InternalMugshotSettings
     // neutral. Hair / eyes / brows are excluded from the boost.
     public float SkinSaturationBoost { get; set; } = 1.0f;
 
+    // Tone-map exposure multiplier (2.5.19+). Scales the tone-mapper's
+    // baseline exposure: 1.0 = neutral (bit-identical to the pre-2.5.19
+    // hardcoded look), >1 brightens toward the blown-out in-game look,
+    // <1 darkens. Folded under EnableToneMapping, so it only takes effect
+    // when tone-mapping is on. Default 1.0 keeps existing tiles unchanged,
+    // so no settings-schema migration is needed.
+    public float Exposure { get; set; } = 1.0f;
+
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.
     public List<CharacterViewerLightingLayout> UserLightingLayouts { get; set; } = new();

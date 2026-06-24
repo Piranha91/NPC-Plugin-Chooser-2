@@ -196,6 +196,8 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             .Subscribe(v => { _settings.InternalMugshot.VignetteIntensity = v; PersistThrottled(); }).DisposeWith(_disposables);
         Viewer.WhenAnyValue(x => x.SkinSaturationBoost).Skip(1)
             .Subscribe(v => { _settings.InternalMugshot.SkinSaturationBoost = v; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.Exposure).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.Exposure = v; PersistThrottled(); }).DisposeWith(_disposables);
 
         // RenderMissingTextureAsWireframe is consumed at mesh-upload time, so
         // the lib raises ReloadRequested when it changes. Re-load the current
@@ -225,6 +227,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Viewer.VignetteRadius = c.VignetteRadius;
         Viewer.VignetteIntensity = c.VignetteIntensity;
         Viewer.SkinSaturationBoost = c.SkinSaturationBoost;
+        Viewer.Exposure = c.Exposure;
         Viewer.BackgroundColor = System.Windows.Media.Color.FromRgb(
             c.BackgroundR, c.BackgroundG, c.BackgroundB);
     }
