@@ -638,12 +638,15 @@ public sealed class InternalMugshotSettings
     // strength up or down without needing to override per-NIF rolloff
     // values. 1.0 is "honest" SSS at the source values.
     //
-    // Default is 0.1 — a faint SSS contribution that gives skin a hint
-    // of warmth without the desaturation that higher values produce on
-    // high-chroma races (Orcs going olive, dark-skinned races going
-    // Mediterranean — likely an implementation or lighting-setup
-    // interaction issue to revisit).
-    public float SubsurfaceStrength { get; set; } = 0.1f;
+    // Default is 1.0 — "honest" SSS at the source NIF rolloff values, pairing
+    // with the game-faithful soft-lighting path (SkinFaithfulSoftLight) so the
+    // warm terminator band reads at material strength instead of the near-
+    // invisible contribution the old 0.1 default produced. Caveats: very high
+    // values can desaturate high-chroma races (Orc olive, dark skin) — keep
+    // at/near 1.0; and many skin sets ship a black/placeholder _sk subsurface
+    // map, in which case SSS is zero regardless of this value (matches the
+    // engine / NifSkope, which also honor the mask).
+    public float SubsurfaceStrength { get; set; } = 1.0f;
 
     // Vignette params (2.5.15+) for the tone-mapping path's subtle
     // radial darkening. Folded under EnableToneMapping (no separate
