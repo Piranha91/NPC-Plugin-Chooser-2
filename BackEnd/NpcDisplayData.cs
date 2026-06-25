@@ -17,6 +17,7 @@ public record NpcDisplayData
     public FormKey TemplateFormKey { get; init; }
     public bool IsInLoadOrder { get; init; }
     public bool IsUnique { get; init; }
+    public Gender Gender { get; init; }
 
     /// <summary>
     /// Creates an NpcDisplayData instance from a full INpcGetter record.
@@ -32,6 +33,7 @@ public record NpcDisplayData
             TemplateFormKey = npcGetter.Template.FormKey,
             IsInLoadOrder = true,
             IsUnique = npcGetter.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Unique),
+            Gender = Auxilliary.GetGender(npcGetter),
         };
     }
 

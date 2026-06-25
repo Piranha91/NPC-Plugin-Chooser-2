@@ -31,7 +31,10 @@ namespace NPC_Plugin_Chooser_2.View_Models
         
         [Description("Uniqueness")]
         Uniqueness,
-        
+
+        [Description("Gender")]
+        Gender,
+
         [Description("Group")]
         Group,
         
@@ -44,5 +47,12 @@ namespace NPC_Plugin_Chooser_2.View_Models
         Any,
         Unique,
         Generic
+    }
+
+    public enum GenderFilterType
+    {
+        Any,
+        Male,
+        Female
     }
 }

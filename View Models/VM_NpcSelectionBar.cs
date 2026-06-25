@@ -163,7 +163,15 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     [Reactive] public UniquenessFilterType SelectedUniquenessFilter2 { get; set; } = UniquenessFilterType.Unique;
     [ObservableAsProperty] public bool IsUniquenessSearch3 { get; }
     [Reactive] public UniquenessFilterType SelectedUniquenessFilter3 { get; set; } = UniquenessFilterType.Unique;
-    
+
+    // Gender Visibility & Selection
+    [ObservableAsProperty] public bool IsGenderSearch1 { get; }
+    [Reactive] public GenderFilterType SelectedGenderFilter1 { get; set; } = GenderFilterType.Female;
+    [ObservableAsProperty] public bool IsGenderSearch2 { get; }
+    [Reactive] public GenderFilterType SelectedGenderFilter2 { get; set; } = GenderFilterType.Female;
+    [ObservableAsProperty] public bool IsGenderSearch3 { get; }
+    [Reactive] public GenderFilterType SelectedGenderFilter3 { get; set; } = GenderFilterType.Female;
+
     // Template Status Visibility & Selection
     [ObservableAsProperty] public bool IsTemplateSearch1 { get; }
     [Reactive] public TemplateFilterType SelectedTemplateFilter1 { get; set; } = TemplateFilterType.BaseHasTemplate;
@@ -696,6 +704,18 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ToPropertyEx(this, x => x.IsUniquenessSearch3).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SearchType1)
+            .Select(type => type == NpcSearchType.Gender)
+            .ToPropertyEx(this, x => x.IsGenderSearch1).DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SearchType2)
+            .Select(type => type == NpcSearchType.Gender)
+            .ToPropertyEx(this, x => x.IsGenderSearch2).DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SearchType3)
+            .Select(type => type == NpcSearchType.Gender)
+            .ToPropertyEx(this, x => x.IsGenderSearch3).DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SearchType1)
             .Select(type => type == NpcSearchType.Template)
             .ToPropertyEx(this, x => x.IsTemplateSearch1).DisposeWith(_disposables);
 
@@ -711,7 +731,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Template) SearchText1 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Gender || type == NpcSearchType.Template) SearchText1 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter1 = null;
             })
             .DisposeWith(_disposables);
@@ -719,7 +739,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Template) SearchText2 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Gender || type == NpcSearchType.Template) SearchText2 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter2 = null;
             })
             .DisposeWith(_disposables);
@@ -727,7 +747,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(type =>
             {
-                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Template) SearchText3 = string.Empty;
+                if (type == NpcSearchType.Group || type == NpcSearchType.SelectionState || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Gender || type == NpcSearchType.Template) SearchText3 = string.Empty;
                 if (type != NpcSearchType.Group) SelectedGroupFilter3 = null;
             })
             .DisposeWith(_disposables);
@@ -781,15 +801,17 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             })
             .DisposeWith(_disposables);
 
+        // 8 properties: past the 7-arg tuple overload, so supply an explicit
+        // selector (the tuple-returning WhenAnyValue maxes out at 7).
         var filter1Changes = this.WhenAnyValue(
-            x => x.SearchText1, x => x.SearchType1, x => x.SelectedStateFilter1, x => x.SelectedGroupFilter1, x => x.SelectedShareStatusFilter1, x => x.SelectedUniquenessFilter1, x => x.SelectedTemplateFilter1
-        ).Select(_ => Unit.Default);
+            x => x.SearchText1, x => x.SearchType1, x => x.SelectedStateFilter1, x => x.SelectedGroupFilter1, x => x.SelectedShareStatusFilter1, x => x.SelectedUniquenessFilter1, x => x.SelectedTemplateFilter1, x => x.SelectedGenderFilter1,
+            (_, _, _, _, _, _, _, _) => Unit.Default);
         var filter2Changes = this.WhenAnyValue(
-            x => x.SearchText2, x => x.SearchType2, x => x.SelectedStateFilter2, x => x.SelectedGroupFilter2, x => x.SelectedShareStatusFilter2, x => x.SelectedUniquenessFilter2, x => x.SelectedTemplateFilter2
-        ).Select(_ => Unit.Default);
+            x => x.SearchText2, x => x.SearchType2, x => x.SelectedStateFilter2, x => x.SelectedGroupFilter2, x => x.SelectedShareStatusFilter2, x => x.SelectedUniquenessFilter2, x => x.SelectedTemplateFilter2, x => x.SelectedGenderFilter2,
+            (_, _, _, _, _, _, _, _) => Unit.Default);
         var filter3Changes = this.WhenAnyValue(
-            x => x.SearchText3, x => x.SearchType3, x => x.SelectedStateFilter3, x => x.SelectedGroupFilter3, x => x.SelectedShareStatusFilter3, x => x.SelectedUniquenessFilter3, x => x.SelectedTemplateFilter3
-        ).Select(_ => Unit.Default);
+            x => x.SearchText3, x => x.SearchType3, x => x.SelectedStateFilter3, x => x.SelectedGroupFilter3, x => x.SelectedShareStatusFilter3, x => x.SelectedUniquenessFilter3, x => x.SelectedTemplateFilter3, x => x.SelectedGenderFilter3,
+            (_, _, _, _, _, _, _, _) => Unit.Default);
         var logicChanges = this.WhenAnyValue(
             x => x.CurrentSearchLogic
         ).Select(_ => Unit.Default);
@@ -2588,6 +2610,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter1));
         }
+        else if (SearchType1 == NpcSearchType.Gender)
+        {
+            predicates.Add(npc => CheckGender(npc, SelectedGenderFilter1));
+        }
         else if (SearchType1 == NpcSearchType.Template)
         {
             predicates.Add(npc => CheckTemplate(npc, SelectedTemplateFilter1));
@@ -2615,6 +2641,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter2));
         }
+        else if (SearchType2 == NpcSearchType.Gender)
+        {
+            predicates.Add(npc => CheckGender(npc, SelectedGenderFilter2));
+        }
         else if (SearchType2 == NpcSearchType.Template)
         {
             predicates.Add(npc => CheckTemplate(npc, SelectedTemplateFilter2));
@@ -2641,6 +2671,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         else if (SearchType3 == NpcSearchType.Uniqueness)
         {
             predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter3));
+        }
+        else if (SearchType3 == NpcSearchType.Gender)
+        {
+            predicates.Add(npc => CheckGender(npc, SelectedGenderFilter3));
         }
         else if (SearchType3 == NpcSearchType.Template)
         {
@@ -2836,7 +2870,23 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 return true;
         }
     }
-    
+
+    private bool CheckGender(VM_NpcsMenuSelection npcMenu, GenderFilterType filterType)
+    {
+        switch (filterType)
+        {
+            case GenderFilterType.Male:
+                // NpcData is null for mugshot-only NPCs not in the load order, so
+                // their gender is unknown and they fall out of a concrete filter.
+                return npcMenu.NpcData?.Gender == Gender.Male;
+            case GenderFilterType.Female:
+                return npcMenu.NpcData?.Gender == Gender.Female;
+            case GenderFilterType.Any:
+            default:
+                return true;
+        }
+    }
+
     private bool CheckTemplate(VM_NpcsMenuSelection npcMenu, TemplateFilterType filterType)
     {
         switch (filterType)
@@ -2870,7 +2920,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
     private Func<VM_NpcsMenuSelection, bool>? BuildTextPredicate(NpcSearchType type, string searchText)
     {
-        if (type == NpcSearchType.SelectionState || type == NpcSearchType.Group || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Template ||
+        if (type == NpcSearchType.SelectionState || type == NpcSearchType.Group || type == NpcSearchType.ShareStatus || type == NpcSearchType.Uniqueness || type == NpcSearchType.Gender || type == NpcSearchType.Template ||
             string.IsNullOrWhiteSpace(searchText))
         {
             return null;

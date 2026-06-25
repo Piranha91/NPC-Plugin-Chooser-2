@@ -53,6 +53,11 @@
                 <x:Type TypeName="vm:UniquenessFilterType"/>
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
+        <ObjectDataProvider x:Key="GenderFilterTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="vm:GenderFilterType"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
         <ObjectDataProvider x:Key="TemplateFilterTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="vm:TemplateFilterType"/>
@@ -215,6 +220,9 @@
                                                 <DataTrigger Binding="{Binding IsUniquenessSearch1}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsGenderSearch1}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsTemplateSearch1}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
@@ -229,6 +237,9 @@
                                    <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                                </ComboBox>
                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource UniquenessFilterTypeEnumValues}}" SelectedItem="{Binding SelectedUniquenessFilter1, Mode=TwoWay}" ToolTip="Filter by uniqueness" Visibility="{Binding IsUniquenessSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                   <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
+                               </ComboBox>
+                               <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource GenderFilterTypeEnumValues}}" SelectedItem="{Binding SelectedGenderFilter1, Mode=TwoWay}" ToolTip="Filter by gender" Visibility="{Binding IsGenderSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
                                    <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
                                </ComboBox>
                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource TemplateFilterTypeEnumValues}}" SelectedItem="{Binding SelectedTemplateFilter1, Mode=TwoWay}" ToolTip="Filter by template status" Visibility="{Binding IsTemplateSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -261,6 +272,9 @@
                                                 <DataTrigger Binding="{Binding IsUniquenessSearch2}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsGenderSearch2}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsTemplateSearch2}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
@@ -275,6 +289,9 @@
                                     <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                                 </ComboBox>
                                 <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource UniquenessFilterTypeEnumValues}}" SelectedItem="{Binding SelectedUniquenessFilter2, Mode=TwoWay}" ToolTip="Filter by uniqueness" Visibility="{Binding IsUniquenessSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource GenderFilterTypeEnumValues}}" SelectedItem="{Binding SelectedGenderFilter2, Mode=TwoWay}" ToolTip="Filter by gender" Visibility="{Binding IsGenderSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
                                 </ComboBox>
                                 <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource TemplateFilterTypeEnumValues}}" SelectedItem="{Binding SelectedTemplateFilter2, Mode=TwoWay}" ToolTip="Filter by template status" Visibility="{Binding IsTemplateSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -307,6 +324,9 @@
                                                  <DataTrigger Binding="{Binding IsUniquenessSearch3}" Value="True">
                                                      <Setter Property="Visibility" Value="Collapsed"/>
                                                  </DataTrigger>
+                                                 <DataTrigger Binding="{Binding IsGenderSearch3}" Value="True">
+                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                 </DataTrigger>
                                                  <DataTrigger Binding="{Binding IsTemplateSearch3}" Value="True">
                                                      <Setter Property="Visibility" Value="Collapsed"/>
                                                  </DataTrigger>
@@ -321,6 +341,9 @@
                                       <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                                   </ComboBox>
                                   <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource UniquenessFilterTypeEnumValues}}" SelectedItem="{Binding SelectedUniquenessFilter3, Mode=TwoWay}" ToolTip="Filter by uniqueness" Visibility="{Binding IsUniquenessSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                      <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
+                                  </ComboBox>
+                                  <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource GenderFilterTypeEnumValues}}" SelectedItem="{Binding SelectedGenderFilter3, Mode=TwoWay}" ToolTip="Filter by gender" Visibility="{Binding IsGenderSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
                                       <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
                                   </ComboBox>
                                   <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource TemplateFilterTypeEnumValues}}" SelectedItem="{Binding SelectedTemplateFilter3, Mode=TwoWay}" ToolTip="Filter by template status" Visibility="{Binding IsTemplateSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
