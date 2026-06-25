@@ -150,6 +150,15 @@ public class Settings
     // Value: A set of tuples, where each tuple represents a "guest" mugshot.
     // Tuple: (string ModName of the guest appearance, FormKey of the guest NPC, string DisplayName of the guest NPC).
     public Dictionary<FormKey, HashSet<(string ModName, FormKey NpcFormKey, string NpcDisplayName)>> GuestAppearances { get; set; } = new();
+    // Subset of GuestAppearances created by the Randomize feature (NOT manual shares).
+    // Tracked so a re-randomize can remove its own previous shares without disturbing the
+    // user's curated/manual shares. Same tuple shape as GuestAppearances.
+    public Dictionary<FormKey, HashSet<(string ModName, FormKey NpcFormKey, string NpcDisplayName)>> RandomizedGuestAppearances { get; set; } = new();
+    // NPCs whose CURRENT selection was assigned by the Randomize feature (own face OR shared),
+    // mapped to the (mod, sourceNpc) it assigned. Lets "Clear Randomized NPCs" deselect only the
+    // NPCs still carrying a randomized choice (manual overrides are left alone). Same shape as
+    // SelectedAppearanceMods.
+    public Dictionary<FormKey, (string ModName, FormKey NpcFormKey)> RandomizedSelections { get; set; } = new();
     public HashSet<string> HiddenModNames { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> HiddenModsPerNpc { get; set; } = new();
     public HashSet<FormKey> CachedSkyPatcherTemplates { get; set; } = new();
