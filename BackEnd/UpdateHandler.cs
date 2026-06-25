@@ -70,6 +70,11 @@ public class UpdateHandler
             await MaybeMoveLegacyMugshotFiles_Initial(splashReporter);
         }
 
+        if (settingsVersion < "2.2.1")
+        {
+            UpdateTo2_2_1_Initial();
+        }
+
         Debug.WriteLine("Settings update process complete.");
     }
 
@@ -910,6 +915,31 @@ public class UpdateHandler
         {
             _settings.InternalMugshot.SubsurfaceStrength = 0.1f;
             Debug.WriteLine("2.1.7 Update: SubsurfaceStrength was at the prior default of 2.0; reverted to 0.1.");
+        }
+    }
+
+    /// <summary>
+    /// 2.2.1 migration: bump <c>SubsurfaceStrength</c> from the prior 0.1 default to
+    /// 1.0 for users who never touched it.
+    ///
+    /// 1.0 is "honest" SSS at the source NIF rolloff values, pairing with the
+    /// game-faithful skin soft-lighting path in CharacterViewer.Rendering
+    /// (SkinFaithfulSoftLight) added this release. At the prior faint 0.1 the warm
+    /// terminator band was effectively invisible.
+    ///
+    /// Strict equality at 0.1f is the "untouched" signal: 0.1 was the shipped
+    /// default from 2.1.7 through 2.2.0 (and the value the 2.1.7 migration wrote for
+    /// users coming from the 2.0 default). Any user who tuned it (0.5, 1.5, 2.0, ...)
+    /// keeps their value. Silent and idempotent — after first run the value is 1.0,
+    /// so the equality check fails on every subsequent run until the version bumps.
+    /// </summary>
+    private void UpdateTo2_2_1_Initial()
+    {
+        const float priorDefault = 0.1f;
+        if (_settings.InternalMugshot.SubsurfaceStrength == priorDefault)
+        {
+            _settings.InternalMugshot.SubsurfaceStrength = 1.0f;
+            Debug.WriteLine("2.2.1 Update: SubsurfaceStrength was at the prior default of 0.1; bumped to 1.0.");
         }
     }
 
