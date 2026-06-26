@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0-windows</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <!-- The app under test is a WPF project; several Models/VMs reference WPF
+             types (System.Windows.Media.Color, WindowState, the dispatcher).
+             UseWPF gives the test assembly the WindowsDesktop framework reference
+             so it can construct and exercise those types headlessly. -->
+        <UseWPF>true</UseWPF>
+        <RootNamespace>NPC_Plugin_Chooser_2.Tests</RootNamespace>
+        <!-- The app under test produces ~450 warnings; don't let them drown the test
+             build output. CS0436 = the Noggog AssemblyVersions source-gen type also
+             flows in transitively from Mutagen.Synthesis; the local copy wins, harmless. -->
+        <NoWarn>$(NoWarn);CS0169;CS0414;CS0649;CS8618;CS0436</NoWarn>
+        <GenerateProgramFile>true</GenerateProgramFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="FluentAssertions" Version="7.0.0-alpha.3" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
+        <PackageReference Include="xunit" Version="2.8.0" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="2.8.0">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\NPC Plugin Chooser 2.csproj" />
+    </ItemGroup>
+
+    <!-- Committed test-data fixtures (minimal Settings.json, fake mod folders,
+         EasyNPC profile samples) copied next to the test assembly so harness
+         code can clone them into throwaway temp directories. -->
+    <ItemGroup>
+        <None Include="TestData\**\*">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <Link>TestData\%(RecursiveDir)%(Filename)%(Extension)</Link>
+        </None>
+    </ItemGroup>
+
+</Project>

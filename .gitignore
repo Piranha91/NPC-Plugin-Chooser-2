@@ -2,6 +2,11 @@
 /bin/
 /.idea/
 
+# Test project build outputs + working artifacts
+Tests/bin/
+Tests/obj/
+Tests/.seam-catalog.json
+
 NPC Plugin Chooser 2.sln.DotSettings.user
 
 FodyWeavers.xsd

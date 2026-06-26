@@ -10,6 +10,21 @@
         <ApplicationIcon>Resources\NPC Logo.ico</ApplicationIcon>
     </PropertyGroup>
 
+    <!-- The xUnit test project lives in the Tests\ subfolder (kept inside the git
+         repo, whose root is this project folder). The SDK's default globbing would
+         otherwise pull every Tests\**\*.cs into THIS app's compilation (and the
+         WPF markup-compile temp project), which fails because the app doesn't
+         reference xunit. Exclude the whole subtree from the app; the test csproj
+         compiles those files itself. -->
+    <ItemGroup>
+        <Compile Remove="Tests\**" />
+        <EmbeddedResource Remove="Tests\**" />
+        <None Remove="Tests\**" />
+        <Page Remove="Tests\**" />
+        <Resource Remove="Tests\**" />
+        <Content Remove="Tests\**" />
+    </ItemGroup>
+
     <!-- CharacterViewer.Rendering (the offscreen 3D renderer) lives in the SynthEBD
          repo. If that repo is checked out as a sibling (..\..\SynthEBD), build
          against its live source so the renderer can be co-developed in place.

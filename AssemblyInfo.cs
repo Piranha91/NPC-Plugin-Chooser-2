@@ -1,4 +1,11 @@
+using System.Runtime.CompilerServices;
 using System.Windows;
+
+// Exposes internal types/members to the test assembly so deterministic seams that are
+// internal (parsers, migration steps, record helpers, VM predicates) can be exercised
+// directly. The app ships as a WinExe — this widens visibility only to the test project,
+// not to any external consumer.
+[assembly: InternalsVisibleTo("NPC Plugin Chooser 2.Tests")]
 
 [assembly: ThemeInfo(
     ResourceDictionaryLocation.None, //where theme specific resource dictionaries are located
