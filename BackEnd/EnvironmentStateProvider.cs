@@ -41,6 +41,12 @@ public class EnvironmentStateProvider : ReactiveObject
     public static string DefaultPluginName { get; } = "NPC";
     public string OutputPluginName { get; private set; }
     public string OutputPluginFileName => (OutputPluginName ?? DefaultPluginName) + ".esp";
+
+    // Absolute path to the folder this app writes its output plugins into (when known). Used to
+    // exclude the app's OWN output plugins from the resolved load order BEFORE Mutagen loads them,
+    // so building the environment never memory-maps (and thus never locks) a previously generated
+    // output plugin that a mod manager has enabled in the load order.
+    public string? OutputModFolderPath { get; private set; }
     
     // Additional properties (for logging and diagnostics)
     [Reactive] public string CreationClubListingsFilePath { get; set; } = string.Empty;
@@ -103,11 +109,12 @@ public class EnvironmentStateProvider : ReactiveObject
         InternalDataPath = Path.Combine(exeLocation, "InternalData");
     }
 
-    public void SetEnvironmentTarget(SkyrimRelease skyrimRelease, string dataFolderPath, string outputPluginName)
+    public void SetEnvironmentTarget(SkyrimRelease skyrimRelease, string dataFolderPath, string outputPluginName, string? outputModFolderPath = null)
     {
         SkyrimVersion = skyrimRelease;
         _targetDataFolderPath = dataFolderPath;
         OutputPluginName = !string.IsNullOrWhiteSpace(outputPluginName) ? outputPluginName : DefaultPluginName;
+        OutputModFolderPath = outputModFolderPath;
     }
 
     public void UpdateEnvironment()
@@ -131,7 +138,24 @@ public class EnvironmentStateProvider : ReactiveObject
         try
         {
             string notificationStr = "";
+
+            // Exclude THIS app's own output plugins (those it writes into OutputModFolderPath, which a
+            // mod manager may have enabled in the load order) BEFORE Mutagen loads them. The stamp-based
+            // TrimDependentPlugins below reads each plugin's header to identify our output — and that read
+            // memory-maps the file, a map the environment then retains for its lifetime, locking the file
+            // so the patcher can't overwrite it. Filtering here, at the pre-load listing stage (ModKey
+            // only, no Mod materialization), means our output is never mapped and never locked.
+            var ownOutputModKeys = GetOwnOutputModKeys();
+            if (ownOutputModKeys.Count > 0)
+            {
+                StartupLogger.Log($"Excluding {ownOutputModKeys.Count} own output plugin(s) from the environment pre-load: {string.Join(", ", ownOutputModKeys.Select(k => k.FileName))}");
+            }
+
             _environment = builder
+                .TransformLoadOrderListings(listings =>
+                    ownOutputModKeys.Count == 0
+                        ? listings
+                        : listings.Where(l => !ownOutputModKeys.Contains(l.ModKey)))
                 .TransformModListings(x =>
                     x.OnlyEnabledAndExisting()
                         .TrimDependentPlugins(OutputMod.ModKey))
@@ -189,7 +213,42 @@ public class EnvironmentStateProvider : ReactiveObject
         
         _environmentUpdatedSubject.OnNext(Unit.Default);
     }
-    
+
+    // ModKeys of the plugin files physically present in this app's own output folder (if known).
+    // These are excluded from the resolved load order before Mutagen loads them (see UpdateEnvironment)
+    // so the environment never memory-maps — and thus never locks — a previously generated output
+    // plugin. Best-effort: returns an empty set if the folder is unset/missing or unreadable, in which
+    // case only the stamp-based TrimDependentPlugins fallback applies.
+    private HashSet<ModKey> GetOwnOutputModKeys()
+    {
+        var result = new HashSet<ModKey>();
+        var dir = OutputModFolderPath;
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) return result;
+
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(dir))
+            {
+                var ext = Path.GetExtension(file);
+                if (!ext.Equals(".esp", StringComparison.OrdinalIgnoreCase)
+                    && !ext.Equals(".esm", StringComparison.OrdinalIgnoreCase)
+                    && !ext.Equals(".esl", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var mk = ModKey.TryFromFileName(Path.GetFileName(file));
+                if (mk != null) result.Add(mk.Value);
+            }
+        }
+        catch
+        {
+            // Best-effort only; the stamp-based TrimDependentPlugins remains as a fallback.
+        }
+
+        return result;
+    }
+
     // Mutagen's default Skyrim.ccc discovery uses registry-based game lookup, which
     // fails for non-standard installs (renamed folder, drive move). When that happens
     // _environment.CreationClubListingsFilePath is empty / missing, so the manual

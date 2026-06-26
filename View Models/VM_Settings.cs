@@ -499,7 +499,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
         // Now that the environment parameters have been set, initialize the environment
         StartupLogger.Log($"Setting environment target: {SkyrimRelease}, path: {SkyrimGamePath}");
-        _environmentStateProvider.SetEnvironmentTarget(SkyrimRelease, SkyrimGamePath, TargetPluginName);
+        _environmentStateProvider.SetEnvironmentTarget(SkyrimRelease, SkyrimGamePath, TargetPluginName, ResolveOutputModFolderForEnv());
         StartupLogger.Log("Updating environment (load order, link cache)");
         _environmentStateProvider.UpdateEnvironment();
         StartupLogger.Log($"Environment initialized, status: {_environmentStateProvider.Status}");
@@ -1291,7 +1291,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 _model.OutputPluginName = TargetPluginName;
 
                 // 2. Set the target and update the environment
-                _environmentStateProvider.SetEnvironmentTarget(SkyrimRelease, SkyrimGamePath, TargetPluginName);
+                _environmentStateProvider.SetEnvironmentTarget(SkyrimRelease, SkyrimGamePath, TargetPluginName, ResolveOutputModFolderForEnv());
                 _environmentStateProvider.UpdateEnvironment();
             })
             .DisposeWith(_disposables);
@@ -1511,6 +1511,18 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             splashReporter?.ShowMessagesOnClose("An error occured during initialization: " + Environment.NewLine +
                                                 Environment.NewLine + ExceptionLogger.GetExceptionStack(e));
         }
+    }
+
+    // Resolves the absolute folder the patcher writes output plugins into, from the persisted model.
+    // Passed to the environment provider so it can exclude this app's own output plugins from the
+    // resolved load order before Mutagen maps them (preventing a self-inflicted file lock on re-runs).
+    private string? ResolveOutputModFolderForEnv()
+    {
+        var outDir = _model?.OutputDirectory;
+        if (string.IsNullOrWhiteSpace(outDir)) return null;
+        return Path.IsPathRooted(outDir)
+            ? outDir
+            : Path.Combine(_model?.ModsFolder ?? string.Empty, outDir);
     }
 
     public static Settings LoadSettings()

@@ -1224,7 +1224,7 @@ public class Patcher : OptionalUIModule
                         }
 
                         _environmentStateProvider.OutputMod.ModHeader.Description = PluginDescriptionSignature;
-                        
+
                         await _environmentStateProvider.OutputMod.BeginWrite
                             .ToPath(outputPluginPath)
                             .WithLoadOrder(_environmentStateProvider.LoadOrder)
