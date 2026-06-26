@@ -256,11 +256,17 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         }
 
         // --- NEW Ambiguous Source Initialization ---
-        IsAmbiguousSource = AssociatedModSetting?.AmbiguousNpcFormKeys.Contains(_targetNpcFormKey) ?? false;
-        CurrentSourcePlugin = AssociatedModSetting?.NpcPluginDisambiguation.GetValueOrDefault(_targetNpcFormKey);
+        // Disambiguation (which plugin within this ModSetting provides the appearance) is
+        // keyed by the NPC whose record is actually spliced: the appearance DONOR. For a
+        // normal replacer the donor equals the target, but for a guest/shared appearance
+        // (IsGuestAppearance) they differ, and the Validator/Patcher both resolve the source
+        // plugin via the donor's FormKey (appearanceNpcFormKey). Keying this UI on the target
+        // instead let the user's source-plugin choice be silently dropped at patch time.
+        IsAmbiguousSource = AssociatedModSetting?.AmbiguousNpcFormKeys.Contains(SourceNpcFormKey) ?? false;
+        CurrentSourcePlugin = AssociatedModSetting?.NpcPluginDisambiguation.GetValueOrDefault(SourceNpcFormKey);
 
         if (IsAmbiguousSource && AssociatedModSetting != null &&
-            AssociatedModSetting.AvailablePluginsForNpcs.TryGetValue(_targetNpcFormKey, out var available))
+            AssociatedModSetting.AvailablePluginsForNpcs.TryGetValue(SourceNpcFormKey, out var available))
         {
             AvailableSourcePlugins = new ObservableCollection<ModKey>(available.OrderBy(k => k.FileName.String));
         }
@@ -1231,15 +1237,19 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             return;
         }
 
-        // Call back to the parent VM_ModSetting to handle the logic
-        bool successfullyUpdated = AssociatedModSetting.SetSingleNpcSourcePlugin(_targetNpcFormKey, selectedPluginKey);
+        // Call back to the parent VM_ModSetting to handle the logic. Keyed on the appearance
+        // DONOR (SourceNpcFormKey), not the target, so the choice lands on the same
+        // disambiguation entry the Validator/Patcher read when splicing the donor's record.
+        // For a normal replacer the two FormKeys are identical; for a guest/shared appearance
+        // they differ and only the donor key has any effect at patch time.
+        bool successfullyUpdated = AssociatedModSetting.SetSingleNpcSourcePlugin(SourceNpcFormKey, selectedPluginKey);
 
         if (successfullyUpdated)
         {
             // The parent VM_ModSetting has updated its NpcPluginDisambiguation map.
             // Now, this specific VM_NpcsMenuMugshot instance should update its own CurrentSourcePlugin
             // to reflect the new choice for the context menu checkmark.
-            if (AssociatedModSetting.NpcPluginDisambiguation.TryGetValue(this._targetNpcFormKey,
+            if (AssociatedModSetting.NpcPluginDisambiguation.TryGetValue(this.SourceNpcFormKey,
                     out var newResolvedSource))
             {
                 this.CurrentSourcePlugin = newResolvedSource;
