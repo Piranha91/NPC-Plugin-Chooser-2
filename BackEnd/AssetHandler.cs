@@ -411,11 +411,18 @@ public class AssetHandler : OptionalUIModule
         _runVM.Value.AppendLog(
             $"    Copying assets for {appearanceNpcRecord.EditorID ?? appearanceNpcRecord.FormKey.ToString()} from sources related to '{appearanceModSetting.DisplayName}'..."); // Verbose only
 
-        var assetSourceDirs = appearanceModSetting.CorrespondingFolderPaths ?? new List<string>();
-        if (!assetSourceDirs.Any())
+        // Assets can be sourced from loose files (CorrespondingFolderPaths) OR from BSAs
+        // (resolved via CorrespondingModKeys) — FindAssetSource checks both. Synthetic
+        // entries like "Base Game"/"Creation Club" carry no folder paths because their
+        // assets (incl. vanilla FaceGen) live in the game BSAs, so a folder-paths-only
+        // guard would wrongly skip all copying for them — e.g. a shared appearance whose
+        // donor's FaceGen comes from a vanilla BSA. Only bail when neither source exists.
+        bool hasFolderSources = (appearanceModSetting.CorrespondingFolderPaths?.Any() ?? false);
+        bool hasBsaSources = appearanceModSetting.CorrespondingModKeys.Any();
+        if (!hasFolderSources && !hasBsaSources)
         {
             _runVM.Value.AppendLog(
-                $"      WARNING: Mod Setting '{appearanceModSetting.DisplayName}' has no Corresponding Folder Paths. Cannot copy assets."); // Verbose only (Warning)
+                $"      WARNING: Mod Setting '{appearanceModSetting.DisplayName}' has no Corresponding Folder Paths or plugins. Cannot copy assets."); // Verbose only (Warning)
             return;
         }
 
