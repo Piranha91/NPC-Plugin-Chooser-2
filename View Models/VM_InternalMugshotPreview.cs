@@ -198,6 +198,16 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             .Subscribe(v => { _settings.InternalMugshot.SkinSaturationBoost = v; PersistThrottled(); }).DisposeWith(_disposables);
         Viewer.WhenAnyValue(x => x.Exposure).Skip(1)
             .Subscribe(v => { _settings.InternalMugshot.Exposure = v; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.TonemapHairRelief).Skip(1)
+            .Subscribe(b => { _settings.InternalMugshot.TonemapHairRelief = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.DaylightBoost).Skip(1)
+            .Subscribe(b => { _settings.InternalMugshot.DaylightBoost = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.DaylightBoostIntensity).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.DaylightBoostIntensity = v; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.EnableBloom).Skip(1)
+            .Subscribe(b => { _settings.InternalMugshot.EnableBloom = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.BloomIntensity).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.BloomIntensity = v; PersistThrottled(); }).DisposeWith(_disposables);
 
         // RenderMissingTextureAsWireframe is consumed at mesh-upload time, so
         // the lib raises ReloadRequested when it changes. Re-load the current
@@ -228,6 +238,11 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Viewer.VignetteIntensity = c.VignetteIntensity;
         Viewer.SkinSaturationBoost = c.SkinSaturationBoost;
         Viewer.Exposure = c.Exposure;
+        Viewer.TonemapHairRelief = c.TonemapHairRelief;
+        Viewer.DaylightBoost = c.DaylightBoost;
+        Viewer.DaylightBoostIntensity = c.DaylightBoostIntensity;
+        Viewer.EnableBloom = c.EnableBloom;
+        Viewer.BloomIntensity = c.BloomIntensity;
         Viewer.BackgroundColor = System.Windows.Media.Color.FromRgb(
             c.BackgroundR, c.BackgroundG, c.BackgroundB);
     }

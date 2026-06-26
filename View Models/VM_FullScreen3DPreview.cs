@@ -52,6 +52,11 @@ public class VM_FullScreen3DPreview : ReactiveObject
     private readonly float _initialVignetteIntensity;
     private readonly float _initialSkinSaturationBoost;
     private readonly float _initialExposure;
+    private readonly bool _initialTonemapHairRelief;
+    private readonly bool _initialDaylightBoost;
+    private readonly float _initialDaylightBoostIntensity;
+    private readonly bool _initialEnableBloom;
+    private readonly float _initialBloomIntensity;
 
     public VM_InternalMugshotPreview Inner { get; }
 
@@ -94,6 +99,11 @@ public class VM_FullScreen3DPreview : ReactiveObject
         _initialVignetteIntensity = cfg.VignetteIntensity;
         _initialSkinSaturationBoost = cfg.SkinSaturationBoost;
         _initialExposure = cfg.Exposure;
+        _initialTonemapHairRelief = cfg.TonemapHairRelief;
+        _initialDaylightBoost = cfg.DaylightBoost;
+        _initialDaylightBoostIntensity = cfg.DaylightBoostIntensity;
+        _initialEnableBloom = cfg.EnableBloom;
+        _initialBloomIntensity = cfg.BloomIntensity;
     }
 
     /// <summary>True if any persisted render-affecting field changed while
@@ -134,6 +144,11 @@ public class VM_FullScreen3DPreview : ReactiveObject
         if (cfg.VignetteIntensity != _initialVignetteIntensity) return true;
         if (cfg.SkinSaturationBoost != _initialSkinSaturationBoost) return true;
         if (cfg.Exposure != _initialExposure) return true;
+        if (cfg.TonemapHairRelief != _initialTonemapHairRelief) return true;
+        if (cfg.DaylightBoost != _initialDaylightBoost) return true;
+        if (cfg.DaylightBoostIntensity != _initialDaylightBoostIntensity) return true;
+        if (cfg.EnableBloom != _initialEnableBloom) return true;
+        if (cfg.BloomIntensity != _initialBloomIntensity) return true;
 
         return false;
     }
@@ -170,6 +185,11 @@ public class VM_FullScreen3DPreview : ReactiveObject
         cfg.VignetteIntensity = _initialVignetteIntensity;
         cfg.SkinSaturationBoost = _initialSkinSaturationBoost;
         cfg.Exposure = _initialExposure;
+        cfg.TonemapHairRelief = _initialTonemapHairRelief;
+        cfg.DaylightBoost = _initialDaylightBoost;
+        cfg.DaylightBoostIntensity = _initialDaylightBoostIntensity;
+        cfg.EnableBloom = _initialEnableBloom;
+        cfg.BloomIntensity = _initialBloomIntensity;
     }
 
     private static bool UserListsEqual<T>(IList<T> a, IList<T> b, System.Func<T, T, bool> eq)

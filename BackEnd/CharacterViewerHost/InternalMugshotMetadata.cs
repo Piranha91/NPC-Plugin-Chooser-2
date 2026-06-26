@@ -83,7 +83,7 @@ public static class InternalMugshotMetadata
     /// field.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 10;
+    public const int PipelineSchemaVersion = 11;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -140,6 +140,11 @@ public static class InternalMugshotMetadata
             ["vignette_intensity"] = cfg.VignetteIntensity,
             ["skin_saturation_boost"] = cfg.SkinSaturationBoost,
             ["exposure"] = cfg.Exposure,
+            ["tonemap_hair_relief"] = cfg.TonemapHairRelief,
+            ["daylight_boost"] = cfg.DaylightBoost,
+            ["daylight_boost_intensity"] = cfg.DaylightBoostIntensity,
+            ["enable_bloom"] = cfg.EnableBloom,
+            ["bloom_intensity"] = cfg.BloomIntensity,
             ["include_default_outfit"] = effectiveIncludeDefaultOutfit,
             ["include_headgear"] = effectiveIncludeHeadgear,
         };
@@ -371,6 +376,20 @@ public static class InternalMugshotMetadata
         if (schemaVersion >= 10)
         {
             sb.Append('|').Append(cfg.Exposure.ToString("R", inv));
+        }
+
+        // === schema v11 fields (hair-relief / daylight / bloom finishing) ===
+        // TonemapHairRelief and EnableBloom default ON, DaylightBoost OFF; but
+        // a v10 tile is compared at schemaVersion=10 (which excludes these
+        // entries), so the default flip does NOT drift v10 tiles. Only tiles
+        // stamped at v11 carry these, and changing any of them re-hashes those.
+        if (schemaVersion >= 11)
+        {
+            sb.Append('|').Append(cfg.TonemapHairRelief ? '1' : '0');
+            sb.Append('|').Append(cfg.DaylightBoost ? '1' : '0');
+            sb.Append('|').Append(cfg.DaylightBoostIntensity.ToString("R", inv));
+            sb.Append('|').Append(cfg.EnableBloom ? '1' : '0');
+            sb.Append('|').Append(cfg.BloomIntensity.ToString("R", inv));
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

@@ -245,6 +245,11 @@ public sealed class InternalMugshotGenerator
                 VignetteIntensity = cfg.VignetteIntensity,
                 SkinSaturationBoost = cfg.SkinSaturationBoost,
                 Exposure = cfg.Exposure,
+                TonemapHairRelief = cfg.TonemapHairRelief,
+                DaylightBoost = cfg.DaylightBoost,
+                DaylightBoostIntensity = cfg.DaylightBoostIntensity,
+                EnableBloom = cfg.EnableBloom,
+                BloomIntensity = cfg.BloomIntensity,
                 // Snapshot the active flow-scoped writer NOW (still on the
                 // host's logical call context). The renderer's dedicated
                 // render thread doesn't inherit this AsyncLocal, so we hand

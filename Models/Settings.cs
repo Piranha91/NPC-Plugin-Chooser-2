@@ -686,6 +686,27 @@ public sealed class InternalMugshotSettings
     // so no settings-schema migration is needed.
     public float Exposure { get; set; } = 1.0f;
 
+    // Hair finishing relief (default ON). Hair pixels skip the fresnel contour
+    // darkening and use a gentler exposure pull-down into the ACES curve, so
+    // blonde hair is not crushed toward brown by the skin-tuned tone-map chain.
+    // Only takes effect when tone-mapping is on. Pixel-affecting -> included in
+    // the mugshot staleness hash (pipeline_schema v11).
+    public bool TonemapHairRelief { get; set; } = true;
+
+    // Daylight boost (default ON at a gentle 1.1 gain). Scales the directional
+    // lights by DaylightBoostIntensity + slight warmth (ambient untouched),
+    // lifting blonde hair toward its in-game daylight look without hand-tuning
+    // the key light. Intensity is the gain: 1.0 = warmth only, higher brightens.
+    public bool DaylightBoost { get; set; } = true;
+    public float DaylightBoostIntensity { get; set; } = 1.1f;
+
+    // Bloom (default ON). Bright-pass + blur glow composited over the scene so
+    // hair highlights bleed into the soft halo the engine produces. Intensity
+    // is the composite gain (0 = no glow). Only takes effect when tone-mapping
+    // is on. Pixel-affecting -> included in the staleness hash (schema v11).
+    public bool EnableBloom { get; set; } = true;
+    public float BloomIntensity { get; set; } = 0.7f;
+
     // User-defined lighting presets persisted across sessions. The settings
     // adapter wraps these in ObservableCollections at runtime.
     public List<CharacterViewerLightingLayout> UserLightingLayouts { get; set; } = new();
