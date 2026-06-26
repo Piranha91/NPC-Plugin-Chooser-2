@@ -601,15 +601,17 @@ public class BsaHandler : OptionalUIModule
                 var bsaDict = GetBsaPathsForPluginsInDirs(mod.CorrespondingModKeys, pathsToSearch, gameRelease);
                 foreach (var modkey in mod.CorrespondingModKeys)
                 {
-                    // Pre-I/O short-circuit under the lock: another caller may
-                    // have populated this modkey already.
+                    // Pre-I/O short-circuit under the lock: another caller may have
+                    // populated this modkey already. Skip only if the existing entry has
+                    // real content — an EMPTY placeholder (a plugin whose BSA wasn't in an
+                    // earlier mod's folders) must stay upgradeable, or that empty entry would
+                    // permanently mask a BSA that this mod's folders actually contain.
                     lock (_bsaContentsLock)
                     {
-                        if (_bsaContents.ContainsKey(modkey))
+                        if (_bsaContents.TryGetValue(modkey, out var existing) && existing.Count > 0)
                         {
-                            int existingBsaCount = _bsaContents[modkey].Count;
-                            int existingFileCount = _bsaContents[modkey].Values.Sum(s => s.Count);
-                            BsaContentsDiag.Log($"    SKIP modkey={modkey.FileName.String} — already in _bsaContents (bsaCount={existingBsaCount}, fileCount={existingFileCount})");
+                            int existingFileCount = existing.Values.Sum(s => s.Count);
+                            BsaContentsDiag.Log($"    SKIP modkey={modkey.FileName.String} — already populated (bsaCount={existing.Count}, fileCount={existingFileCount})");
                             continue;
                         }
                     }
@@ -637,15 +639,35 @@ public class BsaHandler : OptionalUIModule
                         BsaContentsDiag.Log($"    !!! WARNING: modkey={modkey.FileName.String} owns BSA(s) but none opened/indexed — this empty entry will mask reachable assets. bsaPaths=[{string.Join("|", bsaPaths)}]");
                     }
 
-                    // TryAdd makes a sibling-tile race (another thread populated
-                    // the same modkey between our pre-check and our commit) a
-                    // no-op rather than a crash. First populator wins; we do
-                    // not silently overwrite a populated entry.
+                    // Commit policy (handles the pre-check→commit race too):
+                    //  - First CONTENT wins: real content installs over a prior empty
+                    //    placeholder, but never clobbers existing content.
+                    //  - Empty is provisional: recorded only if nothing is there yet, so a
+                    //    genuinely BSA-less plugin isn't rescanned, yet a later mod whose
+                    //    folders hold the BSA can still upgrade it to content.
                     lock (_bsaContentsLock)
                     {
-                        if (!_bsaContents.TryAdd(modkey, filesInArchives))
+                        bool hasExisting = _bsaContents.TryGetValue(modkey, out var existing);
+                        bool existingHasContent = existing is { Count: > 0 };
+
+                        if (filesInArchives.Count > 0)
                         {
-                            BsaContentsDiag.Log($"    RACE-SKIP modkey={modkey.FileName.String} — already added concurrently between pre-check and commit");
+                            if (!existingHasContent)
+                            {
+                                _bsaContents[modkey] = filesInArchives;
+                                if (hasExisting)
+                                {
+                                    BsaContentsDiag.Log($"    UPGRADE modkey={modkey.FileName.String} — replaced empty placeholder with {filesInArchives.Count} BSA(s), {totalFiles} files");
+                                }
+                            }
+                            else
+                            {
+                                BsaContentsDiag.Log($"    KEEP modkey={modkey.FileName.String} — existing content retained (first-content-wins)");
+                            }
+                        }
+                        else if (!hasExisting)
+                        {
+                            _bsaContents[modkey] = filesInArchives; // provisional empty
                         }
                     }
                 }
