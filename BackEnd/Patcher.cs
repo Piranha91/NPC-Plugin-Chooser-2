@@ -522,8 +522,14 @@ public class Patcher : OptionalUIModule
                             bool isFaceGenOnly = false;
                             if (!correspondingRecordFound)
                             {
-                                // Try to find the original source record (e.g., from Skyrim.esm)
-                                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey,
+                                // Try to find the original source record (e.g., from Skyrim.esm).
+                                // Resolve the appearance DONOR (appearanceNpcFormKey), not the target NPC.
+                                // For a shared/guest appearance the two differ, and the output record must
+                                // carry the donor's base appearance data to match the donor's FaceGen mesh.
+                                // Pairing the target's own appearance record with the donor's FaceGen nif
+                                // (e.g. a Nord recipient + a Khajiit donor's head mesh) CTDs on spawn.
+                                // For a normal replacer donor == target, so this is unchanged.
+                                if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(appearanceNpcFormKey,
                                         out var baseNpcGetter, ResolveTarget.Origin))
                                 {
                                     AppendLog(
@@ -574,9 +580,11 @@ public class Patcher : OptionalUIModule
                                 if (!_assetHandler.AssetExists(faceMeshRelativePath, appearanceModSetting))
                                 {
                                     // If the mesh is missing, perform the more expensive check to see if the plugin *actually* changed head data.
-                                    // Resolve the original base record for this NPC (e.g., from Skyrim.esm).
+                                    // Resolve the original base record for the appearance DONOR (e.g., from Skyrim.esm).
+                                    // The output carries the donor's head data, so the diff that signals a black-face
+                                    // risk must be measured against the donor's own base, not the target's.
                                     if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(
-                                            npcFormKey,
+                                            appearanceNpcFormKey,
                                             out var baseNpcGetter, ResolveTarget.Origin))
                                     {
                                         // Compare the head-related properties of the appearance record to the base record.
