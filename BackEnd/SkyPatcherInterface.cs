@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System.Globalization;
+using System.IO;
 using System.Text;
 using System.Windows.Forms;
 using Mutagen.Bethesda;
@@ -123,25 +124,28 @@ public class SkyPatcherInterface : OptionalUIModule
     
     public void ApplyHeight(FormKey applyTo, float heightFlt)
     {
-        string height = heightFlt.ToString();
-        
+        // Always emit with '.' as the decimal separator. SkyPatcher parses the .ini
+        // culture-invariantly, so a culture-sensitive ToString() on a machine that uses
+        // ',' as the decimal mark (e.g. de-DE) would write "height=0,975" and corrupt the line.
+        string height = heightFlt.ToString(CultureInfo.InvariantCulture);
+
         if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
         {
             return;
         }
-        
+
         npcContainer.ActionStrings.Add($"height={height}");
     }
-    
+
     public void ApplyWeight(FormKey applyTo, float weightFlt)
     {
-        string weight = weightFlt.ToString();
-        
+        string weight = weightFlt.ToString(CultureInfo.InvariantCulture);
+
         if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
         {
             return;
         }
-        
+
         npcContainer.ActionStrings.Add($"weight={weight}");
     }
 
@@ -200,10 +204,16 @@ public class SkyPatcherInterface : OptionalUIModule
         {
             return;
         }
-        
-        var kwStr = string.Join(",", keywords);
-        
-        npcContainer.ActionStrings.Add($"keywordsToAdd = {kwStr}");
+
+        // Omit the directive entirely when there are no keywords. An empty "keywordsToAdd="
+        // contributes nothing and an empty value can throw off the SkyPatcher parser.
+        var kwStr = string.Join(",", keywords.Where(k => !string.IsNullOrWhiteSpace(k)));
+        if (kwStr.Length == 0)
+        {
+            return;
+        }
+
+        npcContainer.ActionStrings.Add($"keywordsToAdd={kwStr}");
     }
 
     public bool WriteIni(string outputRootFolder)

@@ -122,12 +122,14 @@ public class OutputValidator
         var skyIndex = BuildSkyPatcherIndex(skyPatcherNpcRoot, npc2IniPath, log);
         log.AppendLine($"[perf] SkyPatcher index built in {swPhase.ElapsedMilliseconds} ms.");
         swPhase.Restart();
-        if (skyIndex.BroadFilterLineCount > 0)
+        if (skyIndex.UnevaluableBroadFilterLineCount > 0)
         {
             result.Notes.Add(
-                $"{skyIndex.BroadFilterLineCount} SkyPatcher config line(s) use broad filters " +
-                "(by race/faction/keyword/mod, etc.) that this tool does not evaluate per-NPC. " +
-                "If an NPC's appearance is wrong despite a clean report, review those manually.");
+                $"{skyIndex.UnevaluableBroadFilterLineCount} SkyPatcher config line(s) use broad filters " +
+                "this tool cannot evaluate per-NPC (e.g. by level/class spell/actor value, or an unrecognized " +
+                "filter). Broad filters by race/faction/keyword/mod/gender/class/combat-style/voice ARE checked " +
+                "against each validated NPC; only these residual lines are not. If an NPC's appearance is wrong " +
+                "despite a clean report, review them manually.");
         }
 
         // In SkyPatcher mode, parse this app's own .ini once to map each recipient NPC to its
@@ -308,7 +310,7 @@ public class OutputValidator
             // NPC (a copy of the donor) in the output plugin and an .ini line that copies the
             // surrogate's visual style onto the recipient at runtime. So validate the .ini line and
             // the surrogate — not the recipient's record/FaceGen.
-            ValidateNpcSkyPatcher(npcFk, donorFk, selectedModName, displayName, winningRecord?.EditorID,
+            ValidateNpcSkyPatcher(npcFk, donorFk, selectedModName, displayName, winningRecord,
                 modSetting, npc2IniMap ?? new(), linkCache, listings, skyIndex, dataFolder, run, result, log);
             return;
         }
@@ -339,7 +341,7 @@ public class OutputValidator
 
         // Check 3: any SkyPatcher mod that would override this NPC at runtime.
         using (ContextualPerformanceTracer.Trace("CheckSkyPatcher"))
-            CheckSkyPatcher(npcFk, displayName, selectedModName, winningRecord?.EditorID, skyIndex, result);
+            CheckSkyPatcher(npcFk, displayName, selectedModName, winningRecord, linkCache, skyIndex, result);
     }
 
     // ----------------------------------------------------------------------------------
@@ -350,7 +352,7 @@ public class OutputValidator
         FormKey donorFk,
         string selectedModName,
         string displayName,
-        string? recipientEditorId,
+        INpcGetter? recipientRecord,
         ModSetting modSetting,
         Dictionary<string, Npc2SkyPatcherLine> npc2IniMap,
         ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
@@ -380,7 +382,7 @@ public class OutputValidator
                 Details = iniLine?.RawLine ?? string.Empty,
             });
             // Can't locate the surrogate without it; still report other SkyPatcher overrides.
-            CheckSkyPatcher(npcFk, displayName, selectedModName, recipientEditorId, skyIndex, result);
+            CheckSkyPatcher(npcFk, displayName, selectedModName, recipientRecord, linkCache, skyIndex, result);
             return;
         }
         FormKey surrogateFk = iniLine.Surrogate;
@@ -446,7 +448,7 @@ public class OutputValidator
         CheckFaceGen(npcFk, surrogateFk, donorFk, displayName, selectedModName, modSetting, dataFolder, linkCache, run, result, log);
 
         // ---- Check 3: other SkyPatcher mods that also set this NPC's visual style ----
-        CheckSkyPatcher(npcFk, displayName, selectedModName, recipientEditorId, skyIndex, result);
+        CheckSkyPatcher(npcFk, displayName, selectedModName, recipientRecord, linkCache, skyIndex, result);
     }
 
     // ----------------------------------------------------------------------------------
@@ -1258,16 +1260,33 @@ public class OutputValidator
         FormKey npcFk,
         string displayName,
         string selectedModName,
-        string? editorId,
+        INpcGetter? npcRecord,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
         SkyPatcherIndex skyIndex,
         ValidationRunResult result)
     {
-        var hits = skyIndex.Lookup(npcFk, editorId);
+        // Exact hits: lines that name this NPC directly (filterByNpcs / EditorID).
+        var hits = skyIndex.Lookup(npcFk, npcRecord?.EditorID);
+
+        // Broad-filter hits: lines gated only by race/faction/keyword/mod/gender/class/combat-style/voice.
+        // Evaluate each against this NPC's resolved record to see whether it is actually captured.
+        foreach (var rule in skyIndex.BroadFilterRules)
+        {
+            if (rule.IsNpc2) continue; // This app never writes broad filters; defensive.
+            if (MatchesBroadFilter(rule, npcFk, npcRecord, linkCache, out var matchedBy))
+            {
+                hits.Add(rule.ToHit(matchedBy));
+            }
+        }
+
         if (hits.Count == 0) return;
 
         foreach (var hit in hits)
         {
             if (hit.IsNpc2) continue; // Don't flag this app's own ini.
+
+            // For broad-filter hits, spell out which filter dimension captured the NPC.
+            string via = hit.MatchNote != null ? $" (captured by broad filter: {hit.MatchNote})" : string.Empty;
 
             if (_settings.UseSkyPatcherMode)
             {
@@ -1281,7 +1300,7 @@ public class OutputValidator
                         NpcDisplayName = displayName,
                         NpcFormKey = npcFk.ToString(),
                         SelectedMod = selectedModName,
-                        Issue = "Another SkyPatcher .ini sets this NPC's visual style and appears to load AFTER this app in alphanumeric order, so it would override the output.",
+                        Issue = "Another SkyPatcher .ini sets this NPC's visual style and appears to load AFTER this app in alphanumeric order, so it would override the output." + via,
                         WinningSource = hit.IniRelPath,
                         Details = hit.RawLine,
                     });
@@ -1295,7 +1314,7 @@ public class OutputValidator
                         NpcDisplayName = displayName,
                         NpcFormKey = npcFk.ToString(),
                         SelectedMod = selectedModName,
-                        Issue = "Another SkyPatcher .ini sets this NPC's visual style at lower priority than this app (this app's .ini wins, by alphanumeric order).",
+                        Issue = "Another SkyPatcher .ini sets this NPC's visual style at lower priority than this app (this app's .ini wins, by alphanumeric order)." + via,
                         WinningSource = hit.IniRelPath,
                         Details = hit.RawLine,
                     });
@@ -1310,12 +1329,128 @@ public class OutputValidator
                     NpcDisplayName = displayName,
                     NpcFormKey = npcFk.ToString(),
                     SelectedMod = selectedModName,
-                    Issue = "A SkyPatcher .ini sets this NPC's visual style. SkyPatcher applies at runtime and will override this app's record-based appearance.",
+                    Issue = "A SkyPatcher .ini sets this NPC's visual style. SkyPatcher applies at runtime and will override this app's record-based appearance." + via,
                     WinningSource = hit.IniRelPath,
                     Details = hit.RawLine,
                 });
             }
         }
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Broad-filter evaluation
+    // ----------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Decides whether a broad-filter SkyPatcher line (one gated by race/faction/keyword/mod/gender/
+    /// class/combat-style/voice rather than an explicit NPC list) actually captures this NPC. A rule
+    /// matches when every inclusion clause is satisfied and no exclusion clause is triggered; a rule
+    /// with only exclusion clauses ("apply to everyone except...") matches any non-excluded NPC.
+    /// <paramref name="matchedBy"/> reports which dimension(s) captured it (for the issue message).
+    /// </summary>
+    private bool MatchesBroadFilter(
+        BroadFilterRule rule,
+        FormKey npcFk,
+        INpcGetter? npc,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        out string matchedBy)
+    {
+        matchedBy = string.Empty;
+        HashSet<FormKey>? keywordCache = null; // resolved lazily (NPC + race keywords)
+        var matchedDims = new List<string>();
+
+        foreach (var clause in rule.Clauses)
+        {
+            bool satisfies = EvaluateClause(clause, npcFk, npc, linkCache, ref keywordCache);
+            if (clause.Excluded)
+            {
+                if (satisfies) return false; // NPC is on this clause's exclusion set → rule skips it.
+            }
+            else
+            {
+                if (!satisfies) return false; // a required inclusion clause failed.
+                matchedDims.Add(clause.Label);
+            }
+        }
+
+        matchedBy = matchedDims.Count > 0
+            ? string.Join("+", matchedDims.Distinct(StringComparer.OrdinalIgnoreCase))
+            : "all NPCs except the excluded set";
+        return true;
+    }
+
+    /// <summary>Evaluates a single filter clause's positive condition against the NPC (ignoring the
+    /// excluded flag, which <see cref="MatchesBroadFilter"/> applies).</summary>
+    private bool EvaluateClause(
+        FilterClause clause,
+        FormKey npcFk,
+        INpcGetter? npc,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        ref HashSet<FormKey>? keywordCache)
+    {
+        switch (clause.Dim)
+        {
+            case FilterDim.Npc:
+                return clause.FormKeys.Contains(npcFk);
+
+            case FilterDim.Mod:
+                // filterByModNames targets NPCs that originate from the named plugin (the defining
+                // master of the FormID). Override-only relationships are not treated as a match.
+                return clause.Names.Contains(npcFk.ModKey.FileName.String.ToLowerInvariant());
+
+            case FilterDim.Race:
+                return npc != null && !npc.Race.IsNull && clause.FormKeys.Contains(npc.Race.FormKey);
+
+            case FilterDim.Class:
+                return npc != null && !npc.Class.IsNull && clause.FormKeys.Contains(npc.Class.FormKey);
+
+            case FilterDim.CombatStyle:
+                return npc != null && !npc.CombatStyle.IsNull && clause.FormKeys.Contains(npc.CombatStyle.FormKey);
+
+            case FilterDim.VoiceType:
+                return npc != null && !npc.Voice.IsNull && clause.FormKeys.Contains(npc.Voice.FormKey);
+
+            case FilterDim.Gender:
+                if (npc == null) return false;
+                bool female = npc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female);
+                return clause.Female == female;
+
+            case FilterDim.Faction:
+            {
+                if (npc == null) return false;
+                // Factions are AND-combined: the NPC must belong to every listed faction.
+                var npcFactions = npc.Factions.Select(f => f.Faction.FormKey).ToHashSet();
+                return clause.FormKeys.All(npcFactions.Contains);
+            }
+
+            case FilterDim.Keyword:
+            {
+                if (npc == null) return false;
+                keywordCache ??= ResolveNpcKeywords(npc, linkCache);
+                return clause.OrWithin
+                    ? clause.FormKeys.Any(keywordCache.Contains)
+                    : clause.FormKeys.All(keywordCache.Contains);
+            }
+
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>The keyword FormKeys an NPC carries for filtering: its own KWDA plus its race's
+    /// keywords (best effort; template-inherited keywords are not resolved).</summary>
+    private static HashSet<FormKey> ResolveNpcKeywords(INpcGetter npc, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache)
+    {
+        var set = new HashSet<FormKey>();
+        if (npc.Keywords != null)
+        {
+            foreach (var kw in npc.Keywords) set.Add(kw.FormKey);
+        }
+        if (!npc.Race.IsNull && linkCache.TryResolve<IRaceGetter>(npc.Race.FormKey, out var race) && race.Keywords != null)
+        {
+            foreach (var kw in race.Keywords) set.Add(kw.FormKey);
+        }
+        return set;
     }
 
     // ----------------------------------------------------------------------------------
@@ -1490,14 +1625,159 @@ public class OutputValidator
                 }
                 else if (!hasNpcFilter && hasBroadFilter)
                 {
-                    // Visual action gated only by broad filters (race/faction/keyword/etc.):
-                    // can't be attributed to a specific NPC here, so just count it for the note.
-                    index.BroadFilterLineCount++;
+                    // Visual action gated only by broad filters (race/faction/keyword/etc.). Parse the
+                    // filter criteria so we can evaluate per-NPC whether each validated NPC is captured.
+                    // Lines that contain a filter we can't evaluate are counted toward the manual-review note.
+                    if (TryParseBroadFilterRule(line, relPath, sortKey, isNpc2, out var rule))
+                    {
+                        index.BroadFilterRules.Add(rule);
+                    }
+                    else
+                    {
+                        index.UnevaluableBroadFilterLineCount++;
+                    }
                 }
             }
         }
 
         return index;
+    }
+
+    /// <summary>
+    /// Parses a broad-filter visual line into an evaluable <see cref="BroadFilterRule"/>. Returns false
+    /// (so the caller treats it as un-evaluable) if the line contains any filter dimension this tool does
+    /// not understand, or a filter value it cannot parse — in those cases we cannot honestly claim whether
+    /// an NPC is captured, so we fall back to the manual-review note rather than risk a false verdict.
+    /// </summary>
+    private static bool TryParseBroadFilterRule(string line, string relPath, string sortKey, bool isNpc2, out BroadFilterRule rule)
+    {
+        rule = new BroadFilterRule
+        {
+            IniRelPath = relPath,
+            SortKey = sortKey,
+            IsNpc2 = isNpc2,
+            RawLine = line.Length > 400 ? line.Substring(0, 400) + "..." : line
+        };
+
+        foreach (var seg in line.Split(':'))
+        {
+            if (seg.Length == 0) continue;
+            int eq = seg.IndexOf('=');
+            string key = (eq >= 0 ? seg.Substring(0, eq) : seg).Trim().ToLowerInvariant();
+            string val = eq >= 0 ? seg.Substring(eq + 1).Trim() : string.Empty;
+
+            if (!key.StartsWith("filterby"))
+            {
+                continue; // an action directive (copyVisualStyle=, skin=, setFlags=, ...) — not a filter.
+            }
+
+            string dimToken = key.Substring("filterby".Length);
+            bool excluded = false;
+            if (dimToken.EndsWith("excluded"))
+            {
+                excluded = true;
+                dimToken = dimToken.Substring(0, dimToken.Length - "excluded".Length);
+            }
+
+            var clause = new FilterClause { Excluded = excluded };
+            switch (dimToken)
+            {
+                case "npcs": case "npc": case "npcsformid":
+                    clause.Dim = FilterDim.Npc; clause.Label = "npc"; break;
+                case "races": case "race":
+                    clause.Dim = FilterDim.Race; clause.Label = "race"; break;
+                case "factions": case "faction":
+                    clause.Dim = FilterDim.Faction; clause.Label = "faction"; break;
+                case "keywords": case "keyword":
+                    clause.Dim = FilterDim.Keyword; clause.Label = "keyword"; clause.OrWithin = false; break;
+                case "keywordsor":
+                    clause.Dim = FilterDim.Keyword; clause.Label = "keyword"; clause.OrWithin = true; break;
+                case "modnames": case "modname": case "mods": case "mod":
+                    clause.Dim = FilterDim.Mod; clause.Label = "mod"; break;
+                case "classes": case "class":
+                    clause.Dim = FilterDim.Class; clause.Label = "class"; break;
+                case "combatstyles": case "combatstyle":
+                    clause.Dim = FilterDim.CombatStyle; clause.Label = "combat style"; break;
+                case "voicetypes": case "voicetype":
+                    clause.Dim = FilterDim.VoiceType; clause.Label = "voice type"; break;
+                case "gender":
+                    clause.Dim = FilterDim.Gender; clause.Label = "gender"; break;
+                default:
+                    return false; // unknown filter dimension → can't evaluate this line.
+            }
+
+            if (!PopulateClauseValues(clause, val)) return false;
+            rule.Clauses.Add(clause);
+        }
+
+        // A pure-broad line must have at least one filter clause to be meaningful.
+        return rule.Clauses.Count > 0;
+    }
+
+    /// <summary>Fills a clause's value set from the raw filter value. Returns false when the value cannot
+    /// be parsed (empty, or a malformed form token), forcing the line to be treated as un-evaluable.</summary>
+    private static bool PopulateClauseValues(FilterClause clause, string val)
+    {
+        if (clause.Dim == FilterDim.Gender)
+        {
+            switch (val.Trim().ToLowerInvariant())
+            {
+                case "female": clause.Female = true; return true;
+                case "male": clause.Female = false; return true;
+                default: return false;
+            }
+        }
+
+        var tokens = val.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0) return false;
+
+        if (clause.Dim == FilterDim.Mod)
+        {
+            foreach (var t in tokens) clause.Names.Add(t.ToLowerInvariant());
+            return clause.Names.Count > 0;
+        }
+
+        // All remaining dimensions are FormID-based (Plugin.esp|hexid).
+        foreach (var t in tokens)
+        {
+            if (!TryParseSkyPatcherFormKey(t, out var fk)) return false;
+            clause.FormKeys.Add(fk);
+        }
+        return clause.FormKeys.Count > 0;
+    }
+
+    /// <summary>A broad SkyPatcher filter dimension this tool can evaluate per-NPC.</summary>
+    private enum FilterDim { Npc, Mod, Race, Faction, Keyword, Class, CombatStyle, VoiceType, Gender }
+
+    /// <summary>One parsed <c>filterByXxx</c> clause from a broad-filter line.</summary>
+    private sealed class FilterClause
+    {
+        public FilterDim Dim;
+        public bool Excluded;
+        public bool OrWithin;            // keyword OR vs AND; ignored for other dims
+        public string Label = string.Empty;
+        public readonly HashSet<FormKey> FormKeys = new();
+        public readonly HashSet<string> Names = new(StringComparer.OrdinalIgnoreCase);
+        public bool? Female;
+    }
+
+    /// <summary>A SkyPatcher visual line gated only by broad filters, parsed for per-NPC evaluation.</summary>
+    private sealed class BroadFilterRule
+    {
+        public string IniRelPath = string.Empty;
+        public string SortKey = string.Empty;
+        public bool IsNpc2;
+        public string RawLine = string.Empty;
+        public readonly List<FilterClause> Clauses = new();
+
+        public SkyPatcherHit ToHit(string matchedBy) => new()
+        {
+            IniRelPath = IniRelPath,
+            SortKey = SortKey,
+            IsNpc2 = IsNpc2,
+            RawLine = RawLine,
+            MatchNote = matchedBy
+        };
     }
 
     private static string MakeSortKey(string root, string iniPath)
@@ -1532,6 +1812,9 @@ public class OutputValidator
         public string SortKey { get; init; } = string.Empty;
         public bool IsNpc2 { get; init; }
         public string RawLine { get; init; } = string.Empty;
+
+        /// Non-null when this hit came from a broad filter; names the dimension(s) that captured the NPC.
+        public string? MatchNote { get; init; }
     }
 
     private sealed class SkyPatcherIndex
@@ -1540,7 +1823,13 @@ public class OutputValidator
         private readonly Dictionary<string, List<SkyPatcherHit>> _byEditorId = new();
 
         public string Npc2SortKey { get; set; } = string.Empty;
-        public int BroadFilterLineCount { get; set; }
+
+        /// Broad-filter visual lines parsed and evaluable per-NPC (race/faction/keyword/mod/...).
+        public List<BroadFilterRule> BroadFilterRules { get; } = new();
+
+        /// Broad-filter visual lines we could NOT evaluate (unrecognized/unparseable filter); surfaced
+        /// as a run-level manual-review note rather than per-NPC.
+        public int UnevaluableBroadFilterLineCount { get; set; }
 
         public void AddByFormKey(string key, SkyPatcherHit hit)
         {
