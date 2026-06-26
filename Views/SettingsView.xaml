@@ -221,6 +221,115 @@
                 </StackPanel>
             </GroupBox>
 
+            <!-- Section 3: Output Settings -->
+            <GroupBox Header="Output Settings" Margin="0,0,0,10" Padding="5">
+                <StackPanel>
+                    <!-- Output Directory (New) -->
+                    <TextBlock Text="Output Directory:" Margin="0,0,0,2"/>
+                    <Grid Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding OutputDirectory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
+                        <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectOutputDirectoryCommand}"/>
+                    </Grid>
+                    <TextBlock Text="Directory where the generated plugin and related files will be saved." FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="0,0,0,5"/>
+
+                    <!-- Append Date/Time Stamp (New) -->
+                    <CheckBox Content="Append Date/Time Stamp to Output Directory"
+                              IsChecked="{Binding AppendTimestampToOutputDirectory, Mode=TwoWay}"
+                              Margin="0,0,0,10"
+                              ToolTip="If checked, a timestamp (YYYYMMDD_HHMMSS) will be appended to the Output Directory name upon generation."/>
+
+                    <!-- Output Plugin Name (Was Output Mod Name) -->
+                    <TextBlock Text="Output Plugin Name:" Margin="0,0,0,2"/>
+                    <TextBox Text="{Binding TargetPluginName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                    <!-- Output Mod Name (Conceptual - No UI Element Needed, value comes from model default) -->
+
+                    <!-- Patching Mode (New) -->
+                    <TextBlock Text="Patching Mode:" Margin="0,0,0,2"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ComboBox Grid.Column="0"
+                                  ItemsSource="{Binding PatchingModes}"
+                                  SelectedItem="{Binding SelectedPatchingMode, Mode=TwoWay}"
+                                  Margin="0,0,5,0"/>
+                        <Button Grid.Column="1" Content="?" Command="{Binding ShowPatchingModeHelpCommand}" Padding="6,2"/>
+                    </Grid>
+
+                    <TextBlock Text="Override Handling Mode:" Margin="0,5,0,2"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <ComboBox ItemsSource="{Binding RecordOverrideHandlingModes}"
+                                  SelectedItem="{Binding SelectedRecordOverrideHandlingMode, Mode=TwoWay}"
+                                  MinWidth="120"
+                                  ToolTip="Determines how overriden records of other plugins are handled."/>
+                        <Button Content="?" Command="{Binding ShowOverrideHandlingModeHelpCommand}" Padding="6,2" Margin="5,0,0,0"/>
+                        
+                        <!-- Override Handling Sub-options (inline) -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,0"
+                                    Visibility="{Binding IsDefaultOverrideHandlingControlsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="Max Nested Search Layers:" VerticalAlignment="Center" Margin="0,0,5,0"
+                                       Visibility="{Binding IsDefaultMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            <TextBox Text="{Binding DefaultMaxNestedIntervalDepth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                     Width="40" VerticalAlignment="Center"
+                                     ToolTip="How many levels of nested record references to search. Higher values find more dependencies but take exponentially longer."
+                                     PreviewTextInput="IntegerTextBox_PreviewTextInput"
+                                     DataObject.Pasting="IntegerTextBox_Pasting"
+                                     Visibility="{Binding IsDefaultMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            <CheckBox Content="Include All" 
+                                      IsChecked="{Binding DefaultIncludeAllOverrides, Mode=TwoWay}"
+                                      VerticalAlignment="Center" Margin="15,0,0,0"
+                                      ToolTip="If checked, grabs ALL override records from the plugins rather than searching by NPC dependencies. Use with caution."/>
+                        </StackPanel>
+                    </StackPanel>
+                    
+                    <CheckBox Content="SkyPatcher Mode"
+                              IsChecked="{Binding UseSkyPatcherMode, Mode=TwoWay}"
+                              Margin="0,5,0,0"
+                              ToolTip="Generates a SkyPatcher .ini file for runtime patching instead of a traditional ESP. This is an advanced feature that may conflict with other runtime patchers."/>
+                    <CheckBox Content="Auto-ESLify If Possible"
+                              IsChecked="{Binding AutoEslIfy, Mode=TwoWay}"
+                              Margin="0,5,0,0"
+                              ToolTip="When writing the output plugin, checks if it can be ESLified and performs the ESLification proccess"/>
+                    
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
+                        <CheckBox Content="Split Output" IsChecked="{Binding SplitOutput, Mode=TwoWay}" VerticalAlignment="Center"
+                                  ToolTip="Splits the generated patch into multiple smaller plugins based on the criteria to the right."/>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SplitOutput}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            
+                            <TextBlock Text="by" VerticalAlignment="Center" Margin="0,0,10,0" FontStyle="Italic"/>
+                            <CheckBox Content="Gender" IsChecked="{Binding SplitOutputByGender, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <CheckBox Content="Race" IsChecked="{Binding SplitOutputByRace, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <TextBox Text="{Binding SplitOutputMaxNpcs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" Width="50" VerticalContentAlignment="Center"
+                                     ToolTip="Maximum number of NPCs to place in a single split plugin."/>
+                            <TextBlock Text="Max # NPCs" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Separator Margin="0,10,0,8"/>
+                    <Button Content="Validate Output..."
+                            Command="{Binding ValidateOutputCommand}"
+                            HorizontalAlignment="Left"
+                            Padding="12,4"
+                            ToolTip="Checks that your generated output actually wins in-game for each NPC you've selected an appearance for: the conflict-winning record, the deployed FaceGen .nif, and any SkyPatcher overrides. Requires the output to be installed and active in your mod manager first. Findings are shown in a table you can copy to Excel."/>
+                </StackPanel>
+            </GroupBox>
+
             <GroupBox Header="Mugshot Settings" Margin="0,0,0,10" Padding="5">
                 <StackPanel>
                     <TextBlock Text="Mugshots Folder:" Margin="0,0,0,2"/>
@@ -993,115 +1102,6 @@
                                     ToolTip="Forgets every cached FaceGen stat. Next view of each tile will re-parse its NIF."/>
                         </StackPanel>
                     </Border>
-                </StackPanel>
-            </GroupBox>
-
-            <!-- Section 3: Output Settings -->
-            <GroupBox Header="Output Settings" Margin="0,0,0,10" Padding="5">
-                <StackPanel>
-                    <!-- Output Directory (New) -->
-                    <TextBlock Text="Output Directory:" Margin="0,0,0,2"/>
-                    <Grid Margin="0,0,0,2">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBox Grid.Column="0" Text="{Binding OutputDirectory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,5,0"/>
-                        <Button Grid.Column="1" Content="Browse..." Command="{Binding SelectOutputDirectoryCommand}"/>
-                    </Grid>
-                    <TextBlock Text="Directory where the generated plugin and related files will be saved." FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="0,0,0,5"/>
-
-                    <!-- Append Date/Time Stamp (New) -->
-                    <CheckBox Content="Append Date/Time Stamp to Output Directory"
-                              IsChecked="{Binding AppendTimestampToOutputDirectory, Mode=TwoWay}"
-                              Margin="0,0,0,10"
-                              ToolTip="If checked, a timestamp (YYYYMMDD_HHMMSS) will be appended to the Output Directory name upon generation."/>
-
-                    <!-- Output Plugin Name (Was Output Mod Name) -->
-                    <TextBlock Text="Output Plugin Name:" Margin="0,0,0,2"/>
-                    <TextBox Text="{Binding TargetPluginName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
-                    <!-- Output Mod Name (Conceptual - No UI Element Needed, value comes from model default) -->
-
-                    <!-- Patching Mode (New) -->
-                    <TextBlock Text="Patching Mode:" Margin="0,0,0,2"/>
-                    <Grid Margin="0,0,0,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <ComboBox Grid.Column="0"
-                                  ItemsSource="{Binding PatchingModes}"
-                                  SelectedItem="{Binding SelectedPatchingMode, Mode=TwoWay}"
-                                  Margin="0,0,5,0"/>
-                        <Button Grid.Column="1" Content="?" Command="{Binding ShowPatchingModeHelpCommand}" Padding="6,2"/>
-                    </Grid>
-
-                    <TextBlock Text="Override Handling Mode:" Margin="0,5,0,2"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                        <ComboBox ItemsSource="{Binding RecordOverrideHandlingModes}"
-                                  SelectedItem="{Binding SelectedRecordOverrideHandlingMode, Mode=TwoWay}"
-                                  MinWidth="120"
-                                  ToolTip="Determines how overriden records of other plugins are handled."/>
-                        <Button Content="?" Command="{Binding ShowOverrideHandlingModeHelpCommand}" Padding="6,2" Margin="5,0,0,0"/>
-                        
-                        <!-- Override Handling Sub-options (inline) -->
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,0"
-                                    Visibility="{Binding IsDefaultOverrideHandlingControlsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="Max Nested Search Layers:" VerticalAlignment="Center" Margin="0,0,5,0"
-                                       Visibility="{Binding IsDefaultMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            <TextBox Text="{Binding DefaultMaxNestedIntervalDepth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
-                                     Width="40" VerticalAlignment="Center"
-                                     ToolTip="How many levels of nested record references to search. Higher values find more dependencies but take exponentially longer."
-                                     PreviewTextInput="IntegerTextBox_PreviewTextInput"
-                                     DataObject.Pasting="IntegerTextBox_Pasting"
-                                     Visibility="{Binding IsDefaultMaxNestedIntervalDepthVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            <CheckBox Content="Include All" 
-                                      IsChecked="{Binding DefaultIncludeAllOverrides, Mode=TwoWay}"
-                                      VerticalAlignment="Center" Margin="15,0,0,0"
-                                      ToolTip="If checked, grabs ALL override records from the plugins rather than searching by NPC dependencies. Use with caution."/>
-                        </StackPanel>
-                    </StackPanel>
-                    
-                    <CheckBox Content="SkyPatcher Mode"
-                              IsChecked="{Binding UseSkyPatcherMode, Mode=TwoWay}"
-                              Margin="0,5,0,0"
-                              ToolTip="Generates a SkyPatcher .ini file for runtime patching instead of a traditional ESP. This is an advanced feature that may conflict with other runtime patchers."/>
-                    <CheckBox Content="Auto-ESLify If Possible"
-                              IsChecked="{Binding AutoEslIfy, Mode=TwoWay}"
-                              Margin="0,5,0,0"
-                              ToolTip="When writing the output plugin, checks if it can be ESLified and performs the ESLification proccess"/>
-                    
-                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
-                        <CheckBox Content="Split Output" IsChecked="{Binding SplitOutput, Mode=TwoWay}" VerticalAlignment="Center"
-                                  ToolTip="Splits the generated patch into multiple smaller plugins based on the criteria to the right."/>
-
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SplitOutput}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            
-                            <TextBlock Text="by" VerticalAlignment="Center" Margin="0,0,10,0" FontStyle="Italic"/>
-                            <CheckBox Content="Gender" IsChecked="{Binding SplitOutputByGender, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <CheckBox Content="Race" IsChecked="{Binding SplitOutputByRace, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <TextBox Text="{Binding SplitOutputMaxNpcs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" Width="50" VerticalContentAlignment="Center"
-                                     ToolTip="Maximum number of NPCs to place in a single split plugin."/>
-                            <TextBlock Text="Max # NPCs" VerticalAlignment="Center" Margin="5,0,0,0"/>
-                        </StackPanel>
-                    </StackPanel>
-
-                    <Separator Margin="0,10,0,8"/>
-                    <Button Content="Validate Output..."
-                            Command="{Binding ValidateOutputCommand}"
-                            HorizontalAlignment="Left"
-                            Padding="12,4"
-                            ToolTip="Checks that your generated output actually wins in-game for each NPC you've selected an appearance for: the conflict-winning record, the deployed FaceGen .nif, and any SkyPatcher overrides. Requires the output to be installed and active in your mod manager first. Findings are shown in a table you can copy to Excel."/>
                 </StackPanel>
             </GroupBox>
             
