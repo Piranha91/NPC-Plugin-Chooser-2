@@ -627,9 +627,14 @@ public class BsaHandler : OptionalUIModule
 
                     int totalFiles = filesInArchives.Values.Sum(s => s.Count);
                     BsaContentsDiag.Log($"    ADD modkey={modkey.FileName.String} bsaCount={filesInArchives.Count} fileCount={totalFiles} bsaPaths=[{string.Join("|", bsaPaths)}]");
-                    if (filesInArchives.Count == 0)
+                    // An empty entry is only a problem when the plugin actually owns BSAs that
+                    // failed to open/index (that genuinely masks reachable assets). A plugin that
+                    // owns no BSA at all is expected — e.g. Update/Dawnguard/HearthFires/Dragonborn
+                    // in Skyrim SE, whose assets are consolidated into the "Skyrim - *.bsa" set and
+                    // resolve under Skyrim.esm — so caching it empty is correct, not poisoning.
+                    if (filesInArchives.Count == 0 && bsaPaths.Count > 0)
                     {
-                        BsaContentsDiag.Log($"    !!! WARNING: ADDING EMPTY ENTRY for modkey={modkey.FileName.String} — this will poison the cache");
+                        BsaContentsDiag.Log($"    !!! WARNING: modkey={modkey.FileName.String} owns BSA(s) but none opened/indexed — this empty entry will mask reachable assets. bsaPaths=[{string.Join("|", bsaPaths)}]");
                     }
 
                     // TryAdd makes a sibling-tile race (another thread populated
