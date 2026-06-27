@@ -650,8 +650,20 @@ public class Patcher : OptionalUIModule
                                 // discovery to its appearance-descended links (computed from the original donor
                                 // record, before CopyAppearanceData redirects them to merged-in output records) so
                                 // non-appearance overrides are never pulled into the output as masters.
+                                //
+                                // The outfit link is ALWAYS included for discovery here (note includeOutfit: true),
+                                // independent of the user's includeOutfit choice. An appearance mod that overrides an
+                                // outfit-reachable record in place - e.g. RS Children Overhaul's edit of ChildClothes01
+                                // (0006D92C), part of Dorthe's default outfit - must still have that override carried
+                                // into the plugin, exactly as the non-SkyPatcher Include path (which traverses patchNpc's
+                                // full EnumerateFormLinks) and IncludeAsNew (which traverses the donor's full
+                                // EnumerateFormLinks) already do - both always include DefaultOutfit. includeOutfit only
+                                // governs whether the SkyPatcher SetOutfit *directive* is emitted (see
+                                // ApplySkyPatcherDirectives); it must not gate dependent-override *discovery*. Gating
+                                // discovery on includeOutfit previously skipped the ChildClothes01 edit in
+                                // SkyPatcher+Include mode while every other combination wrote it.
                                 List<IFormLinkGetter>? skyPatcherAppearanceLinks = _settings.UseSkyPatcherMode
-                                    ? GetAppearanceFormLinks(appearanceNpcRecord, includeOutfit).ToList()
+                                    ? GetAppearanceFormLinks(appearanceNpcRecord, includeOutfit: true).ToList()
                                     : null;
 
                                 switch (_settings.PatchingMode)
