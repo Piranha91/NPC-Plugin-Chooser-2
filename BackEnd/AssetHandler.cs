@@ -61,6 +61,12 @@ public class AssetHandler : OptionalUIModule
         _runVM = runVM;
     }
 
+    // Routes AssetHandler's progress/warning logging through VM_Run when present, but no-ops when the
+    // VM is absent (headless integration tests stub Lazy&lt;VM_Run&gt; as null). Preserves the existing
+    // production behavior - it still logs to the UI - while letting the patcher run without a UI.
+    private void RunLog(string message, bool isError = false, bool forceLog = false)
+        => _runVM.Value?.AppendLog(message, isError, forceLog);
+
     public void Initialize()
     {
         _potentialCopyFailures.Clear();
@@ -408,7 +414,7 @@ public class AssetHandler : OptionalUIModule
         string npcIdentifier)
     {
         using var _ = ContextualPerformanceTracer.Trace("AssertHandler.ScheduleCopyNpcAssets");
-        _runVM.Value.AppendLog(
+        RunLog(
             $"    Copying assets for {appearanceNpcRecord.EditorID ?? appearanceNpcRecord.FormKey.ToString()} from sources related to '{appearanceModSetting.DisplayName}'..."); // Verbose only
 
         // Assets can be sourced from loose files (CorrespondingFolderPaths) OR from BSAs
@@ -421,7 +427,7 @@ public class AssetHandler : OptionalUIModule
         bool hasBsaSources = appearanceModSetting.CorrespondingModKeys.Any();
         if (!hasFolderSources && !hasBsaSources)
         {
-            _runVM.Value.AppendLog(
+            RunLog(
                 $"      WARNING: Mod Setting '{appearanceModSetting.DisplayName}' has no Corresponding Folder Paths or plugins. Cannot copy assets."); // Verbose only (Warning)
             return;
         }
@@ -452,11 +458,11 @@ public class AssetHandler : OptionalUIModule
 
         if (meshSourceType != AssetSourceType.NotFound && texSourceType == AssetSourceType.NotFound)
         {
-            _runVM.Value.AppendLog($"      WARNING: For {npcIdentifier}, a FaceGen mesh (.nif) was found in '{appearanceModSetting.DisplayName}' but a texture (.dds) was not. The game may use a default texture.", false, true);
+            RunLog($"      WARNING: For {npcIdentifier}, a FaceGen mesh (.nif) was found in '{appearanceModSetting.DisplayName}' but a texture (.dds) was not. The game may use a default texture.", false, true);
         }
         else if (meshSourceType == AssetSourceType.NotFound && texSourceType != AssetSourceType.NotFound)
         {
-            _runVM.Value.AppendLog($"      WARNING: For {npcIdentifier}, a FaceGen texture (.dds) was found in '{appearanceModSetting.DisplayName}' but a mesh (.nif) was not. This may result in the 'brown face' bug.", false, true);
+            RunLog($"      WARNING: For {npcIdentifier}, a FaceGen texture (.dds) was found in '{appearanceModSetting.DisplayName}' but a mesh (.nif) was not. This may result in the 'brown face' bug.", false, true);
         }
         // END: ADDED WARNING LOGIC
 
@@ -732,7 +738,7 @@ public class AssetHandler : OptionalUIModule
                 if (File.Exists(gameDataPath))
                 {
                     foundSourcePath = gameDataPath;
-                    _runVM.Value.AppendLog(
+                    RunLog(
                         $"        Found missing asset '{relativePath}' in game data folder."); // Verbose only
                 }
             }
@@ -749,7 +755,7 @@ public class AssetHandler : OptionalUIModule
                     string errorMsg = $"Asset '{relativePath}' not found in any source directories";
                     if (_getMissingExtraAssetsFromAvailableWinners && !isFaceGen) errorMsg += " or game data folder";
                     errorMsg += $" (needed by {sourcePluginName}).";
-                    _runVM.Value.AppendLog($"      WARNING: {errorMsg}"); // Verbose only (Warning)
+                    RunLog($"      WARNING: {errorMsg}"); // Verbose only (Warning)
                 }
             }
             else
@@ -764,7 +770,7 @@ public class AssetHandler : OptionalUIModule
                 }
                 catch (Exception ex)
                 {
-                    _runVM.Value.AppendLog(
+                    RunLog(
                         $"      ERROR copying '{foundSourcePath}' to '{destPath}': {ExceptionLogger.GetExceptionStack(ex)}",
                         true);
                 }
@@ -826,7 +832,7 @@ public class AssetHandler : OptionalUIModule
 
     private bool LoadAuxiliaryFiles()
     {
-        _runVM.Value.AppendLog("Loading auxiliary configuration files..."); // Verbose only
+        RunLog("Loading auxiliary configuration files..."); // Verbose only
         bool success = true;
         // **Correction 3:** Use Resources path
         string resourcesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources");
@@ -844,7 +850,7 @@ public class AssetHandler : OptionalUIModule
                 {
                     _pathsToIgnore = new HashSet<string>(tempList.Select(p => p.Replace(@"\\", @"\")),
                         StringComparer.OrdinalIgnoreCase);
-                    _runVM.Value.AppendLog($"Loaded {_pathsToIgnore.Count} paths to ignore."); // Verbose only
+                    RunLog($"Loaded {_pathsToIgnore.Count} paths to ignore."); // Verbose only
                 }
                 else
                 {
@@ -854,13 +860,13 @@ public class AssetHandler : OptionalUIModule
             catch (Exception ex)
             {
                 // **Correction 4:** Use ExceptionLogger
-                _runVM.Value.AppendLog(
+                RunLog(
                     $"WARNING: Could not load or parse '{ignorePathFile}'. No paths will be ignored. Error: {ExceptionLogger.GetExceptionStack(ex)}"); // Verbose only (Warning)
             }
         }
         else
         {
-            _runVM.Value.AppendLog(
+            RunLog(
                 $"INFO: Ignore paths file not found at '{ignorePathFile}'. No paths will be ignored."); // Verbose only
         }
 
@@ -893,7 +899,7 @@ public class AssetHandler : OptionalUIModule
                         }
                     }
 
-                    _runVM.Value.AppendLog(
+                    RunLog(
                         $"Loaded suppressed warnings for {_warningsToSuppress.Count} specific plugins and global scope."); // Verbose only
                 }
                 else
@@ -904,7 +910,7 @@ public class AssetHandler : OptionalUIModule
             catch (Exception ex)
             {
                 // **Correction 4:** Use ExceptionLogger
-                _runVM.Value.AppendLog(
+                RunLog(
                     $"ERROR: Could not load or parse '{suppressWarningsFile}'. Suppressed warnings will not be used. Error: {ExceptionLogger.GetExceptionStack(ex)}",
                     true);
                 success = false;
@@ -912,7 +918,7 @@ public class AssetHandler : OptionalUIModule
         }
         else
         {
-            _runVM.Value.AppendLog(
+            RunLog(
                 $"ERROR: Suppressed warnings file not found at '{suppressWarningsFile}'. Cannot proceed.",
                 true);
             success = false;

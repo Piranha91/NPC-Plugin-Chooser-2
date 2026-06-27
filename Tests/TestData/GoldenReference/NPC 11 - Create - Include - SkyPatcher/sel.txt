@@ -1,0 +1,10 @@
+player.placeatme 00013475
+player.placeatme 00013476
+player.placeatme 00013477
+player.placeatme 00013478
+player.placeatme 00013479
+player.placeatme 0001347A
+player.placeatme 0001347B
+player.placeatme 0001347C
+tai
+fw 10e1f2

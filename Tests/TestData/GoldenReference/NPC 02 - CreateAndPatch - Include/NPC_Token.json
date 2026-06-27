@@ -1,0 +1,48 @@
+{
+  "CreationDate": "2026-06-26T14:04:04.3868550-07:00",
+  "CreatedPlugins": [
+    "NPC.esp"
+  ],
+  "ProcessedNpcs": {
+    "01347A:Skyrim.esm": {
+      "ModName": "Base Game",
+      "AppearancePlugin": "Skyrim.esm",
+      "OutputPlugin": "NPC.esp"
+    },
+    "013475:Skyrim.esm": {
+      "ModName": "Nordic Faces - FaceGen - With FaceTint",
+      "AppearancePlugin": "Skyrim.esm",
+      "OutputPlugin": "NPC.esp"
+    },
+    "013479:Skyrim.esm": {
+      "ModName": "Nordic Faces - FaceGen - With FaceTint",
+      "AppearancePlugin": "Skyrim.esm",
+      "OutputPlugin": "NPC.esp"
+    },
+    "01347C:Skyrim.esm": {
+      "ModName": "Nordic Faces - FaceGen - With FaceTint",
+      "AppearancePlugin": "Skyrim.esm",
+      "OutputPlugin": "NPC.esp"
+    },
+    "013477:Skyrim.esm": {
+      "ModName": "RS Children Overhaul",
+      "AppearancePlugin": "RSChildren.esp",
+      "OutputPlugin": "NPC.esp"
+    },
+    "013476:Skyrim.esm": {
+      "ModName": "The Ordinary Women SSE",
+      "AppearancePlugin": "The Ordinary Women.esp",
+      "OutputPlugin": "NPC.esp"
+    },
+    "013478:Skyrim.esm": {
+      "ModName": "The Ordinary Women SSE",
+      "AppearancePlugin": "The Ordinary Women.esp",
+      "OutputPlugin": "NPC.esp"
+    },
+    "01347B:Skyrim.esm": {
+      "ModName": "WICO - Windsong Immersive Chracter Overhaul",
+      "AppearancePlugin": "WICO - Immersive People.esp",
+      "OutputPlugin": "NPC.esp"
+    }
+  }
+}

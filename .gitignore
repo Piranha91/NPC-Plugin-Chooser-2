@@ -7,6 +7,12 @@ Tests/bin/
 Tests/obj/
 Tests/.seam-catalog.json
 
+# Golden-output patcher test: the machine-specific environment map is local-only (paths to the user's
+# mods / Skyrim install / reference-output root). The committed EnvironmentMap.example.json documents the
+# schema, and the small reference text artifacts under Tests/TestData/GoldenReference ARE committed; only
+# the reference *assets* (meshes/textures) are kept out of the repo, read from the external root.
+Tests/TestData/*.local.json
+
 NPC Plugin Chooser 2.sln.DotSettings.user
 
 FodyWeavers.xsd

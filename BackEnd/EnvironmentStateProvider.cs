@@ -119,6 +119,28 @@ public class EnvironmentStateProvider : ReactiveObject
 
     public void UpdateEnvironment()
     {
+        // Production path: only enabled+existing plugins, with this app's own output (and anything
+        // mastered to it) trimmed so a previously deployed output plugin is never mapped/locked.
+        UpdateEnvironmentCore(listings =>
+            listings.OnlyEnabledAndExisting().TrimDependentPlugins(OutputMod.ModKey));
+    }
+
+    /// <summary>
+    /// Test-only seam. Builds the environment with a caller-supplied transform over the loaded mod
+    /// listings, so an integration test can reproduce a specific mod-manager profile's exact active
+    /// load order - including plugins that live in mod-manager folders rather than the game Data
+    /// folder (the transform may append hand-loaded <see cref="IModListingGetter{TMod}"/> entries).
+    /// Mirrors <see cref="UpdateEnvironment"/>'s post-build computation; has no production callers.
+    /// </summary>
+    internal void UpdateEnvironmentForTest(
+        Func<IEnumerable<IModListingGetter<ISkyrimModGetter>>, IEnumerable<IModListingGetter<ISkyrimModGetter>>> modListingTransform)
+    {
+        UpdateEnvironmentCore(modListingTransform);
+    }
+
+    private void UpdateEnvironmentCore(
+        Func<IEnumerable<IModListingGetter<ISkyrimModGetter>>, IEnumerable<IModListingGetter<ISkyrimModGetter>>> modListingTransform)
+    {
         EnvironmentBuilderError = string.Empty;
         Status = EnvironmentStatus.Pending;
         
@@ -156,9 +178,7 @@ public class EnvironmentStateProvider : ReactiveObject
                     ownOutputModKeys.Count == 0
                         ? listings
                         : listings.Where(l => !ownOutputModKeys.Contains(l.ModKey)))
-                .TransformModListings(x =>
-                    x.OnlyEnabledAndExisting()
-                        .TrimDependentPlugins(OutputMod.ModKey))
+                .TransformModListings(modListingTransform)
                     .WithOutputMod(OutputMod, OutputModTrimming.Self)
                 .Build();
 

@@ -48,13 +48,34 @@ production code needed no behavioural changes to become testable.
 - `NpcChooserHarness` — the backend Autofac graph (the closure rooted at `Patcher`/`Validator`)
   around a supplied environment + settings.
 
-## Known gaps / future work
+## Golden-output patcher test (`Integration/GoldenOutput/`)
 
-- **Full `Patcher.RunPatchingLogic` end-to-end run** (Create / Create-and-Patch / SkyPatcher
-  producing an output plugin) is only covered at the guard/early-return level. A faithful run
-  needs committed fixture mods (a plugin overriding a vanilla NPC + a matching `ModSetting`/
-  selection), as `SynthEBD.Tests` does with its `DemoSettings` tree. `NpcChooserHarness` is the
-  scaffolding for it.
+`PatcherGoldenOutputTests` runs the **real `Patcher.RunPatchingLogic` end-to-end** across all 12 setting
+combinations ({CreateAndPatch, Create} x {Ignore, Include, IncludeAsNew} x {non-SkyPatcher, SkyPatcher})
+and compares the output (plugin records + assets + SkyPatcher `.ini`) against a committed reference set.
+Pieces:
+
+- **`GoldenEnvironmentBuilder`** reproduces the exact patch-time environment: vanilla + DLC + Creation Club
+  auto-detected from the game Data folder, plus the active extras (USSEP, AI Overhaul) loaded from their
+  mod-manager folders and injected via the `EnvironmentStateProvider.UpdateEnvironmentForTest` seam; the
+  prior `NPC.esp` output is trimmed.
+- **`GoldenComboSettingsBuilder` / `GoldenPatchRunner`** build the per-combo `Settings` (selections, ModSettings,
+  the synthetic "Base Game" entry) and drive the patcher exactly as `VM_Run` does.
+- **Comparators** — appearance is compared by **resolved EditorID** (merged-in records get fresh FormKeys but
+  stable EditorIDs); floats with a small tolerance (the reference round-trips through ESL compaction); assets
+  by **content hash** (SkyPatcher FaceGen, whose path embeds an allocated FormID, is matched by content);
+  SkyPatcher `.ini` directives semantically (output-plugin pointers compared by presence, not FormID).
+- **Machine-specific config** lives in `Tests/TestData/EnvironmentMap.local.json` (gitignored; copy from the
+  committed `EnvironmentMap.example.json`). The small reference plugins/tokens/`sel.txt`/`.ini` are committed
+  under `Tests/TestData/GoldenReference`; the reference **assets** (meshes/textures) are read from the
+  external root named in the local map and are never committed (licensing). The whole suite **skips gracefully**
+  when the local map, the referenced paths, or a Skyrim SE install is absent.
+
+The two SkyPatcher+Include combos (08, 11) have references captured before the ChildClothes01 (0006D92C)
+override fix, so they assert the fix writes that edit and tolerate exactly that deviation until regenerated.
+`PatcherAppearanceLinksTests` (no game needed) locks the contract of the helper the fix turns on.
+
+## Known gaps / future work
 - **`EasyNpcTranslator` import/export** parse cores are coupled to file-dialog/UI calls; only the
   `TryGetDefaultPlugin` preset branch is unit-reachable. Extracting a pure `ParseProfileLine`
   would make the round-trip testable.

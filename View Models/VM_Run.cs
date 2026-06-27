@@ -555,35 +555,16 @@ public class VM_Run : ReactiveObject, IDisposable
                 return;
             }
 
-            var sb = new StringBuilder();
+            string content = _aux.BuildSpawnBatchContent(npcsToProcess, _settings.BatFilePreCommands,
+                _settings.BatFilePostCommands, out int successCount, out var unresolvedFormKeys);
 
-            if (!string.IsNullOrWhiteSpace(_settings.BatFilePreCommands))
+            foreach (var unresolvedFormKey in unresolvedFormKeys)
             {
-                sb.AppendLine(_settings.BatFilePreCommands);
+                AppendLog($"Warning: Could not resolve FormID for {unresolvedFormKey}. It will be skipped.",
+                    isError: true);
             }
 
-            int successCount = 0;
-            foreach (var npcFormKey in npcsToProcess)
-            {
-                string formId = _aux.FormKeyToFormIDString(npcFormKey);
-                if (!string.IsNullOrEmpty(formId))
-                {
-                    sb.AppendLine($"player.placeatme {formId}");
-                    successCount++;
-                }
-                else
-                {
-                    AppendLog($"Warning: Could not resolve FormID for {npcFormKey}. It will be skipped.",
-                        isError: true);
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(_settings.BatFilePostCommands))
-            {
-                sb.AppendLine(_settings.BatFilePostCommands);
-            }
-
-            await File.WriteAllTextAsync(saveFileDialog.FileName, sb.ToString());
+            await File.WriteAllTextAsync(saveFileDialog.FileName, content);
             AppendLog($"Successfully generated spawn bat file with {successCount} NPC(s) at: {saveFileDialog.FileName}",
                 forceLog: true);
         }

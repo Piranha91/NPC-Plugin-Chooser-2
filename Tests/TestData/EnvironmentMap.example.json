@@ -1,0 +1,53 @@
+{
+  // ----------------------------------------------------------------------------------------------
+  // Golden-output integration test configuration.
+  //
+  // Copy this file to "EnvironmentMap.local.json" (gitignored) and replace the paths below with the
+  // real locations on the machine that generated the reference outputs. PatcherGoldenOutputTests
+  // SKIPS GRACEFULLY when this local file (or any path it references) is absent, so committing this
+  // example never breaks anyone's build. Comments and trailing commas are allowed.
+  // ----------------------------------------------------------------------------------------------
+
+  // Folder holding the 12 reference combo sub-folders ("NPC 01 - CreateAndPatch - Ignore", ...).
+  // Assets in here are read but never copied into the repo (licensing); keep this outside source control.
+  "ReferenceOutputRoot": "C:\\Path\\To\\NPC Outputs",
+
+  // The mod-manager profile that was active when the references were generated. Optional but recommended:
+  // they let the test reproduce the exact active load order (and assert NPC.esp is trimmed).
+  "LoadOrderFile": "C:\\Path\\To\\MO2\\profiles\\Blank\\loadorder.txt",
+  "PluginsFile": "C:\\Path\\To\\MO2\\profiles\\Blank\\plugins.txt",
+
+  // Active, non-vanilla plugins that must be in the environment but live in mod folders (not the game
+  // Data folder), in load order. Do NOT list the prior NPC.esp output here - it must be trimmed.
+  "EnvironmentPlugins": [
+    { "Plugin": "unofficial skyrim special edition patch.esp", "Folder": "C:\\Path\\To\\mods\\Unofficial Skyrim Special Edition Patch" },
+    { "Plugin": "AI Overhaul.esp", "Folder": "C:\\Path\\To\\mods\\AI Overhaul SSE" },
+    { "Plugin": "AI Overhaul - Scripted Addon.esp", "Folder": "C:\\Path\\To\\mods\\AI Overhaul SSE" },
+    { "Plugin": "AI Overhaul - USSEP Patch.esp", "Folder": "C:\\Path\\To\\mods\\AI Overhaul SSE" }
+  ],
+
+  // Appearance source mods the patcher reads from disk (NOT loaded into the environment), keyed by the
+  // ModSetting DisplayName used in SelectedAppearanceMods. FaceGen-only mods have no plugins.
+  "AppearanceMods": {
+    "Nordic Faces - FaceGen - With FaceTint": {
+      "Folders": [ "C:\\Path\\To\\mods\\Nordic Faces - FaceGen - With FaceTint" ],
+      "Plugins": [],
+      "IsFaceGenOnly": true
+    },
+    "The Ordinary Women SSE": {
+      "Folders": [ "C:\\Path\\To\\mods\\The Ordinary Women SSE" ],
+      "Plugins": [ "The Ordinary Women.esp" ],
+      "IsFaceGenOnly": false
+    },
+    "RS Children Overhaul": {
+      "Folders": [ "C:\\Path\\To\\mods\\RS Children Overhaul" ],
+      "Plugins": [ "RSChildren.esp", "RSkyrimChildren.esm" ],
+      "IsFaceGenOnly": false
+    },
+    "WICO - Windsong Immersive Chracter Overhaul": {
+      "Folders": [ "C:\\Path\\To\\mods\\WICO - Windsong Immersive Chracter Overhaul" ],
+      "Plugins": [ "WICO - Immersive People.esp", "WICO - USSEP Compatible Patch.esp" ],
+      "IsFaceGenOnly": false
+    }
+  }
+}

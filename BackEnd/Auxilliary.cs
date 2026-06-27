@@ -445,7 +445,50 @@ public class Auxilliary : IDisposable
         }
         return string.Empty;
     }
-    
+
+    /// <summary>
+    /// Builds the textual content of a spawn-batch file (the in-game console ".bat" / "sel.txt" used to
+    /// place the patched NPCs for inspection): optional pre-commands, then one
+    /// <c>player.placeatme &lt;FormID&gt;</c> per resolvable NPC (in the given order), then optional
+    /// post-commands. Pure - no file IO or dialog - so the group-&gt;spawn-batch flow is unit-testable;
+    /// <see cref="NPC_Plugin_Chooser_2.View_Models.VM_Run.GenerateSpawnBatFileAsync"/> wraps it with the
+    /// save dialog and disk write. FormKeys that cannot be resolved to a FormID are skipped and reported
+    /// via <paramref name="unresolved"/>.
+    /// </summary>
+    public string BuildSpawnBatchContent(IEnumerable<FormKey> npcFormKeys, string? preCommands,
+        string? postCommands, out int successCount, out List<FormKey> unresolved)
+    {
+        successCount = 0;
+        unresolved = new List<FormKey>();
+        var sb = new StringBuilder();
+
+        if (!string.IsNullOrWhiteSpace(preCommands))
+        {
+            sb.AppendLine(preCommands);
+        }
+
+        foreach (var npcFormKey in npcFormKeys)
+        {
+            string formId = FormKeyToFormIDString(npcFormKey);
+            if (!string.IsNullOrEmpty(formId))
+            {
+                sb.AppendLine($"player.placeatme {formId}");
+                successCount++;
+            }
+            else
+            {
+                unresolved.Add(npcFormKey);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(postCommands))
+        {
+            sb.AppendLine(postCommands);
+        }
+
+        return sb.ToString();
+    }
+
     public static bool IsFemale(INpcGetter npc)
     {
         return npc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female);
