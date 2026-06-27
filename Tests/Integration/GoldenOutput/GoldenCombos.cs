@@ -32,11 +32,11 @@ internal static class GoldenCombos
     };
 
     /// <summary>
-    /// The reference NPC 08 (CreateAndPatch/Include/SkyPatcher) and NPC 11 (Create/Include/SkyPatcher) were
-    /// captured BEFORE the ChildClothes01 (0006D92C) SkyPatcher+Include fix and are therefore stale: the
-    /// fixed patcher now writes that outfit-override edit, which the stale reference lacks. The golden test
-    /// tolerates exactly that one known deviation for these combos until the user regenerates them.
+    /// Whether a combo's reference set predates the ChildClothes01 (0006D92C) SkyPatcher+Include fix and so
+    /// should tolerate exactly that one deviation (the fixed patcher writes the outfit-override edit a stale
+    /// reference lacks). The SkyPatcher+Include references (NPC 08, NPC 11) have since been regenerated with
+    /// the fix, so nothing is stale now; this hook is kept so a future fix that invalidates a reference can
+    /// flag it here until the user regenerates that combo.
     /// </summary>
-    public static bool IsStaleForChildClothesFix(GoldenCombo combo) =>
-        combo.UseSkyPatcher && combo.OverrideMode == RecordOverrideHandlingMode.Include;
+    public static bool IsStaleForChildClothesFix(GoldenCombo combo) => false;
 }

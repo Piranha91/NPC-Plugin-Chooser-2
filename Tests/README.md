@@ -71,8 +71,9 @@ Pieces:
   external root named in the local map and are never committed (licensing). The whole suite **skips gracefully**
   when the local map, the referenced paths, or a Skyrim SE install is absent.
 
-The two SkyPatcher+Include combos (08, 11) have references captured before the ChildClothes01 (0006D92C)
-override fix, so they assert the fix writes that edit and tolerate exactly that deviation until regenerated.
+All 12 reference combos (including the two SkyPatcher+Include cases, 08 and 11) are captured from the fixed
+patcher, so every combo is compared in full. `GoldenCombos.IsStaleForChildClothesFix` is kept as a hook to
+tolerate a single known deviation should a future fix invalidate a reference until it is regenerated.
 `PatcherAppearanceLinksTests` (no game needed) locks the contract of the helper the fix turns on.
 
 ## Known gaps / future work
