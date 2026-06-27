@@ -76,6 +76,27 @@ patcher, so every combo is compared in full. `GoldenCombos.IsStaleForChildClothe
 tolerate a single known deviation should a future fix invalidate a reference until it is regenerated.
 `PatcherAppearanceLinksTests` (no game needed) locks the contract of the helper the fix turns on.
 
+### Reference mod versions
+
+The committed reference set + the source-oracle expectations were generated against these exact mod versions.
+If you reproduce the reference outputs (or the asset comparison reports a hash mismatch), match these:
+
+| Mod | Version | Notes |
+| --- | --- | --- |
+| Unofficial Skyrim Special Edition Patch (USSEP) | 4.3.8alpha | environment plugin |
+| AI Overhaul SSE | 1.9.5 | USSEP-compatible version installed; environment plugin |
+| Nordic Faces | 5.0 | installed just the FaceTints from the main file + the non-SMP FaceGen meshes optional file |
+| The Ordinary Women SSE | 3.0 | appearance source |
+| WICO - Windsong Immersive Character Overhaul | 0.9f | appearance source |
+| RS Children Overhaul | 1.1.3 | appearance source (the source-oracle target) |
+
+Most of these are old and stable. **USSEP is the most likely cause of a failure for anyone cloning the repo:**
+its author updates it frequently and removes old versions, so the installed version commonly drifts from
+4.3.8alpha. AI Overhaul also updates somewhat often, but its old versions stay available. A USSEP/AI Overhaul
+update only breaks the comparison if it happens to touch this small handful of Riverwood NPCs (or
+ChildClothes01 / the child races) - unlikely, but not impossible. When it does, the asset comparison's
+hash-mismatch message already points at this: regenerate the reference set against the current mod versions.
+
 ### Source-oracle record comparison (`SourceOracleTests`)
 
 The golden comparison checks the *output against a trusted reference*; `SourceOracleTests` additionally checks

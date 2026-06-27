@@ -6,6 +6,10 @@
   // real locations on the machine that generated the reference outputs. PatcherGoldenOutputTests
   // SKIPS GRACEFULLY when this local file (or any path it references) is absent, so committing this
   // example never breaks anyone's build. Comments and trailing commas are allowed.
+  //
+  // The reference set was generated against specific mod versions (USSEP 4.3.8alpha, AI Overhaul 1.9.5,
+  // Nordic Faces 5.0, The Ordinary Women 3.0, WICO 0.9f, RS Children 1.1.3) - see Tests/README.md. USSEP
+  // version-drift is the most likely cause of an asset hash mismatch; match the documented version.
   // ----------------------------------------------------------------------------------------------
 
   // Folder holding the 12 reference combo sub-folders ("NPC 01 - CreateAndPatch - Ignore", ...).
