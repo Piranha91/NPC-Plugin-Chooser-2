@@ -257,7 +257,7 @@ public class AssetHandler : OptionalUIModule
                         {
                             // Create two tasks: one for copying, one for analyzing the source file.
                             Task copyTask = PerformLooseCopyAsync(sourcePath, destPath);
-                            Task analysisTask = PostProcessNifTextures(sourcePath, modSetting, outputBasePath,
+                            Task analysisTask = PostProcessCopiedFile(sourcePath, modSetting, outputBasePath,
                                 faceTintSubPath);
 
                             // Await both tasks to run them in parallel.
@@ -275,7 +275,7 @@ public class AssetHandler : OptionalUIModule
                         // The original sequential logic is still best here.
                         if ((await _bsaHandler.ExtractFileAsync(bsaPath, relativePath, destPath)).ok && modSetting.CopyAssets)
                         {
-                            await PostProcessNifTextures(destPath, modSetting, outputBasePath, faceTintSubPath);
+                            await PostProcessCopiedFile(destPath, modSetting, outputBasePath, faceTintSubPath);
                         }
                         break;
                 
@@ -338,6 +338,9 @@ public class AssetHandler : OptionalUIModule
         // The check now correctly uses the passed-in path.
         if (!nifPathToAnalyze.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)) return;
 
+        // Also follow any SMP/HDT physics XML this NIF points at (independent of textures).
+        ScheduleSmpPhysicsXmls(nifPathToAnalyze, modSetting, outputBasePath, faceTintSubPath);
+
         try
         {
             // The analysis now happens on the source NIF file.
@@ -369,6 +372,130 @@ public class AssetHandler : OptionalUIModule
         {
             AppendLog($"NIF TEXTURE ERROR: Failed to parse '{nifPathToAnalyze}' for additional textures: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
         }
+    }
+
+    /// <summary>
+    /// After a file is copied/extracted, runs the appropriate per-type post-processing:
+    /// NIFs are scanned for referenced textures and physics XMLs; physics XMLs are scanned for
+    /// any sibling XML they include. Non-NIF/non-XML files need no follow-up.
+    /// </summary>
+    private async Task PostProcessCopiedFile(string pathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath)
+    {
+        if (pathToAnalyze.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
+        {
+            await PostProcessNifTextures(pathToAnalyze, modSetting, outputBasePath, faceTintSubPath);
+        }
+        else if (pathToAnalyze.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+        {
+            PostProcessSmpXmlIncludes(pathToAnalyze, modSetting, outputBasePath, faceTintSubPath);
+        }
+    }
+
+    /// <summary>
+    /// SMP/HDT physics is linked to a mesh by an NiStringExtraData block inside the NIF whose value is
+    /// the (Data-relative) path to a physics XML config (see <see cref="NifHandler.GetPhysicsXmlPathsFromNif"/>).
+    /// The game (hdtSMP64) reads that path to load hair/wig/armor/body physics; NPC2 previously never copied
+    /// these XMLs, so forwarded appearances lost their physics. For every NIF we copy for an NPC, we follow its
+    /// embedded reference and schedule the XML for copy too - which scopes the copy to exactly the meshes the
+    /// NPC uses, so we never guess or over-copy. Fire-and-forget like the texture scan (must NOT await while the
+    /// caller holds <see cref="_nifProcessingSemaphore"/>).
+    /// </summary>
+    private void ScheduleSmpPhysicsXmls(string nifPathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath)
+    {
+        try
+        {
+            var xmlRefs = NifHandler.GetPhysicsXmlPathsFromNif(nifPathToAnalyze);
+            foreach (var raw in xmlRefs)
+            {
+                if (!TryNormalizePhysicsXmlPath(raw, nifPathToAnalyze, out var xmlRelPath)) continue;
+
+                // Only this mod's own files - a missing XML usually means the mesh relies on the global
+                // SKSE/Plugins/hdtSkinnedMeshConfigs/defaultBBPs.xml name-map, which is not part of the mod folder.
+                if (FindAssetSource(xmlRelPath, modSetting).Item1 == AssetSourceType.NotFound)
+                {
+                    AppendLog($"  SMP physics XML '{xmlRelPath}' referenced by {Path.GetFileName(nifPathToAnalyze)} " +
+                              $"was not found in '{modSetting.DisplayName}' (may rely on a global defaultBBPs.xml mapping).", false, false);
+                    continue;
+                }
+
+                Debug.WriteLine($"      SMP Physics: scheduling '{xmlRelPath}' (from {Path.GetFileName(nifPathToAnalyze)}).");
+                _ = RequestAssetCopyAsync(xmlRelPath, modSetting, outputBasePath, faceTintSubPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"SMP PHYSICS ERROR: Failed to scan '{nifPathToAnalyze}' for physics XML: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
+        }
+    }
+
+    /// <summary>
+    /// A physics XML may reference sibling XML files. This follows any file-path-like ".xml" reference in a
+    /// copied physics XML so include chains are carried along too. References that don't resolve to one of the
+    /// mod's files are silently ignored (they are speculative). Fire-and-forget, like the NIF scans.
+    /// </summary>
+    private void PostProcessSmpXmlIncludes(string xmlPathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath)
+    {
+        try
+        {
+            if (!File.Exists(xmlPathToAnalyze)) return;
+            string content = File.ReadAllText(xmlPathToAnalyze);
+
+            // Match quoted/element values that look like real relative paths (contain a separator) ending in .xml.
+            var matches = System.Text.RegularExpressions.Regex.Matches(
+                content,
+                "[\"'>]\\s*([^\"'<>|*?\\r\\n]+[\\\\/][^\"'<>|*?\\r\\n]+\\.xml)\\s*[\"'<]",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            foreach (System.Text.RegularExpressions.Match m in matches)
+            {
+                var token = m.Groups[1].Value;
+                if (token.Contains("://")) continue; // skip URLs / schema references
+                if (!TryNormalizePhysicsXmlPath(token, xmlPathToAnalyze, out var relPath)) continue;
+                if (FindAssetSource(relPath, modSetting).Item1 == AssetSourceType.NotFound) continue;
+
+                Debug.WriteLine($"      SMP Physics: scheduling included '{relPath}' (from {Path.GetFileName(xmlPathToAnalyze)}).");
+                _ = RequestAssetCopyAsync(relPath, modSetting, outputBasePath, faceTintSubPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"SMP XML INCLUDE ERROR: Failed to scan '{xmlPathToAnalyze}': {ExceptionLogger.GetExceptionStack(ex)}", true, true);
+        }
+    }
+
+    /// <summary>
+    /// Normalizes a physics-XML reference (as stored in an NiStringExtraData or an XML include) into a
+    /// Data-relative path suitable for <see cref="FindAssetSource"/>. Handles forward slashes, a leading
+    /// "...\data\" prefix, and a bare filename (resolved relative to the analyzed NIF/XML's own folder).
+    /// </summary>
+    private static bool TryNormalizePhysicsXmlPath(string rawValue, string analyzedFilePath, out string xmlRelPath)
+    {
+        xmlRelPath = string.Empty;
+        if (string.IsNullOrWhiteSpace(rawValue)) return false;
+
+        var cleaned = rawValue.Replace('/', '\\').Trim().Trim('"').TrimStart('\\');
+        var segs = cleaned.Split('\\', StringSplitOptions.RemoveEmptyEntries).ToList();
+
+        // Strip a leading "...\data\" prefix if the path was stored with one.
+        int dataIdx = segs.FindIndex(s => s.Equals("data", StringComparison.OrdinalIgnoreCase));
+        if (dataIdx >= 0 && dataIdx + 1 < segs.Count)
+            segs = segs.Skip(dataIdx + 1).ToList();
+
+        if (segs.Count == 0) return false;
+
+        if (segs.Count == 1)
+        {
+            // Bare filename: resolve relative to the analyzed file's Data-relative directory (anchored on "meshes").
+            var anchorSegs = analyzedFilePath.Replace('/', '\\').Split('\\', StringSplitOptions.RemoveEmptyEntries);
+            int meshesIdx = Array.FindIndex(anchorSegs, s => s.Equals("meshes", StringComparison.OrdinalIgnoreCase));
+            if (meshesIdx < 0 || meshesIdx >= anchorSegs.Length - 1) return false;
+            var dirSegs = anchorSegs.Skip(meshesIdx).Take(anchorSegs.Length - meshesIdx - 1);
+            xmlRelPath = string.Join("\\", dirSegs) + "\\" + segs[0];
+            return true;
+        }
+
+        xmlRelPath = string.Join("\\", segs);
+        return true;
     }
 
     /// <summary>
