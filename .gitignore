@@ -10,8 +10,12 @@ Tests/.seam-catalog.json
 # Golden-output patcher test: the machine-specific environment map is local-only (paths to the user's
 # mods / Skyrim install / reference-output root). The committed EnvironmentMap.example.json documents the
 # schema, and the small reference text artifacts under Tests/TestData/GoldenReference ARE committed; only
-# the reference *assets* (meshes/textures) are kept out of the repo, read from the external root.
+# the reference *assets* (meshes/textures) are kept out of the repo.
 Tests/TestData/*.local.json
+
+# Full reference-output set (NPC.esp + meshes/textures per combo, ~1.6 GB) kept in-repo so it survives
+# outside Downloads but never committed (asset licensing). Point ReferenceOutputRoot in the local map here.
+Tests/ReferenceOutputs/
 
 NPC Plugin Chooser 2.sln.DotSettings.user
 

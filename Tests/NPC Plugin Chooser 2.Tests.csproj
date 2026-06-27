@@ -16,6 +16,10 @@
              flows in transitively from Mutagen.Synthesis; the local copy wins, harmless. -->
         <NoWarn>$(NoWarn);CS0169;CS0414;CS0649;CS8618;CS0436</NoWarn>
         <GenerateProgramFile>true</GenerateProgramFile>
+        <!-- The gitignored full reference-output set (NPC.esp + meshes/textures per combo, ~1.6 GB) lives
+             under Tests/ReferenceOutputs so it survives outside Downloads. Exclude it from the project's
+             default item globs so MSBuild never enumerates it (it is read at runtime via the local map). -->
+        <DefaultItemExcludes>$(DefaultItemExcludes);ReferenceOutputs\**</DefaultItemExcludes>
     </PropertyGroup>
 
     <ItemGroup>
