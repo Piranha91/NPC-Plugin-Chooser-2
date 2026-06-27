@@ -76,6 +76,27 @@ patcher, so every combo is compared in full. `GoldenCombos.IsStaleForChildClothe
 tolerate a single known deviation should a future fix invalidate a reference until it is regenerated.
 `PatcherAppearanceLinksTests` (no game needed) locks the contract of the helper the fix turns on.
 
+### Source-oracle record comparison (`SourceOracleTests`)
+
+The golden comparison checks the *output against a trusted reference*; `SourceOracleTests` additionally checks
+the *dependency record contents against the source mod*, so it catches both patcher bugs and mistakes in the
+golden output. For the RS Children records the patcher writes for Dorthe it serializes each record's full
+element tree (Mutagen's YAML serialization, via `RecordYaml`) and compares element by element:
+
+- **Create / Include (wholesale forward):** output record == RS Children's source record, exactly.
+- **CreateAndPatch / Include (delta patch):** for each element, output == RS Children's value where RS Children
+  differs from the Skyrim.esm base, else == the conflict-winning value (e.g. USSEP) - the delta derived here
+  independently from the source/base/winning records.
+- **Merged-in-as-new:** each duplicated RS Children record is a faithful element-by-element copy of its source.
+
+FormKey leaves are normalized to EditorID (so merged-in records' remapped FormKeys compare equal); sequences are
+compared order-independently; and benign round-trip representation differences (an unset nullable serialized as
+`Null` vs omitted, trailing null padding on fixed-size strings) are treated as equal. This is what confirms the
+delta patcher leaves untouched elements as the winning version and forwards only the source's real changes.
+
+The test project references `Mutagen.Bethesda.Serialization.Yaml` + its source generator (the generator is
+call-site driven, so the assembly that calls `Serialize` must reference it).
+
 ## Known gaps / future work
 - **`EasyNpcTranslator` import/export** parse cores are coupled to file-dialog/UI calls; only the
   `TryGetDefaultPlugin` preset branch is unit-reachable. Extracting a pure `ParseProfileLine`

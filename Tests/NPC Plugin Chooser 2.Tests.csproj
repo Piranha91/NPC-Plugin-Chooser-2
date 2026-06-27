@@ -26,6 +26,14 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
+        <!-- Mutagen record serialization (YAML) for the golden-output source-oracle comparison: it dumps a
+             record's full element tree, which the test diffs. The source generator is call-site driven, so
+             the test assembly (where Serialize is called) must reference it directly. Versions match the app. -->
+        <PackageReference Include="Mutagen.Bethesda.Serialization.Yaml" Version="1.37.0-alpha.0" />
+        <PackageReference Include="Mutagen.Bethesda.Serialization.SourceGenerator" Version="1.37.0-alpha.0">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
     </ItemGroup>
 
     <ItemGroup>
