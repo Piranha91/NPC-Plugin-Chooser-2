@@ -71,7 +71,15 @@
                     Margin="15,0,0,0"
                     VerticalAlignment="Center"
                     ToolTip="Analyze why specific masters are required by a plugin file"/>
-            
+
+            <Button x:Name="ValidateOutputButton"
+                    Content="Validate Output"
+                    Command="{Binding ValidateOutputCommand}"
+                    DockPanel.Dock="Left"
+                    Margin="15,0,0,0"
+                    VerticalAlignment="Center"
+                    ToolTip="Checks that your generated output actually wins in-game for each NPC you've selected an appearance for: the conflict-winning record, the deployed FaceGen .nif, and any SkyPatcher overrides. Requires the output to be installed and active in your mod manager first. Findings are shown in a table you can copy to Excel."/>
+
             <TextBlock /> <!-- Fills remaining space as LastChildFill is true by default -->
         </DockPanel>
 

@@ -87,6 +87,10 @@ public class VM_Run : ReactiveObject, IDisposable
     
     public ReactiveCommand<Unit, Unit> AnalyzeMastersCommand { get; }
 
+    // Passthrough to the Settings VM so the Run tab can offer the same "Validate Output"
+    // action without duplicating its logic (which lives in VM_Settings).
+    public ReactiveCommand<Unit, Unit> ValidateOutputCommand => _vmSettings.ValidateOutputCommand;
+
     public VM_Run(
         EnvironmentStateProvider environmentStateProvider,
         Settings settings,
