@@ -3078,7 +3078,9 @@ Options:
                 Dictionary<string, int> serverMods;
                 try
                 {
-                    serverMods = await _faceFinderClient.GetAllModsAsync();
+                    // v2 endpoint by default; reverts to the v1 amalgamation walk when
+                    // FaceFinderSearchFallback.txt is present next to the exe.
+                    serverMods = await _faceFinderClient.SearchAllModsAsync();
                 }
                 catch (Exception ex)
                 {
@@ -3137,7 +3139,8 @@ Options:
                     List<FaceFinderModFaceResult> serverFaces;
                     try
                     {
-                        serverFaces = await _faceFinderClient.GetAllFacesForModAsync(modId);
+                        // v2 endpoint by default; same FaceFinderSearchFallback.txt reverts to v1.
+                        serverFaces = await _faceFinderClient.SearchFacesForModAsync(modId);
                     }
                     catch (Exception ex)
                     {

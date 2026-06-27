@@ -7,6 +7,7 @@ using System.Text;
 using System.Globalization;
 using System.Net;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using NPC_Plugin_Chooser_2.Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
@@ -231,6 +232,70 @@ public class FaceFinderClient
         return result;
     }
 
+    /// <summary>
+    /// v2 counterpart of <see cref="GetAllModsAsync"/> using <c>/api/public/v2/mods/search</c>,
+    /// which fixes the page-1 divergence the v1 method unions around — so this is a plain
+    /// <c>hasMore</c> pagination walk with no implicit/explicit page-1 double fetch. The v2
+    /// envelope is <c>{ page, pageSize, hasMore, results }</c>; each result still carries
+    /// <c>id</c> and <c>name</c>, so name→id mapping (first occurrence of a duplicated name wins)
+    /// is unchanged. Faces/ids are deduped by <c>id</c> as a belt-and-braces measure even though
+    /// the clean walk should not repeat.
+    /// </summary>
+    public async Task<Dictionary<string, int>> GetAllModsV2Async()
+    {
+        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var seenIds = new HashSet<int>();
+
+        int page = 1;
+        while (true)
+        {
+            var requestUri = $"/api/public/v2/mods/search?page={page}";
+            var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
+            request.Headers.Add("X-API-Key", _apiKey);
+
+            HttpResponseMessage? response = null;
+            try
+            {
+                response = await _httpClient.SendAsync(request);
+                var content = await response.Content.ReadAsStringAsync();
+                await LogInteractionAsync(request, response, content);
+
+                if (!response.IsSuccessStatusCode) break;
+
+                var envelope = JsonConvert.DeserializeObject<JObject>(content, new JsonSerializerSettings
+                {
+                    DateParseHandling = DateParseHandling.None
+                });
+
+                if (envelope?["results"] is JArray results)
+                {
+                    foreach (var r in results)
+                    {
+                        int? id = r["id"]?.Value<int?>();
+                        if (!id.HasValue || !seenIds.Add(id.Value)) continue;
+                        string? name = r["name"]?.Value<string>();
+                        if (string.IsNullOrWhiteSpace(name)) continue;
+                        if (!result.ContainsKey(name)) result.Add(name, id.Value);
+                    }
+                }
+
+                var hasMoreToken = envelope?["hasMore"] ?? envelope?["has_more"];
+                bool hasMore = hasMoreToken?.Type == JTokenType.Boolean && hasMoreToken.Value<bool>();
+
+                if (!hasMore) break;
+                page++;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"FaceFinder GetAllModsV2Async error on page {page} ({requestUri}): {ex.Message}");
+                await LogInteractionAsync(request, response, $"EXCEPTION: {ex.Message}");
+                _eventLogger.Log($"GetAllModsV2Async: FaceFinder API error on page {page}: {ex.Message}");
+                break;
+            }
+        }
+        return result;
+    }
+
     /// <summary>Paginated walk of <c>/api/public/mod/faces/search?modId=...</c>
     /// returning every face the server has registered for the given mod.
     /// Pairs with <see cref="GetAllModsAsync"/> in the batch path: the user's
@@ -317,6 +382,80 @@ public class FaceFinderClient
 
             if (!foundDataOnThisPage) break;
             currentPage++;
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// v2 counterpart of <see cref="GetAllFacesForModAsync"/> using
+    /// <c>/api/public/v2/mod/faces/search</c>. Plain <c>hasMore</c> pagination walk; the per-face
+    /// JSON shape matches v1 (<c>npc.form_key</c>, <c>images.full</c>, <c>mod.external_url</c>,
+    /// <c>updated_at</c>), only the envelope differs (<c>{ page, pageSize, hasMore, results }</c>).
+    /// No client-side dedup — the server is expected to return each face once.
+    /// </summary>
+    public async Task<List<FaceFinderModFaceResult>> GetAllFacesForModV2Async(int modId)
+    {
+        var results = new List<FaceFinderModFaceResult>();
+
+        int page = 1;
+        while (true)
+        {
+            var requestUri = $"/api/public/v2/mod/faces/search?modId={modId}&page={page}";
+            var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
+            request.Headers.Add("X-API-Key", _apiKey);
+
+            HttpResponseMessage? response = null;
+            try
+            {
+                response = await _httpClient.SendAsync(request);
+                var content = await response.Content.ReadAsStringAsync();
+                await LogInteractionAsync(request, response, content);
+
+                if (!response.IsSuccessStatusCode) break;
+
+                var envelope = JsonConvert.DeserializeObject<JObject>(content, new JsonSerializerSettings
+                {
+                    DateParseHandling = DateParseHandling.None
+                });
+
+                if (envelope?["results"] is JArray page1)
+                {
+                    foreach (var entry in page1)
+                    {
+                        string? formKey = entry["npc"]?["form_key"]?.Value<string>();
+                        string? imageUrl = entry["images"]?["full"]?.Value<string>();
+                        string? externalUrl = entry["mod"]?["external_url"]?.Value<string>();
+                        string? updatedAtStr = entry["updated_at"]?.Value<string>();
+                        if (string.IsNullOrWhiteSpace(formKey) ||
+                            string.IsNullOrWhiteSpace(imageUrl) ||
+                            string.IsNullOrWhiteSpace(updatedAtStr) ||
+                            !DateTime.TryParse(updatedAtStr, null, DateTimeStyles.RoundtripKind, out var updatedAt))
+                        {
+                            continue;
+                        }
+                        results.Add(new FaceFinderModFaceResult
+                        {
+                            FormKey = formKey,
+                            ImageUrl = imageUrl,
+                            ExternalUrl = externalUrl,
+                            UpdatedAt = updatedAt,
+                        });
+                    }
+                }
+
+                var hasMoreToken = envelope?["hasMore"] ?? envelope?["has_more"];
+                bool hasMore = hasMoreToken?.Type == JTokenType.Boolean && hasMoreToken.Value<bool>();
+
+                if (!hasMore) break;
+                page++;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"FaceFinder GetAllFacesForModV2Async error modId={modId} page={page} ({requestUri}): {ex.Message}");
+                await LogInteractionAsync(request, response, $"EXCEPTION: {ex.Message}");
+                _eventLogger.Log($"GetAllFacesForModV2Async: API error modId={modId} page={page}: {ex.Message}");
+                break;
+            }
         }
         return results;
     }
@@ -621,6 +760,148 @@ public class FaceFinderClient
         _eventLogger.Log($"FaceFinder Client: Returned {distinctFaces.Count()} appearance mods for {npcFormKey}");
         return distinctFaces.Values.ToList();
     }
+
+    /// <summary>
+    /// v2 counterpart of <see cref="GetAllFaceDataForNpcAsync"/> that walks the server's
+    /// <c>/api/public/v2/npc/faces/search</c> endpoint. Per the FaceFinder maintainer, v2
+    /// fixes the page-1 divergence the v1 method works around, so this is a plain pagination
+    /// loop driven by the response envelope's <c>hasMore</c> flag — no implicit/explicit
+    /// page-1 union, and no client-side dedup (the server is expected to return each face once).
+    /// <para>The per-face JSON shape is assumed identical to v1's (<c>mod.name</c>,
+    /// <c>images.full</c>, <c>updated_at</c>); only the envelope differs — v2 wraps the array in
+    /// <c>{ "results": [...], "hasMore": bool }</c>. If the v2 face shape turns out to differ,
+    /// only the field reads below need adjusting.</para>
+    /// <para>Kept side-by-side with the v1 method (rather than replacing it) so the two can be
+    /// compared head-to-head before the amalgamation hack is retired — see
+    /// <c>FaceFinderV2EquivalenceTests</c>.</para>
+    /// </summary>
+    public async Task<List<FaceFinderNpcResult>> GetAllFaceDataForNpcV2Async(FormKey npcFormKey)
+    {
+        var faces = new List<FaceFinderNpcResult>();
+
+        // Same key encoding as v1 (X8 hex + lowercased plugin filename) so both methods
+        // ask the server about the exact same NPC.
+        var formKeyValue = $"{npcFormKey.ID:X8}:{npcFormKey.ModKey.FileName.String.ToLowerInvariant()}";
+        var encodedFormKey = WebUtility.UrlEncode(formKeyValue);
+
+        int page = 1;
+        while (true)
+        {
+            var requestUri = $"/api/public/v2/npc/faces/search?formKey={encodedFormKey}&page={page}";
+            var request = new HttpRequestMessage(HttpMethod.Get, new Uri(ApiBaseUrl + requestUri));
+            request.Headers.Add("X-API-Key", _apiKey);
+
+            HttpResponseMessage? response = null;
+            try
+            {
+                response = await _httpClient.SendAsync(request);
+                var content = await response.Content.ReadAsStringAsync();
+                await LogInteractionAsync(request, response, content);
+
+                if (!response.IsSuccessStatusCode) break;
+
+                // Parse without auto-converting date strings, so updated_at stays a raw
+                // string for the same RoundtripKind parse v1 uses.
+                var envelope = JsonConvert.DeserializeObject<JObject>(content, new JsonSerializerSettings
+                {
+                    DateParseHandling = DateParseHandling.None
+                });
+
+                if (envelope?["results"] is JArray results)
+                {
+                    foreach (var entry in results)
+                    {
+                        string? modName = entry["mod"]?["name"]?.Value<string>();
+                        string? imageUrl = entry["images"]?["full"]?.Value<string>();
+                        string? updatedAtStr = entry["updated_at"]?.Value<string>();
+
+                        if (string.IsNullOrWhiteSpace(modName) ||
+                            string.IsNullOrWhiteSpace(imageUrl) ||
+                            string.IsNullOrWhiteSpace(updatedAtStr) ||
+                            !DateTime.TryParse(updatedAtStr, null, DateTimeStyles.RoundtripKind, out var updatedAt))
+                        {
+                            await LogInteractionAsync(request, response, $"(v2) Invalid mod name: {modName}, image url: {imageUrl}, or updatedAt: {updatedAtStr}");
+                            _eventLogger.Log($"{npcFormKey}: (v2) Invalid mod name: {modName}, image url: {imageUrl}, or updatedAt: {updatedAtStr}");
+                            continue;
+                        }
+
+                        faces.Add(new FaceFinderNpcResult
+                        {
+                            ModName = modName,
+                            ImageUrl = imageUrl,
+                            UpdatedAt = updatedAt
+                        });
+                    }
+                }
+
+                // Accept either casing for the paging flag; the v1 endpoints use snake_case
+                // field names, so a v2 "has_more" would not be surprising.
+                var hasMoreToken = envelope?["hasMore"] ?? envelope?["has_more"];
+                bool hasMore = hasMoreToken?.Type == JTokenType.Boolean && hasMoreToken.Value<bool>();
+
+                if (!hasMore) break;
+                page++;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"FaceFinder v2 API error on page {page}: {ex.Message}");
+                await LogInteractionAsync(request, response, $"EXCEPTION: {ex.Message}");
+                _eventLogger.Log($"FaceFinder v2 API mod retrieval error for {npcFormKey} on page {page}: {ex.Message}");
+                break;
+            }
+        }
+
+        _eventLogger.Log($"FaceFinder Client (v2): Returned {faces.Count} appearance mods for {npcFormKey}");
+        return faces;
+    }
+
+    /// <summary>
+    /// Trigger file (next to the exe) that forces the per-NPC face search back onto the v1
+    /// "amalgamation" path. When absent — the normal case — the v2 endpoint is used. Mirrors
+    /// the other file-keyed behaviour switches in the app (e.g. <c>LogBsaDiag.txt</c>,
+    /// <c>LogStartup.txt</c>, <c>LogRenderTimings.txt</c>).
+    /// </summary>
+    public const string SearchFallbackTriggerFileName = "FaceFinderSearchFallback.txt";
+
+    private static bool UseSearchFallback() =>
+        File.Exists(Path.Combine(AppContext.BaseDirectory, SearchFallbackTriggerFileName));
+
+    /// <summary>
+    /// Entry point for the per-NPC face search. Uses the v2 endpoint
+    /// (<see cref="GetAllFaceDataForNpcV2Async"/>) by default, since it was verified equivalent
+    /// to — and supersedes — the v1 amalgamation hack now that the server's page-1 divergence is
+    /// fixed. Drops back to v1 (<see cref="GetAllFaceDataForNpcAsync"/>) only when
+    /// <c>FaceFinderSearchFallback.txt</c> is present next to the exe, so the old behaviour can
+    /// be restored in the field without a UI toggle or a rebuild should the v2 endpoint regress.
+    /// The file is re-checked per call, so the fallback takes effect without restarting the app.
+    /// Both underlying methods remain callable directly.
+    /// </summary>
+    public Task<List<FaceFinderNpcResult>> SearchFacesForNpcAsync(FormKey npcFormKey) =>
+        UseSearchFallback()
+            ? GetAllFaceDataForNpcAsync(npcFormKey)
+            : GetAllFaceDataForNpcV2Async(npcFormKey);
+
+    /// <summary>
+    /// Entry point for the full mod-name→id map. Uses the v2 endpoint
+    /// (<see cref="GetAllModsV2Async"/>) by default; the same <c>FaceFinderSearchFallback.txt</c>
+    /// trigger that reverts the per-NPC search also reverts this to the v1 amalgamation hack
+    /// (<see cref="GetAllModsAsync"/>). Both underlying methods remain callable directly.
+    /// </summary>
+    public Task<Dictionary<string, int>> SearchAllModsAsync() =>
+        UseSearchFallback()
+            ? GetAllModsAsync()
+            : GetAllModsV2Async();
+
+    /// <summary>
+    /// Entry point for "every face registered for a mod". Uses the v2 endpoint
+    /// (<see cref="GetAllFacesForModV2Async"/>) by default; reverts to v1
+    /// (<see cref="GetAllFacesForModAsync"/>) when <c>FaceFinderSearchFallback.txt</c> is present
+    /// next to the exe. Both underlying methods remain callable directly.
+    /// </summary>
+    public Task<List<FaceFinderModFaceResult>> SearchFacesForModAsync(int modId) =>
+        UseSearchFallback()
+            ? GetAllFacesForModAsync(modId)
+            : GetAllFacesForModV2Async(modId);
 
     private static string GetAPIKey()
     {

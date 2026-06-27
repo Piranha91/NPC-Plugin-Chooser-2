@@ -3318,7 +3318,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
             }
 
-            var faceFinderResults = await _faceFinderClient.GetAllFaceDataForNpcAsync(targetNpcFormKey);
+            // Uses the v2 search endpoint by default; drops back to the v1 amalgamation hack when
+            // FaceFinderSearchFallback.txt is present next to the exe (see SearchFacesForNpcAsync).
+            var faceFinderResults = await _faceFinderClient.SearchFacesForNpcAsync(targetNpcFormKey);
 
             var preLogging = faceFinderResults.Select(x => x.ModName + ": " + x.ImageUrl).ToList();
             string indexedList = String.Empty;
