@@ -12,6 +12,7 @@ using System.Reactive.Subjects;
 using System.Windows.Forms;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 using NPC_Plugin_Chooser_2.Models;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
@@ -30,6 +31,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
         private readonly VM_Mods _modsViewModel;
         private readonly Lazy<VM_MainWindow> _lazyMainWindowVm;
         private readonly SummaryMugshotFactory _summaryMugshotFactory;
+        private readonly BatchMugshotGenerator _batchMugshotGenerator;
         private readonly CompositeDisposable _disposables = new();
         private CancellationTokenSource? _summaryImageLoadCts;
         
@@ -98,7 +100,8 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             VM_NpcSelectionBar npcsViewModel,
             VM_Mods modsViewModel,
             Lazy<VM_MainWindow> lazyMainWindowVm,
-            SummaryMugshotFactory summaryMugshotFactory)
+            SummaryMugshotFactory summaryMugshotFactory,
+            BatchMugshotGenerator batchMugshotGenerator)
         {
             _settings = settings;
             _consistencyProvider = consistencyProvider;
@@ -109,6 +112,7 @@ namespace NPC_Plugin_Chooser_2.View_Models;
             _modsViewModel = modsViewModel;
             _lazyMainWindowVm = lazyMainWindowVm;
             _summaryMugshotFactory = summaryMugshotFactory;
+            _batchMugshotGenerator = batchMugshotGenerator;
 
             MaxNpcsPerPage = _settings.MaxNpcsPerPageSummaryView;
             this.WhenAnyValue(x => x.MaxNpcsPerPage)
@@ -244,8 +248,24 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 
                 // For mugshot view, we need more details
                 var modSetting = _modsViewModel.AllModSettings.FirstOrDefault(m => m.DisplayName.Equals(modName, StringComparison.OrdinalIgnoreCase));
-                
-                string imagePath = _npcsViewModel.GetMugshotPathForNpc(modName, sourceNpcKey, targetNpcKey) ?? placeholderPath;
+
+                // Curated mugshots resolve via the mod's MugShotFolderPaths. Auto-generated
+                // PNGs live in a separate AutoGen folder that (post-2.1.7) is NOT registered
+                // in MugShotFolderPaths, so GetMugshotPathForNpc can't see them. Probe the
+                // AutoGen folder directly when curated resolution comes up empty, mirroring
+                // the NPCs/Mods menu fast-path (VM_NpcsMenuMugshot.LoadInitialImageAsync ->
+                // TryGetExistingFreshAutoGenPath). Without this the Summary tile starts as a
+                // placeholder and only the racy/cancellable LoadRealImageAsync could recover
+                // it, which is why auto-generated faces were missing here but shown elsewhere.
+                string? resolvedPath = _npcsViewModel.GetMugshotPathForNpc(modName, sourceNpcKey, targetNpcKey);
+                if (resolvedPath == null
+                    && modSetting != null
+                    && _batchMugshotGenerator.TryGetExistingFreshAutoGenPath(sourceNpcKey, modSetting, out var autoGenPath))
+                {
+                    resolvedPath = autoGenPath;
+                }
+
+                string imagePath = resolvedPath ?? placeholderPath;
                 bool hasMugshot = !imagePath.Equals(placeholderPath, StringComparison.OrdinalIgnoreCase);
 
                 // Decorator info
