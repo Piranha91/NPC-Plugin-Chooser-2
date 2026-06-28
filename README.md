@@ -238,6 +238,19 @@ The **Renderer** dropdown chooses which engine generates the mugshots. **Interna
 *Legacy renderer (left) vs. Internal renderer (right) for the same mod.*
 
 
+### FaceGen Analysis
+
+![FaceGen Analysis settings](docs/Screenshots/Settings/FaceGen_Analysis_Section.png)
+
+An optional diagnostic that reports how *heavy* each appearance’s FaceGen mesh is, so you can spot mods whose head/hair geometry is absurdly high-poly — a common cause of performance problems. It’s off by default.
+
+* **Enable FaceGen Analysis** — turns it on. N.P.C.2 then inspects each mugshot’s FaceGen mesh (or just checks its file size, if that’s all you asked for) and shows the results in the NPCs gallery. The numbers are cached, so the cost is paid only once per appearance.
+* **Reporting Metrics** — which stats to show: **File Size**, **Polygons** (the triangle / “face” count), and/or **Vertices**.
+* **Display Mode** — **TextOverlay** prints the numbers right on each mugshot; **Tooltip** shows a small indicator instead and reveals the full stats on hover.
+* **Text Height (% of mugshot)** — how large the overlaid text is, relative to the tile.
+* **Highlight Criterion** — how the numbers are colored so heavy meshes jump out. **Spectrum** (shown) fades each value across a configurable **Low → Mid → High** color gradient, so the heaviest meshes glow red; other modes instead flag the heaviest few percent of tiles, or anything past a set threshold.
+* **Clear FaceGen Analysis Cache** — discards the stored measurements so they’re recalculated the next time you view them.
+
 ### EasyNPC Transfer
 
 ![EasyNPC Transfer](docs/Screenshots/Settings/EasyNPC_Transfer_Section.png)
@@ -478,6 +491,12 @@ Sharing also works for NPCs handled via SkyPatcher templates — the tooltip spe
 ![SkyPatcher shared tooltip](docs/Screenshots/NPCs/NPC_From_Skypatcher_Tooltip_As_Shared.png)
 
 * **Teal “CR” badge** — this one is *not* an N.P.C.2 indicator. It’s baked into the image itself by the FaceFinder service and marks a face that was built with Charmers of the Reach (CotR). It has no effect on anything in N.P.C.2 and can be safely ignored.
+
+### FaceGen Stats Overlay
+
+If you turn on [FaceGen Analysis](#facegen-analysis) in Settings, each mugshot is labeled with its FaceGen geometry stats — here the polygon (**Faces**) count and file **Size** — color-graded so the heaviest head/hair meshes stand out (in the default spectrum, light meshes read blue and heavy ones red). It’s an easy way to catch an appearance whose mesh is wildly more expensive than its neighbors before you commit to it.
+
+![FaceGen stats overlaid on the gallery](docs/Screenshots/NPCs/FaceGen_Analysis_Overlay.png)
 
 ### Drag-and-Drop Actions
 
