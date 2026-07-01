@@ -18,11 +18,31 @@ public class SkyPatcherInterface : OptionalUIModule
     private class NpcContainer
     {
         public FormKey NpcFormKey { get; set; }
-        public List<string> ActionStrings { get; set; } = new();
+        public List<SkyPatcherAction> Actions { get; set; } = new();
 
         public NpcContainer(FormKey npcFormKey)
         {
             NpcFormKey = npcFormKey;
+        }
+    }
+
+    /// <summary>
+    /// One SkyPatcher directive for an NPC line. Stored either as a fully literal
+    /// "key=value" string (<see cref="FormKeyRef"/> null), or as a "key" plus a FormKey
+    /// value that is formatted at write time. Keeping the FormKey structural (instead of
+    /// pre-formatting it into the string) lets <see cref="WriteIni"/> remap output-plugin
+    /// FormKeys after an auto-split relocates the surrogate template records from
+    /// "&lt;name&gt;.esp" into "&lt;name&gt;_2.esp" etc.
+    /// </summary>
+    private readonly struct SkyPatcherAction
+    {
+        public string Text { get; }
+        public FormKey? FormKeyRef { get; }
+
+        public SkyPatcherAction(string text, FormKey? formKeyRef = null)
+        {
+            Text = text;
+            FormKeyRef = formKeyRef;
         }
     }
 
@@ -93,9 +113,7 @@ public class SkyPatcherInterface : OptionalUIModule
             return;
         }
 
-        string template = FormatFormKeyForSkyPatcher(faceTemplate);
-        
-        npcContainer.ActionStrings.Add($"copyVisualStyle={template}");
+        npcContainer.Actions.Add(new SkyPatcherAction("copyVisualStyle", faceTemplate));
     }
     
     public void ApplySkin(FormKey applyTo, FormKey skinFk)
@@ -105,9 +123,7 @@ public class SkyPatcherInterface : OptionalUIModule
             return;
         }
         
-        string skin = FormatFormKeyForSkyPatcher(skinFk);
-        
-        npcContainer.ActionStrings.Add($"skin={skin}");
+        npcContainer.Actions.Add(new SkyPatcherAction("skin", skinFk));
     }
     
     public void ApplyRace(FormKey applyTo, FormKey raceFk)
@@ -117,9 +133,7 @@ public class SkyPatcherInterface : OptionalUIModule
             return;
         }
         
-        string skin = FormatFormKeyForSkyPatcher(raceFk);
-        
-        npcContainer.ActionStrings.Add($"race={skin}");
+        npcContainer.Actions.Add(new SkyPatcherAction("race", raceFk));
     }
     
     public void ApplyHeight(FormKey applyTo, float heightFlt)
@@ -134,7 +148,7 @@ public class SkyPatcherInterface : OptionalUIModule
             return;
         }
 
-        npcContainer.ActionStrings.Add($"height={height}");
+        npcContainer.Actions.Add(new SkyPatcherAction($"height={height}"));
     }
 
     public void ApplyWeight(FormKey applyTo, float weightFlt)
@@ -146,7 +160,7 @@ public class SkyPatcherInterface : OptionalUIModule
             return;
         }
 
-        npcContainer.ActionStrings.Add($"weight={weight}");
+        npcContainer.Actions.Add(new SkyPatcherAction($"weight={weight}"));
     }
 
     public void ToggleGender(FormKey applyTo, Gender gender)
@@ -158,11 +172,11 @@ public class SkyPatcherInterface : OptionalUIModule
         
         if (gender == Gender.Female)
         {
-            npcContainer.ActionStrings.Add("setFlags=female");
+            npcContainer.Actions.Add(new SkyPatcherAction("setFlags=female"));
         }
         else
         {
-            npcContainer.ActionStrings.Add("removeFlags=female");
+            npcContainer.Actions.Add(new SkyPatcherAction("removeFlags=female"));
         }
     }
 
@@ -175,11 +189,11 @@ public class SkyPatcherInterface : OptionalUIModule
         
         if (useTraits)
         {
-            npcContainer.ActionStrings.Add("setTemplateFlags=traits");
+            npcContainer.Actions.Add(new SkyPatcherAction("setTemplateFlags=traits"));
         }
         else
         {
-            npcContainer.ActionStrings.Add("removeTemplateFlags=traits");
+            npcContainer.Actions.Add(new SkyPatcherAction("removeTemplateFlags=traits"));
         }
     }
 
@@ -189,8 +203,7 @@ public class SkyPatcherInterface : OptionalUIModule
         {
             return;
         }
-        string outfitStr = FormatFormKeyForSkyPatcher(outfitFk);
-        npcContainer.ActionStrings.Add($"outfitDefault={outfitStr}");
+        npcContainer.Actions.Add(new SkyPatcherAction("outfitDefault", outfitFk));
     }
     
     public void ApplyKeywords(FormKey surrogateFk, IEnumerable<string> keywords)
@@ -213,28 +226,35 @@ public class SkyPatcherInterface : OptionalUIModule
             return;
         }
 
-        npcContainer.ActionStrings.Add($"keywordsToAdd={kwStr}");
+        npcContainer.Actions.Add(new SkyPatcherAction($"keywordsToAdd={kwStr}"));
     }
 
-    public bool WriteIni(string outputRootFolder)
+    /// <param name="formKeyRemap">
+    /// Optional map of original output-plugin FormKeys to their post-split locations. When the
+    /// output plugin was auto-split (see <see cref="Patcher"/>), surrogate template records move
+    /// from "&lt;name&gt;.esp" into "&lt;name&gt;_2.esp" etc.; this map rewrites the affected FormKeys
+    /// so the .ini keeps pointing at the record's true file. Non-output FormKeys (donor skins,
+    /// races, outfits) are absent from the map and therefore left untouched.
+    /// </param>
+    public bool WriteIni(string outputRootFolder, IReadOnlyDictionary<FormKey, FormKey>? formKeyRemap = null)
     {
         var outputPlugin = _environmentStateProvider.OutputMod.ModKey;
         (var outputDir, var outputPath) = GetOutputPath(outputPlugin, outputRootFolder);
-        
+
         try
         {
             if (!Directory.Exists(outputDir))
             {
                 Directory.CreateDirectory(outputDir);
             }
-            
+
             StringBuilder sb = new();
 
             foreach (var entry in _outputs.Values)
             {
                 string npc = FormatFormKeyForSkyPatcher(entry.NpcFormKey);
                 sb.Append($"filterByNPCs={npc}:");
-                sb.Append(string.Join(",", entry.ActionStrings.Order()));
+                sb.Append(string.Join(",", entry.Actions.Select(a => RenderAction(a, formKeyRemap)).Order()));
                 sb.Append(Environment.NewLine);
             }
 
@@ -295,5 +315,23 @@ public class SkyPatcherInterface : OptionalUIModule
     public static string FormatFormKeyForSkyPatcher(FormKey FK)
     {
         return FK.ModKey.ToString() + "|" + FK.IDString().TrimStart(new Char[] { '0' });
+    }
+
+    /// <summary>
+    /// Renders one directive to its final ".ini" text. Literal directives pass through
+    /// unchanged; FormKey-valued directives are formatted here, applying <paramref name="formKeyRemap"/>
+    /// first so a split-relocated output-plugin FormKey resolves to its true file.
+    /// </summary>
+    private static string RenderAction(SkyPatcherAction action, IReadOnlyDictionary<FormKey, FormKey>? formKeyRemap)
+    {
+        if (action.FormKeyRef is FormKey fk)
+        {
+            if (formKeyRemap != null && formKeyRemap.TryGetValue(fk, out var mapped))
+            {
+                fk = mapped;
+            }
+            return action.Text + "=" + FormatFormKeyForSkyPatcher(fk);
+        }
+        return action.Text;
     }
 }

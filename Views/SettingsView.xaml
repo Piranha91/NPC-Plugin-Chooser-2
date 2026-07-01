@@ -295,7 +295,11 @@
                               IsChecked="{Binding AutoEslIfy, Mode=TwoWay}"
                               Margin="0,5,0,0"
                               ToolTip="When writing the output plugin, checks if it can be ESLified and performs the ESLification proccess"/>
-                    
+                    <CheckBox Content="Auto-split if over the master limit"
+                              IsChecked="{Binding AutoSplitOutput, Mode=TwoWay}"
+                              Margin="0,5,0,0"
+                              ToolTip="If the output plugin would exceed Skyrim's 255-master limit, automatically split it into multiple files (e.g. &quot;MyPatch.esp&quot;, &quot;MyPatch_2.esp&quot;, ...). Only triggers on overflow - a normal-sized patch stays a single plugin. When it does split, ALL of the resulting plugins must be enabled in your load order. Also applies per-plugin when 'Split Output' is on."/>
+
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
                         <CheckBox Content="Split Output" IsChecked="{Binding SplitOutput, Mode=TwoWay}" VerticalAlignment="Center"
                                   ToolTip="Splits the generated patch into multiple smaller plugins based on the criteria to the right."/>

@@ -4,6 +4,7 @@ using System.Text;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Allocators;
+using Mutagen.Bethesda.Plugins.Analysis;
 using Mutagen.Bethesda.Plugins.Assets;
 using Mutagen.Bethesda.Plugins.Binary.Parameters;
 using Mutagen.Bethesda.Plugins.Cache;
@@ -1245,11 +1246,26 @@ public class Patcher : OptionalUIModule
 
                         _environmentStateProvider.OutputMod.ModHeader.Description = PluginDescriptionSignature;
 
-                        await _environmentStateProvider.OutputMod.BeginWrite
-                            .ToPath(outputPluginPath)
-                            .WithLoadOrder(_environmentStateProvider.LoadOrder)
-                            .WriteAsync();
-                        
+                        // WithAutoSplit() first attempts a normal single-file write and only splits
+                        // into <name>.esp/<name>_2.esp/... if the output would exceed Skyrim's
+                        // 255-master limit, so the common case is unchanged. Skipped when the user
+                        // disables the setting (in which case an overflow throws as before).
+                        if (_settings.AutoSplitOutput)
+                        {
+                            await _environmentStateProvider.OutputMod.BeginWrite
+                                .ToPath(outputPluginPath)
+                                .WithLoadOrder(_environmentStateProvider.LoadOrder)
+                                .WithAutoSplit()
+                                .WriteAsync();
+                        }
+                        else
+                        {
+                            await _environmentStateProvider.OutputMod.BeginWrite
+                                .ToPath(outputPluginPath)
+                                .WithLoadOrder(_environmentStateProvider.LoadOrder)
+                                .WriteAsync();
+                        }
+
                         _environmentStateProvider.CurrentAllocator?.Commit();
                         _environmentStateProvider.CurrentAllocator?.Dispose();
                         
@@ -1294,7 +1310,13 @@ public class Patcher : OptionalUIModule
 
                     if (_settings.UseSkyPatcherMode)
                     {
-                        _skyPatcherInterface.WriteIni(_currentRunOutputAssetPath);
+                        // If auto-split relocated surrogate template records into "<name>_2.esp"/etc.,
+                        // the .ini's in-memory FormKeys (all "<name>.esp|ID") are stale. Build a map to
+                        // their true post-split files so WriteIni can rewrite them.
+                        var skyPatcherRemap = _settings.AutoSplitOutput
+                            ? BuildSplitFormKeyRemap(outputPluginPath)
+                            : null;
+                        _skyPatcherInterface.WriteIni(_currentRunOutputAssetPath, skyPatcherRemap);
                     }
                 }
                 else
@@ -1317,6 +1339,70 @@ public class Patcher : OptionalUIModule
         }
 
         UpdateProgress(selectionsToProcess.Count, selectionsToProcess.Count, "Finished.");
+    }
+
+    /// <summary>
+    /// After an auto-split write, the surrogate template records the SkyPatcher .ini points at may
+    /// have moved from "&lt;name&gt;.esp" into "&lt;name&gt;_2.esp"/etc. (their local FormID is preserved,
+    /// only the plugin changes). Reads the written split files back and returns a map from each
+    /// original output-plugin FormKey to its true post-split FormKey, or <c>null</c> when the output
+    /// was not split (the common case, where the .ini needs no remapping).
+    /// </summary>
+    private IReadOnlyDictionary<FormKey, FormKey>? BuildSplitFormKeyRemap(string outputPluginPath)
+    {
+        var outputModKey = _environmentStateProvider.OutputMod.ModKey;
+
+        List<FilePath> splitFiles;
+        try
+        {
+            splitFiles = MultiModFileAnalysis.GetSplitModFiles(new ModPath(outputModKey, outputPluginPath));
+        }
+        catch (Exception ex)
+        {
+            // GetSplitModFiles throws on an inconsistent on-disk state; fall back to no remap.
+            AppendLog($"Could not enumerate split output files for SkyPatcher remap: {ex.Message}", false, true);
+            return null;
+        }
+
+        if (splitFiles.Count <= 1)
+        {
+            return null; // Not split - the in-memory FormKeys are already correct.
+        }
+
+        var remap = new Dictionary<FormKey, FormKey>();
+        foreach (var fp in splitFiles)
+        {
+            string filePath = fp;
+            var fileModKey = ModKey.FromFileName(Path.GetFileName(filePath));
+
+            // The base file keeps the original ModKey, so its new records still resolve as
+            // "<name>.esp|ID" - no remap needed for those.
+            if (fileModKey.Equals(outputModKey)) continue;
+
+            try
+            {
+                using var mod = SkyrimMod.CreateFromBinaryOverlay(filePath, _environmentStateProvider.SkyrimVersion);
+                foreach (var rec in mod.EnumerateMajorRecords())
+                {
+                    // Only records mastered to this split file were created in the output plugin
+                    // (surrogates + any injected records). Overrides keep their donor ModKey and
+                    // must be left alone.
+                    if (!rec.FormKey.ModKey.Equals(fileModKey)) continue;
+                    remap[new FormKey(outputModKey, rec.FormKey.ID)] = rec.FormKey;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Could not read split output file '{filePath}' for SkyPatcher remap: {ex.Message}", false, true);
+            }
+        }
+
+        if (remap.Count > 0)
+        {
+            AppendLog($"Auto-split relocated {remap.Count} output record(s); remapped SkyPatcher .ini references across {splitFiles.Count} files.", false, true);
+            return remap;
+        }
+        return null;
     }
 
     /// <summary>

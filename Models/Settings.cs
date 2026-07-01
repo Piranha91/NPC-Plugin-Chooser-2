@@ -123,6 +123,9 @@ public class Settings
     public PatchingMode PatchingMode { get; set; } = PatchingMode.CreateAndPatch; 
     public bool UseSkyPatcherMode { get; set; } = false;
     public bool AutoEslIfy { get; set; } = true;
+    // Automatically split the output plugin into multiple files (<name>.esp, <name>_2.esp, ...)
+    // if it would otherwise exceed Skyrim's 255-master limit. Only triggers on overflow.
+    public bool AutoSplitOutput { get; set; } = true;
     // --- NEW: Split Output Settings ---
     public bool SplitOutput { get; set; } = false;
     public bool SplitOutputByGender { get; set; } = false;

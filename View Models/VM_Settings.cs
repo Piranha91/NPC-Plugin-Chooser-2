@@ -309,6 +309,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool AppendTimestampToOutputDirectory { get; set; }
     [Reactive] public bool UseSkyPatcherMode { get; set; }
     [Reactive] public bool AutoEslIfy { get; set; } = true;
+    [Reactive] public bool AutoSplitOutput { get; set; } = true;
     [Reactive] public bool SplitOutput { get; set; }
     [Reactive] public bool SplitOutputByGender { get; set; }
     [Reactive] public bool SplitOutputByRace { get; set; }
@@ -630,6 +631,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         OutputDirectory = _model.OutputDirectory;
         UseSkyPatcherMode = _model.UseSkyPatcherMode;
         AutoEslIfy = _model.AutoEslIfy;
+        AutoSplitOutput = _model.AutoSplitOutput;
         SplitOutput = _model.SplitOutput;
         SplitOutputByGender = _model.SplitOutputByGender;
         SplitOutputByRace = _model.SplitOutputByRace;
@@ -1261,6 +1263,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         this.WhenAnyValue(x => x.AutoEslIfy)
             .Skip(1)
             .Subscribe(b => _model.AutoEslIfy = b)
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.AutoSplitOutput)
+            .Skip(1)
+            .Subscribe(b => _model.AutoSplitOutput = b)
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SplitOutput).Skip(1).Subscribe(b => _model.SplitOutput = b)
@@ -3981,6 +3988,7 @@ Options:
         sb.AppendLine("Default Override Handling: " + SelectedRecordOverrideHandlingMode);
         sb.AppendLine("SkyPatcher Mode: " + UseSkyPatcherMode);
         sb.AppendLine("AutoEslIfy: " + AutoEslIfy);
+        sb.AppendLine("AutoSplitOutput: " + AutoSplitOutput);
         return sb.ToString();
     }
 

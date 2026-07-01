@@ -41,6 +41,7 @@ internal static class GoldenComboSettingsBuilder
             ModsFolder = string.Empty,
             SplitOutput = false,
             AutoEslIfy = true,                          // reference plugins are ESL-flagged
+            AutoSplitOutput = false,                    // pin the plain single-file write for golden determinism (fixtures never exceed the master limit)
             PatchingMode = combo.PatchingMode,
             UseSkyPatcherMode = combo.UseSkyPatcher,
             DefaultRecordOverrideHandlingMode = combo.OverrideMode,

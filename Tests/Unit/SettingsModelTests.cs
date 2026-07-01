@@ -129,6 +129,7 @@ public class SettingsModelTests
         s.DefaultMaxNestedIntervalDepth.Should().Be(2);
         s.MaxMugshotsToFit.Should().Be(50);
         s.AutoEslIfy.Should().BeTrue();
+        s.AutoSplitOutput.Should().BeTrue();
         s.EasyNpcDefaultPluginExclusions.Should().Contain(ModKey.FromFileName("Synthesis.esp"));
         s.InternalMugshot.Should().NotBeNull();
         s.ModSettings.Should().NotBeNull().And.BeEmpty();
