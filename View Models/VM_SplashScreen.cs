@@ -11,6 +11,7 @@ using System.Windows; // Required for Application
 using System.Diagnostics; // Required for Stopwatch
 using System;
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Text;

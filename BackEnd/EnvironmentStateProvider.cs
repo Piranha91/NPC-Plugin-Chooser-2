@@ -200,9 +200,13 @@ public class EnvironmentStateProvider : ReactiveObject
                 return;
             }
             
-            if (!_environment.LoadOrderFilePath.Exists)
+            // Mutagen 0.54 made IGameEnvironment.LoadOrderFilePath nullable (FilePath?), which no
+            // longer exposes .Exists/.Path directly. Resolve it to its string path (the same
+            // implicit conversion the field assignment below already relies on) and validate that.
+            string loadOrderFilePath = _environment.LoadOrderFilePath;
+            if (string.IsNullOrEmpty(loadOrderFilePath) || !File.Exists(loadOrderFilePath))
             {
-                EnvironmentBuilderError =  "Load order file path at " + _environment.LoadOrderFilePath.Path + " does not exist"; // prevent successful initialization in the wrong mode.
+                EnvironmentBuilderError =  "Load order file path at " + loadOrderFilePath + " does not exist"; // prevent successful initialization in the wrong mode.
                 Status = EnvironmentStatus.Invalid;
                 return;
             }

@@ -1,6 +1,7 @@
 ﻿using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using System.Windows;
 using System.Windows.Input; // For MouseButtonEventArgs
 

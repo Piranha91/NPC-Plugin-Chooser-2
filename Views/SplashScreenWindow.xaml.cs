@@ -3,6 +3,7 @@ using ReactiveUI;
 using System;
 using System.Reactive;
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using System.Windows;
 
 namespace NPC_Plugin_Chooser_2.Views

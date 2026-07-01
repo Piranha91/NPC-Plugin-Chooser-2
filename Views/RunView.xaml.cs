@@ -2,6 +2,7 @@
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using System.Windows.Controls;
 using Splat; // Required for TextBox ScrollToEnd
 using System; // Added for Exception

@@ -1,0 +1,20 @@
+{
+    // Explicit launch config for NPC Plugin Chooser 2. Pins the output path so debugging no longer
+    // depends on C# Dev Kit's cached target framework (which pointed at the old net8.0-windows path
+    // after the retarget). If the project's TargetFramework changes again, update the
+    // "net10.0-windows10.0.19041.0" segment below to match bin/Debug/<TFM>/.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch NPC Plugin Chooser 2 (Debug)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/bin/Debug/net10.0-windows10.0.19041.0/NPC Plugin Chooser 2.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/bin/Debug/net10.0-windows10.0.19041.0",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        }
+    ]
+}
