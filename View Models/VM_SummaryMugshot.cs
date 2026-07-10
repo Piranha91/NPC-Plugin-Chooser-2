@@ -16,6 +16,7 @@ using SixLabors.ImageSharp;
 using System.Windows.Media.Imaging;
 using System.Windows.Media;
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Threading;

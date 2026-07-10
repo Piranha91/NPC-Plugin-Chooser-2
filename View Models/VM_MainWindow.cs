@@ -7,7 +7,8 @@ using System;
 using System.Collections.Specialized;
 using System.Reactive.Linq;
 using System.IO;
-using System.Reactive.Disposables; // Added for Directory.Exists
+using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent; // Added for Directory.Exists
 
 namespace NPC_Plugin_Chooser_2.View_Models;
 

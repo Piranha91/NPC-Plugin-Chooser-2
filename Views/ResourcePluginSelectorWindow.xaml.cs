@@ -1,6 +1,7 @@
 ﻿using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
-using System.Reactive.Disposables; // Required for CompositeDisposable and DisposeWith
+using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent; // Required for CompositeDisposable and DisposeWith
 using System;
 
 namespace NPC_Plugin_Chooser_2.Views

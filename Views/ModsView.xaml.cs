@@ -10,6 +10,7 @@ using System.Linq;
 using System.Reactive; 
 using System.Reactive.Linq; 
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using System.Reactive.Subjects;
 using System.Windows.Controls; 
 using System.Windows.Input;  

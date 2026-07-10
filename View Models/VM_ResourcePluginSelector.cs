@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.Views;
 using ReactiveUI;

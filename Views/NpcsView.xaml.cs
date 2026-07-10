@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using System.Reactive.Linq;
 using System.Threading.Tasks; // Added this
 using System.Windows;
@@ -54,6 +55,14 @@ namespace NPC_Plugin_Chooser_2.Views
             }
 
             this.PreviewKeyDown += NpcsView_PreviewKeyDown;
+
+            // TEMP (memory profiling): Ctrl+Shift+A toggles auto-advance through NPCs, Escape stops it.
+            // Hooked at the WINDOW level (not this UserControl) so it fires regardless of which control
+            // currently has keyboard focus — a UserControl-level PreviewKeyDown only tunnels through when
+            // focus is already inside the NPCs view, which is the likely reason a control-level binding
+            // "did nothing". Attached on Loaded / detached on Unloaded to avoid dangling handlers.
+            this.Loaded += AttachAutoAdvanceHotkey;
+            this.Unloaded += DetachAutoAdvanceHotkey;
 
             this.Loaded += (s, e) =>
             {
@@ -361,6 +370,45 @@ namespace NPC_Plugin_Chooser_2.Views
             }
 
             RefreshImageSizes();
+        }
+
+        // --- TEMP: auto-advance hotkey (memory profiling); remove with the VM's auto-advance members ---
+        private Window? _autoAdvanceHostWindow;
+
+        private void AttachAutoAdvanceHotkey(object sender, RoutedEventArgs e)
+        {
+            var window = Window.GetWindow(this);
+            if (window == null || ReferenceEquals(window, _autoAdvanceHostWindow)) return;
+            if (_autoAdvanceHostWindow != null)
+                _autoAdvanceHostWindow.PreviewKeyDown -= AutoAdvanceHotkey_PreviewKeyDown;
+            _autoAdvanceHostWindow = window;
+            _autoAdvanceHostWindow.PreviewKeyDown += AutoAdvanceHotkey_PreviewKeyDown;
+        }
+
+        private void DetachAutoAdvanceHotkey(object sender, RoutedEventArgs e)
+        {
+            if (_autoAdvanceHostWindow != null)
+                _autoAdvanceHostWindow.PreviewKeyDown -= AutoAdvanceHotkey_PreviewKeyDown;
+            _autoAdvanceHostWindow = null;
+        }
+
+        private void AutoAdvanceHotkey_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            var vm = ViewModel ?? DataContext as VM_NpcSelectionBar;
+            if (vm == null) return;
+
+            if (e.Key == Key.A &&
+                (e.KeyboardDevice.Modifiers & ModifierKeys.Control) != 0 &&
+                (e.KeyboardDevice.Modifiers & ModifierKeys.Shift) != 0)
+            {
+                vm.ToggleAutoAdvance();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape && vm.IsAutoAdvancing)
+            {
+                vm.StopAutoAdvance();
+                e.Handled = true;
+            }
         }
 
         private void NpcsView_PreviewKeyDown(object sender, KeyEventArgs e)

@@ -5,6 +5,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System;
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using ReactiveUI.Fody.Helpers;
 using System.Reactive.Linq;
 

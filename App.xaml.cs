@@ -9,6 +9,8 @@ using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views;
 using NPC_Plugin_Chooser_2.View_Models;
 using ReactiveUI;
+using ReactiveUI.Builder;
+using System.Reactive.Concurrency;
 using Splat;
 using Splat.Autofac;
 using System.IO;
@@ -43,6 +45,12 @@ namespace NPC_Plugin_Chooser_2
 
         protected override async void OnStartup(StartupEventArgs e)
         {
+            // Log any otherwise-silent startup crash to CrashLog.txt next to the exe. Essential for
+            // diagnosing launches under a mod manager (MO2), where the app runs inside a VFS and a
+            // pre-UI crash leaves no window and no output.
+            AppDomain.CurrentDomain.UnhandledException += (_, ev) => LogCrash("AppDomain.UnhandledException", ev.ExceptionObject as Exception);
+            this.DispatcherUnhandledException += (_, ev) => LogCrash("DispatcherUnhandledException", ev.Exception);
+
             // Check for file-based startup logging trigger before anything else
             StartupLogger.InitializeFromFileTrigger();
             StartupLogger.Log("Application starting");
@@ -54,10 +62,29 @@ namespace NPC_Plugin_Chooser_2
             // expensive trace-string formatting when off.
             BsaContentsDiag.InitializeFromFileTrigger();
 
+            // Opt-in per-NPC memory sampler. Off by default — drop a file named
+            // LogMemory.txt next to the exe to record managed-heap / working-set
+            // bytes to MemoryLog.txt on each NPC switch (for diagnosing long-session
+            // RAM growth). Off means the per-switch hook is a cheap IsEnabled check.
+            MemoryLogger.InitializeFromFileTrigger();
+
             using (ContextualPerformanceTracer.Trace("App.OnStartup"))
             {
                 base.OnStartup(e);
                 this.Exit += OnApplicationExit;
+
+                // ReactiveUI 20+ no longer auto-registers its WPF platform services on assembly
+                // load — they must be set up via the RxAppBuilder before the first IViewFor is
+                // created. The splash screen below is a ReactiveUI view (its ctor calls
+                // WhenActivated, which needs IActivationForViewFetcher) and is shown before the
+                // Autofac-backed resolver exists, so initialize the WPF services into the default
+                // Splat locator here first. InitializeCoreApplicationAsync re-runs the builder
+                // against the Autofac resolver for the rest of the app; registration is per-resolver
+                // and idempotent, so doing both is safe. (The main-thread scheduler is force-set
+                // after InitializeCoreApplicationAsync below — WithWpf()'s scheduler doesn't stick.)
+                RxAppBuilder.CreateReactiveUIBuilder()
+                    .WithWpf()
+                    .BuildApp();
 
                 StartupLogger.Log("Showing splash screen");
                 var splashVM = VM_SplashScreen.InitializeAndShow(App.ProgramVersion, keepTopMost: false);
@@ -273,7 +300,14 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterInstance(autofacResolver);
             Locator.SetLocator(autofacResolver);
             Locator.CurrentMutable.InitializeSplat();
-            Locator.CurrentMutable.InitializeReactiveUI();
+            // ReactiveUI 20+ removed Locator.CurrentMutable.InitializeReactiveUI(); platform
+            // services are now registered through the RxAppBuilder fluent API. WithWpf() wires up
+            // the WPF DispatcherScheduler (RxSchedulers.MainThreadScheduler) plus the WPF binding
+            // converters and platform services. Views remain registered manually below, so we omit
+            // WithViewsFromAssembly() to preserve the existing registration behaviour.
+            autofacResolver.CreateReactiveUIBuilder()
+                .WithWpf()
+                .BuildApp();
 
             splashVM.UpdateProgress(55, "Registering View Factories with Splat...");
             Locator.CurrentMutable.Register(() => new MainWindow(), typeof(IViewFor<VM_MainWindow>));
@@ -290,7 +324,17 @@ namespace NPC_Plugin_Chooser_2
             StartupLogger.Log("Building DI container");
             var container = builder.Build();
             autofacResolver.SetLifetimeScope(container);
-            
+
+            // CRITICAL — must run BEFORE any ViewModel / ReactiveCommand is resolved below.
+            // ReactiveCommand captures RxSchedulers.MainThreadScheduler at CREATION time and uses it to
+            // marshal its CanExecute/output notifications forever. The RxAppBuilder leaves
+            // MainThreadScheduler as DefaultScheduler (= thread pool; WithWpf()'s WaitForDispatcherScheduler
+            // does not stick in this app), so commands created during mod population would raise
+            // CanExecute on a background thread — and when a bound Button reads its Command DP it throws a
+            // cross-thread WPF InvalidOperationException. Force the real UI dispatcher here (the
+            // Application dispatcher is resolvable from any thread).
+            ReactiveUI.RxSchedulers.MainThreadScheduler = new DispatcherScheduler(Application.Current.Dispatcher);
+
             StartupLogger.LogPhase("Application Initialization");
             splashVM.UpdateProgress(65, "Initializing main application services...");
             VM_Settings? settingsViewModel;
@@ -408,7 +452,23 @@ namespace NPC_Plugin_Chooser_2
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
             return container;
         }
-        
+
+        /// <summary>
+        /// Last-ditch crash logger: appends an unhandled exception to CrashLog.txt next to the exe so
+        /// failures that occur before (or instead of) any UI — notably when launched under a mod
+        /// manager's virtual file system — leave a diagnosable trace instead of silently vanishing.
+        /// </summary>
+        private static void LogCrash(string source, Exception? ex)
+        {
+            try
+            {
+                File.AppendAllText(
+                    Path.Combine(AppContext.BaseDirectory, "CrashLog.txt"),
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {source}:{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}");
+            }
+            catch { /* nothing more we can do */ }
+        }
+
         private void OnApplicationExit(object sender, ExitEventArgs e)
         {
             // Resolve the VM_Settings instance from the container

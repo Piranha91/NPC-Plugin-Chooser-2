@@ -371,6 +371,74 @@ public class SkyPatcherInterfaceTests
         line.Should().Be("filterByNPCs=T.esp|801:height=1,skin=Skins.esp|222,weight=50");
     }
 
+    // ── WriteIni: post-auto-split FormKey remap ───────────────────────────────
+
+    [Fact]
+    public void WriteIni_WithRemap_RewritesOutputPluginRefs_LeavesDonorRefsUntouched()
+    {
+        // When the output plugin is auto-split, a surrogate that used to live in "NPCTest.esp"
+        // moves to "NPCTest_2.esp" (same local id). The remap must rewrite the copyVisualStyle
+        // target (an output-plugin ref) while leaving the donor skin ref alone.
+        using var tmp = new TempDir();
+        var spi = NewInterface(out var env);
+        var target = FormKey.Factory("000801:T.esp");
+        spi.CreateSkyPatcherNpc(target, MakeDonor());
+
+        var outputFace = FormKey.Factory("000800:NPCTest.esp"); // lives in the output plugin
+        spi.ApplyFace(target, outputFace);
+        spi.ApplySkin(target, FormKey.Factory("00AB12:Skins.esp")); // donor ref - must NOT move
+
+        var remap = new Dictionary<FormKey, FormKey>
+        {
+            [outputFace] = FormKey.Factory("000800:NPCTest_2.esp"),
+        };
+
+        spi.WriteIni(tmp.Path, remap).Should().BeTrue();
+
+        var line = File.ReadAllText(IniPath(tmp.Path)).TrimEnd('\r', '\n');
+        line.Should().Contain("copyVisualStyle=NPCTest_2.esp|800");
+        line.Should().NotContain("NPCTest.esp|800");
+        line.Should().Contain("skin=Skins.esp|AB12");
+    }
+
+    [Fact]
+    public void WriteIni_NullRemap_LeavesFormKeysUnchanged()
+    {
+        // The common (non-split) path passes a null remap; every FormKey is emitted verbatim.
+        using var tmp = new TempDir();
+        var spi = NewInterface(out _);
+        var target = FormKey.Factory("000801:T.esp");
+        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.ApplyFace(target, FormKey.Factory("000800:NPCTest.esp"));
+
+        spi.WriteIni(tmp.Path, null).Should().BeTrue();
+
+        File.ReadAllText(IniPath(tmp.Path)).TrimEnd('\r', '\n')
+            .Should().Be("filterByNPCs=T.esp|801:copyVisualStyle=NPCTest.esp|800");
+    }
+
+    [Fact]
+    public void WriteIni_RemapWithoutMatchingEntry_IsNoOp()
+    {
+        // A remap that doesn't contain the referenced FormKey leaves it untouched (defensive: an
+        // unrelated split entry must never alter a directive it doesn't apply to).
+        using var tmp = new TempDir();
+        var spi = NewInterface(out _);
+        var target = FormKey.Factory("000801:T.esp");
+        spi.CreateSkyPatcherNpc(target, MakeDonor());
+        spi.ApplyFace(target, FormKey.Factory("000800:NPCTest.esp"));
+
+        var remap = new Dictionary<FormKey, FormKey>
+        {
+            [FormKey.Factory("000999:NPCTest.esp")] = FormKey.Factory("000999:NPCTest_2.esp"),
+        };
+
+        spi.WriteIni(tmp.Path, remap).Should().BeTrue();
+
+        File.ReadAllText(IniPath(tmp.Path)).TrimEnd('\r', '\n')
+            .Should().Be("filterByNPCs=T.esp|801:copyVisualStyle=NPCTest.esp|800");
+    }
+
     [Fact]
     public void WriteIni_NoEntries_WritesEmptyFile()
     {
@@ -504,16 +572,28 @@ public class SkyPatcherInterfaceTests
     // ── Reflection helper: read a seeded NPC's ActionStrings without WriteIni ──
 
     /// <summary>
-    /// Reads the private ActionStrings list for a seeded target via Reflect. The dictionary
-    /// (_outputs) and the NpcContainer nested type are private; we fetch the container by key
-    /// and read its public ActionStrings property reflectively (the type itself is never named).
+    /// Reads the private Actions list for a seeded target via Reflect and renders each directive to
+    /// its final ".ini" string (no remap applied), so the directive-content assertions can stay
+    /// unchanged after Actions moved from pre-formatted strings to structural (Text, FormKeyRef)
+    /// entries. The dictionary (_outputs), the NpcContainer, and the SkyPatcherAction nested types
+    /// are all private; we reach them reflectively without naming the types.
     /// </summary>
     private static List<string> GetActionStrings(SkyPatcherInterface spi, FormKey target)
     {
         var outputs = Reflect.GetField<System.Collections.IDictionary>(spi, "_outputs");
         var container = outputs[target];
         container.Should().NotBeNull("the target must have been seeded via CreateSkyPatcherNpc");
-        var prop = container!.GetType().GetProperty("ActionStrings")!;
-        return (List<string>)prop.GetValue(container)!;
+        var actions = (System.Collections.IEnumerable)container!.GetType().GetProperty("Actions")!.GetValue(container)!;
+
+        var rendered = new List<string>();
+        foreach (var action in actions)
+        {
+            var text = (string)action.GetType().GetProperty("Text")!.GetValue(action)!;
+            var formKeyRef = action.GetType().GetProperty("FormKeyRef")!.GetValue(action);
+            rendered.Add(formKeyRef is FormKey fk
+                ? text + "=" + SkyPatcherInterface.FormatFormKeyForSkyPatcher(fk)
+                : text);
+        }
+        return rendered;
     }
 }

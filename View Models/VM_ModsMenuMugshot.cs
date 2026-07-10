@@ -13,6 +13,7 @@ using System.Linq;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using System.Reactive.Linq;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;

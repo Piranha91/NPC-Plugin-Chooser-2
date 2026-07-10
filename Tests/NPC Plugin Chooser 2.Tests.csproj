@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net8.0-windows</TargetFramework>
+        <!-- Match the app's Windows platform version (see note in the app csproj): the test
+             project references the app, so it must target the same windows10.0.19041 floor. -->
+        <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <IsPackable>false</IsPackable>
@@ -33,8 +35,8 @@
         <!-- Mutagen record serialization (YAML) for the golden-output source-oracle comparison: it dumps a
              record's full element tree, which the test diffs. The source generator is call-site driven, so
              the test assembly (where Serialize is called) must reference it directly. Versions match the app. -->
-        <PackageReference Include="Mutagen.Bethesda.Serialization.Yaml" Version="1.37.0-alpha.0" />
-        <PackageReference Include="Mutagen.Bethesda.Serialization.SourceGenerator" Version="1.37.0-alpha.0">
+        <PackageReference Include="Mutagen.Bethesda.Serialization.Yaml" Version="1.38.3" />
+        <PackageReference Include="Mutagen.Bethesda.Serialization.SourceGenerator" Version="1.38.3">
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>

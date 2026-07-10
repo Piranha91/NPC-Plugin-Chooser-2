@@ -2,6 +2,9 @@ using System.Globalization;
 using System.Reactive.Concurrency;
 using NPC_Plugin_Chooser_2.BackEnd;
 using ReactiveUI;
+// ReactiveUI 20+ removed the static RxApp class; its (still read/write) schedulers moved to
+// ReactiveUI.RxSchedulers. Alias keeps this guard's get/set of the schedulers unchanged.
+using RxApp = ReactiveUI.RxSchedulers;
 
 namespace NPC_Plugin_Chooser_2.Tests.TestSupport;
 

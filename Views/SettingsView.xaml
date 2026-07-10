@@ -22,6 +22,7 @@
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         <local:BooleanToOpacityConverter x:Key="BooleanToOpacityConverter"/>
         <local:EnumToVisibilityConverter x:Key="EnumToVisibilityConverter"/>
+        <local:EnumDescriptionConverter x:Key="EnumDescriptionConverter"/>
         <ObjectDataProvider x:Key="SkyrimReleaseEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="bsky:SkyrimRelease"/>
@@ -295,7 +296,11 @@
                               IsChecked="{Binding AutoEslIfy, Mode=TwoWay}"
                               Margin="0,5,0,0"
                               ToolTip="When writing the output plugin, checks if it can be ESLified and performs the ESLification proccess"/>
-                    
+                    <CheckBox Content="Auto-split if over the master limit"
+                              IsChecked="{Binding AutoSplitOutput, Mode=TwoWay}"
+                              Margin="0,5,0,0"
+                              ToolTip="If the output plugin would exceed Skyrim's 255-master limit, automatically split it into multiple files (e.g. &quot;MyPatch.esp&quot;, &quot;MyPatch_2.esp&quot;, ...). Only triggers on overflow - a normal-sized patch stays a single plugin. When it does split, ALL of the resulting plugins must be enabled in your load order. Also applies per-plugin when 'Split Output' is on."/>
+
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
                         <CheckBox Content="Split Output" IsChecked="{Binding SplitOutput, Mode=TwoWay}" VerticalAlignment="Center"
                                   ToolTip="Splits the generated patch into multiple smaller plugins based on the criteria to the right."/>
@@ -651,6 +656,39 @@
                                              ToolTip="Hair-above-head padding (world units)."/>
                                 </StackPanel>
                             </WrapPanel>
+
+                            <!-- Decode-cache budget: how much RAM the in-process renderer's decoded-texture
+                                 and parsed-mesh caches may use during mugshot generation. -->
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <TextBlock Text="Texture/geometry cache:" VerticalAlignment="Center" Margin="0,0,4,0"
+                                           ToolTip="How the in-process renderer sizes its decoded-texture and parsed-mesh RAM caches during mugshot generation. '% Free RAM' (default) grows the cache into a share of spare system memory; 'Fixed RAM' caps the total at the budget below; 'Disabled' turns caching off (renders decode fresh each time — slower, minimal RAM). Takes effect within a few renders; no restart needed."/>
+                                <ComboBox ItemsSource="{Binding MugshotCacheModeChoices}"
+                                          SelectedItem="{Binding MugshotCacheMode, Mode=TwoWay}"
+                                          Width="130" VerticalAlignment="Center">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Converter={StaticResource EnumDescriptionConverter}}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <StackPanel Orientation="Horizontal" Margin="12,0,0,0">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding MugshotCacheMode}" Value="FixedRam">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <TextBlock Text="Budget (GB):" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <xctk:DoubleUpDown Width="75" Minimum="0.25" Maximum="256" Increment="0.5"
+                                                       Value="{Binding MugshotCacheFixedGB, Mode=TwoWay}"
+                                                       FormatString="0.##" VerticalAlignment="Center"
+                                                       ToolTip="Approximate total RAM (GB) the renderer's decode caches may use in Fixed RAM mode."/>
+                                </StackPanel>
+                            </StackPanel>
 
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                 <StackPanel.Style>
