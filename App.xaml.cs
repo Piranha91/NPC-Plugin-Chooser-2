@@ -62,6 +62,13 @@ namespace NPC_Plugin_Chooser_2
             // expensive trace-string formatting when off.
             BsaContentsDiag.InitializeFromFileTrigger();
 
+            // Opt-in asset-provenance report (AssetProvenance.csv: why each output asset was
+            // copied + which NPCs/mods/records pulled it in). Primary control is the "Log Asset
+            // Provenance" checkbox in Settings > Logging, applied from settings below once they
+            // load. This file-trigger is a dev fallback that force-enables it without the UI.
+            // Off means every call site is a cheap IsEnabled check.
+            AssetProvenanceDiag.InitializeFromFileTrigger();
+
             // Opt-in per-NPC memory sampler. Off by default — drop a file named
             // LogMemory.txt next to the exe to record managed-heap / working-set
             // bytes to MemoryLog.txt on each NPC switch (for diagnosing long-session
@@ -183,6 +190,8 @@ namespace NPC_Plugin_Chooser_2
             var settingsModel = VM_Settings.LoadSettings(); // Use the static method from your Settings model
             // Enable startup logging from settings if not already enabled by file trigger
             StartupLogger.InitializeFromSettings(settingsModel.LogStartup);
+            // Apply the persisted "Log Asset Provenance" setting (the file trigger, if present, keeps it on).
+            AssetProvenanceDiag.SetEnabled(settingsModel.LogAssetProvenance);
             StartupLogger.Log("Settings loaded successfully");
             // Apply theme: prefer saved ThemeName, fall back to IsDarkMode for backward compat
             if (!string.IsNullOrEmpty(settingsModel.ThemeName))

@@ -1442,6 +1442,10 @@ Remove a mod from this list to allow it to be imported again."
                               IsChecked="{Binding LogStartup, Mode=TwoWay}"
                               Margin="0,5,0,0"
                               ToolTip="Logs detailed startup operations to StartupLog.txt on next launch. Useful for diagnosing startup hangs. Can also be triggered by placing a LogStartup.txt file next to the .exe."/>
+                    <CheckBox Content="Log Asset Provenance"
+                              IsChecked="{Binding LogAssetProvenance, Mode=TwoWay}"
+                              Margin="0,5,0,0"
+                              ToolTip="When on, a patch run writes AssetProvenance.csv next to the .exe: one row per asset file copied into the output — which NPC, mod, and (for plugin-referenced assets) which record pulled it in, plus its source (loose or BSA). Open in a spreadsheet and sort/filter by any column. Takes effect on the next Run — no restart needed. Useful for tracing why a particular texture/mesh ended up in your output."/>
 
                     <Separator Margin="0,10,0,8"/>
 

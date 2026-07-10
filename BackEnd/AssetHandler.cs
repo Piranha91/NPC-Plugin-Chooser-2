@@ -6,6 +6,7 @@ using Mutagen.Bethesda;
 using Mutagen.Bethesda.Archives;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Assets;
+using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
 using NPC_Plugin_Chooser_2.Models;
@@ -71,6 +72,7 @@ public class AssetHandler : OptionalUIModule
     {
         _potentialCopyFailures.Clear();
         _processedAssetTasks.Clear();
+        AssetProvenanceDiag.Reset(); // opt-in per-run asset provenance report (no-op unless enabled)
         LoadAuxiliaryFiles();
     }
     
@@ -232,12 +234,18 @@ public class AssetHandler : OptionalUIModule
     /// <param name="modSetting">The mod setting providing context for where to find the asset.</param>
     /// <param name="outputBasePath">The root output directory for the patch.</param>
     /// <param name="faceTintSubPath">The relative path of the face tint texture. Prevents mis-assignment of shared NPC face tints</param>
-    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath, string faceTintSubPath, string? overrideDestinationRelativePath = null)
+    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx, string? overrideDestinationRelativePath = null)
     {
         // FIX: Create a composite key to uniquely identify an asset *within the context of its source mod*.
         // This prevents a failed lookup from one mod from blocking a successful lookup from another mod for the same relative path.
-        
-        string cacheKey = $"{(overrideDestinationRelativePath ?? relativePath)}|{modSetting.DisplayName}";
+
+        string destRel = overrideDestinationRelativePath ?? relativePath;
+        string cacheKey = $"{destRel}|{modSetting.DisplayName}";
+
+        // Provenance is recorded on EVERY request (before the dedup below) so a file pulled in by
+        // many NPCs lists them all; the physical copy still happens once via the task cache. No-op
+        // unless the opt-in AssetProvenance diagnostic is enabled.
+        AssetProvenanceDiag.RecordReference(destRel, modSetting.DisplayName, ctx);
 
         return _processedAssetTasks.GetOrAdd(cacheKey, _ => Task.Run(async () =>
         {
@@ -245,6 +253,9 @@ public class AssetHandler : OptionalUIModule
             try
             {
                 var (sourceType, sourcePath, bsaPath) = FindAssetSource(relativePath, modSetting);
+                // Record where the bytes came from once per unique file+mod (the task runs once per cacheKey).
+                AssetProvenanceDiag.RecordSource(destRel, modSetting.DisplayName, sourceType.ToString(),
+                    sourceType == AssetSourceType.BsaFile ? bsaPath : sourcePath);
                 string destPath = Path.Combine(outputBasePath, relativePath);
                 if (overrideDestinationRelativePath != null)
                 {
@@ -258,7 +269,7 @@ public class AssetHandler : OptionalUIModule
                             // Create two tasks: one for copying, one for analyzing the source file.
                             Task copyTask = PerformLooseCopyAsync(sourcePath, destPath);
                             Task analysisTask = PostProcessCopiedFile(sourcePath, modSetting, outputBasePath,
-                                faceTintSubPath);
+                                faceTintSubPath, ctx);
 
                             // Await both tasks to run them in parallel.
                             await Task.WhenAll(copyTask, analysisTask);
@@ -275,10 +286,10 @@ public class AssetHandler : OptionalUIModule
                         // The original sequential logic is still best here.
                         if ((await _bsaHandler.ExtractFileAsync(bsaPath, relativePath, destPath)).ok && modSetting.CopyAssets)
                         {
-                            await PostProcessCopiedFile(destPath, modSetting, outputBasePath, faceTintSubPath);
+                            await PostProcessCopiedFile(destPath, modSetting, outputBasePath, faceTintSubPath, ctx);
                         }
                         break;
-                
+
                     default:
                         // If the asset is not found within this modSetting, the task simply completes,
                         // doing nothing. Another call with a different modSetting will have its own task.
@@ -333,13 +344,13 @@ public class AssetHandler : OptionalUIModule
     /// this function is agnostic to whether or not these textures are assigned to a surrogate, so this could potentially
     /// create the wrong face tint textures
     /// </summary>
-    private async Task PostProcessNifTextures(string nifPathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath)
+    private async Task PostProcessNifTextures(string nifPathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx)
     {
         // The check now correctly uses the passed-in path.
         if (!nifPathToAnalyze.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)) return;
 
         // Also follow any SMP/HDT physics XML this NIF points at (independent of textures).
-        ScheduleSmpPhysicsXmls(nifPathToAnalyze, modSetting, outputBasePath, faceTintSubPath);
+        ScheduleSmpPhysicsXmls(nifPathToAnalyze, modSetting, outputBasePath, faceTintSubPath, ctx);
 
         try
         {
@@ -362,9 +373,10 @@ public class AssetHandler : OptionalUIModule
             Debug.WriteLine($"      NIF Analysis: Found {regularizedPaths.Count} additional textures in {Path.GetFileName(nifPathToAnalyze)}.");
 
             var textureTasks = new List<Task>();
+            var texCtx = ctx.WithReason("NifTexture", Path.GetFileName(nifPathToAnalyze));
             foreach (var texRelPath in regularizedPaths)
             {
-                textureTasks.Add(RequestAssetCopyAsync(texRelPath, modSetting, outputBasePath, faceTintSubPath));
+                textureTasks.Add(RequestAssetCopyAsync(texRelPath, modSetting, outputBasePath, faceTintSubPath, texCtx));
             }
             // await Task.WhenAll(textureTasks); DO not await here - causes deadlock due to upstream semaphore
         }
@@ -379,15 +391,15 @@ public class AssetHandler : OptionalUIModule
     /// NIFs are scanned for referenced textures and physics XMLs; physics XMLs are scanned for
     /// any sibling XML they include. Non-NIF/non-XML files need no follow-up.
     /// </summary>
-    private async Task PostProcessCopiedFile(string pathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath)
+    private async Task PostProcessCopiedFile(string pathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx)
     {
         if (pathToAnalyze.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
         {
-            await PostProcessNifTextures(pathToAnalyze, modSetting, outputBasePath, faceTintSubPath);
+            await PostProcessNifTextures(pathToAnalyze, modSetting, outputBasePath, faceTintSubPath, ctx);
         }
         else if (pathToAnalyze.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
         {
-            PostProcessSmpXmlIncludes(pathToAnalyze, modSetting, outputBasePath, faceTintSubPath);
+            PostProcessSmpXmlIncludes(pathToAnalyze, modSetting, outputBasePath, faceTintSubPath, ctx);
         }
     }
 
@@ -400,11 +412,12 @@ public class AssetHandler : OptionalUIModule
     /// NPC uses, so we never guess or over-copy. Fire-and-forget like the texture scan (must NOT await while the
     /// caller holds <see cref="_nifProcessingSemaphore"/>).
     /// </summary>
-    private void ScheduleSmpPhysicsXmls(string nifPathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath)
+    private void ScheduleSmpPhysicsXmls(string nifPathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx)
     {
         try
         {
             var xmlRefs = NifHandler.GetPhysicsXmlPathsFromNif(nifPathToAnalyze);
+            var xmlCtx = ctx.WithReason("SmpXml", Path.GetFileName(nifPathToAnalyze));
             foreach (var raw in xmlRefs)
             {
                 if (!TryNormalizePhysicsXmlPath(raw, nifPathToAnalyze, out var xmlRelPath)) continue;
@@ -419,7 +432,7 @@ public class AssetHandler : OptionalUIModule
                 }
 
                 Debug.WriteLine($"      SMP Physics: scheduling '{xmlRelPath}' (from {Path.GetFileName(nifPathToAnalyze)}).");
-                _ = RequestAssetCopyAsync(xmlRelPath, modSetting, outputBasePath, faceTintSubPath);
+                _ = RequestAssetCopyAsync(xmlRelPath, modSetting, outputBasePath, faceTintSubPath, xmlCtx);
             }
         }
         catch (Exception ex)
@@ -433,7 +446,7 @@ public class AssetHandler : OptionalUIModule
     /// copied physics XML so include chains are carried along too. References that don't resolve to one of the
     /// mod's files are silently ignored (they are speculative). Fire-and-forget, like the NIF scans.
     /// </summary>
-    private void PostProcessSmpXmlIncludes(string xmlPathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath)
+    private void PostProcessSmpXmlIncludes(string xmlPathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx)
     {
         try
         {
@@ -446,6 +459,7 @@ public class AssetHandler : OptionalUIModule
                 "[\"'>]\\s*([^\"'<>|*?\\r\\n]+[\\\\/][^\"'<>|*?\\r\\n]+\\.xml)\\s*[\"'<]",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+            var includeCtx = ctx.WithReason("SmpXml", Path.GetFileName(xmlPathToAnalyze));
             foreach (System.Text.RegularExpressions.Match m in matches)
             {
                 var token = m.Groups[1].Value;
@@ -454,7 +468,7 @@ public class AssetHandler : OptionalUIModule
                 if (FindAssetSource(relPath, modSetting).Item1 == AssetSourceType.NotFound) continue;
 
                 Debug.WriteLine($"      SMP Physics: scheduling included '{relPath}' (from {Path.GetFileName(xmlPathToAnalyze)}).");
-                _ = RequestAssetCopyAsync(relPath, modSetting, outputBasePath, faceTintSubPath);
+                _ = RequestAssetCopyAsync(relPath, modSetting, outputBasePath, faceTintSubPath, includeCtx);
             }
         }
         catch (Exception ex)
@@ -593,23 +607,35 @@ public class AssetHandler : OptionalUIModule
         }
         // END: ADDED WARNING LOGIC
 
+        // Provenance context for the opt-in AssetProvenance report (no-op unless enabled): every
+        // asset scheduled below is attributed to this target NPC + donor + mod, with a per-asset
+        // reason. faceGenRelPaths lets the final loop tell the NPC's own FaceGen apart from assets
+        // pulled in by the appearance plugin's records.
+        var faceGenCtx = new AssetRequestContext(npcIdentifier, targetNpcFormKey, appearanceNpcRecord.FormKey, appearanceNpcRecord.EditorID, "FaceGen");
+        var pluginRefCtx = faceGenCtx.WithReason("PluginRef");
+        var faceGenRelPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { faceMeshRelativePath, faceTexRelativePath };
+
         if (useSkyPatcher || isFaceSwap)
         {
             (var surrogateFaceGenNifPath, var surrogateFaceGenDdsPath) = // These store the paths for the original NPC FormKey - e.g. the one being copied from
                 Auxilliary.GetFaceGenSubPathStrings(surrogateNpcFormKey, true);
-            RequestAssetCopyAsync(faceMeshRelativePath, appearanceModSetting, outputBasePath, faceTexRelativePath, overrideDestinationRelativePath: surrogateFaceGenNifPath);
-            RequestAssetCopyAsync(faceTexRelativePath, appearanceModSetting, outputBasePath, faceTexRelativePath, overrideDestinationRelativePath: surrogateFaceGenDdsPath);
+            RequestAssetCopyAsync(faceMeshRelativePath, appearanceModSetting, outputBasePath, faceTexRelativePath, faceGenCtx, overrideDestinationRelativePath: surrogateFaceGenNifPath);
+            RequestAssetCopyAsync(faceTexRelativePath, appearanceModSetting, outputBasePath, faceTexRelativePath, faceGenCtx, overrideDestinationRelativePath: surrogateFaceGenDdsPath);
         }
         else
         {
             meshToCopyRelativePaths.Add(faceMeshRelativePath);
-            textureToCopyRelativePaths.Add(faceTexRelativePath); 
+            textureToCopyRelativePaths.Add(faceTexRelativePath);
         }
         
         // 2. Non-FaceGen Assets (Only if CopyExtraAssets is true)
+        // When the AssetProvenance diag is on, assetProv accumulates path -> referencing-record so the
+        // report names exactly which record pulled each PluginRef asset in. Null (skipped) when off.
+        Dictionary<string, HashSet<string>>? assetProv =
+            AssetProvenanceDiag.IsEnabled ? new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase) : null;
         if (appearanceModSetting.CopyAssets)
         {
-            GetAssetPathsReferencedByPlugin(appearanceNpcRecord, appearanceModSetting.CorrespondingModKeys, appearanceModSetting.CorrespondingFolderPaths.ToHashSet(), meshToCopyRelativePaths, textureToCopyRelativePaths);
+            GetAssetPathsReferencedByPlugin(appearanceNpcRecord, appearanceModSetting.CorrespondingModKeys, appearanceModSetting.CorrespondingFolderPaths.ToHashSet(), meshToCopyRelativePaths, textureToCopyRelativePaths, assetProv);
             AddCorrespondingNumericalNifPaths(meshToCopyRelativePaths, new HashSet<string>());
         }
 
@@ -621,16 +647,22 @@ public class AssetHandler : OptionalUIModule
         foreach (var relPath in allAssetPaths)
         {
             Auxilliary.TryRegularizePath(relPath, out string regularizedPath);
-            // This method is fire-and-forget; the task is added to the concurrent dictionary 
+            // FaceGen assets have no referencing record; PluginRef assets carry the record(s) that
+            // referenced them (looked up by the raw path, which is what the prov map is keyed on).
+            AssetRequestContext reqCtx = faceGenRelPaths.Contains(regularizedPath)
+                ? faceGenCtx
+                : pluginRefCtx.WithReferencer(LookupReferencer(assetProv, relPath));
+            // This method is fire-and-forget; the task is added to the concurrent dictionary
             // and runs in the background. It will not re-process assets it has already seen.
-            RequestAssetCopyAsync(regularizedPath, appearanceModSetting, outputBasePath, faceTexRelativePath);
+            RequestAssetCopyAsync(regularizedPath, appearanceModSetting, outputBasePath, faceTexRelativePath, reqCtx);
         }
     }
 
     /// <summary>
     /// Schedules asynchronous processing for assets identified via direct asset links.
     /// </summary>
-    public async Task ScheduleCopyAssetLinkFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting, string outputBasePath, string faceTexRelativePath)
+    public async Task ScheduleCopyAssetLinkFiles(List<IAssetLinkGetter> assetLinks, ModSetting appearanceModSetting, string outputBasePath, string faceTexRelativePath,
+        INpcGetter appearanceNpcRecord, FormKey targetNpcFormKey, string npcIdentifier)
     {
         using var _ = ContextualPerformanceTracer.Trace("AssetHandler.ScheduleCopyAssetLinkFiles");
 
@@ -638,7 +670,7 @@ public class AssetHandler : OptionalUIModule
         {
             return;
         }
-        
+
         var assetRelPaths =
             assetLinks
                 .Select(x => x.GivenPath)
@@ -647,13 +679,14 @@ public class AssetHandler : OptionalUIModule
                 .Where(rel => rel is not null)
                 .Select(rel => rel!) // null-forgiving operator converts string? → string
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        
+
+        var ctx = new AssetRequestContext(npcIdentifier, targetNpcFormKey, appearanceNpcRecord.FormKey, appearanceNpcRecord.EditorID, "AssetLink");
         AddCorrespondingNumericalNifPaths(assetRelPaths, new HashSet<string>()); // safe to pass non-nif files because the function filters for .nif paths anyway
         foreach (var relPath in assetRelPaths)
         {
             if (relPath != null)
             {
-                RequestAssetCopyAsync(relPath, appearanceModSetting, outputBasePath, faceTexRelativePath);
+                RequestAssetCopyAsync(relPath, appearanceModSetting, outputBasePath, faceTexRelativePath, ctx);
             }
         }
     }
@@ -708,15 +741,18 @@ public class AssetHandler : OptionalUIModule
         progressReporter($"Asset Transfer: Complete. {_processedAssetTasks.Count} total assets processed.");
     }
 
-    // --- Asset Identification Helpers (No changes needed here) ---
+    // --- Asset Identification Helpers ---
+    // When the opt-in AssetProvenance diag is on, each helper is passed a path -> referencing-record
+    // map (prov); every asset path it collects is tagged with the record that referenced it (head
+    // part / armor addon / texture set) so the CSV report can name it. prov is null when the diag is off.
     private void GetAssetPathsReferencedByPlugin(INpcGetter npc, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> meshPaths,
-        HashSet<string> texturePaths)
+        HashSet<string> texturePaths, Dictionary<string, HashSet<string>>? prov)
     {
         var visitedHeadParts = new HashSet<FormKey>();
-        
+
         if (npc.HeadParts != null)
             foreach (var hpLink in npc.HeadParts)
-                GetHeadPartAssetPaths(hpLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, visitedHeadParts);
+                GetHeadPartAssetPaths(hpLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, visitedHeadParts, prov);
         if (!npc.WornArmor.IsNull && _recordHandler.TryGetRecordFromMods(npc.WornArmor, correspondingModKeys, fallBackModFolderNames,
                 RecordLookupFallBack.Winner, out var wornArmorGetterGeneric) && wornArmorGetterGeneric != null)
         {
@@ -724,75 +760,115 @@ public class AssetHandler : OptionalUIModule
             if (wornArmorGetter != null && wornArmorGetter.Armature != null)
             {
                 foreach (var aaLink in wornArmorGetter.Armature)
-                    GetARMAAssetPaths(aaLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths);
+                    GetARMAAssetPaths(aaLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, prov);
             }
         }
     }
 
     private void GetHeadPartAssetPaths(IFormLinkGetter<IHeadPartGetter> hpLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> texturePaths,
-        HashSet<string> meshPaths, HashSet<FormKey> visitedHeadParts)
+        HashSet<string> meshPaths, HashSet<FormKey> visitedHeadParts, Dictionary<string, HashSet<string>>? prov)
     {
-        /* Implementation remains the same */
         if (hpLink.IsNull || !_recordHandler.TryGetRecordFromMods(hpLink, correspondingModKeys, fallBackModFolderNames, RecordLookupFallBack.Winner, out var hpGetterGeneric)) return;
         var hpGetter = hpGetterGeneric as IHeadPartGetter;
         if (hpGetter is null) return;
-        
+
         //  PREVENT CIRCULAR REFERENCES
         // If we can't add the FormKey, it means we've already processed this HeadPart.
         if (!visitedHeadParts.Add(hpGetter.FormKey))
         {
             return; // Break the recursive loop
         }
-        
-        if (hpGetter.Model?.File != null) meshPaths.Add(hpGetter.Model.File);
+
+        AddPathWithProv(meshPaths, hpGetter.Model?.File, prov, hpGetter);
         if (hpGetter.Parts != null)
             foreach (var part in hpGetter.Parts)
-                if (part?.FileName != null)
-                    meshPaths.Add(part.FileName);
-        if (!hpGetter.TextureSet.IsNull) GetTextureSetPaths(hpGetter.TextureSet, correspondingModKeys, fallBackModFolderNames, texturePaths);
+                AddPathWithProv(meshPaths, part?.FileName, prov, hpGetter);
+        if (!hpGetter.TextureSet.IsNull) GetTextureSetPaths(hpGetter.TextureSet, correspondingModKeys, fallBackModFolderNames, texturePaths, prov);
         if (hpGetter.ExtraParts != null)
             foreach (var extraPartLink in hpGetter.ExtraParts)
-                GetHeadPartAssetPaths(extraPartLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, visitedHeadParts);
+                GetHeadPartAssetPaths(extraPartLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, visitedHeadParts, prov);
     }
 
     private void GetARMAAssetPaths(IFormLinkGetter<IArmorAddonGetter> aaLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> texturePaths,
-        HashSet<string> meshPaths)
+        HashSet<string> meshPaths, Dictionary<string, HashSet<string>>? prov)
     {
-        /* Implementation remains the same */
         if (aaLink.IsNull || !_recordHandler.TryGetRecordFromMods(aaLink, correspondingModKeys, fallBackModFolderNames, RecordLookupFallBack.Winner, out var aaGetterGeneric)) return;
         var aaGetter = aaGetterGeneric as IArmorAddonGetter;
         if (aaGetter is null) return;
-        
-        if (aaGetter.WorldModel?.Male?.File != null) meshPaths.Add(aaGetter.WorldModel.Male.File);
-        if (aaGetter.WorldModel?.Female?.File != null) meshPaths.Add(aaGetter.WorldModel.Female.File);
+
+        AddPathWithProv(meshPaths, aaGetter.WorldModel?.Male?.File, prov, aaGetter);
+        AddPathWithProv(meshPaths, aaGetter.WorldModel?.Female?.File, prov, aaGetter);
         if (!aaGetter.SkinTexture?.Male.IsNull ?? false)
-            GetTextureSetPaths(aaGetter.SkinTexture.Male, correspondingModKeys, fallBackModFolderNames, texturePaths);
+            GetTextureSetPaths(aaGetter.SkinTexture.Male, correspondingModKeys, fallBackModFolderNames, texturePaths, prov);
         if (!aaGetter.SkinTexture?.Female.IsNull ?? false)
-            GetTextureSetPaths(aaGetter.SkinTexture.Female, correspondingModKeys, fallBackModFolderNames, texturePaths);
+            GetTextureSetPaths(aaGetter.SkinTexture.Female, correspondingModKeys, fallBackModFolderNames, texturePaths, prov);
     }
 
-    private void GetTextureSetPaths(IFormLinkGetter<ITextureSetGetter> txstLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames,  HashSet<string> texturePaths)
+    private void GetTextureSetPaths(IFormLinkGetter<ITextureSetGetter> txstLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames,  HashSet<string> texturePaths, Dictionary<string, HashSet<string>>? prov)
     {
-        /* Implementation remains the same */
         if (txstLink.IsNull ||
             !_recordHandler.TryGetRecordFromMods(txstLink, correspondingModKeys, fallBackModFolderNames, RecordLookupFallBack.Winner, out var txstGetterGeneric)) return;
         var txstGetter = txstGetterGeneric as ITextureSetGetter;
         if (txstGetter is null) return;
-        
-        if (!string.IsNullOrEmpty(txstGetter.Diffuse?.GivenPath)) texturePaths.Add(txstGetter.Diffuse.GivenPath);
-        if (!string.IsNullOrEmpty(txstGetter.NormalOrGloss?.GivenPath))
-            texturePaths.Add(txstGetter.NormalOrGloss.GivenPath);
-        if (!string.IsNullOrEmpty(txstGetter.EnvironmentMaskOrSubsurfaceTint?.GivenPath))
-            texturePaths.Add(txstGetter.EnvironmentMaskOrSubsurfaceTint.GivenPath);
-        if (!string.IsNullOrEmpty(txstGetter.GlowOrDetailMap?.GivenPath))
-            texturePaths.Add(txstGetter.GlowOrDetailMap.GivenPath);
-        if (!string.IsNullOrEmpty(txstGetter.Height?.GivenPath)) texturePaths.Add(txstGetter.Height.GivenPath);
-        if (!string.IsNullOrEmpty(txstGetter.Environment?.GivenPath))
-            texturePaths.Add(txstGetter.Environment.GivenPath);
-        if (!string.IsNullOrEmpty(txstGetter.Multilayer?.GivenPath))
-            texturePaths.Add(txstGetter.Multilayer.GivenPath);
-        if (!string.IsNullOrEmpty(txstGetter.BacklightMaskOrSpecular?.GivenPath))
-            texturePaths.Add(txstGetter.BacklightMaskOrSpecular.GivenPath);
+
+        AddPathWithProv(texturePaths, txstGetter.Diffuse?.GivenPath, prov, txstGetter);
+        AddPathWithProv(texturePaths, txstGetter.NormalOrGloss?.GivenPath, prov, txstGetter);
+        AddPathWithProv(texturePaths, txstGetter.EnvironmentMaskOrSubsurfaceTint?.GivenPath, prov, txstGetter);
+        AddPathWithProv(texturePaths, txstGetter.GlowOrDetailMap?.GivenPath, prov, txstGetter);
+        AddPathWithProv(texturePaths, txstGetter.Height?.GivenPath, prov, txstGetter);
+        AddPathWithProv(texturePaths, txstGetter.Environment?.GivenPath, prov, txstGetter);
+        AddPathWithProv(texturePaths, txstGetter.Multilayer?.GivenPath, prov, txstGetter);
+        AddPathWithProv(texturePaths, txstGetter.BacklightMaskOrSpecular?.GivenPath, prov, txstGetter);
+    }
+
+    // Adds relPath to the given set (if non-empty) and — when the AssetProvenance diag is on
+    // (prov != null) — tags it with the record that referenced it, so the report can say exactly
+    // which head part / armor addon / texture set pulled the file in.
+    private static void AddPathWithProv(HashSet<string> pathSet, string? relPath, Dictionary<string, HashSet<string>>? prov, IMajorRecordGetter owner)
+    {
+        if (string.IsNullOrEmpty(relPath)) return;
+        pathSet.Add(relPath);
+        if (prov == null) return;
+        if (!prov.TryGetValue(relPath, out var owners))
+        {
+            owners = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            prov[relPath] = owners;
+        }
+        owners.Add(DescribeRecordForProv(owner));
+    }
+
+    // "HeadPart 'EditorID' [FormKey]" (or "HeadPart [FormKey]" when no EditorID) for the provenance report.
+    private static string DescribeRecordForProv(IMajorRecordGetter rec)
+    {
+        string type = rec switch
+        {
+            IHeadPartGetter => "HeadPart",
+            IArmorAddonGetter => "ArmorAddon",
+            IArmorGetter => "Armor",
+            ITextureSetGetter => "TextureSet",
+            _ => "Record"
+        };
+        return string.IsNullOrEmpty(rec.EditorID)
+            ? $"{type} [{rec.FormKey}]"
+            : $"{type} '{rec.EditorID}' [{rec.FormKey}]";
+    }
+
+    // Looks up the referencing-record descriptor(s) for a plugin-referenced asset, joined with " | ".
+    // For an auto-added _0/_1 body-double NIF (which has no direct reference of its own) it falls
+    // back to its sibling's records. Returns empty when the diag is off or nothing is recorded.
+    private static string LookupReferencer(Dictionary<string, HashSet<string>>? prov, string relPath)
+    {
+        if (prov == null) return string.Empty;
+        if (prov.TryGetValue(relPath, out var owners) && owners.Count > 0)
+            return string.Join(" | ", owners.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
+
+        string? sibling = null;
+        if (relPath.EndsWith("_0.nif", StringComparison.OrdinalIgnoreCase)) sibling = relPath.Substring(0, relPath.Length - 6) + "_1.nif";
+        else if (relPath.EndsWith("_1.nif", StringComparison.OrdinalIgnoreCase)) sibling = relPath.Substring(0, relPath.Length - 6) + "_0.nif";
+        if (sibling != null && prov.TryGetValue(sibling, out var sibOwners) && sibOwners.Count > 0)
+            return string.Join(" | ", sibOwners.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
+
+        return string.Empty;
     }
 
     // --- Asset Copying/Extraction Helpers ---

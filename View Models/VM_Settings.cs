@@ -407,6 +407,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     
     [Reactive] public bool LogActivity { get; set; }
     [Reactive] public bool LogStartup { get; set; }
+    [Reactive] public bool LogAssetProvenance { get; set; }
 
     // --- Per-NPC logging (Settings > Logging) ---
     // Editable list of NPCs the Validator/Patcher write a full trace for. The
@@ -706,6 +707,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         
         LogActivity = _model.LogActivity;
         LogStartup = _model.LogStartup;
+        LogAssetProvenance = _model.LogAssetProvenance;
 
         ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
         ImportFromLoadOrderExclusionSelectorViewModel = new VM_ModSelector();
@@ -1140,6 +1142,17 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 {
                     StartupLogger.InitializeFromSettings(true);
                 }
+            })
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.LogAssetProvenance)
+            .Skip(1)
+            .Subscribe(b =>
+            {
+                _model.LogAssetProvenance = b;
+                // Applied live — AssetProvenanceDiag reads IsEnabled at patch time, so the next
+                // run picks this up with no restart (the dev file trigger still force-enables it).
+                AssetProvenanceDiag.SetEnabled(b);
             })
             .DisposeWith(_disposables);
 

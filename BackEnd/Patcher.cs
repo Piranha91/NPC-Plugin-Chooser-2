@@ -1178,7 +1178,8 @@ public class Patcher : OptionalUIModule
                                 var (_, faceTintPath) = Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, true);
                                 
                                 await _assetHandler.ScheduleCopyAssetLinkFiles(assetLinks, appearanceModSetting,
-                                    _currentRunOutputAssetPath, faceTintPath);
+                                    _currentRunOutputAssetPath, faceTintPath,
+                                    appearanceNpcRecord, npcFormKey, npcIdentifier);
 
 
                                 if (_settings.UseSkyPatcherMode)
@@ -1231,6 +1232,11 @@ public class Patcher : OptionalUIModule
                     
                     // Verify any cached file access errors to see if they were actual failures.
                     _assetHandler.LogTrueCopyFailures();
+
+                    // Opt-in asset-provenance report (AssetProvenance.csv): why each file was copied
+                    // and which NPCs/mods/records pulled it in. No-op unless enabled (Settings
+                    // checkbox or the LogAssetProvenance.txt dev trigger).
+                    AssetProvenanceDiag.Flush();
 
                     AppendLog("All file operations finished.", false, true);
 

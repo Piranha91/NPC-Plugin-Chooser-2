@@ -132,6 +132,16 @@ speculating from code:
 - **`BsaContentsDiag.log`** (`BsaContentsDiag`) — BSA registration + per-asset
   hit/miss for mugshot resolution. Opt-in: drop a `LogBsaDiag.txt` file next to
   the exe.
+- **`AssetProvenance.csv`** (`AssetProvenanceDiag`) — per patch run, why each asset
+  file was copied into the output. One CSV row per atomic reference (columns: `DestFile,
+  Reason, Referencer, NPC, TargetFormKey, Mod, DonorFormKey, DonorEditorID, SourceKind,
+  SourcePath`) — sort/pivot in a spreadsheet to view by-file or by-NPC. `Reason` is
+  FaceGen / PluginRef / NifTexture / SmpXml / AssetLink; `Referencer` names the specific
+  referencing record for PluginRef (e.g. `HeadPart 'Hair01' [ID]`) or the source NIF/XML
+  for NifTexture/SmpXml. Unlike the other opt-in logs this is **user-facing**: the "Log
+  Asset Provenance" checkbox in Settings > Logging (`Settings.LogAssetProvenance`),
+  applied at runtime so it takes effect on the next Run. A `LogAssetProvenance.txt` file
+  next to the exe still force-enables it as a dev fallback.
 - **`RenderLogs/`** — per-NPC mugshot render traces (asset resolution paths).
 - **`Rejected NPCs/`** — logs why each discarded NPC was excluded from the menu.
 

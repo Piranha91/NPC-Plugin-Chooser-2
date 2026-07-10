@@ -434,6 +434,9 @@ public class Settings
     // --- Troubleshooting / Logging ---
     public bool LogActivity { get; set; } = false;
     public bool LogStartup { get; set; } = false;
+    // When on, a patch run writes AssetProvenance.log (why each output asset was copied + which
+    // NPCs/mods pulled it in). Applied at runtime via AssetProvenanceDiag.SetEnabled.
+    public bool LogAssetProvenance { get; set; } = false;
     public bool FixGarbledText { get; set; } = true;
 
     // NPCs (by FormKey) for which the Validator and Patcher emit a full per-NPC
