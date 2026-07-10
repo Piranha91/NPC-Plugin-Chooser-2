@@ -547,6 +547,13 @@ public sealed class InternalMugshotSettings
     // Verbose log toggle bound through the settings adapter.
     public bool VerboseLog { get; set; } = false;
 
+    // --- Decode-cache budget ---
+    // Controls how the renderer's in-RAM decode caches (decoded DDS textures + parsed NIF geometry) size
+    // themselves. Default reproduces the historical "grow into a share of free RAM" behaviour. FixedRam caps
+    // the total at CacheFixedBudgetGB; Disabled turns caching off (renders decode fresh each time).
+    public RenderCacheMode CacheMode { get; set; } = RenderCacheMode.PercentFreeRam;
+    public double CacheFixedBudgetGB { get; set; } = 4.0;
+
     // When true, the next live-preview load in the Settings panel captures the
     // full asset-resolution + renderer trace into a per-render text file under
     // <ExeDir>\RenderLogs\<ModName>_<FormKey>.txt. Diagnostic-only — used when

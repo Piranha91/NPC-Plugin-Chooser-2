@@ -89,4 +89,22 @@ public sealed class NpcChooserSettingsAdapter : ICharacterViewerSettings
             RequestSave();
         }
     }
+
+    /// <summary>Decode-cache sizing mode. The renderer's caches read this live at each budget re-poll,
+    /// so a change takes effect within a few renders without a restart.</summary>
+    public RenderCacheMode CacheMode
+    {
+        get => _settings.InternalMugshot.CacheMode;
+        set
+        {
+            if (_settings.InternalMugshot.CacheMode == value) return;
+            _settings.InternalMugshot.CacheMode = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CacheMode)));
+            RequestSave();
+        }
+    }
+
+    /// <summary>Fixed cache pool in bytes (from the persisted GB value), used only in FixedRam mode.</summary>
+    public long FixedCacheBudgetBytes =>
+        (long)(Math.Max(0, _settings.InternalMugshot.CacheFixedBudgetGB) * 1024L * 1024L * 1024L);
 }
