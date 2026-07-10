@@ -62,6 +62,12 @@ namespace NPC_Plugin_Chooser_2
             // expensive trace-string formatting when off.
             BsaContentsDiag.InitializeFromFileTrigger();
 
+            // Opt-in per-NPC memory sampler. Off by default — drop a file named
+            // LogMemory.txt next to the exe to record managed-heap / working-set
+            // bytes to MemoryLog.txt on each NPC switch (for diagnosing long-session
+            // RAM growth). Off means the per-switch hook is a cheap IsEnabled check.
+            MemoryLogger.InitializeFromFileTrigger();
+
             using (ContextualPerformanceTracer.Trace("App.OnStartup"))
             {
                 base.OnStartup(e);

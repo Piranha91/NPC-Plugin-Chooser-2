@@ -87,7 +87,15 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private Dictionary<FormKey, List<(string ModName, string ImagePath)>> _downloadedMugshotData = new();
     private readonly Subject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
     private CancellationTokenSource? _mugshotGenerationCts;
-    
+
+    // --- TEMP: auto-advance for memory profiling ---
+    // Drives the browse flow automatically (Ctrl+Shift+A in the NPCs view; Escape to stop) so the opt-in
+    // MemoryLogger accrues a per-NPC sample across a long run without a human clicking. It advances to the
+    // next NPC as soon as the current NPC's mugshot tiles all finish loading (or a safety timeout). Remove
+    // when the memory investigation is done.
+    private CancellationTokenSource? _autoAdvanceCts;
+    [Reactive] public bool IsAutoAdvancing { get; private set; }
+
     // Template filter caches — built once during InitializeAsync
     private HashSet<FormKey> _baseRecordIsTemplateSources = new();     // NPCs referenced as template by other base records
     private HashSet<FormKey> _winOverrideIsTemplateSources = new();    // NPCs referenced as template by other winning overrides
@@ -601,6 +609,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     }
                 }
                 Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms CurrentNpcAppearanceMods bound (count={vms.Count})");
+
+                // Opt-in memory sample, one row per NPC switch (no-op unless LogMemory.txt is present).
+                // Placed after the previous NPC's tiles are disposed so the sample reflects the steady state
+                // for the newly-shown NPC rather than a transient two-NPCs-resident peak.
+                if (MemoryLogger.IsEnabled)
+                    MemoryLogger.LogSample(SelectedNpc?.DisplayName ?? "(none)", vms.Count);
             })
             .ToPropertyEx(this, x => x.CurrentNpcAppearanceMods)
             .DisposeWith(_disposables);
@@ -3510,6 +3524,85 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             if (src != MugshotSourceOverride) result.Add(src);
         }
         return result;
+    }
+
+    // --- TEMP: auto-advance for memory profiling (paired with the fields above; remove when done) ---
+
+    /// <summary>Starts auto-advance if idle, stops it if already running (Ctrl+Shift+A toggle).</summary>
+    public void ToggleAutoAdvance()
+    {
+        if (IsAutoAdvancing) StopAutoAdvance();
+        else _ = RunAutoAdvanceAsync();
+    }
+
+    /// <summary>Stops the auto-advance loop (Escape).</summary>
+    public void StopAutoAdvance()
+    {
+        _autoAdvanceCts?.Cancel();
+        IsAutoAdvancing = false;
+    }
+
+    /// <summary>
+    /// Walks forward through the NPC list on its own: waits for the current NPC's mugshot tiles to finish
+    /// loading, dwells briefly, then advances — repeating until the end of the list or a stop. Each advance
+    /// trips the per-NPC MemoryLogger sample, so this fills MemoryLog.txt without manual clicking. Runs on
+    /// the UI thread (invoked from the view's key handler); awaiting Task.Delay yields to the dispatcher.
+    /// </summary>
+    private async Task RunAutoAdvanceAsync()
+    {
+        if (IsAutoAdvancing) return;
+        _autoAdvanceCts?.Cancel();
+        _autoAdvanceCts = new CancellationTokenSource();
+        var token = _autoAdvanceCts.Token;
+        IsAutoAdvancing = true;
+        try
+        {
+            // If nothing is selected yet, seed the first NPC in the current filtered list so there is a
+            // starting point (otherwise the loop would have nothing to advance from and immediately stop).
+            if (SelectedNpc == null && FilteredNpcs.Count > 0)
+            {
+                SelectedNpc = FilteredNpcs[0];
+                await WaitUntilAsync(() => CurrentNpcAppearanceMods != null, maxMs: 8000, token);
+            }
+
+            while (IsAutoAdvancing && !token.IsCancellationRequested)
+            {
+                // 1. Wait until the current NPC's tiles have all finished loading (all IsLoading == false).
+                //    A safety timeout keeps a tile that never resolves from stalling the whole run.
+                await WaitUntilAsync(
+                    () =>
+                    {
+                        var tiles = CurrentNpcAppearanceMods;
+                        return tiles != null && (tiles.Count == 0 || tiles.All(t => !t.IsLoading));
+                    },
+                    maxMs: 30000, token);
+                if (!IsAutoAdvancing || token.IsCancellationRequested) break;
+
+                // Brief dwell so the fully-loaded state (and its memory sample) settles before moving on.
+                await Task.Delay(300, token);
+                if (!IsAutoAdvancing || token.IsCancellationRequested) break;
+
+                // Reached the last NPC in the filtered list? (same index logic NavigateNextNpcCommand uses.)
+                var idx = SelectedNpc != null ? FilteredNpcs.IndexOf(SelectedNpc) : -1;
+                if (idx < 0 || idx >= FilteredNpcs.Count - 1) break;
+
+                var before = CurrentNpcAppearanceMods;
+                await NavigateNextNpcCommand.Execute();
+
+                // 2. Wait for the rebuild to swap in the next NPC's tile collection before we poll again.
+                await WaitUntilAsync(() => !ReferenceEquals(CurrentNpcAppearanceMods, before), maxMs: 8000, token);
+            }
+        }
+        catch (OperationCanceledException) { /* stopped */ }
+        catch (Exception ex) { Debug.WriteLine($"Auto-advance error: {ExceptionLogger.GetExceptionStack(ex)}"); }
+        finally { IsAutoAdvancing = false; }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, int maxMs, CancellationToken token)
+    {
+        var sw = Stopwatch.StartNew();
+        while (!condition() && sw.ElapsedMilliseconds < maxMs && !token.IsCancellationRequested)
+            await Task.Delay(100, token);
     }
 
     private void TriggerAsyncMugshotGeneration()
