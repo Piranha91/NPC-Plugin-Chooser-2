@@ -68,6 +68,48 @@ public class GoldenPatchSmokeTests
         }
     }
 
+    /// <summary>
+    /// The NPC_Token.json marker is the self-output guard VM_Mods keys on to skip this app's own output
+    /// folder during appearance-mod scanning. It is written up front by RunPatchingLogic (not only at the
+    /// end), so a crash or swallowed save failure between the plugin write and the final unified-token write
+    /// cannot leave partial output on disk without the marker. Here we skip the final unified write to
+    /// reproduce that interrupted state and assert the bootstrap marker is present regardless.
+    /// </summary>
+    [Fact]
+    public async Task BootstrapTokenMarker_IsWritten_EvenWithoutFinalUnifiedWrite()
+    {
+        if (!GoldenOutputConfig.TryLoad(out var config, out var skip))
+        {
+            _output.WriteLine("SKIPPED: " + skip);
+            return;
+        }
+
+        var combo = GoldenCombos.All.First(c => c.Index == 2); // CreateAndPatch / Include / non-SkyPatcher
+        var outDir = Path.Combine(Path.GetTempPath(), "NpcGoldenBootstrap_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outDir);
+
+        try
+        {
+            if (!GoldenEnvironmentBuilder.TryBuild(config!, outDir, "NPC", out var env, out var envSkip))
+            {
+                _output.WriteLine("SKIPPED: " + envSkip);
+                return;
+            }
+
+            var settings = GoldenComboSettingsBuilder.Build(config!, combo, outDir);
+            var result = await GoldenPatchRunner.RunAsync(env!.Provider, settings, writeUnifiedToken: false);
+
+            var tokenPath = Path.Combine(outDir, "NPC_Token.json");
+            File.Exists(tokenPath).Should().BeTrue(
+                "the bootstrap NPC_Token.json marker must exist even when the final unified write never runs, " +
+                "so the app never consumes its own partial output. Log tail:\n" + Tail(result.Log));
+        }
+        finally
+        {
+            try { if (Directory.Exists(outDir)) Directory.Delete(outDir, true); } catch { /* best effort */ }
+        }
+    }
+
     private static string Tail(string log)
     {
         var lines = log.Split('\n');

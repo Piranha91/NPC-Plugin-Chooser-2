@@ -25,7 +25,14 @@ internal sealed class GoldenPatchResult
 /// </summary>
 internal static class GoldenPatchRunner
 {
-    public static async Task<GoldenPatchResult> RunAsync(EnvironmentStateProvider provider, Settings settings)
+    /// <param name="writeUnifiedToken">
+    /// When false, the final <see cref="Patcher.WriteUnifiedTokenFile"/> enrichment is skipped, leaving
+    /// only the bootstrap NPC_Token.json marker that <see cref="Patcher.RunPatchingLogic"/> writes up
+    /// front. This reproduces the on-disk state a crash (or swallowed save failure) between the plugin
+    /// write and the unified-token write would leave behind, so tests can assert the marker still exists.
+    /// </param>
+    public static async Task<GoldenPatchResult> RunAsync(
+        EnvironmentStateProvider provider, Settings settings, bool writeUnifiedToken = true)
     {
         // The TextFileFormKeyAllocator persists EditorID->FormKey assignments to disk and is committed at
         // the end of a run; delete it so each combo allocates from a clean slate (deterministic per run).
@@ -60,7 +67,10 @@ internal static class GoldenPatchRunner
 
         await patcher.RunPatchingLogic(validSelections, showFinalMessage: false, isFirstIteration: true,
             CancellationToken.None);
-        patcher.WriteUnifiedTokenFile();
+        if (writeUnifiedToken)
+        {
+            patcher.WriteUnifiedTokenFile();
+        }
 
         return new GoldenPatchResult
         {

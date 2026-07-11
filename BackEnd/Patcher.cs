@@ -377,6 +377,25 @@ public class Patcher : OptionalUIModule
                 }
             }
 
+            // Write the NPC_Token.json marker up front, before any plugin or asset is saved. The
+            // self-output guard in VM_Mods keys purely on this file's existence to skip this app's
+            // own output folder during appearance-mod scanning. It used to be written last, so a
+            // crash (or a swallowed save failure) mid-patch could leave partial output on disk with
+            // no marker, and the next launch would consume its own output as an appearance mod.
+            // Writing an empty-payload marker here closes that window; WriteUnifiedTokenFile
+            // overwrites it with the full ProcessedNpcs payload once all batches finish.
+            if (isFirstIteration)
+            {
+                if (WriteTokenFileToDisk(out var bootstrapEx))
+                {
+                    AppendLog("Wrote bootstrap NPC_Token.json marker.");
+                }
+                else
+                {
+                    AppendLog($"WARNING: Could not write bootstrap NPC_Token.json marker: {bootstrapEx}", true, true);
+                }
+            }
+
             AppendLog("\nProcessing Valid NPC Appearance Selections...");
 
             if (!selectionsToProcess.Any())
@@ -1417,20 +1436,43 @@ public class Patcher : OptionalUIModule
     /// </summary>
     public void WriteUnifiedTokenFile()
     {
-        if (!_accumulatedTokenData.Any())
-        {
-            AppendLog("No NPC token data to write.", false, true);
-            return;
-        }
-
         if (string.IsNullOrWhiteSpace(_currentRunOutputAssetPath))
         {
             AppendLog("ERROR: Output path not set. Cannot write unified token file.", true);
             return;
         }
 
+        // Always finalize the marker, even when no NPCs were processed: a bootstrap marker with an
+        // empty payload was already written up front, and overwriting it keeps the on-disk token
+        // consistent with the completed run. The self-output guard keys on existence, not contents.
         AppendLog($"Writing unified NPC token file with {_accumulatedTokenData.Count} entries...", false, true);
-        
+
+        var tokenFilePath = Path.Combine(_currentRunOutputAssetPath, "NPC_Token.json");
+        if (WriteTokenFileToDisk(out var exceptionStr))
+        {
+            AppendLog($"Successfully wrote unified NPC_Token.json to {tokenFilePath}", false, true);
+        }
+        else
+        {
+            AppendLog($"NPC_Token.json not saved:" + Environment.NewLine + exceptionStr, true, true);
+        }
+    }
+
+    /// <summary>
+    /// Serializes NPC_Token.json into the current output directory from whatever token data has
+    /// accumulated so far. Shared by the early bootstrap-marker write (before any plugin/asset is
+    /// saved) and the final <see cref="WriteUnifiedTokenFile"/> enrichment. Returns false (with the
+    /// serializer's message) if the output path is unset or the write fails, so callers can log.
+    /// </summary>
+    private bool WriteTokenFileToDisk(out string exceptionStr)
+    {
+        exceptionStr = string.Empty;
+        if (string.IsNullOrWhiteSpace(_currentRunOutputAssetPath))
+        {
+            exceptionStr = "Output path not set.";
+            return false;
+        }
+
         var tokenFilePath = Path.Combine(_currentRunOutputAssetPath, "NPC_Token.json");
         var tokenData = new NpcToken
         {
@@ -1439,15 +1481,8 @@ public class Patcher : OptionalUIModule
             ProcessedNpcs = _accumulatedTokenData
         };
 
-        JSONhandler<NpcToken>.SaveJSONFile(tokenData, tokenFilePath, out bool tokenSaved, out var exceptionStr);
-        if (!tokenSaved)
-        {
-            AppendLog($"NPC_Token.json not saved:" + Environment.NewLine + exceptionStr, true, true);
-        }
-        else
-        {
-            AppendLog($"Successfully wrote unified NPC_Token.json to {tokenFilePath}", false, true);
-        }
+        JSONhandler<NpcToken>.SaveJSONFile(tokenData, tokenFilePath, out bool tokenSaved, out exceptionStr);
+        return tokenSaved;
     }
 
     private void ClearDirectory(string path)
