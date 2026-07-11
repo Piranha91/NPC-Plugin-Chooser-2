@@ -21,6 +21,7 @@ using System.Windows.Media;
 using System.Runtime.InteropServices;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
 using NPC_Plugin_Chooser_2.BackEnd;
@@ -71,6 +72,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private readonly VM_FavoriteFaces.Factory _favoriteFacesFactory;
     private readonly VM_ModSetting.FromModelFactory _modSettingFromModelFactory;
     private readonly PluginProvider _pluginProvider;
+    private readonly RecordHandler _recordHandler;
 
     [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
     private static extern int StrCmpLogicalW(string x, string y);
@@ -314,6 +316,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         VM_FavoriteFaces.Factory favoriteFacesFactory,
         VM_ModSetting.FromModelFactory modSettingFromModelFactory,
         PluginProvider pluginProvider,
+        RecordHandler recordHandler,
         Lazy<VM_Settings> lazyVmSettings)
     {
         _lazyVmSettings = lazyVmSettings;
@@ -331,6 +334,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         _favoriteFacesFactory = favoriteFacesFactory;
         _modSettingFromModelFactory = modSettingFromModelFactory;
         _pluginProvider = pluginProvider;
+        _recordHandler = recordHandler;
 
         _hiddenModNames = _settings.HiddenModNames ?? new(StringComparer.OrdinalIgnoreCase);
         _hiddenModsPerNpc = _settings.HiddenModsPerNpc ?? new();
@@ -1734,11 +1738,21 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                                     continue;
                                 }
 
-                                // Borrowed face: mirror the manual share flow -- register the
-                                // guest then select it, with no master/template validation
-                                // (consistent with how sharing works elsewhere). Replace this
-                                // NPC's previous *randomized* shares first; curated/manual
-                                // shares are left untouched.
+                                // Borrowed face: screen the guest mod's record graph like an own
+                                // face (a donor record can reference unloadable dependencies just
+                                // as easily). Mugshot-only/favorite sources without an installed
+                                // ModSetting can't be validated and pass through as before.
+                                if (modByName.TryGetValue(candidate.ModName, out var guestMod) &&
+                                    !CandidateAppearanceDependenciesAreResolvable(candidate.SourceKey, guestMod,
+                                        out var guestDependencyFailure))
+                                {
+                                    lastFailure = guestDependencyFailure;
+                                    continue;
+                                }
+
+                                // Register the guest then select it. Replace this NPC's previous
+                                // *randomized* shares first; curated/manual shares are left
+                                // untouched.
                                 ClearRandomizedGuestAppearancesForNpc(npcVM.NpcFormKey);
                                 var sourceDisplay = npcByKey.TryGetValue(candidate.SourceKey, out var srcVm)
                                     ? srcVm.DisplayName
@@ -1767,8 +1781,27 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                                     continue;
                                 }
 
+                                // Record-graph screening: resolve the mod's actual NPC record and
+                                // its dependencies the same way patching will, so a candidate whose
+                                // record references something unloadable (e.g. a head part in a
+                                // bundled-but-inactive master) is skipped instead of poisoning the
+                                // output plugin at save time.
+                                if (!CandidateAppearanceDependenciesAreResolvable(npcVM.NpcFormKey, ownMod,
+                                        out var dependencyFailure))
+                                {
+                                    lastFailure = dependencyFailure;
+                                    continue;
+                                }
+
+                                // Randomizer contract (see ValidateAndHandleTemplatesForBatch):
+                                // templated candidates are only eligible when their whole template
+                                // chain resolves in the game load order AND every reference is
+                                // either unassigned (and provided by this mod, so it gets selected
+                                // along) or already assigned to this same mod. Anything else skips
+                                // the candidate rather than overwriting other NPCs' selections.
                                 var (isValid, failureReason, _, affectedNpcs) =
-                                    ValidateAndHandleTemplatesForBatch(npcVM.NpcFormKey, ownMod);
+                                    ValidateAndHandleTemplatesForBatch(npcVM.NpcFormKey, ownMod,
+                                        enforceRandomizerRules: true);
 
                                 if (isValid)
                                 {
@@ -3904,9 +3937,15 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     /// <summary>
     /// Core validation logic for template chains. Returns validation result, failure reason,
     /// the complete template chain, and NPCs that only exist in the link cache.
+    /// <para><paramref name="requireLoadOrderResolvable"/> (randomizer): NPC2 never adds new
+    /// NPCs to the world, so a forwarded template link must point at an NPC that exists in the
+    /// actual game load order. Manual/bulk selection tolerates a template that only exists in
+    /// the mod's own (possibly inactive) plugins on the assumption that patch-time merge-in
+    /// self-contains it; a template that resolves nowhere in the load order would otherwise
+    /// leave the output plugin mastered to a plugin the game doesn't load (fatal at save).</para>
     /// </summary>
-    private (bool isValid, string failureReason, bool wasValidated, List<(FormKey formKey, string displayName)> templateChain, List<FormKey> fromLinkCacheOnly) 
-        ValidateTemplateChain(FormKey npcFormKey, VM_ModSetting modSetting)
+    private (bool isValid, string failureReason, bool wasValidated, List<(FormKey formKey, string displayName)> templateChain, List<FormKey> fromLinkCacheOnly)
+        ValidateTemplateChain(FormKey npcFormKey, VM_ModSetting modSetting, bool requireLoadOrderResolvable = false)
     {
         var emptyChain = new List<(FormKey, string)>();
         var emptyLinkCache = new List<FormKey>();
@@ -4024,6 +4063,18 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     else
                     {
                         currentFormKey = currentNpcGetter.Template.FormKey;
+
+                        // Leveled-NPC links are allowed through here so the loop's dedicated
+                        // check can report them with the accurate "ends with Leveled NPC" reason.
+                        if (requireLoadOrderResolvable &&
+                            !_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(currentFormKey, out _) &&
+                            !_environmentStateProvider.LinkCache.TryResolve<ILeveledNpcGetter>(currentFormKey, out _))
+                        {
+                            var chainStr = string.Join(" -> ", templateChain.Select(x => $"{x.displayName} ({x.formKey})"));
+                            return (false, $"{targetNpcName}: Template {currentFormKey} is not in the game load order (NPC2 cannot add new NPCs to the world)" +
+                                          $"\n  Template chain: {chainStr} -> {currentFormKey}", true,
+                                    templateChain, fromLinkCacheOnly);
+                        }
                     }
                 }
                 else
@@ -4065,18 +4116,58 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     /// Validates and handles template chains for batch selection operations.
     /// Automatically applies selections to template chains without user prompts.
     /// Returns a tuple indicating success and detailed failure reason if unsuccessful.
+    /// <para><paramref name="enforceRandomizerRules"/> applies the randomizer's stricter
+    /// contract: every template reference must resolve in the actual game load order; a
+    /// reference that already has a DIFFERENT mod selected fails the candidate instead of
+    /// being silently overwritten; and a reference this mod does not itself provide must
+    /// fail too, since the resulting appearance would depend on whatever gets selected for
+    /// that reference rather than on the candidate mod.</para>
+    /// <para><paramref name="requireLoadOrderResolvable"/> applies ONLY the load-order chain
+    /// requirement (the missing-master save-crash guard) while keeping this method's
+    /// overwrite/propagation semantics — the right level for bulk-select, where re-assigning
+    /// template references to the chosen mod is the user's explicit intent. Implied by
+    /// <paramref name="enforceRandomizerRules"/>.</para>
     /// </summary>
     private (bool isValid, string failureReason, bool wasValidated, List<FormKey> affectedNpcs) ValidateAndHandleTemplatesForBatch(
-        FormKey npcFormKey, 
-        VM_ModSetting modSetting)
+        FormKey npcFormKey,
+        VM_ModSetting modSetting,
+        bool enforceRandomizerRules = false,
+        bool requireLoadOrderResolvable = false)
     {
-        var (isValid, failureReason, wasValidated, templateChain, fromLinkCacheOnly) = ValidateTemplateChain(npcFormKey, modSetting);
-        
+        var (isValid, failureReason, wasValidated, templateChain, fromLinkCacheOnly) =
+            ValidateTemplateChain(npcFormKey, modSetting,
+                requireLoadOrderResolvable: requireLoadOrderResolvable || enforceRandomizerRules);
+
         var affectedNpcs = new List<FormKey> { npcFormKey };
-        
+
         if (!isValid)
         {
             return (false, failureReason, wasValidated, affectedNpcs);
+        }
+
+        if (enforceRandomizerRules && templateChain.Count > 1)
+        {
+            for (int i = 1; i < templateChain.Count; i++)
+            {
+                var (refKey, refName) = templateChain[i];
+                var (selectedModName, _) = _consistencyProvider.GetSelectedMod(refKey);
+
+                if (!string.IsNullOrEmpty(selectedModName))
+                {
+                    if (!string.Equals(selectedModName, modSetting.DisplayName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return (false,
+                            $"template reference {refName} already has '{selectedModName}' selected",
+                            wasValidated, affectedNpcs);
+                    }
+                }
+                else if (fromLinkCacheOnly.Contains(refKey))
+                {
+                    return (false,
+                        $"'{modSetting.DisplayName}' does not provide an appearance for template reference {refName}, so the templated look cannot be pinned to this mod",
+                        wasValidated, affectedNpcs);
+                }
+            }
         }
 
         // If we got here and have a template chain, automatically apply selections for all templates
@@ -4162,6 +4253,87 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         return true;
     }
 
+    // Safety valve for CandidateAppearanceDependenciesAreResolvable: an appearance
+    // record graph bigger than this is assumed fine rather than stalling the UI.
+    private const int MaxScreenedDependencyRecords = 2000;
+
+    /// <summary>
+    /// Screens a candidate appearance the way the patcher will actually consume it: loads the
+    /// donor NPC record from the candidate mod's own plugins and walks its FormLink graph,
+    /// requiring every reference to either resolve in the game load order (it stays a plain
+    /// reference) or resolve to a record in the mod's own plugins (merge-in will self-contain
+    /// it, so its own references are walked too). A reference that resolves in neither place —
+    /// e.g. a head part or template defined in a bundled master that isn't actually loadable —
+    /// would survive patching as a dangling FormKey and make the output plugin unsaveable
+    /// (missing-master error at write time), so the candidate is rejected up front.
+    /// Uses the same RecordHandler lookup the merge-in itself uses.
+    /// </summary>
+    private bool CandidateAppearanceDependenciesAreResolvable(
+        FormKey donorNpcFormKey,
+        VM_ModSetting? candidate,
+        out string failureReason)
+    {
+        failureReason = string.Empty;
+        if (candidate == null) return true;
+
+        // FaceGen-only entries never merge dependency records (the NPC's links keep pointing
+        // at its original plugin), and mugshot-only mods have no plugins to validate against.
+        if (candidate.IsFaceGenOnlyEntry) return true;
+        if (!candidate.CorrespondingFolderPaths.Any() && !candidate.IsAutoGenerated) return true;
+
+        var linkCache = _environmentStateProvider.LinkCache;
+        if (linkCache == null) return true;
+
+        var modKeyList = candidate.CorrespondingModKeys;
+        var modKeySet = modKeyList.ToHashSet();
+        var folderPaths = candidate.CorrespondingFolderPaths.ToHashSet();
+
+        var donorLink = new FormLink<INpcGetter>(donorNpcFormKey);
+        if (!_recordHandler.TryGetRecordFromMods(donorLink, modKeyList, folderPaths,
+                RecordHandler.RecordLookupFallBack.None, out var donorRecord) || donorRecord == null)
+        {
+            failureReason =
+                $"could not load NPC record {donorNpcFormKey} from '{candidate.DisplayName}'s plugins to validate its dependencies";
+            return false;
+        }
+
+        var visited = new HashSet<FormKey> { donorRecord.FormKey };
+        var queue = new Queue<IMajorRecordGetter>();
+        queue.Enqueue(donorRecord);
+
+        while (queue.Count > 0)
+        {
+            var rec = queue.Dequeue();
+            foreach (var link in rec.EnumerateFormLinks())
+            {
+                if (link.FormKey.IsNull || !visited.Add(link.FormKey)) continue;
+                if (visited.Count > MaxScreenedDependencyRecords) return true;
+
+                // Resolvable in the load order: patching leaves the reference as-is.
+                if (linkCache.TryResolve(link, out _)) continue;
+
+                // Not in the load order: patching must merge it in from the mod's own plugins.
+                bool mergeable = modKeySet.Contains(link.FormKey.ModKey) || candidate.HandleInjectedRecords;
+                if (mergeable &&
+                    _recordHandler.TryGetRecordFromMods(link, modKeyList, folderPaths,
+                        RecordHandler.RecordLookupFallBack.None, out var mergeSource) &&
+                    mergeSource != null)
+                {
+                    queue.Enqueue(mergeSource);
+                    continue;
+                }
+
+                failureReason =
+                    $"its record from '{candidate.DisplayName}' references {link.FormKey} ({link.Type.Name}), " +
+                    "which resolves neither in the game load order nor in the mod's own plugins — " +
+                    "patching would produce a plugin with a missing master";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // Show the splash screen / progress bar once a bulk-select operation has more
     // than this many NPCs queued for template-chain validation.
     private const int BulkSelectionSplashThreshold = 200;
@@ -4229,10 +4401,27 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 if (!processedNpcs.Contains(npcVM.NpcFormKey))
                 {
-                    // Validate and handle template chains
-                    var (isValid, failureReason, wasValidated, affectedNpcs) = ValidateAndHandleTemplatesForBatch(
-                        npcVM.NpcFormKey,
-                        referenceMod.AssociatedModSetting);
+                    // Missing-master crash guards, mirroring what patching will do with this
+                    // record: (1) its dependency graph must resolve in the load order or the
+                    // mod's own plugins; (2) a templated record's chain must stay inside the
+                    // load order (NPC2 never adds new NPCs to the world). Failures skip the
+                    // NPC and are reported instead of poisoning the output plugin at save.
+                    bool isValid;
+                    string failureReason;
+                    List<FormKey> affectedNpcs = new() { npcVM.NpcFormKey };
+                    if (!CandidateAppearanceDependenciesAreResolvable(npcVM.NpcFormKey,
+                            referenceMod.AssociatedModSetting, out var dependencyFailure))
+                    {
+                        isValid = false;
+                        failureReason = $"{npcVM.DisplayName}: {dependencyFailure}";
+                    }
+                    else
+                    {
+                        (isValid, failureReason, _, affectedNpcs) = ValidateAndHandleTemplatesForBatch(
+                            npcVM.NpcFormKey,
+                            referenceMod.AssociatedModSetting,
+                            requireLoadOrderResolvable: true);
+                    }
 
                     if (!isValid)
                     {
@@ -4363,10 +4552,27 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 if (!processedNpcs.Contains(npcVM.NpcFormKey))
                 {
-                    // Validate and handle template chains
-                    var (isValid, failureReason, wasValidated, affectedNpcs) = ValidateAndHandleTemplatesForBatch(
-                        npcVM.NpcFormKey,
-                        referenceMod.AssociatedModSetting);
+                    // Missing-master crash guards, mirroring what patching will do with this
+                    // record: (1) its dependency graph must resolve in the load order or the
+                    // mod's own plugins; (2) a templated record's chain must stay inside the
+                    // load order (NPC2 never adds new NPCs to the world). Failures skip the
+                    // NPC and are reported instead of poisoning the output plugin at save.
+                    bool isValid;
+                    string failureReason;
+                    List<FormKey> affectedNpcs = new() { npcVM.NpcFormKey };
+                    if (!CandidateAppearanceDependenciesAreResolvable(npcVM.NpcFormKey,
+                            referenceMod.AssociatedModSetting, out var dependencyFailure))
+                    {
+                        isValid = false;
+                        failureReason = $"{npcVM.DisplayName}: {dependencyFailure}";
+                    }
+                    else
+                    {
+                        (isValid, failureReason, _, affectedNpcs) = ValidateAndHandleTemplatesForBatch(
+                            npcVM.NpcFormKey,
+                            referenceMod.AssociatedModSetting,
+                            requireLoadOrderResolvable: true);
+                    }
 
                     if (!isValid)
                     {
