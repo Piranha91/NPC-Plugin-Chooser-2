@@ -46,6 +46,12 @@ public class AssetHandler : OptionalUIModule
     // This dictionary tracks all requested asset operations to ensure each asset is processed only once.
     // The key is the asset's relative path, and the value is the task that handles its processing.
     private readonly ConcurrentDictionary<string, Task> _processedAssetTasks = new(StringComparer.OrdinalIgnoreCase);
+
+    // Per-run tracking of asset copies suppressed by base-game-overwrite protection:
+    // mod display name -> unique destination relative paths skipped. Drives the end-of-run
+    // summary log so users know why files were withheld and how to opt in.
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _skippedBaseGameAssets =
+        new(StringComparer.OrdinalIgnoreCase);
     
     // ADD THIS FIELD:
     // This semaphore limits how many NIFs we process at the same time.
@@ -72,6 +78,7 @@ public class AssetHandler : OptionalUIModule
     {
         _potentialCopyFailures.Clear();
         _processedAssetTasks.Clear();
+        _skippedBaseGameAssets.Clear();
         AssetProvenanceDiag.Reset(); // opt-in per-run asset provenance report (no-op unless enabled)
         LoadAuxiliaryFiles();
     }
@@ -252,6 +259,31 @@ public class AssetHandler : OptionalUIModule
             await _nifProcessingSemaphore.WaitAsync();
             try
             {
+                // Base-game-overwrite protection: unless the user opted in for this mod, assets
+                // that would land on a base game / Creation Club asset path are not copied, so the
+                // versions from the user's other installed mods (e.g. skin replacers) keep winning.
+                // FaceGen is exempt (inherently per-NPC). This is a live path test independent of
+                // the import-time scan that shows the checkbox, so a stale scan can never cause a
+                // wrong copy. Skipping is reference-safe: records/NIFs keep their vanilla-relative
+                // paths, which the game resolves from the load order as usual. The cheap pre-checks
+                // here avoid triggering the one-time vanilla-index build for exempt requests.
+                if (!modSetting.OverwriteBaseGameAssets &&
+                    !string.Equals(ctx.Reason, "FaceGen", StringComparison.OrdinalIgnoreCase))
+                {
+                    var vanillaAssetPaths = await _bsaHandler.GetVanillaAssetPathsAsync();
+                    if (ShouldSkipAsBaseGameOverwrite(destRel, ctx.Reason,
+                            modSetting.OverwriteBaseGameAssets, vanillaAssetPaths))
+                    {
+                        AssetProvenanceDiag.RecordSource(destRel, modSetting.DisplayName,
+                            AssetProvenanceDiag.SkippedBaseGameOverwriteKind, null);
+                        _skippedBaseGameAssets
+                            .GetOrAdd(modSetting.DisplayName,
+                                _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase))
+                            .TryAdd(destRel, 0);
+                        return; // Task completes as a no-op, mirroring the NotFound branch below.
+                    }
+                }
+
                 var (sourceType, sourcePath, bsaPath) = FindAssetSource(relativePath, modSetting);
                 // Record where the bytes came from once per unique file+mod (the task runs once per cacheKey).
                 AssetProvenanceDiag.RecordSource(destRel, modSetting.DisplayName, sourceType.ToString(),
@@ -303,6 +335,40 @@ public class AssetHandler : OptionalUIModule
         }));
     }
     
+    /// <summary>
+    /// The authoritative base-game-overwrite skip decision (see RequestAssetCopyAsync): true when
+    /// the destination path would overwrite a base game / Creation Club asset path, the source
+    /// mod has not opted in via "Overwrite Base Game Assets", and the request is not FaceGen
+    /// (by reason or by path — FaceGen files must always land at their vanilla-derived paths).
+    /// <paramref name="vanillaAssetPaths"/> uses backslash separators, OrdinalIgnoreCase.
+    /// Pure function, unit-testable in isolation.
+    /// </summary>
+    public static bool ShouldSkipAsBaseGameOverwrite(string destRelPath, string reason,
+        bool overwriteBaseGameAssets, IReadOnlySet<string> vanillaAssetPaths)
+    {
+        if (overwriteBaseGameAssets) return false;
+        if (string.Equals(reason, "FaceGen", StringComparison.OrdinalIgnoreCase)) return false;
+        if (Auxilliary.IsFaceGenPath(destRelPath)) return false;
+        return vanillaAssetPaths.Contains(destRelPath.Replace('/', '\\'));
+    }
+
+    /// <summary>
+    /// Logs a per-mod summary of the asset copies suppressed by base-game-overwrite protection
+    /// during this run, so users know why files were withheld and how to opt in. Call after all
+    /// asset tasks have completed. No-op when nothing was skipped.
+    /// </summary>
+    public void LogBaseGameAssetSkipSummary()
+    {
+        if (_skippedBaseGameAssets.IsEmpty) return;
+        foreach (var entry in _skippedBaseGameAssets.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            AppendLog(
+                $"Skipped {entry.Value.Count} asset file(s) from '{entry.Key}' because they would overwrite base game assets (e.g. skin textures) and stomp your installed replacers. " +
+                "To copy them anyway, check 'Overwrite Base Game Assets' for that mod in the Mods menu.",
+                false, true);
+        }
+    }
+
     /// <summary>
     /// Performs the physical copy of a loose file.
     /// </summary>

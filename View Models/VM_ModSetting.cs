@@ -81,6 +81,13 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     [Reactive] public bool IncludeOutfits { get; set; } = false;
     [Reactive] public bool CopyAssets { get; set; } = true;
 
+    // Base-game-overwrite protection (see Models.ModSetting for semantics). The checkbox is
+    // only shown when the import/refresh scan found colliding asset paths in this mod.
+    [Reactive] public bool OverwriteBaseGameAssets { get; set; } = false;
+    [Reactive] public bool HasBaseGameAssetPaths { get; set; } = false;
+    [Reactive] public int BaseGameAssetPathCount { get; set; } = 0;
+    [ObservableAsProperty] public string OverwriteBaseGameAssetsToolTip { get; }
+
     [Reactive] public string MergeInToolTip { get; set; } = ModSetting.DefaultMergeInTooltip;
     [Reactive] public bool HasAlteredMergeLogic { get; set; } = false;
     [Reactive] public bool HandleInjectedRecords { get; set; } = false;
@@ -249,6 +256,9 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         HasAlteredHandleInjectedRecordsLogic = model.HasAlteredHandleInjectedRecordsLogic;
         IncludeOutfits = model.IncludeOutfits;
         CopyAssets = model.CopyAssets;
+        OverwriteBaseGameAssets = model.OverwriteBaseGameAssets;
+        HasBaseGameAssetPaths = model.HasBaseGameAssetPaths;
+        BaseGameAssetPathCount = model.BaseGameAssetPathCount;
         MergeInToolTip = model.MergeInToolTip;
         HandleInjectedRecords = model.HandleInjectedRecords;
         HasAlteredHandleInjectedRecordsLogic = model.HasAlteredHandleInjectedRecordsLogic;
@@ -537,6 +547,12 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             .ToPropertyEx(this, x => x.KeywordsToolTip, initialValue: DefaultKeywordsToolTip, scheduler: RxApp.MainThreadScheduler)
             .DisposeWith(_disposables);
 
+        this.WhenAnyValue(x => x.BaseGameAssetPathCount)
+            .Select(BuildOverwriteBaseGameAssetsToolTip)
+            .ToPropertyEx(this, x => x.OverwriteBaseGameAssetsToolTip,
+                initialValue: BuildOverwriteBaseGameAssetsToolTip(0), scheduler: RxApp.MainThreadScheduler)
+            .DisposeWith(_disposables);
+
         // --- Command Initializations ---
         AddFolderPathCommand = ReactiveCommand.CreateFromTask(AddFolderPathAsync).DisposeWith(_disposables);
         BrowseFolderPathCommand = ReactiveCommand.CreateFromTask<string>(BrowseFolderPathAsync).DisposeWith(_disposables);
@@ -696,6 +712,19 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         UpdateIsMaxNestedIntervalDepthVisible();
     }
 
+    private static string BuildOverwriteBaseGameAssetsToolTip(int count)
+    {
+        return $"This mod contains {count} asset file(s) at the same paths as base game assets (e.g. body/skin textures)." +
+               Environment.NewLine +
+               "If unchecked (default), those files are NOT copied to the output, so the versions from your other installed mods (e.g. skin replacers) stay in effect." +
+               Environment.NewLine +
+               "If checked, this mod's versions are copied into the output and will override them game-wide (not just for this mod's NPCs)." +
+               Environment.NewLine +
+               "Note: leaving this unchecked can make skin textures in game differ slightly from the mugshot." +
+               Environment.NewLine +
+               "FaceGen files are unaffected by this setting and are always copied.";
+    }
+
     public ModSetting SaveToModel()
     {
         var model = new Models.ModSetting
@@ -717,6 +746,9 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             MergeInDependencyRecords = MergeInDependencyRecords,
             IncludeOutfits = IncludeOutfits,
             CopyAssets = CopyAssets,
+            OverwriteBaseGameAssets = OverwriteBaseGameAssets,
+            HasBaseGameAssetPaths = HasBaseGameAssetPaths,
+            BaseGameAssetPathCount = BaseGameAssetPathCount,
             MergeInToolTip = MergeInToolTip,
             HasAlteredMergeLogic = HasAlteredMergeLogic,
             HandleInjectedRecords = HandleInjectedRecords,

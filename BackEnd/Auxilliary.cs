@@ -1048,6 +1048,21 @@ public class Auxilliary : IDisposable
     }
 
     /// <summary>
+    /// True when a data-relative path lies under one of the FaceGen output trees
+    /// (meshes\actors\character\facegendata\..., textures\actors\character\facegendata\...).
+    /// FaceGen files are inherently per-NPC and must be written at their vanilla-derived
+    /// paths, so base-game-overwrite protection never applies to them. Accepts either slash
+    /// style and an optional leading separator; comparison is case-insensitive.
+    /// </summary>
+    public static bool IsFaceGenPath(string? relativePath)
+    {
+        if (string.IsNullOrEmpty(relativePath)) return false;
+        string normalized = relativePath.Replace('/', '\\').TrimStart('\\');
+        return normalized.StartsWith(@"meshes\actors\character\facegendata\", StringComparison.OrdinalIgnoreCase)
+               || normalized.StartsWith(@"textures\actors\character\facegendata\", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// OPTIMIZED: This method no longer performs a slow linear search.
     /// It now uses the pre-built dictionary for an instantaneous lookup.
     /// </summary>

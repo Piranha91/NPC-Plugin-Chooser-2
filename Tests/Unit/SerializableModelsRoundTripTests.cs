@@ -74,6 +74,9 @@ public class SerializableModelsRoundTripTests
             PluginsWithOverrideRecords = new HashSet<ModKey> { ModA },
             IncludeOutfits = true,
             CopyAssets = false,
+            OverwriteBaseGameAssets = true,
+            HasBaseGameAssetPaths = true,
+            BaseGameAssetPathCount = 42,
             NpcFormKeysToNotifications = new Dictionary<FormKey,
                 (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)>
             {
@@ -106,6 +109,9 @@ public class SerializableModelsRoundTripTests
         clone.IncludeAllOverrides.Should().BeTrue();
         clone.IncludeOutfits.Should().BeTrue();
         clone.CopyAssets.Should().BeFalse();
+        clone.OverwriteBaseGameAssets.Should().BeTrue();
+        clone.HasBaseGameAssetPaths.Should().BeTrue();
+        clone.BaseGameAssetPathCount.Should().Be(42);
         clone.ModRecordOverrideHandlingMode.Should().Be(RecordOverrideHandlingMode.IncludeAsNew);
     }
 

@@ -42,6 +42,11 @@ public static class AssetProvenanceDiag
     private const string CsvFileName = "AssetProvenance.csv";
     private const string TriggerFileName = "LogAssetProvenance.txt";
 
+    /// <summary>SourceKind recorded when a copy was suppressed by base-game-overwrite
+    /// protection: the file sits at a base game / Creation Club asset path and the source
+    /// mod's "Overwrite Base Game Assets" option is unchecked, so nothing was written.</summary>
+    public const string SkippedBaseGameOverwriteKind = "SkippedBaseGameOverwrite";
+
     /// <summary>Effective on/off state. Hot-path call sites check this to skip all
     /// record-keeping when nobody is listening. Driven by the user setting via
     /// <see cref="SetEnabled"/>, and force-on by the dev file trigger.</summary>
@@ -169,6 +174,7 @@ public static class AssetProvenanceDiag
     {
         "LooseFile" => "Loose",
         "BsaFile" => "BSA",
+        SkippedBaseGameOverwriteKind => SkippedBaseGameOverwriteKind,
         _ => "NotFound",
     };
 

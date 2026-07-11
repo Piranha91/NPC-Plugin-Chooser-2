@@ -22,6 +22,8 @@ namespace NPC_Plugin_Chooser_2.Tests.Harness;
 /// NOTE: All *_Final steps + MaybeMoveLegacyMugshotFiles_Initial not covered: they
 ///   require VM_Mods / VM_NpcSelectionBar / PluginProvider / EnvironmentStateProvider
 ///   (a live load order) and/or show dialogs — those belong to the integration wave.
+///   Exception: the GATE around <c>UpdateTo2_2_2_Final</c> (version + one-shot
+///   <c>HasUpdatedTo2_2_2</c> flag) is exercised below via null-service probes.
 /// </summary>
 public class UpdateHandlerMigrationTests
 {
@@ -297,6 +299,52 @@ public class UpdateHandlerMigrationTests
             splashReporter: null);
 
         s.InternalMugshot.SubsurfaceStrength.Should().Be(2.0f);
+    }
+
+    // ---- FinalCheckForUpdatesAndPatch : 2.2.2 base-game-asset scan gate ---------------
+    // UpdateTo2_2_2_Final itself needs a live VM_Mods (integration wave), but its GATE is
+    // testable headless: with ProgramVersion >= 2.1.7 every earlier *_Final gate is closed,
+    // so whether the null modsVm gets dereferenced tells us whether the 2.2.2 gate opened.
+
+    [Fact]
+    public async Task FinalCheck_From2_2_1_FlagAlreadySet_SkipsBaseGameScan()
+    {
+        var s = new Settings { ProgramVersion = "2.2.1", HasUpdatedTo2_2_2 = true };
+
+        // Gate closed by the one-shot flag: completes without touching the null services.
+        await Make(s).FinalCheckForUpdatesAndPatch(
+            npcsVm: null!, modsVm: null!, pluginProvider: null!, aux: null!,
+            environmentStateProvider: null!, splashReporter: null);
+
+        s.HasUpdatedTo2_2_2.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task FinalCheck_From2_2_2_OrNewer_SkipsBaseGameScan()
+    {
+        var s = new Settings { ProgramVersion = "2.2.2", HasUpdatedTo2_2_2 = false };
+
+        await Make(s).FinalCheckForUpdatesAndPatch(
+            npcsVm: null!, modsVm: null!, pluginProvider: null!, aux: null!,
+            environmentStateProvider: null!, splashReporter: null);
+
+        // Gate closed by version: the migration didn't run, so the flag stays false.
+        s.HasUpdatedTo2_2_2.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task FinalCheck_From2_2_1_WithoutFlag_OpensBaseGameScanGate()
+    {
+        var s = new Settings { ProgramVersion = "2.2.1", HasUpdatedTo2_2_2 = false };
+
+        // Gate-open probe: UpdateTo2_2_2_Final immediately enumerates modsVm.AllModSettings,
+        // so the null modsVm faulting proves the gate fired (the real scan belongs to the
+        // integration wave).
+        var act = () => Make(s).FinalCheckForUpdatesAndPatch(
+            npcsVm: null!, modsVm: null!, pluginProvider: null!, aux: null!,
+            environmentStateProvider: null!, splashReporter: null);
+
+        await act.Should().ThrowAsync<NullReferenceException>();
     }
 
     // ---- Constructor sanity ----------------------------------------------------------

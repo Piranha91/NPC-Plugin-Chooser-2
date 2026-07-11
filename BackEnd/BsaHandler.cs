@@ -698,7 +698,74 @@ public class BsaHandler : OptionalUIModule
         }
         return result;
     }
-    
+
+    // --- Vanilla (base game + Creation Club) asset-path index ---------------------------------
+    // Union of every archive-internal path shipped in the base game + Creation Club BSAs. Used
+    // for base-game-overwrite protection: detecting (VM_Mods scan) and skipping (AssetHandler)
+    // mod assets that sit at vanilla paths and would otherwise stomp the user's installed
+    // replacers (e.g. skin mods) game-wide. Built lazily on first request and cached for the
+    // session, keyed on data folder + release so a game-path change rebuilds it. Paths follow
+    // the _bsaContents convention: backslash separators, OrdinalIgnoreCase comparison.
+    private HashSet<string>? _vanillaAssetPaths;
+    private string? _vanillaAssetPathsKey;
+    private readonly SemaphoreSlim _vanillaAssetPathsLock = new(1, 1);
+
+    /// <summary>
+    /// Returns the set of all asset paths contained in the base game + Creation Club BSAs
+    /// (see field comment above). The stock game ships its assets exclusively in BSAs, so
+    /// membership in this set is the "would overwrite a base game asset" test. Returns an
+    /// empty set when the game environment is not resolved. Thread-safe; the potentially
+    /// expensive build runs at most once per session per (data folder, release).
+    /// </summary>
+    public async Task<IReadOnlySet<string>> GetVanillaAssetPathsAsync()
+    {
+        string dataFolder = _environmentStateProvider.DataFolderPath.ToString() ?? string.Empty;
+        var gameRelease = _environmentStateProvider.SkyrimVersion.ToGameRelease();
+        string cacheKey = $"{dataFolder}|{gameRelease}";
+
+        // Benign race: the field is only ever assigned a fully-built set.
+        if (_vanillaAssetPaths != null &&
+            cacheKey.Equals(_vanillaAssetPathsKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return _vanillaAssetPaths;
+        }
+
+        await _vanillaAssetPathsLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_vanillaAssetPaths != null &&
+                cacheKey.Equals(_vanillaAssetPathsKey, StringComparison.OrdinalIgnoreCase))
+            {
+                return _vanillaAssetPaths;
+            }
+
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(dataFolder) && Directory.Exists(dataFolder))
+            {
+                await Task.Run(() =>
+                {
+                    var vanillaKeys = _environmentStateProvider.BaseGamePlugins
+                        .Concat(_environmentStateProvider.CreationClubPlugins)
+                        .ToHashSet();
+                    var contents = GetAllFilePathsForMod(vanillaKeys, new[] { dataFolder }, gameRelease);
+                    foreach (var containedPaths in contents.Values)
+                    {
+                        result.UnionWith(containedPaths);
+                    }
+                }).ConfigureAwait(false);
+                AppendLog($"Indexed {result.Count} base game / Creation Club asset paths for overwrite protection.");
+            }
+
+            _vanillaAssetPaths = result;
+            _vanillaAssetPathsKey = cacheKey;
+            return result;
+        }
+        finally
+        {
+            _vanillaAssetPathsLock.Release();
+        }
+    }
+
     public string GetStatusReport()
     {
         string output = "";

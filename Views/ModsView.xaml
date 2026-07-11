@@ -450,6 +450,17 @@
                                                         ToolTip="If checked, all assets required for the NPC's appearance (meshes, textures, etc.) will be copied to the output folder. If unchecked, only FaceGen files will be copied."/>
                                         </StackPanel>
 
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0"
+                                                    Visibility="{Binding HasBaseGameAssetPaths, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <TextBlock Text="Overwrite Base Game Assets"
+                                                        VerticalAlignment="Center"
+                                                        ToolTip="{Binding OverwriteBaseGameAssetsToolTip}"/>
+                                            <CheckBox IsChecked="{Binding OverwriteBaseGameAssets, Mode=TwoWay}"
+                                                        VerticalAlignment="Center"
+                                                        Margin="5 0 0 0"
+                                                        ToolTip="{Binding OverwriteBaseGameAssetsToolTip}"/>
+                                        </StackPanel>
+
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0" Visibility="{Binding DataContext.CurrentPatchingMode, ElementName=ModSettingsItemsControl, Converter={StaticResource PatchingModeConverter}, ConverterParameter=CreateAndPatch}">
                                             <TextBlock Text="Include Outfits" 
                                                         VerticalAlignment="Center" 

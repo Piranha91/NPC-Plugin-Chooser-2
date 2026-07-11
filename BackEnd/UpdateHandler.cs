@@ -146,6 +146,11 @@ public class UpdateHandler
             await UpdateTo2_1_7_Final(modsVm, splashReporter);
         }
 
+        if (settingsVersion < "2.2.2" && !_settings.HasUpdatedTo2_2_2)
+        {
+            await UpdateTo2_2_2_Final(modsVm, splashReporter);
+        }
+
         Debug.WriteLine("Settings update process complete.");
     }
 
@@ -254,6 +259,59 @@ public class UpdateHandler
         // repaired / cleaned state is written back through the model before the next
         // throttled SaveSettings.
         modsVm.SaveModSettingsToModel();
+    }
+
+    /// <summary>
+    /// 2.2.2 migration: one-time scan of every existing mod for assets that sit at base game /
+    /// Creation Club asset paths (e.g. loose skin textures shipped by overhauls like Cathedral
+    /// HMB). From 2.2.2 on, the patcher skips copying such assets unless the user opts in via
+    /// the per-mod "Overwrite Base Game Assets" checkbox; this scan populates the persisted
+    /// <c>HasBaseGameAssetPaths</c>/<c>BaseGameAssetPathCount</c> flags that make the checkbox
+    /// appear. Mods imported or refreshed after this migration are scanned by
+    /// <see cref="VM_Mods.AnalyzeModSettingsAsync"/> / <see cref="VM_Mods.RefreshSingleModSettingAsync"/>
+    /// and never need it. Guarded by <c>Settings.HasUpdatedTo2_2_2</c> so dev builds still
+    /// versioned below 2.2.2 don't re-run the full-mod-list scan on every launch.
+    /// </summary>
+    private async Task UpdateTo2_2_2_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
+    {
+        splashReporter?.UpdateStep("Updating to 2.2.2: scanning mods for base game asset overlaps...");
+
+        var modsToProcess = modsVm.AllModSettings.ToList();
+        if (modsToProcess.Count > 0)
+        {
+            // Same parallelism shape as VM_Mods.AnalyzeModSettingsAsync — the scan is disk-bound
+            // per mod, and this migration runs exactly once.
+            var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
+            int processed = 0;
+            var scanTasks = modsToProcess.Select(async modVm =>
+            {
+                await semaphore.WaitAsync();
+                try
+                {
+                    await modsVm.ScanForBaseGameAssetPathsAsync(modVm);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"UpdateTo2_2_2_Final: scan failed for {modVm.DisplayName}: {ex.Message}");
+                }
+                finally
+                {
+                    int current = Interlocked.Increment(ref processed);
+                    splashReporter?.UpdateProgress((double)current / modsToProcess.Count * 100,
+                        $"Scanned: {modVm.DisplayName}");
+                    semaphore.Release();
+                }
+            }).ToList();
+            await Task.WhenAll(scanTasks);
+        }
+
+        _settings.HasUpdatedTo2_2_2 = true;
+
+        // Mirror the existing post-migration save pattern so the scan results are written back
+        // through the model before the next throttled SaveSettings.
+        modsVm.SaveModSettingsToModel();
+
+        Debug.WriteLine("2.2.2 base-game-asset scan complete.");
     }
 
     private async Task RepairResourceOnlyCorruption_2_1_7(VM_Mods modsVm, VM_SplashScreen? splashReporter)

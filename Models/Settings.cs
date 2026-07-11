@@ -430,6 +430,9 @@ public class Settings
     // --- Manual Update Logging
     public bool HasUpdatedTo2_0_7 { get; set; } = false;
     public bool HasUpdatedTo2_0_7_templates { get; set; } = false;
+    // One-shot guard for the 2.2.2 base-game-asset scan migration, so dev builds still
+    // versioned below 2.2.2 don't re-run the full-mod-list scan on every launch.
+    public bool HasUpdatedTo2_2_2 { get; set; } = false;
     
     // --- Troubleshooting / Logging ---
     public bool LogActivity { get; set; } = false;

@@ -656,4 +656,86 @@ public class VM_ModsPureTests
 
         result.Select(System.IO.Path.GetFileName).Should().BeEquivalentTo(new[] { "Mod A", "Mod B" });
     }
+
+    // ------------------------------------------------------------------
+    // CollectBaseGameAssetOverlaps (static; base-game-overwrite scan core)
+    // ------------------------------------------------------------------
+
+    private static readonly IReadOnlySet<string> VanillaPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        @"textures\actors\character\female\femalebody_1.dds",
+        @"textures\actors\character\female\femalehead.dds",
+        @"meshes\actors\character\character assets\femalebody_1.nif",
+        // Vanilla FaceGen lives in the vanilla BSAs; the scan must NOT flag it.
+        @"meshes\actors\character\facegendata\facegeom\Skyrim.esm\0001A696.nif",
+    };
+
+    [Fact]
+    public void CollectOverlaps_FlagsVanillaCollisions_IgnoresNewFiles()
+    {
+        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        VM_Mods.CollectBaseGameAssetOverlaps(new[]
+        {
+            @"textures\actors\character\female\femalebody_1.dds",   // collision
+            @"textures\actors\character\KSHairdos\hair01.dds",      // new file — no collision
+            @"MyMod.esp",                                           // plugin at data root — no collision
+        }, VanillaPaths, results);
+
+        results.Should().BeEquivalentTo(new[] { @"textures\actors\character\female\femalebody_1.dds" });
+    }
+
+    [Fact]
+    public void CollectOverlaps_ExcludesFaceGenPaths()
+    {
+        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        VM_Mods.CollectBaseGameAssetOverlaps(new[]
+        {
+            @"meshes\actors\character\facegendata\facegeom\Skyrim.esm\0001A696.nif",
+        }, VanillaPaths, results);
+
+        results.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void CollectOverlaps_NormalizesForwardSlashes_AndDedupes()
+    {
+        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Same file seen twice (e.g. loose + packed in the mod's BSA), one with forward
+        // slashes and different casing — must normalize and collapse to a single entry.
+        VM_Mods.CollectBaseGameAssetOverlaps(new[]
+        {
+            "textures/actors/character/female/femalehead.dds",
+            @"Textures\Actors\Character\Female\FemaleHead.dds",
+        }, VanillaPaths, results);
+
+        results.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void CollectOverlaps_EmptyAndNullCandidates_AreIgnored()
+    {
+        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        VM_Mods.CollectBaseGameAssetOverlaps(new[] { "", null! }, VanillaPaths, results);
+
+        results.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void CollectOverlaps_AccumulatesAcrossCalls()
+    {
+        // The scan calls this once per mod folder and once per BSA content set, all into the
+        // same results set.
+        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        VM_Mods.CollectBaseGameAssetOverlaps(
+            new[] { @"textures\actors\character\female\femalebody_1.dds" }, VanillaPaths, results);
+        VM_Mods.CollectBaseGameAssetOverlaps(
+            new[] { @"meshes\actors\character\character assets\femalebody_1.nif" }, VanillaPaths, results);
+
+        results.Should().HaveCount(2);
+    }
 }

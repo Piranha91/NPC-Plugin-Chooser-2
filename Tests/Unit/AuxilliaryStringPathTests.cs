@@ -410,4 +410,44 @@ public class AuxilliaryStringPathTests
         ((int)Gender.Male).Should().Be(1);
         Enum.GetValues<Gender>().Should().HaveCount(2);
     }
+
+    // ---------------------------------------------------------------------
+    // IsFaceGenPath (base-game-overwrite protection exemption)
+    // ---------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(@"meshes\actors\character\facegendata\facegeom\Skyrim.esm\0001A696.nif")]
+    [InlineData(@"textures\actors\character\facegendata\facetint\Skyrim.esm\0001A696.dds")]
+    [InlineData("meshes/actors/character/facegendata/facegeom/Skyrim.esm/0001A696.nif")] // forward slashes
+    [InlineData(@"MESHES\ACTORS\CHARACTER\FACEGENDATA\FACEGEOM\Skyrim.esm\0001A696.NIF")] // case
+    [InlineData(@"\meshes\actors\character\facegendata\facegeom\Skyrim.esm\0001A696.nif")] // leading separator
+    public void IsFaceGenPath_FaceGenTrees_ReturnsTrue(string path)
+    {
+        Auxilliary.IsFaceGenPath(path).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(@"textures\actors\character\female\femalebody_1.dds")] // the Cathedral HMB case
+    [InlineData(@"meshes\actors\character\character assets\femalebody_1.nif")]
+    [InlineData(@"textures\actors\character\eyes\eyebrown.dds")]
+    [InlineData(@"meshes\armor\iron\ironarmor_1.nif")]
+    [InlineData(@"facegendata\facegeom\Skyrim.esm\0001A696.nif")] // missing meshes\ prefix — not the output tree
+    [InlineData("")]
+    [InlineData(null)]
+    public void IsFaceGenPath_NonFaceGenPaths_ReturnsFalse(string? path)
+    {
+        Auxilliary.IsFaceGenPath(path).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsFaceGenPath_MatchesBothOutputsOfGetFaceGenSubPathStrings()
+    {
+        // The regularized (data-relative) FaceGen paths the pipeline actually copies must
+        // always be classified as FaceGen, or overwrite protection would block them.
+        var npc = FormKey.Factory("01A696:Skyrim.esm");
+        var (meshPath, texPath) = Auxilliary.GetFaceGenSubPathStrings(npc, regularized: true);
+
+        Auxilliary.IsFaceGenPath(meshPath).Should().BeTrue();
+        Auxilliary.IsFaceGenPath(texPath).Should().BeTrue();
+    }
 }

@@ -50,6 +50,18 @@ public class ModSetting
     public bool IncludeOutfits { get; set; } = false;
     public bool CopyAssets { get; set; } = true;
 
+    // Base-game-overwrite protection: some mods ship assets at the same data-relative paths as
+    // base game / Creation Club assets (e.g. loose skin textures in overhauls like Cathedral HMB).
+    // Copying those into the output would override the user's installed replacers (skin mods etc.)
+    // game-wide, so the patcher skips them unless the user opts in per mod. FaceGen files are
+    // exempt — they are inherently per-NPC and must live at their vanilla-derived paths.
+    // OverwriteBaseGameAssets is the user's opt-in; HasBaseGameAssetPaths/BaseGameAssetPathCount
+    // are the scan result (computed on import/refresh, not per launch) that controls whether the
+    // checkbox is shown. The patcher-side skip is a live path test independent of the scan result.
+    public bool OverwriteBaseGameAssets { get; set; } = false;
+    public bool HasBaseGameAssetPaths { get; set; } = false;
+    public int BaseGameAssetPathCount { get; set; } = 0;
+
     public Dictionary<FormKey, (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)> 
         NpcFormKeysToNotifications
     {

@@ -15,8 +15,11 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 ///    the "_0.nifx" suffix boundary, idempotency, and the <c>addedRelPaths</c> out-set tracking.
 ///  - <see cref="AssetHandler.GetContainingSubdirectories"/> — first-level-only directory scan
 ///    against real temp dirs, plus the null-argument guards.
+///  - <see cref="AssetHandler.ShouldSkipAsBaseGameOverwrite"/> — the base-game-overwrite
+///    protection decision (opt-in flag, FaceGen exemptions by reason and by path, vanilla-set
+///    membership with slash/case normalization).
 ///
-/// Both targets are <c>public static</c>, so they are invoked directly (no Reflect needed).
+/// All targets are <c>public static</c>, so they are invoked directly (no Reflect needed).
 /// Neither requires a constructed AssetHandler, a live environment, nor a Skyrim install.
 ///
 /// NOTE: every other helper on AssetHandler (FindAssetSource, RequestAssetCopyAsync,
@@ -313,5 +316,89 @@ public class AssetHandlerStaticTests
         var act = () => AssetHandler.GetContainingSubdirectories(null!, null!);
         act.Should().Throw<ArgumentNullException>()
             .Which.ParamName.Should().Be("rootDir");
+    }
+
+    // ----------------------------------------------------------------------
+    // ShouldSkipAsBaseGameOverwrite (base-game-overwrite protection)
+    // ----------------------------------------------------------------------
+
+    private static readonly IReadOnlySet<string> VanillaSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        @"textures\actors\character\female\femalebody_1.dds",
+        @"meshes\actors\character\character assets\femalebody_1.nif",
+        // Vanilla NPC FaceGen ships in the vanilla BSAs too — the exemption below must win.
+        @"meshes\actors\character\facegendata\facegeom\Skyrim.esm\0001A696.nif",
+        @"textures\actors\character\facegendata\facetint\Skyrim.esm\0001A696.dds",
+    };
+
+    [Fact]
+    public void ShouldSkip_VanillaPath_NoOptIn_Skips()
+    {
+        AssetHandler.ShouldSkipAsBaseGameOverwrite(
+                @"textures\actors\character\female\femalebody_1.dds", "PluginRef",
+                overwriteBaseGameAssets: false, VanillaSet)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShouldSkip_VanillaPath_OptedIn_Copies()
+    {
+        AssetHandler.ShouldSkipAsBaseGameOverwrite(
+                @"textures\actors\character\female\femalebody_1.dds", "PluginRef",
+                overwriteBaseGameAssets: true, VanillaSet)
+            .Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("NifTexture")]
+    [InlineData("SmpXml")]
+    [InlineData("AssetLink")]
+    [InlineData("PluginRef")]
+    public void ShouldSkip_AppliesToAllNonFaceGenReasons(string reason)
+    {
+        AssetHandler.ShouldSkipAsBaseGameOverwrite(
+                @"meshes\actors\character\character assets\femalebody_1.nif", reason,
+                overwriteBaseGameAssets: false, VanillaSet)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShouldSkip_FaceGenReason_NeverSkips()
+    {
+        // A vanilla NPC's own FaceGen collides with the vanilla set by construction, but
+        // overwriting it is the entire point of the app.
+        AssetHandler.ShouldSkipAsBaseGameOverwrite(
+                @"meshes\actors\character\facegendata\facegeom\Skyrim.esm\0001A696.nif", "FaceGen",
+                overwriteBaseGameAssets: false, VanillaSet)
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShouldSkip_FaceGenPath_NeverSkips_RegardlessOfReason()
+    {
+        // Belt-and-suspenders: even under a non-FaceGen reason, a facegendata path is exempt.
+        AssetHandler.ShouldSkipAsBaseGameOverwrite(
+                @"textures\actors\character\facegendata\facetint\Skyrim.esm\0001A696.dds", "NifTexture",
+                overwriteBaseGameAssets: false, VanillaSet)
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShouldSkip_NonVanillaPath_Copies()
+    {
+        AssetHandler.ShouldSkipAsBaseGameOverwrite(
+                @"textures\actors\character\KSHairdos\hair01.dds", "PluginRef",
+                overwriteBaseGameAssets: false, VanillaSet)
+            .Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("textures/actors/character/female/femalebody_1.dds")] // forward slashes
+    [InlineData(@"TEXTURES\ACTORS\CHARACTER\FEMALE\FEMALEBODY_1.DDS")] // case
+    public void ShouldSkip_NormalizesSlashesAndCase(string destRelPath)
+    {
+        AssetHandler.ShouldSkipAsBaseGameOverwrite(destRelPath, "PluginRef",
+                overwriteBaseGameAssets: false, VanillaSet)
+            .Should().BeTrue();
     }
 }
