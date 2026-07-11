@@ -560,8 +560,9 @@ public class NpcMeshResolver
     /// Resolves the NPC's worn attire ("Include Default Outfit") and/or head
     /// gear ("Include headgear") into neutral <see cref="MeshOverride"/>s for
     /// <see cref="VM_CharacterViewer.ApplyMeshOverrides"/>. Walks
-    /// <c>NPC.DefaultOutfit → OTFT.Items</c> (ARMO directly, LeveledItem resolved
-    /// deterministically to the first valid armor and logged), plus the worn/skin
+    /// <c>NPC.DefaultOutfit → OTFT.Items</c> (ARMO directly; LeveledItem per its
+    /// Use All flag — every entry for use-all gear lists, else deterministically
+    /// the first valid armor — and logged), plus the worn/skin
     /// armor for head-slot pieces, and emits one override per applicable
     /// ArmorAddon (filtered by NPC race). Body pieces are <c>Kind=Armor</c> (hide
     /// exactly the slots they fill, so clothing hides the nude body); head pieces
@@ -693,11 +694,15 @@ public class NpcMeshResolver
 
     /// <summary>
     /// Resolves one outfit <c>Items</c> entry to apparel armor(s) and appends
-    /// them to <paramref name="armors"/>. ARMO entries are taken directly;
-    /// LeveledItem entries are resolved DETERMINISTICALLY to the first valid
-    /// armor (in declared entry order, recursing into nested leveled lists) and
-    /// the choice is logged — never random per render. Non-apparel items
-    /// (weapons / ammo / quest items) and unresolvable links are skipped.
+    /// them to <paramref name="armors"/>. ARMO entries are taken directly.
+    /// LeveledItem entries honor the list's Use All flag: a use-all list
+    /// contributes armor from EVERY entry (the engine equips them all — vanilla
+    /// soldier outfits are one use-all gear list with one per-slot sub-list,
+    /// e.g. the Thalmor Elven Light set), while a plain list is a runtime
+    /// random pick that the preview stands in for DETERMINISTICALLY with the
+    /// first entry that yields any armor — never random per render. Either way
+    /// the result is logged. Non-apparel items (weapons / ammo / quest items)
+    /// and unresolvable links are skipped.
     /// </summary>
     private void CollectOutfitItemArmors(FormKey itemFormKey, ILinkCache linkCache, NpcResolutionContext? context,
         string source, List<(IArmorGetter armor, string source)> armors, HashSet<FormKey> seen, int depth)
@@ -714,13 +719,22 @@ public class NpcMeshResolver
         var lvli = ResolveRecord<ILeveledItemGetter>(itemFormKey.ToLink<ILeveledItemGetter>(), linkCache, context);
         if (lvli != null)
         {
-            var chosen = ResolveFirstArmorFromLeveledItem(lvli, linkCache, context, depth);
-            if (chosen != null)
+            var collected = new List<(IArmorGetter armor, string label)>();
+            CollectArmorsFromLeveledItem(lvli, linkCache, context, depth, collected);
+            if (collected.Count > 0)
             {
-                LogVerbose("CharacterViewer: Outfit LeveledItem " + itemFormKey + " -> chose armor "
-                    + chosen.Value.label + " (deterministic: first valid armor in entry order)");
-                if (seen.Add(chosen.Value.armor.FormKey))
-                    armors.Add((chosen.Value.armor, source + " -> LVLI:" + itemFormKey));
+                bool useAll = lvli.Flags.HasFlag(LeveledItem.Flag.UseAll);
+                LogVerbose("CharacterViewer: Outfit LeveledItem " + itemFormKey +
+                    (useAll
+                        ? " -> use-all list: collected " + collected.Count + " armor(s): "
+                          + string.Join(", ", collected.Select(c => c.label))
+                        : " -> chose armor " + collected[0].label
+                          + " (deterministic: first valid armor in entry order)"));
+                foreach (var (collectedArmor, _) in collected)
+                {
+                    if (seen.Add(collectedArmor.FormKey))
+                        armors.Add((collectedArmor, source + " -> LVLI:" + itemFormKey));
+                }
             }
             else
             {
@@ -732,30 +746,44 @@ public class NpcMeshResolver
         LogVerbose("CharacterViewer: Outfit item " + itemFormKey + " is not Armor/LeveledItem (non-apparel, skipped)");
     }
 
-    /// <summary>Deterministically picks the first valid armor reachable from
-    /// <paramref name="lvli"/> in declared entry order, recursing into nested
-    /// leveled lists. Returns null when the list contains no apparel armor.</summary>
-    private (IArmorGetter armor, string label)? ResolveFirstArmorFromLeveledItem(
-        ILeveledItemGetter lvli, ILinkCache linkCache, NpcResolutionContext? context, int depth)
+    /// <summary>Collects apparel armors reachable from <paramref name="lvli"/>,
+    /// honoring the Use All flag at every level: a use-all list visits EVERY
+    /// entry (the engine equips them all); a plain list stops at the first
+    /// entry (in declared order) that yields at least one armor — the
+    /// deterministic stand-in for the engine's runtime roll. Entries that
+    /// resolve to neither Armor nor LeveledItem are skipped and never count
+    /// as a plain list's "first yielding entry".</summary>
+    private void CollectArmorsFromLeveledItem(
+        ILeveledItemGetter lvli, ILinkCache linkCache, NpcResolutionContext? context, int depth,
+        List<(IArmorGetter armor, string label)> collected)
     {
-        if (depth > 10 || lvli.Entries == null) return null;
+        if (depth > 10 || lvli.Entries == null) return;
+        bool useAll = lvli.Flags.HasFlag(LeveledItem.Flag.UseAll);
+
         foreach (var entry in lvli.Entries)
         {
             var refLink = entry?.Data?.Reference;
             if (refLink == null || refLink.IsNull) continue;
             var fk = refLink.FormKey;
 
-            var armor = ResolveRecord<IArmorGetter>(fk.ToLink<IArmorGetter>(), linkCache, context);
-            if (armor != null) return (armor, armor.EditorID ?? fk.ToString());
+            int countBefore = collected.Count;
 
-            var nested = ResolveRecord<ILeveledItemGetter>(fk.ToLink<ILeveledItemGetter>(), linkCache, context);
-            if (nested != null)
+            var armor = ResolveRecord<IArmorGetter>(fk.ToLink<IArmorGetter>(), linkCache, context);
+            if (armor != null)
             {
-                var inner = ResolveFirstArmorFromLeveledItem(nested, linkCache, context, depth + 1);
-                if (inner != null) return inner;
+                collected.Add((armor, armor.EditorID ?? fk.ToString()));
             }
+            else
+            {
+                var nested = ResolveRecord<ILeveledItemGetter>(fk.ToLink<ILeveledItemGetter>(), linkCache, context);
+                if (nested != null)
+                {
+                    CollectArmorsFromLeveledItem(nested, linkCache, context, depth + 1, collected);
+                }
+            }
+
+            if (!useAll && collected.Count > countBefore) return; // plain list: first yielding entry wins
         }
-        return null;
     }
 
     /// <summary>Emits one <see cref="MeshOverride"/> per applicable ArmorAddon of
