@@ -102,6 +102,18 @@
                 <TextBlock Text="⚠ Some attire meshes couldn't render" Foreground="White"
                            FontWeight="SemiBold"/>
             </Border>
+
+            <!-- Outfit-conflict warning: "Include Outfit" is overridden at
+                 runtime by a SkyPatcher/SPID config, or NPC2's own SkyPatcher
+                 ini entry is not conflict-winning. The banner text names the
+                 winning config so the user knows why the preview wears what
+                 it wears. -->
+            <Border HorizontalAlignment="Stretch" VerticalAlignment="Bottom" Margin="6"
+                    Background="#C0703000" CornerRadius="4" Padding="6,3"
+                    Visibility="{Binding HasOutfitNotice, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                <TextBlock Text="{Binding OutfitNoticeText}" Foreground="White"
+                           FontWeight="SemiBold" TextWrapping="Wrap"/>
+            </Border>
         </Grid>
 
         <!-- Status -->

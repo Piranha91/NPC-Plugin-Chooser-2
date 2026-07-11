@@ -52,6 +52,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     private readonly MugshotStalenessChecker _stalenessChecker;
     private readonly ImagePacker _imagePacker;
     private readonly Func<VM_InternalMugshotPreview> _internalPreviewFactory;
+    private readonly BackEnd.OutfitDistribution.OutfitDisplayResolver _outfitDisplayResolver;
     private readonly CancellationToken _cancellationToken;
     private readonly CompositeDisposable _disposables = new();
 
@@ -95,6 +96,11 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 
     [Reactive] public bool HasMissingAssets { get; set; } = false;
     [Reactive] public string MissingAssetNotificationText { get; set; } = string.Empty;
+    /// <summary>Outfit-conflict badge (Include Outfit overridden at runtime by
+    /// SkyPatcher/SPID, or NPC2's SkyPatcher ini not conflict-winning) —
+    /// computed live from current configs; see VM_NpcsMenuMugshot.</summary>
+    [Reactive] public bool HasOutfitNotice { get; set; } = false;
+    [Reactive] public string OutfitNoticeText { get; set; } = string.Empty;
 
     public VM_ModSetting ParentVMModSetting => _parentVMModSetting;
     public bool CanOpenModFolder => _parentVMModSetting.CorrespondingFolderPaths.Any();
@@ -146,7 +152,8 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         ImagePacker imagePacker,
         Func<VM_InternalMugshotPreview> internalPreviewFactory,
         GeneratedMugshotTracker tracker,
-        FaceFinderCacheTracker faceFinderTracker
+        FaceFinderCacheTracker faceFinderTracker,
+        BackEnd.OutfitDistribution.OutfitDisplayResolver outfitDisplayResolver
     )
     {
         _parentVMMaster = parentVMMaster;
@@ -162,6 +169,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         _internalPreviewFactory = internalPreviewFactory;
         _tracker = tracker;
         _faceFinderTracker = faceFinderTracker;
+        _outfitDisplayResolver = outfitDisplayResolver;
         _cancellationToken = cancellationToken;
 
         ImagePath = imagePath; // Store the given path (could be real or placeholder)
@@ -398,7 +406,12 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                     }
                 }
 
-                return (bmp, dimensions, meshes, textures, faceGenMismatch);
+                // Outfit-conflict notice — live simulation of Include Outfit
+                // vs SkyPatcher/SPID for this tile's NPC (its own target in
+                // the Mods menu).
+                string outfitNotice = ComputeOutfitNoticeSafe();
+
+                return (bmp, dimensions, meshes, textures, faceGenMismatch, outfitNotice);
             });
 
             // Always apply (even with empty lists) so a re-load of a tile whose
@@ -408,6 +421,9 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             {
                 ApplyMissingAssetNotifications(loadResult.meshes, loadResult.textures, loadResult.faceGenMismatch);
             }
+
+            OutfitNoticeText = loadResult.outfitNotice;
+            HasOutfitNotice = loadResult.outfitNotice.Length > 0;
 
             // Assign results back on the UI thread
             var bitmap = loadResult.bmp;
@@ -876,7 +892,8 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         // Skip regeneration if a fresh PNG already exists for the active renderer.
         if (File.Exists(pngSavePath) &&
             !_stalenessChecker.NeedsRegeneration(pngSavePath, NpcFormKey, nifPath,
-                _parentVMModSetting.CorrespondingFolderPaths, autoGen))
+                _parentVMModSetting.CorrespondingFolderPaths, autoGen,
+                effectiveOutfitIdentityProvider: ComputeOutfitIdentityStamp))
         {
             SetImageSource(pngSavePath, isPlaceholder: false);
             await UpdateUIAfterSuccess();
@@ -898,6 +915,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 missingMeshes, missingTextures, faceGenMismatchOut: faceGenMismatch);
             ApplyMissingAssetNotifications(missingMeshes, missingTextures,
                 faceGenMismatch.Count > 0 ? faceGenMismatch[0] : null);
+            _ = RefreshOutfitNoticeAsync();
         }
         else if (!string.IsNullOrWhiteSpace(nifPath))
         {
@@ -915,6 +933,55 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         }
 
         return false;
+    }
+
+    /// <summary>Current depicted-outfit identity stamp for this tile (the NPC
+    /// is its own patch target in the Mods menu) — the staleness checker's
+    /// v12 comparison input.</summary>
+    private string ComputeOutfitIdentityStamp()
+    {
+        var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == _parentVMModSetting.DisplayName);
+        var (includeOutfit, _) = _settings.GetEffectiveAttireFlags(NpcFormKey);
+        return _outfitDisplayResolver.ResolveForDisplay(NpcFormKey, NpcFormKey, sourceMod, includeOutfit).IdentityStamp;
+    }
+
+    /// <summary>Computes the outfit-conflict notice for this tile. Empty =
+    /// no conflict. Safe on background threads.</summary>
+    private string ComputeOutfitNoticeSafe()
+    {
+        try
+        {
+            var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == _parentVMModSetting.DisplayName);
+            if (sourceMod == null) return string.Empty;
+            var (includeOutfit, _) = _settings.GetEffectiveAttireFlags(NpcFormKey);
+            var result = _outfitDisplayResolver.ResolveForDisplay(NpcFormKey, NpcFormKey, sourceMod, includeOutfit);
+            if (string.IsNullOrEmpty(result.WarningText)) return string.Empty;
+
+            var sbNotice = new System.Text.StringBuilder(result.WarningText);
+            if (!string.IsNullOrEmpty(result.SourceDetail))
+            {
+                sbNotice.Append("\n\nDisplayed outfit: ").Append(result.SourceDetail);
+            }
+            foreach (var approx in result.Approximations)
+            {
+                sbNotice.Append("\nNote: approximated — ").Append(approx);
+            }
+            return sbNotice.ToString();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ComputeOutfitNoticeSafe failed for {NpcFormKey}: {ex.Message}");
+            return string.Empty;
+        }
+    }
+
+    /// <summary>Recomputes <see cref="OutfitNoticeText"/> off the UI thread
+    /// and applies it. Fire-and-forget from load/generation paths.</summary>
+    private async Task RefreshOutfitNoticeAsync()
+    {
+        var notice = await Task.Run(ComputeOutfitNoticeSafe);
+        OutfitNoticeText = notice;
+        HasOutfitNotice = notice.Length > 0;
     }
 
     /// <summary>Sets the unified missing-asset overlay state from the two

@@ -8,6 +8,7 @@ using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.Models;
+using NPC_Plugin_Chooser_2.BackEnd.OutfitDistribution;
 
 namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 
@@ -41,6 +42,7 @@ public class NpcMeshResolver
     private readonly RecordHandler _recordHandler;
     private readonly EnvironmentStateProvider _env;
     private readonly BsaHandler _bsaHandler;
+    private readonly OutfitDisplayResolver _outfitDisplayResolver;
 
     public NpcMeshResolver(
         ICharacterViewerLogger logger,
@@ -49,7 +51,8 @@ public class NpcMeshResolver
         NpcConsistencyProvider consistency,
         RecordHandler recordHandler,
         EnvironmentStateProvider env,
-        BsaHandler bsaHandler)
+        BsaHandler bsaHandler,
+        OutfitDisplayResolver outfitDisplayResolver)
     {
         _logger = logger;
         _logGate = logGate;
@@ -58,6 +61,7 @@ public class NpcMeshResolver
         _recordHandler = recordHandler;
         _env = env;
         _bsaHandler = bsaHandler;
+        _outfitDisplayResolver = outfitDisplayResolver;
     }
 
     private void LogVerbose(string message)
@@ -538,9 +542,18 @@ public class NpcMeshResolver
     /// </summary>
     public IReadOnlyList<MeshOverride> ResolveAttireMeshOverridesForActiveSelection(
         FormKey targetNpcFormKey, bool includeDefaultOutfit, bool includeHeadgear)
+        => ResolveAttireMeshOverridesForActiveSelection(targetNpcFormKey, includeDefaultOutfit, includeHeadgear, out _);
+
+    /// <summary>Overload exposing the effective-outfit resolution (source /
+    /// warning / identity stamp) alongside the mesh overrides, so the live
+    /// preview can surface runtime-distribution conflicts.</summary>
+    public IReadOnlyList<MeshOverride> ResolveAttireMeshOverridesForActiveSelection(
+        FormKey targetNpcFormKey, bool includeDefaultOutfit, bool includeHeadgear,
+        out OutfitDisplayResult outfitDisplay)
     {
         var modSetting = LookupSelectedModSetting(targetNpcFormKey, out var sourceFormKey);
-        return ResolveAttireMeshOverrides(sourceFormKey, modSetting, includeDefaultOutfit, includeHeadgear);
+        return ResolveAttireMeshOverrides(sourceFormKey, modSetting, includeDefaultOutfit, includeHeadgear,
+            targetNpcFormKey, out outfitDisplay);
     }
 
     /// <summary>
@@ -559,17 +572,38 @@ public class NpcMeshResolver
     /// </summary>
     public IReadOnlyList<MeshOverride> ResolveAttireMeshOverrides(
         FormKey npcFormKey, ModSetting? modSetting, bool includeDefaultOutfit, bool includeHeadgear)
+        => ResolveAttireMeshOverrides(npcFormKey, modSetting, includeDefaultOutfit, includeHeadgear,
+            targetNpcFormKey: null, out _);
+
+    /// <summary>
+    /// Overload exposing the effective-outfit resolution alongside the mesh
+    /// overrides. <paramref name="targetNpcFormKey"/> is the NPC being patched
+    /// in the user's load order (differs from <paramref name="npcFormKey"/>
+    /// for guest appearances; runtime distributors filter on the target) —
+    /// null means the rendered NPC is its own target.
+    /// </summary>
+    public IReadOnlyList<MeshOverride> ResolveAttireMeshOverrides(
+        FormKey npcFormKey, ModSetting? modSetting, bool includeDefaultOutfit, bool includeHeadgear,
+        FormKey? targetNpcFormKey, out OutfitDisplayResult outfitDisplay)
     {
+        outfitDisplay = OutfitDisplayResult.NoOutfit;
         if (!includeDefaultOutfit && !includeHeadgear) return Array.Empty<MeshOverride>();
         var linkCache = _env.LinkCache;
         if (linkCache == null) return Array.Empty<MeshOverride>();
+
+        // Effective outfit: patch-mode plugin level + runtime distributors
+        // (SkyPatcher / SPID). Replaces the old direct read of the donor
+        // record's DefaultOutfit.
+        outfitDisplay = _outfitDisplayResolver.ResolveForDisplay(
+            targetNpcFormKey ?? npcFormKey, npcFormKey, modSetting, includeDefaultOutfit);
+
         return ResolveAttireMeshOverrides(npcFormKey, linkCache,
-            BuildContext(npcFormKey, modSetting), includeDefaultOutfit, includeHeadgear);
+            BuildContext(npcFormKey, modSetting), includeDefaultOutfit, includeHeadgear, outfitDisplay);
     }
 
     private IReadOnlyList<MeshOverride> ResolveAttireMeshOverrides(
         FormKey npcFormKey, ILinkCache linkCache, NpcResolutionContext? context,
-        bool includeDefaultOutfit, bool includeHeadgear)
+        bool includeDefaultOutfit, bool includeHeadgear, OutfitDisplayResult outfitDisplay)
     {
         var result = new List<MeshOverride>();
         // Outfit is the dominant toggle — headgear is part of the outfit and never
@@ -594,11 +628,22 @@ public class NpcMeshResolver
         // both the outfit and the worn armor is only emitted once.
         var seenOverrideKeys = new HashSet<string>();
 
-        // Default outfit → apparel armors. Drives both features: a head-slot
-        // piece becomes headgear, everything else body attire.
-        if (npcGetter.DefaultOutfit != null && !npcGetter.DefaultOutfit.IsNull)
+        // Effective outfit → apparel armors. Drives both features: a head-slot
+        // piece becomes headgear, everything else body attire. The outfit
+        // FormKey comes from OutfitDisplayResolver (patch-mode plugin level +
+        // SkyPatcher/SPID runtime layers); donor-sourced outfits resolve
+        // through the mod's plugins, winner/runtime outfits through the plain
+        // load-order winner — matching where the record actually comes from
+        // in game.
+        if (outfitDisplay.OutfitFormKey is { } effectiveOutfitKey)
         {
-            var outfit = ResolveRecord<IOutfitGetter>(npcGetter.DefaultOutfit, linkCache, context);
+            var outfitContext = outfitDisplay.UseModScopedResolution ? context : null;
+            var outfit = ResolveRecord<IOutfitGetter>(effectiveOutfitKey.ToLink<IOutfitGetter>(), linkCache, outfitContext);
+            if (outfitDisplay.Source != OutfitDisplaySource.AppearanceMod)
+            {
+                LogVerbose("CharacterViewer: effective outfit " + effectiveOutfitKey + " via "
+                    + outfitDisplay.Source + (outfitDisplay.SourceDetail != null ? " (" + outfitDisplay.SourceDetail + ")" : ""));
+            }
             if (outfit?.Items != null)
             {
                 var outfitArmors = new List<(IArmorGetter armor, string source)>();
@@ -606,20 +651,20 @@ public class NpcMeshResolver
                 foreach (var itemLink in outfit.Items)
                 {
                     if (itemLink == null || itemLink.IsNull) continue;
-                    CollectOutfitItemArmors(itemLink.FormKey, linkCache, context,
-                        "Outfit:" + npcGetter.DefaultOutfit.FormKey, outfitArmors, seenArmorKeys, depth: 0);
+                    CollectOutfitItemArmors(itemLink.FormKey, linkCache, outfitContext,
+                        "Outfit:" + effectiveOutfitKey, outfitArmors, seenArmorKeys, depth: 0);
                 }
                 foreach (var (armor, source) in outfitArmors)
                 {
-                    AppendArmorMeshOverrides(armor, source, sex, npcRaceKey, linkCache, context,
+                    AppendArmorMeshOverrides(armor, source, sex, npcRaceKey, linkCache, outfitContext,
                         includeBody: includeDefaultOutfit, includeHeadgear: includeHeadgear,
                         hairCountsAsHeadgear: true, result, seenOverrideKeys);
                 }
             }
             else
             {
-                LogVerbose("CharacterViewer: ResolveAttireMeshOverrides could not resolve DefaultOutfit "
-                    + npcGetter.DefaultOutfit.FormKey + " for " + npcName);
+                LogVerbose("CharacterViewer: ResolveAttireMeshOverrides could not resolve effective outfit "
+                    + effectiveOutfitKey + " for " + npcName);
             }
         }
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -6,6 +6,7 @@ using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Disposables.Fluent;
 using System.Reactive.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using CharacterViewer.Rendering;
 using Mutagen.Bethesda.Plugins;
@@ -49,6 +50,14 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     /// an incompatible / absent skeleton.</summary>
     [Reactive] public bool HasMissingAssets { get; private set; }
     [Reactive] public string MissingAssetNotificationText { get; private set; } = string.Empty;
+
+    /// <summary>Outfit-conflict banner: set when "Include Outfit" is overridden
+    /// at runtime by a SkyPatcher/SPID config, or (SkyPatcher mode) NPC2's own
+    /// ini entry is not conflict-winning. Empty = no banner. The provenance
+    /// line (which config supplies the displayed outfit) rides along in the
+    /// text so the user can see WHY the preview wears what it wears.</summary>
+    [Reactive] public bool HasOutfitNotice { get; private set; }
+    [Reactive] public string OutfitNoticeText { get; private set; } = string.Empty;
 
     // Non-persistent override state for the full-screen popup (see
     // PersistAttireToggles). Seeded from the persisted defaults at construction.
@@ -117,6 +126,11 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     // non-null, GL-context-reset re-fires re-uses this scope; when null,
     // the re-fire falls back to the active selection (Settings-panel path).
     private ModSetting? _lastExplicitModSetting;
+    /// <summary>Patch-target FormKey of the last explicit (per-tile) load —
+    /// differs from <see cref="CurrentNpcFormKey"/> for guest appearances.
+    /// Preserved so toggle/context-reset reloads keep simulating runtime
+    /// outfit distribution against the right NPC.</summary>
+    private FormKey? _lastExplicitTargetNpcFormKey;
 
     public ReactiveCommand<Unit, Unit> LoadSelectedNpcCommand { get; }
     public ReactiveCommand<Unit, Unit> ResetCommand { get; }
@@ -318,7 +332,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     {
         if (CurrentNpcFormKey.IsNull) return Task.CompletedTask;
         return _lastExplicitModSetting != null
-            ? LoadAsync(CurrentNpcFormKey, _lastExplicitModSetting)
+            ? LoadAsync(CurrentNpcFormKey, _lastExplicitModSetting, _lastExplicitTargetNpcFormKey)
             : LoadAsync(CurrentNpcFormKey);
     }
 
@@ -328,7 +342,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         try
         {
             if (_lastExplicitModSetting != null)
-                await LoadAsync(CurrentNpcFormKey, _lastExplicitModSetting).ConfigureAwait(false);
+                await LoadAsync(CurrentNpcFormKey, _lastExplicitModSetting, _lastExplicitTargetNpcFormKey).ConfigureAwait(false);
             else
                 await LoadAsync(CurrentNpcFormKey).ConfigureAwait(false);
         }
@@ -350,7 +364,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             // to the user's globally-selected mod after a context reset.
             if (_lastExplicitModSetting != null)
             {
-                await LoadAsync(CurrentNpcFormKey, _lastExplicitModSetting).ConfigureAwait(false);
+                await LoadAsync(CurrentNpcFormKey, _lastExplicitModSetting, _lastExplicitTargetNpcFormKey).ConfigureAwait(false);
             }
             else
             {
@@ -386,6 +400,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         }
 
         _lastExplicitModSetting = null;
+        _lastExplicitTargetNpcFormKey = null;
         using var captureScope = MaybeStartRenderLogCapture(formKey, modName: "ActiveSelection");
         try
         {
@@ -409,8 +424,9 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             // Attire / headgear (Include Default Outfit / Include headgear). Scoped
             // to the user's active appearance selection, matching the mesh load.
             var attire = _resolver.ResolveAttireMeshOverridesForActiveSelection(
-                formKey, IncludeDefaultOutfit, IncludeHeadgear);
+                formKey, IncludeDefaultOutfit, IncludeHeadgear, out var outfitDisplay);
             ApplyAttireOverrides(attire);
+            ApplyOutfitNotice(outfitDisplay);
 
             PreviewLoaded?.Invoke();
         }
@@ -432,7 +448,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     /// scopes directly via <see cref="NpcMeshResolver"/> and feeding them
     /// into the underlying viewer's path-accepting <c>LoadAsync</c>.
     /// </summary>
-    public async Task LoadAsync(FormKey formKey, ModSetting? modSetting)
+    public async Task LoadAsync(FormKey formKey, ModSetting? modSetting, FormKey? targetNpcFormKey = null)
     {
         if (formKey.IsNull) return;
         if (_env.LinkCache == null)
@@ -442,6 +458,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         }
 
         _lastExplicitModSetting = modSetting;
+        _lastExplicitTargetNpcFormKey = targetNpcFormKey;
         using var captureScope = MaybeStartRenderLogCapture(formKey, modSetting?.DisplayName ?? "Unscoped");
         try
         {
@@ -463,10 +480,14 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             StatusText = $"Loaded {formKey}";
 
             // Attire / headgear (Include Default Outfit / Include headgear),
-            // resolved through this tile's explicit mod scope.
+            // resolved through this tile's explicit mod scope. targetNpcFormKey
+            // (the patch target; differs from formKey for guest appearances)
+            // keys the runtime-distribution simulation.
             var attire = _resolver.ResolveAttireMeshOverrides(
-                formKey, modSetting, IncludeDefaultOutfit, IncludeHeadgear);
+                formKey, modSetting, IncludeDefaultOutfit, IncludeHeadgear,
+                targetNpcFormKey, out var outfitDisplay);
             ApplyAttireOverrides(attire);
+            ApplyOutfitNotice(outfitDisplay);
 
             PreviewLoaded?.Invoke();
         }
@@ -474,6 +495,34 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         {
             StatusText = $"Load failed: {ex.Message}";
             System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: " + ExceptionLogger.GetExceptionStack(ex));
+        }
+    }
+
+    /// <summary>Applies the outfit-conflict banner + provenance line from an
+    /// effective-outfit resolution. Warnings (Include Outfit overridden /
+    /// NPC2's SkyPatcher ini losing) drive the banner; a conflict-free
+    /// runtime-distributed outfit only annotates <see cref="StatusText"/> so
+    /// the user can still see why the preview wears what it wears.</summary>
+    private void ApplyOutfitNotice(BackEnd.OutfitDistribution.OutfitDisplayResult outfitDisplay)
+    {
+        if (!string.IsNullOrEmpty(outfitDisplay.WarningText))
+        {
+            var sb = new StringBuilder(outfitDisplay.WarningText);
+            foreach (var approx in outfitDisplay.Approximations)
+            {
+                sb.Append("\nNote: approximated — ").Append(approx);
+            }
+            OutfitNoticeText = sb.ToString();
+            HasOutfitNotice = true;
+        }
+        else
+        {
+            OutfitNoticeText = string.Empty;
+            HasOutfitNotice = false;
+            if (!string.IsNullOrEmpty(outfitDisplay.SourceDetail))
+            {
+                StatusText += $" — outfit via {outfitDisplay.SourceDetail}";
+            }
         }
     }
 

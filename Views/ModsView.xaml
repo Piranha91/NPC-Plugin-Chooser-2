@@ -719,7 +719,20 @@
                                                 <Image Source="/NPC Plugin Chooser 2;component/Resources/Missing Asset.png" />
                                             </Viewbox>
                                         </Grid>
-                                                            
+
+                                        <!-- Outfit-conflict indicator (Bottom-Left): "Include Outfit" is
+                                             overridden at runtime by SkyPatcher/SPID, or NPC2's SkyPatcher
+                                             ini entry is not conflict-winning. Tooltip explains why. -->
+                                        <Grid HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="0 0 0 10"
+                                              Visibility="{Binding HasOutfitNotice, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                              ToolTip="{Binding OutfitNoticeText}"
+                                              Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                              Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+                                            <Viewbox Stretch="Uniform">
+                                                <TextBlock Text="⚠" FontWeight="Bold" Foreground="Orange"/>
+                                            </Viewbox>
+                                        </Grid>
+
                                     </Grid>
                                     
                                     <Border.ContextMenu>

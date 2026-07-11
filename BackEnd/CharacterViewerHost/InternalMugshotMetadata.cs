@@ -81,9 +81,18 @@ public static class InternalMugshotMetadata
     /// 0.6 baseline), so a v9 tile compared at schemaVersion=9 (which excludes
     /// this entry) keeps hash-matching a v10 cfg whose user hasn't changed the
     /// field.</item>
+    /// <item>12: added <c>effective_outfit</c> — the IDENTITY (FormKey string,
+    /// or "none" when attire is off / the NPC has no outfit) of the outfit the
+    /// render depicted, as resolved by OutfitDisplayResolver (patch-mode plugin
+    /// level + SkyPatcher/SPID runtime layers). Identity only, deliberately
+    /// excluding the provenance source: switching Create ↔ CreateAndPatch (or
+    /// any other input change) that lands on the SAME outfit FormKey must not
+    /// re-stale the tile. Pre-v12 PNGs lack the field and are compared at
+    /// their stamped schema, so the feature's introduction regenerates
+    /// nothing by itself.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 11;
+    public const int PipelineSchemaVersion = 12;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -96,12 +105,18 @@ public static class InternalMugshotMetadata
     // (NOT folded into the settings hash that drives staleness).
     private const string FaceGenMismatchKey = "facegen_mismatch";
     public const string PipelineSchemaKey = "pipeline_schema";
+    /// <summary>JSON key of the depicted-outfit identity stamp (v12+).</summary>
+    public const string EffectiveOutfitKey = "effective_outfit";
+    /// <summary>Identity value stamped when no outfit is depicted (attire
+    /// toggle off, or the NPC resolves to no outfit).</summary>
+    public const string NoOutfitIdentity = "none";
 
     public static string Build(
         FormKey npcFormKey,
         InternalMugshotSettings cfg,
         bool effectiveIncludeDefaultOutfit,
         bool effectiveIncludeHeadgear,
+        string effectiveOutfitIdentity,
         IReadOnlyList<string>? missingMeshes = null,
         IReadOnlyList<string>? missingTextures = null,
         string? faceGenMismatch = null)
@@ -113,7 +128,8 @@ public static class InternalMugshotMetadata
             [PipelineSchemaKey] = PipelineSchemaVersion,
             ["npc_form_key"] = npcFormKey.ToString(),
             ["settings_hash"] = ComputeSettingsHashAtSchema(cfg, PipelineSchemaVersion,
-                effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear),
+                effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear, effectiveOutfitIdentity),
+            [EffectiveOutfitKey] = string.IsNullOrEmpty(effectiveOutfitIdentity) ? NoOutfitIdentity : effectiveOutfitIdentity,
             ["camera_mode"] = cfg.CameraMode.ToString(),
             ["background_color"] = new JArray(cfg.BackgroundR, cfg.BackgroundG, cfg.BackgroundB),
             ["output_size"] = new JArray(cfg.OutputWidth, cfg.OutputHeight),
@@ -243,6 +259,28 @@ public static class InternalMugshotMetadata
         }
     }
 
+    /// <summary>Reads the depicted-outfit identity stamped at v12+. Returns
+    /// null when absent (pre-v12 PNGs) so callers can skip the comparison for
+    /// tiles rendered before the field existed.</summary>
+    public static string? TryReadEffectiveOutfit(string parametersJson)
+    {
+        if (string.IsNullOrWhiteSpace(parametersJson)) return null;
+        try
+        {
+            var obj = JObject.Parse(parametersJson);
+            if (obj.TryGetValue(EffectiveOutfitKey, out var token))
+            {
+                var s = token?.Value<string>();
+                return string.IsNullOrWhiteSpace(s) ? null : s;
+            }
+        }
+        catch
+        {
+            // Malformed JSON / unexpected schema — treat as "not stamped".
+        }
+        return null;
+    }
+
     /// <summary>Convenience: hash at the current pipeline schema. Equivalent to
     /// <c>ComputeSettingsHashAtSchema(cfg, PipelineSchemaVersion)</c>.</summary>
     public static string ComputeSettingsHash(InternalMugshotSettings cfg)
@@ -263,7 +301,8 @@ public static class InternalMugshotMetadata
     /// NOT folded in here yet because the in-process renderer documents
     /// them as unused (cf. OffscreenRenderRequest XML doc).</para></summary>
     public static string ComputeSettingsHashAtSchema(InternalMugshotSettings cfg, int schemaVersion,
-        bool? effectiveIncludeDefaultOutfit = null, bool? effectiveIncludeHeadgear = null)
+        bool? effectiveIncludeDefaultOutfit = null, bool? effectiveIncludeHeadgear = null,
+        string? effectiveOutfitIdentity = null)
     {
         var sb = new StringBuilder();
         var inv = CultureInfo.InvariantCulture;
@@ -390,6 +429,20 @@ public static class InternalMugshotMetadata
             sb.Append('|').Append(cfg.DaylightBoostIntensity.ToString("R", inv));
             sb.Append('|').Append(cfg.EnableBloom ? '1' : '0');
             sb.Append('|').Append(cfg.BloomIntensity.ToString("R", inv));
+        }
+
+        // === schema v12 fields (depicted-outfit identity) ===
+        // The resolved outfit FormKey string ("none" when attire is off or the
+        // NPC has no outfit) — IDENTITY only, never the provenance source, so
+        // any combination of patching mode / Include Outfit / distributor
+        // configs that lands on the same outfit keeps the same hash. Callers
+        // without a per-NPC outfit context pass null and fall back to "none";
+        // the staleness checker always supplies the stamped/current value.
+        if (schemaVersion >= 12)
+        {
+            sb.Append('|').Append(string.IsNullOrEmpty(effectiveOutfitIdentity)
+                ? NoOutfitIdentity
+                : effectiveOutfitIdentity);
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

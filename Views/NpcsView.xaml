@@ -800,6 +800,19 @@
                                               (FontSize 10 + 1px vertical padding) so the icons
                                               sit above the text rather than overlapping it. -->
 
+                                         <!-- Outfit-conflict indicator: "Include Outfit" is
+                                              overridden at runtime by SkyPatcher/SPID, or NPC2's
+                                              SkyPatcher ini entry is not conflict-winning; the
+                                              tooltip explains which config wins and why. -->
+                                         <Grid Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                               Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}"
+                                               Visibility="{Binding HasOutfitNotice, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                               ToolTip="{Binding OutfitNoticeText}">
+                                             <Viewbox Stretch="Uniform">
+                                                 <TextBlock Text="⚠" FontWeight="Bold" Foreground="Orange"/>
+                                             </Viewbox>
+                                         </Grid>
+
                                          <!-- Missing-asset indicator: fires for unresolved meshes
                                               OR textures; the tooltip enumerates each category
                                               under its own heading. -->

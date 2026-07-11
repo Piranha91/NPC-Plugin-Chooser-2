@@ -111,7 +111,8 @@ public sealed class InternalMugshotGenerator
         List<string>? missingMeshPathsOut = null,
         List<string>? missingTexturePathsOut = null,
         bool assetValidatedOnly = false,
-        List<string>? faceGenMismatchOut = null)
+        List<string>? faceGenMismatchOut = null,
+        FormKey? targetNpcFormKey = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int tid = Environment.CurrentManagedThreadId;
@@ -178,8 +179,15 @@ public sealed class InternalMugshotGenerator
             // metadata below so the staleness checker stays consistent.
             var (effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear) =
                 _settings.GetEffectiveAttireFlags(npcFormKey);
+            // targetNpcFormKey is the NPC being patched in the load order (only
+            // differs from npcFormKey for guest appearances); the effective-
+            // outfit simulation (patch mode + SkyPatcher/SPID) keys on it. The
+            // resulting outfit IDENTITY is stamped into the PNG metadata below
+            // so the staleness checker can re-render only when the depicted
+            // outfit actually changes.
             var meshOverrides = _resolver.ResolveAttireMeshOverrides(
-                npcFormKey, modSetting, effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear);
+                npcFormKey, modSetting, effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear,
+                targetNpcFormKey, out var outfitDisplay);
             var meshOverrideWarningsOut = new List<string>();
 
             // Opt-in per-render phase timing (drop a LogRenderTimings.txt file
@@ -349,6 +357,7 @@ public sealed class InternalMugshotGenerator
                 var parametersJson = InternalMugshotMetadata.Build(
                     npcFormKey, _settings.InternalMugshot,
                     effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear,
+                    outfitDisplay.IdentityStamp,
                     missingMeshPathsOut, missingTexturePathsOut, faceGenMismatch);
                 MugshotPngMetadata.InjectParameters(outputPath, parametersJson);
             }

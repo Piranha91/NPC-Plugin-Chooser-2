@@ -98,6 +98,7 @@ public sealed class BatchMugshotGenerator
     private readonly GeneratedMugshotTracker _autoGenTracker;
     private readonly FaceFinderCacheTracker _faceFinderTracker;
     private readonly EventLogger _eventLogger;
+    private readonly OutfitDistribution.OutfitDisplayResolver _outfitDisplayResolver;
 
     public BatchMugshotGenerator(
         Settings settings,
@@ -107,7 +108,8 @@ public sealed class BatchMugshotGenerator
         MugshotStalenessChecker stalenessChecker,
         GeneratedMugshotTracker autoGenTracker,
         FaceFinderCacheTracker faceFinderTracker,
-        EventLogger eventLogger)
+        EventLogger eventLogger,
+        OutfitDistribution.OutfitDisplayResolver outfitDisplayResolver)
     {
         _settings = settings;
         _internalGenerator = internalGenerator;
@@ -117,6 +119,24 @@ public sealed class BatchMugshotGenerator
         _autoGenTracker = autoGenTracker;
         _faceFinderTracker = faceFinderTracker;
         _eventLogger = eventLogger;
+        _outfitDisplayResolver = outfitDisplayResolver;
+    }
+
+    /// <summary>Builds the lazy depicted-outfit identity provider the
+    /// staleness checker uses for v12+ PNGs. Resolves against the persisted
+    /// ModSetting named by <paramref name="modDisplayName"/>;
+    /// <paramref name="targetNpcFormKey"/> is the patch target (null = the
+    /// rendered NPC is its own target).</summary>
+    private Func<string> MakeOutfitIdentityProvider(
+        FormKey npcFormKey, FormKey? targetNpcFormKey, string modDisplayName)
+    {
+        return () =>
+        {
+            var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == modDisplayName);
+            var (includeOutfit, _) = _settings.GetEffectiveAttireFlags(npcFormKey);
+            return _outfitDisplayResolver.ResolveForDisplay(
+                targetNpcFormKey ?? npcFormKey, npcFormKey, sourceMod, includeOutfit).IdentityStamp;
+        };
     }
 
     /// <summary>
@@ -461,7 +481,7 @@ public sealed class BatchMugshotGenerator
     /// fresh FaceGen lookup, so passing null still catches every drift case
     /// (renderer/resolution/version/settings hash).</summary>
     public bool TryGetExistingFreshAutoGenPath(
-        FormKey npcFormKey, VM_ModSetting modSetting, out string? path)
+        FormKey npcFormKey, VM_ModSetting modSetting, out string? path, FormKey? targetNpcFormKey = null)
     {
         path = null;
         if (!_settings.UsePortraitCreatorFallback) return false;
@@ -470,7 +490,11 @@ public sealed class BatchMugshotGenerator
         var savePath = GetAutoGenSavePath(_settings, modSetting.DisplayName, npcFormKey);
         if (!File.Exists(savePath)) return false;
 
-        if (_stalenessChecker.NeedsRegeneration(savePath, npcFormKey)) return false;
+        if (_stalenessChecker.NeedsRegeneration(savePath, npcFormKey,
+                effectiveOutfitIdentityProvider: MakeOutfitIdentityProvider(npcFormKey, targetNpcFormKey, modSetting.DisplayName)))
+        {
+            return false;
+        }
 
         path = savePath;
         return true;
@@ -480,7 +504,8 @@ public sealed class BatchMugshotGenerator
         FormKey npcFormKey,
         VM_ModSetting modSetting,
         CancellationToken token,
-        bool assetValidatedOnly = false)
+        bool assetValidatedOnly = false,
+        FormKey? targetNpcFormKey = null)
     {
         if (!_settings.UsePortraitCreatorFallback) return GenerationResult.None;
 
@@ -492,7 +517,8 @@ public sealed class BatchMugshotGenerator
             {
                 var sourceMod = _settings.ModSettings.FirstOrDefault(
                     m => m.DisplayName == modSetting.DisplayName);
-                if (!_stalenessChecker.NeedsRegeneration(savePath, npcFormKey))
+                if (!_stalenessChecker.NeedsRegeneration(savePath, npcFormKey,
+                        effectiveOutfitIdentityProvider: MakeOutfitIdentityProvider(npcFormKey, targetNpcFormKey, modSetting.DisplayName)))
                 {
                     // Surface the previously-stamped missing-asset arrays so the
                     // tile's overlay survives revisits. Post-2.1.7 the autogen
@@ -526,7 +552,7 @@ public sealed class BatchMugshotGenerator
                 var faceGenMismatch = new List<string>();
                 bool generated = await _internalGenerator.GenerateAsync(
                     npcFormKey, sourceMod, savePath, token, missingMeshes, missingTextures,
-                    assetValidatedOnly, faceGenMismatch);
+                    assetValidatedOnly, faceGenMismatch, targetNpcFormKey);
                 return new GenerationResult(
                     Generated: generated,
                     AlreadyCurrent: false,

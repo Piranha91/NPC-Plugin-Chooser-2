@@ -237,6 +237,58 @@ The **Renderer** dropdown chooses which engine generates the mugshots. **Interna
 
 *Legacy renderer (left) vs. Internal renderer (right) for the same mod.*
 
+#### Which outfit does the preview wear?
+
+When the **Attire** toggle has the character wearing their default outfit, N.P.C.2 doesn't just show the outfit from the appearance mod's plugin — it predicts the outfit the NPC will *actually wear in game* after your patching-mode choice **and** any runtime outfit distributors (SkyPatcher configs, SPID `_DISTR.ini` files) have had their say. Mugshots and the [3D preview](#3d-preview) both follow these rules, and a mugshot only re-renders when the *resolved outfit itself* changes — flipping settings that land on the same outfit costs nothing.
+
+Legend for the tables below:
+
+* **Mod's outfit** — the outfit from the selected appearance mod's plugin (what **Include Outfit** would carry into the output).
+* **Winning outfit** — the outfit on the conflict-winning override of the NPC in your load order (what EasyNPC-style patching preserves).
+* **SkyPatcher outfit** — the outfit set by the *last* matching `outfitDefault=` line across your installed SkyPatcher npc configs (that's the one SkyPatcher itself applies).
+* **SPID outfit** — the outfit from the *first* matching `Outfit =` entry across your `*_DISTR.ini` files (that's the one SPID itself applies). Entries with a chance below 100 are random at runtime and are never depicted.
+
+An external entry only "matches" if its filters match the NPC **and** its outfit actually resolves in your load order; otherwise it's skipped and the next row down supplies the outfit.
+
+**Normal mode (SkyPatcher Mode off):**
+
+| Patching mode | Include Outfit | SkyPatcher ini matches | SPID entry matches | Preview displays | Warning shown |
+|---|---|---|---|---|---|
+| Create | ✘ | ✘ | ✘ | Mod's outfit | — |
+| Create | ✘ | ✘ | ✔ | SPID outfit | — |
+| Create | ✘ | ✔ | any | SkyPatcher outfit | — |
+| Create | ✔ | ✘ | ✘ | Mod's outfit | — |
+| Create | ✔ | ✘ | ✔ | SPID outfit | ⚠ Include Outfit overridden by SPID |
+| Create | ✔ | ✔ | any | SkyPatcher outfit | ⚠ Include Outfit overridden by SkyPatcher |
+| Create and Patch | ✘ | ✘ | ✘ | Winning outfit | — |
+| Create and Patch | ✘ | ✘ | ✔ | SPID outfit | — |
+| Create and Patch | ✘ | ✔ | any | SkyPatcher outfit | — |
+| Create and Patch | ✔ | ✘ | ✘ | Mod's outfit | — |
+| Create and Patch | ✔ | ✘ | ✔ | SPID outfit | ⚠ Include Outfit overridden by SPID |
+| Create and Patch | ✔ | ✔ | any | SkyPatcher outfit | ⚠ Include Outfit overridden by SkyPatcher |
+
+Note the Create-mode quirk: Create forwards the appearance mod's whole NPC record, so the mod's outfit ships even with **Include Outfit** off — the checkbox only changes whether a runtime override *warns* you.
+
+**SkyPatcher Mode (either patching mode — neither touches the NPC record at plugin level):**
+
+With **Include Outfit** on, N.P.C.2's own SkyPatcher ini sets the outfit, so it competes with any external SkyPatcher configs by ordinary SkyPatcher config order — whichever loads later wins. (Configs directly in `SkyPatcher\npc\` load before any subfolder; subfolders load in name order, so only a subfolder sorting after `NPC Plugin Chooser` beats N.P.C.2's entry.)
+
+| Include Outfit | SkyPatcher ini matches | SPID entry matches | Preview displays | Warning shown |
+|---|---|---|---|---|
+| ✘ | ✘ | ✘ | Winning outfit | — |
+| ✘ | ✘ | ✔ | SPID outfit | — |
+| ✘ | ✔ | any | SkyPatcher outfit | — |
+| ✔ | ✘ | ✘ | Mod's outfit (via N.P.C.2's ini) | — |
+| ✔ | ✘ | ✔ | Mod's outfit — N.P.C.2's directive suspends SPID | — |
+| ✔ | ✔, loads *before* N.P.C.2's ini | any | Mod's outfit | — |
+| ✔ | ✔, loads *after* N.P.C.2's ini | any | SkyPatcher outfit | ⚠ N.P.C.2's SkyPatcher entry not conflict-winning |
+
+**Why SkyPatcher beats SPID:** SPID deliberately backs off an NPC whose default outfit no longer matches the value it read from the plugins — and SkyPatcher's edits (including N.P.C.2's own, in SkyPatcher Mode) are exactly such a change. Two edge cases bend the tables:
+
+* If SkyPatcher assigns the **same** outfit the record already has (including N.P.C.2's directive being a no-op because the mod's outfit equals the winning one), SPID does *not* suspend — a matching SPID entry wins after all, and with **Include Outfit** on you'll get the SPID-overridden warning.
+* A runtime winner that happens to equal the mod's outfit displays without a warning — what you asked for is what's shown.
+
+When a warning applies, the mugshot tile shows an orange **⚠** badge (hover it for which config wins and why) and the 3D preview shows a banner; when a distributor changes the outfit *without* defeating an Include Outfit request, the preview's status line simply notes where the outfit came from. Rare filter types that only exist at runtime (skill-based filters, sub-100% chances) are treated conservatively and called out as approximations in the tooltip.
 
 ### FaceGen Analysis
 
@@ -480,6 +532,8 @@ Mugshots can carry small icons in their corners that flag special states. Hover 
 
 ![Red missing assets tooltip](docs/Screenshots/NPCs/Red_Missing_Assets_Icon_Tooltip.png)
 
+* **Orange ⚠ outfit-conflict badge** — the outfit you asked N.P.C.2 to include for this NPC will be overridden at runtime by a SkyPatcher or SPID config in your load order (or, in SkyPatcher Mode, N.P.C.2’s own outfit entry loses to a later-loading config). The tooltip names the winning config file and line. See [Which outfit does the preview wear?](#which-outfit-does-the-preview-wear) for the full resolution rules.
+
 * **Share badge** — marks an appearance involved in [sharing](#sharing-an-appearance-between-npcs). The same silhouette appears in two colors, one for each direction. One color means the appearance was **shared *to* this NPC** from another — selecting it applies that look, and the tooltip names the donor. The other color means this mugshot’s appearance has been **shared *out* to another NPC** — hovering names the recipient.
 
 ![Shared-from tooltip](docs/Screenshots/NPCs/Share_Icon_Blue_Tooltip_SharedFrom.png)
@@ -519,6 +573,8 @@ When **Show NPC Descriptions** is on, a short bio of the selected NPC appears at
 ![3D preview window](docs/Screenshots/NPCs/Show_3D_Preview_Window.png)
 
 The **Show 3D Preview** option (or Ctrl+Shift+RClick on a mugshot) opens an interactive 3D render of the NPC as that appearance mod would make them. You can spin the model and tune lighting, camera FOV, color grading, and skin shading — the same controls described under [Auto-Generation](#auto-generation-built-in-3d-renderer) — and toggle whether they’re shown in their default outfit and/or headgear, to inspect the appearance far more closely than a static mugshot allows.
+
+With the outfit toggle on, the preview dresses the NPC in the outfit they’ll *actually wear in game* given your patching mode, the Include Outfit setting, and any SkyPatcher/SPID outfit distribution in your load order — see [Which outfit does the preview wear?](#which-outfit-does-the-preview-wear). If a runtime config defeats an outfit you asked N.P.C.2 to include, a warning banner in the preview names the config responsible; otherwise the status line at the bottom notes where a distributed outfit came from.
 
 ### Favorite Faces
 
@@ -576,7 +632,7 @@ Each mod entry exposes:
 * **Corresponding Mod Folder Paths** — the folder(s) where this mod’s actual resources (plugins, meshes, textures) live. By default this is just the mod’s own folder. **Add** more folders when a separate mod is needed as a resource and you want it merged in rather than left as a master (e.g. High Poly Head, Better Argonian Horns). Use **Browse...** to change a path and **X** to remove one.
 * **Merge Dependencies** — whether records referenced by the NPC are merged into the output plugin. Leave it **unchecked** for a mod that merely *defines* an NPC you want to forward (e.g. forwarding an NPC’s original look from Legacy of the Dragonborn) — otherwise the patcher tries to merge a huge chunk of that mod and may crash. Pure appearance replacers are fine to merge.
 * **Copy Assets** — whether this mod’s non-plugin resources (textures, meshes, and the like *other than* FaceGen) are forwarded into the output folder. If you uncheck it, **you** become responsible for keeping that mod’s assets enabled in your mod manager so the files are still available in-game (the mod’s plugin doesn’t necessarily have to stay enabled — just its assets).
-* **Include Outfits** — whether this mod’s NPC outfits are carried into the output (can also be set per-NPC from the NPCs tab).
+* **Include Outfits** — whether this mod’s NPC outfits are carried into the output (can also be set per-NPC from the NPCs tab). Note that a SkyPatcher or SPID config in your load order can still override an included outfit at runtime — the character previews simulate this and flag it with an orange ⚠ badge when it happens (see [Which outfit does the preview wear?](#which-outfit-does-the-preview-wear)).
 * **Handle Injected Records** — also merge in this mod’s *injected* records. An injected record is one a mod slots into another plugin’s FormID space (for example, into Skyrim.esm’s) instead of its own. Normally the patcher only merges records owned by the appearance mod’s own plugins; checking this makes it hunt down injected records as well. Most appearance mods don’t need it and it makes patching slower, so leave it off unless a specific mod requires it.
 * **Set Keywords** and **Set Resource Plugins** — open their own dialogs, described just below.
 * **Record Override Handling Mode** — how this mod’s *non-NPC* override records are handled (see [Record Override Handling](#record-override-handling)).

@@ -47,6 +47,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     private readonly EventLogger _eventLogger;
     private readonly Func<VM_InternalMugshotPreview> _internalPreviewFactory;
     private readonly FaceGenAnalysisCache _faceGenAnalysisCache = null!;
+    private readonly BackEnd.OutfitDistribution.OutfitDisplayResolver _outfitDisplayResolver;
     private readonly CompositeDisposable Disposables = new();
     // Static + frozen so VM instances can be constructed off the UI thread
     // (see CreateMugShotViewModelsAsync's Task.Run) without WPF's
@@ -92,6 +93,16 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     /// <see cref="MissingAssetNotificationText"/>.</summary>
     [Reactive] public bool HasMissingAssets { get; set; } = false;
     [Reactive] public string MissingAssetNotificationText { get; set; } = string.Empty;
+    /// <summary>True when the effective-outfit simulation reports a runtime
+    /// conflict for this tile: "Include Outfit" is overridden by a
+    /// SkyPatcher/SPID config, or (SkyPatcher mode) NPC2's own ini entry is
+    /// not conflict-winning. Drives the outfit-warning badge; the full text
+    /// is in <see cref="OutfitNoticeText"/>. Computed live from the current
+    /// configs at tile load / after generation, not read from stamped
+    /// metadata, so it stays current when the overriding config changes
+    /// without the depicted outfit changing.</summary>
+    [Reactive] public bool HasOutfitNotice { get; set; } = false;
+    [Reactive] public string OutfitNoticeText { get; set; } = string.Empty;
     [Reactive] public FormKey? TemplateNpcKey { get; set; }
     [Reactive] public bool CanJumpToTemplate { get; set; }
     public bool IsAmbiguousSource { get; }
@@ -214,7 +225,8 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         Func<VM_InternalMugshotPreview> internalPreviewFactory,
         GeneratedMugshotTracker tracker,
         FaceFinderCacheTracker faceFinderTracker,
-        FaceGenAnalysisCache faceGenAnalysisCache)
+        FaceGenAnalysisCache faceGenAnalysisCache,
+        BackEnd.OutfitDistribution.OutfitDisplayResolver outfitDisplayResolver)
     {
         ModName = modName;
         _lazyMods = lazyMods;
@@ -239,6 +251,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         _tracker = tracker;
         _faceFinderTracker = faceFinderTracker;
         _faceGenAnalysisCache = faceGenAnalysisCache;
+        _outfitDisplayResolver = outfitDisplayResolver;
 
         // FaceGen analysis: derived display properties tied to settings + Stats.
         // Reactive subscriptions live in InitFaceGenAnalysis() so the full block
@@ -608,7 +621,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
                 if (source == MugshotSourceType.AutoGeneration
                     && _batchGenerator.TryGetExistingFreshAutoGenPath(
-                           SourceNpcFormKey, AssociatedModSetting, out var freshAutoGen))
+                           SourceNpcFormKey, AssociatedModSetting, out var freshAutoGen, _targetNpcFormKey))
                 {
                     ImagePath = freshAutoGen!;
                     realMugshotExists = true;
@@ -702,7 +715,12 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             // dedup so this is a no-op on cache hits (~sub-ms).
             NifMeshBuilder.FaceGenStats? facegen = FetchFaceGenStatsSync();
 
-            return (bitmap, meshes, textures, facegen, faceGenMismatch);
+            // Outfit-conflict notice (Include Outfit vs SkyPatcher/SPID) —
+            // computed live from current configs, applies to any real mugshot
+            // since it describes the runtime outcome, not the PNG's pedigree.
+            string outfitNotice = ComputeOutfitNoticeSafe();
+
+            return (bitmap, meshes, textures, facegen, faceGenMismatch, outfitNotice);
         });
 
         // Always apply (even with empty lists) so a re-load of a tile whose
@@ -712,6 +730,9 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         {
             ApplyMissingAssetNotifications(loadResult.meshes, loadResult.textures, loadResult.faceGenMismatch);
         }
+
+        OutfitNoticeText = loadResult.outfitNotice;
+        HasOutfitNotice = loadResult.outfitNotice.Length > 0;
 
         // FaceGen stats (if any) — set after the await so it lands on the
         // UI thread, triggering the reactive overlay-state refresh.
@@ -980,7 +1001,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             // exceptions surface via inner.StatusText.
             window.Loaded += async (_, _) =>
             {
-                try { await inner.LoadAsync(SourceNpcFormKey, modSetting); }
+                try { await inner.LoadAsync(SourceNpcFormKey, modSetting, _targetNpcFormKey); }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine(
@@ -1584,7 +1605,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         _eventLogger.Log($"Falling back to {_settings.SelectedRenderer} renderer for {SourceNpcFormKey}", "PORTRAIT_GEN");
 
         var rendererResult = await _batchGenerator.RunSelectedRendererAsync(
-            SourceNpcFormKey, AssociatedModSetting, token);
+            SourceNpcFormKey, AssociatedModSetting, token, targetNpcFormKey: _targetNpcFormKey);
 
         // The Internal renderer reports per-render missing-asset paths whether
         // it just rendered or reused a fresh PNG: in the Generated branch the
@@ -1599,6 +1620,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         if (rendererResult.Source == GenerationSource.InternalRenderer && rendererResult.ProducedFile)
         {
             ApplyMissingAssetNotifications(rendererResult.MissingMeshes, rendererResult.MissingTextures, rendererResult.FaceGenMismatch);
+            _ = RefreshOutfitNoticeAsync();
         }
 
         // ProducedFile covers both Generated == true (just rendered) and
@@ -1673,6 +1695,47 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
         HasMissingAssets = true;
         MissingAssetNotificationText = sb.ToString();
+    }
+
+    /// <summary>Computes the outfit-conflict notice for this tile via the
+    /// effective-outfit simulation. Returns an empty string when there is no
+    /// conflict (or on any failure). Safe on background threads.</summary>
+    private string ComputeOutfitNoticeSafe()
+    {
+        try
+        {
+            var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == ModName);
+            if (sourceMod == null) return string.Empty;
+            var (includeOutfit, _) = _settings.GetEffectiveAttireFlags(SourceNpcFormKey);
+            var result = _outfitDisplayResolver.ResolveForDisplay(
+                _targetNpcFormKey, SourceNpcFormKey, sourceMod, includeOutfit);
+            if (string.IsNullOrEmpty(result.WarningText)) return string.Empty;
+
+            var sb = new StringBuilder(result.WarningText);
+            if (!string.IsNullOrEmpty(result.SourceDetail))
+            {
+                sb.Append("\n\nDisplayed outfit: ").Append(result.SourceDetail);
+            }
+            foreach (var approx in result.Approximations)
+            {
+                sb.Append("\nNote: approximated — ").Append(approx);
+            }
+            return sb.ToString();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ComputeOutfitNoticeSafe failed for {SourceNpcFormKey}: {ex.Message}");
+            return string.Empty;
+        }
+    }
+
+    /// <summary>Recomputes <see cref="OutfitNoticeText"/> off the UI thread
+    /// and applies it. Fire-and-forget from load/generation paths.</summary>
+    private async Task RefreshOutfitNoticeAsync()
+    {
+        var notice = await Task.Run(ComputeOutfitNoticeSafe);
+        OutfitNoticeText = notice;
+        HasOutfitNotice = notice.Length > 0;
     }
 
     private void SetImageSource(string path)
