@@ -1252,11 +1252,6 @@ public class Patcher : OptionalUIModule
                     // Verify any cached file access errors to see if they were actual failures.
                     _assetHandler.LogTrueCopyFailures();
 
-                    // Per-mod summary of assets withheld by base-game-overwrite protection
-                    // (vanilla-path assets from mods without the "Overwrite Base Game Assets"
-                    // opt-in). No-op when nothing was skipped.
-                    _assetHandler.LogBaseGameAssetSkipSummary();
-
                     // Opt-in asset-provenance report (AssetProvenance.csv): why each file was copied
                     // and which NPCs/mods/records pulled it in. No-op unless enabled (Settings
                     // checkbox or the LogAssetProvenance.txt dev trigger).
