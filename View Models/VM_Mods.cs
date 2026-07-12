@@ -1380,9 +1380,9 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         try
         {
-            await AnalyzeModSettingsAsync(splashReporter, faceGenCache);
+            var analysisFailedVms = await AnalyzeModSettingsAsync(splashReporter, faceGenCache, warnings);
 
-            PruneEmptyNewlyCreatedAppearanceMods(splashReporter);
+            PruneEmptyNewlyCreatedAppearanceMods(splashReporter, analysisFailedVms);
 
             // Mirror the 2.1.6 migration sweep for first-time scans. Inside
             // ProcessNewModFolderForParallelScanAsync, FindAndAddMissingMasters runs against
@@ -1392,11 +1392,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // even though the foundation's NPCs are the very ones being templated by the
             // replacer. AnalyzeModSettingsAsync has now run RefreshNpcLists, so NpcFormKeys
             // is populated and CleanupCorrespondingFolders will produce the correct result.
-            await CleanupNewlyCreatedCorrespondingFoldersAsync(splashReporter);
-
-            // Phase 4: Run final UI-dependent work
-            splashReporter?.UpdateStep("Finalizing mod settings...");
-            await FinalizeAndApplySettingsOnUI(warnings);
+            await CleanupNewlyCreatedCorrespondingFoldersAsync(splashReporter, analysisFailedVms);
 
             _aux.SaveRaceCache();
         }
@@ -1405,6 +1401,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // Handle exceptions from the analysis phase
             foreach (var ex in aggEx.Flatten().InnerExceptions)
             {
+                StartupLogger.Log($"Mod population error: {ExceptionLogger.GetExceptionStack(ex)}", "ERROR");
                 Debug.WriteLine($"Async NPC list refresh error (outer): {ExceptionLogger.GetExceptionStack(ex)}");
                 Application.Current.Dispatcher.Invoke(() =>
                     warnings.Add($"Async NPC list refresh error: {ExceptionLogger.GetExceptionStack(ex)}"));
@@ -1412,11 +1409,26 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }
         catch (Exception ex)
         {
+            StartupLogger.Log($"Mod population error: {ExceptionLogger.GetExceptionStack(ex)}", "ERROR");
             Debug.WriteLine($"Error in PopulateModSettingsAsync after WhenAll: {ExceptionLogger.GetExceptionStack(ex)}");
             Application.Current.Dispatcher.Invoke(() => warnings.Add($"Unexpected error: {ExceptionLogger.GetExceptionStack(ex)}"));
         }
         finally
         {
+            // Phase 4 must ALWAYS run: it clears IsLoadingNpcData, applies the mod list to
+            // the UI, and shows any collected warnings. Skipping it on failure left the Mods
+            // tab permanently stuck on "Loading NPC data..." with the error invisible.
+            try
+            {
+                splashReporter?.UpdateStep("Finalizing mod settings...");
+                await FinalizeAndApplySettingsOnUI(warnings);
+            }
+            catch (Exception ex)
+            {
+                StartupLogger.Log($"FinalizeAndApplySettingsOnUI failed: {ExceptionLogger.GetExceptionStack(ex)}", "ERROR");
+                Debug.WriteLine($"FinalizeAndApplySettingsOnUI failed: {ExceptionLogger.GetExceptionStack(ex)}");
+            }
+
             splashReporter?.UpdateStep("Mod settings populated.");
         }
     }
@@ -2362,8 +2374,13 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         EnsureAutoEntry(BaseGameModSettingName, baseGameModKeys, _environmentStateProvider.BaseGamePlugins ?? new());
     }
 
-    private async Task AnalyzeModSettingsAsync(VM_SplashScreen? splashReporter,
-        (Dictionary<string,HashSet<string>> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles) faceGenCache)
+    /// <returns>
+    /// The set of VMs whose analysis task threw. Callers must treat these as unanalyzed
+    /// (their NPC lists are empty or partial) rather than as genuinely empty mods.
+    /// </returns>
+    private async Task<HashSet<VM_ModSetting>> AnalyzeModSettingsAsync(VM_SplashScreen? splashReporter,
+        (Dictionary<string,HashSet<string>> allFaceGenLooseFiles, Dictionary<string, HashSet<string>> allFaceGenBsaFiles) faceGenCache,
+        List<string> warnings)
     {
         var maxParallelism = Environment.ProcessorCount;
         var semaphore = new SemaphoreSlim(maxParallelism);
@@ -2418,6 +2435,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         // --- END CACHING LOGIC ---
 
         StartupLogger.Log($"Analyzing {vmsToAnalyze.Count} mods (cache misses), {allVMs.Count - vmsToAnalyze.Count} cache hits, parallelism: {maxParallelism}");
+
+        // One failed mod must not abort the whole population: a fault that escapes a task
+        // propagates through Task.WhenAll and skips FinalizeAndApplySettingsOnUI, leaving
+        // the Mods tab permanently stuck on "Loading NPC data..." with no error surfaced.
+        var analysisFailures = new ConcurrentBag<(VM_ModSetting Vm, string Error)>();
 
         var refreshTasks = vmsToAnalyze.Select(async vm =>
         {
@@ -2490,6 +2512,19 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     }
                 });
             }
+            catch (Exception ex)
+            {
+                // Unguarded throw sites include PluginProvider.LoadPlugins (rethrows plugin
+                // parse failures) and link-cache resolution inside RefreshNpcLists' FaceGen-only
+                // branch. Record and continue so the remaining mods still analyze.
+                // Null the snapshot: it was pre-assigned during cache validation, so if it
+                // persisted, the next launch would treat this mod's empty/partial NPC lists
+                // as a valid cache hit and never re-analyze it.
+                vm.LastKnownState = null;
+                StartupLogger.Log($"  [{vm.DisplayName}] ANALYSIS FAILED: {ExceptionLogger.GetExceptionStack(ex)}", "ERROR");
+                analysisFailures.Add((vm,
+                    $"Mod '{vm.DisplayName}' failed analysis and may be missing from the Mods menu or missing NPCs:\n{ExceptionLogger.GetExceptionStack(ex)}"));
+            }
             finally
             {
                 semaphore.Release();
@@ -2497,13 +2532,18 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         }).ToList();
 
         await Task.WhenAll(refreshTasks);
-        StartupLogger.Log("All mod analysis tasks complete");
+        StartupLogger.Log(analysisFailures.IsEmpty
+            ? "All mod analysis tasks complete"
+            : $"Mod analysis complete with {analysisFailures.Count} failed mod(s)", analysisFailures.IsEmpty ? "INFO" : "ERROR");
+        warnings.AddRange(analysisFailures.Select(f => f.Error));
 
         // --- Resolve and apply the collected SkyPatcher data after all analysis is done ---
         if (!allSkyPatcherGuests.IsEmpty)
         {
             await ResolveAndApplySkyPatcherGuests(allSkyPatcherGuests.ToList());
         }
+
+        return analysisFailures.Select(f => f.Vm).ToHashSet();
     }
 
     /// <summary>
@@ -2517,11 +2557,17 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// to the load order). Only newly-created VMs are eligible -- previously-saved
     /// user mods are preserved even if currently empty, since they may be in a
     /// transient bad state due to load-order drift.
+    /// VMs whose analysis task threw (<paramref name="analysisFailedVms"/>) are excluded:
+    /// their empty NPC list means "not analyzed", and pruning them would cache their
+    /// folders as non-appearance with a misleading reason, hiding them on every
+    /// subsequent launch even though the underlying failure may be transient.
     /// </summary>
-    private void PruneEmptyNewlyCreatedAppearanceMods(VM_SplashScreen? splashReporter)
+    private void PruneEmptyNewlyCreatedAppearanceMods(VM_SplashScreen? splashReporter,
+        IReadOnlySet<VM_ModSetting> analysisFailedVms)
     {
         var emptyVms = _allModSettingsInternal
             .Where(vm => vm.IsNewlyCreated
+                         && !analysisFailedVms.Contains(vm)
                          && !vm.IsFaceGenOnlyEntry
                          && !vm.IsMugshotOnlyEntry
                          && vm.CorrespondingModKeys.Any()
@@ -2620,6 +2666,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
     private async Task FinalizeAndApplySettingsOnUI(List<string> warnings)
     {
+        StartupLogger.Log($"Applying {_allModSettingsInternal.Count} mod settings to UI ({warnings.Count} warning(s))");
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
             foreach (var vm in _allModSettingsInternal)
@@ -3237,14 +3284,19 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// users whose persisted <c>CorrespondingFolderPaths</c> were polluted by older builds before this fix
     /// existed. Once a user's settings have been rewritten by either path, both paths become idempotent.
     /// </summary>
-    private async Task CleanupNewlyCreatedCorrespondingFoldersAsync(VM_SplashScreen? splashReporter)
+    private async Task CleanupNewlyCreatedCorrespondingFoldersAsync(VM_SplashScreen? splashReporter,
+        IReadOnlySet<VM_ModSetting> analysisFailedVms)
     {
         if (string.IsNullOrWhiteSpace(_settings.ModsFolder) || !Directory.Exists(_settings.ModsFolder))
         {
             return;
         }
 
-        var newlyCreated = _allModSettingsInternal.Where(vm => vm.IsNewlyCreated).ToList();
+        // Analysis-failed VMs are skipped: CleanupCorrespondingFolders keys off NpcFormKeys,
+        // which is empty/partial for them, so it would detach or re-attach folders wrongly
+        // (and CorrespondingFolderPaths is persisted).
+        var newlyCreated = _allModSettingsInternal
+            .Where(vm => vm.IsNewlyCreated && !analysisFailedVms.Contains(vm)).ToList();
         if (!newlyCreated.Any())
         {
             return;
