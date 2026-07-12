@@ -89,7 +89,12 @@ namespace NPC_Plugin_Chooser_2.BackEnd
         /// </summary>
         public HashSet<ISkyrimModGetter> LoadPlugins(IEnumerable<ModKey> keys, HashSet<string> modFolderNames, out HashSet<string> loadedPaths, bool asReadOnly = true)
         {
-            var plugins = new HashSet<ISkyrimModGetter>();
+            // Reference equality is required here. Mutagen's mod classes define CONTENT-based
+            // Equals/GetHashCode, which walk the mod header lazily; a technically-malformed but
+            // game-accepted header (e.g. DynamicAnimalVariantsPlus.esp ships a zero-length INCC
+            // subrecord) makes GetHashCode throw ArgumentOutOfRangeException on HashSet.Add.
+            // Identity semantics is also what this set means: distinct loaded plugin instances.
+            var plugins = new HashSet<ISkyrimModGetter>(ReferenceEqualityComparer.Instance);
             loadedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (keys == null) return plugins;
 
