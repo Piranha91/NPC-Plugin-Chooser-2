@@ -35,6 +35,11 @@ namespace NPC_Plugin_Chooser_2
     {
         private SplashScreenWindow _splashScreenWindow;
         private IContainer _container;
+
+        // Set by the RenderHarness.json developer flow (see RenderHarnessRunner):
+        // when true, OnStartup shuts the app down after core initialization
+        // instead of opening the main window.
+        private bool _renderHarnessExitRequested;
         public const string ProgramVersion = "2.2.1"; // Central version definition
 
         // App constructor should be minimal
@@ -105,6 +110,16 @@ namespace NPC_Plugin_Chooser_2
                 {
                     StartupLogger.Log($"Fatal error during startup: {ex.Message}", "ERROR");
                     splashVM?.ShowMessagesOnClose("An error occured during startup: " + Environment.NewLine + Environment.NewLine + ExceptionLogger.GetExceptionStack(ex));
+                }
+
+                // A completed render-harness run (RenderHarness.json) exits
+                // instead of opening the main window; OnApplicationExit still
+                // runs (settings save, renderer + container disposal).
+                if (_renderHarnessExitRequested)
+                {
+                    await splashVM.CloseSplashScreenAsync();
+                    Shutdown();
+                    return;
                 }
 
                 splashVM.UpdateProgress(95, "Loading main window...");
@@ -462,7 +477,22 @@ namespace NPC_Plugin_Chooser_2
             var environmentProvider = container.Resolve<EnvironmentStateProvider>();
             StartupLogger.Log("Running final update checks");
             await updateHandler.FinalCheckForUpdatesAndPatch(npcsViewModel, modsViewModel, pluginProvider, aux, environmentProvider, splashVM);
-            
+
+            // Developer render harness: RenderHarness.json next to the exe
+            // renders the mugshots it lists (per parameter variant) and, by
+            // default, requests app exit — see RenderHarnessRunner. Runs after
+            // the full startup pipeline so mod settings, environment, and the
+            // eagerly-created offscreen renderer are all available.
+            if (RenderHarnessRunner.ConfigExists)
+            {
+                StartupLogger.Log("RenderHarness.json detected — running render harness");
+                splashVM.UpdateProgress(90, "Running render harness...");
+                _renderHarnessExitRequested = await RenderHarnessRunner.RunAsync(
+                    container.Resolve<Settings>(),
+                    container.Resolve<InternalMugshotGenerator>());
+                StartupLogger.Log($"Render harness finished (exitRequested={_renderHarnessExitRequested})");
+            }
+
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
             return container;
         }

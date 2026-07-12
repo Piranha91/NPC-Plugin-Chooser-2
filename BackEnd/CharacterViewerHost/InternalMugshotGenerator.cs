@@ -247,6 +247,8 @@ public sealed class InternalMugshotGenerator
                 SsaoRadius = cfg.SsaoRadius,
                 SsaoBias = cfg.SsaoBias,
                 SsaoIntensity = cfg.SsaoIntensity,
+                SsaoThickness = cfg.SsaoThickness,
+                SsaoHairGap = cfg.SsaoHairGap,
                 EnableEyeCatchlight = cfg.EnableEyeCatchlight,
                 SubsurfaceStrength = cfg.SubsurfaceStrength,
                 VignetteRadius = cfg.VignetteRadius,

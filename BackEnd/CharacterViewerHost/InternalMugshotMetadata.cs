@@ -92,7 +92,7 @@ public static class InternalMugshotMetadata
     /// nothing by itself.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 12;
+    public const int PipelineSchemaVersion = 13;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -443,6 +443,18 @@ public static class InternalMugshotMetadata
             sb.Append('|').Append(string.IsNullOrEmpty(effectiveOutfitIdentity)
                 ? NoOutfitIdentity
                 : effectiveOutfitIdentity);
+        }
+
+        // === schema v13 fields (SSAO occluder thickness + hair AO gap) ===
+        // Thickness default 1.5 matches the value the renderer hardcoded from
+        // 2.5.16 through v12, and a v12 tile is compared at schemaVersion=12
+        // (which excludes these entries), so existing tiles stay valid until
+        // the user actually changes a field. HairGap is new at v13 (the fade
+        // itself changes hair shading, which the schema bump re-stales).
+        if (schemaVersion >= 13)
+        {
+            sb.Append('|').Append(cfg.SsaoThickness.ToString("R", inv));
+            sb.Append('|').Append(cfg.SsaoHairGap.ToString("R", inv));
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

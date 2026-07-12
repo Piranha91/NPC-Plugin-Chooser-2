@@ -201,6 +201,10 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             .Subscribe(v => { _settings.InternalMugshot.SsaoBias = v; PersistThrottled(); }).DisposeWith(_disposables);
         Viewer.WhenAnyValue(x => x.SsaoIntensity).Skip(1)
             .Subscribe(v => { _settings.InternalMugshot.SsaoIntensity = v; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.SsaoThickness).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.SsaoThickness = v; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.SsaoHairGap).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.SsaoHairGap = v; PersistThrottled(); }).DisposeWith(_disposables);
         Viewer.WhenAnyValue(x => x.EnableEyeCatchlight).Skip(1)
             .Subscribe(b => { _settings.InternalMugshot.EnableEyeCatchlight = b; PersistThrottled(); }).DisposeWith(_disposables);
         Viewer.WhenAnyValue(x => x.SubsurfaceStrength).Skip(1)
@@ -247,6 +251,8 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Viewer.SsaoRadius = c.SsaoRadius;
         Viewer.SsaoBias = c.SsaoBias;
         Viewer.SsaoIntensity = c.SsaoIntensity;
+        Viewer.SsaoThickness = c.SsaoThickness;
+        Viewer.SsaoHairGap = c.SsaoHairGap;
         Viewer.EnableEyeCatchlight = c.EnableEyeCatchlight;
         Viewer.SubsurfaceStrength = c.SubsurfaceStrength;
         Viewer.VignetteRadius = c.VignetteRadius;

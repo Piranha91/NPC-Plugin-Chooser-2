@@ -648,6 +648,23 @@ public sealed class InternalMugshotSettings
     public float SsaoBias { get; set; } = 0.05f;
     public float SsaoIntensity { get; set; } = 1.5f;
 
+    // SSAO occluder-thickness rejection distance in view-space units
+    // (2.5.20+). An occluder only darkens a fragment when its depth is
+    // within roughly this distance; geometry farther behind (e.g. a shirt
+    // collar a few units behind beard strands) is treated as a separate
+    // surface seen through a gap, not a crevice wall. Also drives the
+    // bilateral SSAO blur's depth threshold. Default matches the renderer's
+    // previously hardcoded value.
+    public float SsaoThickness { get; set; } = 1.5f;
+
+    // Max view-space gap between a hair/beard fragment and the opaque surface
+    // behind it for screen AO to still shade the hair (2.5.20+). Hair is
+    // excluded from the SSAO depth prepass, so its AO texel belongs to the
+    // surface behind the strands: within the gap (scalp, chin) that AO is a
+    // fair stand-in; beyond it (a collar behind the beard) it is background
+    // structure that would ghost through the beard and is faded out.
+    public float SsaoHairGap { get; set; } = 0.8f;
+
     // Eye catch-light toggle (2.5.13+). When on, eye shapes get a tight,
     // bright specular highlight from the key light layered on top of
     // their normal Blinn-Phong specular. Real portrait photography
