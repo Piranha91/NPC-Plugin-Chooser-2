@@ -2209,6 +2209,9 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
         }
 
+        // Mark the temp VM before classifying so CheckMergeInSuitability's FaceGen-only
+        // early-out applies (its dummy/resource plugins must not be classified).
+        tempVmForAnalysis.IsFaceGenOnlyEntry = true;
         tempVmForAnalysis.CheckMergeInSuitability(
             splashReporter == null ? null : splashReporter.ShowMessagesOnClose);
 
@@ -2903,7 +2906,7 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     /// </summary>
     /// <summary>
     /// Returns true if the given (in-load-order) master plugin is itself an "appearance mod" by the same
-    /// record-ratio rule that drives the Merge Dependencies default (appearanceCount &gt;= nonAppearanceCount).
+    /// <see cref="MergeInClassifier"/> provenance rule that drives the Merge Dependencies default.
     /// Base-game and Creation Club masters short-circuit to false to avoid enumerating huge vanilla masters.
     /// Results are cached by ModKey via <see cref="_masterAppearanceClassificationCache"/> for the scan.
     /// </summary>
@@ -2936,8 +2939,12 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
             try
             {
-                var (appearanceCount, nonAppearanceCount) = Auxilliary.CountRecordsByAppearance(mod);
-                return appearanceCount >= nonAppearanceCount; // ">=" mirrors "!(non > appearance)"
+                // Same provenance classifier as VM_ModSetting.CheckMergeInSuitability (they must
+                // not diverge). A lone master is its own "internal set", and SkyPatcher INIs
+                // don't apply to a bare dependency plugin.
+                var counts = MergeInClassifier.CountPlugin(mod, new HashSet<ModKey> { key });
+                return MergeInClassifier.Classify(counts, skyPatcherTargets: 0) ==
+                       MergeInClassifier.Verdict.AppearanceReplacer;
             }
             catch
             {

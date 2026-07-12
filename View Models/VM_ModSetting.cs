@@ -1552,15 +1552,29 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     }
 
     /// <summary>
-    /// Checks the number of potential appearance records vs. total records.
-    /// If most of the records are not related to NPC appearance, flag that this mod probably shouldn't be merged in.
+    /// Decides the default state of "Merge Dependencies" via <see cref="MergeInClassifier"/>:
+    /// a mod is an appearance replacer (merge) when its NPC records predominantly OVERRIDE
+    /// NPCs defined outside this ModSetting (or it targets them via SkyPatcher visual INIs)
+    /// and its non-appearance record volume stays within the classifier's allowance;
+    /// otherwise it is a base/source mod and merge-in is disabled by default.
+    /// Runs identically for the initial folder scan, single-mod refresh, and refresh-all
+    /// (which repopulates through the scan path) — all three call this method.
     /// </summary>
     public void CheckMergeInSuitability(Action<string>? showMessageAction)
     {
         StartupLogger.Log($"  [{DisplayName}] Checking merge-in suitability");
-        int appearanceRecordCount = 0;
-        int nonAppearanceRecordCount = 0;
+
+        // FaceGen-only entries have no plugins to classify (or only dummy/resource plugins):
+        // merge-in is a no-op for them, and the provenance classifier was only validated on
+        // plugin-bearing mods — leave their checkbox at its default.
+        if (IsFaceGenOnlyEntry)
+        {
+            return;
+        }
+
+        var totals = new MergeInClassifier.Counts();
         bool isBaseGame = false;
+        var internalKeys = this.CorrespondingModKeys.ToHashSet();
 
         foreach (var modKey in this.CorrespondingModKeys)
         {
@@ -1584,14 +1598,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                           // import things like headparts, textures, etc.
             }
 
-            // Count this plugin's appearance vs non-appearance records via the shared classifier so the
-            // Merge Dependencies default and the dependency-folder keep logic stay in lockstep.
-            int nonAppearanceRecordCountForPlugin = 0;
             try
             {
-                var (appearanceForPlugin, nonAppearanceForPlugin) = Auxilliary.CountRecordsByAppearance(plugin);
-                appearanceRecordCount += appearanceForPlugin;
-                nonAppearanceRecordCountForPlugin = nonAppearanceForPlugin;
+                // Identity-only tallies (FormKey caches + group counts; no record parsing).
+                totals += MergeInClassifier.CountPlugin(plugin, internalKeys);
             }
             catch (Exception e)
             {
@@ -1618,23 +1628,36 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                     File.WriteAllText(logFilePath, errorMessage);
                 }
             }
-
-            nonAppearanceRecordCount += nonAppearanceRecordCountForPlugin;
         }
 
+        // Lexical INI scan: works at initial-scan time, before SkyPatcherTargetModKeys exists.
+        int skyPatcherTargets = MergeInClassifier.CountSkyPatcherVisualTargets(this.CorrespondingFolderPaths);
 
-        if (isBaseGame || nonAppearanceRecordCount > appearanceRecordCount)
+        var verdict = isBaseGame
+            ? MergeInClassifier.Verdict.BaseMod
+            : MergeInClassifier.Classify(totals, skyPatcherTargets);
+
+        StartupLogger.Log(
+            $"  [{DisplayName}] Merge-in classifier: {verdict} (npcOverrides={totals.OverrideNpcs}, newNpcs={totals.NewNpcs}, " +
+            $"skyPatcherTargets={skyPatcherTargets}, supportRecords={totals.SupportRecords}, hardRecords={totals.HardRecords}, isBaseGame={isBaseGame})");
+
+        if (verdict == MergeInClassifier.Verdict.BaseMod)
         {
             this.HasAlteredMergeLogic = true;
             this.MergeInDependencyRecords = false;
             this.MergeInToolTip =
-                $"N.P.C. has determined that the plugin(s) in {this.DisplayName} have more non-appearance records than appearance records, " +
+                $"N.P.C. has determined that {this.DisplayName} doesn't look like an NPC appearance replacer " +
                 Environment.NewLine +
-                "suggesting that it's not just an appearance replacer mod. Merge-in has been disabled by default. You can re-enable it, but be warned that " +
+                $"(NPC overrides: {totals.OverrideNpcs}, own/new NPCs: {totals.NewNpcs}, SkyPatcher visual targets: {skyPatcherTargets}, " +
                 Environment.NewLine +
-                "merging in large plugins with a lot of non-appearance records can freeze the patcher and is completely unnecessary if the plugin is staying in your load order" +
+                $"appearance-support records: {totals.SupportRecords}, other records: {totals.HardRecords}), " +
+                "suggesting it defines its own content rather than replacing existing NPC appearances." +
                 Environment.NewLine +
-                "and you're just making sure its NPC appearances are winning conflicts." + Environment.NewLine +
+                "Merge-in has been disabled by default. You can re-enable it, but be warned that " +
+                "merging in large plugins with a lot of non-appearance records can freeze the patcher" +
+                Environment.NewLine +
+                "and is completely unnecessary if the plugin is staying in your load order and you're just making sure its NPC appearances are winning conflicts." +
+                Environment.NewLine +
                 Environment.NewLine + ModSetting.DefaultMergeInTooltip;
         }
     }

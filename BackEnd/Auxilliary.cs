@@ -878,9 +878,9 @@ public class Auxilliary : IDisposable
     }
 
     /// <summary>
-    /// The appearance-related getter interface types whose records are counted as "appearance" by the
-    /// merge-in-suitability / appearance-mod heuristic. Kept here so every caller classifies records
-    /// identically (the Merge Dependencies default and the dependency-folder keep logic must not diverge).
+    /// The appearance-related getter interface types (the NPC group plus its visual-support
+    /// groups). <see cref="MergeInClassifier"/> treats records OUTSIDE these groups as "hard"
+    /// records when classifying a mod as appearance replacer vs base mod; keep the two in sync.
     /// </summary>
     public static readonly HashSet<Type> AppearanceRecordTypes = new()
     {
@@ -893,31 +893,6 @@ public class Auxilliary : IDisposable
         typeof(IColorRecordGetter),
         typeof(IEyesGetter)
     };
-
-    /// <summary>
-    /// Counts a single plugin's records split into appearance vs non-appearance buckets, using the same
-    /// definition that drives the "Merge Dependencies" default. Appearance counts are O(1) group-count
-    /// lookups; non-appearance is a lazy FormKey-cache enumeration that skips the appearance groups.
-    /// Neither side parses record contents, so plugins containing records Mutagen considers malformed
-    /// still get complete, accurate counts. The caller owns the threshold decision and any base-game /
-    /// resource-only exclusions.
-    /// </summary>
-    public static (int appearanceCount, int nonAppearanceCount) CountRecordsByAppearance(ISkyrimModGetter plugin)
-    {
-        int appearanceCount =
-            plugin.Npcs.Count +
-            plugin.Armors.Count +
-            plugin.ArmorAddons.Count +
-            plugin.TextureSets.Count +
-            plugin.HeadParts.Count +
-            plugin.Hairs.Count +
-            plugin.Colors.Count +
-            plugin.Eyes.Count;
-
-        int nonAppearanceCount = LazyEnumerateMajorRecords(plugin, AppearanceRecordTypes).Count();
-
-        return (appearanceCount, nonAppearanceCount);
-    }
 
     /// <summary>
     /// Removes or replaces characters that are invalid in file paths.

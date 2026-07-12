@@ -53,7 +53,7 @@ public class AuxilliaryLazyEnumerationTests
     }
 
     [Fact]
-    public void CountRecordsByAppearance_SplitsUsingAppearanceRecordTypes()
+    public void MergeInClassifierCountPlugin_SplitsSupportAndHardUsingAppearanceRecordTypes()
     {
         var mod = MutagenFixtures.NewMod("Counts.esp");
         mod.Npcs.AddNew();
@@ -62,10 +62,10 @@ public class AuxilliaryLazyEnumerationTests
         mod.FootstepSets.AddNew();
         mod.Quests.AddNew();
 
-        var (appearance, nonAppearance) = Auxilliary.CountRecordsByAppearance(mod);
+        var counts = MergeInClassifier.CountPlugin(mod, new HashSet<ModKey> { mod.ModKey });
 
-        appearance.Should().Be(2);
-        nonAppearance.Should().Be(3);
+        counts.Should().Be(new MergeInClassifier.Counts(
+            OverrideNpcs: 0, NewNpcs: 1, SupportRecords: 1, HardRecords: 3));
     }
 
     // ---- Malformed-record robustness (Baba Yaga regression) ----------------------------------
@@ -108,8 +108,8 @@ public class AuxilliaryLazyEnumerationTests
             npc.FormKey, weapon.FormKey, footstep.FormKey, set.FormKey,
         });
 
-        var (appearance, nonAppearance) = Auxilliary.CountRecordsByAppearance(overlay);
-        appearance.Should().Be(1);
-        nonAppearance.Should().Be(3);
+        var counts = MergeInClassifier.CountPlugin(overlay, new HashSet<ModKey> { overlay.ModKey });
+        counts.Should().Be(new MergeInClassifier.Counts(
+            OverrideNpcs: 0, NewNpcs: 1, SupportRecords: 0, HardRecords: 3));
     }
 }
