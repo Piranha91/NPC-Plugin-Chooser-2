@@ -198,7 +198,7 @@ If you check **Auto-Generate missing mugshots**, N.P.C.2 will render its own mug
 * **Background** / **Output** size: The background color and the pixel dimensions of the generated images.
 * **Asset Resolution**: Controls which copy of an asset wins when the same file exists in more than one place (e.g. a BSA vs. a loose file).
 * **Attire**: Whether the rendered character wears their **default outfit** and/or **headgear**.
-* **Re-render mugshots flagged with missing assets**: Retries NPCs that previously failed because assets couldn’t be found.
+* **Re-render When**: Which staleness checks trigger an automatic re-render of an existing mugshot — when it was produced by a **Newer renderer version**, when the **Stale Conditions** it was generated with (lighting, camera / framing, background, resolution, render options) no longer match your current settings, or when it was flagged with **Missing Assets** (meshes / textures that couldn’t be found). All three are on by default; turn one off to keep those mugshots in place instead of regenerating them.
 * **Delete All Auto-Generated Mugshots**: Clears everything the renderer has produced. The adjacent **Search Mode** dropdown only changes how this deletion inventories existing renders first — *Fast* uses N.P.C.2’s cached list (recommended), *Comprehensive* re-scans all folders and reads metadata.
 
 ![Auto-Generation preview](docs/Screenshots/Settings/Mugshot_Settings_Section_Autogen_ShowPreview.png)

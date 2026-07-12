@@ -750,10 +750,26 @@
                                           ToolTip="When on, a loose copy of an asset in your Skyrim Data folder takes precedence over the same path in any mod folder, letting your installed body / skin / texture replacers leak into mod-specific previews. FaceGen NIFs and FaceTint DDS are excluded so the mod's actual face overrides aren't replaced by vanilla copies. Off by default."/>
                             </WrapPanel>
 
-                            <CheckBox Content="Re-render mugshots flagged with missing assets"
-                                      IsChecked="{Binding AutoUpdateMugshotsWithMissingAssets, Mode=TwoWay}"
-                                      Margin="0,8,0,0"
-                                      ToolTip="When on (default), a previously-generated mugshot whose stamped metadata records any missing meshes or textures is treated as stale and re-rendered on the next session — giving newly-installed assets a chance to fill in the wireframe / placeholder areas automatically. Turn off to keep the existing PNG in place even when it depicts an incomplete model."/>
+                            <!-- Re-render triggers: each toggle gates one staleness check -
+                                 renderer/program-version drift, settings/condition drift, and
+                                 recorded missing-asset drift. All default on; turn one off to
+                                 stop that class of automatic regeneration. Backing gates live in
+                                 MugshotStalenessChecker (Internal) / PortraitCreator (Legacy). -->
+                            <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="Re-render When:" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <CheckBox Content="Newer renderer version"
+                                          IsChecked="{Binding AutoUpdateOldMugshots, Mode=TwoWay}"
+                                          VerticalAlignment="Center" Margin="0,0,12,0"
+                                          ToolTip="When on (default), a mugshot produced by an older version of the renderer (Internal) or the NPC Portrait Creator (Legacy) is treated as stale and re-rendered, so it picks up rendering fixes and improvements from the current version. Turn off to keep older-version mugshots in place."/>
+                                <CheckBox Content="Stale Conditions"
+                                          IsChecked="{Binding AutoUpdateStaleMugshots, Mode=TwoWay}"
+                                          VerticalAlignment="Center" Margin="0,0,12,0"
+                                          ToolTip="When on (default), a mugshot is re-rendered when the settings it was generated with - lighting, camera / framing, background, resolution and render options - no longer match your current settings. Turn off to keep existing mugshots in place even after you change these settings."/>
+                                <CheckBox Content="Missing Assets"
+                                          IsChecked="{Binding AutoUpdateMugshotsWithMissingAssets, Mode=TwoWay}"
+                                          VerticalAlignment="Center"
+                                          ToolTip="When on (default), a previously-generated mugshot whose stamped metadata records any missing meshes or textures is treated as stale and re-rendered on the next session — giving newly-installed assets a chance to fill in the wireframe / placeholder areas automatically. Turn off to keep the existing PNG in place even when it depicts an incomplete model."/>
+                            </WrapPanel>
 
                             <!-- Attire defaults: apply to both the mugshot renderer and
                                  the 3D preview. The full-screen 3D preview exposes the
