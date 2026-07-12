@@ -721,250 +721,160 @@ public class Auxilliary : IDisposable
     }
     
     /// <summary>
-    /// Lazily enumerates all major records in a mod without loading them all into memory at once.
-    /// Processing stops as soon as the consuming loop breaks.
+    /// The top-level record groups covered by <see cref="LazyEnumerateMajorRecords(ISkyrimModGetter)"/>: each
+    /// group's getter interface (the key matched against typesToSkip / <see cref="AppearanceRecordTypes"/>)
+    /// paired with its accessor on the mod.
     /// </summary>
-    public static IEnumerable<IFormLinkGetter<IMajorRecordGetter>> LazyEnumerateMajorRecords(ISkyrimModGetter mod)
+    private static readonly (Type GetterType, Func<ISkyrimModGetter, IGroupGetter?> GetGroup)[] TopLevelRecordGroups =
     {
-        // Use an empty enumerable if a property is null to prevent NullReferenceException
-        var empty = Enumerable.Empty<IMajorRecordGetter>();
-        
-        foreach (var record in mod.AcousticSpaces ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Actions ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Activators ?? empty) yield return record.ToLink();
-        foreach (var record in mod.ActorValueInformation ?? empty) yield return record.ToLink();
-        foreach (var record in mod.AddonNodes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.AlchemicalApparatuses ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Ammunitions ?? empty) yield return record.ToLink();
-        foreach (var record in mod.AnimatedObjects ?? empty) yield return record.ToLink();
-        foreach (var record in mod.ArmorAddons ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Armors ?? empty) yield return record.ToLink();
-        foreach (var record in mod.ArtObjects ?? empty) yield return record.ToLink();
-        foreach (var record in mod.AssociationTypes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.BodyParts ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Books ?? empty) yield return record.ToLink();
-        foreach (var record in mod.CameraPaths ?? empty) yield return record.ToLink();
-        foreach (var record in mod.CameraShots ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Classes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Climates ?? empty) yield return record.ToLink();
-        foreach (var record in mod.CollisionLayers ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Colors ?? empty) yield return record.ToLink();
-        foreach (var record in mod.CombatStyles ?? empty) yield return record.ToLink();
-        foreach (var record in mod.ConstructibleObjects ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Containers ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Debris ?? empty) yield return record.ToLink();
-        foreach (var record in mod.DefaultObjectManagers ?? empty) yield return record.ToLink();
-        foreach (var record in mod.DialogBranches ?? empty) yield return record.ToLink();
-        foreach (var record in mod.DialogTopics ?? empty) yield return record.ToLink();
-        foreach (var record in mod.DialogViews ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Doors ?? empty) yield return record.ToLink();
-        foreach (var record in mod.DualCastData ?? empty) yield return record.ToLink();
-        foreach (var record in mod.EffectShaders ?? empty) yield return record.ToLink();
-        foreach (var record in mod.EncounterZones ?? empty) yield return record.ToLink();
-        foreach (var record in mod.EquipTypes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Explosions ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Eyes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Factions ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Florae ?? empty) yield return record.ToLink();
-        foreach (var record in mod.FootstepSets ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Footsteps ?? empty) yield return record.ToLink();
-        foreach (var record in mod.FormLists ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Furniture ?? empty) yield return record.ToLink();
-        foreach (var record in mod.GameSettings ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Globals ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Grasses ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Hairs ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Hazards ?? empty) yield return record.ToLink();
-        foreach (var record in mod.HeadParts ?? empty) yield return record.ToLink();
-        foreach (var record in mod.IdleAnimations ?? empty) yield return record.ToLink();
-        foreach (var record in mod.IdleMarkers ?? empty) yield return record.ToLink();
-        foreach (var record in mod.ImageSpaceAdapters ?? empty) yield return record.ToLink();
-        foreach (var record in mod.ImageSpaces ?? empty) yield return record.ToLink();
-        foreach (var record in mod.ImpactDataSets ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Impacts ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Ingestibles ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Ingredients ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Keys ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Keywords ?? empty) yield return record.ToLink();
-        foreach (var record in mod.LandscapeTextures ?? empty) yield return record.ToLink();
-        foreach (var record in mod.LensFlares ?? empty) yield return record.ToLink();
-        foreach (var record in mod.LeveledItems ?? empty) yield return record.ToLink();
-        foreach (var record in mod.LeveledNpcs ?? empty) yield return record.ToLink();
-        foreach (var record in mod.LeveledSpells ?? empty) yield return record.ToLink();
-        foreach (var record in mod.LightingTemplates ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Lights ?? empty) yield return record.ToLink();
-        foreach (var record in mod.LoadScreens ?? empty) yield return record.ToLink();
-        foreach (var record in mod.LocationReferenceTypes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Locations ?? empty) yield return record.ToLink();
-        foreach (var record in mod.MagicEffects ?? empty) yield return record.ToLink();
-        foreach (var record in mod.MaterialObjects ?? empty) yield return record.ToLink();
-        foreach (var record in mod.MaterialTypes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Messages ?? empty) yield return record.ToLink();
-        foreach (var record in mod.MiscItems ?? empty) yield return record.ToLink();
-        foreach (var record in mod.MoveableStatics ?? empty) yield return record.ToLink();
-        foreach (var record in mod.MovementTypes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.MusicTracks ?? empty) yield return record.ToLink();
-        foreach (var record in mod.MusicTypes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.NavigationMeshInfoMaps ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Npcs ?? empty) yield return record.ToLink();
-        foreach (var record in mod.ObjectEffects ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Outfits ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Packages ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Perks ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Projectiles ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Quests ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Races ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Regions ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Relationships ?? empty) yield return record.ToLink();
-        foreach (var record in mod.ReverbParameters ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Scenes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Scrolls ?? empty) yield return record.ToLink();
-        foreach (var record in mod.ShaderParticleGeometries ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Shouts ?? empty) yield return record.ToLink();
-        foreach (var record in mod.SoulGems ?? empty) yield return record.ToLink();
-        foreach (var record in mod.SoundCategories ?? empty) yield return record.ToLink();
-        foreach (var record in mod.SoundDescriptors ?? empty) yield return record.ToLink();
-        foreach (var record in mod.SoundMarkers ?? empty) yield return record.ToLink();
-        foreach (var record in mod.SoundOutputModels ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Spells ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Statics ?? empty) yield return record.ToLink();
-        foreach (var record in mod.StoryManagerBranchNodes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.StoryManagerEventNodes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.StoryManagerQuestNodes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.TalkingActivators ?? empty) yield return record.ToLink();
-        foreach (var record in mod.TextureSets ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Trees ?? empty) yield return record.ToLink();
-        foreach (var record in mod.VisualEffects ?? empty) yield return record.ToLink();
-        foreach (var record in mod.VoiceTypes ?? empty) yield return record.ToLink();
-        foreach (var record in mod.VolumetricLightings ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Waters ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Weapons ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Weathers ?? empty) yield return record.ToLink();
-        foreach (var record in mod.WordsOfPower ?? empty) yield return record.ToLink();
-        foreach (var record in mod.Worldspaces ?? empty) yield return record.ToLink();
-    }
-    
+        (typeof(IAcousticSpaceGetter), static m => m.AcousticSpaces),
+        (typeof(IActionRecordGetter), static m => m.Actions),
+        (typeof(IActivatorGetter), static m => m.Activators),
+        (typeof(IActorValueInformationGetter), static m => m.ActorValueInformation),
+        (typeof(IAddonNodeGetter), static m => m.AddonNodes),
+        (typeof(IAlchemicalApparatusGetter), static m => m.AlchemicalApparatuses),
+        (typeof(IAmmunitionGetter), static m => m.Ammunitions),
+        (typeof(IAnimatedObjectGetter), static m => m.AnimatedObjects),
+        (typeof(IArmorAddonGetter), static m => m.ArmorAddons),
+        (typeof(IArmorGetter), static m => m.Armors),
+        (typeof(IArtObjectGetter), static m => m.ArtObjects),
+        (typeof(IAssociationTypeGetter), static m => m.AssociationTypes),
+        (typeof(IBodyPartGetter), static m => m.BodyParts),
+        (typeof(IBookGetter), static m => m.Books),
+        (typeof(ICameraPathGetter), static m => m.CameraPaths),
+        (typeof(ICameraShotGetter), static m => m.CameraShots),
+        (typeof(IClassGetter), static m => m.Classes),
+        (typeof(IClimateGetter), static m => m.Climates),
+        (typeof(ICollisionLayerGetter), static m => m.CollisionLayers),
+        (typeof(IColorRecordGetter), static m => m.Colors),
+        (typeof(ICombatStyleGetter), static m => m.CombatStyles),
+        (typeof(IConstructibleObjectGetter), static m => m.ConstructibleObjects),
+        (typeof(IContainerGetter), static m => m.Containers),
+        (typeof(IDebrisGetter), static m => m.Debris),
+        (typeof(IDefaultObjectManagerGetter), static m => m.DefaultObjectManagers),
+        (typeof(IDialogBranchGetter), static m => m.DialogBranches),
+        (typeof(IDialogTopicGetter), static m => m.DialogTopics),
+        (typeof(IDialogViewGetter), static m => m.DialogViews),
+        (typeof(IDoorGetter), static m => m.Doors),
+        (typeof(IDualCastDataGetter), static m => m.DualCastData),
+        (typeof(IEffectShaderGetter), static m => m.EffectShaders),
+        (typeof(IEncounterZoneGetter), static m => m.EncounterZones),
+        (typeof(IEquipTypeGetter), static m => m.EquipTypes),
+        (typeof(IExplosionGetter), static m => m.Explosions),
+        (typeof(IEyesGetter), static m => m.Eyes),
+        (typeof(IFactionGetter), static m => m.Factions),
+        (typeof(IFloraGetter), static m => m.Florae),
+        (typeof(IFootstepSetGetter), static m => m.FootstepSets),
+        (typeof(IFootstepGetter), static m => m.Footsteps),
+        (typeof(IFormListGetter), static m => m.FormLists),
+        (typeof(IFurnitureGetter), static m => m.Furniture),
+        (typeof(IGameSettingGetter), static m => m.GameSettings),
+        (typeof(IGlobalGetter), static m => m.Globals),
+        (typeof(IGrassGetter), static m => m.Grasses),
+        (typeof(IHairGetter), static m => m.Hairs),
+        (typeof(IHazardGetter), static m => m.Hazards),
+        (typeof(IHeadPartGetter), static m => m.HeadParts),
+        (typeof(IIdleAnimationGetter), static m => m.IdleAnimations),
+        (typeof(IIdleMarkerGetter), static m => m.IdleMarkers),
+        (typeof(IImageSpaceAdapterGetter), static m => m.ImageSpaceAdapters),
+        (typeof(IImageSpaceGetter), static m => m.ImageSpaces),
+        (typeof(IImpactDataSetGetter), static m => m.ImpactDataSets),
+        (typeof(IImpactGetter), static m => m.Impacts),
+        (typeof(IIngestibleGetter), static m => m.Ingestibles),
+        (typeof(IIngredientGetter), static m => m.Ingredients),
+        (typeof(IKeyGetter), static m => m.Keys),
+        (typeof(IKeywordGetter), static m => m.Keywords),
+        (typeof(ILandscapeTextureGetter), static m => m.LandscapeTextures),
+        (typeof(ILensFlareGetter), static m => m.LensFlares),
+        (typeof(ILeveledItemGetter), static m => m.LeveledItems),
+        (typeof(ILeveledNpcGetter), static m => m.LeveledNpcs),
+        (typeof(ILeveledSpellGetter), static m => m.LeveledSpells),
+        (typeof(ILightingTemplateGetter), static m => m.LightingTemplates),
+        (typeof(ILightGetter), static m => m.Lights),
+        (typeof(ILoadScreenGetter), static m => m.LoadScreens),
+        (typeof(ILocationReferenceTypeGetter), static m => m.LocationReferenceTypes),
+        (typeof(ILocationGetter), static m => m.Locations),
+        (typeof(IMagicEffectGetter), static m => m.MagicEffects),
+        (typeof(IMaterialObjectGetter), static m => m.MaterialObjects),
+        (typeof(IMaterialTypeGetter), static m => m.MaterialTypes),
+        (typeof(IMessageGetter), static m => m.Messages),
+        (typeof(IMiscItemGetter), static m => m.MiscItems),
+        (typeof(IMoveableStaticGetter), static m => m.MoveableStatics),
+        (typeof(IMovementTypeGetter), static m => m.MovementTypes),
+        (typeof(IMusicTrackGetter), static m => m.MusicTracks),
+        (typeof(IMusicTypeGetter), static m => m.MusicTypes),
+        (typeof(INavigationMeshInfoMapGetter), static m => m.NavigationMeshInfoMaps),
+        (typeof(INpcGetter), static m => m.Npcs),
+        (typeof(IObjectEffectGetter), static m => m.ObjectEffects),
+        (typeof(IOutfitGetter), static m => m.Outfits),
+        (typeof(IPackageGetter), static m => m.Packages),
+        (typeof(IPerkGetter), static m => m.Perks),
+        (typeof(IProjectileGetter), static m => m.Projectiles),
+        (typeof(IQuestGetter), static m => m.Quests),
+        (typeof(IRaceGetter), static m => m.Races),
+        (typeof(IRegionGetter), static m => m.Regions),
+        (typeof(IRelationshipGetter), static m => m.Relationships),
+        (typeof(IReverbParametersGetter), static m => m.ReverbParameters),
+        (typeof(ISceneGetter), static m => m.Scenes),
+        (typeof(IScrollGetter), static m => m.Scrolls),
+        (typeof(IShaderParticleGeometryGetter), static m => m.ShaderParticleGeometries),
+        (typeof(IShoutGetter), static m => m.Shouts),
+        (typeof(ISoulGemGetter), static m => m.SoulGems),
+        (typeof(ISoundCategoryGetter), static m => m.SoundCategories),
+        (typeof(ISoundDescriptorGetter), static m => m.SoundDescriptors),
+        (typeof(ISoundMarkerGetter), static m => m.SoundMarkers),
+        (typeof(ISoundOutputModelGetter), static m => m.SoundOutputModels),
+        (typeof(ISpellGetter), static m => m.Spells),
+        (typeof(IStaticGetter), static m => m.Statics),
+        (typeof(IStoryManagerBranchNodeGetter), static m => m.StoryManagerBranchNodes),
+        (typeof(IStoryManagerEventNodeGetter), static m => m.StoryManagerEventNodes),
+        (typeof(IStoryManagerQuestNodeGetter), static m => m.StoryManagerQuestNodes),
+        (typeof(ITalkingActivatorGetter), static m => m.TalkingActivators),
+        (typeof(ITextureSetGetter), static m => m.TextureSets),
+        (typeof(ITreeGetter), static m => m.Trees),
+        (typeof(IVisualEffectGetter), static m => m.VisualEffects),
+        (typeof(IVoiceTypeGetter), static m => m.VoiceTypes),
+        (typeof(IVolumetricLightingGetter), static m => m.VolumetricLightings),
+        (typeof(IWaterGetter), static m => m.Waters),
+        (typeof(IWeaponGetter), static m => m.Weapons),
+        (typeof(IWeatherGetter), static m => m.Weathers),
+        (typeof(IWordOfPowerGetter), static m => m.WordsOfPower),
+        (typeof(IWorldspaceGetter), static m => m.Worldspaces),
+    };
+
+    private static readonly HashSet<Type> NoSkippedTypes = new();
+
     /// <summary>
-    /// Lazily enumerates all major records in a mod, skipping any record types included in the provided HashSet.
+    /// Lazily enumerates the identities (FormKey + record type) of all top-level major records in a mod.
+    /// Walks each group's FormKey cache (built from the record headers alone) instead of constructing the
+    /// records themselves, so a record whose subrecord data Mutagen rejects as malformed (e.g. a FootstepSet
+    /// whose DATA counts disagree with its lists) is still enumerated instead of aborting the whole scan.
+    /// The returned links carry only record identity; callers that need record CONTENTS must resolve them
+    /// separately and handle parse failures. Processing stops as soon as the consuming loop breaks.
     /// </summary>
-    public static IEnumerable<IFormLinkGetter<IMajorRecordGetter>> LazyEnumerateMajorRecords(ISkyrimModGetter mod, HashSet<Type> typesToSkip)
+    public static IEnumerable<IFormLinkGetter> LazyEnumerateMajorRecords(ISkyrimModGetter mod)
     {
-        // Use an empty enumerable if a property is null to prevent NullReferenceException
-        var empty = Enumerable.Empty<IMajorRecordGetter>();
-        
-        if (!typesToSkip.Contains(typeof(IAcousticSpaceGetter))) foreach (var record in mod.AcousticSpaces ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IActionRecordGetter))) foreach (var record in mod.Actions ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IActivatorGetter))) foreach (var record in mod.Activators ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IActorValueInformationGetter))) foreach (var record in mod.ActorValueInformation ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IAddonNodeGetter))) foreach (var record in mod.AddonNodes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IAlchemicalApparatusGetter))) foreach (var record in mod.AlchemicalApparatuses ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IAmmunitionGetter))) foreach (var record in mod.Ammunitions ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IAnimatedObjectGetter))) foreach (var record in mod.AnimatedObjects ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IArmorAddonGetter))) foreach (var record in mod.ArmorAddons ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IArmorGetter))) foreach (var record in mod.Armors ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IArtObjectGetter))) foreach (var record in mod.ArtObjects ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IAssociationTypeGetter))) foreach (var record in mod.AssociationTypes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IBodyPartGetter))) foreach (var record in mod.BodyParts ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IBookGetter))) foreach (var record in mod.Books ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ICameraPathGetter))) foreach (var record in mod.CameraPaths ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ICameraShotGetter))) foreach (var record in mod.CameraShots ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IClassGetter))) foreach (var record in mod.Classes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IClimateGetter))) foreach (var record in mod.Climates ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ICollisionLayerGetter))) foreach (var record in mod.CollisionLayers ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IColorRecordGetter))) foreach (var record in mod.Colors ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ICombatStyleGetter))) foreach (var record in mod.CombatStyles ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IConstructibleObjectGetter))) foreach (var record in mod.ConstructibleObjects ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IContainerGetter))) foreach (var record in mod.Containers ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IDebrisGetter))) foreach (var record in mod.Debris ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IDefaultObjectManagerGetter))) foreach (var record in mod.DefaultObjectManagers ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IDialogBranchGetter))) foreach (var record in mod.DialogBranches ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IDialogTopicGetter))) foreach (var record in mod.DialogTopics ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IDialogViewGetter))) foreach (var record in mod.DialogViews ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IDoorGetter))) foreach (var record in mod.Doors ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IDualCastDataGetter))) foreach (var record in mod.DualCastData ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IEffectShaderGetter))) foreach (var record in mod.EffectShaders ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IEncounterZoneGetter))) foreach (var record in mod.EncounterZones ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IEquipTypeGetter))) foreach (var record in mod.EquipTypes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IExplosionGetter))) foreach (var record in mod.Explosions ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IEyesGetter))) foreach (var record in mod.Eyes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IFactionGetter))) foreach (var record in mod.Factions ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IFloraGetter))) foreach (var record in mod.Florae ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IFootstepSetGetter))) foreach (var record in mod.FootstepSets ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IFootstepGetter))) foreach (var record in mod.Footsteps ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IFormListGetter))) foreach (var record in mod.FormLists ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IFurnitureGetter))) foreach (var record in mod.Furniture ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IGameSettingGetter))) foreach (var record in mod.GameSettings ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IGlobalGetter))) foreach (var record in mod.Globals ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IGrassGetter))) foreach (var record in mod.Grasses ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IHairGetter))) foreach (var record in mod.Hairs ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IHazardGetter))) foreach (var record in mod.Hazards ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IHeadPartGetter))) foreach (var record in mod.HeadParts ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IIdleAnimationGetter))) foreach (var record in mod.IdleAnimations ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IIdleMarkerGetter))) foreach (var record in mod.IdleMarkers ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IImageSpaceAdapterGetter))) foreach (var record in mod.ImageSpaceAdapters ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IImageSpaceGetter))) foreach (var record in mod.ImageSpaces ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IImpactDataSetGetter))) foreach (var record in mod.ImpactDataSets ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IImpactGetter))) foreach (var record in mod.Impacts ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IIngestibleGetter))) foreach (var record in mod.Ingestibles ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IIngredientGetter))) foreach (var record in mod.Ingredients ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IKeyGetter))) foreach (var record in mod.Keys ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IKeywordGetter))) foreach (var record in mod.Keywords ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ILandscapeTextureGetter))) foreach (var record in mod.LandscapeTextures ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ILensFlareGetter))) foreach (var record in mod.LensFlares ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ILeveledItemGetter))) foreach (var record in mod.LeveledItems ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ILeveledNpcGetter))) foreach (var record in mod.LeveledNpcs ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ILeveledSpellGetter))) foreach (var record in mod.LeveledSpells ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ILightingTemplateGetter))) foreach (var record in mod.LightingTemplates ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ILightGetter))) foreach (var record in mod.Lights ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ILoadScreenGetter))) foreach (var record in mod.LoadScreens ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ILocationReferenceTypeGetter))) foreach (var record in mod.LocationReferenceTypes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ILocationGetter))) foreach (var record in mod.Locations ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IMagicEffectGetter))) foreach (var record in mod.MagicEffects ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IMaterialObjectGetter))) foreach (var record in mod.MaterialObjects ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IMaterialTypeGetter))) foreach (var record in mod.MaterialTypes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IMessageGetter))) foreach (var record in mod.Messages ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IMiscItemGetter))) foreach (var record in mod.MiscItems ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IMoveableStaticGetter))) foreach (var record in mod.MoveableStatics ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IMovementTypeGetter))) foreach (var record in mod.MovementTypes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IMusicTrackGetter))) foreach (var record in mod.MusicTracks ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IMusicTypeGetter))) foreach (var record in mod.MusicTypes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(INavigationMeshInfoMapGetter))) foreach (var record in mod.NavigationMeshInfoMaps ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(INpcGetter))) foreach (var record in mod.Npcs ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IObjectEffectGetter))) foreach (var record in mod.ObjectEffects ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IOutfitGetter))) foreach (var record in mod.Outfits ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IPackageGetter))) foreach (var record in mod.Packages ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IPerkGetter))) foreach (var record in mod.Perks ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IProjectileGetter))) foreach (var record in mod.Projectiles ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IQuestGetter))) foreach (var record in mod.Quests ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IRaceGetter))) foreach (var record in mod.Races ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IRegionGetter))) foreach (var record in mod.Regions ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IRelationshipGetter))) foreach (var record in mod.Relationships ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IReverbParametersGetter))) foreach (var record in mod.ReverbParameters ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ISceneGetter))) foreach (var record in mod.Scenes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IScrollGetter))) foreach (var record in mod.Scrolls ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IShaderParticleGeometryGetter))) foreach (var record in mod.ShaderParticleGeometries ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IShoutGetter))) foreach (var record in mod.Shouts ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ISoulGemGetter))) foreach (var record in mod.SoulGems ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ISoundCategoryGetter))) foreach (var record in mod.SoundCategories ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ISoundDescriptorGetter))) foreach (var record in mod.SoundDescriptors ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ISoundMarkerGetter))) foreach (var record in mod.SoundMarkers ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ISoundOutputModelGetter))) foreach (var record in mod.SoundOutputModels ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ISpellGetter))) foreach (var record in mod.Spells ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IStaticGetter))) foreach (var record in mod.Statics ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IStoryManagerBranchNodeGetter))) foreach (var record in mod.StoryManagerBranchNodes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IStoryManagerEventNodeGetter))) foreach (var record in mod.StoryManagerEventNodes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IStoryManagerQuestNodeGetter))) foreach (var record in mod.StoryManagerQuestNodes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ITalkingActivatorGetter))) foreach (var record in mod.TalkingActivators ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ITextureSetGetter))) foreach (var record in mod.TextureSets ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(ITreeGetter))) foreach (var record in mod.Trees ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IVisualEffectGetter))) foreach (var record in mod.VisualEffects ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IVoiceTypeGetter))) foreach (var record in mod.VoiceTypes ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IVolumetricLightingGetter))) foreach (var record in mod.VolumetricLightings ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IWaterGetter))) foreach (var record in mod.Waters ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IWeaponGetter))) foreach (var record in mod.Weapons ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IWeatherGetter))) foreach (var record in mod.Weathers ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IWordOfPowerGetter))) foreach (var record in mod.WordsOfPower ?? empty) yield return record.ToLink();
-        if (!typesToSkip.Contains(typeof(IWorldspaceGetter))) foreach (var record in mod.Worldspaces ?? empty) yield return record.ToLink();
+        return LazyEnumerateMajorRecords(mod, NoSkippedTypes);
+    }
+
+    /// <summary>
+    /// Same as <see cref="LazyEnumerateMajorRecords(ISkyrimModGetter)"/>, skipping any record groups whose
+    /// getter type is included in the provided HashSet.
+    /// </summary>
+    public static IEnumerable<IFormLinkGetter> LazyEnumerateMajorRecords(ISkyrimModGetter mod, HashSet<Type> typesToSkip)
+    {
+        foreach (var (getterType, getGroup) in TopLevelRecordGroups)
+        {
+            if (typesToSkip.Contains(getterType)) continue;
+
+            var group = getGroup(mod);
+            if (group == null) continue;
+
+            foreach (var formKey in group.FormKeys)
+            {
+                yield return new FormLinkInformation(formKey, getterType);
+            }
+        }
     }
 
     /// <summary>
@@ -987,8 +897,10 @@ public class Auxilliary : IDisposable
     /// <summary>
     /// Counts a single plugin's records split into appearance vs non-appearance buckets, using the same
     /// definition that drives the "Merge Dependencies" default. Appearance counts are O(1) group-count
-    /// lookups; non-appearance is a lazy enumeration that skips the appearance groups. The caller owns
-    /// the threshold decision and any base-game / resource-only exclusions.
+    /// lookups; non-appearance is a lazy FormKey-cache enumeration that skips the appearance groups.
+    /// Neither side parses record contents, so plugins containing records Mutagen considers malformed
+    /// still get complete, accurate counts. The caller owns the threshold decision and any base-game /
+    /// resource-only exclusions.
     /// </summary>
     public static (int appearanceCount, int nonAppearanceCount) CountRecordsByAppearance(ISkyrimModGetter plugin)
     {
