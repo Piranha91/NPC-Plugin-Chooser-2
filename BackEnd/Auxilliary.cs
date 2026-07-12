@@ -214,6 +214,27 @@ public class Auxilliary : IDisposable
         return printableCount > s.Length * 0.5;
     }
     
+    /// <summary>
+    /// Returns a directory path safe to assign to a WPF file dialog's InitialDirectory.
+    /// The Vista-style common item dialog throws E_INVALIDARG ("Value does not fall within
+    /// the expected range") when InitialDirectory does not resolve to an existing folder,
+    /// so this returns the first path that exists (preferred -> fallback -> MyDocuments).
+    /// </summary>
+    public static string GetSafeInitialDirectory(string? preferredPath, string? fallbackPath = null)
+    {
+        if (!string.IsNullOrWhiteSpace(preferredPath) && Directory.Exists(preferredPath))
+        {
+            return preferredPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(fallbackPath) && Directory.Exists(fallbackPath))
+        {
+            return fallbackPath;
+        }
+
+        return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    }
+
     public static string GetLogString(IMajorRecordGetter majorRecordGetter, Language? language, bool fullString = false)
     {
         StringBuilder logBuilder = new();

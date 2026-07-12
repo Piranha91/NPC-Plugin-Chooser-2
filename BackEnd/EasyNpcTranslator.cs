@@ -663,7 +663,7 @@ public class EasyNpcTranslator
             Filter = "EasyNPC Profile (*.txt)|*.txt|All files (*.*)|*.*",
             Title = "Save Updated EasyNPC Profile As...",
             FileName = Path.GetFileName(filePath),
-            InitialDirectory = Path.GetDirectoryName(filePath)
+            InitialDirectory = Auxilliary.GetSafeInitialDirectory(Path.GetDirectoryName(filePath))
         };
 
         if (saveFileDialog.ShowDialog() != true)

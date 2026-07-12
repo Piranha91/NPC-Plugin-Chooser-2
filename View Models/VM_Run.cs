@@ -512,8 +512,10 @@ public class VM_Run : ReactiveObject, IDisposable
 
         var saveFileDialog = new SaveFileDialog
         {
-            // Use the newly calculated directory path.
-            InitialDirectory = initialDirectory,
+            // Guard against a non-existent directory: the WPF SaveFileDialog throws
+            // E_INVALIDARG ("Value does not fall within the expected range") if
+            // InitialDirectory does not resolve to a real folder.
+            InitialDirectory = Auxilliary.GetSafeInitialDirectory(initialDirectory, _environmentStateProvider.DataFolderPath),
             FileName = $"{groupNameForFile}.txt",
             DefaultExt = ".txt",
             Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*"
@@ -626,7 +628,7 @@ public class VM_Run : ReactiveObject, IDisposable
         {
             Title = "Select Plugin to Analyze",
             Filter = "Plugin files (*.esp;*.esm;*.esl)|*.esp;*.esm;*.esl|All files (*.*)|*.*",
-            InitialDirectory = _environmentStateProvider.DataFolderPath,
+            InitialDirectory = Auxilliary.GetSafeInitialDirectory(_environmentStateProvider.DataFolderPath),
             CheckFileExists = true
         };
 
