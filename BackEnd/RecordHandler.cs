@@ -764,11 +764,16 @@ public class RecordHandler
         {
             TryAddPluginToCaches(modKey, fallBackModFolderNames);
         }
+        // Opt-in record-provenance tracking: carry the traversal path so each discovered
+        // override can be attributed a root -> ... -> record chain (consumed when/if the
+        // override is actually written to the output). Null when disabled.
+        List<RecordProvenanceDiag.Node>? provenanceChain =
+            RecordProvenanceDiag.IsEnabled ? new List<RecordProvenanceDiag.Node>() : null;
         HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> dependencyContexts = new();
         foreach (var link in containedFormLinks)
         {
             ct.ThrowIfCancellationRequested();
-            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, maxNestedIntervalDepth, 0, searchedFormKeys, ct);
+            CollectOverriddenDependencyRecords(link, relevantContextKeys, dependencyContexts, maxNestedIntervalDepth, 0, searchedFormKeys, provenanceChain, ct);
         }
 
         if (NpcDiagnosticLogger.IsActive)
@@ -923,6 +928,8 @@ public class RecordHandler
                         if (context != null)
                         {
                             var duplicate = context.DuplicateIntoAsNewRecord(_environmentStateProvider.OutputMod);
+                            RecordProvenanceDiag.RecordBulkOverrideImport(record.FormKey, record.EditorID,
+                                record.Registration.Name, duplicate.FormKey, modKey);
                             duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + modKey.FileName;
                             _currentDuplicateInMappings.Add(record.FormKey, duplicate.FormKey);
                             remappedOverrideMap.Add(record.FormKey, duplicate.FormKey);
@@ -958,7 +965,7 @@ public class RecordHandler
     }
     
     private void CollectOverriddenDependencyRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
-        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey> searchedFormKeys, CancellationToken ct)
+        HashSet<IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>> collectedRecords, int maxNestedIntervalDepth, int currentDepth, HashSet<FormKey> searchedFormKeys, List<RecordProvenanceDiag.Node>? provenanceChain, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         if (formLinkGetter.IsNull)
@@ -968,16 +975,16 @@ public class RecordHandler
 
         currentDepth++;
         if (currentDepth > maxNestedIntervalDepth) {return;}
-        
+
         if (searchedFormKeys == null)
         {
             searchedFormKeys = new HashSet<FormKey>();
         }
-        
+
         searchedFormKeys.Add(formLinkGetter.FormKey);
 
         IMajorRecordGetter? modRecord = null;
-        
+
         // try to get the record version in the given mod plugin if possible
         foreach (var modKey in relevantContextKeys)
         {
@@ -988,6 +995,7 @@ public class RecordHandler
                 if (!relevantContextKeys.Contains(formLinkGetter.FormKey.ModKey)) // this is an override rather than a new record
                 {
                     collectedRecords.Add(context);
+                    RecordProvenanceDiag.RecordOverrideDiscoveryChain(formLinkGetter.FormKey, modRecord.EditorID, provenanceChain);
                 }
                 break;
             }
@@ -1017,11 +1025,14 @@ public class RecordHandler
 
         if (modRecord != null)
         {
+            // While descending into this record's links, it is the sub-records' provenance parent.
+            provenanceChain?.Add(new RecordProvenanceDiag.Node(formLinkGetter.FormKey, modRecord.EditorID));
             var sublinks = modRecord.EnumerateFormLinks();
             foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)).ToArray())
             {
-                CollectOverriddenDependencyRecords(subLink, relevantContextKeys, collectedRecords, maxNestedIntervalDepth, currentDepth, searchedFormKeys, ct);
+                CollectOverriddenDependencyRecords(subLink, relevantContextKeys, collectedRecords, maxNestedIntervalDepth, currentDepth, searchedFormKeys, provenanceChain, ct);
             }
+            provenanceChain?.RemoveAt(provenanceChain.Count - 1);
         }
     }
 
@@ -1041,10 +1052,14 @@ public class RecordHandler
         }
 
         Dictionary<FormKey, FormKey> remappedOverrideMap = new();
+        // Opt-in record-provenance tracking: the recursion path doubles as each duplicated
+        // record's root -> ... -> parent chain. Null when disabled.
+        List<RecordProvenanceDiag.Node>? provenanceChain =
+            RecordProvenanceDiag.IsEnabled ? new List<RecordProvenanceDiag.Node>() : null;
         foreach (var link in containedFormLinks)
         {
             ct.ThrowIfCancellationRequested();
-            TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedOverrideMap, mergedInRecords, maxNestedIntervalDepth, 0, ref exceptionStrings, searchedFormKeys, ct);
+            TraverseAndDuplicateInOverrideRecords(link, relevantContextKeys, _environmentStateProvider.OutputMod, remappedOverrideMap, mergedInRecords, maxNestedIntervalDepth, 0, ref exceptionStrings, searchedFormKeys, provenanceChain, ct);
         }
         
         foreach (var newRecord in mergedInRecords.And(rootRecord).ToArray())
@@ -1067,7 +1082,7 @@ public class RecordHandler
     private bool TraverseAndDuplicateInOverrideRecords(IFormLinkGetter formLinkGetter, List<ModKey> relevantContextKeys,
         ISkyrimMod outputMod,
         Dictionary<FormKey, FormKey> remappedSubLinks, HashSet<IMajorRecord> mergedInRecords,
-        int maxNestedIntervalDepth, int currentDepth, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, CancellationToken ct)
+        int maxNestedIntervalDepth, int currentDepth, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, List<RecordProvenanceDiag.Node>? provenanceChain, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         if (formLinkGetter.IsNull)
@@ -1077,21 +1092,26 @@ public class RecordHandler
 
         currentDepth++;
         if (currentDepth > maxNestedIntervalDepth) {return false;}
-        
+
         searchedFormKeys.Add(formLinkGetter.FormKey);
 
         bool parentRecordShouldBeMergedIn = false;
         bool currentRecordHasBeenMergedIn = false;
         IMajorRecordGetter? traversedModRecord = null;
+        // Source-side EditorID of the record this link resolved to, captured before any
+        // duplication mutates it (the duplicate gets a plugin-name suffix). Used for the
+        // record-provenance chain, which reports source identities.
+        string? sourceEditorId = null;
         IModContext<ISkyrimMod, ISkyrimModGetter, IMajorRecord, IMajorRecordGetter>? modContext = null;
-        
+
         // try to get the record version in the given mod plugin if possible
         foreach (var modKey in relevantContextKeys)
         {
-            if (_modLinkCaches.ContainsKey(modKey) && 
-                _modLinkCaches[modKey].TryResolve(formLinkGetter, out traversedModRecord) && 
+            if (_modLinkCaches.ContainsKey(modKey) &&
+                _modLinkCaches[modKey].TryResolve(formLinkGetter, out traversedModRecord) &&
                 traversedModRecord != null)
             {
+                sourceEditorId = traversedModRecord.EditorID;
                 modContext = _modLinkCaches[modKey].ResolveContext(formLinkGetter);
                 currentDepth = 0; // reset the interval search
                 if (!relevantContextKeys.Contains(formLinkGetter.FormKey.ModKey)) // this is an override rather than a new record
@@ -1104,9 +1124,14 @@ public class RecordHandler
                         remappedSubLinks.TryAdd(formLinkGetter.FormKey, _currentDuplicateInMappings[formLinkGetter.FormKey]);
                         return true;
                     }
-                    
+
                     var duplicate = modContext.DuplicateIntoAsNewRecord(outputMod);
                     RecordMergedRecordOrigin(formLinkGetter.FormKey, duplicate.FormKey, traversedModRecord.EditorID);
+                    if (provenanceChain != null)
+                    {
+                        RecordProvenanceDiag.RecordMergedAsNew(formLinkGetter.FormKey, traversedModRecord.EditorID,
+                            traversedModRecord.Registration.Name, duplicate.FormKey, provenanceChain);
+                    }
                     duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + modKey.FileName;
                     traversedModRecord = duplicate;
                     _currentDuplicateInMappings.Add(formLinkGetter.FormKey, duplicate.FormKey);
@@ -1139,12 +1164,19 @@ public class RecordHandler
 
             if (_modLinkCaches.ContainsKey(parentmod))
             {
-                _modLinkCaches[parentmod].TryResolve(formLinkGetter, out traversedModRecord);
+                if (_modLinkCaches[parentmod].TryResolve(formLinkGetter, out traversedModRecord) &&
+                    traversedModRecord != null)
+                {
+                    sourceEditorId = traversedModRecord.EditorID;
+                }
             }
         }
-        
+
         if (traversedModRecord != null)
         {
+            // While descending into this record's links, it is the sub-records' provenance parent
+            // (source identity — captured before any duplication renamed it).
+            provenanceChain?.Add(new RecordProvenanceDiag.Node(formLinkGetter.FormKey, sourceEditorId));
             var sublinks = traversedModRecord.EnumerateFormLinks().Distinct();
             foreach (var subLink in sublinks.Where(x => !searchedFormKeys.Contains(x.FormKey)).ToArray())
             {
@@ -1162,21 +1194,28 @@ public class RecordHandler
                 {
                     continue;
                 }
-                
-                bool subRecordsAreOverrides = TraverseAndDuplicateInOverrideRecords(subLink, relevantContextKeys, outputMod, remappedSubLinks, mergedInRecords, maxNestedIntervalDepth, currentDepth, ref exceptionStrings, searchedFormKeys, ct);
+
+                bool subRecordsAreOverrides = TraverseAndDuplicateInOverrideRecords(subLink, relevantContextKeys, outputMod, remappedSubLinks, mergedInRecords, maxNestedIntervalDepth, currentDepth, ref exceptionStrings, searchedFormKeys, provenanceChain, ct);
                 if (subRecordsAreOverrides)
                 {
                     parentRecordShouldBeMergedIn = true; // merge in this record (even if it's not itself contained in the source mod) because this record's subrecords have been merged in.
                 }
             }
-            
-            if (parentRecordShouldBeMergedIn && 
-                !currentRecordHasBeenMergedIn && 
+            // Done descending — this record is no longer the provenance parent.
+            provenanceChain?.RemoveAt(provenanceChain.Count - 1);
+
+            if (parentRecordShouldBeMergedIn &&
+                !currentRecordHasBeenMergedIn &&
                 !remappedSubLinks.ContainsKey(formLinkGetter.FormKey))
             {
                 if (Auxilliary.TryDuplicateGenericRecordAsNew(traversedModRecord, outputMod, out var duplicate, out string exceptionString))
                 {
                     RecordMergedRecordOrigin(formLinkGetter.FormKey, duplicate.FormKey, traversedModRecord.EditorID);
+                    if (provenanceChain != null)
+                    {
+                        RecordProvenanceDiag.RecordMergedAsNew(formLinkGetter.FormKey, sourceEditorId,
+                            traversedModRecord.Registration.Name, (FormKey)duplicate.FormKey, provenanceChain);
+                    }
                     duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + formLinkGetter.FormKey.ModKey;
                     remappedSubLinks.Add(formLinkGetter.FormKey, duplicate.FormKey);
                     mergedInRecords.Add(duplicate);

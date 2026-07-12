@@ -35,16 +35,26 @@ public static class PatcherExtensions
         HashSet<IFormLinkGetter> identifiedLinks = new();
         var implicits = Implicits.Get(modToDuplicateInto.GameRelease);
 
+        // Opt-in record-provenance tracking (RecordProvenance.csv): remember which record first
+        // referenced each traversed link (first-wins, so the maps form a forest rooted at
+        // recordsToDuplicate) plus each record's source EditorID, so every duplicated record can
+        // be attributed a root -> ... -> parent chain at duplication time. Null when disabled.
+        bool trackProvenance = RecordProvenanceDiag.IsEnabled;
+        Dictionary<FormKey, FormKey>? provParentOf = trackProvenance ? new() : null;
+        Dictionary<FormKey, string?>? provEditorIdOf = trackProvenance ? new() : null;
+
         // Use an explicit stack to prevent recursive overflow
         var linksToProcess = new Stack<IFormLinkGetter>();
 
         // 1. Seed the stack with the initial records to traverse
         foreach (var rec in recordsToDuplicate)
         {
+            if (trackProvenance) provEditorIdOf![rec.FormKey] = rec.EditorID;
             if (onlySubRecords)
             {
                 foreach (var containedLink in rec.EnumerateFormLinks())
                 {
+                    if (trackProvenance) provParentOf!.TryAdd(containedLink.FormKey, rec.FormKey);
                     linksToProcess.Push(containedLink);
                 }
             }
@@ -71,15 +81,17 @@ public static class PatcherExtensions
             }
 
             if ((modKeysToDuplicateFrom.Contains(link.FormKey.ModKey) || handleInjectedRecords) &&
-                recordHandler.TryGetRecordFromMods(link, modKeysToDuplicateFrom, fallBackModFolderNames, fallBackMode, out var linkRec) && 
+                recordHandler.TryGetRecordFromMods(link, modKeysToDuplicateFrom, fallBackModFolderNames, fallBackMode, out var linkRec) &&
                 linkRec != null)
             {
                 identifiedLinks.Add(link);
+                if (trackProvenance) provEditorIdOf!.TryAdd(link.FormKey, linkRec.EditorID);
                 // 3. Add newly discovered links to the stack instead of making a recursive call
                 foreach (var containedLink in linkRec.EnumerateFormLinks())
                 {
                     if (modKeysToDuplicateFrom.Contains(containedLink.FormKey.ModKey) || handleInjectedRecords)
                     {
+                        if (trackProvenance) provParentOf!.TryAdd(containedLink.FormKey, link.FormKey);
                         linksToProcess.Push(containedLink);
                     }
                 }
@@ -109,6 +121,12 @@ public static class PatcherExtensions
             {
                 dup.EditorID = newEdid;
                 recordHandler.RecordMergedRecordOrigin(identifiedLink.FormKey, dup.FormKey, identifiedRec.EditorID);
+                if (trackProvenance)
+                {
+                    RecordProvenanceDiag.RecordMergedAsNew(identifiedLink.FormKey, identifiedRec.EditorID,
+                        identifiedRec.Registration.Name, (FormKey)dup.FormKey,
+                        BuildProvenanceParentChain(identifiedLink.FormKey, provParentOf!, provEditorIdOf!));
+                }
                 mapping[identifiedLink.FormKey] = dup.FormKey;
                 mergedInRecords.Add(dup);
                 modToDuplicateInto.Remove(identifiedLink.FormKey, identifiedLink.Type);
@@ -123,6 +141,27 @@ public static class PatcherExtensions
         modToDuplicateInto.RemapLinks(mapping);
 
         return mergedInRecords;
+    }
+
+    /// <summary>
+    /// Walks the first-referenced-by map from <paramref name="child"/> up to its walk root and
+    /// returns the path root-first, EXCLUDING the child itself — the shape
+    /// <see cref="RecordProvenanceDiag.RecordMergedAsNew"/> expects. The map is a forest
+    /// (parents are assigned first-wins, so each node's parent was discovered before it), which
+    /// makes the walk acyclic; the depth cap is a pure safety net.
+    /// </summary>
+    private static List<RecordProvenanceDiag.Node> BuildProvenanceParentChain(
+        FormKey child, Dictionary<FormKey, FormKey> parentOf, Dictionary<FormKey, string?> editorIdOf)
+    {
+        var chain = new List<RecordProvenanceDiag.Node>();
+        var current = child;
+        for (int depth = 0; depth < 100 && parentOf.TryGetValue(current, out var parent); depth++)
+        {
+            chain.Add(new RecordProvenanceDiag.Node(parent, editorIdOf.GetValueOrDefault(parent)));
+            current = parent;
+        }
+        chain.Reverse();
+        return chain;
     }
 
     // Original form depending on global link cache

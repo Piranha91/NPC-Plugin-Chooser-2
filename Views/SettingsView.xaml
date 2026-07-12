@@ -1458,6 +1458,10 @@ Remove a mod from this list to allow it to be imported again."
                               IsChecked="{Binding LogStartup, Mode=TwoWay}"
                               Margin="0,5,0,0"
                               ToolTip="Logs detailed startup operations to StartupLog.txt on next launch. Useful for diagnosing startup hangs. Can also be triggered by placing a LogStartup.txt file next to the .exe."/>
+                    <CheckBox Content="Log Record Provenance"
+                              IsChecked="{Binding LogRecordProvenance, Mode=TwoWay}"
+                              Margin="0,5,0,0"
+                              ToolTip="When on, a patch run writes RecordProvenance.csv next to the .exe: one row per record merged into the output plugin (excluding the patched NPC records themselves) — its FormKey, EditorID, record type, and the full chain of references that pulled it in, from the root NPC down to the record. Open in a spreadsheet and sort/filter by any column. Takes effect on the next Run — no restart needed. Useful for tracing why a particular record ended up in your output plugin."/>
                     <CheckBox Content="Log Asset Provenance"
                               IsChecked="{Binding LogAssetProvenance, Mode=TwoWay}"
                               Margin="0,5,0,0"

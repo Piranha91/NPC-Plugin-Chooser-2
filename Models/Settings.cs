@@ -437,6 +437,10 @@ public class Settings
     // --- Troubleshooting / Logging ---
     public bool LogActivity { get; set; } = false;
     public bool LogStartup { get; set; } = false;
+    // When on, a patch run writes RecordProvenance.csv (every non-NPC record merged into the
+    // output plugin + the reference chain that pulled it in). Applied at runtime via
+    // RecordProvenanceDiag.SetEnabled.
+    public bool LogRecordProvenance { get; set; } = false;
     // When on, a patch run writes AssetProvenance.log (why each output asset was copied + which
     // NPCs/mods pulled it in). Applied at runtime via AssetProvenanceDiag.SetEnabled.
     public bool LogAssetProvenance { get; set; } = false;

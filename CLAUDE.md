@@ -142,6 +142,21 @@ speculating from code:
   Asset Provenance" checkbox in Settings > Logging (`Settings.LogAssetProvenance`),
   applied at runtime so it takes effect on the next Run. A `LogAssetProvenance.txt` file
   next to the exe still force-enables it as a dev fallback.
+- **`RecordProvenance.csv`** (`RecordProvenanceDiag`) — per patch run, every non-NPC record
+  merged into the output plugin and the reference chain that pulled it in. One CSV row per
+  output record, first discovery wins (columns: `OutputFormKey, SourceFormKey, EditorID, Type,
+  Kind, ProvenanceHistory`). `Type` is the record type's registration name (Armor, ArmorAddon,
+  TextureSet, ...); `Kind` is MergedAsNew / Override / DeltaPatchedOverride /
+  BulkOverrideImport / Generated; `ProvenanceHistory` is a single cell of source-side
+  `FormKey (EditorID) -> ... -> FormKey (EditorID)` from the root NPC down to the record
+  (bulk 'Include All' imports get a placeholder — nothing was traversed). Patched NPC records
+  themselves are excluded, but an NPC pulled in as a NEW record (e.g. via a Template chain) IS
+  logged. Also **user-facing**: the "Log Record Provenance" checkbox in Settings > Logging
+  (`Settings.LogRecordProvenance`), applied at runtime; a `LogRecordProvenance.txt` file next
+  to the exe force-enables it as a dev fallback. Chain capture lives in the merge walkers
+  (`PatcherExtensions.DuplicateFromOnlyReferencedGetters`, `RecordHandler`'s override
+  traversals); the Patcher sets the per-NPC root context and flushes alongside
+  `AssetProvenanceDiag`.
 - **`RenderLogs/`** — per-NPC mugshot render traces (asset resolution paths).
 - **`Rejected NPCs/`** — logs why each discarded NPC was excluded from the menu.
 

@@ -74,6 +74,12 @@ namespace NPC_Plugin_Chooser_2
             // Off means every call site is a cheap IsEnabled check.
             AssetProvenanceDiag.InitializeFromFileTrigger();
 
+            // Opt-in record-provenance report (RecordProvenance.csv: every non-NPC record merged
+            // into the output plugin + the reference chain that pulled it in). Primary control is
+            // the "Log Record Provenance" checkbox in Settings > Logging, applied from settings
+            // below once they load; the file-trigger is a dev fallback.
+            RecordProvenanceDiag.InitializeFromFileTrigger();
+
             // Opt-in per-NPC memory sampler. Off by default — drop a file named
             // LogMemory.txt next to the exe to record managed-heap / working-set
             // bytes to MemoryLog.txt on each NPC switch (for diagnosing long-session
@@ -207,6 +213,8 @@ namespace NPC_Plugin_Chooser_2
             StartupLogger.InitializeFromSettings(settingsModel.LogStartup);
             // Apply the persisted "Log Asset Provenance" setting (the file trigger, if present, keeps it on).
             AssetProvenanceDiag.SetEnabled(settingsModel.LogAssetProvenance);
+            // Likewise for "Log Record Provenance".
+            RecordProvenanceDiag.SetEnabled(settingsModel.LogRecordProvenance);
             StartupLogger.Log("Settings loaded successfully");
             // Apply theme: prefer saved ThemeName, fall back to IsDarkMode for backward compat
             if (!string.IsNullOrEmpty(settingsModel.ThemeName))

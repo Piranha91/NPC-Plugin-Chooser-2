@@ -121,6 +121,7 @@ public class Patcher : OptionalUIModule
                     {
                         _environmentStateProvider.OutputMod.Remove(recordFormKey, recordType);
                         removedCount++;
+                        RecordProvenanceDiag.RemoveOutputRecord(recordFormKey);
                     }
                     catch (Exception ex)
                     {
@@ -301,6 +302,7 @@ public class Patcher : OptionalUIModule
                 _patchedRecordOwners.Clear();
                 _patchedRecordTypes.Clear();
                 _recordHandler.ResetMergedRecordTracking();
+                RecordProvenanceDiag.Reset(); // opt-in per-run record provenance report (no-op unless enabled)
             }
 
             _recordDeltaPatcher.Reinitialize(true);
@@ -486,6 +488,11 @@ public class Patcher : OptionalUIModule
                             // unless the user added this NPC to the logging list.
                             NpcDiagnosticLogger.BeginNpc(npcFormKey);
                             NpcDiagnosticLogger.LogSection("PATCHING");
+
+                            // Root-NPC context for the opt-in record-provenance report: every
+                            // record merged in until the next call is chained back to this NPC.
+                            // Safe as an ambient static because NPCs are processed sequentially.
+                            RecordProvenanceDiag.SetCurrentNpc(npcFormKey, winningNpcOverride.EditorID);
 
                             AppendLog($"- Processing: {npcIdentifier} -> Selected Mod: '{selectedModDisplayName}'");
 
@@ -852,6 +859,13 @@ public class Patcher : OptionalUIModule
                                                                         recordDifs, winningRecord, ctx.ModKey);
                                                                     deltaPatchedRecords.Add(winningRecord);
                                                                     RegisterRecordOwnership(npcFormKey, winningRecord, npcContributions);
+                                                                    RecordProvenanceDiag.RecordOverrideWritten(
+                                                                        ctx.Record.FormKey, ctx.Record.EditorID,
+                                                                        ctx.Record.Registration.Name,
+                                                                        deltaPatched: true,
+                                                                        includeAllOverrides
+                                                                            ? "discovered by all-overrides plugin scan"
+                                                                            : null);
                                                                 }
                                                                 else
                                                                 {
@@ -873,6 +887,13 @@ public class Patcher : OptionalUIModule
                                                         {
                                                             ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
                                                             RegisterRecordOwnership(npcFormKey, ctx.Record, npcContributions);
+                                                            RecordProvenanceDiag.RecordOverrideWritten(
+                                                                ctx.Record.FormKey, ctx.Record.EditorID,
+                                                                ctx.Record.Registration.Name,
+                                                                deltaPatched: false,
+                                                                includeAllOverrides
+                                                                    ? "discovered by all-overrides plugin scan"
+                                                                    : null);
                                                         }
                                                         catch (Exception ex)
                                                         {
@@ -1075,6 +1096,13 @@ public class Patcher : OptionalUIModule
                                                     {
                                                         ctx.GetOrAddAsOverride(_environmentStateProvider.OutputMod);
                                                         RegisterRecordOwnership(npcFormKey, ctx.Record, npcContributions);
+                                                        RecordProvenanceDiag.RecordOverrideWritten(
+                                                            ctx.Record.FormKey, ctx.Record.EditorID,
+                                                            ctx.Record.Registration.Name,
+                                                            deltaPatched: false,
+                                                            includeAllOverrides
+                                                                ? "discovered by all-overrides plugin scan"
+                                                                : null);
                                                     }
                                                     catch (Exception ex)
                                                     {
@@ -1256,6 +1284,11 @@ public class Patcher : OptionalUIModule
                     // and which NPCs/mods/records pulled it in. No-op unless enabled (Settings
                     // checkbox or the LogAssetProvenance.txt dev trigger).
                     AssetProvenanceDiag.Flush();
+
+                    // Opt-in record-provenance report (RecordProvenance.csv): every non-NPC record
+                    // in the output plugin with the reference chain that pulled it in. No-op unless
+                    // enabled (Settings checkbox or the LogRecordProvenance.txt dev trigger).
+                    RecordProvenanceDiag.Flush();
 
                     AppendLog("All file operations finished.", false, true);
 
@@ -1865,6 +1898,7 @@ public class Patcher : OptionalUIModule
         //var newKeyword = new Keyword(_environmentStateProvider.OutputMod, keyword);
         var newKeyword = _environmentStateProvider.OutputMod.Keywords.AddNew(keyword);
         newKeyword.EditorID = keyword;
+        RecordProvenanceDiag.RecordGenerated(newKeyword.FormKey, keyword, "Keyword");
         _generatedKeywords.Add(keyword, newKeyword);
         return newKeyword;
     }

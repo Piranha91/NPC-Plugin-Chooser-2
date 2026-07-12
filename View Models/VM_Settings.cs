@@ -407,6 +407,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     
     [Reactive] public bool LogActivity { get; set; }
     [Reactive] public bool LogStartup { get; set; }
+    [Reactive] public bool LogRecordProvenance { get; set; }
     [Reactive] public bool LogAssetProvenance { get; set; }
 
     // --- Per-NPC logging (Settings > Logging) ---
@@ -707,6 +708,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         
         LogActivity = _model.LogActivity;
         LogStartup = _model.LogStartup;
+        LogRecordProvenance = _model.LogRecordProvenance;
         LogAssetProvenance = _model.LogAssetProvenance;
 
         ExclusionSelectorViewModel = new VM_ModSelector(); // Initialize early
@@ -1142,6 +1144,17 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 {
                     StartupLogger.InitializeFromSettings(true);
                 }
+            })
+            .DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.LogRecordProvenance)
+            .Skip(1)
+            .Subscribe(b =>
+            {
+                _model.LogRecordProvenance = b;
+                // Applied live — RecordProvenanceDiag reads IsEnabled at patch time, so the next
+                // run picks this up with no restart (the dev file trigger still force-enables it).
+                RecordProvenanceDiag.SetEnabled(b);
             })
             .DisposeWith(_disposables);
 
