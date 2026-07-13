@@ -569,6 +569,10 @@ public sealed class InternalMugshotSettings
     // the total at CacheFixedBudgetGB; Disabled turns caching off (renders decode fresh each time).
     public RenderCacheMode CacheMode { get; set; } = RenderCacheMode.PercentFreeRam;
     public double CacheFixedBudgetGB { get; set; } = 4.0;
+    // Collective share of free RAM (0-100) the decode caches may use together when CacheMode is
+    // PercentFreeRam. Default 85 reproduces the historical behaviour (each cache gets its calibrated
+    // fraction); one knob scales all three caches together while holding their 75:9:1 ratio.
+    public double CacheFreeRamPercent { get; set; } = 85.0;
 
     // When true, the next live-preview load in the Settings panel captures the
     // full asset-resolution + renderer trace into a per-render text file under

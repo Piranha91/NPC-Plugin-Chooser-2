@@ -671,6 +671,25 @@
                                         </DataTemplate>
                                     </ComboBox.ItemTemplate>
                                 </ComboBox>
+                                <!-- Free-RAM percentage field: shown only when % Free RAM is selected. -->
+                                <StackPanel Orientation="Horizontal" Margin="12,0,0,0"
+                                            ToolTip="Total share of free RAM the decode caches may use together (they keep their fixed 75:9:1 ratio). 85 is the default; higher caches more aggressively, lower frees RAM for other work. Takes effect within a few renders; no restart needed.">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding MugshotCacheMode}" Value="PercentFreeRam">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <TextBlock Text="Free RAM %:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <xctk:DoubleUpDown Width="75" Minimum="0" Maximum="100" Increment="5"
+                                                       Value="{Binding MugshotCacheFreeRamPercent, Mode=TwoWay}"
+                                                       FormatString="0.##" VerticalAlignment="Center"
+                                                       ToolTip="Total share of free RAM (0-100) the renderer's decode caches may collectively use in % Free RAM mode."/>
+                                </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="12,0,0,0">
                                     <StackPanel.Style>
                                         <Style TargetType="StackPanel">

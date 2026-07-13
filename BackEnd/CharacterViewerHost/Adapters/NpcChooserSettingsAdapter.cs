@@ -107,4 +107,8 @@ public sealed class NpcChooserSettingsAdapter : ICharacterViewerSettings
     /// <summary>Fixed cache pool in bytes (from the persisted GB value), used only in FixedRam mode.</summary>
     public long FixedCacheBudgetBytes =>
         (long)(Math.Max(0, _settings.InternalMugshot.CacheFixedBudgetGB) * 1024L * 1024L * 1024L);
+
+    /// <summary>Collective share of free RAM (0-100) the decode caches may use in PercentFreeRam mode.
+    /// Read live at each budget re-poll, so a change takes effect within a few renders without a restart.</summary>
+    public double FreeRamCachePercent => Math.Clamp(_settings.InternalMugshot.CacheFreeRamPercent, 0, 100);
 }

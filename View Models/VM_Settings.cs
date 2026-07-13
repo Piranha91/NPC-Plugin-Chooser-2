@@ -148,6 +148,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public RenderCacheMode MugshotCacheMode { get; set; }
     public IEnumerable<RenderCacheMode> MugshotCacheModeChoices { get; } = Enum.GetValues(typeof(RenderCacheMode)).Cast<RenderCacheMode>();
     [Reactive] public double MugshotCacheFixedGB { get; set; }
+    [Reactive] public double MugshotCacheFreeRamPercent { get; set; }
 
     [Reactive] public float InternalHeadTopFraction { get; set; }
     [Reactive] public float InternalHeadBottomFraction { get; set; }
@@ -560,6 +561,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalCameraMode = _model.InternalMugshot.CameraMode;
         MugshotCacheMode = _model.InternalMugshot.CacheMode;
         MugshotCacheFixedGB = _model.InternalMugshot.CacheFixedBudgetGB;
+        MugshotCacheFreeRamPercent = _model.InternalMugshot.CacheFreeRamPercent;
         InternalHeadTopFraction = _model.InternalMugshot.HeadTopFraction;
         InternalHeadBottomFraction = _model.InternalMugshot.HeadBottomFraction;
         InternalYaw = _model.InternalMugshot.Yaw;
@@ -918,6 +920,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(m => { _model.InternalMugshot.CacheMode = m; RequestThrottledSave(); }).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.MugshotCacheFixedGB).Skip(1)
             .Subscribe(g => { _model.InternalMugshot.CacheFixedBudgetGB = g; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.MugshotCacheFreeRamPercent).Skip(1)
+            .Subscribe(p => { _model.InternalMugshot.CacheFreeRamPercent = p; RequestThrottledSave(); }).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.InternalCameraMode).Skip(1)
             .Subscribe(m => { _model.InternalMugshot.CameraMode = m; RequestThrottledSave(); }).DisposeWith(_disposables);
