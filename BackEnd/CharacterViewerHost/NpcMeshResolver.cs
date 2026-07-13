@@ -832,15 +832,20 @@ public class NpcMeshResolver
             string key = (isHead ? "Headgear:" : "Outfit:") + armaLink.FormKey + ":" + slots;
             if (!seenKeys.Add(key)) continue;
 
-            // Texture set: §2.6.6 — ArmorAddon.SkinTexture takes precedence. When
-            // present (skin-type addons), use it; rebase to the mod's loose
-            // overrides like the base meshes. Otherwise leave Textures null so the
-            // NIF's own embedded BSShaderTextureSet renders (correct for armor) —
-            // the armature's per-object AlternateTextures can't be expressed
-            // through the renderer's flat per-shape slot channel, so they degrade
-            // to the NIF default (logged for traceability).
-            var txst = ResolveTxstTextures(arma, sex, linkCache, context, armaLink.FormKey);
+            // Texture sets — two independent channels can apply, both rebased to
+            // the mod's loose overrides like the base meshes:
+            //  • ArmorAddon.SkinTexture (NAM0/NAM1) — a mesh-wide skin TXST used by
+            //    skin-type addons; carried in the flat MeshOverride.Textures.
+            //  • WorldModel.AlternateTextures (MODS) — per-object TXST overrides
+            //    that retexture individual named shapes of the world-model NIF
+            //    (how one shared mesh serves multiple visual variants); carried
+            //    per-shape in MeshOverride.ShapeTextures, keyed on the NIF shape
+            //    node name. Absent both, Textures/ShapeTextures stay null and the
+            //    NIF's own embedded BSShaderTextureSet renders (correct for plain
+            //    armor).
             meshPath = RebaseToAbsoluteIfPresent(meshPath, context) ?? meshPath;
+
+            var txst = ResolveTxstTextures(arma, sex, linkCache, context, armaLink.FormKey);
             Dictionary<int, string>? textures = null;
             if (txst.Count > 0)
             {
@@ -851,10 +856,25 @@ public class NpcMeshResolver
                 }
                 textures = txst;
             }
-            else if (HasAlternateTextures(arma, sex))
+
+            var altTxst = ResolveAlternateTextures(arma, sex, linkCache, context, armaLink.FormKey);
+            IReadOnlyDictionary<string, IReadOnlyDictionary<int, string>>? shapeTextures = null;
+            if (altTxst.Count > 0)
             {
-                LogVerbose("CharacterViewer: ARMA " + armaLink.FormKey + " has AlternateTextures but no SkinTexture; "
-                    + "using the NIF's own texture set (per-object overrides not routable through MeshOverride)");
+                var perShape = new Dictionary<string, IReadOnlyDictionary<int, string>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var shapeName in altTxst.Keys.ToList())
+                {
+                    var slotMap = altTxst[shapeName];
+                    foreach (var slot in slotMap.Keys.ToList())
+                    {
+                        var rebased = RebaseToAbsoluteIfPresent(slotMap[slot], context);
+                        if (rebased != null) slotMap[slot] = rebased;
+                    }
+                    perShape[shapeName] = slotMap;
+                }
+                shapeTextures = perShape;
+                LogVerbose("CharacterViewer: ARMA " + armaLink.FormKey + " AlternateTextures applied to "
+                    + perShape.Count + " shape(s): " + string.Join(", ", perShape.Keys));
             }
 
             var kind = isHead ? MeshOverrideKind.Headgear : MeshOverrideKind.Armor;
@@ -884,17 +904,11 @@ public class NpcMeshResolver
                 HidesSlots = hides,
                 Kind = kind,
                 Textures = textures,
+                ShapeTextures = shapeTextures,
             });
             LogVerbose("CharacterViewer: attire override '" + key + "' mesh=" + meshPath
                 + " slots=" + slots + " kind=" + kind + " src=" + source);
         }
-    }
-
-    private static bool HasAlternateTextures(IArmorAddonGetter arma, Sex sex)
-    {
-        var model = sex == Sex.Female ? arma.WorldModel?.Female : arma.WorldModel?.Male;
-        var alts = model?.AlternateTextures;
-        return alts != null && alts.Count > 0;
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -1232,31 +1246,86 @@ public class NpcMeshResolver
                 return result;
             }
 
-            void TryAdd(int slot, string? path)
-            {
-                if (string.IsNullOrWhiteSpace(path)) return;
-                string fullPath = path;
-                if (!fullPath.StartsWith("textures\\", StringComparison.OrdinalIgnoreCase) &&
-                    !fullPath.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
-                {
-                    fullPath = "textures\\" + fullPath;
-                }
-                result[slot] = fullPath;
-            }
-
-            TryAdd(0, txst.Diffuse?.DataRelativePath.Path);
-            TryAdd(1, txst.NormalOrGloss?.DataRelativePath.Path);
-            TryAdd(2, txst.GlowOrDetailMap?.DataRelativePath.Path);
-            TryAdd(3, txst.Height?.DataRelativePath.Path);
-            TryAdd(4, txst.Environment?.DataRelativePath.Path);
-            TryAdd(5, txst.Multilayer?.DataRelativePath.Path);
-            TryAdd(7, txst.BacklightMaskOrSpecular?.DataRelativePath.Path);
+            PopulateTxstSlots(txst, result);
         }
         catch (Exception ex)
         {
             LogVerbose("CharacterViewer: TXST resolution failed for ARMA " + armaFormKey + ": " + ex.Message);
         }
         return result;
+    }
+
+    /// <summary>Resolves an ArmorAddon's per-object AlternateTextures (the MODS
+    /// subrecord on the sex-appropriate WorldModel) into a per-shape TXST map:
+    /// NIF shape node name -> (renderer texture-slot -> game-relative path). This
+    /// is how a mod retextures individual shapes of a shared world-model NIF
+    /// (e.g. alternate-coloured variants of one cuirass) without shipping a
+    /// separate mesh. Each entry's <c>Name</c> is the target shape's NIF node name
+    /// (matched by the renderer against BuiltMesh.ShapeName) and <c>NewTexture</c>
+    /// is the replacement TextureSet. Slot indices match
+    /// <see cref="ResolveTxstTextures"/>.</summary>
+    private Dictionary<string, Dictionary<int, string>> ResolveAlternateTextures(
+        IArmorAddonGetter armaGetter, Sex sex, ILinkCache linkCache, NpcResolutionContext? context, FormKey armaFormKey)
+    {
+        var result = new Dictionary<string, Dictionary<int, string>>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var model = sex == Sex.Female ? armaGetter.WorldModel?.Female : armaGetter.WorldModel?.Male;
+            var alts = model?.AlternateTextures;
+            if (alts == null || alts.Count == 0) return result;
+
+            foreach (var alt in alts)
+            {
+                if (alt == null) continue;
+                string shapeName = alt.Name;
+                if (string.IsNullOrWhiteSpace(shapeName)) continue;
+                if (alt.NewTexture.IsNull) continue;
+                var txst = ResolveRecord<ITextureSetGetter>(alt.NewTexture, linkCache, context);
+                if (txst == null)
+                {
+                    LogVerbose("CharacterViewer: Could not resolve AlternateTexture TXST " + alt.NewTexture.FormKey
+                        + " for shape '" + shapeName + "' from ARMA " + armaFormKey);
+                    continue;
+                }
+
+                var slots = new Dictionary<int, string>();
+                PopulateTxstSlots(txst, slots);
+                if (slots.Count > 0) result[shapeName] = slots; // last write wins on duplicate shape names
+            }
+        }
+        catch (Exception ex)
+        {
+            LogVerbose("CharacterViewer: AlternateTexture resolution failed for ARMA " + armaFormKey + ": " + ex.Message);
+        }
+        return result;
+    }
+
+    /// <summary>Reads a TextureSet's slot paths into <paramref name="slots"/> using
+    /// the renderer's slot indices (0 diffuse, 1 normal/gloss, 2 glow/detail,
+    /// 3 height, 4 environment, 5 multilayer, 7 backlight/specular), prefixing a
+    /// bare "textures\" root when the TXST stores a Data-relative path without it.
+    /// Shared by the SkinTexture and AlternateTextures resolvers.</summary>
+    private static void PopulateTxstSlots(ITextureSetGetter txst, Dictionary<int, string> slots)
+    {
+        void TryAdd(int slot, string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+            string fullPath = path;
+            if (!fullPath.StartsWith("textures\\", StringComparison.OrdinalIgnoreCase) &&
+                !fullPath.StartsWith("textures/", StringComparison.OrdinalIgnoreCase))
+            {
+                fullPath = "textures\\" + fullPath;
+            }
+            slots[slot] = fullPath;
+        }
+
+        TryAdd(0, txst.Diffuse?.DataRelativePath.Path);
+        TryAdd(1, txst.NormalOrGloss?.DataRelativePath.Path);
+        TryAdd(2, txst.GlowOrDetailMap?.DataRelativePath.Path);
+        TryAdd(3, txst.Height?.DataRelativePath.Path);
+        TryAdd(4, txst.Environment?.DataRelativePath.Path);
+        TryAdd(5, txst.Multilayer?.DataRelativePath.Path);
+        TryAdd(7, txst.BacklightMaskOrSpecular?.DataRelativePath.Path);
     }
 
     private static string BuildFaceGenPath(FormKey formKey)
