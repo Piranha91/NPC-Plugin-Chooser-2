@@ -168,8 +168,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     public bool IsMugshotOnlyEntry { get; set; } = false;
 
     // Flag indicating if this VM was created from a facegen-only Mod folder (in which case only NPCs with facegen
-    // rather than all NPCs in the corresponding plugins should be displayed
-    public bool IsFaceGenOnlyEntry { get; set; } = false;
+    // rather than all NPCs in the corresponding plugins should be displayed.
+    // [Reactive] because it is assigned after construction (model load, folder scan, refresh) and
+    // MergeInDependencyRecordsVisible is derived from it via a WhenAnyValue subscription.
+    [Reactive] public bool IsFaceGenOnlyEntry { get; set; } = false;
 
     public HashSet<FormKey> FaceGenOnlyNpcFormKeys { get; set; } =
         new(); // NPCs contained in the given FaceGen-only mod
@@ -270,9 +272,6 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         // IsMugshotOnlyEntry is set to false via chaining
         IsFaceGenOnlyEntry = model.IsFaceGenOnlyEntry;
         FaceGenOnlyNpcFormKeys = new(model.FaceGenOnlyNpcFormKeys);
-
-        MergeInDependencyRecordsVisible = DisplayName != VM_Mods.BaseGameModSettingName &&
-                                          DisplayName != VM_Mods.CreationClubModsettingName;
 
         _pluginsWithOverrideRecords = model.PluginsWithOverrideRecords;
         HasAlteredMergeLogic = model.HasAlteredMergeLogic;
@@ -408,6 +407,17 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             )
             .DistinctUntilChanged()
             .ToPropertyEx(this, x => x.HasModPathsAssigned)
+            .DisposeWith(_disposables);
+
+        // Merge-in is meaningless for FaceGen-only entries (no plugins to merge from; the
+        // patcher neutralizes it per NPC anyway) and hard-disabled for the synthetic Base
+        // Game / Creation Club entries — hide the checkbox in both cases. Reactive because
+        // IsFaceGenOnlyEntry is assigned after construction (model load, folder scan, refresh).
+        this.WhenAnyValue(x => x.IsFaceGenOnlyEntry)
+            .Subscribe(isFaceGenOnly => MergeInDependencyRecordsVisible =
+                !isFaceGenOnly &&
+                DisplayName != VM_Mods.BaseGameModSettingName &&
+                DisplayName != VM_Mods.CreationClubModsettingName)
             .DisposeWith(_disposables);
 
         // When folder paths are added or removed, trigger a full refresh of this mod setting.
