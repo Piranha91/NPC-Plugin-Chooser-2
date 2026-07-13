@@ -1625,6 +1625,23 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 AddGuestAppearanceToSettings(target, source, modDisplayName, npcDisplayName);
             }
 
+            // Reconcile persisted shares now that the NPC lists are rebuilt: a donor NPC
+            // deleted from this mod (records + FaceGen + ini) must also drop off any target
+            // NPCs it was shared onto, or it lingers as a dead placeholder tile. Raw plugin
+            // records are included so a donor that was merely rejected during analysis is
+            // not mistaken for deleted; donors the ini scan above just re-registered are
+            // exempt because they may resolve via the load order rather than this mod's own
+            // plugins. Skipped when nothing is provably live (e.g. plugins failed to load),
+            // where sweeping would act on absence of evidence.
+            var liveDonorKeys = plugins.SelectMany(p => p.Npcs).Select(n => n.FormKey)
+                .Concat(vmToRefresh.NpcFormKeysToDisplayName.Keys)
+                .ToHashSet();
+            var freshDonorKeys = guests.Select(g => g.SourceNpc).ToHashSet();
+            if (liveDonorKeys.Count > 0 || freshDonorKeys.Count > 0)
+            {
+                _npcSelectionBar.PruneStaleGuestAppearances(vmToRefresh.DisplayName, liveDonorKeys, freshDonorKeys);
+            }
+
             // Mirror the analysis-time cache so a subsequent CleanupCorrespondingFolders
             // call recognises SkyPatcher-targeted foundations as NPC sources to exclude.
             // Widened lookup catches foundations on disk but not in the user's LO.
@@ -2398,6 +2415,12 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
 
         var allSkyPatcherGuests = new ConcurrentBag<(FormKey Target, FormKey Source, string ModDisplayName, string SourceNpcDisplayName)>();
 
+        // Donor NPCs each re-analyzed mod can still vouch for (raw plugin records + rebuilt
+        // NPC list). Only mods that get far enough through analysis land here, so cache-hit
+        // and mugshot-only entries are naturally excluded from the stale-share
+        // reconciliation that runs after the SkyPatcher import below.
+        var analyzedDonorKeys = new ConcurrentDictionary<VM_ModSetting, HashSet<FormKey>>();
+
         var allVMs = _allModSettingsInternal.ToList(); // Create a copy to iterate over
         var vmsToAnalyze = new List<VM_ModSetting>();
 
@@ -2487,6 +2510,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                                 allSkyPatcherGuests.Add(guest);
                             }
 
+                            analyzedDonorKeys[vm] = plugins.SelectMany(x => x.Npcs)
+                                .Select(n => n.FormKey)
+                                .Concat(vm.NpcFormKeysToDisplayName.Keys)
+                                .ToHashSet();
+
                             // Cache target ModKeys for the cleanup pass: SkyPatcher templates
                             // don't override foundation NPCs at the record level, so without
                             // this signal FindAndAddMissingMasters would re-attach the
@@ -2546,7 +2574,30 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             await ResolveAndApplySkyPatcherGuests(allSkyPatcherGuests.ToList());
         }
 
-        return analysisFailures.Select(f => f.Vm).ToHashSet();
+        var analysisFailedVms = analysisFailures.Select(f => f.Vm).ToHashSet();
+
+        // Reconcile persisted shares for every mod that was actually re-analyzed: a donor
+        // NPC deleted from a mod (records + FaceGen + ini) must also drop off any target
+        // NPCs it was shared onto, or it lingers as a dead placeholder tile. Failed mods
+        // are skipped (their empty NPC lists mean "not analyzed", not "donors deleted"),
+        // as are mods with no provably-live donors at all — sweeping there would act on
+        // absence of evidence (e.g. an invalid environment). Runs after
+        // ResolveAndApplySkyPatcherGuests so live ini donors are already re-registered.
+        var freshDonorsByMod = allSkyPatcherGuests
+            .GroupBy(g => g.ModDisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Source).ToHashSet(),
+                StringComparer.OrdinalIgnoreCase);
+        foreach (var (vm, liveDonorKeys) in analyzedDonorKeys)
+        {
+            if (analysisFailedVms.Contains(vm)) continue;
+            var freshDonorKeys = freshDonorsByMod.TryGetValue(vm.DisplayName, out var fresh)
+                ? fresh
+                : new HashSet<FormKey>();
+            if (liveDonorKeys.Count == 0 && freshDonorKeys.Count == 0) continue;
+            _npcSelectionBar.PruneStaleGuestAppearances(vm.DisplayName, liveDonorKeys, freshDonorKeys);
+        }
+
+        return analysisFailedVms;
     }
 
     /// <summary>
@@ -2614,6 +2665,11 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             }
 
             _allModSettingsInternal.Remove(vm);
+            // Shares referencing this discarded entry (typically registered moments ago by
+            // the SkyPatcher import in AnalyzeModSettingsAsync) would otherwise orphan
+            // immediately as dead placeholder tiles.
+            _npcSelectionBar.PruneStaleGuestAppearances(vm.DisplayName,
+                new HashSet<FormKey>(), new HashSet<FormKey>());
             vm.Dispose(); // pruned (non-appearance) mod; discarded, so release its subscriptions
         }
     }
@@ -3522,6 +3578,12 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                     npc.AppearanceMods.Remove(modSettingToRemove);
                 }
             }
+
+            // Persisted shares reference this entry by DisplayName; with the entry gone they
+            // are permanently dead placeholder tiles, so sweep them all (and any SkyPatcher
+            // template flags nothing references anymore) along with it.
+            _npcSelectionBar.PruneStaleGuestAppearances(modSettingToRemove.DisplayName,
+                new HashSet<FormKey>(), new HashSet<FormKey>());
 
             ApplyFilters(); // Refresh the ModSettingsList (left panel)
         }

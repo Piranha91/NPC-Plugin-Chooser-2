@@ -2391,6 +2391,27 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                     _consistencyProvider.SetSelectedMod(npcKey, placeholderTargetModSetting.DisplayName, npcKey);
                 }
 
+                // Guest/shared appearances reference the mod by DisplayName too; re-point
+                // them at the merged entry so RemoveModSetting's stale-share sweep below
+                // doesn't discard them as orphans of the retiring name.
+                foreach (var guestDict in new[]
+                             { _settings.GuestAppearances, _settings.RandomizedGuestAppearances })
+                {
+                    foreach (var guestSet in guestDict.Values)
+                    {
+                        var toMigrate = guestSet.Where(g =>
+                                g.ModName.Equals(mugshotSourceModSetting.DisplayName,
+                                    StringComparison.OrdinalIgnoreCase))
+                            .ToList();
+                        foreach (var guest in toMigrate)
+                        {
+                            guestSet.Remove(guest);
+                            guestSet.Add((placeholderTargetModSetting.DisplayName, guest.NpcFormKey,
+                                guest.NpcDisplayName));
+                        }
+                    }
+                }
+
                 // Remove the now-redundant mugshot-only mod setting.
                 bool wasRemoved = _lazyMods.Value?.RemoveModSetting(mugshotSourceModSetting) ?? false;
                 if (!wasRemoved)

@@ -3803,6 +3803,66 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Reconciles persisted guest/shared appearances sourced from <paramref name="modName"/>
+    /// against what that mod still provides, removing entries whose donor NPC is gone. The
+    /// SkyPatcher import only ever ADDS shares, so without this sweep a donor deleted from a
+    /// mod (records + FaceGen + ini) lingers forever as a dead placeholder tile on its target
+    /// NPC. Routed through <see cref="RemoveGuestAppearance"/> so the randomized-share subset,
+    /// a dangling selection, and the on-screen tiles stay in sync. Also drops each pruned
+    /// donor's <see cref="Settings.CachedSkyPatcherTemplates"/> flag once no share from ANY
+    /// mod references it anymore, so the donor key doesn't stay hidden from the NPC list.
+    /// </summary>
+    /// <param name="modName">DisplayName of the mod whose shares are being reconciled.</param>
+    /// <param name="liveDonorKeys">Donor NPCs the mod still contains. Callers include raw
+    /// plugin records, not just analysis-accepted NPCs, so a donor that merely failed
+    /// analysis this pass (e.g. load-order drift) is not mistaken for deleted. Empty when
+    /// the mod entry itself is being removed, which sweeps every share it sourced.</param>
+    /// <param name="freshDonorKeys">Donors the current SkyPatcher ini scan just
+    /// (re-)registered; exempt because an ini donor may resolve via the load order without
+    /// being one of the mod's own NPCs.</param>
+    /// <returns>Number of shares removed.</returns>
+    public int PruneStaleGuestAppearances(string modName, IReadOnlySet<FormKey> liveDonorKeys,
+        IReadOnlySet<FormKey> freshDonorKeys)
+    {
+        // Snapshot first: RemoveGuestAppearance mutates GuestAppearances mid-enumeration otherwise.
+        var staleGuests = new List<(FormKey TargetKey, string ModName, FormKey DonorKey, string DonorDisplay)>();
+        foreach (var (targetKey, guestSet) in _settings.GuestAppearances)
+        {
+            foreach (var (guestModName, donorKey, donorDisplay) in guestSet)
+            {
+                if (!guestModName.Equals(modName, StringComparison.OrdinalIgnoreCase)) continue;
+                if (liveDonorKeys.Contains(donorKey) || freshDonorKeys.Contains(donorKey)) continue;
+                staleGuests.Add((targetKey, guestModName, donorKey, donorDisplay));
+            }
+        }
+
+        foreach (var (targetKey, guestModName, donorKey, donorDisplay) in staleGuests)
+        {
+            RemoveGuestAppearance(targetKey, guestModName, donorKey, donorDisplay);
+        }
+
+        // The template flag exists to hide a donor-only NPC from the list while shares point
+        // at it; once the last share is gone it would orphan-hide the FormKey indefinitely.
+        foreach (var donorKey in staleGuests.Select(g => g.DonorKey).Distinct())
+        {
+            bool stillReferenced = _settings.GuestAppearances.Values
+                .Any(set => set.Any(g => g.NpcFormKey.Equals(donorKey)));
+            if (!stillReferenced)
+            {
+                _settings.CachedSkyPatcherTemplates.Remove(donorKey);
+            }
+        }
+
+        if (staleGuests.Count > 0)
+        {
+            Debug.WriteLine(
+                $"PruneStaleGuestAppearances: removed {staleGuests.Count} stale share(s) sourced from '{modName}'.");
+        }
+
+        return staleGuests.Count;
+    }
+
     /// <summary>Adds a guest/shared appearance AND records it as randomizer-created, so a
     /// later re-randomize can remove it (see <see cref="ClearRandomizedGuestAppearancesForNpc"/>).</summary>
     private void AddRandomizedGuestAppearance(FormKey targetNpcKey, string guestModName, FormKey guestNpcKey, string guestDisplayStr)
