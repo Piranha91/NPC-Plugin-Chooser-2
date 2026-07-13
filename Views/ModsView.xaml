@@ -130,8 +130,8 @@
                          ScrollViewer.VerticalScrollBarVisibility="Auto">
 
                     <ListBox.Resources>
-                        <Style TargetType="ScrollBar">
-                            <Setter Property="ToolTip" 
+                        <Style TargetType="ScrollBar" BasedOn="{StaticResource {x:Type ScrollBar}}">
+                            <Setter Property="ToolTip"
                                     Value="{Binding DataContext.TotalModsLoadedText, RelativeSource={RelativeSource AncestorType=ListBox}}"/>
                         </Style>
                     </ListBox.Resources>
@@ -607,7 +607,7 @@
                 <!-- ============================ VIRTUALIZATION FIX END ============================ -->
             </Grid>
 
-            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" x:Name="ColumnSplitter"/>
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="{DynamicResource BorderBrush}" x:Name="ColumnSplitter"/>
 
             <Grid Grid.Column="2">
                  <Grid.RowDefinitions>
