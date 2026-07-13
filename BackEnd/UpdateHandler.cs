@@ -36,6 +36,9 @@ public class UpdateHandler
         if (string.IsNullOrWhiteSpace(_settings.ProgramVersion))
         {
             Debug.WriteLine("New user or fresh settings, skipping update check.");
+            // Fresh settings have no stale analysis caches; mark flag-guarded one-shot
+            // migrations as already applied so they don't fire on the second launch.
+            _settings.RecordlessFaceGenRescanVersion = RecordlessFaceGenRescanTarget;
             return;
         }
 
@@ -73,6 +76,11 @@ public class UpdateHandler
         if (settingsVersion < "2.2.1")
         {
             UpdateTo2_2_1_Initial();
+        }
+
+        if (_settings.RecordlessFaceGenRescanVersion < RecordlessFaceGenRescanTarget)
+        {
+            InvalidateAnalysisCachesForRecordlessFaceGenNpcs_Initial();
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -999,6 +1007,37 @@ public class UpdateHandler
             _settings.InternalMugshot.SubsurfaceStrength = 1.0f;
             Debug.WriteLine("2.2.1 Update: SubsurfaceStrength was at the prior default of 0.1; bumped to 1.0.");
         }
+    }
+
+    /// <summary>
+    /// Target for <c>Settings.RecordlessFaceGenRescanVersion</c>. Bump this whenever the
+    /// record-less FaceGen NPC detection in RefreshNpcLists changes in a way that requires
+    /// re-analyzing mods whose cached snapshot is still valid. History: 1 = initial
+    /// detection; 2 = resource-only plugins' records now count as record-backed (v1 flooded
+    /// mods that list dependency folders, e.g. CotR overhauls, with spurious NPCs);
+    /// 3 = reworded the persisted FaceGenOnly notification tooltip.
+    /// </summary>
+    private const int RecordlessFaceGenRescanTarget = 3;
+
+    /// <summary>
+    /// One-time invalidation of every mod's analysis cache (LastKnownState) so the next
+    /// population pass re-runs RefreshNpcLists, which now detects FaceGen files shipped
+    /// without a plugin record inside plugin-backed mods and surfaces those NPCs as
+    /// selectable FaceGen-only entries (with an issue-notification icon). Without this,
+    /// mods with a valid cached snapshot would never recompute FaceGenOnlyNpcFormKeys.
+    /// Guarded by <c>Settings.RecordlessFaceGenRescanVersion</c> rather than a program
+    /// version gate so dev builds don't re-run the full re-analysis on every launch.
+    /// </summary>
+    private void InvalidateAnalysisCachesForRecordlessFaceGenNpcs_Initial()
+    {
+        foreach (var modSetting in _settings.ModSettings)
+        {
+            modSetting.LastKnownState = null;
+        }
+
+        _settings.RecordlessFaceGenRescanVersion = RecordlessFaceGenRescanTarget;
+        Debug.WriteLine(
+            "One-time analysis-cache invalidation applied so record-less FaceGen NPCs get discovered on this launch.");
     }
 
     private async Task UpdateTo2_0_4_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)

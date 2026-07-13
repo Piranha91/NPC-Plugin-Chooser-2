@@ -433,6 +433,12 @@ public class Settings
     // One-shot guard for the 2.2.2 base-game-asset scan migration, so dev builds still
     // versioned below 2.2.2 don't re-run the full-mod-list scan on every launch.
     public bool HasUpdatedTo2_2_2 { get; set; } = false;
+    // Guard for the record-less FaceGen NPC rescan: when below
+    // UpdateHandler.RecordlessFaceGenRescanTarget, every mod's analysis cache
+    // (LastKnownState) is invalidated once so RefreshNpcLists re-discovers FaceGen files
+    // shipped without plugin records inside plugin-backed mods. Versioned (not a bool) so
+    // a revision to the detection logic can force another rescan by bumping the target.
+    public int RecordlessFaceGenRescanVersion { get; set; } = 0;
     
     // --- Troubleshooting / Logging ---
     public bool LogActivity { get; set; } = false;

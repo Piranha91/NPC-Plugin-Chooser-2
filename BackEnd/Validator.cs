@@ -2,6 +2,7 @@
 using System.Text;
 using System.Windows;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views;
@@ -197,9 +198,28 @@ public class Validator : OptionalUIModule
             {
                 ModKey? sourcePlugin = null;
                 // Determine the specific plugin providing the NPC's appearance
-                if (appearanceModSetting.IsFaceGenOnlyEntry)
+                bool isFaceGenOnlySelection = appearanceModSetting.IsFaceGenOnlyEntry ||
+                                              appearanceModSetting.FaceGenOnlyNpcFormKeys.Contains(
+                                                  appearanceNpcFormKey);
+                if (isFaceGenOnlySelection)
                 {
-                    sourcePlugin = npcFormKey.ModKey;
+                    // No plugin in the selected mod carries this NPC's record. At patch time the
+                    // appearance DONOR's origin record is resolved from the load order (LinkCache,
+                    // ResolveTarget.Origin) and paired with this mod's FaceGen files — so that
+                    // record must actually resolve. Catch a missing defining plugin here instead
+                    // of letting the patcher silently skip the NPC mid-run.
+                    if (!_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(appearanceNpcFormKey, out _,
+                            ResolveTarget.Origin))
+                    {
+                        var errorMsg =
+                            $"For NPC {npcIdentifier}, the selected mod '{selectedModDisplayName}' provides only FaceGen files for this NPC, and the record it would inherit ({appearanceNpcFormKey}) cannot be resolved from the load order (its defining plugin '{appearanceNpcFormKey.ModKey.FileName}' is missing). This selection is invalid.";
+                        AppendLog($"  SCREENING ERROR: {errorMsg}", true);
+                        invalidSelections.Add(
+                            $"{npcIdentifier} -> '{selectedModDisplayName}' (FaceGen-only selection; NPC record unresolvable - missing '{appearanceNpcFormKey.ModKey.FileName}')");
+                        continue;
+                    }
+
+                    sourcePlugin = appearanceNpcFormKey.ModKey;
                 }
                 else if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(appearanceNpcFormKey, out var disambiguatedPlugin))
                 {

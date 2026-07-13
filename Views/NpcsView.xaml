@@ -749,14 +749,40 @@
                                                Visibility="{Binding HasIssueNotification, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                ToolTip="{Binding IssueNotificationText}">
 
-                                             <!-- Inner Viewbox to scale the "!" and center it -->
+                                             <!-- Inner Viewbox to scale the "!" and center it
+                                                  (Template and other generic issues) -->
                                              <Viewbox Stretch="Uniform"
                                                       HorizontalAlignment="Center"
                                                       VerticalAlignment="Center">
+                                                 <Viewbox.Style>
+                                                     <Style TargetType="Viewbox">
+                                                         <Style.Triggers>
+                                                             <DataTrigger Binding="{Binding IssueType}" Value="FaceGenOnly">
+                                                                 <Setter Property="Visibility" Value="Collapsed"/>
+                                                             </DataTrigger>
+                                                         </Style.Triggers>
+                                                     </Style>
+                                                 </Viewbox.Style>
                                                  <TextBlock Text="!"
                                                             FontWeight="Bold"
                                                             Foreground="Red"/>
                                              </Viewbox>
+
+                                             <!-- FaceGen-only issues (mod ships FaceGen but no
+                                                  plugin record for this NPC) use a dedicated icon -->
+                                             <Image Source="/NPC Plugin Chooser 2;component/Resources/No Npc Record.png"
+                                                    Stretch="Uniform">
+                                                 <Image.Style>
+                                                     <Style TargetType="Image">
+                                                         <Setter Property="Visibility" Value="Collapsed"/>
+                                                         <Style.Triggers>
+                                                             <DataTrigger Binding="{Binding IssueType}" Value="FaceGenOnly">
+                                                                 <Setter Property="Visibility" Value="Visible"/>
+                                                             </DataTrigger>
+                                                         </Style.Triggers>
+                                                     </Style>
+                                                 </Image.Style>
+                                             </Image>
                                          </Grid>
 
                                          <!-- FaceGen-stats text overlay (TextOverlay display mode).

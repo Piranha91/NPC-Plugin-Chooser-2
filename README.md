@@ -805,6 +805,8 @@ Before writing your own, check whether someone has already done the work — com
 
 A: Yes. It’ll use the base plugin for those NPCs for conflict patching.
 
+This also works for *mixed* mods — ones whose plugin covers some NPCs while other NPCs only ship FaceGen files. The record-less NPCs are offered like any other appearance, marked with a warning icon in the gallery explaining that their record will be inherited from the NPC’s original plugin with just the mod’s face mesh/textures applied (so if the mod’s FaceGen was built against different head parts, the face may mismatch in game).
+
 **Q: Why can’t I see {some NPC} from {some mod}?**
 
 A: Check the Rejected NPCs subfolder (next to the main .exe file). It contains logs for all discarded NPCs.

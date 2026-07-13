@@ -409,7 +409,7 @@ public class OutputValidator
             var donorRec = TryResolveSelectedSourceNpc(modSetting, donorFk);
             if (donorRec == null)
             {
-                if (!modSetting.IsFaceGenOnlyEntry)
+                if (!modSetting.IsFaceGenOnlyEntry && !modSetting.FaceGenOnlyNpcFormKeys.Contains(donorFk))
                 {
                     result.Issues.Add(new ValidationIssue
                     {
@@ -480,7 +480,7 @@ public class OutputValidator
 
         if (sourceRecord == null)
         {
-            if (!modSetting.IsFaceGenOnlyEntry)
+            if (!modSetting.IsFaceGenOnlyEntry && !modSetting.FaceGenOnlyNpcFormKeys.Contains(donorFk))
             {
                 result.Issues.Add(new ValidationIssue
                 {

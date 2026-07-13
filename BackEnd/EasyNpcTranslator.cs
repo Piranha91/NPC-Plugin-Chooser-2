@@ -721,6 +721,15 @@ public class EasyNpcTranslator
             return true;
         }
 
+        // Record-less FaceGen NPC inside a plugin-backed mod: no plugin supplies the record
+        // (AvailablePluginsForNpcs has no entry), so treat it like a FaceGen-only entry.
+        if (appearanceMod.FaceGenOnlyNpcFormKeys.Contains(npcFormKey))
+        {
+            appearancePlugin = npcFormKey.ModKey;
+            faceGenWarning = $"NPC {formString} from {appearanceModName}";
+            return true;
+        }
+
         if (appearanceMod.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var availablePlugins))
         {
             if (availablePlugins.Count == 1)
