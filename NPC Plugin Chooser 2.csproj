@@ -46,7 +46,7 @@
       <ProjectReference Include="..\..\SynthEBD\CharacterViewer.Rendering\CharacterViewer.Rendering.csproj" />
     </ItemGroup>
     <ItemGroup Condition="!Exists('..\..\SynthEBD\CharacterViewer.Rendering\CharacterViewer.Rendering.csproj')">
-      <PackageReference Include="SynthEBD.CharacterViewer.Rendering" Version="2.6.0" />
+      <PackageReference Include="SynthEBD.CharacterViewer.Rendering" Version="2.6.1" />
     </ItemGroup>
 
     <ItemGroup>
