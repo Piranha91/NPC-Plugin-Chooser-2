@@ -188,7 +188,7 @@ public sealed class InternalMugshotGenerator
             var meshOverrides = _resolver.ResolveAttireMeshOverrides(
                 npcFormKey, modSetting, effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear,
                 targetNpcFormKey, out var outfitDisplay);
-            var meshOverrideWarningsOut = new List<string>();
+            var meshOverrideWarningsOut = new List<MeshOverrideWarning>();
 
             // Opt-in per-render phase timing (drop a LogRenderTimings.txt file
             // next to the exe). Pure data, no logging — so timings are
@@ -199,7 +199,7 @@ public sealed class InternalMugshotGenerator
             {
                 MeshPaths = paths,
                 MeshOverrides = meshOverrides.Count > 0 ? meshOverrides : null,
-                MeshOverrideWarningsOut = meshOverrideWarningsOut,
+                MeshOverrideWarningDetailsOut = meshOverrideWarningsOut,
                 Width = cfg.OutputWidth,
                 Height = cfg.OutputHeight,
                 BackgroundRgb = (cfg.BackgroundR, cfg.BackgroundG, cfg.BackgroundB),
@@ -308,10 +308,16 @@ public sealed class InternalMugshotGenerator
             // skeleton shouldn't discard an otherwise-complete face mugshot. Fold
             // them into the persisted missing-mesh list so the tile's existing
             // missing-asset overlay (and the cached metadata) shows them.
+            // StalePhysicsConfig is deliberately NOT folded: the mod's own
+            // physics-XML link is broken but the render is correct, and nothing
+            // the user installs can clear it — persisting it as a missing asset
+            // would re-stale this mugshot every session.
             if (meshOverrideWarningsOut.Count > 0)
             {
                 Trace($"  meshOverrideWarnings tid={Environment.CurrentManagedThreadId} count={meshOverrideWarningsOut.Count}");
-                missingMeshPathsOut?.AddRange(meshOverrideWarningsOut);
+                missingMeshPathsOut?.AddRange(meshOverrideWarningsOut
+                    .Where(w => w.Kind != MeshOverrideWarningKind.StalePhysicsConfig)
+                    .Select(w => w.Message));
             }
 
             // FaceGen-vs-records consistency. CV.R renders the baked FaceGen geometry

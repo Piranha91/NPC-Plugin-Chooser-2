@@ -93,15 +93,30 @@
                 </StackPanel>
             </Border>
 
-            <!-- Missing-asset warning (attire/headgear mesh-override failures):
-                 mirrors the mugshot tile's missing-asset icon pattern. -->
-            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6"
-                    Background="#C0703000" CornerRadius="4" Padding="6,3"
-                    ToolTip="{Binding MissingAssetNotificationText}"
-                    Visibility="{Binding HasMissingAssets, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
-                <TextBlock Text="⚠ Some attire meshes couldn't render" Foreground="White"
-                           FontWeight="SemiBold"/>
-            </Border>
+            <!-- Missing-asset warning (attire/headgear mesh-override failures)
+                 and the informational stale-physics-config notice, stacked so
+                 both badges can show at once. The missing-asset badge mirrors
+                 the mugshot tile's missing-asset icon pattern. -->
+            <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6">
+                <Border HorizontalAlignment="Right"
+                        Background="#C0703000" CornerRadius="4" Padding="6,3"
+                        ToolTip="{Binding MissingAssetNotificationText}"
+                        Visibility="{Binding HasMissingAssets, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                    <TextBlock Text="⚠ Some attire meshes couldn't render" Foreground="White"
+                               FontWeight="SemiBold"/>
+                </Border>
+                <!-- Stale physics config: the mod links an SMP/HDT xml that
+                     doesn't exist. Render is correct, so this is informational
+                     (never persisted, never re-stales a mugshot). The 🛈 glyph
+                     is a PLACEHOLDER icon, to be replaced with final art. -->
+                <Border HorizontalAlignment="Right" Margin="0,4,0,0"
+                        Background="#C0305870" CornerRadius="4" Padding="6,3"
+                        ToolTip="{Binding PhysicsConfigNoticeText}"
+                        Visibility="{Binding HasPhysicsConfigNotice, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                    <TextBlock Text="🛈 An attire mesh has a broken physics link" Foreground="White"
+                               FontWeight="SemiBold"/>
+                </Border>
+            </StackPanel>
 
             <!-- Outfit-conflict warning: "Include Outfit" is overridden at
                  runtime by a SkyPatcher/SPID config, or NPC2's own SkyPatcher
