@@ -837,12 +837,15 @@ public class NpcMeshResolver
             //  • ArmorAddon.SkinTexture (NAM0/NAM1) — a mesh-wide skin TXST used by
             //    skin-type addons; carried in the flat MeshOverride.Textures.
             //  • WorldModel.AlternateTextures (MODS) — per-object TXST overrides
-            //    that retexture individual named shapes of the world-model NIF
-            //    (how one shared mesh serves multiple visual variants); carried
-            //    per-shape in MeshOverride.ShapeTextures, keyed on the NIF shape
-            //    node name. Absent both, Textures/ShapeTextures stay null and the
-            //    NIF's own embedded BSShaderTextureSet renders (correct for plain
-            //    armor).
+            //    that retexture individual shapes of the world-model NIF (how one
+            //    shared mesh serves multiple visual variants); carried as
+            //    MeshOverride.AlternateTextures entries preserving BOTH identity
+            //    fields the record stores (3D Name + 3D Index). The renderer
+            //    matches by name first and falls back to the index so a
+            //    BodySlide-rebuilt mesh whose shapes were renamed still gets its
+            //    variant applied the way the engine applies it. Absent both
+            //    channels, Textures/AlternateTextures stay null and the NIF's own
+            //    embedded BSShaderTextureSet renders (correct for plain armor).
             meshPath = RebaseToAbsoluteIfPresent(meshPath, context) ?? meshPath;
 
             var txst = ResolveTxstTextures(arma, sex, linkCache, context, armaLink.FormKey);
@@ -858,23 +861,28 @@ public class NpcMeshResolver
             }
 
             var altTxst = ResolveAlternateTextures(arma, sex, linkCache, context, armaLink.FormKey);
-            IReadOnlyDictionary<string, IReadOnlyDictionary<int, string>>? shapeTextures = null;
+            IReadOnlyList<AlternateTextureSpec>? alternateTextures = null;
             if (altTxst.Count > 0)
             {
-                var perShape = new Dictionary<string, IReadOnlyDictionary<int, string>>(StringComparer.OrdinalIgnoreCase);
-                foreach (var shapeName in altTxst.Keys.ToList())
+                var specs = new List<AlternateTextureSpec>(altTxst.Count);
+                foreach (var (shapeName, shapeIndex, slotMap) in altTxst)
                 {
-                    var slotMap = altTxst[shapeName];
                     foreach (var slot in slotMap.Keys.ToList())
                     {
                         var rebased = RebaseToAbsoluteIfPresent(slotMap[slot], context);
                         if (rebased != null) slotMap[slot] = rebased;
                     }
-                    perShape[shapeName] = slotMap;
+                    specs.Add(new AlternateTextureSpec
+                    {
+                        ShapeName = shapeName,
+                        ShapeIndex = shapeIndex,
+                        Textures = slotMap,
+                    });
                 }
-                shapeTextures = perShape;
-                LogVerbose("CharacterViewer: ARMA " + armaLink.FormKey + " AlternateTextures applied to "
-                    + perShape.Count + " shape(s): " + string.Join(", ", perShape.Keys));
+                alternateTextures = specs;
+                LogVerbose("CharacterViewer: ARMA " + armaLink.FormKey + " AlternateTextures resolved ("
+                    + specs.Count + "): "
+                    + string.Join(", ", specs.Select(s => "[" + s.ShapeIndex + "]'" + s.ShapeName + "'")));
             }
 
             var kind = isHead ? MeshOverrideKind.Headgear : MeshOverrideKind.Armor;
@@ -904,7 +912,7 @@ public class NpcMeshResolver
                 HidesSlots = hides,
                 Kind = kind,
                 Textures = textures,
-                ShapeTextures = shapeTextures,
+                AlternateTextures = alternateTextures,
             });
             LogVerbose("CharacterViewer: attire override '" + key + "' mesh=" + meshPath
                 + " slots=" + slots + " kind=" + kind + " src=" + source);
@@ -1264,10 +1272,19 @@ public class NpcMeshResolver
     /// (matched by the renderer against BuiltMesh.ShapeName) and <c>NewTexture</c>
     /// is the replacement TextureSet. Slot indices match
     /// <see cref="ResolveTxstTextures"/>.</summary>
-    private Dictionary<string, Dictionary<int, string>> ResolveAlternateTextures(
+    /// <summary>Resolves an ArmorAddon world-model's AlternateTextures (MODS)
+    /// entries to (3D Name, 3D Index, texture-slot map) tuples, in record order.
+    /// Both identity fields are carried: the renderer matches by name first and
+    /// falls back to the index, so a rebuilt mesh whose shapes were renamed
+    /// (BodySlide output) still gets its variant — the engine itself keys on the
+    /// index (see <c>AlternateTextureSpec</c>). Entries whose TXST fails to
+    /// resolve, or that carry neither a name nor a usable index, are skipped
+    /// with a log line. Duplicate targets are preserved; the renderer applies
+    /// them in order (later wins per slot).</summary>
+    private List<(string ShapeName, int ShapeIndex, Dictionary<int, string> Slots)> ResolveAlternateTextures(
         IArmorAddonGetter armaGetter, Sex sex, ILinkCache linkCache, NpcResolutionContext? context, FormKey armaFormKey)
     {
-        var result = new Dictionary<string, Dictionary<int, string>>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<(string, int, Dictionary<int, string>)>();
         try
         {
             var model = sex == Sex.Female ? armaGetter.WorldModel?.Female : armaGetter.WorldModel?.Male;
@@ -1277,20 +1294,21 @@ public class NpcMeshResolver
             foreach (var alt in alts)
             {
                 if (alt == null) continue;
-                string shapeName = alt.Name;
-                if (string.IsNullOrWhiteSpace(shapeName)) continue;
+                string shapeName = alt.Name ?? string.Empty;
+                int shapeIndex = alt.Index;
+                if (string.IsNullOrWhiteSpace(shapeName) && shapeIndex < 0) continue;
                 if (alt.NewTexture.IsNull) continue;
                 var txst = ResolveRecord<ITextureSetGetter>(alt.NewTexture, linkCache, context);
                 if (txst == null)
                 {
                     LogVerbose("CharacterViewer: Could not resolve AlternateTexture TXST " + alt.NewTexture.FormKey
-                        + " for shape '" + shapeName + "' from ARMA " + armaFormKey);
+                        + " for shape '" + shapeName + "' (3D index " + shapeIndex + ") from ARMA " + armaFormKey);
                     continue;
                 }
 
                 var slots = new Dictionary<int, string>();
                 PopulateTxstSlots(txst, slots);
-                if (slots.Count > 0) result[shapeName] = slots; // last write wins on duplicate shape names
+                if (slots.Count > 0) result.Add((shapeName, shapeIndex, slots));
             }
         }
         catch (Exception ex)
