@@ -851,6 +851,20 @@
                                              </Viewbox>
                                          </Grid>
 
+                                         <!-- Stale-physics-config indicator: an outfit mesh links
+                                              an SMP/HDT physics XML that doesn't exist (broken
+                                              link inside the mod). Informational only — the
+                                              render is correct and this never re-stales the
+                                              mugshot. -->
+                                         <Grid Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                               Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}"
+                                               Visibility="{Binding HasPhysicsConfigNotice, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                               ToolTip="{Binding PhysicsConfigNoticeText}">
+                                             <Viewbox Stretch="Uniform">
+                                                 <Image Source="/NPC Plugin Chooser 2;component/Resources/Missing Outfit Assets.png" />
+                                             </Viewbox>
+                                         </Grid>
+
                                          <!-- Multiple-plugins indicator: NPC is defined in
                                               multiple source plugins; right-click to pick the
                                               correct source. -->

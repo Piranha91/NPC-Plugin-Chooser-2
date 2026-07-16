@@ -731,6 +731,20 @@
                                             </Viewbox>
                                         </Grid>
 
+                                        <!-- Stale-physics-config indicator (Top-Right): an outfit mesh
+                                             links an SMP/HDT physics XML that doesn't exist (broken link
+                                             inside the mod). Informational only — the render is correct
+                                             and this never re-stales the mugshot. -->
+                                        <Grid HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0 0 0 0"
+                                              Visibility="{Binding HasPhysicsConfigNotice, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                              ToolTip="{Binding PhysicsConfigNoticeText}"
+                                              Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                              Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
+                                            <Viewbox Stretch="Uniform">
+                                                <Image Source="/NPC Plugin Chooser 2;component/Resources/Missing Outfit Assets.png" />
+                                            </Viewbox>
+                                        </Grid>
+
                                         <!-- Outfit-conflict indicator (Bottom-Left): "Include Outfit" is
                                              overridden at runtime by SkyPatcher/SPID, or NPC2's SkyPatcher
                                              ini entry is not conflict-winning. Tooltip explains why. -->

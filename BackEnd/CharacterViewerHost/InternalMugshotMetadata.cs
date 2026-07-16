@@ -104,6 +104,13 @@ public static class InternalMugshotMetadata
     // exactly like the missing-asset arrays. Like those, it's an output of the render
     // (NOT folded into the settings hash that drives staleness).
     private const string FaceGenMismatchKey = "facegen_mismatch";
+    // Stale-physics-config notices (an attire mesh links an SMP/HDT physics XML
+    // that doesn't exist — a broken link in the mod itself; the render is still
+    // correct). Stamped so the tile can show its informational outfit-asset icon
+    // across restarts. Deliberately NOT read by TryReadMissingAssets and NOT
+    // consulted by MugshotStalenessChecker — this key must never make a cached
+    // mugshot stale (nothing the user installs can clear it).
+    private const string PhysicsConfigNoticesKey = "physics_config_notices";
     public const string PipelineSchemaKey = "pipeline_schema";
     /// <summary>JSON key of the depicted-outfit identity stamp (v12+).</summary>
     public const string EffectiveOutfitKey = "effective_outfit";
@@ -119,7 +126,8 @@ public static class InternalMugshotMetadata
         string effectiveOutfitIdentity,
         IReadOnlyList<string>? missingMeshes = null,
         IReadOnlyList<string>? missingTextures = null,
-        string? faceGenMismatch = null)
+        string? faceGenMismatch = null,
+        IReadOnlyList<string>? physicsConfigNotices = null)
     {
         var obj = new JObject
         {
@@ -193,6 +201,10 @@ public static class InternalMugshotMetadata
         {
             obj[FaceGenMismatchKey] = faceGenMismatch;
         }
+        if (physicsConfigNotices != null && physicsConfigNotices.Count > 0)
+        {
+            obj[PhysicsConfigNoticesKey] = new JArray(physicsConfigNotices);
+        }
 
         return obj.ToString(Newtonsoft.Json.Formatting.None);
     }
@@ -223,6 +235,28 @@ public static class InternalMugshotMetadata
             // Malformed JSON or unexpected schema — treat as "no missing
             // assets recorded" rather than propagating the parse error.
         }
+    }
+
+    /// <summary>Parses the stale-physics-config notices out of a
+    /// previously-stamped "Parameters" JSON. Empty when absent (older PNGs, or
+    /// renders with no broken physics links) or on any parse error. Kept
+    /// separate from <see cref="TryReadMissingAssets"/> on purpose: these are
+    /// informational (the render is correct) and must never count as missing
+    /// assets for the staleness checker.</summary>
+    public static List<string> TryReadPhysicsConfigNotices(string parametersJson)
+    {
+        var notices = new List<string>();
+        if (string.IsNullOrWhiteSpace(parametersJson)) return notices;
+        try
+        {
+            var obj = JObject.Parse(parametersJson);
+            ReadStringArray(obj, PhysicsConfigNoticesKey, notices);
+        }
+        catch
+        {
+            // Malformed JSON — treat as "no notices recorded".
+        }
+        return notices;
     }
 
     /// <summary>Parses the FaceGen-mismatch reason out of a previously-stamped

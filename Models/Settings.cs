@@ -601,6 +601,25 @@ public sealed class InternalMugshotSettings
     // silently culled (cleaner preview at the cost of hiding the failure).
     public bool RenderMissingTextureAsWireframe { get; set; } = true;
 
+    // Warning-icon visibility. Each gates one mugshot-tile warning icon AND
+    // whether its backing state is stamped into the PNG metadata at render
+    // time, so a mugshot generated while a toggle is off carries no trace of
+    // that warning class. Deliberately NOT part of the settings hash — instead
+    // MugshotStalenessChecker treats "stamp present while its toggle is off"
+    // as stale, so unchecking re-renders exactly the mugshots that were
+    // displaying that icon (once; the regen stamps clean and the check goes
+    // quiet). Re-checking cannot resurrect icons for PNGs rendered while off —
+    // the information was never recorded; those refresh only when something
+    // else re-stales them.
+    //
+    // ShowMissingNpcAssetsIcon: the missing meshes/textures/FaceGen-mismatch
+    // overlay. NOTE: while off, newly-rendered PNGs record no missing assets,
+    // so the "Re-render When: Missing Assets" auto-update has no signal for
+    // them. ShowMissingOutfitAssetsIcon: the stale-physics-config (broken
+    // SMP/HDT xml link) icon.
+    public bool ShowMissingNpcAssetsIcon { get; set; } = true;
+    public bool ShowMissingOutfitAssetsIcon { get; set; } = true;
+
     // Character-preview attire toggles (mesh-override channel; CharacterViewer.Rendering
     // neutral MeshOverride pipeline). Both resolve Mutagen Armor/Outfit/NPC records
     // host-side (NpcMeshResolver.ResolveAttireMeshOverrides) and feed the renderer's

@@ -282,6 +282,33 @@ public sealed class MugshotStalenessChecker
             }
         }
 
+        // Warning-icon visibility drift (ungated — a deliberate user action).
+        // A stamp present while its "Show ... Icon" toggle is OFF marks the
+        // PNG stale so it re-renders once WITHOUT the stamp (the generator
+        // gates stamping on the same toggle), after which this check goes
+        // quiet for it. The toggles are intentionally NOT in the settings
+        // hash: flipping one refreshes exactly the mugshots that were
+        // displaying that icon, not every mugshot. Turning a toggle back ON
+        // cannot resurrect icons for PNGs rendered while it was off — the
+        // information was never recorded.
+        if (!_settings.InternalMugshot.ShowMissingNpcAssetsIcon)
+        {
+            InternalMugshotMetadata.TryReadMissingAssets(
+                parametersJson, out var stampedMeshes, out var stampedTextures);
+            var stampedFaceGen = InternalMugshotMetadata.TryReadFaceGenMismatch(parametersJson);
+            if (stampedMeshes.Count > 0 || stampedTextures.Count > 0 || stampedFaceGen != null)
+            {
+                Trace($"  Internal: npc-assets icon disabled but PNG carries stamp (meshes={stampedMeshes.Count} textures={stampedTextures.Count} facegen={stampedFaceGen != null})");
+                return true;
+            }
+        }
+        if (!_settings.InternalMugshot.ShowMissingOutfitAssetsIcon &&
+            InternalMugshotMetadata.TryReadPhysicsConfigNotices(parametersJson).Count > 0)
+        {
+            Trace("  Internal: outfit-assets icon disabled but PNG carries physics-config notices");
+            return true;
+        }
+
         // Settings drift (gated on AutoUpdateStaleMugshots). The hash is
         // schema-versioned: each pipeline_schema bump is append-only, so
         // a v0 PNG's hash can be reproduced from current cfg by stopping

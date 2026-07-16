@@ -46,7 +46,7 @@
       <ProjectReference Include="..\..\SynthEBD\CharacterViewer.Rendering\CharacterViewer.Rendering.csproj" />
     </ItemGroup>
     <ItemGroup Condition="!Exists('..\..\SynthEBD\CharacterViewer.Rendering\CharacterViewer.Rendering.csproj')">
-      <PackageReference Include="SynthEBD.CharacterViewer.Rendering" Version="2.6.1" />
+      <PackageReference Include="SynthEBD.CharacterViewer.Rendering" Version="2.6.2" />
     </ItemGroup>
 
     <ItemGroup>
@@ -180,6 +180,10 @@
       </Resource>
       <None Remove="Resources\Missing Asset.png" />
       <Resource Include="Resources\Missing Asset.png">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Resource>
+      <None Remove="Resources\Missing Outfit Assets.png" />
+      <Resource Include="Resources\Missing Outfit Assets.png">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Resource>
       <None Remove="Resources\Contains Overrides.png" />

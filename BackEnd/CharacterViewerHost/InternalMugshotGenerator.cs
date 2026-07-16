@@ -112,7 +112,8 @@ public sealed class InternalMugshotGenerator
         List<string>? missingTexturePathsOut = null,
         bool assetValidatedOnly = false,
         List<string>? faceGenMismatchOut = null,
-        FormKey? targetNpcFormKey = null)
+        FormKey? targetNpcFormKey = null,
+        List<string>? physicsConfigNoticesOut = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int tid = Environment.CurrentManagedThreadId;
@@ -311,13 +312,21 @@ public sealed class InternalMugshotGenerator
             // StalePhysicsConfig is deliberately NOT folded: the mod's own
             // physics-XML link is broken but the render is correct, and nothing
             // the user installs can clear it — persisting it as a missing asset
-            // would re-stale this mugshot every session.
+            // would re-stale this mugshot every session. It is stamped under its
+            // own staleness-neutral metadata key instead, so the tile can show
+            // the informational outfit-asset icon across restarts.
+            List<string>? physicsConfigNotices = null;
             if (meshOverrideWarningsOut.Count > 0)
             {
                 Trace($"  meshOverrideWarnings tid={Environment.CurrentManagedThreadId} count={meshOverrideWarningsOut.Count}");
                 missingMeshPathsOut?.AddRange(meshOverrideWarningsOut
                     .Where(w => w.Kind != MeshOverrideWarningKind.StalePhysicsConfig)
                     .Select(w => w.Message));
+                physicsConfigNotices = meshOverrideWarningsOut
+                    .Where(w => w.Kind == MeshOverrideWarningKind.StalePhysicsConfig)
+                    .Select(w => w.Message).ToList();
+                if (physicsConfigNotices.Count > 0)
+                    physicsConfigNoticesOut?.AddRange(physicsConfigNotices);
             }
 
             // FaceGen-vs-records consistency. CV.R renders the baked FaceGen geometry
@@ -362,11 +371,22 @@ public sealed class InternalMugshotGenerator
             // them back on load).
             try
             {
+                // Warning-icon visibility gates the STAMP, not the out-lists:
+                // callers still receive the diagnostics (assetValidatedOnly
+                // gating, logs), but a PNG rendered while a toggle is off
+                // carries no trace of that warning class — which is what lets
+                // MugshotStalenessChecker's toggle-off check settle after one
+                // regeneration instead of looping.
+                bool stampNpcAssets = _settings.InternalMugshot.ShowMissingNpcAssetsIcon;
+                bool stampOutfitNotices = _settings.InternalMugshot.ShowMissingOutfitAssetsIcon;
                 var parametersJson = InternalMugshotMetadata.Build(
                     npcFormKey, _settings.InternalMugshot,
                     effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear,
                     outfitDisplay.IdentityStamp,
-                    missingMeshPathsOut, missingTexturePathsOut, faceGenMismatch);
+                    stampNpcAssets ? missingMeshPathsOut : null,
+                    stampNpcAssets ? missingTexturePathsOut : null,
+                    stampNpcAssets ? faceGenMismatch : null,
+                    stampOutfitNotices ? physicsConfigNotices : null);
                 MugshotPngMetadata.InjectParameters(outputPath, parametersJson);
             }
             catch (Exception metaEx)

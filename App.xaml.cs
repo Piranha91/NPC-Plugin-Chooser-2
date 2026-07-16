@@ -428,7 +428,13 @@ namespace NPC_Plugin_Chooser_2
             // OffscreenRenderRequest.Exposure). It degrades gracefully on an
             // older renderer (the property is simply absent / defaults), so
             // this stays a soft warning rather than a hard requirement.
-            var requiredViewerVersion = new Version(2, 5, 19);
+            // 2.6.2 added the structured mesh-override warnings
+            // (MeshOverrideWarning / OffscreenRenderRequest
+            // .MeshOverrideWarningDetailsOut) that the stale-physics-config
+            // icon and its staleness exemption are built on — this build
+            // compiles against those types, so an older DLL won't load at all;
+            // the warning documents the floor for the bundled-DLL swap case.
+            var requiredViewerVersion = new Version(2, 6, 2);
             if (CharacterViewerRendering.Version < requiredViewerVersion)
             {
                 StartupLogger.Log(

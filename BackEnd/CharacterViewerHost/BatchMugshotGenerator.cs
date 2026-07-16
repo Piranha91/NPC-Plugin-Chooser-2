@@ -66,6 +66,14 @@ public sealed record GenerationResult(
     /// Non-positional so the many existing constructor call sites are unaffected.</summary>
     public string? FaceGenMismatch { get; init; }
 
+    /// <summary>Stale-physics-config notices (an attire mesh links an SMP/HDT
+    /// physics XML that doesn't exist) detected at render time, or read back
+    /// from a cached PNG's staleness-neutral metadata key. Informational only:
+    /// the render is correct, so these never count as missing assets and never
+    /// re-stale the mugshot. Non-positional like <see cref="FaceGenMismatch"/>
+    /// so existing constructor call sites are unaffected.</summary>
+    public IReadOnlyList<string> PhysicsConfigNotices { get; init; } = Array.Empty<string>();
+
     public bool ProducedFile => OutputPath != null && (Generated || AlreadyCurrent);
     public bool ProducedAnything => ProducedFile || InMemoryImageBytes != null;
 }
@@ -530,12 +538,14 @@ public sealed class BatchMugshotGenerator
                     var json = MugshotPngMetadata.TryRead(savePath);
                     List<string> existingMeshes = new();
                     List<string> existingTextures = new();
+                    List<string> existingPhysicsNotices = new();
                     string? existingFaceGenMismatch = null;
                     if (!string.IsNullOrWhiteSpace(json))
                     {
                         InternalMugshotMetadata.TryReadMissingAssets(
                             json, out existingMeshes, out existingTextures);
                         existingFaceGenMismatch = InternalMugshotMetadata.TryReadFaceGenMismatch(json);
+                        existingPhysicsNotices = InternalMugshotMetadata.TryReadPhysicsConfigNotices(json);
                     }
                     return new GenerationResult(
                         Generated: false, AlreadyCurrent: true, OutputPath: savePath,
@@ -544,15 +554,16 @@ public sealed class BatchMugshotGenerator
                         MissingTextures: existingTextures,
                         FaceFinderExternalUrl: null,
                         InMemoryImageBytes: null)
-                    { FaceGenMismatch = existingFaceGenMismatch };
+                    { FaceGenMismatch = existingFaceGenMismatch, PhysicsConfigNotices = existingPhysicsNotices };
                 }
 
                 var missingMeshes = new List<string>();
                 var missingTextures = new List<string>();
                 var faceGenMismatch = new List<string>();
+                var physicsNotices = new List<string>();
                 bool generated = await _internalGenerator.GenerateAsync(
                     npcFormKey, sourceMod, savePath, token, missingMeshes, missingTextures,
-                    assetValidatedOnly, faceGenMismatch, targetNpcFormKey);
+                    assetValidatedOnly, faceGenMismatch, targetNpcFormKey, physicsNotices);
                 return new GenerationResult(
                     Generated: generated,
                     AlreadyCurrent: false,
@@ -562,7 +573,7 @@ public sealed class BatchMugshotGenerator
                     MissingTextures: missingTextures,
                     FaceFinderExternalUrl: null,
                     InMemoryImageBytes: null)
-                { FaceGenMismatch = faceGenMismatch.Count > 0 ? faceGenMismatch[0] : null };
+                { FaceGenMismatch = faceGenMismatch.Count > 0 ? faceGenMismatch[0] : null, PhysicsConfigNotices = physicsNotices };
             }
             else
             {

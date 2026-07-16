@@ -162,6 +162,12 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     /// as non-persistent per-view overrides seeded from these.</summary>
     [Reactive] public bool InternalIncludeDefaultOutfit { get; set; }
     [Reactive] public bool InternalIncludeHeadgear { get; set; }
+    /// <summary>Warning-icon visibility (mugshot tiles). Each also gates the
+    /// stamping of its warning class into PNG metadata; unchecking re-stales
+    /// exactly the mugshots that were displaying that icon (see
+    /// MugshotStalenessChecker's icon-visibility drift check).</summary>
+    [Reactive] public bool InternalShowMissingNpcAssetsIcon { get; set; }
+    [Reactive] public bool InternalShowMissingOutfitAssetsIcon { get; set; }
     /// <summary>SolidColorBrush wrapping InternalMugshot.BackgroundR/G/B.
     /// Surfaced as a single property so the SettingsView color-picker swatch
     /// + "Change..." button can mirror the legacy Portrait Creator's UI shape
@@ -570,6 +576,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         InternalIncludeAccessories = _model.InternalMugshot.IncludeAccessories;
         InternalIncludeDefaultOutfit = _model.InternalMugshot.IncludeDefaultOutfit;
         InternalIncludeHeadgear = _model.InternalMugshot.IncludeHeadgear;
+        InternalShowMissingNpcAssetsIcon = _model.InternalMugshot.ShowMissingNpcAssetsIcon;
+        InternalShowMissingOutfitAssetsIcon = _model.InternalMugshot.ShowMissingOutfitAssetsIcon;
         InternalBackgroundColor = new SolidColorBrush(Color.FromRgb(
             _model.InternalMugshot.BackgroundR,
             _model.InternalMugshot.BackgroundG,
@@ -956,6 +964,14 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 RequestThrottledSave();
                 InternalMugshotPreviewVM?.ReapplyAttireFromSettings();
             }).DisposeWith(_disposables);
+
+        // Warning-icon visibility: write-through + save. Tiles pick the new
+        // value up on their next apply/reload; unchecking additionally
+        // re-stales stamped mugshots via MugshotStalenessChecker.
+        this.WhenAnyValue(x => x.InternalShowMissingNpcAssetsIcon).Skip(1)
+            .Subscribe(b => { _model.InternalMugshot.ShowMissingNpcAssetsIcon = b; RequestThrottledSave(); }).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.InternalShowMissingOutfitAssetsIcon).Skip(1)
+            .Subscribe(b => { _model.InternalMugshot.ShowMissingOutfitAssetsIcon = b; RequestThrottledSave(); }).DisposeWith(_disposables);
 
         // --- FaceGen Analysis persistence ---
         this.WhenAnyValue(x => x.EnableFaceGenAnalysis).Skip(1)

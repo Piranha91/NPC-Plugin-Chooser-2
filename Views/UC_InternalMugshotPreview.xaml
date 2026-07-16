@@ -107,14 +107,18 @@
                 </Border>
                 <!-- Stale physics config: the mod links an SMP/HDT xml that
                      doesn't exist. Render is correct, so this is informational
-                     (never persisted, never re-stales a mugshot). The 🛈 glyph
-                     is a PLACEHOLDER icon, to be replaced with final art. -->
+                     (stamped under a staleness-neutral metadata key; never
+                     re-stales a mugshot). -->
                 <Border HorizontalAlignment="Right" Margin="0,4,0,0"
                         Background="#C0305870" CornerRadius="4" Padding="6,3"
                         ToolTip="{Binding PhysicsConfigNoticeText}"
                         Visibility="{Binding HasPhysicsConfigNotice, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
-                    <TextBlock Text="🛈 An attire mesh has a broken physics link" Foreground="White"
-                               FontWeight="SemiBold"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Image Source="/NPC Plugin Chooser 2;component/Resources/Missing Outfit Assets.png"
+                               Height="16" Margin="0,0,4,0"/>
+                        <TextBlock Text="An attire mesh has a broken physics link" Foreground="White"
+                                   FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
                 </Border>
             </StackPanel>
 
