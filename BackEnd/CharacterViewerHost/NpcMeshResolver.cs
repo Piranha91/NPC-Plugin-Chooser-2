@@ -883,6 +883,17 @@ public class NpcMeshResolver
                 LogVerbose("CharacterViewer: ARMA " + armaLink.FormKey + " AlternateTextures resolved ("
                     + specs.Count + "): "
                     + string.Join(", ", specs.Select(s => "[" + s.ShapeIndex + "]'" + s.ShapeName + "'")));
+                // Slot-path dump (post-rebase: an absolute path means the TXST
+                // was redirected into the selected mod's folders). Logged here —
+                // inside the resolve phase's guaranteed capture window — so the
+                // handed-over TXST contents are documented even if the renderer's
+                // own apply trace is lost (it runs later, on a render tick).
+                if (_logGate != null && _logGate.Verbose)
+                    foreach (var spec in specs)
+                        LogVerbose("CharacterViewer:   altTex [3D index " + spec.ShapeIndex
+                            + "] name='" + spec.ShapeName + "' slots {"
+                            + string.Join(", ", spec.Textures.OrderBy(kv => kv.Key)
+                                .Select(kv => kv.Key + "=" + kv.Value)) + "}");
             }
 
             var kind = isHead ? MeshOverrideKind.Headgear : MeshOverrideKind.Armor;
@@ -1319,10 +1330,11 @@ public class NpcMeshResolver
     }
 
     /// <summary>Reads a TextureSet's slot paths into <paramref name="slots"/> using
-    /// the renderer's slot indices (0 diffuse, 1 normal/gloss, 2 glow/detail,
-    /// 3 height, 4 environment, 5 multilayer, 7 backlight/specular), prefixing a
-    /// bare "textures\" root when the TXST stores a Data-relative path without it.
-    /// Shared by the SkinTexture and AlternateTextures resolvers.</summary>
+    /// the renderer's NIF-order slot indices (0 diffuse, 1 normal/gloss,
+    /// 2 glow/subsurface, 3 height, 4 environment cubemap, 5 environment mask,
+    /// 6 multilayer/inner, 7 backlight/specular), prefixing a bare "textures\"
+    /// root when the TXST stores a Data-relative path without it. Shared by the
+    /// SkinTexture and AlternateTextures resolvers.</summary>
     private static void PopulateTxstSlots(ITextureSetGetter txst, Dictionary<int, string> slots)
     {
         void TryAdd(int slot, string? path)
@@ -1339,10 +1351,23 @@ public class NpcMeshResolver
 
         TryAdd(0, txst.Diffuse?.DataRelativePath.Path);
         TryAdd(1, txst.NormalOrGloss?.DataRelativePath.Path);
+        // TX02 is dual-purpose by shader type: subsurface (_sk) for skin
+        // shaders (renderer slot 2) and environment mask (_m) for env-mapped
+        // gear (renderer slot 5). Write it to both; a TXST that also authors
+        // TX03 (glow/detail) wins slot 2 below. Dropping TX02 (the previous
+        // behavior) left an AlternateTextures variant reflecting its new
+        // cubemap through the NIF's STALE embedded env mask — the Caenarvon
+        // Gala dress rendered gold instead of navy because the default
+        // colorway's high-reflectivity mask stayed bound under the variant's
+        // gold cubemap.
+        TryAdd(2, txst.EnvironmentMaskOrSubsurfaceTint?.DataRelativePath.Path);
+        TryAdd(5, txst.EnvironmentMaskOrSubsurfaceTint?.DataRelativePath.Path);
         TryAdd(2, txst.GlowOrDetailMap?.DataRelativePath.Path);
         TryAdd(3, txst.Height?.DataRelativePath.Path);
         TryAdd(4, txst.Environment?.DataRelativePath.Path);
-        TryAdd(5, txst.Multilayer?.DataRelativePath.Path);
+        // NIF slot 6 (inner/multilayer) — previously written to 5, where it
+        // would have stomped the environment mask.
+        TryAdd(6, txst.Multilayer?.DataRelativePath.Path);
         TryAdd(7, txst.BacklightMaskOrSpecular?.DataRelativePath.Path);
     }
 

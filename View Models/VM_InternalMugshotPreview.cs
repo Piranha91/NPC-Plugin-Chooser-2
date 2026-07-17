@@ -142,6 +142,15 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     /// outfit distribution against the right NPC.</summary>
     private FormKey? _lastExplicitTargetNpcFormKey;
 
+    // Active render-log capture session (see BeginRenderLogSession). Held past
+    // LoadAsync because the renderer-side work the log exists to document
+    // (scene build, attire mesh overrides, AlternateTextures matching, texture
+    // loads) drains on a later render tick; closed on the SceneCommitted that
+    // follows the load. The generation counter keeps a stale commit from a
+    // superseded load from closing the newer load's session.
+    private IDisposable? _renderLogCaptureScope;
+    private int _renderLogCaptureGeneration;
+
     public ReactiveCommand<Unit, Unit> LoadSelectedNpcCommand { get; }
     public ReactiveCommand<Unit, Unit> ResetCommand { get; }
 
@@ -347,11 +356,24 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
 
     private void OnViewerSceneCommitted()
     {
+        // Snapshot the session generation on the event (render) thread; the
+        // dispatched close is a no-op if a newer load has begun a new session
+        // by the time it runs.
+        int captureGeneration = _renderLogCaptureGeneration;
+        void Handle()
+        {
+            UpdateMeshOverrideWarning();
+            // The commit that follows a load is when the queued attire
+            // overrides have drained (mesh build, AlternateTextures matching,
+            // texture loads) — the render-log session can close now that the
+            // full apply trace has been captured.
+            EndRenderLogSession(captureGeneration);
+        }
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher != null && !dispatcher.CheckAccess())
-            dispatcher.BeginInvoke(new Action(UpdateMeshOverrideWarning));
+            dispatcher.BeginInvoke(new Action(Handle));
         else
-            UpdateMeshOverrideWarning();
+            Handle();
     }
 
     /// <summary>Re-applies the attire/headgear overrides after a toggle flip.
@@ -443,7 +465,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
 
         _lastExplicitModSetting = null;
         _lastExplicitTargetNpcFormKey = null;
-        using var captureScope = MaybeStartRenderLogCapture(formKey, modName: "ActiveSelection");
+        BeginRenderLogSession(formKey, modName: "ActiveSelection");
         try
         {
             StatusText = $"Loading {formKey}…";
@@ -476,6 +498,9 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         {
             StatusText = $"Load failed: {ex.Message}";
             System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: " + ExceptionLogger.GetExceptionStack(ex));
+            // A failed load may never reach SceneCommitted — close the session
+            // here so the log gate isn't left forced-on indefinitely.
+            EndRenderLogSession(_renderLogCaptureGeneration);
         }
     }
 
@@ -501,7 +526,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
 
         _lastExplicitModSetting = modSetting;
         _lastExplicitTargetNpcFormKey = targetNpcFormKey;
-        using var captureScope = MaybeStartRenderLogCapture(formKey, modSetting?.DisplayName ?? "Unscoped");
+        BeginRenderLogSession(formKey, modSetting?.DisplayName ?? "Unscoped");
         try
         {
             StatusText = $"Loading {formKey}…";
@@ -537,6 +562,9 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         {
             StatusText = $"Load failed: {ex.Message}";
             System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: " + ExceptionLogger.GetExceptionStack(ex));
+            // A failed load may never reach SceneCommitted — close the session
+            // here so the log gate isn't left forced-on indefinitely.
+            EndRenderLogSession(_renderLogCaptureGeneration);
         }
     }
 
@@ -568,13 +596,42 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         }
     }
 
+    /// <summary>Begins a render-log session for one preview load: closes any
+    /// prior session, then opens the capture via
+    /// <see cref="MaybeStartRenderLogCapture"/>. Ended by the SceneCommitted
+    /// that follows the load (<see cref="OnViewerSceneCommitted"/>), by the
+    /// load's catch block, by the next load, or by <see cref="Dispose"/> —
+    /// NOT by LoadAsync returning, because the renderer applies the scene and
+    /// the attire overrides on a later render tick and the capture must span
+    /// that work to document outfit asset resolution.</summary>
+    private void BeginRenderLogSession(FormKey formKey, string modName)
+    {
+        _renderLogCaptureScope?.Dispose();
+        _renderLogCaptureGeneration++;
+        _renderLogCaptureScope = MaybeStartRenderLogCapture(formKey, modName);
+    }
+
+    /// <summary>Closes the active render-log session if
+    /// <paramref name="generation"/> still identifies it; a stale generation
+    /// (a newer load already began its own session) is a no-op. Always called
+    /// on the UI thread (LoadAsync flow or dispatched from SceneCommitted), so
+    /// no locking is needed.</summary>
+    private void EndRenderLogSession(int generation)
+    {
+        if (generation != _renderLogCaptureGeneration) return;
+        var scope = _renderLogCaptureScope;
+        _renderLogCaptureScope = null;
+        scope?.Dispose();
+    }
+
     /// <summary>If <see cref="InternalMugshotSettings.LogRenderLogic"/> is on,
     /// opens a per-render capture session writing to
     /// <c>&lt;ExeDir&gt;\RenderLogs\&lt;modName&gt;_&lt;NpcLabel&gt;_Preview.txt</c> and forces the
     /// shared <see cref="CharacterViewerLogGate.Verbose"/> flag on for the
     /// session's duration. Disposing the returned scope flushes the file and
     /// restores the prior verbose state. When the toggle is off, returns a
-    /// no-op disposable so callers can <c>using var</c> unconditionally.</summary>
+    /// no-op disposable. Lifecycle is owned by
+    /// <see cref="BeginRenderLogSession"/>/<see cref="EndRenderLogSession"/>.</summary>
     private IDisposable MaybeStartRenderLogCapture(FormKey formKey, string modName)
     {
         if (!_settings.InternalMugshot.LogRenderLogic) return EmptyDisposable.Instance;
@@ -684,6 +741,8 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     {
         Viewer.GlContextReset -= OnViewerGlContextReset;
         Viewer.SceneCommitted -= OnViewerSceneCommitted;
+        _renderLogCaptureScope?.Dispose();
+        _renderLogCaptureScope = null;
         _disposables.Dispose();
         Viewer.Dispose();
     }
