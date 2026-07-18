@@ -1,0 +1,23 @@
+{
+  "outputDirectory": "S:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2\\Docs\\RenderReference\\baseline",
+  "exitWhenDone": true,
+  "burnInRenders": 1,
+  "renders": [
+    { "modName": "Pandorable's NPCs", "npcFormKey": "01326A:Skyrim.esm", "fileName": "r1-elisif-gala.png" },
+    { "modName": "Northbourne NPCs of Haafingar", "npcFormKey": "0132AB:Skyrim.esm", "fileName": "r2-taarie.png" },
+    { "modName": "Legacy of the Dragonborn SSE", "npcFormKey": "121460:LegacyoftheDragonborn.esm", "fileName": "r7-shadowhunter.png" },
+    { "modName": "Gore - A Companion Mod", "npcFormKey": "000D63:GORE.esp", "fileName": "r8-gore.png" }
+  ],
+  "variants": [
+    { "name": "ref", "settings": {
+        "IncludeDefaultOutfit": true,
+        "IncludeHeadgear": true,
+        "CameraMode": "Manual",
+        "ManualDistance": 260,
+        "ManualAzimuth": 180,
+        "ManualElevation": 0,
+        "ManualTargetY": 90,
+        "OutputWidth": 720,
+        "OutputHeight": 1080 } }
+  ]
+}

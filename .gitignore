@@ -24,3 +24,9 @@ FodyWeavers.xsd
 .claude/settings.local.json
 
 NPC Plugin Chooser 2_azcom00l_wpftmp.csproj
+
+# Rendered NPC imagery stays out of the repo (SFW policy): render-audit
+# evidence composites and the regression baseline PNGs are generated
+# locally by the harness configs in Docs/RenderReference.
+Docs/Screenshots/OutfitAudit/
+Docs/RenderReference/baseline/

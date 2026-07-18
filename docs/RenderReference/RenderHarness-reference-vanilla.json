@@ -1,0 +1,26 @@
+{
+  "outputDirectory": "S:\\Dev\\NPC Plugin Chooser 2\\NPC Plugin Chooser 2\\Docs\\RenderReference\\baseline",
+  "exitWhenDone": true,
+  "burnInRenders": 1,
+  "renders": [
+    { "modName": "Base Game", "npcFormKey": "00A877:Dawnguard.esm", "fileName": "r3-gelebor.png" },
+    { "modName": "Base Game", "npcFormKey": "01B1DB:Skyrim.esm", "fileName": "r4-risaad.png" },
+    { "modName": "Base Game", "npcFormKey": "013BA3:Skyrim.esm", "fileName": "r6-hulda.png" },
+    { "modName": "Base Game", "npcFormKey": "044313:Skyrim.esm", "fileName": "s1-briarheart.png" },
+    { "modName": "Base Game", "npcFormKey": "01B1D9:Skyrim.esm", "fileName": "s2-khayla.png" },
+    { "modName": "Creation Club", "npcFormKey": "00081E:ccEDHSSE003-Redguard.esl", "fileName": "s3-azadi.png" },
+    { "modName": "Base Game", "npcFormKey": "0E0CDD:Skyrim.esm", "fileName": "s4-nightingale.png" }
+  ],
+  "variants": [
+    { "name": "ref", "settings": {
+        "IncludeDefaultOutfit": true,
+        "IncludeHeadgear": true,
+        "CameraMode": "Manual",
+        "ManualDistance": 260,
+        "ManualAzimuth": 180,
+        "ManualElevation": 0,
+        "ManualTargetY": 90,
+        "OutputWidth": 720,
+        "OutputHeight": 1080 } }
+  ]
+}
