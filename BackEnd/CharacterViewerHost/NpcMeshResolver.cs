@@ -1362,7 +1362,14 @@ public class NpcMeshResolver
         // gold cubemap.
         TryAdd(2, txst.EnvironmentMaskOrSubsurfaceTint?.DataRelativePath.Path);
         TryAdd(5, txst.EnvironmentMaskOrSubsurfaceTint?.DataRelativePath.Path);
-        TryAdd(2, txst.GlowOrDetailMap?.DataRelativePath.Path);
+        // TX03 (Glow/Detail) goes to slot 3 (detail/parallax), NOT slot 2:
+        // the renderer's slot 2 is the skin/SSS sampler for skin shaders, and
+        // vanilla beast skin TXSTs author BOTH TX02 (_sk) and TX03 — routing
+        // TX03 to slot 2 clobbered the subsurface map (AUD-2). Slot 2 as a
+        // GLOW sampler is unimplemented (AUD-4), so nothing is lost for glow
+        // shapes. TX04 (Height) is written after so an explicit height map
+        // wins slot 3 over a detail map in the (pathological) both-authored case.
+        TryAdd(3, txst.GlowOrDetailMap?.DataRelativePath.Path);
         TryAdd(3, txst.Height?.DataRelativePath.Path);
         TryAdd(4, txst.Environment?.DataRelativePath.Path);
         // NIF slot 6 (inner/multilayer) — previously written to 5, where it
