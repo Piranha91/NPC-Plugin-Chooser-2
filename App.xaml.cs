@@ -507,6 +507,20 @@ namespace NPC_Plugin_Chooser_2
                 StartupLogger.Log($"Render harness finished (exitRequested={_renderHarnessExitRequested})");
             }
 
+            // Outfit-rendering audit scan: AuditScan.json next to the exe walks
+            // every NPC's outfit records + world-model NIFs and writes a CSV of
+            // records affected by the audit findings (AUD-1..7). Run through
+            // MO2 so it sees the real modlist. See AuditScanRunner and
+            // Docs/OutfitRenderingAudit-2026-07.md.
+            if (AuditScanRunner.ConfigExists)
+            {
+                StartupLogger.Log("AuditScan.json detected — running outfit-rendering audit scan");
+                splashVM.UpdateProgress(90, "Running audit scan...");
+                bool auditExitRequested = await AuditScanRunner.RunAsync(container);
+                _renderHarnessExitRequested = _renderHarnessExitRequested || auditExitRequested;
+                StartupLogger.Log("Audit scan finished");
+            }
+
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
             return container;
         }
