@@ -449,6 +449,21 @@ public class NpcMeshResolver
             }
         }
 
+        // Eyeball shape names from the resolved HeadPart records — the
+        // authoritative IsEye input for the renderer. Custom eyes authored as
+        // BSLSP_ENVMAP with unconventional shape names (FoxGlove Auri's
+        // "FoxGloveEyeMesh") evade the renderer's plural-"Eyes" name
+        // heuristic and would receive eye-socket SSAO plus lose the
+        // catchlight; the baked FaceGen shape is named after the head part's
+        // EditorID, so this set identifies them exactly.
+        var eyeShapeNames = FaceGenConsistencyAnalyzer.CollectShapeNamesOfType(
+            npcGetter,
+            fk => ResolveRecord<IHeadPartGetter>(fk.ToLink<IHeadPartGetter>(), linkCache, context),
+            fk => ResolveRecord<IRaceGetter>(fk.ToLink<IRaceGetter>(), linkCache, context),
+            HeadPart.TypeEnum.Eyes);
+        if (eyeShapeNames.Count > 0)
+            LogVerbose("CharacterViewer: Eyes HeadPart shape name(s): " + string.Join(", ", eyeShapeNames));
+
         // Final pass: rebase any path that exists as a loose file under one of
         // the context's mod folders to its absolute disk path. The renderer's
         // GameAssetResolver passes rooted paths through unchanged; everything
@@ -498,6 +513,7 @@ public class NpcMeshResolver
             NpcWeight = weight,
             NpcBaseHeight = baseHeight,
             HairColorRgb = hairRgb,
+            EyeShapeNames = eyeShapeNames,
         };
     }
 

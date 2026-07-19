@@ -1,5 +1,8 @@
 using FluentAssertions;
+using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Records;
+using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Tests.TestSupport;
 using Xunit;
@@ -392,6 +395,122 @@ public class FaceGenConsistencyAnalyzerResultTests
     public void IsGenericNode_TruthTable(string shapeName, string? primary, bool expected)
     {
         IsGenericNode(shapeName, primary).Should().Be(expected);
+    }
+
+    // ---- CollectShapeNamesOfType (public static; in-memory Mutagen records) -----------------
+    //
+    // Feeds ResolvedNpcMeshPaths.EyeShapeNames — the renderer's authoritative IsEye input.
+    // Motivating case: FoxGlove Auri's eyeball is an ENVMAP-typed shape named "FoxGloveEyeMesh"
+    // (singular), which evades the renderer's plural-"Eyes" name heuristic and received
+    // eye-socket SSAO until classified via its HeadPart record here.
+
+    private static Func<FormKey, IHeadPartGetter?> Resolver(params HeadPart[] parts)
+    {
+        var map = parts.ToDictionary(p => p.FormKey, p => (IHeadPartGetter)p);
+        return fk => map.TryGetValue(fk, out var hp) ? hp : null;
+    }
+
+    private static HeadPart NewHeadPart(
+        SkyrimMod mod, string editorId, HeadPart.TypeEnum? type)
+    {
+        var hp = mod.HeadParts.AddNew();
+        hp.EditorID = editorId;
+        hp.Type = type;
+        return hp;
+    }
+
+    [Fact]
+    public void CollectShapeNamesOfType_CollectsTypedPartAndItsExtraParts_ExcludesOtherTypes()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var eyes = NewHeadPart(mod, "FoxGloveEyeMesh", HeadPart.TypeEnum.Eyes);
+        var extra = NewHeadPart(mod, "FoxGloveEyeExtra", null); // Extra Parts are typically untyped
+        var hair = NewHeadPart(mod, "HairShape", HeadPart.TypeEnum.Hair);
+        eyes.ExtraParts.Add(extra.FormKey.ToLink<IHeadPartGetter>());
+
+        var npc = MutagenFixtures.NewNpc(mod);
+        npc.HeadParts.Add(eyes.FormKey.ToLink<IHeadPartGetter>());
+        npc.HeadParts.Add(hair.FormKey.ToLink<IHeadPartGetter>());
+
+        var names = FaceGenConsistencyAnalyzer.CollectShapeNamesOfType(
+            npc, Resolver(eyes, extra, hair), _ => null, HeadPart.TypeEnum.Eyes);
+
+        names.Should().BeEquivalentTo(new[] { "FoxGloveEyeMesh", "FoxGloveEyeExtra" });
+        names.Contains("foxgloveeyemesh").Should().BeTrue("shape-name reconciliation is case-insensitive");
+    }
+
+    [Fact]
+    public void CollectShapeNamesOfType_FallsBackToRaceDefault_WhenNpcLacksSlot()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var raceEyes = NewHeadPart(mod, "RaceEyesDefault", HeadPart.TypeEnum.Eyes);
+        var race = MutagenFixtures.NewRace(mod, "TestRace");
+        var headData = new HeadData();
+        var hpRef = new HeadPartReference();
+        hpRef.Head.SetTo(raceEyes.FormKey);
+        headData.HeadParts.Add(hpRef);
+        race.HeadData = new GenderedItem<HeadData?>(headData, null);
+
+        var npc = MutagenFixtures.NewNpc(mod, race: race); // male by default, no own eyes
+
+        var names = FaceGenConsistencyAnalyzer.CollectShapeNamesOfType(
+            npc, Resolver(raceEyes), _ => race, HeadPart.TypeEnum.Eyes);
+
+        names.Should().BeEquivalentTo(new[] { "RaceEyesDefault" });
+    }
+
+    [Fact]
+    public void CollectShapeNamesOfType_SkipsRaceDefault_WhenNpcOccupiesSlot()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npcEyes = NewHeadPart(mod, "NpcEyes", HeadPart.TypeEnum.Eyes);
+        var raceEyes = NewHeadPart(mod, "RaceEyesDefault", HeadPart.TypeEnum.Eyes);
+        var race = MutagenFixtures.NewRace(mod, "TestRace");
+        var headData = new HeadData();
+        var hpRef = new HeadPartReference();
+        hpRef.Head.SetTo(raceEyes.FormKey);
+        headData.HeadParts.Add(hpRef);
+        race.HeadData = new GenderedItem<HeadData?>(headData, null);
+
+        var npc = MutagenFixtures.NewNpc(mod, race: race);
+        npc.HeadParts.Add(npcEyes.FormKey.ToLink<IHeadPartGetter>());
+
+        var names = FaceGenConsistencyAnalyzer.CollectShapeNamesOfType(
+            npc, Resolver(npcEyes, raceEyes), _ => race, HeadPart.TypeEnum.Eyes);
+
+        names.Should().BeEquivalentTo(new[] { "NpcEyes" });
+    }
+
+    [Fact]
+    public void CollectShapeNamesOfType_CircularExtraParts_Terminates()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var eyes = NewHeadPart(mod, "LoopingEyes", HeadPart.TypeEnum.Eyes);
+        eyes.ExtraParts.Add(eyes.FormKey.ToLink<IHeadPartGetter>()); // self-referencing Extra Part
+
+        var npc = MutagenFixtures.NewNpc(mod);
+        npc.HeadParts.Add(eyes.FormKey.ToLink<IHeadPartGetter>());
+
+        var names = FaceGenConsistencyAnalyzer.CollectShapeNamesOfType(
+            npc, Resolver(eyes), _ => null, HeadPart.TypeEnum.Eyes);
+
+        names.Should().BeEquivalentTo(new[] { "LoopingEyes" });
+    }
+
+    [Fact]
+    public void CollectShapeNamesOfType_UnresolvableAndNullLinks_AreSkipped()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var eyes = NewHeadPart(mod, "GoodEyes", HeadPart.TypeEnum.Eyes);
+
+        var npc = MutagenFixtures.NewNpc(mod);
+        npc.HeadParts.Add(eyes.FormKey.ToLink<IHeadPartGetter>());
+        npc.HeadParts.Add(MutagenFixtures.Fk("0DEAD0:Missing.esp").ToLink<IHeadPartGetter>());
+
+        var names = FaceGenConsistencyAnalyzer.CollectShapeNamesOfType(
+            npc, Resolver(eyes), _ => null, HeadPart.TypeEnum.Eyes);
+
+        names.Should().BeEquivalentTo(new[] { "GoodEyes" });
     }
 
     // NOTE: FaceGenConsistencyAnalyzer.Analyze / GetSurvey / CachedSurvey not covered:

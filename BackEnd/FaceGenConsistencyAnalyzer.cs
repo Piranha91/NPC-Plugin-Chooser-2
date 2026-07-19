@@ -285,6 +285,77 @@ public sealed class FaceGenConsistencyAnalyzer
         };
     }
 
+    /// <summary>
+    /// Collects the FaceGen shape names that belong to head parts of
+    /// <paramref name="type"/> for this NPC: the EditorIDs of every effective
+    /// head part of that type plus, recursively, their Extra Parts — the
+    /// Creation Kit bakes each geometry-bearing part as a shape named after
+    /// its EditorID, and Extra Parts inherit the classification of the typed
+    /// part that references them (their own Type is typically null/Misc).
+    /// "Effective" mirrors <see cref="Analyze"/>: the NPC's own head parts,
+    /// plus the race's defaults for any slot Type the NPC does not occupy.
+    /// The returned set is OrdinalIgnoreCase to match the engine's
+    /// case-insensitive shape-name/EditorID reconciliation. Feeds
+    /// <see cref="ResolvedNpcMeshPaths.EyeShapeNames"/> (authoritative
+    /// renderer IsEye classification) when called with
+    /// <see cref="HeadPart.TypeEnum.Eyes"/>.
+    /// </summary>
+    public static HashSet<string> CollectShapeNamesOfType(
+        INpcGetter npc,
+        System.Func<FormKey, IHeadPartGetter?> resolveHeadPart,
+        System.Func<FormKey, IRaceGetter?> resolveRace,
+        HeadPart.TypeEnum type)
+    {
+        var names = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        var visited = new HashSet<FormKey>();
+
+        void Collect(IFormLinkGetter<IHeadPartGetter>? link)
+        {
+            if (link is null || link.IsNull || !visited.Add(link.FormKey)) return;
+            var hp = resolveHeadPart(link.FormKey);
+            if (hp is null) return;
+            if (!string.IsNullOrEmpty(hp.EditorID)) names.Add(hp.EditorID!);
+            if (hp.ExtraParts != null)
+                foreach (var ep in hp.ExtraParts) Collect(ep);
+        }
+
+        // NPC's own head parts; record the slot Types it occupies so race
+        // defaults for those slots are skipped, same as Analyze.
+        var npcSlotTypes = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        if (npc.HeadParts != null)
+        {
+            foreach (var link in npc.HeadParts)
+            {
+                if (link == null || link.IsNull) continue;
+                var hp = resolveHeadPart(link.FormKey);
+                var slot = hp?.Type.ToString();
+                if (!string.IsNullOrEmpty(slot)) npcSlotTypes.Add(slot!);
+                if (hp?.Type == type) Collect(link);
+            }
+        }
+
+        var race = npc.Race.IsNull ? null : resolveRace(npc.Race.FormKey);
+        if (race != null)
+        {
+            var headData = Auxilliary.IsFemale(npc) ? race.HeadData?.Female : race.HeadData?.Male;
+            if (headData?.HeadParts != null)
+            {
+                foreach (var hpRef in headData.HeadParts)
+                {
+                    var link = hpRef.Head;
+                    if (link.IsNull) continue;
+                    var hp = resolveHeadPart(link.FormKey);
+                    if (hp is null) continue;
+                    var slot = hp.Type.ToString();
+                    if (!string.IsNullOrEmpty(slot) && npcSlotTypes.Contains(slot!)) continue;
+                    if (hp.Type == type) Collect(link);
+                }
+            }
+        }
+
+        return names;
+    }
+
     private static bool IsGenericNode(string shapeName, string? primaryHeadShapeName)
     {
         if (!string.IsNullOrEmpty(primaryHeadShapeName) &&
