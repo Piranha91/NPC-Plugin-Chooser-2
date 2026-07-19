@@ -476,10 +476,24 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             // AdditionalScopes (1.2.0+) supersedes AdditionalDataFolders.
             Viewer.AdditionalScopes = _resolver.BuildResolutionScopesForActiveSelection(formKey);
             ApplyAdvancedResolutionToggles();
-            // The viewer's INpcMeshDataSource adapter parses CacheKey as a FormKey;
-            // DisplayLabel is purely diagnostic.
+            // Resolve mesh paths EXPLICITLY and feed the path-accepting LoadAsync,
+            // mirroring the per-tile overload below, instead of going through
+            // LoadByIdentityAsync + the INpcMeshDataSource adapter. That identity
+            // route memoizes ResolvedNpcMeshPaths in the rendering tier keyed on
+            // (FormKey, LinkCache token) — but ResolveForActiveSelection depends on
+            // the user's CURRENT appearance selection, which can change without an
+            // environment rebuild, so the memo served the PREVIOUS selection's
+            // record resolution (head parts / worn armor / TXST) after a switch.
+            // Resolution is a cheap record walk; skipping the memo is correct.
+            var paths = _resolver.ResolveForActiveSelection(formKey);
+            if (paths == null)
+            {
+                StatusText = $"Could not resolve mesh paths for {formKey}";
+                return;
+            }
+
             var identity = new NpcIdentity(formKey.ToString(), formKey.ToString());
-            await Viewer.LoadByIdentityAsync(identity);
+            await Viewer.LoadAsync(identity, paths);
 
             CurrentNpcFormKey = formKey;
             CurrentNpcDisplayLabel = formKey.ToString();

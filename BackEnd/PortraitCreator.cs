@@ -157,7 +157,18 @@ public class PortraitCreator
                 var gameRelease = _environmentProvider.SkyrimVersion.ToGameRelease();
                 await _bsaHandler.AddMissingModToCache(modSettingModel, gameRelease);
 
-                if (_bsaHandler.FileExists(relativeNifPath, modKey, out var bsaPath))
+                // Folder-scoped first: the BSA index is keyed by plugin
+                // FILENAME, and another mod shipping the same plugin name in a
+                // different folder can own a same-named archive with different
+                // FaceGen — a folder-blind lookup would serve that variant's
+                // BSA. Fall back to the broadcast for archives outside this
+                // folder (e.g. base-game BSAs consulted via the Data folder).
+                if (!_bsaHandler.FileExistsInArchiveAtFolder(relativeNifPath, modKey, modFolder, out var bsaPath))
+                {
+                    _bsaHandler.FileExists(relativeNifPath, modKey, out bsaPath);
+                }
+
+                if (bsaPath != null)
                 {
                     if (string.IsNullOrWhiteSpace(bsaPath)) continue;
                     

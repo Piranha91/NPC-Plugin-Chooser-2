@@ -567,7 +567,31 @@ public class AssetHandler : OptionalUIModule
             }
         }
         
-        // 2. Check BSAs associated with the mod
+        // 2. Check BSAs associated with the mod. Folder-scoped first: the BSA
+        // index is keyed by plugin FILENAME (ModKey), and two NPC2 mods can
+        // ship the same plugin name in different folders with different BSA
+        // content — the folder-blind broadcast would serve whichever variant's
+        // archive matched first, extracting another mod's bytes into this
+        // mod's output. Iterate folders in reverse to match the loose-file
+        // last-path-wins convention above.
+        foreach (var modKey in modSetting.CorrespondingModKeys)
+        {
+            for (int i = modSetting.CorrespondingFolderPaths.Count - 1; i >= 0; i--)
+            {
+                if (_bsaHandler.FileExistsInArchiveAtFolder(relativePath, modKey,
+                        modSetting.CorrespondingFolderPaths[i], out var scopedBsaPath) &&
+                    scopedBsaPath != null)
+                {
+                    return (AssetSourceType.BsaFile, relativePath, scopedBsaPath);
+                }
+            }
+        }
+
+        // Folder-blind fallback: synthetic entries ("Base Game"/"Creation
+        // Club") carry no CorrespondingFolderPaths — their archives live in
+        // the game Data folder — and some mods reference assets from BSAs
+        // outside their own folders. A scoped miss falling through to the
+        // broadcast preserves the previous behavior for those cases.
         foreach (var modKey in modSetting.CorrespondingModKeys)
         {
             if (_bsaHandler.FileExists(relativePath, modKey, out var bsaPath) && bsaPath != null)

@@ -542,30 +542,17 @@ public class BsaHandler : OptionalUIModule
     {
         BsaContentsDiag.Log($"AddMissingModToCache ENTER mod='{mod.DisplayName}' modKeys=[{string.Join(",", mod.CorrespondingModKeys.Select(k => k.FileName.String))}] folders=[{string.Join("|", mod.CorrespondingFolderPaths)}]");
 
-        // Only short-circuit when EVERY modKey for this mod is already indexed.
-        // The previous "any modKey×folder pair already indexed → skip" check was
-        // too lenient: for a mod listing [USSEP.esp, MyMod.esp] with folders
-        // [USSEP folder, MyMod folder], a prior mod that indexed USSEP would
-        // satisfy the check and cause MyMod.esp to never get scanned —
-        // leaving the mod's own BSA invisible to FileExistsInArchiveAtFolder.
-        // Delegating to PopulateBsaContentPathsAsync is safe here: it skips
-        // already-cached modKeys per-key, so the cached USSEP entry isn't
-        // redundantly re-scanned.
-        bool allCached;
-        lock (_bsaContentsLock)
-        {
-            allCached = mod.CorrespondingModKeys.All(_bsaContents.ContainsKey);
-        }
-
-        if (!allCached)
-        {
-            BsaContentsDiag.Log($"AddMissingModToCache not all modKeys cached → delegating to PopulateBsaContentPathsAsync mod='{mod.DisplayName}'");
-            await PopulateBsaContentPathsAsync(new List<ModSetting>() {mod}, gameRelease, reinitializeCache: false);
-        }
-        else
-        {
-            BsaContentsDiag.Log($"AddMissingModToCache all modKeys already cached mod='{mod.DisplayName}' — no populate needed");
-        }
+        // Always delegate to PopulateBsaContentPathsAsync. A modKey-presence
+        // short-circuit here is no longer sound: the index is keyed by plugin
+        // FILENAME, so a sibling mod shipping the same plugin name in a
+        // different folder may already have populated the modKey entry while
+        // THIS mod's own BSA (a different archive path) is still unindexed —
+        // skipping would leave it invisible to FileExistsInArchiveAtFolder.
+        // Delegation is cheap: PopulateBsaContentPathsAsync filters candidate
+        // archives per BSA path and only opens ones not yet indexed, so fully
+        // cached mods cost one directory scan and no archive I/O.
+        BsaContentsDiag.Log($"AddMissingModToCache delegating to PopulateBsaContentPathsAsync mod='{mod.DisplayName}'");
+        await PopulateBsaContentPathsAsync(new List<ModSetting>() {mod}, gameRelease, reinitializeCache: false);
     }
     
     public async Task PopulateBsaContentPathsAsync(IEnumerable<ModSetting> mods, GameRelease gameRelease, bool cacheReaders = false, bool reinitializeCache = true)
@@ -601,24 +588,38 @@ public class BsaHandler : OptionalUIModule
                 var bsaDict = GetBsaPathsForPluginsInDirs(mod.CorrespondingModKeys, pathsToSearch, gameRelease);
                 foreach (var modkey in mod.CorrespondingModKeys)
                 {
-                    // Pre-I/O short-circuit under the lock: another caller may have
-                    // populated this modkey already. Skip only if the existing entry has
-                    // real content — an EMPTY placeholder (a plugin whose BSA wasn't in an
-                    // earlier mod's folders) must stay upgradeable, or that empty entry would
-                    // permanently mask a BSA that this mod's folders actually contain.
+                    var bsaPaths = bsaDict[modkey];
+
+                    // Pre-I/O filter under the lock: only open archives not already
+                    // indexed under this modkey. The index outer key is the plugin
+                    // FILENAME (ModKey), and multiple NPC2 mods can ship the same
+                    // plugin name in DIFFERENT folders, each owning its own BSA with
+                    // different content. The previous first-content-wins commit
+                    // stored only the first variant's archives and skipped every
+                    // sibling, leaving their BSAs permanently invisible — folder-
+                    // scoped lookups (FileExistsInArchiveAtFolder) returned false
+                    // and folder-blind lookups served the wrong variant's archive.
+                    // Per-archive merging (full BSA path = inner key, unique per
+                    // folder) keeps the shared-plugin fast path — already-indexed
+                    // archives are filtered out here so nothing is re-opened —
+                    // while making every variant's BSA reachable.
+                    List<string> newBsaPaths;
                     lock (_bsaContentsLock)
                     {
-                        if (_bsaContents.TryGetValue(modkey, out var existing) && existing.Count > 0)
+                        _bsaContents.TryGetValue(modkey, out var existing);
+                        newBsaPaths = bsaPaths
+                            .Where(p => existing == null || !existing.ContainsKey(p))
+                            .ToList();
+                        if (newBsaPaths.Count == 0 && existing != null)
                         {
                             int existingFileCount = existing.Values.Sum(s => s.Count);
-                            BsaContentsDiag.Log($"    SKIP modkey={modkey.FileName.String} — already populated (bsaCount={existing.Count}, fileCount={existingFileCount})");
+                            BsaContentsDiag.Log($"    SKIP modkey={modkey.FileName.String} — all {bsaPaths.Count} candidate BSA(s) already indexed (bsaCount={existing.Count}, fileCount={existingFileCount})");
                             continue;
                         }
                     }
 
-                    var bsaPaths = bsaDict[modkey];
                     var filesInArchives = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-                    var readers = OpenBsaArchiveReaders(bsaPaths, gameRelease, cacheReaders);
+                    var readers = OpenBsaArchiveReaders(newBsaPaths, gameRelease, cacheReaders);
                     foreach (var entry in readers)
                     {
                         var (bsaPath, reader) = entry;
@@ -628,46 +629,39 @@ public class BsaHandler : OptionalUIModule
                     }
 
                     int totalFiles = filesInArchives.Values.Sum(s => s.Count);
-                    BsaContentsDiag.Log($"    ADD modkey={modkey.FileName.String} bsaCount={filesInArchives.Count} fileCount={totalFiles} bsaPaths=[{string.Join("|", bsaPaths)}]");
-                    // An empty entry is only a problem when the plugin actually owns BSAs that
-                    // failed to open/index (that genuinely masks reachable assets). A plugin that
-                    // owns no BSA at all is expected — e.g. Update/Dawnguard/HearthFires/Dragonborn
-                    // in Skyrim SE, whose assets are consolidated into the "Skyrim - *.bsa" set and
-                    // resolve under Skyrim.esm — so caching it empty is correct, not poisoning.
-                    if (filesInArchives.Count == 0 && bsaPaths.Count > 0)
+                    BsaContentsDiag.Log($"    ADD modkey={modkey.FileName.String} bsaCount={filesInArchives.Count} fileCount={totalFiles} bsaPaths=[{string.Join("|", newBsaPaths)}]");
+                    // An empty result is only a problem when the plugin actually owns
+                    // unindexed BSAs that failed to open (that genuinely masks reachable
+                    // assets). A plugin that owns no BSA at all is expected — e.g.
+                    // Update/Dawnguard/HearthFires/Dragonborn in Skyrim SE, whose assets
+                    // are consolidated into the "Skyrim - *.bsa" set and resolve under
+                    // Skyrim.esm — so recording it empty is correct, not poisoning.
+                    if (filesInArchives.Count == 0 && newBsaPaths.Count > 0)
                     {
-                        BsaContentsDiag.Log($"    !!! WARNING: modkey={modkey.FileName.String} owns BSA(s) but none opened/indexed — this empty entry will mask reachable assets. bsaPaths=[{string.Join("|", bsaPaths)}]");
+                        BsaContentsDiag.Log($"    !!! WARNING: modkey={modkey.FileName.String} owns BSA(s) but none opened/indexed — reachable assets may be masked. bsaPaths=[{string.Join("|", newBsaPaths)}]");
                     }
 
-                    // Commit policy (handles the pre-check→commit race too):
-                    //  - First CONTENT wins: real content installs over a prior empty
-                    //    placeholder, but never clobbers existing content.
-                    //  - Empty is provisional: recorded only if nothing is there yet, so a
-                    //    genuinely BSA-less plugin isn't rescanned, yet a later mod whose
-                    //    folders hold the BSA can still upgrade it to content.
+                    // Commit policy: MERGE per archive path (handles the pre-check→
+                    // commit race too — an archive another caller indexed meanwhile is
+                    // simply not overwritten). An empty result still records an empty
+                    // entry when the modkey is absent, so a genuinely BSA-less plugin
+                    // isn't rescanned, while staying extendable by a later mod whose
+                    // folders do hold an archive for this plugin name.
                     lock (_bsaContentsLock)
                     {
-                        bool hasExisting = _bsaContents.TryGetValue(modkey, out var existing);
-                        bool existingHasContent = existing is { Count: > 0 };
-
-                        if (filesInArchives.Count > 0)
+                        if (!_bsaContents.TryGetValue(modkey, out var existing))
                         {
-                            if (!existingHasContent)
+                            _bsaContents[modkey] = filesInArchives;
+                        }
+                        else
+                        {
+                            foreach (var kv in filesInArchives)
                             {
-                                _bsaContents[modkey] = filesInArchives;
-                                if (hasExisting)
+                                if (!existing.ContainsKey(kv.Key))
                                 {
-                                    BsaContentsDiag.Log($"    UPGRADE modkey={modkey.FileName.String} — replaced empty placeholder with {filesInArchives.Count} BSA(s), {totalFiles} files");
+                                    existing[kv.Key] = kv.Value;
                                 }
                             }
-                            else
-                            {
-                                BsaContentsDiag.Log($"    KEEP modkey={modkey.FileName.String} — existing content retained (first-content-wins)");
-                            }
-                        }
-                        else if (!hasExisting)
-                        {
-                            _bsaContents[modkey] = filesInArchives; // provisional empty
                         }
                     }
                 }
