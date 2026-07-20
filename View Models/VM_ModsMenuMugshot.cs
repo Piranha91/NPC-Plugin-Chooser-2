@@ -954,7 +954,8 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
     {
         var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == _parentVMModSetting.DisplayName);
         var (includeOutfit, _) = _settings.GetEffectiveAttireFlags(NpcFormKey);
-        return _outfitDisplayResolver.ResolveForDisplay(NpcFormKey, NpcFormKey, sourceMod, includeOutfit).IdentityStamp;
+        return _outfitDisplayResolver.ResolveForDisplay(NpcFormKey, NpcFormKey, sourceMod, includeOutfit).IdentityStamp
+               + _outfitDisplayResolver.ComputeWigIdentitySuffix(NpcFormKey, sourceMod, includeOutfit);
     }
 
     /// <summary>Computes the outfit-conflict notice for this tile. Empty =

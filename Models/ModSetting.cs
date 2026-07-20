@@ -62,6 +62,20 @@ public class ModSetting
     public bool HasBaseGameAssetPaths { get; set; } = false;
     public int BaseGameAssetPathCount { get; set; } = 0;
 
+    // Wig/antler detection results (computed during mod analysis on cache miss,
+    // persisted so cache hits keep them — same lifecycle as HasBaseGameAssetPaths).
+    // DetectedWigArmors: ARMOs whose Name contains "wig"/"hair" AND whose ARMA(s)
+    // occupy a hair biped slot (31 Hair / 41 LongHair). DetectedAntlerArmors:
+    // ARMOs whose EditorID or Name contains "antler" (no slot guard — antler
+    // slots aren't standardized). ModWigHandlingMode: per-mod override of
+    // Settings.DefaultWigHandlingMode (null = use the global default).
+    public HashSet<FormKey> DetectedWigArmors { get; set; } = new();
+    public HashSet<FormKey> DetectedAntlerArmors { get; set; } = new();
+    public WigHandlingMode? ModWigHandlingMode { get; set; } = null;
+
+    [JsonIgnore]
+    public bool HasWigs => DetectedWigArmors.Count > 0 || DetectedAntlerArmors.Count > 0;
+
     public Dictionary<FormKey, (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)> 
         NpcFormKeysToNotifications
     {

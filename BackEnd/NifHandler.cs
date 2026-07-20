@@ -43,6 +43,61 @@ public class NifHandler
     }
 
     /// <summary>
+    /// Deletes the named shapes from a NIF in place and saves it. Used by the
+    /// wig-forwarding pipeline to strip the baked hair shape(s) from a copied
+    /// FaceGen NIF after the hair head part is removed from the NPC record —
+    /// otherwise the baked hair renders alongside the forwarded wig in game.
+    /// Matching is by exact shape name (FaceGen shapes are named after their
+    /// head part EditorIDs), case-insensitive. Modeled on SynthEBD's
+    /// FaceGenPatcher.RemoveShapesByHeadPartType: collect first, then delete
+    /// (DeleteShape re-indexes blocks), with the GetShapes scope held open
+    /// across the deletes and the Save. Returns the number of shapes removed
+    /// (0 = file left untouched, no save).
+    /// </summary>
+    public static int RemoveShapesByName(string nifPath, IReadOnlyCollection<string> shapeNames,
+        Action<string>? log = null)
+    {
+        var wanted = shapeNames as ISet<string> ??
+                     new HashSet<string>(shapeNames, StringComparer.OrdinalIgnoreCase);
+        using NifFile nif = new NifFile();
+        int loadResult = nif.Load(nifPath);
+        if (loadResult != 0)
+        {
+            log?.Invoke($"RemoveShapesByName: failed to load NIF (code {loadResult}): {nifPath}");
+            return 0;
+        }
+
+        var toRemove = new List<(NiShape Shape, string Name)>();
+        using var shapes = nif.GetShapes();
+        foreach (var shape in shapes)
+        {
+            string? name = shape.name?.get();
+            if (string.IsNullOrEmpty(name)) continue;
+            if (wanted.Contains(name))
+            {
+                toRemove.Add((shape, name));
+            }
+        }
+
+        if (toRemove.Count == 0) return 0;
+
+        foreach (var (shape, name) in toRemove)
+        {
+            nif.DeleteShape(shape);
+            log?.Invoke($"RemoveShapesByName: removed shape '{name}' from {Path.GetFileName(nifPath)}");
+        }
+
+        int saveResult = nif.Save(nifPath);
+        if (saveResult != 0)
+        {
+            log?.Invoke($"RemoveShapesByName: save FAILED (code {saveResult}): {nifPath}");
+            return 0;
+        }
+
+        return toRemove.Count;
+    }
+
+    /// <summary>
     /// The NiStringExtraData block name that HDT-SMP / FSMP uses to point a NIF at its
     /// physics XML config file. hdtSMP64 scanBBP() reads the XML path from the
     /// <c>stringData</c> of an extra-data block with this name (see hdtDefaultBBP.cpp).

@@ -143,7 +143,8 @@ public sealed class BatchMugshotGenerator
             var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == modDisplayName);
             var (includeOutfit, _) = _settings.GetEffectiveAttireFlags(npcFormKey);
             return _outfitDisplayResolver.ResolveForDisplay(
-                targetNpcFormKey ?? npcFormKey, npcFormKey, sourceMod, includeOutfit).IdentityStamp;
+                       targetNpcFormKey ?? npcFormKey, npcFormKey, sourceMod, includeOutfit).IdentityStamp
+                   + _outfitDisplayResolver.ComputeWigIdentitySuffix(npcFormKey, sourceMod, includeOutfit);
         };
     }
 

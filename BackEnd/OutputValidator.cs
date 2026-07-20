@@ -594,8 +594,14 @@ public class OutputValidator
         CheckLink("HeadTexture", a.HeadTexture, b.HeadTexture);
         CheckLink("HairColor", a.HairColor, b.HairColor);
 
-        var aHead = HeadPartKeySet(a.HeadParts, linkCache, src);
-        var bHead = HeadPartKeySet(b.HeadParts, linkCache, src);
+        // Wig forwarding (ForwardToSkin) deliberately removes the donor's
+        // Hair-type head parts from the output (the wig lives in the skin
+        // instead; see WigForwarder). Exclude hair from the comparison when
+        // that applies to this NPC so the intentional removal isn't reported
+        // as a mismatch.
+        bool excludeHair = WigForwardingRemovesHair(b, sourceMod, linkCache, src);
+        var aHead = HeadPartKeySet(a.HeadParts, linkCache, src, excludeHair);
+        var bHead = HeadPartKeySet(b.HeadParts, linkCache, src, excludeHair);
         if (!aHead.SetEquals(bHead))
         {
             var missing = bHead.Except(aHead).Select(StripHeadPartPrefix).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList(); // expected but absent from output
@@ -684,16 +690,58 @@ public class OutputValidator
     private HashSet<string> HeadPartKeySet(
         IReadOnlyList<IFormLinkGetter<IHeadPartGetter>> headParts,
         ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
-        SourceModRefs src)
+        SourceModRefs src,
+        bool excludeHair = false)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var hp in headParts)
         {
             if (hp.IsNull) continue;
+            if (excludeHair && IsHairHeadPart(hp, linkCache, src)) continue;
             var eid = ResolveEditorId(hp, linkCache, src);
             set.Add(!string.IsNullOrEmpty(eid) ? "eid:" + eid : "fk:" + hp.FormKey);
         }
         return set;
+    }
+
+    private bool IsHairHeadPart(IFormLinkGetter<IHeadPartGetter> link,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
+    {
+        if (linkCache.TryResolve<IHeadPartGetter>(link.FormKey, out var rec) && rec.Type != null)
+        {
+            return rec.Type == HeadPart.TypeEnum.Hair;
+        }
+
+        if (_recordHandler.TryGetRecordFromMods(link, src.ModKeys, src.Folders,
+                RecordHandler.RecordLookupFallBack.Origin, out var modRec) && modRec is IHeadPartGetter hpRec)
+        {
+            return hpRec.Type == HeadPart.TypeEnum.Hair;
+        }
+
+        return false;
+    }
+
+    /// <summary>Mirrors <see cref="WigForwarder"/>'s ForwardToSkin hair-removal
+    /// applicability for validation: active wig mode, a donor WNAM to forward
+    /// into, and a detected (hair-slot) wig among the donor outfit's items.</summary>
+    private bool WigForwardingRemovesHair(INpcGetter donor, ModSetting sourceMod,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
+    {
+        if (_settings.GetEffectiveWigMode(sourceMod) != WigHandlingMode.ForwardToSkin) return false;
+        if (sourceMod.DetectedWigArmors.Count == 0) return false;
+        if (donor.WornArmor.IsNull) return false;
+        if (donor.DefaultOutfit == null || donor.DefaultOutfit.IsNull) return false;
+
+        IOutfitGetter? outfit =
+            _recordHandler.TryGetRecordFromMods(donor.DefaultOutfit, src.ModKeys, src.Folders,
+                RecordHandler.RecordLookupFallBack.Origin, out var modRec) && modRec is IOutfitGetter scoped
+                ? scoped
+                : linkCache.TryResolve<IOutfitGetter>(donor.DefaultOutfit.FormKey, out var winner)
+                    ? winner
+                    : null;
+        if (outfit?.Items == null) return false;
+
+        return outfit.Items.Any(i => i != null && !i.IsNull && sourceMod.DetectedWigArmors.Contains(i.FormKey));
     }
 
     /// <summary>

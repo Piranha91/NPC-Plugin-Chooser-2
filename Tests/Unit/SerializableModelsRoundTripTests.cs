@@ -77,6 +77,9 @@ public class SerializableModelsRoundTripTests
             OverwriteBaseGameAssets = true,
             HasBaseGameAssetPaths = true,
             BaseGameAssetPathCount = 42,
+            DetectedWigArmors = new HashSet<FormKey> { Npc1 },
+            DetectedAntlerArmors = new HashSet<FormKey> { Npc2 },
+            ModWigHandlingMode = WigHandlingMode.ForwardToOutfit,
             NpcFormKeysToNotifications = new Dictionary<FormKey,
                 (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)>
             {
@@ -113,6 +116,10 @@ public class SerializableModelsRoundTripTests
         clone.HasBaseGameAssetPaths.Should().BeTrue();
         clone.BaseGameAssetPathCount.Should().Be(42);
         clone.ModRecordOverrideHandlingMode.Should().Be(RecordOverrideHandlingMode.IncludeAsNew);
+        clone.ModWigHandlingMode.Should().Be(WigHandlingMode.ForwardToOutfit);
+        clone.DetectedWigArmors.Should().BeEquivalentTo(new[] { Npc1 });
+        clone.DetectedAntlerArmors.Should().BeEquivalentTo(new[] { Npc2 });
+        clone.HasWigs.Should().BeTrue();
     }
 
     [Fact]

@@ -287,7 +287,33 @@
                                       ToolTip="If checked, grabs ALL override records from the plugins rather than searching by NPC dependencies. Use with caution."/>
                         </StackPanel>
                     </StackPanel>
-                    
+
+                    <TextBlock Text="Default Wig Handling Mode:" Margin="0,5,0,2"/>
+                    <ComboBox ItemsSource="{Binding WigHandlingModes}"
+                              SelectedItem="{Binding SelectedDefaultWigHandlingMode, Mode=TwoWay}"
+                              MinWidth="120" HorizontalAlignment="Left"
+                              Margin="0,0,0,10">
+                        <ComboBox.ToolTip>
+                            <ToolTip>
+                                <TextBlock TextWrapping="Wrap" Width="340">
+                                    How detected wig/antler armors (hair-slot armors in a mod's Default Outfits)
+                                    are handled during patching. Applies in Create and Patch mode and in SkyPatcher mode;
+                                    individual mods can override this in the Mods menu when a wig is detected.
+                                    <LineBreak/><LineBreak/>
+                                    ForwardToSkin: the wig becomes part of the NPC's skin (WornArmor), so it shows
+                                    no matter what outfit the NPC wears. Falls back to ForwardToOutfit if the
+                                    appearance plugin assigns no WornArmor.
+                                    <LineBreak/><LineBreak/>
+                                    ForwardToOutfit: the outfit the NPC actually wears in game is duplicated and
+                                    the wig added to the duplicate (no change if it already contains the wig).
+                                    <LineBreak/><LineBreak/>
+                                    None: the wig is treated like any other outfit element — forwarded only if
+                                    Include Outfits is selected.
+                                </TextBlock>
+                            </ToolTip>
+                        </ComboBox.ToolTip>
+                    </ComboBox>
+
                     <CheckBox Content="SkyPatcher Mode"
                               IsChecked="{Binding UseSkyPatcherMode, Mode=TwoWay}"
                               Margin="0,5,0,0"

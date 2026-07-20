@@ -340,6 +340,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public IEnumerable<RecordOverrideHandlingMode> RecordOverrideHandlingModes { get; } =
         Enum.GetValues(typeof(RecordOverrideHandlingMode)).Cast<RecordOverrideHandlingMode>();
 
+    // Global default Wig Handling Mode (per-mod entries with "Default" resolve
+    // to this; see Models.WigHandlingMode / Settings.GetEffectiveWigMode).
+    [Reactive] public WigHandlingMode SelectedDefaultWigHandlingMode { get; set; }
+
+    public IEnumerable<WigHandlingMode> WigHandlingModes { get; } =
+        Enum.GetValues(typeof(WigHandlingMode)).Cast<WigHandlingMode>();
+
     public ReactiveCommand<Unit, Unit> ShowOverrideHandlingModeHelpCommand { get; }
 
     // --- New EasyNPC Transfer Properties ---
@@ -660,6 +667,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         AppendTimestampToOutputDirectory = _model.AppendTimestampToOutputDirectory;
         SelectedPatchingMode = _model.PatchingMode;
         SelectedRecordOverrideHandlingMode = _model.DefaultRecordOverrideHandlingMode;
+        SelectedDefaultWigHandlingMode = _model.DefaultWigHandlingMode;
         DefaultMaxNestedIntervalDepth = _model.DefaultMaxNestedIntervalDepth;
         DefaultIncludeAllOverrides = _model.DefaultIncludeAllOverrides;
         UpdateDefaultOverrideVisibility(); // Initialize visibility state
@@ -1065,6 +1073,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => _model.AppendTimestampToOutputDirectory = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedPatchingMode).Skip(1).Subscribe(pm => _model.PatchingMode = pm)
             .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedDefaultWigHandlingMode).Skip(1)
+            .Subscribe(m => _model.DefaultWigHandlingMode = m).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b)
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.BatFilePreCommands).Skip(1).Subscribe(s => _model.BatFilePreCommands = s)

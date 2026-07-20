@@ -795,6 +795,7 @@ public class VM_Mods : ReactiveObject
         var plugins =
             _pluginProvider.LoadPlugins(newVm.CorrespondingModKeys, modFolderPaths, out var loadedPaths);
         await Task.Run(() => newVm.RefreshNpcLists(faceGenCache.allFaceGenLooseFiles, faceGenCache.allFaceGenBsaFiles, plugins, _settings.LocalizationLanguage));
+        newVm.ScanForWigs(plugins);
         _pluginProvider.UnloadPlugins(loadedPaths);
 
         await ScanForBaseGameAssetPathsAsync(newVm);
@@ -2530,6 +2531,13 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                         using (ContextualPerformanceTracer.Trace("ScanForBaseGameAssetPaths"))
                         {
                             await ScanForBaseGameAssetPathsAsync(vm);
+                        }
+
+                        // Same cache-miss-only lifecycle: wig/antler detection needs the
+                        // mod's plugins, which are still loaded here.
+                        using (ContextualPerformanceTracer.Trace("ScanForWigs"))
+                        {
+                            vm.ScanForWigs(plugins);
                         }
                     }
                     finally

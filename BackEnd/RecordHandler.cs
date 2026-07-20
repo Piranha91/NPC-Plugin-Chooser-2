@@ -146,6 +146,35 @@ public class RecordHandler
         }
     }
 
+    /// <summary>
+    /// Seeds (or overwrites) a source → output remap so subsequent merge-in
+    /// walkers treat <paramref name="sourceFormKey"/> as already duplicated:
+    /// they will not deep-copy the original, and every reference to it gets
+    /// redirected to <paramref name="outputFormKey"/> instead. This is how a
+    /// deliberately-modified duplicate (e.g. the +Wig WornArmor built by
+    /// <see cref="WigForwarder"/>) replaces the original in the merge without
+    /// the original also being pulled in. Overwrite semantics are intentional:
+    /// mappings live per appearance-mod batch, and a later NPC in the batch may
+    /// need the same source record redirected to a different duplicate —
+    /// references remapped under the earlier seed are already materialized, so
+    /// re-seeding cannot retroactively affect them.
+    /// </summary>
+    public void SeedDuplicateMapping(FormKey sourceFormKey, FormKey outputFormKey)
+    {
+        if (sourceFormKey.IsNull || outputFormKey.IsNull) return;
+        _currentDuplicateInMappings[sourceFormKey] = outputFormKey;
+    }
+
+    /// <summary>Looks up where <paramref name="sourceFormKey"/> was remapped to
+    /// in the current appearance-mod batch, if it was duplicated into the
+    /// output. Lets callers that stashed SOURCE-side FormKeys before a merge
+    /// (e.g. <see cref="WigForwarder"/>'s hair head part removal) find the
+    /// corresponding output records afterwards.</summary>
+    public bool TryGetDuplicateMapping(FormKey sourceFormKey, out FormKey outputFormKey)
+    {
+        return _currentDuplicateInMappings.TryGetValue(sourceFormKey, out outputFormKey);
+    }
+
     public void PrimeLinkCachesFor(IEnumerable<ModKey> modKeys, HashSet<string> fallBackModFolderNames)
     {
         foreach (var modKey in modKeys)

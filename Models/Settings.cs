@@ -138,6 +138,37 @@ public class Settings
     public RecordOverrideHandlingMode DefaultRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
     public int DefaultMaxNestedIntervalDepth { get; set; } = 2;
     public bool DefaultIncludeAllOverrides { get; set; } = false;
+    public WigHandlingMode DefaultWigHandlingMode { get; set; } = WigHandlingMode.ForwardToSkin;
+
+    /// <summary>
+    /// The wig handling mode that will actually apply to
+    /// <paramref name="modSetting"/> on the next patch run: the per-mod
+    /// override when set, else the global default — and None whenever wig
+    /// handling is inert (no wigs/antlers detected, or plain Create record
+    /// mode; Create-and-Patch and SkyPatcher output both activate it).
+    /// Centralized so the patcher, renderer, metadata stamp, and staleness
+    /// checker all agree on the depicted result.
+    /// </summary>
+    public WigHandlingMode GetEffectiveWigMode(ModSetting? modSetting)
+    {
+        if (modSetting == null || !modSetting.HasWigs) return WigHandlingMode.None;
+        if (!UseSkyPatcherMode && PatchingMode != PatchingMode.CreateAndPatch) return WigHandlingMode.None;
+        return modSetting.ModWigHandlingMode ?? DefaultWigHandlingMode;
+    }
+
+    /// <summary>
+    /// The wig handling mode the RENDERER depicts for <paramref name="modSetting"/>.
+    /// Identical to <see cref="GetEffectiveWigMode"/> except that the dev/harness
+    /// override <see cref="InternalMugshotSettings.WigModeOverride"/> (when set and
+    /// the mod has detections) wins regardless of output mode, so RenderHarness
+    /// variants can A/B the modes without touching the patching settings.
+    /// </summary>
+    public WigHandlingMode GetEffectiveRenderWigMode(ModSetting? modSetting)
+    {
+        if (modSetting == null || !modSetting.HasWigs) return WigHandlingMode.None;
+        if (InternalMugshot.WigModeOverride is { } forced) return forced;
+        return GetEffectiveWigMode(modSetting);
+    }
 
     // UI / Other
     public bool ShowNpcDescriptions { get; set; } = true;
@@ -439,6 +470,12 @@ public class Settings
     // shipped without plugin records inside plugin-backed mods. Versioned (not a bool) so
     // a revision to the detection logic can force another rescan by bumping the target.
     public int RecordlessFaceGenRescanVersion { get; set; } = 0;
+    // Guard for the wig/antler detection rescan: when below
+    // UpdateHandler.WigScanRescanTarget, every mod's analysis cache (LastKnownState)
+    // is invalidated once so the next population pass runs ScanForWigs on mods whose
+    // snapshot would otherwise hit and skip detection forever. Versioned (not a bool)
+    // so a revision to the detection keywords/slot guard can force another rescan.
+    public int WigScanRescanVersion { get; set; } = 0;
     
     // --- Troubleshooting / Logging ---
     public bool LogActivity { get; set; } = false;
@@ -636,6 +673,13 @@ public sealed class InternalMugshotSettings
     //   an NPC clothed but bareheaded.
     public bool IncludeDefaultOutfit { get; set; } = true;
     public bool IncludeHeadgear { get; set; } = false;
+
+    // Dev/harness override for the renderer's wig handling mode (see
+    // Settings.GetEffectiveRenderWigMode): when set and the tile's mod has
+    // detected wigs/antlers, the renderer depicts this mode regardless of the
+    // patching-mode gate. Not exposed in the UI; RenderHarness variants set it
+    // by property name via reflection for per-mode A/B renders.
+    public WigHandlingMode? WigModeOverride { get; set; } = null;
 
     // Portrait-quality rendering toggles (CharacterViewer.Rendering 2.5.9+).
     // Each gates a feature in the in-process renderer that improves the

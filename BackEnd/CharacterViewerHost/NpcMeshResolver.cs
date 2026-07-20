@@ -604,7 +604,12 @@ public class NpcMeshResolver
         FormKey? targetNpcFormKey, out OutfitDisplayResult outfitDisplay)
     {
         outfitDisplay = OutfitDisplayResult.NoOutfit;
-        if (!includeDefaultOutfit && !includeHeadgear) return Array.Empty<MeshOverride>();
+        // Wig handling (WigHandlingMode): the mugshot depicts the POST-PATCH
+        // NPC, so an active ForwardToSkin mode renders the forwarded wig even
+        // with the outfit toggle off — it is part of the skin after patching.
+        var wigMode = _settings.GetEffectiveRenderWigMode(modSetting);
+        if (!includeDefaultOutfit && !includeHeadgear && wigMode != WigHandlingMode.ForwardToSkin)
+            return Array.Empty<MeshOverride>();
         var linkCache = _env.LinkCache;
         if (linkCache == null) return Array.Empty<MeshOverride>();
 
@@ -615,20 +620,28 @@ public class NpcMeshResolver
             targetNpcFormKey ?? npcFormKey, npcFormKey, modSetting, includeDefaultOutfit);
 
         return ResolveAttireMeshOverrides(npcFormKey, linkCache,
-            BuildContext(npcFormKey, modSetting), includeDefaultOutfit, includeHeadgear, outfitDisplay);
+            BuildContext(npcFormKey, modSetting), includeDefaultOutfit, includeHeadgear, outfitDisplay,
+            wigMode, modSetting);
     }
 
     private IReadOnlyList<MeshOverride> ResolveAttireMeshOverrides(
         FormKey npcFormKey, ILinkCache linkCache, NpcResolutionContext? context,
-        bool includeDefaultOutfit, bool includeHeadgear, OutfitDisplayResult outfitDisplay)
+        bool includeDefaultOutfit, bool includeHeadgear, OutfitDisplayResult outfitDisplay,
+        WigHandlingMode wigMode = WigHandlingMode.None, ModSetting? modSetting = null)
     {
         var result = new List<MeshOverride>();
         // Outfit is the dominant toggle — headgear is part of the outfit and never
         // renders on its own, so with the outfit off nothing attire-related is
         // emitted regardless of the headgear flag. (The UI also hides the headgear
-        // toggle while the outfit is off.)
+        // toggle while the outfit is off.) Exception: an active ForwardToSkin wig
+        // mode still emits the forwarded wig pieces (post-patch they are skin).
         includeHeadgear = includeHeadgear && includeDefaultOutfit;
-        if (!includeDefaultOutfit && !includeHeadgear) return result;
+        bool maybeWigs = wigMode != WigHandlingMode.None && modSetting != null;
+        if (!includeDefaultOutfit && !includeHeadgear &&
+            !(maybeWigs && wigMode == WigHandlingMode.ForwardToSkin))
+        {
+            return result;
+        }
 
         var npcGetter = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
         if (npcGetter == null)
@@ -644,6 +657,38 @@ public class NpcMeshResolver
         // Dedup by override Key (slot(s) + ARMA FormKey) so a piece reachable via
         // both the outfit and the worn armor is only emitted once.
         var seenOverrideKeys = new HashSet<string>();
+
+        // Wig/antler pass — runs BEFORE the outfit walk so the forwarded pieces
+        // are emitted with the headgear gate bypassed (a forwarded wig is the
+        // character's hair, not removable headgear; the outfit walk then dedups
+        // the same ARMAs by key). ForwardToSkin pieces render regardless of the
+        // outfit toggle; ForwardToOutfit pieces only with the outfit on —
+        // mirroring what the patched NPC wears in game.
+        var wigPlan = maybeWigs
+            ? BuildWigRenderPlan(npcGetter, modSetting!, wigMode, linkCache, context)
+            : null;
+        bool renderWigs = wigPlan != null &&
+                          (wigPlan.Mode == WigHandlingMode.ForwardToSkin || includeDefaultOutfit);
+        if (renderWigs)
+        {
+            foreach (var (wigArmor, isAntler) in wigPlan!.Armors)
+            {
+                AppendArmorMeshOverrides(wigArmor, "WigForward(" + wigPlan.Mode + "):" + wigArmor.FormKey,
+                    sex, npcRaceKey, linkCache, context,
+                    includeBody: false, includeHeadgear: false,
+                    hairCountsAsHeadgear: true, result, seenOverrideKeys,
+                    isAntler ? WigPieceClass.Antler : WigPieceClass.Wig);
+            }
+
+            LogVerbose("CharacterViewer: wig handling (" + wigPlan.Mode + ") emitted " + result.Count +
+                       " forwarded piece(s) for " + npcName);
+        }
+
+        if (!includeDefaultOutfit && !includeHeadgear)
+        {
+            // ForwardToSkin with the outfit off: only the wig pieces are shown.
+            return result;
+        }
 
         // Effective outfit → apparel armors. Drives both features: a head-slot
         // piece becomes headgear, everything else body attire. The outfit
@@ -706,6 +751,69 @@ public class NpcMeshResolver
             + ") outfit=" + includeDefaultOutfit + " headgear=" + includeHeadgear
             + " -> " + result.Count + " override(s)");
         return result;
+    }
+
+    /// <summary>Passthrough to
+    /// <see cref="OutfitDisplayResolver.ComputeWigIdentitySuffix"/> for hosts
+    /// that hold this resolver but not the outfit-display resolver (the
+    /// offscreen generator's metadata stamp).</summary>
+    public string ComputeWigIdentitySuffix(FormKey sourceNpcFormKey, ModSetting? modSetting,
+        bool includeDefaultOutfit)
+        => _outfitDisplayResolver.ComputeWigIdentitySuffix(sourceNpcFormKey, modSetting, includeDefaultOutfit);
+
+    /// <summary>Piece classification for the wig-forwarding pass: Wig pieces
+    /// emit only their hair-slot ARMAs (matching WigForwarder's transfer);
+    /// Antler pieces emit every ARMA (antler slots aren't standardized).</summary>
+    private enum WigPieceClass
+    {
+        None,
+        Wig,
+        Antler
+    }
+
+    private sealed class WigRenderPlan
+    {
+        public WigHandlingMode Mode;
+        public List<(IArmorGetter Armor, bool IsAntler)> Armors = new();
+    }
+
+    /// <summary>
+    /// Mirrors <see cref="WigForwarder"/>'s per-NPC applicability rules for the
+    /// renderer: the applicable wigs/antlers are the DONOR outfit's direct
+    /// items that the analysis scan detected (resolved mod-scoped — the wig
+    /// comes from the appearance mod's plugins), and ForwardToSkin falls back
+    /// to ForwardToOutfit when the donor record assigns no WNAM. Returns null
+    /// when nothing applies.
+    /// </summary>
+    private WigRenderPlan? BuildWigRenderPlan(INpcGetter npcGetter, ModSetting modSetting,
+        WigHandlingMode wigMode, ILinkCache linkCache, NpcResolutionContext? context)
+    {
+        if (npcGetter.DefaultOutfit == null || npcGetter.DefaultOutfit.IsNull) return null;
+        var donorOutfit = ResolveRecord<IOutfitGetter>(npcGetter.DefaultOutfit, linkCache, context);
+        if (donorOutfit?.Items == null) return null;
+
+        var plan = new WigRenderPlan { Mode = wigMode };
+        foreach (var item in donorOutfit.Items)
+        {
+            if (item == null || item.IsNull) continue;
+            bool isAntler = modSetting.DetectedAntlerArmors.Contains(item.FormKey);
+            bool isWig = !isAntler && modSetting.DetectedWigArmors.Contains(item.FormKey);
+            if (!isAntler && !isWig) continue;
+            var armor = ResolveRecord<IArmorGetter>(item.FormKey.ToLink<IArmorGetter>(), linkCache, context);
+            if (armor == null) continue;
+            plan.Armors.Add((armor, isAntler));
+        }
+
+        if (plan.Armors.Count == 0) return null;
+
+        if (plan.Mode == WigHandlingMode.ForwardToSkin &&
+            (npcGetter.WornArmor == null || npcGetter.WornArmor.IsNull))
+        {
+            // Patcher fallback mirror: no WNAM to transfer the wig into.
+            plan.Mode = WigHandlingMode.ForwardToOutfit;
+        }
+
+        return plan;
     }
 
     /// <summary>
@@ -810,7 +918,8 @@ public class NpcMeshResolver
     /// combines slot(s) + ARMA FormKey so it's stable and unique per piece.</summary>
     private void AppendArmorMeshOverrides(IArmorGetter armor, string source, Sex sex, FormKey? npcRaceKey,
         ILinkCache linkCache, NpcResolutionContext? context, bool includeBody, bool includeHeadgear,
-        bool hairCountsAsHeadgear, List<MeshOverride> result, HashSet<string> seenKeys)
+        bool hairCountsAsHeadgear, List<MeshOverride> result, HashSet<string> seenKeys,
+        WigPieceClass wigPiece = WigPieceClass.None)
     {
         if (armor.Armature == null) return;
         foreach (var armaLink in armor.Armature)
@@ -822,6 +931,17 @@ public class NpcMeshResolver
 
             int slots = (int)arma.BodyTemplate.FirstPersonFlags;
             if (slots == 0) continue;
+
+            // Wig-forwarding pass (see WigPieceClass): forwarded pieces bypass
+            // the includeBody/includeHeadgear gates below — a forwarded wig is
+            // the character's hair, not removable headgear. The slot-based
+            // classification itself is untouched, so a hair-slot wig lands as
+            // Kind=Headgear (draw priority hides the base/FaceGen hair, exactly
+            // how the piece behaves worn in game) and a slot-42 antler follows
+            // the open-circlet rule and leaves the hair visible.
+            bool isForwardedWigPiece =
+                wigPiece == WigPieceClass.Antler ||
+                (wigPiece == WigPieceClass.Wig && (slots & (int)WigDetector.HairSlots) != 0);
 
             // A piece is headgear if it occupies the Head (30) or Circlet (42)
             // slot, or — when hairCountsAsHeadgear is set — the Hair (31) slot,
@@ -839,8 +959,11 @@ public class NpcMeshResolver
             // jewelry, so folding in Ears would over-hide.
             int headMask = HeadSlotMask | (hairCountsAsHeadgear ? HairSlotBit : 0);
             bool isHead = (slots & headMask) != 0;
-            if (isHead && !includeHeadgear) continue;
-            if (!isHead && !includeBody) continue;
+            if (!isForwardedWigPiece)
+            {
+                if (isHead && !includeHeadgear) continue;
+                if (!isHead && !includeBody) continue;
+            }
 
             string? meshPath = GetWorldModelPath(arma, sex);
             if (meshPath == null) continue;

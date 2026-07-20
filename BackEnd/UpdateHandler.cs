@@ -39,6 +39,7 @@ public class UpdateHandler
             // Fresh settings have no stale analysis caches; mark flag-guarded one-shot
             // migrations as already applied so they don't fire on the second launch.
             _settings.RecordlessFaceGenRescanVersion = RecordlessFaceGenRescanTarget;
+            _settings.WigScanRescanVersion = WigScanRescanTarget;
             return;
         }
 
@@ -81,6 +82,11 @@ public class UpdateHandler
         if (_settings.RecordlessFaceGenRescanVersion < RecordlessFaceGenRescanTarget)
         {
             InvalidateAnalysisCachesForRecordlessFaceGenNpcs_Initial();
+        }
+
+        if (_settings.WigScanRescanVersion < WigScanRescanTarget)
+        {
+            InvalidateAnalysisCachesForWigScan_Initial();
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -1018,6 +1024,35 @@ public class UpdateHandler
     /// 3 = reworded the persisted FaceGenOnly notification tooltip.
     /// </summary>
     private const int RecordlessFaceGenRescanTarget = 3;
+
+    /// <summary>
+    /// Target for <c>Settings.WigScanRescanVersion</c>. Bump this whenever
+    /// <see cref="WigDetector"/>'s keywords or slot guard change in a way that
+    /// requires re-scanning mods whose cached analysis snapshot is still valid.
+    /// History: 1 = initial wig/antler detection.
+    /// </summary>
+    private const int WigScanRescanTarget = 1;
+
+    /// <summary>
+    /// One-time invalidation of every mod's analysis cache (LastKnownState) so
+    /// the next population pass runs <see cref="VM_ModSetting.ScanForWigs"/> on
+    /// existing mods. Without this, mods with a valid cached snapshot would
+    /// never get wig/antler detection and the Wig Handling Mode dropdown would
+    /// never appear for them. Guarded by <c>Settings.WigScanRescanVersion</c>
+    /// rather than a program version gate so dev builds don't re-run the full
+    /// re-analysis on every launch.
+    /// </summary>
+    private void InvalidateAnalysisCachesForWigScan_Initial()
+    {
+        foreach (var modSetting in _settings.ModSettings)
+        {
+            modSetting.LastKnownState = null;
+        }
+
+        _settings.WigScanRescanVersion = WigScanRescanTarget;
+        Debug.WriteLine(
+            "One-time analysis-cache invalidation applied so wig/antler detection runs on this launch.");
+    }
 
     /// <summary>
     /// One-time invalidation of every mod's analysis cache (LastKnownState) so the next

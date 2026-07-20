@@ -112,9 +112,46 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                     new KeyValuePair<RecordOverrideHandlingMode?, string>(e, e.ToString())
                 ));
 
+    // SelectedItem bridge for the dropdown (see the sync subscriptions in the
+    // constructor). WPF's SelectedValue/SelectedValuePath matching cannot
+    // ESTABLISH a selection when the bound value is null (the "Default"
+    // entry's Key), so any mod whose persisted mode was null rendered a blank
+    // ComboBox on every launch — interactive clicks set SelectedItem directly,
+    // which masked the bug until the next load. Binding SelectedItem to the
+    // actual KeyValuePair (struct, structural equality) displays the null-keyed
+    // entry correctly; OverrideRecordOverrideHandlingMode stays the persisted
+    // source of truth.
+    [Reactive] public KeyValuePair<RecordOverrideHandlingMode?, string> SelectedRecordOverrideHandlingItem { get; set; }
+
     [Reactive] public int MaxNestedIntervalDepth { get; set; } = 2;
     [Reactive] public bool IsMaxNestedIntervalDepthVisible { get; set; }
     [Reactive] public bool IncludeAllOverrides { get; set; } = false;
+
+    // Wig/antler detection + per-mod handling mode (see Models.ModSetting /
+    // Models.WigHandlingMode). The dropdown is only shown when the analysis
+    // scan found wigs/antlers AND wig handling is active for the current
+    // output mode (Create-and-Patch or SkyPatcher).
+    public HashSet<FormKey> DetectedWigArmors { get; set; } = new();
+    public HashSet<FormKey> DetectedAntlerArmors { get; set; } = new();
+    [Reactive] public bool HasWigs { get; set; }
+    [Reactive] public WigHandlingMode? OverrideWigHandlingMode { get; set; }
+    [Reactive] public bool IsWigHandlingVisible { get; set; }
+
+    public IEnumerable<KeyValuePair<WigHandlingMode?, string>> WigHandlingModes { get; }
+        = new[]
+            {
+                new KeyValuePair<WigHandlingMode?, string>(null, "Default")
+            }
+            .Concat(Enum.GetValues(typeof(WigHandlingMode))
+                .Cast<WigHandlingMode>()
+                .Select(e =>
+                    new KeyValuePair<WigHandlingMode?, string>(e, e.ToString())
+                ));
+
+    // SelectedItem bridge — same null-key display fix as
+    // SelectedRecordOverrideHandlingItem (null = "Default" is this dropdown's
+    // normal state, so without the bridge it rendered blank for every mod).
+    [Reactive] public KeyValuePair<WigHandlingMode?, string> SelectedWigHandlingItem { get; set; }
     
     public HashSet<string> NpcNames { get; set; } = new();
     public HashSet<string> NpcEditorIDs { get; set; } = new();
@@ -269,6 +306,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         OverrideRecordOverrideHandlingMode = model.ModRecordOverrideHandlingMode;
         IncludeAllOverrides = model.IncludeAllOverrides;
         MaxNestedIntervalDepth = model.MaxNestedIntervalDepth;
+        DetectedWigArmors = new HashSet<FormKey>(model.DetectedWigArmors ?? new HashSet<FormKey>());
+        DetectedAntlerArmors = new HashSet<FormKey>(model.DetectedAntlerArmors ?? new HashSet<FormKey>());
+        HasWigs = DetectedWigArmors.Count > 0 || DetectedAntlerArmors.Count > 0;
+        OverrideWigHandlingMode = model.ModWigHandlingMode;
         // AvailablePluginsForNpcs should be re-calculated on load.
         // IsMugshotOnlyEntry is set to false via chaining
         IsFaceGenOnlyEntry = model.IsFaceGenOnlyEntry;
@@ -686,6 +727,44 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedRecordOverrideHandlingMode)
             .Subscribe(_ => UpdateIsMaxNestedIntervalDepthVisible())
             .DisposeWith(_disposables);
+
+        // Wig Handling dropdown visibility: shown only when the analysis scan
+        // detected wigs/antlers AND the output mode activates wig handling —
+        // Create-and-Patch record mode, or SkyPatcher mode in either
+        // PatchingMode (mirrors Settings.GetEffectiveWigMode).
+        this.WhenAnyValue(x => x.HasWigs)
+            .CombineLatest(
+                _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.UseSkyPatcherMode),
+                (hasWigs, output) => hasWigs &&
+                                     (output.Item2 || output.Item1 == PatchingMode.CreateAndPatch))
+            .Subscribe(visible => IsWigHandlingVisible = visible)
+            .DisposeWith(_disposables);
+
+        // Two-way sync between the persisted nullable modes and their
+        // SelectedItem bridges (see the bridge properties for why SelectedValue
+        // can't be bound directly). Mode → item registers FIRST so each bridge
+        // is initialized from the current mode before its own writer attaches;
+        // Fody's if-changed setters terminate the ping-pong (KeyValuePair is a
+        // struct with structural equality). Programmatic writes (model load,
+        // batch actions, the decline-popup revert to null) flow into the
+        // display, and user selections flow back through the same
+        // OverrideRecordOverrideHandlingMode / OverrideWigHandlingMode
+        // properties, so the existing confirmation-popup subscriptions keep
+        // working unchanged.
+        this.WhenAnyValue(x => x.OverrideRecordOverrideHandlingMode)
+            .Subscribe(mode => SelectedRecordOverrideHandlingItem =
+                RecordOverrideHandlingModes.First(kv => kv.Key == mode))
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedRecordOverrideHandlingItem)
+            .Subscribe(item => OverrideRecordOverrideHandlingMode = item.Key)
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.OverrideWigHandlingMode)
+            .Subscribe(mode => SelectedWigHandlingItem =
+                WigHandlingModes.First(kv => kv.Key == mode))
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedWigHandlingItem)
+            .Subscribe(item => OverrideWigHandlingMode = item.Key)
+            .DisposeWith(_disposables);
         
         this.WhenAnyValue(x => x.IncludeAllOverrides)
             .Skip(1) // Skip initial value
@@ -736,6 +815,26 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                "FaceGen files are unaffected by this setting and are always copied.";
     }
 
+    /// <summary>
+    /// Detects wig/antler armors in this mod's loaded plugins and stores the
+    /// result on the VM (persisted via <see cref="SaveToModel"/>). Runs only
+    /// on analysis cache misses — same lifecycle as the base-game-asset scan —
+    /// so unchanged mods keep their persisted detection across launches.
+    /// ARMA links the mod inherits from masters resolve through the
+    /// load-order link cache.
+    /// </summary>
+    public void ScanForWigs(IReadOnlyCollection<ISkyrimModGetter> plugins)
+    {
+        var (wigs, antlers) = WigDetector.Scan(plugins, formKey =>
+            _environmentStateProvider.LinkCache != null &&
+            _environmentStateProvider.LinkCache.TryResolve<IArmorAddonGetter>(formKey, out var arma)
+                ? arma
+                : null);
+        DetectedWigArmors = wigs;
+        DetectedAntlerArmors = antlers;
+        HasWigs = wigs.Count > 0 || antlers.Count > 0;
+    }
+
     public ModSetting SaveToModel()
     {
         var model = new Models.ModSetting
@@ -767,6 +866,9 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             HandleInjectedOverridesToolTip = HandleInjectedOverridesToolTip,
             ModRecordOverrideHandlingMode = OverrideRecordOverrideHandlingMode,
             MaxNestedIntervalDepth = MaxNestedIntervalDepth,
+            DetectedWigArmors = new HashSet<FormKey>(DetectedWigArmors),
+            DetectedAntlerArmors = new HashSet<FormKey>(DetectedAntlerArmors),
+            ModWigHandlingMode = OverrideWigHandlingMode,
             IsAutoGenerated = IsAutoGenerated,
             PluginsWithOverrideRecords = _pluginsWithOverrideRecords,
             IncludeAllOverrides = IncludeAllOverrides,

@@ -29,6 +29,14 @@ public class Patcher : OptionalUIModule
     private readonly PluginProvider _pluginProvider;
     private readonly BsaHandler _bsaHandler;
     private readonly SkyPatcherInterface _skyPatcherInterface;
+    private readonly WigForwarder _wigForwarder;
+
+    // FaceGen NIFs that need their baked hair shape(s) stripped after the
+    // asset copy completes (ForwardToSkin wig handling; see WigForwarder).
+    // Populated per NPC during the (parallel) patch loop, applied once after
+    // MonitorAndWaitForAllTasks.
+    private readonly System.Collections.Concurrent.ConcurrentBag<(string NifPath, HashSet<string> ShapeNames, string NpcIdentifier)>
+        _pendingWigNifEdits = new();
 
     private Dictionary<string, ModSetting> _modSettingsMap;
     private string _currentRunOutputAssetPath = string.Empty;
@@ -51,7 +59,8 @@ public class Patcher : OptionalUIModule
 
     public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator,
         AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher,
-        PluginProvider pluginProvider, BsaHandler bsaHandler, SkyPatcherInterface skyPatcherInterface)
+        PluginProvider pluginProvider, BsaHandler bsaHandler, SkyPatcherInterface skyPatcherInterface,
+        WigForwarder wigForwarder)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -63,6 +72,7 @@ public class Patcher : OptionalUIModule
         _pluginProvider = pluginProvider;
         _bsaHandler = bsaHandler;
         _skyPatcherInterface = skyPatcherInterface;
+        _wigForwarder = wigForwarder;
     }
 
     public async Task PreInitializationLogicAsync()
@@ -302,6 +312,7 @@ public class Patcher : OptionalUIModule
                 _patchedRecordOwners.Clear();
                 _patchedRecordTypes.Clear();
                 _recordHandler.ResetMergedRecordTracking();
+                _pendingWigNifEdits.Clear();
                 RecordProvenanceDiag.Reset(); // opt-in per-run record provenance report (no-op unless enabled)
             }
 
@@ -438,6 +449,7 @@ public class Patcher : OptionalUIModule
                             _pluginProvider.LoadPlugins(modKeysForBatch, currentModFolderPaths, out loadedPluginPaths);
                             _recordHandler.PrimeLinkCachesFor(modKeysForBatch, currentModFolderPaths);
                             _recordHandler.ResetMapping();
+                            _wigForwarder.ResetCache();
                             _bsaHandler.OpenBsaReadersFor(currentModSetting, _settings.SkyrimRelease.ToGameRelease());
                         }
                         else
@@ -577,6 +589,7 @@ public class Patcher : OptionalUIModule
                             }
 
                             Npc? patchNpc = null;
+                            WigForwarder.Result? wigForward = null;
                             var mergeInDependencyRecords = appearanceModSetting?.MergeInDependencyRecords ?? false;
                             var recordOverrideHandlingMode = appearanceModSetting?.ModRecordOverrideHandlingMode ??
                                                              _settings.DefaultRecordOverrideHandlingMode;
@@ -693,6 +706,28 @@ public class Patcher : OptionalUIModule
                                     ? GetAppearanceFormLinks(appearanceNpcRecord, includeOutfit: true).ToList()
                                     : null;
 
+                                // Wig/antler forwarding (see WigHandlingMode). Runs BEFORE the
+                                // appearance copy / dependency merge-in: ForwardToSkin seeds the
+                                // donor WNAM → +Wig duplicate mapping so the merge redirects to
+                                // the duplicate and never pulls in the original. The NPC record
+                                // links are pointed at the duplicates AFTER CopyAppearanceData
+                                // (whose non-merge path would otherwise reset them). Inert unless
+                                // the mod has detected wigs and the output mode activates it
+                                // (GetEffectiveWigMode).
+                                if (!isFaceGenOnly && appearanceModSetting != null &&
+                                    _settings.GetEffectiveWigMode(appearanceModSetting) != WigHandlingMode.None)
+                                {
+                                    wigForward = _wigForwarder.Apply(npcFormKey, appearanceNpcRecord,
+                                        appearanceModSetting, appearanceModKey.Value, currentModFolderPaths,
+                                        mergeInDependencyRecords, npcIdentifier, AppendLog);
+                                    if (wigForward != null)
+                                    {
+                                        RegisterRecordOwnerships(npcFormKey, wigForward.MergedRecords,
+                                            npcContributions);
+                                        _aux.CollectShallowAssetLinks(wigForward.MergedRecords, assetLinks);
+                                    }
+                                }
+
                                 switch (_settings.PatchingMode)
                                 {
                                     case PatchingMode.CreateAndPatch:
@@ -734,6 +769,16 @@ public class Patcher : OptionalUIModule
                                         RegisterRecordOwnerships(npcFormKey, mergedInAppearanceRecords, npcContributions);
                                         _aux.CollectShallowAssetLinks(mergedInAppearanceRecords, assetLinks);
 
+                                        // After CopyAppearanceData: its non-merge path resets WNAM
+                                        // to the donor original and its outfit branch may replace
+                                        // DefaultOutfit; this re-points them at the +Wig duplicates
+                                        // and removes hair head parts superseded by a forwarded wig.
+                                        if (wigForward != null)
+                                        {
+                                            _wigForwarder.FinalizeNpcRecord(wigForward, patchNpc,
+                                                npcIdentifier, AppendLog);
+                                        }
+
                                         if (mergeInDependencyRecords)
                                         {
                                             List<string> mergeInExceptions = new();
@@ -757,8 +802,12 @@ public class Patcher : OptionalUIModule
 
                                         if (_settings.UseSkyPatcherMode)
                                         {
+                                            // A wig forwarded to the outfit must emit the
+                                            // outfitDefault= directive even when the user's
+                                            // Include Outfit choice is off — the duplicate outfit
+                                            // is how the wig reaches the NPC at runtime.
                                             ApplySkyPatcherDirectives(npcFormKey, winningNpcOverride, patchNpc,
-                                                includeOutfit);
+                                                includeOutfit || (wigForward?.OutfitForwarded ?? false));
                                         }
 
                                         switch (recordOverrideHandlingMode)
@@ -1020,6 +1069,17 @@ public class Patcher : OptionalUIModule
                                             }
                                         }
 
+                                        // Wig forwarding in this branch only activates in SkyPatcher
+                                        // mode (GetEffectiveWigMode is None for plain Create). Point
+                                        // the surrogate at the +Wig duplicates and drop superseded
+                                        // hair head parts BEFORE the merge-in walker, so neither the
+                                        // original WNAM nor the removed hair is ever traversed.
+                                        if (wigForward != null)
+                                        {
+                                            _wigForwarder.FinalizeNpcRecord(wigForward, patchNpc,
+                                                npcIdentifier, AppendLog);
+                                        }
+
                                         if (mergeInDependencyRecords)
                                         {
                                             List<string> mergeInExceptions = new();
@@ -1043,8 +1103,12 @@ public class Patcher : OptionalUIModule
 
                                         if (_settings.UseSkyPatcherMode)
                                         {
+                                            // A wig forwarded to the outfit must emit the
+                                            // outfitDefault= directive even when the user's
+                                            // Include Outfit choice is off — the duplicate outfit
+                                            // is how the wig reaches the NPC at runtime.
                                             ApplySkyPatcherDirectives(npcFormKey, winningNpcOverride, patchNpc,
-                                                includeOutfit);
+                                                includeOutfit || (wigForward?.OutfitForwarded ?? false));
                                         }
 
                                         switch (recordOverrideHandlingMode)
@@ -1221,6 +1285,20 @@ public class Patcher : OptionalUIModule
                                 await _assetHandler.ScheduleCopyNpcAssets(npcFormKey, appearanceNpcRecord,
                                     appearanceModSetting, // appearanceNpcRecord here rather than patchNpc is intentional
                                     _currentRunOutputAssetPath, npcIdentifier);
+
+                                // Queue the baked-hair strip for this NPC's copied FaceGen NIF
+                                // (ForwardToSkin wig handling). The copy destination is keyed by
+                                // the OUTPUT record's FormKey in every mode (surrogate in
+                                // SkyPatcher mode, the patch target otherwise); applied after
+                                // MonitorAndWaitForAllTasks below, once the file exists.
+                                if (wigForward is { HairShapeNames.Count: > 0 })
+                                {
+                                    var (wigFaceGenNifRelPath, _) =
+                                        Auxilliary.GetFaceGenSubPathStrings(patchNpc.FormKey, true);
+                                    _pendingWigNifEdits.Add((
+                                        Path.Combine(_currentRunOutputAssetPath, wigFaceGenNifRelPath),
+                                        wigForward.HairShapeNames, npcIdentifier));
+                                }
                                 
                                 var (_, faceTintPath) = Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, true);
                                 
@@ -1276,9 +1354,11 @@ public class Patcher : OptionalUIModule
 
                     await _assetHandler.MonitorAndWaitForAllTasks(logMessage =>
                         AppendLog("  " + logMessage, false, true));
-                    
+
                     // Verify any cached file access errors to see if they were actual failures.
                     _assetHandler.LogTrueCopyFailures();
+
+                    ApplyPendingWigNifEdits();
 
                     // Opt-in asset-provenance report (AssetProvenance.csv): why each file was copied
                     // and which NPCs/mods/records pulled it in. No-op unless enabled (Settings
@@ -1570,6 +1650,54 @@ public class Patcher : OptionalUIModule
             else
             {
                 AppendLog($"  Skipping deletion of non-asset directory: {dir.Name}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Strips the baked hair shape(s) from the copied FaceGen NIFs queued by
+    /// the wig-forwarding pass (see <see cref="WigForwarder"/>: the hair head
+    /// part was removed from the NPC record, and the baked FaceGen hair would
+    /// otherwise render alongside the forwarded wig in game). Runs once per
+    /// patch run, after all asset copy/extraction tasks have finished so the
+    /// destination files exist. Per-file failures are logged and skipped —
+    /// a surviving baked hair clashes visually but breaks nothing.
+    /// </summary>
+    private void ApplyPendingWigNifEdits()
+    {
+        if (_pendingWigNifEdits.IsEmpty) return;
+
+        AppendLog($"Stripping baked hair from {_pendingWigNifEdits.Count} FaceGen NIF(s) (wig forwarding)...",
+            false, true);
+        foreach (var (nifPath, shapeNames, npcIdentifier) in _pendingWigNifEdits)
+        {
+            try
+            {
+                if (!File.Exists(nifPath))
+                {
+                    AppendLog($"  WARNING: {npcIdentifier}: FaceGen NIF not found for baked-hair strip: {nifPath}",
+                        false, true);
+                    continue;
+                }
+
+                int removed = NifHandler.RemoveShapesByName(nifPath, shapeNames,
+                    msg => AppendLog("    " + msg, false, false));
+                if (removed > 0)
+                {
+                    AppendLog($"  {npcIdentifier}: removed {removed} baked hair shape(s) " +
+                              $"[{string.Join(", ", shapeNames)}] from {Path.GetFileName(nifPath)}.", false, true);
+                }
+                else
+                {
+                    AppendLog($"  WARNING: {npcIdentifier}: no shape named [{string.Join(", ", shapeNames)}] " +
+                              $"found in {Path.GetFileName(nifPath)} — the baked hair may clash with the forwarded wig in game.",
+                        false, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"  ERROR stripping baked hair for {npcIdentifier} ({nifPath}): {ex.Message}",
+                    true, true);
             }
         }
     }

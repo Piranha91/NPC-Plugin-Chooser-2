@@ -524,10 +524,12 @@
                                              </TextBlock.ToolTip>
                                          </TextBlock>
 
+                                         <!-- SelectedItem (not SelectedValue): WPF can't establish a selection
+                                              from a null SelectedValue, so the null-keyed "Default" entry rendered
+                                              blank on load. See VM_ModSetting.SelectedRecordOverrideHandlingItem. -->
                                          <ComboBox
                                              ItemsSource="{Binding RecordOverrideHandlingModes}"
-                                             SelectedValuePath="Key"
-                                             SelectedValue="{Binding OverrideRecordOverrideHandlingMode, Mode=TwoWay}"
+                                             SelectedItem="{Binding SelectedRecordOverrideHandlingItem, Mode=TwoWay}"
                                              Margin="5 0 0 0">
                                              <ComboBox.ItemTemplate>
                                                  <DataTemplate>
@@ -535,6 +537,47 @@
                                                  </DataTemplate>
                                              </ComboBox.ItemTemplate>
                                          </ComboBox>
+
+                                         <!-- Wig Handling Mode: only shown when the analysis scan detected
+                                              wig/antler armors in this mod AND wig handling is active for the
+                                              current output mode (Create and Patch, or SkyPatcher mode). -->
+                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,0"
+                                                     Visibility="{Binding IsWigHandlingVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                             <TextBlock Text="Wig Handling Mode" VerticalAlignment="Center">
+                                                 <TextBlock.ToolTip>
+                                                     <ToolTip>
+                                                         <TextBlock TextWrapping="Wrap" Width="340">
+                                                             This mod ships wig/antler armors (hair-slot armors in its Default Outfits).
+                                                             Controls how they are handled during patching — and how mugshots and the
+                                                             3D preview depict the NPC.
+                                                             <LineBreak/><LineBreak/>
+                                                             Default: Use the default setting from the Settings tab.
+                                                             <LineBreak/>
+                                                             ForwardToSkin: transfer the wig into the NPC's skin (WornArmor) so it shows
+                                                             regardless of the outfit worn. Falls back to ForwardToOutfit if the appearance
+                                                             plugin assigns no WornArmor.
+                                                             <LineBreak/>
+                                                             ForwardToOutfit: duplicate the outfit the NPC actually wears in game and add
+                                                             the wig to the duplicate (no change if it already contains the wig).
+                                                             <LineBreak/>
+                                                             None: the wig is treated like any other outfit element — forwarded only if
+                                                             Include Outfits is selected.
+                                                         </TextBlock>
+                                                     </ToolTip>
+                                                 </TextBlock.ToolTip>
+                                             </TextBlock>
+
+                                             <ComboBox
+                                                 ItemsSource="{Binding WigHandlingModes}"
+                                                 SelectedItem="{Binding SelectedWigHandlingItem, Mode=TwoWay}"
+                                                 Margin="5 0 0 0">
+                                                 <ComboBox.ItemTemplate>
+                                                     <DataTemplate>
+                                                         <TextBlock Text="{Binding Value}"/>
+                                                     </DataTemplate>
+                                                 </ComboBox.ItemTemplate>
+                                             </ComboBox>
+                                         </StackPanel>
                                      </StackPanel>
                                      
                                      <StackPanel Grid.Row="8" Orientation="Horizontal" 

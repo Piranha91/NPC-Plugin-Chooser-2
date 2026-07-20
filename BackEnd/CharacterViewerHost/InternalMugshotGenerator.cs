@@ -379,10 +379,15 @@ public sealed class InternalMugshotGenerator
                 // regeneration instead of looping.
                 bool stampNpcAssets = _settings.InternalMugshot.ShowMissingNpcAssetsIcon;
                 bool stampOutfitNotices = _settings.InternalMugshot.ShowMissingOutfitAssetsIcon;
+                // The attire identity = effective outfit + the wig-forwarding
+                // contribution (WigHandlingMode) — same composition the
+                // staleness checker's identity providers use, so a mode or
+                // wig-set change re-stales exactly the affected tiles.
                 var parametersJson = InternalMugshotMetadata.Build(
                     npcFormKey, _settings.InternalMugshot,
                     effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear,
-                    outfitDisplay.IdentityStamp,
+                    outfitDisplay.IdentityStamp + _resolver.ComputeWigIdentitySuffix(
+                        npcFormKey, modSetting, effectiveIncludeDefaultOutfit),
                     stampNpcAssets ? missingMeshPathsOut : null,
                     stampNpcAssets ? missingTexturePathsOut : null,
                     stampNpcAssets ? faceGenMismatch : null,

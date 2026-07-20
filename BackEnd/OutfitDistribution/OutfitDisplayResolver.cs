@@ -380,6 +380,16 @@ public class OutfitDisplayResolver
     /// with Winner fallback — the same scoping NpcMeshResolver uses).</summary>
     private FormKey? ResolveDonorOutfit(FormKey sourceNpcFormKey, ModSetting? modSetting, ILinkCache linkCache)
     {
+        var donor = ResolveDonorNpc(sourceNpcFormKey, modSetting, linkCache);
+        if (donor?.DefaultOutfit == null || donor.DefaultOutfit.IsNull) return null;
+        return donor.DefaultOutfit.FormKey;
+    }
+
+    /// <summary>The donor NPC record resolved through the mod's plugins
+    /// (disambiguation key first, then CorrespondingModKeys in reverse with
+    /// Winner fallback), falling back to the load-order winner.</summary>
+    private INpcGetter? ResolveDonorNpc(FormKey sourceNpcFormKey, ModSetting? modSetting, ILinkCache linkCache)
+    {
         INpcGetter? donor = null;
         if (modSetting != null && modSetting.CorrespondingModKeys.Count > 0)
         {
@@ -403,8 +413,65 @@ public class OutfitDisplayResolver
         {
             linkCache.TryResolve<INpcGetter>(sourceNpcFormKey, out donor);
         }
-        if (donor?.DefaultOutfit == null || donor.DefaultOutfit.IsNull) return null;
-        return donor.DefaultOutfit.FormKey;
+        return donor;
+    }
+
+    /// <summary>
+    /// The wig-forwarding contribution to the depicted-attire identity stamp
+    /// (appended to <see cref="OutfitDisplayResult.IdentityStamp"/> by the
+    /// mugshot metadata stamp and the staleness checker's identity provider).
+    /// Empty when nothing wig-related is depicted — mode inert, no detected
+    /// wig/antler in the donor's outfit, or a ForwardToOutfit wig with the
+    /// outfit toggle off. Mirrors NpcMeshResolver's render plan (including the
+    /// no-WNAM ForwardToSkin → ForwardToOutfit fallback) so a stale PNG is
+    /// re-rendered exactly when the depicted wig state changes. Deliberately
+    /// content-based (mode + sorted wig FormKeys), not a mode-only tag: adding
+    /// or removing a wig from the mod's outfit re-stales the tile too.
+    /// </summary>
+    public string ComputeWigIdentitySuffix(FormKey sourceNpcFormKey, ModSetting? modSetting,
+        bool includeDefaultOutfitRenderFlag)
+    {
+        var mode = _settings.GetEffectiveRenderWigMode(modSetting);
+        if (mode == WigHandlingMode.None || modSetting == null) return string.Empty;
+        var linkCache = _env.LinkCache;
+        if (linkCache == null) return string.Empty;
+
+        var donor = ResolveDonorNpc(sourceNpcFormKey, modSetting, linkCache);
+        if (donor?.DefaultOutfit == null || donor.DefaultOutfit.IsNull) return string.Empty;
+
+        IOutfitGetter? donorOutfit = null;
+        var folders = modSetting.CorrespondingFolderPaths.ToHashSet();
+        if (_recordHandler.TryGetRecordFromMods(donor.DefaultOutfit, modSetting.CorrespondingModKeys, folders,
+                RecordHandler.RecordLookupFallBack.Winner, out var outfitRec) && outfitRec is IOutfitGetter scoped)
+        {
+            donorOutfit = scoped;
+        }
+        else
+        {
+            linkCache.TryResolve<IOutfitGetter>(donor.DefaultOutfit.FormKey, out donorOutfit);
+        }
+        if (donorOutfit?.Items == null) return string.Empty;
+
+        var wigKeys = donorOutfit.Items
+            .Where(i => i != null && !i.IsNull)
+            .Select(i => i.FormKey)
+            .Where(k => modSetting.DetectedWigArmors.Contains(k) || modSetting.DetectedAntlerArmors.Contains(k))
+            .Select(k => k.ToString())
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+        if (wigKeys.Count == 0) return string.Empty;
+
+        if (mode == WigHandlingMode.ForwardToSkin && (donor.WornArmor == null || donor.WornArmor.IsNull))
+        {
+            mode = WigHandlingMode.ForwardToOutfit; // WigForwarder / renderer fallback mirror
+        }
+
+        if (mode == WigHandlingMode.ForwardToOutfit && !includeDefaultOutfitRenderFlag)
+        {
+            return string.Empty; // wig is outfit content; outfit off = not depicted
+        }
+
+        return "+wig[" + mode + ":" + string.Join(",", wigKeys) + "]";
     }
 
     private static string DescribeOutfit(FormKey outfit, ILinkCache linkCache)
