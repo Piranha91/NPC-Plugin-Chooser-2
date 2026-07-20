@@ -77,6 +77,19 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     [Reactive] public bool HasAntlerRemovalNotice { get; private set; }
     [Reactive] public string AntlerRemovalNoticeText { get; private set; } = string.Empty;
 
+    // --- "Set Antler Head Parts" selector (per-tile 3D popup only) ---
+    /// <summary>Whether the antler head-part selector can be offered: the preview
+    /// was loaded through an explicit mod (the per-tile 3D popup) and that NPC has
+    /// head parts. The Settings-tab embedded preview (active selection) omits it.</summary>
+    [Reactive] public bool IsAntlerSelectorAvailable { get; private set; }
+    [Reactive] public bool ShowAntlerSelector { get; set; }
+    public System.Collections.ObjectModel.ObservableCollection<VM_AntlerHeadPartCandidate>
+        AntlerHeadPartCandidates { get; } = new();
+    public ReactiveCommand<Unit, Unit> ToggleAntlerSelectorCommand { get; }
+
+    private ModSetting? _antlerSelectorModSetting;
+    private bool _suppressAntlerRepopulate;
+
     // Non-persistent override state for the full-screen popup (see
     // PersistAttireToggles). Seeded from the persisted defaults at construction.
     private bool _localIncludeDefaultOutfit;
@@ -191,6 +204,8 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
 
         LoadSelectedNpcCommand = ReactiveCommand.CreateFromTask(LoadSelectedNpcAsync).DisposeWith(_disposables);
         ResetCommand = ReactiveCommand.Create(ResetSettingsToDefaults).DisposeWith(_disposables);
+        ToggleAntlerSelectorCommand = ReactiveCommand.Create(() => { ShowAntlerSelector = !ShowAntlerSelector; })
+            .DisposeWith(_disposables);
 
         // When the host UC's GL context is reset (WPF recreated the UC; see
         // UC_InternalMugshotPreview.GlControl_OnRender), the renderer drops all
@@ -514,6 +529,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             ApplyAttireOverrides(attire);
             ApplyOutfitNotice(outfitDisplay);
             SetAntlerRemovalNotice(_resolver.AntlerRemovalAppliesForActiveSelection(formKey));
+            ClearAntlerSelector(); // no explicit mod scope on the active-selection path
 
             PreviewLoaded?.Invoke();
         }
@@ -579,6 +595,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             ApplyAttireOverrides(attire);
             ApplyOutfitNotice(outfitDisplay);
             SetAntlerRemovalNotice(_resolver.AntlerRemovalApplies(formKey, modSetting));
+            PopulateAntlerSelector(modSetting, formKey);
 
             PreviewLoaded?.Invoke();
         }
@@ -630,6 +647,101 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             ? "Antlers are removed from this NPC in the patched output (this mod's Antler Handling Mode is "
               + "Remove) and are hidden here to match."
             : string.Empty;
+    }
+
+    /// <summary>Rebuilds the antler head-part selector list for the loaded NPC
+    /// (explicit-mod / popup path only). Skipped during a designation-triggered
+    /// reload so the list the user is interacting with isn't rebuilt underneath
+    /// them.</summary>
+    private void PopulateAntlerSelector(ModSetting? modSetting, FormKey formKey)
+    {
+        if (_suppressAntlerRepopulate) return;
+        ClearAntlerSelectorItems();
+        _antlerSelectorModSetting = modSetting;
+        if (modSetting == null)
+        {
+            IsAntlerSelectorAvailable = false;
+            ShowAntlerSelector = false;
+            return;
+        }
+
+        foreach (var c in _resolver.GetAntlerHeadPartCandidates(formKey, modSetting))
+        {
+            var vm = new VM_AntlerHeadPartCandidate(c);
+            vm.DesignationChanged += OnCandidateDesignationChanged;
+            vm.HoverChanged += OnCandidateHoverChanged;
+            AntlerHeadPartCandidates.Add(vm);
+        }
+        IsAntlerSelectorAvailable = AntlerHeadPartCandidates.Count > 0;
+        if (!IsAntlerSelectorAvailable) ShowAntlerSelector = false;
+    }
+
+    private void ClearAntlerSelector()
+    {
+        ClearAntlerSelectorItems();
+        _antlerSelectorModSetting = null;
+        IsAntlerSelectorAvailable = false;
+        ShowAntlerSelector = false;
+    }
+
+    private void ClearAntlerSelectorItems()
+    {
+        foreach (var vm in AntlerHeadPartCandidates)
+        {
+            vm.DesignationChanged -= OnCandidateDesignationChanged;
+            vm.HoverChanged -= OnCandidateHoverChanged;
+        }
+        AntlerHeadPartCandidates.Clear();
+    }
+
+    /// <summary>Row hover → glow-highlight the matching baked head shape(s) in the
+    /// viewport (cleared on leave).</summary>
+    private void OnCandidateHoverChanged(VM_AntlerHeadPartCandidate c, bool entered)
+    {
+        try { Viewer.SetHighlightedShapeNames(entered ? c.ShapeNames : null); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: antler highlight failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>Checkbox toggle → update this mod's manual antler head-part set
+    /// (persisted on Settings, keyed by mod name), make the mod's Antler Handling
+    /// dropdown appear, and reload so the head part hides / the notice updates.</summary>
+    private async void OnCandidateDesignationChanged(VM_AntlerHeadPartCandidate c)
+    {
+        var mod = _antlerSelectorModSetting;
+        if (mod == null) return;
+        string modName = mod.DisplayName;
+
+        if (!_settings.ManualAntlerHeadPartsByMod.TryGetValue(modName, out var set) || set == null)
+        {
+            set = new HashSet<FormKey>();
+            _settings.ManualAntlerHeadPartsByMod[modName] = set;
+        }
+        if (c.IsDesignated) set.Add(c.FormKey); else set.Remove(c.FormKey);
+        if (set.Count == 0) _settings.ManualAntlerHeadPartsByMod.Remove(modName);
+        PersistThrottled();
+
+        // A manual-only mod needs its Antler Handling dropdown to appear so the
+        // user can set Remove.
+        Locator.Current.GetService<VM_Mods>()?.RefreshModSettingAntlerState(modName);
+
+        // Reload so HideHeadShapeNames (hide) + the removal notice reflect it,
+        // without rebuilding the list the user is clicking in. HideHeadShapeNames
+        // is applied at mesh-install time, so the SAME-NPC reload must force a
+        // full rebuild (the same-identity short-circuit would otherwise skip it,
+        // leaving the shape visible until a close+reopen). Clear the lingering
+        // hover glow first — the rebuilt scene has fresh meshes.
+        try { Viewer.SetHighlightedShapeNames(null); } catch { /* best-effort */ }
+        Viewer.ForceRebuildNextLoad();
+        _suppressAntlerRepopulate = true;
+        try { await ReloadCurrentAsync(); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: antler designation reload failed: " + ex.Message);
+        }
+        finally { _suppressAntlerRepopulate = false; }
     }
 
     /// <summary>Begins a render-log session for one preview load: closes any
@@ -777,6 +889,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     {
         Viewer.GlContextReset -= OnViewerGlContextReset;
         Viewer.SceneCommitted -= OnViewerSceneCommitted;
+        ClearAntlerSelectorItems();
         _renderLogCaptureScope?.Dispose();
         _renderLogCaptureScope = null;
         _disposables.Dispose();

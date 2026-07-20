@@ -329,8 +329,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         DetectedAntlerArmatures = new HashSet<FormKey>(model.DetectedAntlerArmatures ?? new HashSet<FormKey>());
         DetectedAntlerHeadParts = new HashSet<FormKey>(model.DetectedAntlerHeadParts ?? new HashSet<FormKey>());
         HasWigArmors = DetectedWigArmors.Count > 0;
-        HasAntlers = DetectedAntlerArmors.Count > 0 || DetectedAntlerArmatures.Count > 0 ||
-                     DetectedAntlerHeadParts.Count > 0;
+        RecomputeHasAntlers();
         OverrideWigHandlingMode = model.ModWigHandlingMode;
         OverrideAntlerHandlingMode = model.ModAntlerHandlingMode;
         // AvailablePluginsForNpcs should be re-calculated on load.
@@ -874,8 +873,18 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         DetectedAntlerArmatures = scan.AntlerArmatures;
         DetectedAntlerHeadParts = scan.AntlerHeadParts;
         HasWigArmors = scan.Wigs.Count > 0;
-        HasAntlers = scan.AntlerArmors.Count > 0 || scan.AntlerArmatures.Count > 0 ||
-                     scan.AntlerHeadParts.Count > 0;
+        RecomputeHasAntlers();
+    }
+
+    /// <summary>HasAntlers = scan-detected antlers (any source) OR user-designated
+    /// manual antler head parts for this mod. Recomputed after detection changes
+    /// and after a manual designation via the 3D preview selector (so the Antler
+    /// Handling dropdown appears for a manual-only mod without a restart).</summary>
+    public void RecomputeHasAntlers()
+    {
+        HasAntlers = DetectedAntlerArmors.Count > 0 || DetectedAntlerArmatures.Count > 0 ||
+                     DetectedAntlerHeadParts.Count > 0 ||
+                     _parentVm.HasManualAntlerHeadParts(DisplayName);
     }
 
     public ModSetting SaveToModel()

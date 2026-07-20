@@ -537,8 +537,9 @@ public class NpcMeshResolver
     private IReadOnlySet<string> ComputeAntlerHideHeadShapeNames(INpcGetter npcGetter, ModSetting? modSetting,
         ILinkCache linkCache, NpcResolutionContext? context)
     {
-        if (modSetting == null || modSetting.DetectedAntlerHeadParts.Count == 0)
-            return EmptyShapeNameSet;
+        if (modSetting == null) return EmptyShapeNameSet;
+        var antlerHeadParts = _settings.GetEffectiveAntlerHeadParts(modSetting);
+        if (antlerHeadParts.Count == 0) return EmptyShapeNameSet;
         if (_settings.GetEffectiveRenderAntlerMode(modSetting) != AntlerHandlingMode.Remove)
             return EmptyShapeNameSet;
 
@@ -546,7 +547,7 @@ public class NpcMeshResolver
         foreach (var hpLink in npcGetter.HeadParts)
         {
             if (hpLink == null || hpLink.IsNull) continue;
-            if (!modSetting.DetectedAntlerHeadParts.Contains(hpLink.FormKey)) continue;
+            if (!antlerHeadParts.Contains(hpLink.FormKey)) continue;
             var hpRec = ResolveRecord<IHeadPartGetter>(hpLink, linkCache, context);
             if (hpRec == null) continue;
             if (!string.IsNullOrEmpty(hpRec.EditorID)) names.Add(hpRec.EditorID);
@@ -638,7 +639,7 @@ public class NpcMeshResolver
     /// </summary>
     public bool AntlerRemovalApplies(FormKey npcFormKey, ModSetting? modSetting)
     {
-        if (modSetting == null || !modSetting.HasAntlers) return false;
+        if (modSetting == null || !_settings.ModHasAntlers(modSetting)) return false;
         if (_settings.GetEffectiveRenderAntlerMode(modSetting) != AntlerHandlingMode.Remove) return false;
         var linkCache = _env.LinkCache;
         if (linkCache == null) return false;
@@ -646,9 +647,10 @@ public class NpcMeshResolver
         var npc = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
         if (npc == null) return false;
 
-        // Source 3: antler head part on the NPC.
+        // Source 3: antler head part on the NPC (keyword-detected or designated).
+        var antlerHeadParts = _settings.GetEffectiveAntlerHeadParts(modSetting);
         foreach (var hp in npc.HeadParts)
-            if (hp != null && !hp.IsNull && modSetting.DetectedAntlerHeadParts.Contains(hp.FormKey)) return true;
+            if (hp != null && !hp.IsNull && antlerHeadParts.Contains(hp.FormKey)) return true;
 
         // Source 2: antler ArmorAddon baked into the WornArmor.
         if (!npc.WornArmor.IsNull)
@@ -669,6 +671,65 @@ public class NpcMeshResolver
         }
 
         return false;
+    }
+
+    /// <summary>One head part of the previewed NPC, for the "Set Antler Head
+    /// Parts" selector. <see cref="ShapeNames"/> are the baked FaceGen shape names
+    /// (head part EditorID + ExtraParts EditorIDs) used to highlight/hide the
+    /// geometry. <see cref="IsAutoDetected"/> = keyword-detected (locked on);
+    /// <see cref="IsDesignated"/> = in the effective antler set (auto OR manual).</summary>
+    public sealed record AntlerHeadPartCandidate(
+        FormKey FormKey,
+        string DisplayName,
+        string TypeLabel,
+        IReadOnlyList<string> ShapeNames,
+        bool IsAutoDetected,
+        bool IsDesignated);
+
+    /// <summary>Enumerates the previewed NPC's head parts as antler-selector
+    /// candidates (resolved through the mod scope, matching the rendered NIF).
+    /// Empty when the NPC or environment can't be resolved.</summary>
+    public IReadOnlyList<AntlerHeadPartCandidate> GetAntlerHeadPartCandidates(FormKey npcFormKey, ModSetting? modSetting)
+    {
+        var result = new List<AntlerHeadPartCandidate>();
+        if (modSetting == null) return result;
+        var linkCache = _env.LinkCache;
+        if (linkCache == null) return result;
+        var context = BuildContext(npcFormKey, modSetting);
+        var npc = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
+        if (npc == null) return result;
+
+        var detected = modSetting.DetectedAntlerHeadParts;
+        var manual = _settings.GetManualAntlerHeadParts(modSetting.DisplayName).ToHashSet();
+        var seen = new HashSet<FormKey>();
+        foreach (var hpLink in npc.HeadParts)
+        {
+            if (hpLink == null || hpLink.IsNull || !seen.Add(hpLink.FormKey)) continue;
+            var hp = ResolveRecord<IHeadPartGetter>(hpLink, linkCache, context);
+            if (hp == null) continue;
+
+            var shapeNames = new List<string>();
+            if (!string.IsNullOrEmpty(hp.EditorID)) shapeNames.Add(hp.EditorID);
+            if (hp.ExtraParts != null)
+            {
+                foreach (var extraLink in hp.ExtraParts)
+                {
+                    if (extraLink == null || extraLink.IsNull) continue;
+                    var extraRec = ResolveRecord<IHeadPartGetter>(extraLink, linkCache, context);
+                    if (!string.IsNullOrEmpty(extraRec?.EditorID)) shapeNames.Add(extraRec.EditorID);
+                }
+            }
+
+            string display = hp.Name?.String ?? string.Empty;
+            if (string.IsNullOrEmpty(display)) display = hp.EditorID ?? string.Empty;
+            if (string.IsNullOrEmpty(display)) display = hpLink.FormKey.ToString();
+
+            bool auto = detected.Contains(hpLink.FormKey);
+            bool designated = auto || manual.Contains(hpLink.FormKey);
+            result.Add(new AntlerHeadPartCandidate(hpLink.FormKey, display,
+                hp.Type?.ToString() ?? "Misc", shapeNames, auto, designated));
+        }
+        return result;
     }
 
     /// <summary>

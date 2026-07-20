@@ -79,19 +79,66 @@
                  Settings live preview and the full-screen 3D popup. Bind to the
                  wrapper VM (the UC's DataContext); toggling persists to settings
                  and re-applies the mesh-override set via a reload. -->
-            <Border x:Name="AttireTogglePanel"
-                    HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6"
-                    Background="#A0000000" CornerRadius="4" Padding="8,6">
-                <StackPanel Orientation="Vertical">
-                    <CheckBox Content="Include Default Outfit" Foreground="White"
-                              IsChecked="{Binding IncludeDefaultOutfit}"
-                              ToolTip="Render the NPC's default outfit. Body-covering armor hides the nude body."/>
-                    <CheckBox Content="Include headgear" Foreground="White" Margin="0,4,0,0"
-                              IsChecked="{Binding IncludeHeadgear}"
-                              Visibility="{Binding IncludeDefaultOutfit, Converter={StaticResource BooleanToVisibilityConverter}}"
-                              ToolTip="Render worn/outfit head gear (helmets/hoods/circlets). Hair is hidden under headgear."/>
-                </StackPanel>
-            </Border>
+            <StackPanel HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6" Orientation="Vertical">
+                <Border x:Name="AttireTogglePanel"
+                        Background="#A0000000" CornerRadius="4" Padding="8,6">
+                    <StackPanel Orientation="Vertical">
+                        <CheckBox Content="Include Default Outfit" Foreground="White"
+                                  IsChecked="{Binding IncludeDefaultOutfit}"
+                                  ToolTip="Render the NPC's default outfit. Body-covering armor hides the nude body."/>
+                        <CheckBox Content="Include headgear" Foreground="White" Margin="0,4,0,0"
+                                  IsChecked="{Binding IncludeHeadgear}"
+                                  Visibility="{Binding IncludeDefaultOutfit, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                  ToolTip="Render worn/outfit head gear (helmets/hoods/circlets). Hair is hidden under headgear."/>
+                    </StackPanel>
+                </Border>
+
+                <!-- "Set Antler Head Parts" selector (per-tile 3D popup only; hidden
+                     when the NPC has no head parts or on the Settings-tab preview). -->
+                <Button Content="Set Antler Head Parts…" Margin="0,6,0,0" HorizontalAlignment="Left" Padding="6,2"
+                        Command="{Binding ToggleAntlerSelectorCommand}"
+                        Visibility="{Binding IsAntlerSelectorAvailable, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}"/>
+
+                <Border Margin="0,6,0,0" Width="300" MaxHeight="380"
+                        Background="#E0202020" CornerRadius="4" Padding="8"
+                        Visibility="{Binding ShowAntlerSelector, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="Antler head parts" Foreground="White"
+                                   FontWeight="Bold" Margin="0,0,0,4"/>
+                        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="#CCCCCC" FontSize="11"
+                                   Margin="0,0,0,6"
+                                   Text="Hover a head part to highlight it in the preview. Check the antlers to strip them from the output — this mod's Antler Handling Mode must be Remove for the removal to apply."/>
+                        <ListBox ItemsSource="{Binding AntlerHeadPartCandidates}" Background="Transparent"
+                                 BorderThickness="0" MaxHeight="300"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <EventSetter Event="MouseEnter" Handler="AntlerCandidate_MouseEnter"/>
+                                    <EventSetter Event="MouseLeave" Handler="AntlerCandidate_MouseLeave"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Padding" Value="2,1"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <CheckBox IsChecked="{Binding IsDesignated, Mode=TwoWay}"
+                                                  IsEnabled="{Binding CanToggle}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding DisplayName}" Foreground="White"
+                                                   Margin="6,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding TypeLabel}" Foreground="#999999" FontSize="10"
+                                                   Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="(auto)" Foreground="#66CCFF" FontSize="10"
+                                                   Margin="6,0,0,0" VerticalAlignment="Center"
+                                                   ToolTip="Keyword-detected antler — always removed when the mode is Remove."
+                                                   Visibility="{Binding IsAutoDetected, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
+            </StackPanel>
 
             <!-- Missing-asset warning (attire/headgear mesh-override failures)
                  and the informational stale-physics-config notice, stacked so

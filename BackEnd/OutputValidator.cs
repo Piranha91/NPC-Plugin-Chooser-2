@@ -714,7 +714,7 @@ public class OutputValidator
     private HashSet<FormKey>? AntlerRemovalHeadPartKeys(ModSetting sourceMod)
     {
         if (_settings.GetEffectiveAntlerMode(sourceMod) != AntlerHandlingMode.Remove) return null;
-        return sourceMod.DetectedAntlerHeadParts;
+        return _settings.GetEffectiveAntlerHeadParts(sourceMod);
     }
 
     private bool IsHairHeadPart(IFormLinkGetter<IHeadPartGetter> link,

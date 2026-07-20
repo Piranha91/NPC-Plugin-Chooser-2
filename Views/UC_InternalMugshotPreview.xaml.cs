@@ -590,6 +590,20 @@ public partial class UC_InternalMugshotPreview : UserControl
         GlControl.Visibility = Visibility.Visible;
     }
 
+    // "Set Antler Head Parts" selector: hovering a row highlights the matching
+    // baked head shape(s) in the viewport (VM_CharacterViewer.SetHighlightedShapeNames).
+    private void AntlerCandidate_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is VM_AntlerHeadPartCandidate vm)
+            vm.RaiseHover(true);
+    }
+
+    private void AntlerCandidate_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is VM_AntlerHeadPartCandidate vm)
+            vm.RaiseHover(false);
+    }
+
     private void GlControl_OnRender(TimeSpan delta)
     {
         if (_viewer == null) return;

@@ -86,10 +86,17 @@ public class ModSetting
     [JsonIgnore]
     public bool HasWigArmors => DetectedWigArmors.Count > 0;
 
+    /// <summary>Whether the analysis SCAN detected antlers (any of the three
+    /// sources). User-designated antlers (persisted on
+    /// <see cref="Settings.ManualAntlerHeadPartsByMod"/>) are folded in by
+    /// <see cref="Settings.ModHasAntlers"/> — use that for effective checks.</summary>
     [JsonIgnore]
-    public bool HasAntlers => DetectedAntlerArmors.Count > 0 ||
-                              DetectedAntlerArmatures.Count > 0 ||
-                              DetectedAntlerHeadParts.Count > 0;
+    public bool HasDetectedAntlers => DetectedAntlerArmors.Count > 0 ||
+                                      DetectedAntlerArmatures.Count > 0 ||
+                                      DetectedAntlerHeadParts.Count > 0;
+
+    [JsonIgnore]
+    public bool HasAntlers => HasDetectedAntlers;
 
     [JsonIgnore]
     public bool HasWigs => HasWigArmors || HasAntlers;

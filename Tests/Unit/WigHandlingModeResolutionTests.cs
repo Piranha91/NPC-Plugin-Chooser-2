@@ -199,4 +199,43 @@ public class WigHandlingModeResolutionTests
         // Plain Create record mode: inert even with detections.
         NewSettings(PatchingMode.Create).WigOrAntlerHandlingActive(ModWithAntler()).Should().BeFalse();
     }
+
+    // ── Manually-designated antler head parts (the "Set Antler Head Parts" selector) ──
+
+    [Fact]
+    public void ManualAntlerHeadParts_ActivateHandling_ForAScanUndetectedMod()
+    {
+        var headPart = MutagenFixtures.Fk("00A1B2:FoxGloveAuri.esp");
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+        var mod = new ModSetting { DisplayName = "FoxGlove" }; // no keyword detection at all
+
+        settings.ModHasAntlers(mod).Should().BeFalse();
+        settings.GetEffectiveAntlerHeadParts(mod).Should().BeEmpty();
+        settings.GetEffectiveAntlerMode(mod).Should().Be(AntlerHandlingMode.None);
+
+        // The user designates a head part (keyed by mod name on the root Settings).
+        settings.ManualAntlerHeadPartsByMod["FoxGlove"] = new HashSet<FormKey> { headPart };
+
+        settings.ModHasAntlers(mod).Should().BeTrue("a manual designation counts as having antlers");
+        settings.GetEffectiveAntlerHeadParts(mod).Should().Contain(headPart);
+        settings.GetEffectiveAntlerMode(mod).Should().Be(AntlerHandlingMode.ForwardToSkin,
+            "manual-only mod resolves to the global default until a per-mod mode is set");
+
+        mod.ModAntlerHandlingMode = AntlerHandlingMode.Remove;
+        settings.GetEffectiveAntlerMode(mod).Should().Be(AntlerHandlingMode.Remove);
+    }
+
+    [Fact]
+    public void EffectiveAntlerHeadParts_UnionsDetectedAndManual_ByModName()
+    {
+        var detected = MutagenFixtures.Fk("000111:M.esp");
+        var manual = MutagenFixtures.Fk("000222:M.esp");
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+        var mod = new ModSetting { DisplayName = "M", DetectedAntlerHeadParts = { detected } };
+        settings.ManualAntlerHeadPartsByMod["M"] = new HashSet<FormKey> { manual };
+
+        settings.GetEffectiveAntlerHeadParts(mod).Should().BeEquivalentTo(new[] { detected, manual });
+        // Manual entries are keyed by DisplayName — a different mod isn't affected.
+        settings.GetEffectiveAntlerHeadParts(new ModSetting { DisplayName = "Other" }).Should().BeEmpty();
+    }
 }

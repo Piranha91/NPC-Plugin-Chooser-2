@@ -475,4 +475,21 @@ public class SerializableModelsRoundTripTests
         clone.ProcessedNpcs.Should().NotBeSameAs(token.ProcessedNpcs);
         clone.ProcessedNpcs[Npc1].OutputPlugin.Should().Be(ModB);
     }
+
+    [Fact]
+    public void Settings_ManualAntlerHeadPartsByMod_SurvivesRoundTrip()
+    {
+        var settings = new Settings
+        {
+            ManualAntlerHeadPartsByMod = new Dictionary<string, HashSet<FormKey>>
+            {
+                ["FoxGlove"] = new HashSet<FormKey> { Npc1, Npc2 },
+            },
+        };
+
+        var clone = RoundTrip(settings);
+
+        clone.ManualAntlerHeadPartsByMod.Should().ContainKey("FoxGlove");
+        clone.ManualAntlerHeadPartsByMod["FoxGlove"].Should().BeEquivalentTo(new[] { Npc1, Npc2 });
+    }
 }

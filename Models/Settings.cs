@@ -146,6 +146,15 @@ public class Settings
     // field in an old Settings.json deserializes to this default (no migration).
     public AntlerHandlingMode DefaultAntlerHandlingMode { get; set; } = AntlerHandlingMode.ForwardToSkin;
 
+    // User-designated antler head parts, per mod (keyed by ModSetting.DisplayName),
+    // from the 3D preview's "Set Antler Head Parts" selector — for antler head
+    // parts whose names lack the "antler" keyword (e.g. non-intelligible names the
+    // scan can't detect). Stored on the root Settings (not ModSetting) so it
+    // survives VM_Mods.SaveModSettingsToModel, which rebuilds ModSettings from the
+    // VM list. Folded into the effective antler head-part set by
+    // GetEffectiveAntlerHeadParts. Additive to DetectedAntlerHeadParts.
+    public Dictionary<string, HashSet<FormKey>> ManualAntlerHeadPartsByMod { get; set; } = new();
+
     /// <summary>True when wig/antler handling is active for the current output
     /// mode: Create-and-Patch record mode, or SkyPatcher output in either
     /// PatchingMode. Inert in plain Create record mode.</summary>
@@ -177,9 +186,46 @@ public class Settings
     /// </summary>
     public AntlerHandlingMode GetEffectiveAntlerMode(ModSetting? modSetting)
     {
-        if (modSetting == null || !modSetting.HasAntlers) return AntlerHandlingMode.None;
+        if (modSetting == null || !ModHasAntlers(modSetting)) return AntlerHandlingMode.None;
         if (!WigHandlingActiveForOutputMode) return AntlerHandlingMode.None;
         return modSetting.ModAntlerHandlingMode ?? DefaultAntlerHandlingMode;
+    }
+
+    /// <summary>The user's manually-designated antler head parts for
+    /// <paramref name="modName"/> (empty when none). See
+    /// <see cref="ManualAntlerHeadPartsByMod"/>.</summary>
+    public IReadOnlyCollection<FormKey> GetManualAntlerHeadParts(string? modName)
+    {
+        if (!string.IsNullOrEmpty(modName) &&
+            ManualAntlerHeadPartsByMod.TryGetValue(modName!, out var set) && set != null)
+        {
+            return set;
+        }
+        return Array.Empty<FormKey>();
+    }
+
+    /// <summary>The full antler head-part set for a mod: scan-detected
+    /// (<see cref="ModSetting.DetectedAntlerHeadParts"/>) plus user-designated
+    /// (<see cref="ManualAntlerHeadPartsByMod"/>). Single source of truth for
+    /// antler head-part removal (patcher, renderer, validator).</summary>
+    public HashSet<FormKey> GetEffectiveAntlerHeadParts(ModSetting? modSetting)
+    {
+        if (modSetting == null) return new HashSet<FormKey>();
+        var manual = GetManualAntlerHeadParts(modSetting.DisplayName);
+        if (manual.Count == 0) return modSetting.DetectedAntlerHeadParts;
+        var set = new HashSet<FormKey>(modSetting.DetectedAntlerHeadParts);
+        set.UnionWith(manual);
+        return set;
+    }
+
+    /// <summary>Whether a mod has any antlers at all — scan-detected OR
+    /// user-designated head parts. The effective gate for antler handling and
+    /// the per-mod dropdown's visibility (a manual-only mod still needs the
+    /// mode dropdown so its designation can be set to Remove).</summary>
+    public bool ModHasAntlers(ModSetting? modSetting)
+    {
+        if (modSetting == null) return false;
+        return modSetting.HasDetectedAntlers || GetManualAntlerHeadParts(modSetting.DisplayName).Count > 0;
     }
 
     /// <summary>True when either wig or antler handling will act on
@@ -207,7 +253,7 @@ public class Settings
     /// <see cref="InternalMugshotSettings.AntlerModeOverride"/>.</summary>
     public AntlerHandlingMode GetEffectiveRenderAntlerMode(ModSetting? modSetting)
     {
-        if (modSetting == null || !modSetting.HasAntlers) return AntlerHandlingMode.None;
+        if (modSetting == null || !ModHasAntlers(modSetting)) return AntlerHandlingMode.None;
         if (InternalMugshot.AntlerModeOverride is { } forced) return forced;
         return GetEffectiveAntlerMode(modSetting);
     }

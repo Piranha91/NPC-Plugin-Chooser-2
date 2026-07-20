@@ -737,16 +737,17 @@ public class WigForwarder
     /// <summary>Collects the donor NPC's keyword-detected antler head parts
     /// (source 3) into <paramref name="result"/> for removal — record keys (no
     /// bald replacement) and FaceGen shape names to strip. Only head parts the
-    /// scan flagged (<see cref="ModSetting.DetectedAntlerHeadParts"/>) qualify;
-    /// non-intelligible names need manual designation, a separate feature.</summary>
+    /// scan flagged OR the user manually designated
+    /// (<see cref="ModSetting.EffectiveAntlerHeadParts"/>) qualify.</summary>
     private void CollectAntlerHeadPartRemoval(INpcGetter donorNpc, ModSetting appearanceModSetting,
         HashSet<string> modFolderPaths, Result result)
     {
-        if (appearanceModSetting.DetectedAntlerHeadParts.Count == 0) return;
+        var antlerHeadParts = _settings.GetEffectiveAntlerHeadParts(appearanceModSetting);
+        if (antlerHeadParts.Count == 0) return;
         foreach (var hpLink in donorNpc.HeadParts)
         {
             if (hpLink == null || hpLink.IsNull) continue;
-            if (!appearanceModSetting.DetectedAntlerHeadParts.Contains(hpLink.FormKey)) continue;
+            if (!antlerHeadParts.Contains(hpLink.FormKey)) continue;
             result.DonorAntlerHeadPartKeys.Add(hpLink.FormKey);
             var hpRec = ResolveFromModsOrWinner<IHeadPartGetter>(hpLink,
                 appearanceModSetting.CorrespondingModKeys, modFolderPaths);
