@@ -41,6 +41,27 @@ namespace NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
 /// <c>variants</c>, everything renders once under the current settings.
 /// Renders always bypass the mugshot staleness cache (PNGs go to the harness
 /// output directory, not the autogen folder).
+///
+/// <para><b>Determinism (measured 2026-07-14, RTX 5090):</b> output is fully
+/// deterministic WITHIN a process — render #2 onward is bit-identical, and
+/// render #1 differs only by ±1 LSB on a handful of alpha-blended fragments
+/// (brows / lashes / hairline; ≤15 px at 900×900) as the driver's shader
+/// microcode settles. ACROSS processes it is NOT bit-exact: the NVIDIA
+/// driver's async shader compiler nondeterministically lands on one of a few
+/// discrete SASS schedules per process, so ~95% of processes agree to ±1 LSB
+/// but ~2-5% land in a distinct, internally-deterministic state that shades
+/// skin/hair ~+2.8 luma warmer (bit-identical whenever it recurs — two
+/// independent processes reproduced it exactly). That per-process state is
+/// fixed for the whole process, so <b>burn-in does NOT remove it</b> (a
+/// burn-in render lands in the same state as the real one). It is not
+/// fixable from portable GL app code; see the render-determinism memory.
+/// <c>burnInRenders</c> only removes the small render-#1 warm-up wobble by
+/// making the sweep's renders use the process's settled steady-state
+/// microcode — set <c>"burnInRenders": 1</c> (the first listed render is
+/// drawn that many times up front, under the base settings before any
+/// variant, and discarded). Launch with <c>DOTNET_TieredCompilation=0</c> to
+/// remove JIT re-tiering as a confound, though it was verified not to affect
+/// pixels.</para>
 /// </summary>
 public static class RenderHarnessRunner
 {
@@ -54,6 +75,11 @@ public static class RenderHarnessRunner
     {
         public string OutputDirectory { get; set; } = "";
         public bool ExitWhenDone { get; set; } = true;
+        /// <summary>Number of throwaway renders of the first listed mugshot to
+        /// draw before the sweep, letting the GPU driver's background shader
+        /// optimization settle so the sweep's PNGs are bit-stable. See the
+        /// class-level Determinism remarks. 0 (default) = no burn-in.</summary>
+        public int BurnInRenders { get; set; } = 0;
         public List<HarnessRender> Renders { get; set; } = new();
         public List<HarnessVariant> Variants { get; set; } = new();
     }
@@ -116,6 +142,22 @@ public static class RenderHarnessRunner
             var variants = config.Variants.Count > 0
                 ? config.Variants
                 : new List<HarnessVariant> { new() { Name = "base" } };
+
+            // Burn-in: render the first mugshot N times under the base settings
+            // and discard the PNGs, so the sweep proper starts from the GPU
+            // driver's settled steady state (see class Determinism remarks).
+            if (config.BurnInRenders > 0 && config.Renders.Count > 0)
+            {
+                string burnDir = Path.Combine(outDir, "_burnin");
+                Directory.CreateDirectory(burnDir);
+                for (int i = 0; i < config.BurnInRenders; i++)
+                {
+                    await RunOneAsync(settings, generator, config.Renders[0],
+                        $"burn-in {i + 1}/{config.BurnInRenders}", burnDir, log);
+                }
+                try { Directory.Delete(burnDir, recursive: true); }
+                catch { /* best-effort — leftover burn-in PNGs are harmless */ }
+            }
 
             try
             {
