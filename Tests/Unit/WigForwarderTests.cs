@@ -147,9 +147,9 @@ public class WigForwarderTests
         return f;
     }
 
-    private static WigForwarder.Result? Apply(Fixture f, bool mergeIn = true) =>
+    private static WigForwarder.Result? Apply(Fixture f, bool mergeIn = true, bool includeOutfit = false) =>
         f.Forwarder.Apply(f.DonorNpc.FormKey, f.DonorNpc, f.ModSetting, DonorKey,
-            new HashSet<string>(), mergeIn, "TestNpc", (_, _, _) => { });
+            new HashSet<string>(), mergeIn, includeOutfit, "TestNpc", (_, _, _) => { });
 
     [Fact]
     public void ForwardToSkin_DuplicatesWnam_TransfersArmatures_AndSeedsMapping()
@@ -368,6 +368,47 @@ public class WigForwarderTests
         f.Forwarder.FinalizeNpcRecord(result, patchNpc, "TestNpc", (_, _, _) => { });
         patchNpc.HeadParts.Select(h => h.FormKey).Should().Contain(f.HairHeadPart.FormKey);
         f.OutputMod.HeadParts.Should().BeEmpty("no bald record is generated when the real hair stays");
+    }
+
+    [Fact]
+    public void ForwardToSkin_WithIncludeOutfit_StripsWigsFromForwardedOutfitDuplicate()
+    {
+        var f = Make(WigHandlingMode.ForwardToSkin);
+
+        var result = Apply(f, mergeIn: false, includeOutfit: true);
+
+        result!.SkinDuplicateKey.Should().NotBeNull();
+        result.OutfitDuplicateKey.Should().NotBeNull(
+            "the forwarded outfit must not carry the wig the skin now provides — a slot clash in game");
+
+        var dup = f.OutputMod.Outfits.Single(o => o.FormKey == result.OutfitDuplicateKey!.Value);
+        dup.EditorID.Should().Be("AuriOutfit");
+        dup.Items!.Select(i => i.FormKey).Should().BeEquivalentTo(new[] { f.DressArmor.FormKey },
+            "wig and antler items are removed; the rest of the outfit is preserved");
+
+        // ApplyLinksTo points the NPC at BOTH duplicates.
+        var patchNpc = f.OutputMod.Npcs.AddNew();
+        result.ApplyLinksTo(patchNpc);
+        patchNpc.WornArmor.FormKey.Should().Be(result.SkinDuplicateKey!.Value);
+        patchNpc.DefaultOutfit.FormKey.Should().Be(result.OutfitDuplicateKey!.Value);
+
+        // Reuse: a second NPC with the same outfit + wig set shares the duplicate.
+        var second = Apply(f, mergeIn: false, includeOutfit: true);
+        second!.OutfitDuplicateKey.Should().Be(result.OutfitDuplicateKey);
+        f.OutputMod.Outfits.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void ForwardToSkin_WithoutIncludeOutfit_LeavesTheOutfitAlone()
+    {
+        var f = Make(WigHandlingMode.ForwardToSkin);
+
+        var result = Apply(f, mergeIn: false, includeOutfit: false);
+
+        result!.SkinDuplicateKey.Should().NotBeNull();
+        result.OutfitDuplicateKey.Should().BeNull(
+            "with Include Outfit off the patcher does not touch outfits; the load order decides");
+        f.OutputMod.Outfits.Should().BeEmpty();
     }
 
     [Fact]

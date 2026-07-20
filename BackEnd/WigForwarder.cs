@@ -44,8 +44,8 @@ public class WigForwarder
 
     public sealed class Result
     {
-        public FormKey? SkinDuplicateKey { get; init; }
-        public FormKey? OutfitDuplicateKey { get; init; }
+        public FormKey? SkinDuplicateKey { get; set; }
+        public FormKey? OutfitDuplicateKey { get; set; }
         public List<MajorRecord> MergedRecords { get; } = new();
         public bool OutfitForwarded => OutfitDuplicateKey != null;
 
@@ -178,6 +178,7 @@ public class WigForwarder
         ModKey donorContextModKey,
         HashSet<string> modFolderPaths,
         bool mergeInDependencyRecords,
+        bool includeOutfit,
         string npcIdentifier,
         Action<string, bool, bool> appendLog)
     {
@@ -210,7 +211,27 @@ public class WigForwarder
         {
             var skinResult = TryForwardToSkin(donorNpc, appearanceModSetting, donorContextModKey, modFolderPaths,
                 mergeInDependencyRecords, applicableWigs, npcIdentifier, appendLog);
-            if (skinResult != null) return skinResult;
+            if (skinResult != null)
+            {
+                // The wig now lives in the skin; a FORWARDED outfit must not
+                // carry it too (user-verified in game: both copies present =
+                // slot clash). When the user's Include Outfit choice will
+                // assign the donor outfit to this NPC, swap it for a duplicate
+                // with the forwarded wig/antler items removed. Built from the
+                // mod-scoped winning version of the outfit, so the mod's other
+                // items are carried into the output regardless of whether the
+                // outfit record originates in the mod's own plugins or is its
+                // override of a foundation record.
+                if (includeOutfit && donorOutfitGetter != null)
+                {
+                    StripWigsFromForwardedOutfit(skinResult, donorOutfitGetter, applicableWigs,
+                        appearanceModSetting, donorContextModKey, modFolderPaths,
+                        mergeInDependencyRecords, npcIdentifier, appendLog);
+                }
+
+                return skinResult;
+            }
+
             appendLog($"      Wig handling: {npcIdentifier} has no WNAM in the appearance plugin — falling back to ForwardToOutfit.",
                 false, false);
         }
@@ -463,6 +484,79 @@ public class WigForwarder
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// ForwardToSkin companion for Include Outfit: duplicates the donor's
+    /// outfit (its mod-scoped WINNING content — including the case where the
+    /// mod only OVERRIDES a foundation outfit record) with the forwarded
+    /// wig/antler items removed, and hands the duplicate back on
+    /// <paramref name="result"/> so <see cref="Result.ApplyLinksTo"/> assigns
+    /// it. Duplicate-and-strip rather than an in-place override edit: other
+    /// NPCs sharing the original outfit keep their wig. Also has the welcome
+    /// side effect of carrying the mod's outfit content into the output, so
+    /// the assignment no longer depends on the (soon-disabled) appearance
+    /// plugin winning the outfit record in the load order.
+    /// </summary>
+    private void StripWigsFromForwardedOutfit(
+        Result result,
+        IOutfitGetter donorOutfit,
+        List<(FormKey Key, bool IsAntler)> applicableWigs,
+        ModSetting appearanceModSetting,
+        ModKey donorContextModKey,
+        HashSet<string> modFolderPaths,
+        bool mergeInDependencyRecords,
+        string npcIdentifier,
+        Action<string, bool, bool> appendLog)
+    {
+        string wigSetId = "strip:" + BuildWigSetId(applicableWigs);
+        lock (_lock)
+        {
+            if (_outfitDuplicates.TryGetValue((donorOutfit.FormKey, wigSetId), out var existing))
+            {
+                result.OutfitDuplicateKey = existing;
+                return;
+            }
+        }
+
+        if (!Auxilliary.TryDuplicateGenericRecordAsNew(donorOutfit, _environmentStateProvider.OutputMod,
+                out dynamic? dupDyn, out string exceptionString) || dupDyn is not Outfit dup)
+        {
+            appendLog($"      Wig handling ERROR for {npcIdentifier}: could not duplicate forwarded outfit " +
+                      $"{donorOutfit.FormKey} for wig removal: {exceptionString}", true, true);
+            return;
+        }
+
+        dup.EditorID = donorOutfit.EditorID;
+        var removeKeys = applicableWigs.Select(w => w.Key).ToHashSet();
+        int removed = dup.Items?.RemoveAll(l => l != null && removeKeys.Contains(l.FormKey)) ?? 0;
+
+        _recordHandler.RecordMergedRecordOrigin(donorOutfit.FormKey, dup.FormKey, donorOutfit.EditorID);
+        RecordProvenanceDiag.RecordMergedAsNew(donorOutfit.FormKey, donorOutfit.EditorID, "Outfit",
+            dup.FormKey, null);
+
+        result.OutfitDuplicateKey = dup.FormKey;
+        result.MergedRecords.Add(dup);
+        lock (_lock) { _outfitDuplicates[(donorOutfit.FormKey, wigSetId)] = dup.FormKey; }
+
+        if (mergeInDependencyRecords)
+        {
+            List<string> exceptions = new();
+            var merged = _recordHandler.DuplicateFromOnlyReferencedGetters(
+                _environmentStateProvider.OutputMod, dup, appearanceModSetting.CorrespondingModKeys,
+                donorContextModKey, onlySubRecords: true, appearanceModSetting.HandleInjectedRecords,
+                modFolderPaths, ref exceptions);
+            result.MergedRecords.AddRange(merged);
+            if (exceptions.Any())
+            {
+                appendLog("Exceptions during wig outfit-strip merge for " + npcIdentifier + ":" +
+                          Environment.NewLine + string.Join(Environment.NewLine, exceptions), true, false);
+            }
+        }
+
+        appendLog($"      Wig handling (ForwardToSkin): duplicated forwarded outfit {donorOutfit.FormKey} " +
+                  $"as {dup.FormKey} with {removed} wig/antler item(s) removed (they live in the skin now).",
+            false, false);
     }
 
     /// <summary>Collects the donor NPC's Hair-type head parts into

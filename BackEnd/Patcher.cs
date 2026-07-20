@@ -719,7 +719,7 @@ public class Patcher : OptionalUIModule
                                 {
                                     wigForward = _wigForwarder.Apply(npcFormKey, appearanceNpcRecord,
                                         appearanceModSetting, appearanceModKey.Value, currentModFolderPaths,
-                                        mergeInDependencyRecords, npcIdentifier, AppendLog);
+                                        mergeInDependencyRecords, includeOutfit, npcIdentifier, AppendLog);
                                     if (wigForward != null)
                                     {
                                         RegisterRecordOwnerships(npcFormKey, wigForward.MergedRecords,
