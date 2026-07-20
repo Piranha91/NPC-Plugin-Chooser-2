@@ -596,12 +596,13 @@ public class OutputValidator
 
         // Wig forwarding (ForwardToSkin) deliberately removes the donor's
         // Hair-type head parts from the output (the wig lives in the skin
-        // instead; see WigForwarder). Exclude hair from the comparison when
-        // that applies to this NPC so the intentional removal isn't reported
-        // as a mismatch.
+        // instead; see WigForwarder), and antler Remove deletes keyword-detected
+        // antler head parts. Exclude both from the comparison when they apply to
+        // this NPC so the intentional removals aren't reported as mismatches.
         bool excludeHair = WigForwardingRemovesHair(b, sourceMod, linkCache, src);
-        var aHead = HeadPartKeySet(a.HeadParts, linkCache, src, excludeHair);
-        var bHead = HeadPartKeySet(b.HeadParts, linkCache, src, excludeHair);
+        var antlerRemovals = AntlerRemovalHeadPartKeys(sourceMod);
+        var aHead = HeadPartKeySet(a.HeadParts, linkCache, src, excludeHair, antlerRemovals);
+        var bHead = HeadPartKeySet(b.HeadParts, linkCache, src, excludeHair, antlerRemovals);
         if (!aHead.SetEquals(bHead))
         {
             var missing = bHead.Except(aHead).Select(StripHeadPartPrefix).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList(); // expected but absent from output
@@ -691,17 +692,29 @@ public class OutputValidator
         IReadOnlyList<IFormLinkGetter<IHeadPartGetter>> headParts,
         ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
         SourceModRefs src,
-        bool excludeHair = false)
+        bool excludeHair = false,
+        HashSet<FormKey>? excludeKeys = null)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var hp in headParts)
         {
             if (hp.IsNull) continue;
+            if (excludeKeys != null && excludeKeys.Contains(hp.FormKey)) continue;
             if (excludeHair && IsHairHeadPart(hp, linkCache, src)) continue;
             var eid = ResolveEditorId(hp, linkCache, src);
             set.Add(!string.IsNullOrEmpty(eid) ? "eid:" + eid : "fk:" + hp.FormKey);
         }
         return set;
+    }
+
+    /// <summary>The keyword-detected antler head parts that antler Remove deletes
+    /// from the output for <paramref name="sourceMod"/> — excluded from the
+    /// head-part comparison so the intentional removal isn't a mismatch. Empty
+    /// unless antler Remove is the effective mode.</summary>
+    private HashSet<FormKey>? AntlerRemovalHeadPartKeys(ModSetting sourceMod)
+    {
+        if (_settings.GetEffectiveAntlerMode(sourceMod) != AntlerHandlingMode.Remove) return null;
+        return sourceMod.DetectedAntlerHeadParts;
     }
 
     private bool IsHairHeadPart(IFormLinkGetter<IHeadPartGetter> link,

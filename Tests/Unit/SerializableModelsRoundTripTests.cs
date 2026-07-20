@@ -79,7 +79,10 @@ public class SerializableModelsRoundTripTests
             BaseGameAssetPathCount = 42,
             DetectedWigArmors = new HashSet<FormKey> { Npc1 },
             DetectedAntlerArmors = new HashSet<FormKey> { Npc2 },
+            DetectedAntlerArmatures = new HashSet<FormKey> { Npc1 },
+            DetectedAntlerHeadParts = new HashSet<FormKey> { Npc2 },
             ModWigHandlingMode = WigHandlingMode.ForwardToOutfit,
+            ModAntlerHandlingMode = AntlerHandlingMode.Remove,
             NpcFormKeysToNotifications = new Dictionary<FormKey,
                 (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)>
             {
@@ -117,9 +120,13 @@ public class SerializableModelsRoundTripTests
         clone.BaseGameAssetPathCount.Should().Be(42);
         clone.ModRecordOverrideHandlingMode.Should().Be(RecordOverrideHandlingMode.IncludeAsNew);
         clone.ModWigHandlingMode.Should().Be(WigHandlingMode.ForwardToOutfit);
+        clone.ModAntlerHandlingMode.Should().Be(AntlerHandlingMode.Remove);
         clone.DetectedWigArmors.Should().BeEquivalentTo(new[] { Npc1 });
         clone.DetectedAntlerArmors.Should().BeEquivalentTo(new[] { Npc2 });
-        clone.HasWigs.Should().BeTrue();
+        clone.DetectedAntlerArmatures.Should().BeEquivalentTo(new[] { Npc1 });
+        clone.DetectedAntlerHeadParts.Should().BeEquivalentTo(new[] { Npc2 });
+        clone.HasWigArmors.Should().BeTrue();
+        clone.HasAntlers.Should().BeTrue();
     }
 
     [Fact]

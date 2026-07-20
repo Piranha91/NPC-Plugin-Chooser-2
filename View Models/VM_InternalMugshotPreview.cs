@@ -69,6 +69,14 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     [Reactive] public bool HasOutfitNotice { get; private set; }
     [Reactive] public string OutfitNoticeText { get; private set; } = string.Empty;
 
+    /// <summary>Antler-removal banner: set when the mod's effective antler mode is
+    /// Remove AND this NPC carries an antler the patch will strip (outfit, worn
+    /// armor, or FaceGen head part). The preview hides the antler to match the
+    /// patched output; this notice tells the user why it's absent. Informational
+    /// only — never marks a cached mugshot stale.</summary>
+    [Reactive] public bool HasAntlerRemovalNotice { get; private set; }
+    [Reactive] public string AntlerRemovalNoticeText { get; private set; } = string.Empty;
+
     // Non-persistent override state for the full-screen popup (see
     // PersistAttireToggles). Seeded from the persisted defaults at construction.
     private bool _localIncludeDefaultOutfit;
@@ -505,6 +513,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
                 formKey, IncludeDefaultOutfit, IncludeHeadgear, out var outfitDisplay);
             ApplyAttireOverrides(attire);
             ApplyOutfitNotice(outfitDisplay);
+            SetAntlerRemovalNotice(_resolver.AntlerRemovalAppliesForActiveSelection(formKey));
 
             PreviewLoaded?.Invoke();
         }
@@ -569,6 +578,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
                 targetNpcFormKey, out var outfitDisplay);
             ApplyAttireOverrides(attire);
             ApplyOutfitNotice(outfitDisplay);
+            SetAntlerRemovalNotice(_resolver.AntlerRemovalApplies(formKey, modSetting));
 
             PreviewLoaded?.Invoke();
         }
@@ -608,6 +618,18 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
                 StatusText += $" — outfit via {outfitDisplay.SourceDetail}";
             }
         }
+    }
+
+    /// <summary>Sets the antler-removal banner from the resolver's per-NPC check
+    /// (antler mode Remove + this NPC actually carries a strippable antler). The
+    /// preview already hides the antler; this explains the absence.</summary>
+    private void SetAntlerRemovalNotice(bool applies)
+    {
+        HasAntlerRemovalNotice = applies;
+        AntlerRemovalNoticeText = applies
+            ? "Antlers are removed from this NPC in the patched output (this mod's Antler Handling Mode is "
+              + "Remove) and are hidden here to match."
+            : string.Empty;
     }
 
     /// <summary>Begins a render-log session for one preview load: closes any

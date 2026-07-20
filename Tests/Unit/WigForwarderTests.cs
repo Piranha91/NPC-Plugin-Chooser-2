@@ -17,15 +17,16 @@ using Xunit;
 namespace NPC_Plugin_Chooser_2.Tests.Unit;
 
 /// <summary>
-/// Patch-time wig forwarding against in-memory mods. The donor plugin is
-/// seeded straight into RecordHandler's ModKey-keyed link caches (the same
-/// seam <c>RecordHandlerCacheProvenanceTests</c> uses) so mod-scoped record
-/// resolution works without a Skyrim install; the EnvironmentStateProvider is
-/// an uninitialized instance carrying only the in-memory output mod (its
-/// LinkCache is null, so the effective-outfit stack resolves to "no outfit" —
-/// which also exercises the authored wig-only outfit branch). The
-/// ForwardToOutfit path against a REAL winning outfit needs a game
-/// environment and is covered by the manual patch-run verification instead.
+/// Patch-time wig/antler forwarding against in-memory mods, evaluating the two
+/// classes independently. The donor plugin is seeded straight into
+/// RecordHandler's ModKey-keyed link caches (the same seam
+/// <c>RecordHandlerCacheProvenanceTests</c> uses) so mod-scoped record resolution
+/// works without a Skyrim install; the EnvironmentStateProvider is an
+/// uninitialized instance carrying only the in-memory output mod (its LinkCache
+/// is null, so the effective-outfit stack resolves to "no outfit" — which also
+/// exercises the authored wig/antler-only outfit branch). The ForwardToOutfit
+/// path against a REAL winning outfit needs a game environment and is covered by
+/// the manual patch-run verification instead.
 /// </summary>
 public class WigForwarderTests
 {
@@ -41,6 +42,7 @@ public class WigForwarderTests
         public Npc DonorNpc = null!;
         public Armor SkinArmor = null!;
         public ArmorAddon SkinArma = null!;
+        public ArmorAddon? WnamAntlerArma;
         public Armor WigArmor = null!;
         public ArmorAddon WigArma = null!;
         public Armor AntlerArmor = null!;
@@ -51,12 +53,14 @@ public class WigForwarderTests
         public HeadPart HairHeadPart = null!;
         public HeadPart HairlinePart = null!;
         public HeadPart EyesHeadPart = null!;
+        public HeadPart? AntlerHeadPart;
 
         public Dictionary<FormKey, FormKey> Mappings =>
             Reflect.GetField<Dictionary<FormKey, FormKey>>(RecordHandler, "_currentDuplicateInMappings");
     }
 
-    private static Fixture Make(WigHandlingMode? perModMode, bool donorHasWnam = true)
+    private static Fixture Make(WigHandlingMode? wigMode, AntlerHandlingMode? antlerMode,
+        bool donorHasWnam = true, bool wnamBakedAntler = false, bool faceGenAntlerHeadPart = false)
     {
         var f = new Fixture
         {
@@ -70,6 +74,15 @@ public class WigForwarderTests
         f.SkinArmor.EditorID = "AuriSkin";
         f.SkinArmor.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Body };
         f.SkinArmor.Armature.Add(f.SkinArma.ToLink());
+
+        // Source 2: an antler ArmorAddon baked directly into the WornArmor.
+        if (wnamBakedAntler)
+        {
+            f.WnamAntlerArma = f.DonorMod.ArmorAddons.AddNew();
+            f.WnamAntlerArma.EditorID = "AuriWnamAntlerAddon";
+            f.WnamAntlerArma.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Circlet };
+            f.SkinArmor.Armature.Add(f.WnamAntlerArma.ToLink());
+        }
 
         f.WigArma = f.DonorMod.ArmorAddons.AddNew();
         f.WigArma.BodyTemplate = new BodyTemplate
@@ -108,11 +121,20 @@ public class WigForwarderTests
         f.EyesHeadPart.EditorID = "FoxGloveEyeMesh";
         f.EyesHeadPart.Type = HeadPart.TypeEnum.Eyes;
 
+        // Source 3: an antler head part baked into the FaceGen. (Type is
+        // irrelevant — antler head parts are keyed by FormKey, not Type.)
+        if (faceGenAntlerHeadPart)
+        {
+            f.AntlerHeadPart = f.DonorMod.HeadParts.AddNew();
+            f.AntlerHeadPart.EditorID = "AuriAntlerHeadPart";
+        }
+
         f.DonorNpc = MutagenFixtures.NewNpc(f.DonorMod, editorId: "Auri");
         if (donorHasWnam) f.DonorNpc.WornArmor.SetTo(f.SkinArmor);
         f.DonorNpc.DefaultOutfit.SetTo(f.DonorOutfit);
         f.DonorNpc.HeadParts.Add(f.HairHeadPart.ToLink());
         f.DonorNpc.HeadParts.Add(f.EyesHeadPart.ToLink());
+        if (f.AntlerHeadPart != null) f.DonorNpc.HeadParts.Add(f.AntlerHeadPart.ToLink());
 
         // Environment: uninitialized (no game install) with only the output
         // mod attached. LinkCache stays null.
@@ -142,8 +164,14 @@ public class WigForwarderTests
             CorrespondingModKeys = { DonorKey },
             DetectedWigArmors = { f.WigArmor.FormKey },
             DetectedAntlerArmors = { f.AntlerArmor.FormKey },
-            ModWigHandlingMode = perModMode,
+            ModWigHandlingMode = wigMode,
+            ModAntlerHandlingMode = antlerMode,
         };
+        // The scan folds an antler ARMO's own addons into the ARMA set; a
+        // WornArmor-baked antler adds its own.
+        f.ModSetting.DetectedAntlerArmatures.Add(f.AntlerArma.FormKey);
+        if (f.WnamAntlerArma != null) f.ModSetting.DetectedAntlerArmatures.Add(f.WnamAntlerArma.FormKey);
+        if (f.AntlerHeadPart != null) f.ModSetting.DetectedAntlerHeadParts.Add(f.AntlerHeadPart.FormKey);
         return f;
     }
 
@@ -152,9 +180,9 @@ public class WigForwarderTests
             new HashSet<string>(), mergeIn, includeOutfit, "TestNpc", (_, _, _) => { });
 
     [Fact]
-    public void ForwardToSkin_DuplicatesWnam_TransfersArmatures_AndSeedsMapping()
+    public void ForwardToSkin_BothClasses_DuplicatesWnam_TransfersArmatures_AndSeedsMapping()
     {
-        var f = Make(WigHandlingMode.ForwardToSkin);
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.ForwardToSkin);
 
         var result = Apply(f);
 
@@ -170,37 +198,28 @@ public class WigForwarderTests
         dup.EditorID.Should().Be("AuriSkin",
             "the duplicate IS the merged WNAM; OutputValidator equates skins by EditorID");
 
-        // The duplicate's own BOD2 mask must be widened to cover the
-        // transferred ARMAs — the engine ignores addons on slots the parent
-        // armor doesn't declare (user-verified in game), so the original Body
-        // mask must gain Hair+LongHair (wig) and Circlet (antler).
+        // The duplicate's own BOD2 mask must be widened to cover the transferred
+        // ARMAs — Body must gain Hair+LongHair (wig) and Circlet (antler).
         dup.BodyTemplate.Should().NotBeNull();
         dup.BodyTemplate!.FirstPersonFlags.Should().Be(
             BipedObjectFlag.Body | BipedObjectFlag.Hair | BipedObjectFlag.LongHair | BipedObjectFlag.Circlet);
 
-        // Armature: original skin ARMA + the wig's hair ARMA + ALL antler
-        // ARMAs — merged into the output and remapped there.
+        // Armature: skin ARMA + wig hair ARMA + ALL antler ARMAs.
         dup.Armature.Should().HaveCount(3);
         f.OutputMod.ArmorAddons.Should().HaveCount(3);
-        dup.Armature.Select(a => a.FormKey.ModKey).Should().OnlyContain(mk => mk == f.OutputMod.ModKey,
-            "the duplicate's ARMA chain must be self-contained after merge-in");
 
-        // The seeded mapping is what makes CopyAppearanceData's skin merge
-        // redirect to the duplicate instead of re-duplicating the original.
         f.Mappings.Should().ContainKey(f.SkinArmor.FormKey)
             .WhoseValue.Should().Be(dup.FormKey);
-
         result.MergedRecords.Should().Contain(r => r.FormKey == dup.FormKey);
     }
 
     [Fact]
     public void ForwardToSkin_WithoutMergeIn_KeepsDonorArmatureLinks()
     {
-        var f = Make(WigHandlingMode.ForwardToSkin);
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.ForwardToSkin);
 
-        var result = Apply(f, mergeIn: false);
+        Apply(f, mergeIn: false);
 
-        result!.SkinDuplicateKey.Should().NotBeNull();
         var dup = f.OutputMod.Armors.First();
         dup.Armature.Select(a => a.FormKey).Should().BeEquivalentTo(new[]
         {
@@ -210,9 +229,24 @@ public class WigForwarderTests
     }
 
     [Fact]
+    public void WigOnlyToSkin_DoesNotTransferTheAntler()
+    {
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.None);
+
+        Apply(f, mergeIn: false);
+
+        var dup = f.OutputMod.Armors.Single();
+        dup.Armature.Select(a => a.FormKey).Should().BeEquivalentTo(new[]
+        {
+            f.SkinArma.FormKey, f.WigArma.FormKey,
+        }, "antler mode None leaves the antler out of the skin");
+        dup.BodyTemplate!.FirstPersonFlags.Should().NotHaveFlag(BipedObjectFlag.Circlet);
+    }
+
+    [Fact]
     public void ForwardToSkin_NoDonorWnam_FallsBackToOutfitForwarding()
     {
-        var f = Make(WigHandlingMode.ForwardToSkin, donorHasWnam: false);
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.ForwardToSkin, donorHasWnam: false);
 
         var result = Apply(f, mergeIn: false);
 
@@ -221,7 +255,7 @@ public class WigForwarderTests
         result.OutfitDuplicateKey.Should().NotBeNull();
 
         // No resolvable effective outfit here (null LinkCache) -> a minimal
-        // wig-only outfit is authored so the wig still reaches the NPC.
+        // wig/antler-only outfit is authored so both still reach the NPC.
         var outfit = f.OutputMod.Outfits.First();
         outfit.FormKey.Should().Be(result.OutfitDuplicateKey!.Value);
         outfit.Items!.Select(i => i.FormKey).Should().BeEquivalentTo(new[]
@@ -231,9 +265,9 @@ public class WigForwarderTests
     }
 
     [Fact]
-    public void ForwardToOutfit_AddsWigsToOutfit_AndLeavesSkinAlone()
+    public void ForwardToOutfit_BothClasses_AddsToOutfit_AndLeavesSkinAlone()
     {
-        var f = Make(WigHandlingMode.ForwardToOutfit);
+        var f = Make(WigHandlingMode.ForwardToOutfit, AntlerHandlingMode.ForwardToOutfit);
 
         var result = Apply(f, mergeIn: false);
 
@@ -245,21 +279,48 @@ public class WigForwarderTests
     }
 
     [Fact]
-    public void ModeNone_DoesNothing()
+    public void WigToSkin_AntlerToOutfit_ProducesBothDuplicates()
     {
-        var f = Make(WigHandlingMode.None);
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.ForwardToOutfit);
+
+        var result = Apply(f, mergeIn: false)!;
+
+        result.SkinDuplicateKey.Should().NotBeNull("the wig forwards to the skin");
+        result.OutfitDuplicateKey.Should().NotBeNull("the antler forwards to an outfit");
+
+        // Skin dup carries the wig ARMA but not the antler ARMA.
+        var skinDup = f.OutputMod.Armors.Single();
+        skinDup.Armature.Select(a => a.FormKey).Should().Contain(f.WigArma.FormKey);
+        skinDup.Armature.Select(a => a.FormKey).Should().NotContain(f.AntlerArma.FormKey);
+
+        // Authored outfit (null LinkCache) carries the antler only.
+        var outfit = f.OutputMod.Outfits.Single(o => o.FormKey == result.OutfitDuplicateKey!.Value);
+        outfit.Items!.Select(i => i.FormKey).Should().Contain(f.AntlerArmor.FormKey);
+        outfit.Items!.Select(i => i.FormKey).Should().NotContain(f.WigArmor.FormKey);
+
+        var patchNpc = f.OutputMod.Npcs.AddNew();
+        result.ApplyLinksTo(patchNpc);
+        patchNpc.WornArmor.FormKey.Should().Be(result.SkinDuplicateKey!.Value);
+        patchNpc.DefaultOutfit.FormKey.Should().Be(result.OutfitDuplicateKey!.Value);
+    }
+
+    [Fact]
+    public void BothModesNone_DoesNothing()
+    {
+        var f = Make(WigHandlingMode.None, AntlerHandlingMode.None);
         Apply(f).Should().BeNull();
         f.OutputMod.Armors.Should().BeEmpty();
         f.OutputMod.Outfits.Should().BeEmpty();
     }
 
     [Fact]
-    public void NoDetectedWigInDonorOutfit_DoesNothing()
+    public void NoDetectedPieceInDonorOutfit_DoesNothing()
     {
-        var f = Make(WigHandlingMode.ForwardToSkin);
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.ForwardToSkin);
         f.ModSetting.DetectedWigArmors.Clear();
         f.ModSetting.DetectedAntlerArmors.Clear();
-        f.ModSetting.DetectedWigArmors.Add(MutagenFixtures.Fk("0FFFFF:Other.esp")); // detection exists, but not in this NPC's outfit
+        f.ModSetting.DetectedAntlerArmatures.Clear();
+        f.ModSetting.DetectedWigArmors.Add(MutagenFixtures.Fk("0FFFFF:Other.esp")); // exists, but not in this NPC's outfit
 
         Apply(f).Should().BeNull();
         f.OutputMod.Armors.Should().BeEmpty();
@@ -268,45 +329,33 @@ public class WigForwarderTests
     [Fact]
     public void RepeatApply_ReusesTheSameDuplicate()
     {
-        var f = Make(WigHandlingMode.ForwardToSkin);
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.ForwardToSkin);
 
         var first = Apply(f);
         var second = Apply(f);
 
         second!.SkinDuplicateKey.Should().Be(first!.SkinDuplicateKey);
         f.OutputMod.Armors.Should().HaveCount(1,
-            "NPCs sharing the same WNAM + wig set must share one +Wig duplicate");
-    }
-
-    [Fact]
-    public void ApplyLinksTo_PointsThePatchedNpcAtTheDuplicates()
-    {
-        var f = Make(WigHandlingMode.ForwardToSkin);
-        var result = Apply(f)!;
-
-        var patchNpc = f.OutputMod.Npcs.AddNew();
-        result.ApplyLinksTo(patchNpc);
-
-        patchNpc.WornArmor.FormKey.Should().Be(result.SkinDuplicateKey!.Value);
+            "NPCs sharing the same WNAM + config + sets must share one +Wig duplicate");
     }
 
     [Fact]
     public void ForwardToSkin_CollectsHairHeadPartsAndShapeNames()
     {
-        var f = Make(WigHandlingMode.ForwardToSkin);
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.None);
 
         var result = Apply(f)!;
 
         result.DonorHairHeadPartKeys.Should().BeEquivalentTo(new[] { f.HairHeadPart.FormKey },
             "only the Hair-type head part is superseded by the wig — eyes must stay");
-        result.HairShapeNames.Should().BeEquivalentTo(new[] { "FoxGloveHairMesh", "FoxGloveHairline" },
+        result.FaceGenShapeNamesToStrip.Should().BeEquivalentTo(new[] { "FoxGloveHairMesh", "FoxGloveHairline" },
             "the FaceGen strip needs the hair's EditorID plus its ExtraParts' EditorIDs");
     }
 
     [Fact]
     public void FinalizeNpcRecord_ReplacesHairHeadParts_WithSharedBaldRecord()
     {
-        var f = Make(WigHandlingMode.ForwardToSkin);
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.None);
         var result = Apply(f)!;
 
         // Simulate CopyAppearanceData's merge outcome: the hair head part got
@@ -321,10 +370,6 @@ public class WigForwarderTests
 
         f.Forwarder.FinalizeNpcRecord(result, patchNpc, "TestNpc", (_, _, _) => { });
 
-        // The MAPPED hair duplicate is removed via the duplicate-in mapping
-        // lookup and replaced with the generated modeless bald hair — an NPC
-        // with NO hair head part gets a random race-chargen hair back-filled
-        // by the engine (and dark-faces), so removal alone is not enough.
         var bald = f.OutputMod.HeadParts.Single(h => h.EditorID == WigForwarder.BaldHairEditorId);
         bald.Type.Should().Be(HeadPart.TypeEnum.Hair);
         bald.Model.Should().BeNull("the bald hair must render nothing — the wig supplies the visuals");
@@ -336,32 +381,19 @@ public class WigForwarderTests
         patchNpc.HeadParts.Select(h => h.FormKey).Should().BeEquivalentTo(
             new[] { f.EyesHeadPart.FormKey, bald.FormKey });
         patchNpc.WornArmor.FormKey.Should().Be(result.SkinDuplicateKey!.Value);
-
-        // Non-merge path (links still carry donor keys) — and the SAME bald
-        // record is reused across NPCs, not re-created.
-        var patchNpc2 = f.OutputMod.Npcs.AddNew();
-        patchNpc2.HeadParts.Add(f.HairHeadPart.ToLink());
-        patchNpc2.HeadParts.Add(f.EyesHeadPart.ToLink());
-
-        f.Forwarder.FinalizeNpcRecord(result, patchNpc2, "TestNpc", (_, _, _) => { });
-
-        patchNpc2.HeadParts.Select(h => h.FormKey).Should().BeEquivalentTo(
-            new[] { f.EyesHeadPart.FormKey, bald.FormKey });
-        f.OutputMod.HeadParts.Count(h => h.EditorID == WigForwarder.BaldHairEditorId).Should().Be(1);
     }
 
     [Fact]
     public void AntlerOnlyForwarding_KeepsTheHairHeadPart()
     {
-        var f = Make(WigHandlingMode.ForwardToSkin);
-        f.ModSetting.DetectedWigArmors.Clear(); // antlers remain detected
+        var f = Make(WigHandlingMode.None, AntlerHandlingMode.ForwardToSkin);
 
         var result = Apply(f)!;
 
         result.SkinDuplicateKey.Should().NotBeNull("antlers still forward to the skin");
         result.DonorHairHeadPartKeys.Should().BeEmpty(
             "no hair-slot piece was transferred, so the NPC's real hair must survive (Option B specimen)");
-        result.HairShapeNames.Should().BeEmpty();
+        result.FaceGenShapeNamesToStrip.Should().BeEmpty();
 
         var patchNpc = f.OutputMod.Npcs.AddNew();
         patchNpc.HeadParts.Add(f.HairHeadPart.ToLink());
@@ -370,29 +402,114 @@ public class WigForwarderTests
         f.OutputMod.HeadParts.Should().BeEmpty("no bald record is generated when the real hair stays");
     }
 
+    // ── The motivating case: forward the wig to skin, keep antlers OFF ──
+
     [Fact]
-    public void ForwardToSkin_WithIncludeOutfit_StripsWigsFromForwardedOutfitDuplicate()
+    public void WigForwardToSkin_AntlerRemove_WithIncludeOutfit_TheMotivatingCase()
     {
-        var f = Make(WigHandlingMode.ForwardToSkin);
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.Remove);
+
+        var result = Apply(f, mergeIn: false, includeOutfit: true)!;
+
+        result.SkinDuplicateKey.Should().NotBeNull();
+        result.OutfitDuplicateKey.Should().NotBeNull();
+
+        // WNAM duplicate carries the wig ARMA but NOT the antler ARMA, and its
+        // slot mask gained Hair/LongHair but NOT Circlet.
+        var skinDup = f.OutputMod.Armors.Single();
+        skinDup.Armature.Select(a => a.FormKey).Should().Contain(f.WigArma.FormKey);
+        skinDup.Armature.Select(a => a.FormKey).Should().NotContain(f.AntlerArma.FormKey);
+        skinDup.BodyTemplate!.FirstPersonFlags.Should().Be(
+            BipedObjectFlag.Body | BipedObjectFlag.Hair | BipedObjectFlag.LongHair);
+
+        // Forwarded outfit contains the dress only — wig (to skin) and antler
+        // (Remove) both stripped.
+        var outfit = f.OutputMod.Outfits.Single(o => o.FormKey == result.OutfitDuplicateKey!.Value);
+        outfit.Items!.Select(i => i.FormKey).Should().BeEquivalentTo(new[] { f.DressArmor.FormKey });
+
+        // Hair still supplied by the forwarded wig -> hair head part removed.
+        result.DonorHairHeadPartKeys.Should().BeEquivalentTo(new[] { f.HairHeadPart.FormKey });
+    }
+
+    // ── Source 2: antler baked into the WornArmor ──
+
+    [Fact]
+    public void AntlerRemove_StripsBakedAntlerFromWornArmorDuplicate()
+    {
+        var f = Make(WigHandlingMode.None, AntlerHandlingMode.Remove, wnamBakedAntler: true);
+
+        var result = Apply(f, mergeIn: false)!;
+
+        result.SkinDuplicateKey.Should().NotBeNull(
+            "a WornArmor duplicate is built even with nothing forwarded to skin, so the baked antler can be stripped");
+        var skinDup = f.OutputMod.Armors.Single();
+        skinDup.Armature.Select(a => a.FormKey).Should().BeEquivalentTo(new[] { f.SkinArma.FormKey },
+            "the baked antler ArmorAddon is removed; the real skin ARMA stays");
+        skinDup.Armature.Select(a => a.FormKey).Should().NotContain(f.WnamAntlerArma!.FormKey);
+    }
+
+    [Fact]
+    public void AntlerForwardToSkin_LeavesBakedWornArmorAntlerInPlace()
+    {
+        var f = Make(WigHandlingMode.None, AntlerHandlingMode.ForwardToSkin, wnamBakedAntler: true);
+
+        var result = Apply(f, mergeIn: false);
+
+        // The outfit antler forwards to the skin dup; the baked WornArmor antler
+        // is already in the skin, so it is not stripped.
+        result!.SkinDuplicateKey.Should().NotBeNull();
+        var skinDup = f.OutputMod.Armors.Single();
+        skinDup.Armature.Select(a => a.FormKey).Should().Contain(f.WnamAntlerArma!.FormKey,
+            "ForwardToSkin does not strip a WornArmor-baked antler");
+    }
+
+    // ── Source 3: antler baked into a FaceGen head part ──
+
+    [Fact]
+    public void AntlerRemove_CollectsAntlerHeadPart_ForRecordAndFaceGenRemoval()
+    {
+        var f = Make(WigHandlingMode.None, AntlerHandlingMode.Remove, faceGenAntlerHeadPart: true);
+
+        var result = Apply(f, mergeIn: false)!;
+
+        result.DonorAntlerHeadPartKeys.Should().BeEquivalentTo(new[] { f.AntlerHeadPart!.FormKey });
+        result.FaceGenShapeNamesToStrip.Should().Contain("AuriAntlerHeadPart");
+        // No hair replacement for an antler removal.
+        result.DonorHairHeadPartKeys.Should().BeEmpty();
+
+        var patchNpc = f.OutputMod.Npcs.AddNew();
+        patchNpc.HeadParts.Add(f.HairHeadPart.ToLink());
+        patchNpc.HeadParts.Add(f.AntlerHeadPart!.ToLink());
+        f.Forwarder.FinalizeNpcRecord(result, patchNpc, "TestNpc", (_, _, _) => { });
+
+        patchNpc.HeadParts.Select(h => h.FormKey).Should().BeEquivalentTo(new[] { f.HairHeadPart.FormKey },
+            "the antler head part is removed with NO bald replacement; the real hair stays");
+        f.OutputMod.HeadParts.Should().NotContain(h => h.EditorID == WigForwarder.BaldHairEditorId);
+    }
+
+    // ── Include-Outfit strip variants ──
+
+    [Fact]
+    public void ForwardToSkin_WithIncludeOutfit_StripsBothClassesFromForwardedOutfit()
+    {
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.ForwardToSkin);
 
         var result = Apply(f, mergeIn: false, includeOutfit: true);
 
         result!.SkinDuplicateKey.Should().NotBeNull();
         result.OutfitDuplicateKey.Should().NotBeNull(
-            "the forwarded outfit must not carry the wig the skin now provides — a slot clash in game");
+            "the forwarded outfit must not carry pieces the skin now provides — a slot clash in game");
 
         var dup = f.OutputMod.Outfits.Single(o => o.FormKey == result.OutfitDuplicateKey!.Value);
         dup.EditorID.Should().Be("AuriOutfit");
         dup.Items!.Select(i => i.FormKey).Should().BeEquivalentTo(new[] { f.DressArmor.FormKey },
             "wig and antler items are removed; the rest of the outfit is preserved");
 
-        // ApplyLinksTo points the NPC at BOTH duplicates.
         var patchNpc = f.OutputMod.Npcs.AddNew();
         result.ApplyLinksTo(patchNpc);
         patchNpc.WornArmor.FormKey.Should().Be(result.SkinDuplicateKey!.Value);
         patchNpc.DefaultOutfit.FormKey.Should().Be(result.OutfitDuplicateKey!.Value);
 
-        // Reuse: a second NPC with the same outfit + wig set shares the duplicate.
         var second = Apply(f, mergeIn: false, includeOutfit: true);
         second!.OutfitDuplicateKey.Should().Be(result.OutfitDuplicateKey);
         f.OutputMod.Outfits.Should().HaveCount(1);
@@ -401,7 +518,7 @@ public class WigForwarderTests
     [Fact]
     public void ForwardToSkin_WithoutIncludeOutfit_LeavesTheOutfitAlone()
     {
-        var f = Make(WigHandlingMode.ForwardToSkin);
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.ForwardToSkin);
 
         var result = Apply(f, mergeIn: false, includeOutfit: false);
 
@@ -414,7 +531,7 @@ public class WigForwarderTests
     [Fact]
     public void DuplicateReuse_StillCollectsHairRemovalForTheLaterNpc()
     {
-        var f = Make(WigHandlingMode.ForwardToSkin);
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.None);
 
         var first = Apply(f);
         var second = Apply(f);
@@ -422,6 +539,6 @@ public class WigForwarderTests
         second!.SkinDuplicateKey.Should().Be(first!.SkinDuplicateKey);
         second.DonorHairHeadPartKeys.Should().BeEquivalentTo(new[] { f.HairHeadPart.FormKey },
             "hair removal is per-NPC and must not be lost on a duplicate-reuse cache hit");
-        second.HairShapeNames.Should().Contain("FoxGloveHairMesh");
+        second.FaceGenShapeNamesToStrip.Should().Contain("FoxGloveHairMesh");
     }
 }

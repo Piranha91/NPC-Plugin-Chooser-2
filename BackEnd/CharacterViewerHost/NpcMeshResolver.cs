@@ -171,7 +171,7 @@ public class NpcMeshResolver
     {
         var linkCache = _env.LinkCache;
         if (linkCache == null) return null;
-        return Resolve(npcFormKey, linkCache, BuildContext(npcFormKey, modSetting));
+        return Resolve(npcFormKey, linkCache, BuildContext(npcFormKey, modSetting), modSetting);
     }
 
     /// <summary>
@@ -321,7 +321,8 @@ public class NpcMeshResolver
     /// itself can't be resolved either from the context's plugins or the
     /// link cache.
     /// </summary>
-    public ResolvedNpcMeshPaths? Resolve(FormKey npcFormKey, ILinkCache linkCache, NpcResolutionContext? context = null)
+    public ResolvedNpcMeshPaths? Resolve(FormKey npcFormKey, ILinkCache linkCache,
+        NpcResolutionContext? context = null, ModSetting? modSetting = null)
     {
         var npcGetter = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
         if (npcGetter == null)
@@ -464,6 +465,14 @@ public class NpcMeshResolver
         if (eyeShapeNames.Count > 0)
             LogVerbose("CharacterViewer: Eyes HeadPart shape name(s): " + string.Join(", ", eyeShapeNames));
 
+        // Antler Remove (source 3): the patch strips keyword-detected antler head
+        // parts from the FaceGen NIF, so the preview/mugshot must not draw those
+        // baked shapes either. Collect their shape names (head part EditorID +
+        // ExtraParts EditorIDs) so the renderer hides them (HideHeadShapeNames).
+        var hideHeadShapeNames = ComputeAntlerHideHeadShapeNames(npcGetter, modSetting, linkCache, context);
+        if (hideHeadShapeNames.Count > 0)
+            LogVerbose("CharacterViewer: hiding baked antler head shape(s): " + string.Join(", ", hideHeadShapeNames));
+
         // Final pass: rebase any path that exists as a loose file under one of
         // the context's mod folders to its absolute disk path. The renderer's
         // GameAssetResolver passes rooted paths through unchanged; everything
@@ -514,8 +523,48 @@ public class NpcMeshResolver
             NpcBaseHeight = baseHeight,
             HairColorRgb = hairRgb,
             EyeShapeNames = eyeShapeNames,
+            HideHeadShapeNames = hideHeadShapeNames,
         };
     }
+
+    /// <summary>Shape names to hide from the FaceGen head when the effective
+    /// antler mode is Remove: the NPC's keyword-detected antler head parts
+    /// (<see cref="ModSetting.DetectedAntlerHeadParts"/>) — their EditorIDs plus
+    /// ExtraParts' EditorIDs (baked FaceGen shapes are named after them). Mirrors
+    /// <c>WigForwarder.CollectAntlerHeadPartRemoval</c> so the preview matches the
+    /// patched output. Empty unless antler Remove applies. Uses the RENDER antler
+    /// mode so the harness override and the output-mode gate are honored.</summary>
+    private IReadOnlySet<string> ComputeAntlerHideHeadShapeNames(INpcGetter npcGetter, ModSetting? modSetting,
+        ILinkCache linkCache, NpcResolutionContext? context)
+    {
+        if (modSetting == null || modSetting.DetectedAntlerHeadParts.Count == 0)
+            return EmptyShapeNameSet;
+        if (_settings.GetEffectiveRenderAntlerMode(modSetting) != AntlerHandlingMode.Remove)
+            return EmptyShapeNameSet;
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var hpLink in npcGetter.HeadParts)
+        {
+            if (hpLink == null || hpLink.IsNull) continue;
+            if (!modSetting.DetectedAntlerHeadParts.Contains(hpLink.FormKey)) continue;
+            var hpRec = ResolveRecord<IHeadPartGetter>(hpLink, linkCache, context);
+            if (hpRec == null) continue;
+            if (!string.IsNullOrEmpty(hpRec.EditorID)) names.Add(hpRec.EditorID);
+            if (hpRec.ExtraParts != null)
+            {
+                foreach (var extraLink in hpRec.ExtraParts)
+                {
+                    if (extraLink == null || extraLink.IsNull) continue;
+                    var extraRec = ResolveRecord<IHeadPartGetter>(extraLink, linkCache, context);
+                    if (!string.IsNullOrEmpty(extraRec?.EditorID)) names.Add(extraRec.EditorID);
+                }
+            }
+        }
+        return names;
+    }
+
+    private static readonly IReadOnlySet<string> EmptyShapeNameSet =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     // ─────────────────────────────────────────────────────────────────────
     //  Attire / headgear mesh-override resolution
@@ -572,6 +621,56 @@ public class NpcMeshResolver
             targetNpcFormKey, out outfitDisplay);
     }
 
+    /// <summary>Active-selection companion to
+    /// <see cref="AntlerRemovalApplies"/> for the live preview's info banner.</summary>
+    public bool AntlerRemovalAppliesForActiveSelection(FormKey targetNpcFormKey)
+    {
+        var modSetting = LookupSelectedModSetting(targetNpcFormKey, out var sourceFormKey);
+        return AntlerRemovalApplies(sourceFormKey, modSetting);
+    }
+
+    /// <summary>
+    /// True when the effective antler mode is Remove AND this NPC actually carries
+    /// an antler that the patch will strip — from its Default Outfit (source 1),
+    /// its WornArmor (source 2), or a keyword-detected FaceGen head part
+    /// (source 3). Drives the preview's "antlers removed" notice; a cheap record
+    /// walk mirroring what <see cref="WigForwarder"/> acts on.
+    /// </summary>
+    public bool AntlerRemovalApplies(FormKey npcFormKey, ModSetting? modSetting)
+    {
+        if (modSetting == null || !modSetting.HasAntlers) return false;
+        if (_settings.GetEffectiveRenderAntlerMode(modSetting) != AntlerHandlingMode.Remove) return false;
+        var linkCache = _env.LinkCache;
+        if (linkCache == null) return false;
+        var context = BuildContext(npcFormKey, modSetting);
+        var npc = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
+        if (npc == null) return false;
+
+        // Source 3: antler head part on the NPC.
+        foreach (var hp in npc.HeadParts)
+            if (hp != null && !hp.IsNull && modSetting.DetectedAntlerHeadParts.Contains(hp.FormKey)) return true;
+
+        // Source 2: antler ArmorAddon baked into the WornArmor.
+        if (!npc.WornArmor.IsNull)
+        {
+            var wnam = ResolveRecord<IArmorGetter>(npc.WornArmor, linkCache, context);
+            if (wnam?.Armature != null)
+                foreach (var a in wnam.Armature)
+                    if (a != null && !a.IsNull && modSetting.DetectedAntlerArmatures.Contains(a.FormKey)) return true;
+        }
+
+        // Source 1: antler ARMO in the Default Outfit.
+        if (!npc.DefaultOutfit.IsNull)
+        {
+            var outfit = ResolveRecord<IOutfitGetter>(npc.DefaultOutfit, linkCache, context);
+            if (outfit?.Items != null)
+                foreach (var i in outfit.Items)
+                    if (i != null && !i.IsNull && modSetting.DetectedAntlerArmors.Contains(i.FormKey)) return true;
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Resolves the NPC's worn attire ("Include Default Outfit") and/or head
     /// gear ("Include headgear") into neutral <see cref="MeshOverride"/>s for
@@ -604,11 +703,14 @@ public class NpcMeshResolver
         FormKey? targetNpcFormKey, out OutfitDisplayResult outfitDisplay)
     {
         outfitDisplay = OutfitDisplayResult.NoOutfit;
-        // Wig handling (WigHandlingMode): the mugshot depicts the POST-PATCH
-        // NPC, so an active ForwardToSkin mode renders the forwarded wig even
-        // with the outfit toggle off — it is part of the skin after patching.
+        // Wig/antler handling: the mugshot depicts the POST-PATCH NPC, so a
+        // ForwardToSkin mode renders the forwarded piece even with the outfit
+        // toggle off — it is part of the skin after patching.
         var wigMode = _settings.GetEffectiveRenderWigMode(modSetting);
-        if (!includeDefaultOutfit && !includeHeadgear && wigMode != WigHandlingMode.ForwardToSkin)
+        var antlerMode = _settings.GetEffectiveRenderAntlerMode(modSetting);
+        bool anySkinForward = wigMode == WigHandlingMode.ForwardToSkin ||
+                              antlerMode == AntlerHandlingMode.ForwardToSkin;
+        if (!includeDefaultOutfit && !includeHeadgear && !anySkinForward)
             return Array.Empty<MeshOverride>();
         var linkCache = _env.LinkCache;
         if (linkCache == null) return Array.Empty<MeshOverride>();
@@ -621,24 +723,27 @@ public class NpcMeshResolver
 
         return ResolveAttireMeshOverrides(npcFormKey, linkCache,
             BuildContext(npcFormKey, modSetting), includeDefaultOutfit, includeHeadgear, outfitDisplay,
-            wigMode, modSetting);
+            wigMode, antlerMode, modSetting);
     }
 
     private IReadOnlyList<MeshOverride> ResolveAttireMeshOverrides(
         FormKey npcFormKey, ILinkCache linkCache, NpcResolutionContext? context,
         bool includeDefaultOutfit, bool includeHeadgear, OutfitDisplayResult outfitDisplay,
-        WigHandlingMode wigMode = WigHandlingMode.None, ModSetting? modSetting = null)
+        WigHandlingMode wigMode = WigHandlingMode.None,
+        AntlerHandlingMode antlerMode = AntlerHandlingMode.None, ModSetting? modSetting = null)
     {
         var result = new List<MeshOverride>();
         // Outfit is the dominant toggle — headgear is part of the outfit and never
         // renders on its own, so with the outfit off nothing attire-related is
         // emitted regardless of the headgear flag. (The UI also hides the headgear
         // toggle while the outfit is off.) Exception: an active ForwardToSkin wig
-        // mode still emits the forwarded wig pieces (post-patch they are skin).
+        // or antler mode still emits the forwarded pieces (post-patch they are skin).
         includeHeadgear = includeHeadgear && includeDefaultOutfit;
-        bool maybeWigs = wigMode != WigHandlingMode.None && modSetting != null;
-        if (!includeDefaultOutfit && !includeHeadgear &&
-            !(maybeWigs && wigMode == WigHandlingMode.ForwardToSkin))
+        bool maybeWigsOrAntlers = (wigMode != WigHandlingMode.None || antlerMode != AntlerHandlingMode.None)
+                                  && modSetting != null;
+        bool anySkinForward = wigMode == WigHandlingMode.ForwardToSkin ||
+                              antlerMode == AntlerHandlingMode.ForwardToSkin;
+        if (!includeDefaultOutfit && !includeHeadgear && !(maybeWigsOrAntlers && anySkinForward))
         {
             return result;
         }
@@ -661,27 +766,34 @@ public class NpcMeshResolver
         // Wig/antler pass — runs BEFORE the outfit walk so the forwarded pieces
         // are emitted with the headgear gate bypassed (a forwarded wig is the
         // character's hair, not removable headgear; the outfit walk then dedups
-        // the same ARMAs by key). ForwardToSkin pieces render regardless of the
-        // outfit toggle; ForwardToOutfit pieces only with the outfit on —
-        // mirroring what the patched NPC wears in game.
-        var wigPlan = maybeWigs
-            ? BuildWigRenderPlan(npcGetter, modSetting!, wigMode, linkCache, context)
+        // the same ARMAs by key). Skin pieces render regardless of the outfit
+        // toggle; outfit pieces only with the outfit on; Removed pieces never
+        // (and are suppressed from the outfit walk) — mirroring what the patched
+        // NPC wears in game.
+        var wigPlan = maybeWigsOrAntlers
+            ? BuildWigRenderPlan(npcGetter, modSetting!, wigMode, antlerMode, linkCache, context)
             : null;
-        bool renderWigs = wigPlan != null &&
-                          (wigPlan.Mode == WigHandlingMode.ForwardToSkin || includeDefaultOutfit);
-        if (renderWigs)
+        if (wigPlan != null)
         {
-            foreach (var (wigArmor, isAntler) in wigPlan!.Armors)
+            int emitted = 0;
+            foreach (var (wigArmor, isAntler, forward) in wigPlan.Pieces)
             {
-                AppendArmorMeshOverrides(wigArmor, "WigForward(" + wigPlan.Mode + "):" + wigArmor.FormKey,
+                bool render = forward == PieceForward.Skin ||
+                              (forward == PieceForward.Outfit && includeDefaultOutfit);
+                if (!render) continue;
+                AppendArmorMeshOverrides(wigArmor, "WigForward(" + forward + "):" + wigArmor.FormKey,
                     sex, npcRaceKey, linkCache, context,
                     includeBody: false, includeHeadgear: false,
                     hairCountsAsHeadgear: true, result, seenOverrideKeys,
                     isAntler ? WigPieceClass.Antler : WigPieceClass.Wig);
+                emitted++;
             }
 
-            LogVerbose("CharacterViewer: wig handling (" + wigPlan.Mode + ") emitted " + result.Count +
-                       " forwarded piece(s) for " + npcName);
+            if (emitted > 0)
+            {
+                LogVerbose("CharacterViewer: wig/antler handling emitted " + emitted +
+                           " forwarded piece(s) for " + npcName);
+            }
         }
 
         if (!includeDefaultOutfit && !includeHeadgear)
@@ -708,11 +820,23 @@ public class NpcMeshResolver
             }
             if (outfit?.Items != null)
             {
+                // Antler Remove (source 1): the patcher strips the antler from a
+                // FORWARDED outfit, so suppress it from the depicted attire — but
+                // only when the depicted outfit IS the forwarded donor outfit
+                // (Source == AppearanceMod). A load-order/runtime-owned outfit is
+                // not forwarded, so Remove can't reach it and the game still shows
+                // the antler; leave it visible there.
+                bool suppressRemovedAntlers = wigPlan != null &&
+                    wigPlan.SuppressedOutfitItemKeys.Count > 0 &&
+                    outfitDisplay.Source == OutfitDisplaySource.AppearanceMod;
+
                 var outfitArmors = new List<(IArmorGetter armor, string source)>();
                 var seenArmorKeys = new HashSet<FormKey>();
                 foreach (var itemLink in outfit.Items)
                 {
                     if (itemLink == null || itemLink.IsNull) continue;
+                    if (suppressRemovedAntlers && wigPlan!.SuppressedOutfitItemKeys.Contains(itemLink.FormKey))
+                        continue;
                     CollectOutfitItemArmors(itemLink.FormKey, linkCache, outfitContext,
                         "Outfit:" + effectiveOutfitKey, outfitArmors, seenArmorKeys, depth: 0);
                 }
@@ -741,9 +865,16 @@ public class NpcMeshResolver
             var (wornArmor, wornSource) = ResolveWornArmor(npcGetter, linkCache, context, npcName);
             if (wornArmor != null)
             {
+                // Antler Remove (source 2): a WornArmor-baked antler ArmorAddon
+                // (slot 42/circlet) would otherwise render here — the patch strips
+                // it from the WNAM duplicate, so suppress it in the preview too.
+                var suppressAntlerArmas = (antlerMode == AntlerHandlingMode.Remove && modSetting != null)
+                    ? modSetting.DetectedAntlerArmatures
+                    : null;
                 AppendArmorMeshOverrides(wornArmor, wornSource, sex, npcRaceKey, linkCache, context,
                     includeBody: false, includeHeadgear: true,
-                    hairCountsAsHeadgear: false, result, seenOverrideKeys);
+                    hairCountsAsHeadgear: false, result, seenOverrideKeys,
+                    suppressArmaKeys: suppressAntlerArmas);
             }
         }
 
@@ -771,49 +902,99 @@ public class NpcMeshResolver
         Antler
     }
 
+    /// <summary>Where a forwarded piece ends up (per WigForwarder): the skin
+    /// (shows regardless of outfit), the worn outfit (shows only with the outfit
+    /// on), or Removed (antler Remove — never rendered, and suppressed from the
+    /// outfit walk when the outfit is forwarded).</summary>
+    private enum PieceForward
+    {
+        Skin,
+        Outfit,
+        Removed
+    }
+
     private sealed class WigRenderPlan
     {
-        public WigHandlingMode Mode;
-        public List<(IArmorGetter Armor, bool IsAntler)> Armors = new();
+        public List<(IArmorGetter Armor, bool IsAntler, PieceForward Forward)> Pieces = new();
+
+        /// <summary>Source-1 antler item FormKeys that antler Remove strips from a
+        /// forwarded donor outfit — suppressed from the outfit walk (only when the
+        /// depicted outfit is that forwarded donor outfit).</summary>
+        public HashSet<FormKey> SuppressedOutfitItemKeys = new();
     }
 
     /// <summary>
-    /// Mirrors <see cref="WigForwarder"/>'s per-NPC applicability rules for the
-    /// renderer: the applicable wigs/antlers are the DONOR outfit's direct
-    /// items that the analysis scan detected (resolved mod-scoped — the wig
-    /// comes from the appearance mod's plugins), and ForwardToSkin falls back
-    /// to ForwardToOutfit when the donor record assigns no WNAM. Returns null
-    /// when nothing applies.
+    /// Mirrors <see cref="WigForwarder"/>'s per-NPC, per-class routing for the
+    /// renderer: the applicable wigs/antlers are the DONOR outfit's direct items
+    /// the analysis scan detected (resolved mod-scoped — they come from the
+    /// appearance mod's plugins). Wigs follow the wig mode, antlers the antler
+    /// mode; ForwardToSkin falls back to ForwardToOutfit when the donor record
+    /// assigns no WNAM (shared, one WNAM). Antler Remove is not rendered and its
+    /// item key is collected for outfit-walk suppression. Returns null when
+    /// nothing applies. (Sources 2/3 — antlers baked into the WornArmor or FaceGen
+    /// — are not suppressed in the preview yet; CV.R has no hide-by-name FaceGen
+    /// hook, so that is deferred to the 3D-preview antler-designator work. The
+    /// patch output is correct for all sources.)
     /// </summary>
     private WigRenderPlan? BuildWigRenderPlan(INpcGetter npcGetter, ModSetting modSetting,
-        WigHandlingMode wigMode, ILinkCache linkCache, NpcResolutionContext? context)
+        WigHandlingMode wigMode, AntlerHandlingMode antlerMode, ILinkCache linkCache,
+        NpcResolutionContext? context)
     {
         if (npcGetter.DefaultOutfit == null || npcGetter.DefaultOutfit.IsNull) return null;
         var donorOutfit = ResolveRecord<IOutfitGetter>(npcGetter.DefaultOutfit, linkCache, context);
         if (donorOutfit?.Items == null) return null;
 
-        var plan = new WigRenderPlan { Mode = wigMode };
+        bool hasWnam = npcGetter.WornArmor != null && !npcGetter.WornArmor.IsNull;
+        var plan = new WigRenderPlan();
         foreach (var item in donorOutfit.Items)
         {
             if (item == null || item.IsNull) continue;
             bool isAntler = modSetting.DetectedAntlerArmors.Contains(item.FormKey);
             bool isWig = !isAntler && modSetting.DetectedWigArmors.Contains(item.FormKey);
             if (!isAntler && !isWig) continue;
-            var armor = ResolveRecord<IArmorGetter>(item.FormKey.ToLink<IArmorGetter>(), linkCache, context);
-            if (armor == null) continue;
-            plan.Armors.Add((armor, isAntler));
+
+            if (isAntler)
+            {
+                switch (antlerMode)
+                {
+                    case AntlerHandlingMode.ForwardToSkin:
+                        AddRenderPiece(plan, item.FormKey, true, hasWnam ? PieceForward.Skin : PieceForward.Outfit,
+                            linkCache, context);
+                        break;
+                    case AntlerHandlingMode.ForwardToOutfit:
+                        AddRenderPiece(plan, item.FormKey, true, PieceForward.Outfit, linkCache, context);
+                        break;
+                    case AntlerHandlingMode.Remove:
+                        plan.SuppressedOutfitItemKeys.Add(item.FormKey);
+                        break;
+                    // None: legacy passthrough — the outfit walk depicts it normally.
+                }
+            }
+            else
+            {
+                switch (wigMode)
+                {
+                    case WigHandlingMode.ForwardToSkin:
+                        AddRenderPiece(plan, item.FormKey, false, hasWnam ? PieceForward.Skin : PieceForward.Outfit,
+                            linkCache, context);
+                        break;
+                    case WigHandlingMode.ForwardToOutfit:
+                        AddRenderPiece(plan, item.FormKey, false, PieceForward.Outfit, linkCache, context);
+                        break;
+                    // None: legacy passthrough.
+                }
+            }
         }
 
-        if (plan.Armors.Count == 0) return null;
-
-        if (plan.Mode == WigHandlingMode.ForwardToSkin &&
-            (npcGetter.WornArmor == null || npcGetter.WornArmor.IsNull))
-        {
-            // Patcher fallback mirror: no WNAM to transfer the wig into.
-            plan.Mode = WigHandlingMode.ForwardToOutfit;
-        }
-
+        if (plan.Pieces.Count == 0 && plan.SuppressedOutfitItemKeys.Count == 0) return null;
         return plan;
+    }
+
+    private void AddRenderPiece(WigRenderPlan plan, FormKey armorKey, bool isAntler, PieceForward forward,
+        ILinkCache linkCache, NpcResolutionContext? context)
+    {
+        var armor = ResolveRecord<IArmorGetter>(armorKey.ToLink<IArmorGetter>(), linkCache, context);
+        if (armor != null) plan.Pieces.Add((armor, isAntler, forward));
     }
 
     /// <summary>
@@ -919,12 +1100,14 @@ public class NpcMeshResolver
     private void AppendArmorMeshOverrides(IArmorGetter armor, string source, Sex sex, FormKey? npcRaceKey,
         ILinkCache linkCache, NpcResolutionContext? context, bool includeBody, bool includeHeadgear,
         bool hairCountsAsHeadgear, List<MeshOverride> result, HashSet<string> seenKeys,
-        WigPieceClass wigPiece = WigPieceClass.None)
+        WigPieceClass wigPiece = WigPieceClass.None, IReadOnlySet<FormKey>? suppressArmaKeys = null)
     {
         if (armor.Armature == null) return;
         foreach (var armaLink in armor.Armature)
         {
             if (armaLink == null || armaLink.IsNull) continue;
+            // Host-designated ArmorAddon suppression (antler Remove, source 2).
+            if (suppressArmaKeys != null && suppressArmaKeys.Contains(armaLink.FormKey)) continue;
             var arma = ResolveRecord<IArmorAddonGetter>(armaLink, linkCache, context);
             if (arma?.BodyTemplate == null) continue;
             if (!IsArmatureForRace(arma, npcRaceKey)) continue;

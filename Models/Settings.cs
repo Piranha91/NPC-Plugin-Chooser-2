@@ -140,34 +140,76 @@ public class Settings
     public bool DefaultIncludeAllOverrides { get; set; } = false;
     public WigHandlingMode DefaultWigHandlingMode { get; set; } = WigHandlingMode.ForwardToSkin;
 
+    // Antlers are handled independently of hair-slot wigs (see AntlerHandlingMode).
+    // Default ForwardToSkin preserves the pre-split behavior (the old unified mode
+    // forwarded antlers to the skin), so existing installs are unchanged; an absent
+    // field in an old Settings.json deserializes to this default (no migration).
+    public AntlerHandlingMode DefaultAntlerHandlingMode { get; set; } = AntlerHandlingMode.ForwardToSkin;
+
+    /// <summary>True when wig/antler handling is active for the current output
+    /// mode: Create-and-Patch record mode, or SkyPatcher output in either
+    /// PatchingMode. Inert in plain Create record mode.</summary>
+    private bool WigHandlingActiveForOutputMode =>
+        UseSkyPatcherMode || PatchingMode == PatchingMode.CreateAndPatch;
+
     /// <summary>
     /// The wig handling mode that will actually apply to
-    /// <paramref name="modSetting"/> on the next patch run: the per-mod
-    /// override when set, else the global default — and None whenever wig
-    /// handling is inert (no wigs/antlers detected, or plain Create record
-    /// mode; Create-and-Patch and SkyPatcher output both activate it).
-    /// Centralized so the patcher, renderer, metadata stamp, and staleness
-    /// checker all agree on the depicted result.
+    /// <paramref name="modSetting"/> on the next patch run: the per-mod override
+    /// when set, else the global default — and None whenever wig handling is inert
+    /// (no wig ARMOs detected, or plain Create record mode; Create-and-Patch and
+    /// SkyPatcher output both activate it). Wig-class only (antlers are gated
+    /// separately by <see cref="GetEffectiveAntlerMode"/>). Centralized so the
+    /// patcher, renderer, metadata stamp, and staleness checker all agree.
     /// </summary>
     public WigHandlingMode GetEffectiveWigMode(ModSetting? modSetting)
     {
-        if (modSetting == null || !modSetting.HasWigs) return WigHandlingMode.None;
-        if (!UseSkyPatcherMode && PatchingMode != PatchingMode.CreateAndPatch) return WigHandlingMode.None;
+        if (modSetting == null || !modSetting.HasWigArmors) return WigHandlingMode.None;
+        if (!WigHandlingActiveForOutputMode) return WigHandlingMode.None;
         return modSetting.ModWigHandlingMode ?? DefaultWigHandlingMode;
     }
+
+    /// <summary>
+    /// The antler handling mode that will actually apply to
+    /// <paramref name="modSetting"/> on the next patch run. Mirrors
+    /// <see cref="GetEffectiveWigMode"/> but gates on the antler detection sets
+    /// (any of ARMO / ArmorAddon / HeadPart) and resolves against
+    /// <see cref="DefaultAntlerHandlingMode"/>.
+    /// </summary>
+    public AntlerHandlingMode GetEffectiveAntlerMode(ModSetting? modSetting)
+    {
+        if (modSetting == null || !modSetting.HasAntlers) return AntlerHandlingMode.None;
+        if (!WigHandlingActiveForOutputMode) return AntlerHandlingMode.None;
+        return modSetting.ModAntlerHandlingMode ?? DefaultAntlerHandlingMode;
+    }
+
+    /// <summary>True when either wig or antler handling will act on
+    /// <paramref name="modSetting"/> this run — the patcher's outer gate.</summary>
+    public bool WigOrAntlerHandlingActive(ModSetting? modSetting) =>
+        GetEffectiveWigMode(modSetting) != WigHandlingMode.None ||
+        GetEffectiveAntlerMode(modSetting) != AntlerHandlingMode.None;
 
     /// <summary>
     /// The wig handling mode the RENDERER depicts for <paramref name="modSetting"/>.
     /// Identical to <see cref="GetEffectiveWigMode"/> except that the dev/harness
     /// override <see cref="InternalMugshotSettings.WigModeOverride"/> (when set and
-    /// the mod has detections) wins regardless of output mode, so RenderHarness
+    /// the mod has wig detections) wins regardless of output mode, so RenderHarness
     /// variants can A/B the modes without touching the patching settings.
     /// </summary>
     public WigHandlingMode GetEffectiveRenderWigMode(ModSetting? modSetting)
     {
-        if (modSetting == null || !modSetting.HasWigs) return WigHandlingMode.None;
+        if (modSetting == null || !modSetting.HasWigArmors) return WigHandlingMode.None;
         if (InternalMugshot.WigModeOverride is { } forced) return forced;
         return GetEffectiveWigMode(modSetting);
+    }
+
+    /// <summary>The antler handling mode the RENDERER depicts. Mirrors
+    /// <see cref="GetEffectiveRenderWigMode"/> with the antler harness override
+    /// <see cref="InternalMugshotSettings.AntlerModeOverride"/>.</summary>
+    public AntlerHandlingMode GetEffectiveRenderAntlerMode(ModSetting? modSetting)
+    {
+        if (modSetting == null || !modSetting.HasAntlers) return AntlerHandlingMode.None;
+        if (InternalMugshot.AntlerModeOverride is { } forced) return forced;
+        return GetEffectiveAntlerMode(modSetting);
     }
 
     // UI / Other
@@ -674,12 +716,14 @@ public sealed class InternalMugshotSettings
     public bool IncludeDefaultOutfit { get; set; } = true;
     public bool IncludeHeadgear { get; set; } = false;
 
-    // Dev/harness override for the renderer's wig handling mode (see
-    // Settings.GetEffectiveRenderWigMode): when set and the tile's mod has
-    // detected wigs/antlers, the renderer depicts this mode regardless of the
-    // patching-mode gate. Not exposed in the UI; RenderHarness variants set it
-    // by property name via reflection for per-mode A/B renders.
+    // Dev/harness overrides for the renderer's wig / antler handling modes (see
+    // Settings.GetEffectiveRenderWigMode / GetEffectiveRenderAntlerMode): when set
+    // and the tile's mod has detections of that class, the renderer depicts this
+    // mode regardless of the patching-mode gate. Not exposed in the UI;
+    // RenderHarness variants set them by property name via reflection for per-mode
+    // A/B renders.
     public WigHandlingMode? WigModeOverride { get; set; } = null;
+    public AntlerHandlingMode? AntlerModeOverride { get; set; } = null;
 
     // Portrait-quality rendering toggles (CharacterViewer.Rendering 2.5.9+).
     // Each gates a feature in the in-process renderer that improves the

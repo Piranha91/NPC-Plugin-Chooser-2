@@ -1029,9 +1029,11 @@ public class UpdateHandler
     /// Target for <c>Settings.WigScanRescanVersion</c>. Bump this whenever
     /// <see cref="WigDetector"/>'s keywords or slot guard change in a way that
     /// requires re-scanning mods whose cached analysis snapshot is still valid.
-    /// History: 1 = initial wig/antler detection.
+    /// History: 1 = initial wig/antler detection; 2 = antler detection extended
+    /// to WornArmor-baked ArmorAddons and FaceGen head parts (new persisted
+    /// DetectedAntlerArmatures / DetectedAntlerHeadParts sets need populating).
     /// </summary>
-    private const int WigScanRescanTarget = 1;
+    private const int WigScanRescanTarget = 2;
 
     /// <summary>
     /// One-time invalidation of every mod's analysis cache (LastKnownState) so

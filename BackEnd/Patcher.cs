@@ -715,7 +715,7 @@ public class Patcher : OptionalUIModule
                                 // the mod has detected wigs and the output mode activates it
                                 // (GetEffectiveWigMode).
                                 if (!isFaceGenOnly && appearanceModSetting != null &&
-                                    _settings.GetEffectiveWigMode(appearanceModSetting) != WigHandlingMode.None)
+                                    _settings.WigOrAntlerHandlingActive(appearanceModSetting))
                                 {
                                     wigForward = _wigForwarder.Apply(npcFormKey, appearanceNpcRecord,
                                         appearanceModSetting, appearanceModKey.Value, currentModFolderPaths,
@@ -1286,18 +1286,19 @@ public class Patcher : OptionalUIModule
                                     appearanceModSetting, // appearanceNpcRecord here rather than patchNpc is intentional
                                     _currentRunOutputAssetPath, npcIdentifier);
 
-                                // Queue the baked-hair strip for this NPC's copied FaceGen NIF
-                                // (ForwardToSkin wig handling). The copy destination is keyed by
-                                // the OUTPUT record's FormKey in every mode (surrogate in
-                                // SkyPatcher mode, the patch target otherwise); applied after
+                                // Queue the baked hair/antler shape strip for this NPC's copied
+                                // FaceGen NIF (wig ForwardToSkin removes hair; antler Remove removes
+                                // baked antler head-part shapes). The copy destination is keyed by
+                                // the OUTPUT record's FormKey in every mode (surrogate in SkyPatcher
+                                // mode, the patch target otherwise); applied after
                                 // MonitorAndWaitForAllTasks below, once the file exists.
-                                if (wigForward is { HairShapeNames.Count: > 0 })
+                                if (wigForward is { FaceGenShapeNamesToStrip.Count: > 0 })
                                 {
                                     var (wigFaceGenNifRelPath, _) =
                                         Auxilliary.GetFaceGenSubPathStrings(patchNpc.FormKey, true);
                                     _pendingWigNifEdits.Add((
                                         Path.Combine(_currentRunOutputAssetPath, wigFaceGenNifRelPath),
-                                        wigForward.HairShapeNames, npcIdentifier));
+                                        wigForward.FaceGenShapeNamesToStrip, npcIdentifier));
                                 }
                                 
                                 var (_, faceTintPath) = Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, true);
@@ -1655,19 +1656,20 @@ public class Patcher : OptionalUIModule
     }
 
     /// <summary>
-    /// Strips the baked hair shape(s) from the copied FaceGen NIFs queued by
-    /// the wig-forwarding pass (see <see cref="WigForwarder"/>: the hair head
-    /// part was removed from the NPC record, and the baked FaceGen hair would
-    /// otherwise render alongside the forwarded wig in game). Runs once per
-    /// patch run, after all asset copy/extraction tasks have finished so the
-    /// destination files exist. Per-file failures are logged and skipped —
-    /// a surviving baked hair clashes visually but breaks nothing.
+    /// Strips the baked hair/antler shape(s) from the copied FaceGen NIFs queued
+    /// by the wig/antler-forwarding pass (see <see cref="WigForwarder"/>: the hair
+    /// head part was removed for a forwarded wig, and/or an antler head part was
+    /// removed by antler Remove; the baked FaceGen shape would otherwise still
+    /// render in game). Runs once per patch run, after all asset copy/extraction
+    /// tasks have finished so the destination files exist. Per-file failures are
+    /// logged and skipped — a surviving baked shape clashes visually but breaks
+    /// nothing.
     /// </summary>
     private void ApplyPendingWigNifEdits()
     {
         if (_pendingWigNifEdits.IsEmpty) return;
 
-        AppendLog($"Stripping baked hair from {_pendingWigNifEdits.Count} FaceGen NIF(s) (wig forwarding)...",
+        AppendLog($"Stripping baked hair/antler shapes from {_pendingWigNifEdits.Count} FaceGen NIF(s) (wig/antler forwarding)...",
             false, true);
         foreach (var (nifPath, shapeNames, npcIdentifier) in _pendingWigNifEdits)
         {
@@ -1684,19 +1686,19 @@ public class Patcher : OptionalUIModule
                     msg => AppendLog("    " + msg, false, false));
                 if (removed > 0)
                 {
-                    AppendLog($"  {npcIdentifier}: removed {removed} baked hair shape(s) " +
+                    AppendLog($"  {npcIdentifier}: removed {removed} baked hair/antler shape(s) " +
                               $"[{string.Join(", ", shapeNames)}] from {Path.GetFileName(nifPath)}.", false, true);
                 }
                 else
                 {
                     AppendLog($"  WARNING: {npcIdentifier}: no shape named [{string.Join(", ", shapeNames)}] " +
-                              $"found in {Path.GetFileName(nifPath)} — the baked hair may clash with the forwarded wig in game.",
+                              $"found in {Path.GetFileName(nifPath)} — the baked hair/antler may still show in game.",
                         false, true);
                 }
             }
             catch (Exception ex)
             {
-                AppendLog($"  ERROR stripping baked hair for {npcIdentifier} ({nifPath}): {ex.Message}",
+                AppendLog($"  ERROR stripping baked hair/antler for {npcIdentifier} ({nifPath}): {ex.Message}",
                     true, true);
             }
         }

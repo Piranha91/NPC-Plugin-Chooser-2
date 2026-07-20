@@ -539,7 +539,7 @@
                                          </ComboBox>
 
                                          <!-- Wig Handling Mode: only shown when the analysis scan detected
-                                              wig/antler armors in this mod AND wig handling is active for the
+                                              hair-slot wig armors in this mod AND wig handling is active for the
                                               current output mode (Create and Patch, or SkyPatcher mode). -->
                                          <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,0"
                                                      Visibility="{Binding IsWigHandlingVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -547,9 +547,9 @@
                                                  <TextBlock.ToolTip>
                                                      <ToolTip>
                                                          <TextBlock TextWrapping="Wrap" Width="340">
-                                                             This mod ships wig/antler armors (hair-slot armors in its Default Outfits).
+                                                             This mod ships hair-slot wig armors in its Default Outfits.
                                                              Controls how they are handled during patching — and how mugshots and the
-                                                             3D preview depict the NPC.
+                                                             3D preview depict the NPC. Antlers are controlled separately.
                                                              <LineBreak/><LineBreak/>
                                                              Default: Use the default setting from the Settings tab.
                                                              <LineBreak/>
@@ -570,6 +570,51 @@
                                              <ComboBox
                                                  ItemsSource="{Binding WigHandlingModes}"
                                                  SelectedItem="{Binding SelectedWigHandlingItem, Mode=TwoWay}"
+                                                 Margin="5 0 0 0">
+                                                 <ComboBox.ItemTemplate>
+                                                     <DataTemplate>
+                                                         <TextBlock Text="{Binding Value}"/>
+                                                     </DataTemplate>
+                                                 </ComboBox.ItemTemplate>
+                                             </ComboBox>
+                                         </StackPanel>
+
+                                         <!-- Antler Handling Mode: shown when the analysis scan detected antler
+                                              armors / addons / head parts in this mod AND antler handling is active
+                                              for the current output mode. Independent of the wig dropdown. -->
+                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,0"
+                                                     Visibility="{Binding IsAntlerHandlingVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                             <TextBlock Text="Antler Handling Mode" VerticalAlignment="Center">
+                                                 <TextBlock.ToolTip>
+                                                     <ToolTip>
+                                                         <TextBlock TextWrapping="Wrap" Width="340">
+                                                             This mod ships antlers (in an outfit, baked into the worn armor, or as a
+                                                             keyword-detected FaceGen head part). Controls how they are handled during
+                                                             patching — and how mugshots and the 3D preview depict the NPC.
+                                                             <LineBreak/><LineBreak/>
+                                                             Default: Use the default setting from the Settings tab.
+                                                             <LineBreak/>
+                                                             ForwardToSkin: transfer the antler into the NPC's skin (WornArmor) so it shows
+                                                             regardless of the outfit worn. Falls back to ForwardToOutfit if the appearance
+                                                             plugin assigns no WornArmor.
+                                                             <LineBreak/>
+                                                             ForwardToOutfit: duplicate the outfit the NPC actually wears in game and add
+                                                             the antler to the duplicate.
+                                                             <LineBreak/>
+                                                             Remove: keep the antler OFF the NPC entirely — stripped from a forwarded outfit,
+                                                             from the worn armor, and from the FaceGen. An outfit the load order owns (not
+                                                             forwarded) can't be reached.
+                                                             <LineBreak/>
+                                                             None: the antler is treated like any other outfit element — forwarded only if
+                                                             Include Outfits is selected.
+                                                         </TextBlock>
+                                                     </ToolTip>
+                                                 </TextBlock.ToolTip>
+                                             </TextBlock>
+
+                                             <ComboBox
+                                                 ItemsSource="{Binding AntlerHandlingModes}"
+                                                 SelectedItem="{Binding SelectedAntlerHandlingItem, Mode=TwoWay}"
                                                  Margin="5 0 0 0">
                                                  <ComboBox.ItemTemplate>
                                                      <DataTemplate>

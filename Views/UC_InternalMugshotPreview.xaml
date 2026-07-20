@@ -120,6 +120,17 @@
                                    FontWeight="SemiBold" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Border>
+                <!-- Antler removal: the mod's Antler Handling Mode is Remove and
+                     this NPC carries an antler the patch strips (outfit / worn
+                     armor / FaceGen head part). The preview hides it to match the
+                     patched output; informational only. -->
+                <Border HorizontalAlignment="Right" Margin="0,4,0,0"
+                        Background="#C0305870" CornerRadius="4" Padding="6,3"
+                        ToolTip="{Binding AntlerRemovalNoticeText}"
+                        Visibility="{Binding HasAntlerRemovalNotice, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                    <TextBlock Text="Antlers removed (hidden to match output)" Foreground="White"
+                               FontWeight="SemiBold"/>
+                </Border>
             </StackPanel>
 
             <!-- Outfit-conflict warning: "Include Outfit" is overridden at

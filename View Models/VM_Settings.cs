@@ -340,12 +340,17 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public IEnumerable<RecordOverrideHandlingMode> RecordOverrideHandlingModes { get; } =
         Enum.GetValues(typeof(RecordOverrideHandlingMode)).Cast<RecordOverrideHandlingMode>();
 
-    // Global default Wig Handling Mode (per-mod entries with "Default" resolve
-    // to this; see Models.WigHandlingMode / Settings.GetEffectiveWigMode).
+    // Global default Wig / Antler Handling Modes (per-mod entries with "Default"
+    // resolve to these; see Models.WigHandlingMode / Models.AntlerHandlingMode /
+    // Settings.GetEffectiveWigMode / GetEffectiveAntlerMode).
     [Reactive] public WigHandlingMode SelectedDefaultWigHandlingMode { get; set; }
+    [Reactive] public AntlerHandlingMode SelectedDefaultAntlerHandlingMode { get; set; }
 
     public IEnumerable<WigHandlingMode> WigHandlingModes { get; } =
         Enum.GetValues(typeof(WigHandlingMode)).Cast<WigHandlingMode>();
+
+    public IEnumerable<AntlerHandlingMode> AntlerHandlingModes { get; } =
+        Enum.GetValues(typeof(AntlerHandlingMode)).Cast<AntlerHandlingMode>();
 
     public ReactiveCommand<Unit, Unit> ShowOverrideHandlingModeHelpCommand { get; }
 
@@ -668,6 +673,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SelectedPatchingMode = _model.PatchingMode;
         SelectedRecordOverrideHandlingMode = _model.DefaultRecordOverrideHandlingMode;
         SelectedDefaultWigHandlingMode = _model.DefaultWigHandlingMode;
+        SelectedDefaultAntlerHandlingMode = _model.DefaultAntlerHandlingMode;
         DefaultMaxNestedIntervalDepth = _model.DefaultMaxNestedIntervalDepth;
         DefaultIncludeAllOverrides = _model.DefaultIncludeAllOverrides;
         UpdateDefaultOverrideVisibility(); // Initialize visibility state
@@ -1075,6 +1081,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedDefaultWigHandlingMode).Skip(1)
             .Subscribe(m => _model.DefaultWigHandlingMode = m).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedDefaultAntlerHandlingMode).Skip(1)
+            .Subscribe(m => _model.DefaultAntlerHandlingMode = m).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b)
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.BatFilePreCommands).Skip(1).Subscribe(s => _model.BatFilePreCommands = s)

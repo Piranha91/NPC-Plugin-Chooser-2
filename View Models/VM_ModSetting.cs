@@ -127,15 +127,21 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     [Reactive] public bool IsMaxNestedIntervalDepthVisible { get; set; }
     [Reactive] public bool IncludeAllOverrides { get; set; } = false;
 
-    // Wig/antler detection + per-mod handling mode (see Models.ModSetting /
-    // Models.WigHandlingMode). The dropdown is only shown when the analysis
-    // scan found wigs/antlers AND wig handling is active for the current
-    // output mode (Create-and-Patch or SkyPatcher).
+    // Wig/antler detection + per-mod handling modes (see Models.ModSetting /
+    // Models.WigHandlingMode / Models.AntlerHandlingMode). Each dropdown is shown
+    // only when the analysis scan found that class AND wig/antler handling is
+    // active for the current output mode (Create-and-Patch or SkyPatcher). Wigs
+    // and antlers are controlled independently.
     public HashSet<FormKey> DetectedWigArmors { get; set; } = new();
     public HashSet<FormKey> DetectedAntlerArmors { get; set; } = new();
-    [Reactive] public bool HasWigs { get; set; }
+    public HashSet<FormKey> DetectedAntlerArmatures { get; set; } = new();
+    public HashSet<FormKey> DetectedAntlerHeadParts { get; set; } = new();
+    [Reactive] public bool HasWigArmors { get; set; }
+    [Reactive] public bool HasAntlers { get; set; }
     [Reactive] public WigHandlingMode? OverrideWigHandlingMode { get; set; }
+    [Reactive] public AntlerHandlingMode? OverrideAntlerHandlingMode { get; set; }
     [Reactive] public bool IsWigHandlingVisible { get; set; }
+    [Reactive] public bool IsAntlerHandlingVisible { get; set; }
 
     public IEnumerable<KeyValuePair<WigHandlingMode?, string>> WigHandlingModes { get; }
         = new[]
@@ -148,10 +154,22 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                     new KeyValuePair<WigHandlingMode?, string>(e, e.ToString())
                 ));
 
-    // SelectedItem bridge — same null-key display fix as
-    // SelectedRecordOverrideHandlingItem (null = "Default" is this dropdown's
-    // normal state, so without the bridge it rendered blank for every mod).
+    public IEnumerable<KeyValuePair<AntlerHandlingMode?, string>> AntlerHandlingModes { get; }
+        = new[]
+            {
+                new KeyValuePair<AntlerHandlingMode?, string>(null, "Default")
+            }
+            .Concat(Enum.GetValues(typeof(AntlerHandlingMode))
+                .Cast<AntlerHandlingMode>()
+                .Select(e =>
+                    new KeyValuePair<AntlerHandlingMode?, string>(e, e.ToString())
+                ));
+
+    // SelectedItem bridges — same null-key display fix as
+    // SelectedRecordOverrideHandlingItem (null = "Default" is these dropdowns'
+    // normal state, so without the bridge they rendered blank for every mod).
     [Reactive] public KeyValuePair<WigHandlingMode?, string> SelectedWigHandlingItem { get; set; }
+    [Reactive] public KeyValuePair<AntlerHandlingMode?, string> SelectedAntlerHandlingItem { get; set; }
     
     public HashSet<string> NpcNames { get; set; } = new();
     public HashSet<string> NpcEditorIDs { get; set; } = new();
@@ -308,8 +326,13 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         MaxNestedIntervalDepth = model.MaxNestedIntervalDepth;
         DetectedWigArmors = new HashSet<FormKey>(model.DetectedWigArmors ?? new HashSet<FormKey>());
         DetectedAntlerArmors = new HashSet<FormKey>(model.DetectedAntlerArmors ?? new HashSet<FormKey>());
-        HasWigs = DetectedWigArmors.Count > 0 || DetectedAntlerArmors.Count > 0;
+        DetectedAntlerArmatures = new HashSet<FormKey>(model.DetectedAntlerArmatures ?? new HashSet<FormKey>());
+        DetectedAntlerHeadParts = new HashSet<FormKey>(model.DetectedAntlerHeadParts ?? new HashSet<FormKey>());
+        HasWigArmors = DetectedWigArmors.Count > 0;
+        HasAntlers = DetectedAntlerArmors.Count > 0 || DetectedAntlerArmatures.Count > 0 ||
+                     DetectedAntlerHeadParts.Count > 0;
         OverrideWigHandlingMode = model.ModWigHandlingMode;
+        OverrideAntlerHandlingMode = model.ModAntlerHandlingMode;
         // AvailablePluginsForNpcs should be re-calculated on load.
         // IsMugshotOnlyEntry is set to false via chaining
         IsFaceGenOnlyEntry = model.IsFaceGenOnlyEntry;
@@ -728,16 +751,25 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             .Subscribe(_ => UpdateIsMaxNestedIntervalDepthVisible())
             .DisposeWith(_disposables);
 
-        // Wig Handling dropdown visibility: shown only when the analysis scan
-        // detected wigs/antlers AND the output mode activates wig handling —
-        // Create-and-Patch record mode, or SkyPatcher mode in either
-        // PatchingMode (mirrors Settings.GetEffectiveWigMode).
-        this.WhenAnyValue(x => x.HasWigs)
+        // Wig / Antler dropdown visibility: each dropdown shows only when the
+        // analysis scan detected that class AND the output mode activates the
+        // handling — Create-and-Patch record mode, or SkyPatcher mode in either
+        // PatchingMode (mirrors Settings.GetEffectiveWigMode/GetEffectiveAntlerMode).
+        // Wigs and antlers are gated on their own detection sets (not the union),
+        // so a mod with antlers-only shows only the Antler dropdown and vice versa.
+        this.WhenAnyValue(x => x.HasWigArmors)
             .CombineLatest(
                 _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.UseSkyPatcherMode),
                 (hasWigs, output) => hasWigs &&
                                      (output.Item2 || output.Item1 == PatchingMode.CreateAndPatch))
             .Subscribe(visible => IsWigHandlingVisible = visible)
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.HasAntlers)
+            .CombineLatest(
+                _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.UseSkyPatcherMode),
+                (hasAntlers, output) => hasAntlers &&
+                                        (output.Item2 || output.Item1 == PatchingMode.CreateAndPatch))
+            .Subscribe(visible => IsAntlerHandlingVisible = visible)
             .DisposeWith(_disposables);
 
         // Two-way sync between the persisted nullable modes and their
@@ -764,6 +796,13 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedWigHandlingItem)
             .Subscribe(item => OverrideWigHandlingMode = item.Key)
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.OverrideAntlerHandlingMode)
+            .Subscribe(mode => SelectedAntlerHandlingItem =
+                AntlerHandlingModes.First(kv => kv.Key == mode))
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedAntlerHandlingItem)
+            .Subscribe(item => OverrideAntlerHandlingMode = item.Key)
             .DisposeWith(_disposables);
         
         this.WhenAnyValue(x => x.IncludeAllOverrides)
@@ -825,14 +864,18 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// </summary>
     public void ScanForWigs(IReadOnlyCollection<ISkyrimModGetter> plugins)
     {
-        var (wigs, antlers) = WigDetector.Scan(plugins, formKey =>
+        var scan = WigDetector.Scan(plugins, formKey =>
             _environmentStateProvider.LinkCache != null &&
             _environmentStateProvider.LinkCache.TryResolve<IArmorAddonGetter>(formKey, out var arma)
                 ? arma
                 : null);
-        DetectedWigArmors = wigs;
-        DetectedAntlerArmors = antlers;
-        HasWigs = wigs.Count > 0 || antlers.Count > 0;
+        DetectedWigArmors = scan.Wigs;
+        DetectedAntlerArmors = scan.AntlerArmors;
+        DetectedAntlerArmatures = scan.AntlerArmatures;
+        DetectedAntlerHeadParts = scan.AntlerHeadParts;
+        HasWigArmors = scan.Wigs.Count > 0;
+        HasAntlers = scan.AntlerArmors.Count > 0 || scan.AntlerArmatures.Count > 0 ||
+                     scan.AntlerHeadParts.Count > 0;
     }
 
     public ModSetting SaveToModel()
@@ -868,7 +911,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             MaxNestedIntervalDepth = MaxNestedIntervalDepth,
             DetectedWigArmors = new HashSet<FormKey>(DetectedWigArmors),
             DetectedAntlerArmors = new HashSet<FormKey>(DetectedAntlerArmors),
+            DetectedAntlerArmatures = new HashSet<FormKey>(DetectedAntlerArmatures),
+            DetectedAntlerHeadParts = new HashSet<FormKey>(DetectedAntlerHeadParts),
             ModWigHandlingMode = OverrideWigHandlingMode,
+            ModAntlerHandlingMode = OverrideAntlerHandlingMode,
             IsAutoGenerated = IsAutoGenerated,
             PluginsWithOverrideRecords = _pluginsWithOverrideRecords,
             IncludeAllOverrides = IncludeAllOverrides,

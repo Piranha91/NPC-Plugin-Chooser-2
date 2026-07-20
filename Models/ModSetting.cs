@@ -65,16 +65,34 @@ public class ModSetting
     // Wig/antler detection results (computed during mod analysis on cache miss,
     // persisted so cache hits keep them — same lifecycle as HasBaseGameAssetPaths).
     // DetectedWigArmors: ARMOs whose Name contains "wig"/"hair" AND whose ARMA(s)
-    // occupy a hair biped slot (31 Hair / 41 LongHair). DetectedAntlerArmors:
-    // ARMOs whose EditorID or Name contains "antler" (no slot guard — antler
-    // slots aren't standardized). ModWigHandlingMode: per-mod override of
-    // Settings.DefaultWigHandlingMode (null = use the global default).
+    // occupy a hair biped slot (31 Hair / 41 LongHair). Antlers are detected from
+    // three sources so Remove can reach all of them:
+    //   DetectedAntlerArmors     — ARMOs whose EditorID/Name contains "antler"
+    //                              (in an outfit; no slot guard).
+    //   DetectedAntlerArmatures  — ARMAs whose EditorID contains "antler" (baked
+    //                              into a WornArmor) plus the addons of the antler
+    //                              ARMOs above.
+    //   DetectedAntlerHeadParts  — HeadParts whose Name/EditorID contains "antler"
+    //                              (baked into the FaceGen).
+    // ModWigHandlingMode / ModAntlerHandlingMode: per-mod overrides of the global
+    // Settings.DefaultWigHandlingMode / DefaultAntlerHandlingMode (null = default).
     public HashSet<FormKey> DetectedWigArmors { get; set; } = new();
     public HashSet<FormKey> DetectedAntlerArmors { get; set; } = new();
+    public HashSet<FormKey> DetectedAntlerArmatures { get; set; } = new();
+    public HashSet<FormKey> DetectedAntlerHeadParts { get; set; } = new();
     public WigHandlingMode? ModWigHandlingMode { get; set; } = null;
+    public AntlerHandlingMode? ModAntlerHandlingMode { get; set; } = null;
 
     [JsonIgnore]
-    public bool HasWigs => DetectedWigArmors.Count > 0 || DetectedAntlerArmors.Count > 0;
+    public bool HasWigArmors => DetectedWigArmors.Count > 0;
+
+    [JsonIgnore]
+    public bool HasAntlers => DetectedAntlerArmors.Count > 0 ||
+                              DetectedAntlerArmatures.Count > 0 ||
+                              DetectedAntlerHeadParts.Count > 0;
+
+    [JsonIgnore]
+    public bool HasWigs => HasWigArmors || HasAntlers;
 
     public Dictionary<FormKey, (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)> 
         NpcFormKeysToNotifications

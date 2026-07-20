@@ -431,13 +431,16 @@ public class OutfitDisplayResolver
     public string ComputeWigIdentitySuffix(FormKey sourceNpcFormKey, ModSetting? modSetting,
         bool includeDefaultOutfitRenderFlag)
     {
-        var mode = _settings.GetEffectiveRenderWigMode(modSetting);
-        if (mode == WigHandlingMode.None || modSetting == null) return string.Empty;
+        if (modSetting == null) return string.Empty;
+        var wigMode = _settings.GetEffectiveRenderWigMode(modSetting);
+        var antlerMode = _settings.GetEffectiveRenderAntlerMode(modSetting);
+        if (wigMode == WigHandlingMode.None && antlerMode == AntlerHandlingMode.None) return string.Empty;
         var linkCache = _env.LinkCache;
         if (linkCache == null) return string.Empty;
 
         var donor = ResolveDonorNpc(sourceNpcFormKey, modSetting, linkCache);
         if (donor?.DefaultOutfit == null || donor.DefaultOutfit.IsNull) return string.Empty;
+        bool hasWnam = donor.WornArmor != null && !donor.WornArmor.IsNull;
 
         IOutfitGetter? donorOutfit = null;
         var folders = modSetting.CorrespondingFolderPaths.ToHashSet();
@@ -452,26 +455,48 @@ public class OutfitDisplayResolver
         }
         if (donorOutfit?.Items == null) return string.Empty;
 
-        var wigKeys = donorOutfit.Items
-            .Where(i => i != null && !i.IsNull)
-            .Select(i => i.FormKey)
-            .Where(k => modSetting.DetectedWigArmors.Contains(k) || modSetting.DetectedAntlerArmors.Contains(k))
-            .Select(k => k.ToString())
-            .OrderBy(s => s, StringComparer.Ordinal)
-            .ToList();
-        if (wigKeys.Count == 0) return string.Empty;
+        var itemKeys = donorOutfit.Items.Where(i => i != null && !i.IsNull).Select(i => i.FormKey).ToList();
+        var wigKeys = itemKeys.Where(k => modSetting.DetectedWigArmors.Contains(k))
+            .Select(k => k.ToString()).OrderBy(s => s, StringComparer.Ordinal).ToList();
+        var antlerKeys = itemKeys.Where(k => modSetting.DetectedAntlerArmors.Contains(k))
+            .Select(k => k.ToString()).OrderBy(s => s, StringComparer.Ordinal).ToList();
 
-        if (mode == WigHandlingMode.ForwardToSkin && (donor.WornArmor == null || donor.WornArmor.IsNull))
+        var sb = new StringBuilder();
+
+        // Wig segment — content-based (mode + sorted keys) so adding/removing a wig
+        // re-stales too. ForwardToSkin depicts regardless of the outfit toggle; a
+        // ForwardToOutfit wig (incl. the no-WNAM fallback) only with the outfit on.
+        if (wigMode != WigHandlingMode.None && wigKeys.Count > 0)
         {
-            mode = WigHandlingMode.ForwardToOutfit; // WigForwarder / renderer fallback mirror
+            var effWig = (wigMode == WigHandlingMode.ForwardToSkin && !hasWnam)
+                ? WigHandlingMode.ForwardToOutfit
+                : wigMode;
+            if (effWig == WigHandlingMode.ForwardToSkin || includeDefaultOutfitRenderFlag)
+            {
+                sb.Append("+wig[" + effWig + ":" + string.Join(",", wigKeys) + "]");
+            }
         }
 
-        if (mode == WigHandlingMode.ForwardToOutfit && !includeDefaultOutfitRenderFlag)
+        // Antler segment — the outfit (source 1) antlers the preview reflects.
+        // Skin shows always; Remove changes the depiction (hidden) so switching to
+        // it re-stales; ForwardToOutfit only with the outfit on. (Sources 2/3 —
+        // baked WornArmor/FaceGen antlers — are not depicted in the preview yet, so
+        // they're deliberately left out to avoid needless re-renders.)
+        if (antlerMode != AntlerHandlingMode.None && antlerKeys.Count > 0)
         {
-            return string.Empty; // wig is outfit content; outfit off = not depicted
+            var effAntler = (antlerMode == AntlerHandlingMode.ForwardToSkin && !hasWnam)
+                ? AntlerHandlingMode.ForwardToOutfit
+                : antlerMode;
+            bool depicted = effAntler == AntlerHandlingMode.ForwardToSkin ||
+                            effAntler == AntlerHandlingMode.Remove ||
+                            includeDefaultOutfitRenderFlag;
+            if (depicted)
+            {
+                sb.Append("+antler[" + effAntler + ":" + string.Join(",", antlerKeys) + "]");
+            }
         }
 
-        return "+wig[" + mode + ":" + string.Join(",", wigKeys) + "]";
+        return sb.ToString();
     }
 
     private static string DescribeOutfit(FormKey outfit, ILinkCache linkCache)
