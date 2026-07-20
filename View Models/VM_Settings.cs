@@ -352,6 +352,17 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public IEnumerable<AntlerHandlingMode> AntlerHandlingModes { get; } =
         Enum.GetValues(typeof(AntlerHandlingMode)).Cast<AntlerHandlingMode>();
 
+    // Scope of manually-designated antler head-part blocking (Settings.ManualAntlerBlockScope):
+    // how broadly a designated EditorID is treated as an antler across the load order.
+    [Reactive] public AntlerBlockScope SelectedAntlerBlockScope { get; set; }
+
+    public IEnumerable<KeyValuePair<AntlerBlockScope, string>> AntlerBlockScopes { get; } = new[]
+    {
+        new KeyValuePair<AntlerBlockScope, string>(AntlerBlockScope.AllNpcs, "All NPCs (any mod)"),
+        new KeyValuePair<AntlerBlockScope, string>(AntlerBlockScope.SameMod, "Same mod only"),
+        new KeyValuePair<AntlerBlockScope, string>(AntlerBlockScope.SpecificNpc, "Specific NPC(s) only"),
+    };
+
     public ReactiveCommand<Unit, Unit> ShowOverrideHandlingModeHelpCommand { get; }
 
     // --- New EasyNPC Transfer Properties ---
@@ -674,6 +685,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SelectedRecordOverrideHandlingMode = _model.DefaultRecordOverrideHandlingMode;
         SelectedDefaultWigHandlingMode = _model.DefaultWigHandlingMode;
         SelectedDefaultAntlerHandlingMode = _model.DefaultAntlerHandlingMode;
+        SelectedAntlerBlockScope = _model.ManualAntlerBlockScope;
         DefaultMaxNestedIntervalDepth = _model.DefaultMaxNestedIntervalDepth;
         DefaultIncludeAllOverrides = _model.DefaultIncludeAllOverrides;
         UpdateDefaultOverrideVisibility(); // Initialize visibility state
@@ -1083,6 +1095,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(m => _model.DefaultWigHandlingMode = m).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedDefaultAntlerHandlingMode).Skip(1)
             .Subscribe(m => _model.DefaultAntlerHandlingMode = m).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedAntlerBlockScope).Skip(1)
+            .Subscribe(s => _model.ManualAntlerBlockScope = s).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b)
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.BatFilePreCommands).Skip(1).Subscribe(s => _model.BatFilePreCommands = s)

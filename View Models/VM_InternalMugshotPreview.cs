@@ -88,6 +88,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> ToggleAntlerSelectorCommand { get; }
 
     private ModSetting? _antlerSelectorModSetting;
+    private FormKey _antlerSelectorNpcFormKey = FormKey.Null;
     private bool _suppressAntlerRepopulate;
 
     // Non-persistent override state for the full-screen popup (see
@@ -658,6 +659,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         if (_suppressAntlerRepopulate) return;
         ClearAntlerSelectorItems();
         _antlerSelectorModSetting = modSetting;
+        _antlerSelectorNpcFormKey = formKey;
         if (modSetting == null)
         {
             IsAntlerSelectorAvailable = false;
@@ -711,16 +713,13 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     private async void OnCandidateDesignationChanged(VM_AntlerHeadPartCandidate c)
     {
         var mod = _antlerSelectorModSetting;
-        if (mod == null) return;
+        if (mod == null || string.IsNullOrEmpty(c.EditorId)) return;
         string modName = mod.DisplayName;
 
-        if (!_settings.ManualAntlerHeadPartsByMod.TryGetValue(modName, out var set) || set == null)
-        {
-            set = new HashSet<FormKey>();
-            _settings.ManualAntlerHeadPartsByMod[modName] = set;
-        }
-        if (c.IsDesignated) set.Add(c.FormKey); else set.Remove(c.FormKey);
-        if (set.Count == 0) _settings.ManualAntlerHeadPartsByMod.Remove(modName);
+        if (c.IsDesignated)
+            _settings.AddManualAntlerHeadPart(c.EditorId, modName, _antlerSelectorNpcFormKey);
+        else
+            _settings.RemoveManualAntlerHeadPart(c.EditorId, modName, _antlerSelectorNpcFormKey);
         PersistThrottled();
 
         // A manual-only mod needs its Antler Handling dropdown to appear so the

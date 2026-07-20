@@ -88,7 +88,7 @@ public class ModSetting
 
     /// <summary>Whether the analysis SCAN detected antlers (any of the three
     /// sources). User-designated antlers (persisted on
-    /// <see cref="Settings.ManualAntlerHeadPartsByMod"/>) are folded in by
+    /// <see cref="Settings.ManualAntlerHeadParts"/>) are folded in by
     /// <see cref="Settings.ModHasAntlers"/> — use that for effective checks.</summary>
     [JsonIgnore]
     public bool HasDetectedAntlers => DetectedAntlerArmors.Count > 0 ||

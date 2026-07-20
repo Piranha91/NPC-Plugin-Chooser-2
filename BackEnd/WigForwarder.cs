@@ -734,23 +734,23 @@ public class WigForwarder
         }
     }
 
-    /// <summary>Collects the donor NPC's keyword-detected antler head parts
-    /// (source 3) into <paramref name="result"/> for removal — record keys (no
-    /// bald replacement) and FaceGen shape names to strip. Only head parts the
-    /// scan flagged OR the user manually designated
-    /// (<see cref="ModSetting.EffectiveAntlerHeadParts"/>) qualify.</summary>
+    /// <summary>Collects the donor NPC's antler head parts (source 3) into
+    /// <paramref name="result"/> for removal — record keys (no bald replacement)
+    /// and FaceGen shape names to strip. A head part qualifies when the scan
+    /// flagged it OR the user manually designated its EditorID for this mod+NPC
+    /// under the current scope (<see cref="Settings.IsAntlerHeadPart"/>). Called
+    /// only when the effective antler mode is Remove.</summary>
     private void CollectAntlerHeadPartRemoval(INpcGetter donorNpc, ModSetting appearanceModSetting,
         HashSet<string> modFolderPaths, Result result)
     {
-        var antlerHeadParts = _settings.GetEffectiveAntlerHeadParts(appearanceModSetting);
-        if (antlerHeadParts.Count == 0) return;
         foreach (var hpLink in donorNpc.HeadParts)
         {
             if (hpLink == null || hpLink.IsNull) continue;
-            if (!antlerHeadParts.Contains(hpLink.FormKey)) continue;
-            result.DonorAntlerHeadPartKeys.Add(hpLink.FormKey);
             var hpRec = ResolveFromModsOrWinner<IHeadPartGetter>(hpLink,
                 appearanceModSetting.CorrespondingModKeys, modFolderPaths);
+            if (!_settings.IsAntlerHeadPart(appearanceModSetting, hpLink.FormKey, hpRec?.EditorID, donorNpc.FormKey))
+                continue;
+            result.DonorAntlerHeadPartKeys.Add(hpLink.FormKey);
             if (hpRec != null) AddShapeNames(hpRec, appearanceModSetting, modFolderPaths, result);
         }
     }

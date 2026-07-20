@@ -477,19 +477,33 @@ public class SerializableModelsRoundTripTests
     }
 
     [Fact]
-    public void Settings_ManualAntlerHeadPartsByMod_SurvivesRoundTrip()
+    public void Settings_ManualAntlerHeadParts_SurviveRoundTrip()
     {
         var settings = new Settings
         {
-            ManualAntlerHeadPartsByMod = new Dictionary<string, HashSet<FormKey>>
+            ManualAntlerBlockScope = AntlerBlockScope.SpecificNpc,
+            ManualAntlerHeadParts = new List<ManualAntlerHeadPart>
             {
-                ["FoxGlove"] = new HashSet<FormKey> { Npc1, Npc2 },
+                new()
+                {
+                    EditorId = "000CotG_FaendalHairlineExtra04",
+                    Sources =
+                    {
+                        new AntlerHeadPartSource { ModName = "FoxGlove", NpcFormKey = Npc1 },
+                        new AntlerHeadPartSource { ModName = "OtherMod", NpcFormKey = Npc2 },
+                    },
+                },
             },
         };
 
         var clone = RoundTrip(settings);
 
-        clone.ManualAntlerHeadPartsByMod.Should().ContainKey("FoxGlove");
-        clone.ManualAntlerHeadPartsByMod["FoxGlove"].Should().BeEquivalentTo(new[] { Npc1, Npc2 });
+        clone.ManualAntlerBlockScope.Should().Be(AntlerBlockScope.SpecificNpc);
+        clone.ManualAntlerHeadParts.Should().ContainSingle();
+        var entry = clone.ManualAntlerHeadParts[0];
+        entry.EditorId.Should().Be("000CotG_FaendalHairlineExtra04");
+        entry.Sources.Should().HaveCount(2);
+        entry.Sources.Should().Contain(s => s.ModName == "FoxGlove" && s.NpcFormKey == Npc1);
+        entry.Sources.Should().Contain(s => s.ModName == "OtherMod" && s.NpcFormKey == Npc2);
     }
 }

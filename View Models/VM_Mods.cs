@@ -3508,12 +3508,12 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     }
 
 
-    /// <summary>Whether the user has manually designated any antler head parts
-    /// for <paramref name="modName"/> (see
-    /// <see cref="Settings.ManualAntlerHeadPartsByMod"/>). Lets a per-mod VM show
-    /// its Antler Handling dropdown even when the scan detected no antlers.</summary>
+    /// <summary>Whether the user manually designated any antler head part IN
+    /// <paramref name="modName"/> (see
+    /// <see cref="Settings.ModHasManualAntlerDesignation"/>). Lets a per-mod VM
+    /// show its Antler Handling dropdown even when the scan detected no antlers.</summary>
     public bool HasManualAntlerHeadParts(string? modName) =>
-        _settings.GetManualAntlerHeadParts(modName).Count > 0;
+        _settings.ModHasManualAntlerDesignation(modName);
 
     /// <summary>Recomputes the HasAntlers flag of the mod named
     /// <paramref name="modName"/> (so its Antler Handling dropdown appears/hides

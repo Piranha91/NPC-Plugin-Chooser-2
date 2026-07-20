@@ -146,14 +146,16 @@ public class Settings
     // field in an old Settings.json deserializes to this default (no migration).
     public AntlerHandlingMode DefaultAntlerHandlingMode { get; set; } = AntlerHandlingMode.ForwardToSkin;
 
-    // User-designated antler head parts, per mod (keyed by ModSetting.DisplayName),
-    // from the 3D preview's "Set Antler Head Parts" selector — for antler head
-    // parts whose names lack the "antler" keyword (e.g. non-intelligible names the
-    // scan can't detect). Stored on the root Settings (not ModSetting) so it
-    // survives VM_Mods.SaveModSettingsToModel, which rebuilds ModSettings from the
-    // VM list. Folded into the effective antler head-part set by
-    // GetEffectiveAntlerHeadParts. Additive to DetectedAntlerHeadParts.
-    public Dictionary<string, HashSet<FormKey>> ManualAntlerHeadPartsByMod { get; set; } = new();
+    // User-designated antler head parts from the 3D preview's "Set Antler Head
+    // Parts" selector — for antler head parts whose names lack the "antler"
+    // keyword (e.g. non-intelligible names the scan can't detect). Keyed by
+    // EditorID with (mod, NPC) provenance so ManualAntlerBlockScope can restrict
+    // blocking. Stored on the root Settings (not ModSetting) so it survives
+    // VM_Mods.SaveModSettingsToModel, which rebuilds ModSettings from the VM list.
+    // Eligibility only — actual removal still requires the mod's Antler Handling
+    // Mode to be Remove (see IsAntlerHeadPart consumers).
+    public AntlerBlockScope ManualAntlerBlockScope { get; set; } = AntlerBlockScope.AllNpcs;
+    public List<ManualAntlerHeadPart> ManualAntlerHeadParts { get; set; } = new();
 
     /// <summary>True when wig/antler handling is active for the current output
     /// mode: Create-and-Patch record mode, or SkyPatcher output in either
@@ -191,41 +193,84 @@ public class Settings
         return modSetting.ModAntlerHandlingMode ?? DefaultAntlerHandlingMode;
     }
 
-    /// <summary>The user's manually-designated antler head parts for
-    /// <paramref name="modName"/> (empty when none). See
-    /// <see cref="ManualAntlerHeadPartsByMod"/>.</summary>
-    public IReadOnlyCollection<FormKey> GetManualAntlerHeadParts(string? modName)
+    /// <summary>Whether a head part with EditorID <paramref name="editorId"/> is a
+    /// USER-designated antler for (<paramref name="modName"/>,
+    /// <paramref name="npcFormKey"/>) under the current
+    /// <see cref="ManualAntlerBlockScope"/>. Eligibility only — removal still
+    /// requires the mod's Antler Handling Mode to be Remove.</summary>
+    public bool IsManualAntlerHeadPart(string? editorId, string? modName, FormKey npcFormKey)
     {
-        if (!string.IsNullOrEmpty(modName) &&
-            ManualAntlerHeadPartsByMod.TryGetValue(modName!, out var set) && set != null)
+        if (string.IsNullOrEmpty(editorId)) return false;
+        var entry = ManualAntlerHeadParts.FirstOrDefault(
+            d => string.Equals(d.EditorId, editorId, StringComparison.OrdinalIgnoreCase));
+        if (entry == null || entry.Sources.Count == 0) return false;
+        return ManualAntlerBlockScope switch
         {
-            return set;
-        }
-        return Array.Empty<FormKey>();
+            AntlerBlockScope.SameMod => !string.IsNullOrEmpty(modName) &&
+                entry.Sources.Any(s => string.Equals(s.ModName, modName, StringComparison.OrdinalIgnoreCase)),
+            AntlerBlockScope.SpecificNpc => entry.Sources.Any(s => s.NpcFormKey == npcFormKey),
+            _ => true, // AllNpcs
+        };
     }
 
-    /// <summary>The full antler head-part set for a mod: scan-detected
-    /// (<see cref="ModSetting.DetectedAntlerHeadParts"/>) plus user-designated
-    /// (<see cref="ManualAntlerHeadPartsByMod"/>). Single source of truth for
-    /// antler head-part removal (patcher, renderer, validator).</summary>
-    public HashSet<FormKey> GetEffectiveAntlerHeadParts(ModSetting? modSetting)
+    /// <summary>Whether a head part is an antler for
+    /// <paramref name="modSetting"/> — scan-detected (by FormKey) OR
+    /// user-designated (by EditorID, scope-filtered). This is ELIGIBILITY, mode
+    /// independent; the callers gate removal on the effective antler mode being
+    /// Remove. The single per-head-part antler test for patcher/renderer/validator.</summary>
+    public bool IsAntlerHeadPart(ModSetting modSetting, FormKey headPartFormKey, string? headPartEditorId,
+        FormKey npcFormKey)
+        => modSetting.DetectedAntlerHeadParts.Contains(headPartFormKey) ||
+           IsManualAntlerHeadPart(headPartEditorId, modSetting.DisplayName, npcFormKey);
+
+    /// <summary>Whether the user made any manual antler designation IN
+    /// <paramref name="modName"/> (its DisplayName appears in some designation's
+    /// Sources). Gates that mod's antler handling + dropdown so a manual-only mod
+    /// can still be set to Remove.</summary>
+    public bool ModHasManualAntlerDesignation(string? modName)
+        => !string.IsNullOrEmpty(modName) && ManualAntlerHeadParts.Any(
+            d => d.Sources.Any(s => string.Equals(s.ModName, modName, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>Adds a manual antler designation for a head part EditorID, tagged
+    /// with the mod + NPC it was made on (idempotent per source).</summary>
+    public void AddManualAntlerHeadPart(string editorId, string modName, FormKey npcFormKey)
     {
-        if (modSetting == null) return new HashSet<FormKey>();
-        var manual = GetManualAntlerHeadParts(modSetting.DisplayName);
-        if (manual.Count == 0) return modSetting.DetectedAntlerHeadParts;
-        var set = new HashSet<FormKey>(modSetting.DetectedAntlerHeadParts);
-        set.UnionWith(manual);
-        return set;
+        if (string.IsNullOrEmpty(editorId)) return;
+        var entry = ManualAntlerHeadParts.FirstOrDefault(
+            d => string.Equals(d.EditorId, editorId, StringComparison.OrdinalIgnoreCase));
+        if (entry == null)
+        {
+            entry = new ManualAntlerHeadPart { EditorId = editorId };
+            ManualAntlerHeadParts.Add(entry);
+        }
+        if (!entry.Sources.Any(s => s.NpcFormKey == npcFormKey &&
+                string.Equals(s.ModName, modName, StringComparison.OrdinalIgnoreCase)))
+        {
+            entry.Sources.Add(new AntlerHeadPartSource { ModName = modName, NpcFormKey = npcFormKey });
+        }
+    }
+
+    /// <summary>Removes the (mod, NPC) source of a manual antler designation;
+    /// drops the whole entry when its last source is gone.</summary>
+    public void RemoveManualAntlerHeadPart(string editorId, string modName, FormKey npcFormKey)
+    {
+        if (string.IsNullOrEmpty(editorId)) return;
+        var entry = ManualAntlerHeadParts.FirstOrDefault(
+            d => string.Equals(d.EditorId, editorId, StringComparison.OrdinalIgnoreCase));
+        if (entry == null) return;
+        entry.Sources.RemoveAll(s => s.NpcFormKey == npcFormKey &&
+            string.Equals(s.ModName, modName, StringComparison.OrdinalIgnoreCase));
+        if (entry.Sources.Count == 0) ManualAntlerHeadParts.Remove(entry);
     }
 
     /// <summary>Whether a mod has any antlers at all — scan-detected OR
-    /// user-designated head parts. The effective gate for antler handling and
-    /// the per-mod dropdown's visibility (a manual-only mod still needs the
-    /// mode dropdown so its designation can be set to Remove).</summary>
+    /// manually designated in it. Gates antler handling and the per-mod dropdown
+    /// (a manual-only mod still needs the mode dropdown so it can be set to
+    /// Remove).</summary>
     public bool ModHasAntlers(ModSetting? modSetting)
     {
         if (modSetting == null) return false;
-        return modSetting.HasDetectedAntlers || GetManualAntlerHeadParts(modSetting.DisplayName).Count > 0;
+        return modSetting.HasDetectedAntlers || ModHasManualAntlerDesignation(modSetting.DisplayName);
     }
 
     /// <summary>True when either wig or antler handling will act on

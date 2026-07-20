@@ -346,6 +346,30 @@
                         </ComboBox.ToolTip>
                     </ComboBox>
 
+                    <TextBlock Text="Manual Antler Block Scope:" Margin="0,5,0,2"/>
+                    <ComboBox ItemsSource="{Binding AntlerBlockScopes}"
+                              SelectedValuePath="Key" DisplayMemberPath="Value"
+                              SelectedValue="{Binding SelectedAntlerBlockScope, Mode=TwoWay}"
+                              MinWidth="120" HorizontalAlignment="Left"
+                              Margin="0,0,0,10">
+                        <ComboBox.ToolTip>
+                            <ToolTip>
+                                <TextBlock TextWrapping="Wrap" Width="340">
+                                    How broadly a head part you manually designate as an antler (via the 3D preview's
+                                    "Set Antler Head Parts" button) is blocked. This controls scope only — a head part
+                                    is still removed only when its mod's Antler Handling Mode is Remove.
+                                    <LineBreak/><LineBreak/>
+                                    All NPCs (any mod): block that head part's EditorID wherever it appears (the default).
+                                    <LineBreak/><LineBreak/>
+                                    Same mod only: block it only in the mod it was designated in.
+                                    <LineBreak/><LineBreak/>
+                                    Specific NPC(s) only: block it only on the NPC(s) it was designated on, regardless
+                                    of which mod supplies that NPC's appearance.
+                                </TextBlock>
+                            </ToolTip>
+                        </ComboBox.ToolTip>
+                    </ComboBox>
+
                     <CheckBox Content="SkyPatcher Mode"
                               IsChecked="{Binding UseSkyPatcherMode, Mode=TwoWay}"
                               Margin="0,5,0,0"

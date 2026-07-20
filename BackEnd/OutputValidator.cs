@@ -600,7 +600,7 @@ public class OutputValidator
         // antler head parts. Exclude both from the comparison when they apply to
         // this NPC so the intentional removals aren't reported as mismatches.
         bool excludeHair = WigForwardingRemovesHair(b, sourceMod, linkCache, src);
-        var antlerRemovals = AntlerRemovalHeadPartKeys(sourceMod);
+        var antlerRemovals = AntlerRemovalHeadPartKeys(b, sourceMod, linkCache, src);
         var aHead = HeadPartKeySet(a.HeadParts, linkCache, src, excludeHair, antlerRemovals);
         var bHead = HeadPartKeySet(b.HeadParts, linkCache, src, excludeHair, antlerRemovals);
         if (!aHead.SetEquals(bHead))
@@ -707,14 +707,25 @@ public class OutputValidator
         return set;
     }
 
-    /// <summary>The keyword-detected antler head parts that antler Remove deletes
-    /// from the output for <paramref name="sourceMod"/> — excluded from the
-    /// head-part comparison so the intentional removal isn't a mismatch. Empty
-    /// unless antler Remove is the effective mode.</summary>
-    private HashSet<FormKey>? AntlerRemovalHeadPartKeys(ModSetting sourceMod)
+    /// <summary>The donor NPC's antler head parts that antler Remove deletes from
+    /// the output — excluded from the head-part comparison so the intentional
+    /// removal isn't a mismatch. A head part qualifies when keyword-detected OR
+    /// manually designated (by EditorID, scope-filtered; see
+    /// <see cref="Settings.IsAntlerHeadPart"/>). Null unless antler Remove is the
+    /// effective mode or nothing qualifies.</summary>
+    private HashSet<FormKey>? AntlerRemovalHeadPartKeys(INpcGetter donor, ModSetting sourceMod,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
     {
         if (_settings.GetEffectiveAntlerMode(sourceMod) != AntlerHandlingMode.Remove) return null;
-        return _settings.GetEffectiveAntlerHeadParts(sourceMod);
+        var result = new HashSet<FormKey>();
+        foreach (var hp in donor.HeadParts)
+        {
+            if (hp.IsNull) continue;
+            var eid = ResolveEditorId(hp, linkCache, src);
+            if (_settings.IsAntlerHeadPart(sourceMod, hp.FormKey, eid, donor.FormKey))
+                result.Add(hp.FormKey);
+        }
+        return result.Count > 0 ? result : null;
     }
 
     private bool IsHairHeadPart(IFormLinkGetter<IHeadPartGetter> link,

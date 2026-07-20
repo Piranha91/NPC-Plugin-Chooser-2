@@ -202,40 +202,94 @@ public class WigHandlingModeResolutionTests
 
     // ── Manually-designated antler head parts (the "Set Antler Head Parts" selector) ──
 
+    private static readonly FormKey NpcA = MutagenFixtures.Fk("000D62:018Auri.esp");
+    private static readonly FormKey NpcB = MutagenFixtures.Fk("000E71:018Auri.esp");
+
     [Fact]
-    public void ManualAntlerHeadParts_ActivateHandling_ForAScanUndetectedMod()
+    public void ManualDesignation_ActivatesHandling_AndResolvesMode_ForAScanUndetectedMod()
     {
-        var headPart = MutagenFixtures.Fk("00A1B2:FoxGloveAuri.esp");
         var settings = NewSettings(PatchingMode.CreateAndPatch);
         var mod = new ModSetting { DisplayName = "FoxGlove" }; // no keyword detection at all
 
         settings.ModHasAntlers(mod).Should().BeFalse();
-        settings.GetEffectiveAntlerHeadParts(mod).Should().BeEmpty();
         settings.GetEffectiveAntlerMode(mod).Should().Be(AntlerHandlingMode.None);
 
-        // The user designates a head part (keyed by mod name on the root Settings).
-        settings.ManualAntlerHeadPartsByMod["FoxGlove"] = new HashSet<FormKey> { headPart };
+        // The user designates head part "Antler01" on NpcA in FoxGlove.
+        settings.AddManualAntlerHeadPart("Antler01", "FoxGlove", NpcA);
 
-        settings.ModHasAntlers(mod).Should().BeTrue("a manual designation counts as having antlers");
-        settings.GetEffectiveAntlerHeadParts(mod).Should().Contain(headPart);
+        settings.ModHasAntlers(mod).Should().BeTrue("a designation made in the mod counts as having antlers");
         settings.GetEffectiveAntlerMode(mod).Should().Be(AntlerHandlingMode.ForwardToSkin,
             "manual-only mod resolves to the global default until a per-mod mode is set");
+
+        // IsAntlerHeadPart matches the designated EditorID (eligibility; removal still needs Remove).
+        settings.IsAntlerHeadPart(mod, MutagenFixtures.Fk("000111:M.esp"), "Antler01", NpcA).Should().BeTrue();
+        settings.IsAntlerHeadPart(mod, MutagenFixtures.Fk("000111:M.esp"), "NotAnAntler", NpcA).Should().BeFalse();
 
         mod.ModAntlerHandlingMode = AntlerHandlingMode.Remove;
         settings.GetEffectiveAntlerMode(mod).Should().Be(AntlerHandlingMode.Remove);
     }
 
     [Fact]
-    public void EffectiveAntlerHeadParts_UnionsDetectedAndManual_ByModName()
+    public void IsAntlerHeadPart_UnionsDetected_AndManual()
     {
         var detected = MutagenFixtures.Fk("000111:M.esp");
-        var manual = MutagenFixtures.Fk("000222:M.esp");
         var settings = NewSettings(PatchingMode.CreateAndPatch);
         var mod = new ModSetting { DisplayName = "M", DetectedAntlerHeadParts = { detected } };
-        settings.ManualAntlerHeadPartsByMod["M"] = new HashSet<FormKey> { manual };
+        settings.AddManualAntlerHeadPart("ManualAntler", "M", NpcA);
 
-        settings.GetEffectiveAntlerHeadParts(mod).Should().BeEquivalentTo(new[] { detected, manual });
-        // Manual entries are keyed by DisplayName — a different mod isn't affected.
-        settings.GetEffectiveAntlerHeadParts(new ModSetting { DisplayName = "Other" }).Should().BeEmpty();
+        settings.IsAntlerHeadPart(mod, detected, "AnyEid", NpcA).Should().BeTrue("keyword-detected by FormKey");
+        settings.IsAntlerHeadPart(mod, MutagenFixtures.Fk("000999:M.esp"), "ManualAntler", NpcA)
+            .Should().BeTrue("manually designated by EditorID");
+    }
+
+    [Fact]
+    public void BlockScope_AllNpcs_BlocksTheEditorIdEverywhere()
+    {
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+        settings.ManualAntlerBlockScope = AntlerBlockScope.AllNpcs;
+        settings.AddManualAntlerHeadPart("Antler01", "FoxGlove", NpcA);
+
+        settings.IsManualAntlerHeadPart("Antler01", "FoxGlove", NpcA).Should().BeTrue();
+        settings.IsManualAntlerHeadPart("Antler01", "OtherMod", NpcB).Should().BeTrue("All NPCs = any mod, any NPC");
+        settings.IsManualAntlerHeadPart("antler01", "OtherMod", NpcB).Should().BeTrue("EditorID match is case-insensitive");
+    }
+
+    [Fact]
+    public void BlockScope_SameMod_BlocksOnlyWithinTheDesignatingMod()
+    {
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+        settings.ManualAntlerBlockScope = AntlerBlockScope.SameMod;
+        settings.AddManualAntlerHeadPart("Antler01", "FoxGlove", NpcA);
+
+        settings.IsManualAntlerHeadPart("Antler01", "FoxGlove", NpcB).Should().BeTrue("same mod, any NPC");
+        settings.IsManualAntlerHeadPart("Antler01", "OtherMod", NpcA).Should().BeFalse("different mod");
+    }
+
+    [Fact]
+    public void BlockScope_SpecificNpc_BlocksOnlyOnTheDesignatedNpc()
+    {
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+        settings.ManualAntlerBlockScope = AntlerBlockScope.SpecificNpc;
+        settings.AddManualAntlerHeadPart("Antler01", "FoxGlove", NpcA);
+
+        settings.IsManualAntlerHeadPart("Antler01", "OtherMod", NpcA).Should().BeTrue("same NPC, regardless of source mod");
+        settings.IsManualAntlerHeadPart("Antler01", "FoxGlove", NpcB).Should().BeFalse("different NPC");
+    }
+
+    [Fact]
+    public void RemoveManualAntlerHeadPart_DropsOnlyThatSource()
+    {
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+        settings.ManualAntlerBlockScope = AntlerBlockScope.SpecificNpc;
+        settings.AddManualAntlerHeadPart("Antler01", "FoxGlove", NpcA);
+        settings.AddManualAntlerHeadPart("Antler01", "FoxGlove", NpcB);
+
+        settings.RemoveManualAntlerHeadPart("Antler01", "FoxGlove", NpcA);
+
+        settings.IsManualAntlerHeadPart("Antler01", "FoxGlove", NpcA).Should().BeFalse("its source was removed");
+        settings.IsManualAntlerHeadPart("Antler01", "FoxGlove", NpcB).Should().BeTrue("the other NPC's source survives");
+
+        settings.RemoveManualAntlerHeadPart("Antler01", "FoxGlove", NpcB);
+        settings.ManualAntlerHeadParts.Should().BeEmpty("the entry is dropped when its last source is gone");
     }
 }

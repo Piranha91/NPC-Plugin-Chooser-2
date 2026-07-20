@@ -18,6 +18,10 @@ namespace NPC_Plugin_Chooser_2.View_Models;
 public class VM_AntlerHeadPartCandidate : ReactiveObject
 {
     public FormKey FormKey { get; }
+
+    /// <summary>The head part's EditorID — the manual-block key (persisted).</summary>
+    public string EditorId { get; }
+
     public string DisplayName { get; }
     public string TypeLabel { get; }
 
@@ -45,6 +49,7 @@ public class VM_AntlerHeadPartCandidate : ReactiveObject
     public VM_AntlerHeadPartCandidate(NpcMeshResolver.AntlerHeadPartCandidate model)
     {
         FormKey = model.FormKey;
+        EditorId = model.EditorId;
         DisplayName = model.DisplayName;
         TypeLabel = model.TypeLabel;
         ShapeNames = model.ShapeNames;
