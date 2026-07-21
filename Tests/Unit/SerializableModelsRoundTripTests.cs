@@ -506,4 +506,51 @@ public class SerializableModelsRoundTripTests
         entry.Sources.Should().Contain(s => s.ModName == "FoxGlove" && s.NpcFormKey == Npc1);
         entry.Sources.Should().Contain(s => s.ModName == "OtherMod" && s.NpcFormKey == Npc2);
     }
+
+    [Fact]
+    public void Settings_FavoriteFacesGroupAssignments_SurviveRoundTrip()
+    {
+        // The favorites group store is a List<FavoriteFaceGroupAssignment> rather than a
+        // Dictionary<(FormKey, string), ...> precisely so it round-trips through Newtonsoft
+        // (a ValueTuple dictionary key would be ToString()'d on write and not parse back).
+        // This guards that the persisted favorite groups actually survive a save/load.
+        var settings = new Settings
+        {
+            FavoriteFaces = new HashSet<(FormKey NpcFormKey, string ModName)>
+            {
+                (Npc1, "Pandorable"),
+                (Npc2, "FoxGlove"),
+            },
+            FavoriteFacesGroupAssignments = new List<FavoriteFaceGroupAssignment>
+            {
+                new()
+                {
+                    NpcFormKey = Npc1,
+                    ModName = "Pandorable",
+                    Groups = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Followers", "Housecarls" },
+                },
+                new()
+                {
+                    NpcFormKey = Npc2,
+                    ModName = "FoxGlove",
+                    Groups = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Followers" },
+                },
+            },
+        };
+
+        var clone = RoundTrip(settings);
+
+        // The favorite entries themselves (tuple set) survive.
+        clone.FavoriteFaces.Should().Contain((Npc1, "Pandorable"));
+        clone.FavoriteFaces.Should().Contain((Npc2, "FoxGlove"));
+
+        // And each favorite's group memberships (keyed by source NPC + mod) survive.
+        clone.FavoriteFacesGroupAssignments.Should().HaveCount(2);
+
+        var first = clone.FavoriteFacesGroupAssignments.Single(a => a.NpcFormKey == Npc1 && a.ModName == "Pandorable");
+        first.Groups.Should().BeEquivalentTo(new[] { "Followers", "Housecarls" });
+
+        var second = clone.FavoriteFacesGroupAssignments.Single(a => a.NpcFormKey == Npc2 && a.ModName == "FoxGlove");
+        second.Groups.Should().BeEquivalentTo(new[] { "Followers" });
+    }
 }

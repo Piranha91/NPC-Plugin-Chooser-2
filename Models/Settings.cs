@@ -369,6 +369,15 @@ public class Settings
     }
     public HashSet<ModKey> ImportFromLoadOrderExclusions { get; set; } = new();
     public HashSet<(FormKey NpcFormKey, string ModName)> FavoriteFaces { get; set; } = new();
+    // Named groups the user assigns to favorite faces, entirely separate from
+    // NpcGroupAssignments (which groups NPCs in the main menu). Keyed per favorite
+    // face — the (source NpcFormKey, ModName) pair that identifies a FavoriteFaces
+    // entry — so the same source NPC favorited from two different mods can be
+    // grouped independently. Stored as a list of records rather than a
+    // Dictionary<(FormKey, string), ...> because a ValueTuple dictionary key does
+    // not round-trip through Newtonsoft (it would be ToString()'d on write). Absent
+    // from pre-feature Settings.json, so it simply deserializes to an empty list.
+    public List<FavoriteFaceGroupAssignment> FavoriteFacesGroupAssignments { get; set; } = new();
     public bool NormalizeImageDimensions { get; set; } = false;
     public int MaxMugshotsToFit { get; set; } = 50;
     public int MaxNpcsPerPageSummaryView { get; set; } = 100;
@@ -626,6 +635,21 @@ public class Settings
     // activity trace to "{exe}\NPC Logs\{display}.txt". Membership in this list is
     // the on/off switch; an empty list means no per-NPC logging. See NpcDiagnosticLogger.
     public List<FormKey> NpcsToLog { get; set; } = new();
+}
+
+/// <summary>
+/// Persisted group membership for a single favorite face. A favorite face is
+/// identified by the (<see cref="NpcFormKey"/> = source NPC, <see cref="ModName"/>)
+/// pair that keys <see cref="Settings.FavoriteFaces"/>. <see cref="Groups"/> holds
+/// the user-defined group names this favorite belongs to. See
+/// <see cref="Settings.FavoriteFacesGroupAssignments"/> for why this is stored as a
+/// list of records rather than a tuple-keyed dictionary.
+/// </summary>
+public class FavoriteFaceGroupAssignment
+{
+    public FormKey NpcFormKey { get; set; }
+    public string ModName { get; set; } = string.Empty;
+    public HashSet<string> Groups { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public enum TemplateIconPosition

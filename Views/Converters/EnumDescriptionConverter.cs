@@ -14,9 +14,14 @@ namespace NPC_Plugin_Chooser_2.Views // Adjust namespace if needed
         {
             if (value == null) return string.Empty;
 
-            Enum myEnum = (Enum)value;
-            string description = GetEnumDescription(myEnum);
-            return description;
+            // Display converter: must never throw, or a failed cast crashes the whole
+            // window during layout. WPF can momentarily activate this binding against a
+            // non-enum value while a ComboBox selection box's template is instantiating
+            // (observed on net10). Fall back to the value's string form for anything
+            // that isn't an enum instead of hard-casting.
+            if (value is not Enum myEnum) return value.ToString() ?? string.Empty;
+
+            return GetEnumDescription(myEnum);
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

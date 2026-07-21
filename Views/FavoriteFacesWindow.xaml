@@ -8,6 +8,7 @@
         xmlns:themes="clr-namespace:NPC_Plugin_Chooser_2.Themes"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         xmlns:reactiveui="http://reactiveui.net"
+        xmlns:System="clr-namespace:System;assembly=mscorlib"
         mc:Ignorable="d"
         x:TypeArguments="vm:VM_FavoriteFaces"
         Style="{DynamicResource ThemedWindowStyle}"
@@ -19,7 +20,25 @@
     
     <Window.Resources>
         <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
-        <local:WidthPercentageConverter x:Key="WidthPercentageConverter"/> 
+        <local:WidthPercentageConverter x:Key="WidthPercentageConverter"/>
+        <local:EnumDescriptionConverter x:Key="EnumDescConverter"/>
+        <local:EnumMatchToBooleanConverter x:Key="EnumMatchToBooleanConverter"/>
+
+        <ObjectDataProvider x:Key="FavoriteFaceSearchTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="vm:FavoriteFaceSearchType"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="GenderFilterTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="vm:GenderFilterType"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="UniquenessFilterTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="vm:UniquenessFilterType"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
     </Window.Resources>
 
     <Grid Margin="5">
@@ -29,46 +48,133 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Filter Bar -->
+        <!-- Filter Bar (mirrors the NPCs menu: favorite groups + 3 search rows + AND/OR) -->
         <Border Grid.Row="0" BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="5" Margin="0,0,0,5">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Vertical">
 
-                <TextBlock Grid.Column="0" Text="Name:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                <TextBox Grid.Column="1" 
-                         Text="{Binding FilterName, UpdateSourceTrigger=PropertyChanged}" 
-                         VerticalContentAlignment="Center"
-                         Margin="0,0,10,0"
-                         ToolTip="Filter by NPC display name (partial match)"/>
+                <!-- Favorite Groups management -->
+                <GroupBox Header="Favorite Groups" Margin="0,0,0,5" Padding="2">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
+                        <TextBlock Text="Group:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                        <ComboBox MinWidth="120" MaxWidth="200" Margin="0,0,5,0" VerticalAlignment="Center"
+                                  IsEditable="True"
+                                  ItemsSource="{Binding AvailableFavoriteGroups}"
+                                  Text="{Binding SelectedFavoriteGroupName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  ToolTip="Select or type a favorite-group name"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0">
+                            <Button Content="Add" Padding="3,1" Margin="0,0,1,0" Command="{Binding AddCurrentFavoriteToGroupCommand}" ToolTip="Add the selected favorite to the specified group"/>
+                            <Button Content="Remove" Padding="3,1" Margin="0,0,2,0" Command="{Binding RemoveCurrentFavoriteFromGroupCommand}" ToolTip="Remove the selected favorite from the specified group"/>
+                            <TextBlock Text="Current" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0">
+                            <Button Content="Add" Padding="3,1" Margin="0,0,1,0" Command="{Binding AddAllVisibleFavoritesToGroupCommand}" ToolTip="Add all favorites currently visible below to the specified group"/>
+                            <Button Content="Remove" Padding="3,1" Margin="0,0,2,0" Command="{Binding RemoveAllVisibleFavoritesFromGroupCommand}" ToolTip="Remove all favorites currently visible below from the specified group"/>
+                            <TextBlock Text="Visible" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </StackPanel>
+                </GroupBox>
 
-                <TextBlock Grid.Column="2" Text="EditorID:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                <TextBox Grid.Column="3" 
-                         Text="{Binding FilterEditorId, UpdateSourceTrigger=PropertyChanged}" 
-                         VerticalContentAlignment="Center"
-                         Margin="0,0,10,0"
-                         ToolTip="Filter by NPC FormKey/EditorID (partial match)"/>
+                <!-- Search Term 1 -->
+                <Grid Margin="0,0,0,5">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <ComboBox Grid.Column="0" MinWidth="90" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FavoriteFaceSearchTypeEnumValues}}" SelectedItem="{Binding SearchType1, Mode=TwoWay}" ToolTip="Select search field 1">
+                        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Grid Grid.Column="1">
+                        <TextBox VerticalAlignment="Center" Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 1">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsGenderSearch1}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding IsUniquenessSearch1}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding IsGroupSearch1}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
+                        <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource GenderFilterTypeEnumValues}}" SelectedItem="{Binding SelectedGenderFilter1, Mode=TwoWay}" ToolTip="Filter by gender" Visibility="{Binding IsGenderSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource UniquenessFilterTypeEnumValues}}" SelectedItem="{Binding SelectedUniquenessFilter1, Mode=TwoWay}" ToolTip="Filter by uniqueness" Visibility="{Binding IsUniquenessSearch1, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableFavoriteGroups}" SelectedItem="{Binding SelectedGroupFilter1, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch1, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </Grid>
+                </Grid>
 
-                <TextBlock Grid.Column="4" Text="Mod:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                <TextBox Grid.Column="5" 
-                         Text="{Binding FilterModName, UpdateSourceTrigger=PropertyChanged}" 
-                         VerticalContentAlignment="Center"
-                         Margin="0,0,10,0"
-                         ToolTip="Filter by mod name (partial match)"/>
+                <!-- Search Term 2 -->
+                <Grid Margin="0,0,0,5">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <ComboBox Grid.Column="0" MinWidth="90" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FavoriteFaceSearchTypeEnumValues}}" SelectedItem="{Binding SearchType2, Mode=TwoWay}" ToolTip="Select search field 2">
+                        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Grid Grid.Column="1">
+                        <TextBox VerticalAlignment="Center" Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 2">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsGenderSearch2}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding IsUniquenessSearch2}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding IsGroupSearch2}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
+                        <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource GenderFilterTypeEnumValues}}" SelectedItem="{Binding SelectedGenderFilter2, Mode=TwoWay}" ToolTip="Filter by gender" Visibility="{Binding IsGenderSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource UniquenessFilterTypeEnumValues}}" SelectedItem="{Binding SelectedUniquenessFilter2, Mode=TwoWay}" ToolTip="Filter by uniqueness" Visibility="{Binding IsUniquenessSearch2, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableFavoriteGroups}" SelectedItem="{Binding SelectedGroupFilter2, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch2, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </Grid>
+                </Grid>
 
-                <Button Grid.Column="6" 
-                        Content="Clear" 
-                        Command="{Binding ClearFiltersCommand}" 
-                        Padding="8,2"
-                        ToolTip="Clear all filters"/>
-            </Grid>
+                <!-- Search Term 3 -->
+                <Grid Margin="0,0,0,5">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <ComboBox Grid.Column="0" MinWidth="90" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FavoriteFaceSearchTypeEnumValues}}" SelectedItem="{Binding SearchType3, Mode=TwoWay}" ToolTip="Select search field 3">
+                        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Grid Grid.Column="1">
+                        <TextBox VerticalAlignment="Center" Text="{Binding SearchText3, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Enter search term 3">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsGenderSearch3}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding IsUniquenessSearch3}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding IsGroupSearch3}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
+                        <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource GenderFilterTypeEnumValues}}" SelectedItem="{Binding SelectedGenderFilter3, Mode=TwoWay}" ToolTip="Filter by gender" Visibility="{Binding IsGenderSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource UniquenessFilterTypeEnumValues}}" SelectedItem="{Binding SelectedUniquenessFilter3, Mode=TwoWay}" ToolTip="Filter by uniqueness" Visibility="{Binding IsUniquenessSearch3, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}"/></DataTemplate></ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableFavoriteGroups}" SelectedItem="{Binding SelectedGroupFilter3, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch3, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </Grid>
+                </Grid>
+
+                <!-- Match logic + Clear -->
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <RadioButton Content="AND (Match All)" GroupName="FavSearchLogic" VerticalAlignment="Center" Margin="0,0,10,0"
+                                     ToolTip="Results must match all active search terms"
+                                     IsChecked="{Binding CurrentSearchLogic, Mode=TwoWay, Converter={StaticResource EnumMatchToBooleanConverter}, ConverterParameter={x:Static vm:SearchLogic.AND}}"/>
+                        <RadioButton Content="OR (Match Any)" GroupName="FavSearchLogic" VerticalAlignment="Center"
+                                     ToolTip="Results must match at least one active search term"
+                                     IsChecked="{Binding CurrentSearchLogic, Mode=TwoWay, Converter={StaticResource EnumMatchToBooleanConverter}, ConverterParameter={x:Static vm:SearchLogic.OR}}"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Clear" Command="{Binding ClearFiltersCommand}" Padding="8,2" VerticalAlignment="Center" ToolTip="Clear all filter values"/>
+                </Grid>
+            </StackPanel>
         </Border>
 
         <ScrollViewer Grid.Row="1" x:Name="MugshotScrollViewer"
