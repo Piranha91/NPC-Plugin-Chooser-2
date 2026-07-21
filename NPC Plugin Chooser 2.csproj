@@ -186,6 +186,10 @@
       <Resource Include="Resources\Missing Outfit Assets.png">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Resource>
+      <None Remove="Resources\No Antlers.png" />
+      <Resource Include="Resources\No Antlers.png">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Resource>
       <None Remove="Resources\Contains Overrides.png" />
       <Resource Include="Resources\Contains Overrides.png">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

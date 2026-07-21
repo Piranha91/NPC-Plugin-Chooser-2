@@ -48,6 +48,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     private readonly Func<VM_InternalMugshotPreview> _internalPreviewFactory;
     private readonly FaceGenAnalysisCache _faceGenAnalysisCache = null!;
     private readonly BackEnd.OutfitDistribution.OutfitDisplayResolver _outfitDisplayResolver;
+    private readonly NpcMeshResolver _npcMeshResolver;
     private readonly CompositeDisposable Disposables = new();
     // Static + frozen so VM instances can be constructed off the UI thread
     // (see CreateMugShotViewModelsAsync's Task.Run) without WPF's
@@ -110,6 +111,15 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     /// without the depicted outfit changing.</summary>
     [Reactive] public bool HasOutfitNotice { get; set; } = false;
     [Reactive] public string OutfitNoticeText { get; set; } = string.Empty;
+    /// <summary>True when this tile's mod has its effective Antler Handling Mode
+    /// set to <see cref="AntlerHandlingMode.Remove"/> AND this NPC actually
+    /// carries an antler the patch will strip (outfit / WornArmor / FaceGen head
+    /// part). Drives the "no antlers" badge; the full text is in
+    /// <see cref="AntlerRemovalNoticeText"/>. Computed live from the current
+    /// configs at tile load / after generation via <see cref="NpcMeshResolver"/>,
+    /// mirroring the 3D preview's removal notice.</summary>
+    [Reactive] public bool HasAntlerRemovalNotice { get; set; } = false;
+    [Reactive] public string AntlerRemovalNoticeText { get; set; } = string.Empty;
     [Reactive] public FormKey? TemplateNpcKey { get; set; }
     [Reactive] public bool CanJumpToTemplate { get; set; }
     public bool IsAmbiguousSource { get; }
@@ -233,7 +243,8 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         GeneratedMugshotTracker tracker,
         FaceFinderCacheTracker faceFinderTracker,
         FaceGenAnalysisCache faceGenAnalysisCache,
-        BackEnd.OutfitDistribution.OutfitDisplayResolver outfitDisplayResolver)
+        BackEnd.OutfitDistribution.OutfitDisplayResolver outfitDisplayResolver,
+        NpcMeshResolver npcMeshResolver)
     {
         ModName = modName;
         _lazyMods = lazyMods;
@@ -259,6 +270,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         _faceFinderTracker = faceFinderTracker;
         _faceGenAnalysisCache = faceGenAnalysisCache;
         _outfitDisplayResolver = outfitDisplayResolver;
+        _npcMeshResolver = npcMeshResolver;
 
         // FaceGen analysis: derived display properties tied to settings + Stats.
         // Reactive subscriptions live in InitFaceGenAnalysis() so the full block
@@ -729,7 +741,12 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             // since it describes the runtime outcome, not the PNG's pedigree.
             string outfitNotice = ComputeOutfitNoticeSafe();
 
-            return (bitmap, meshes, textures, physicsNotices, facegen, faceGenMismatch, outfitNotice);
+            // Antler-removal notice (effective Antler Handling Mode = Remove and
+            // this NPC actually carries a strippable antler) — computed live like
+            // the outfit notice; describes the patched outcome, not the PNG.
+            string antlerNotice = ComputeAntlerRemovalNoticeSafe();
+
+            return (bitmap, meshes, textures, physicsNotices, facegen, faceGenMismatch, outfitNotice, antlerNotice);
         });
 
         // Always apply (even with empty lists) so a re-load of a tile whose
@@ -743,6 +760,9 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
         OutfitNoticeText = loadResult.outfitNotice;
         HasOutfitNotice = loadResult.outfitNotice.Length > 0;
+
+        AntlerRemovalNoticeText = loadResult.antlerNotice;
+        HasAntlerRemovalNotice = loadResult.antlerNotice.Length > 0;
 
         // FaceGen stats (if any) — set after the await so it lands on the
         // UI thread, triggering the reactive overlay-state refresh.
@@ -1632,6 +1652,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             ApplyMissingAssetNotifications(rendererResult.MissingMeshes, rendererResult.MissingTextures, rendererResult.FaceGenMismatch);
             ApplyPhysicsConfigNotices(rendererResult.PhysicsConfigNotices);
             _ = RefreshOutfitNoticeAsync();
+            _ = RefreshAntlerRemovalNoticeAsync();
         }
 
         // ProducedFile covers both Generated == true (just rendered) and
@@ -1764,6 +1785,37 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         var notice = await Task.Run(ComputeOutfitNoticeSafe);
         OutfitNoticeText = notice;
         HasOutfitNotice = notice.Length > 0;
+    }
+
+    /// <summary>Computes the "antlers removed" notice for this tile: non-empty
+    /// when the mod's effective Antler Handling Mode is Remove and this NPC
+    /// actually carries a strippable antler (see
+    /// <see cref="NpcMeshResolver.AntlerRemovalApplies"/>). Returns an empty
+    /// string otherwise or on any failure. Safe on background threads.</summary>
+    private string ComputeAntlerRemovalNoticeSafe()
+    {
+        try
+        {
+            var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == ModName);
+            if (sourceMod == null) return string.Empty;
+            if (!_npcMeshResolver.AntlerRemovalApplies(SourceNpcFormKey, sourceMod)) return string.Empty;
+            return "Antlers are removed from this NPC in the patched output " +
+                   "(this mod's Antler Handling Mode is set to Remove).";
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ComputeAntlerRemovalNoticeSafe failed for {SourceNpcFormKey}: {ex.Message}");
+            return string.Empty;
+        }
+    }
+
+    /// <summary>Recomputes <see cref="AntlerRemovalNoticeText"/> off the UI
+    /// thread and applies it. Fire-and-forget from load/generation paths.</summary>
+    private async Task RefreshAntlerRemovalNoticeAsync()
+    {
+        var notice = await Task.Run(ComputeAntlerRemovalNoticeSafe);
+        AntlerRemovalNoticeText = notice;
+        HasAntlerRemovalNotice = notice.Length > 0;
     }
 
     private void SetImageSource(string path)

@@ -746,13 +746,21 @@
                                                 FontSize="10" Padding="3,1"
                                                 TextTrimming="CharacterEllipsis" ToolTip="{Binding ModName}"/>
                                      
-                                     <!-- Top-left vertical stack: issue-notification "!" on top,
-                                          FaceGen-stats text overlay below. Each child controls
-                                          its own Visibility so either can show alone without
-                                          leaving an empty slot. -->
+                                     <!-- Top-left vertical stack: an icon row (issue-notification
+                                          "!" and, beside it, the "no antlers" badge) on top, with
+                                          the FaceGen-stats text overlay below. Each child controls
+                                          its own Visibility so any can show alone without leaving
+                                          an empty slot; the horizontal row lets the antler badge
+                                          shift right to clear the "!" only when both are shown. -->
                                      <StackPanel Orientation="Vertical"
                                                  HorizontalAlignment="Left"
                                                  VerticalAlignment="Top">
+
+                                         <!-- Top-left icon row: issue "!" (left) then the
+                                              antlers-removed badge (right). A collapsed child
+                                              takes zero width, so the badge sits flush-left when
+                                              no issue icon is present. -->
+                                         <StackPanel Orientation="Horizontal">
 
                                          <!-- Outer Container for Issue Notification Indicator -->
                                          <Grid x:Name="IssueIndicatorContainerGrid"
@@ -796,6 +804,26 @@
                                                  </Image.Style>
                                              </Image>
                                          </Grid>
+
+                                         <!-- Antlers-removed badge: this mod's effective Antler
+                                              Handling Mode is Remove and the patch strips an antler
+                                              this NPC actually carries, so the depicted/patched NPC
+                                              has no antlers. Sits to the right of the issue "!".
+                                              Sized to 20% of the tile (matching the Missing-Asset
+                                              and Multi-plugin badges) rather than the 10% issue
+                                              indicator, so it reads at the same scale. -->
+                                         <Grid Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                               Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}"
+                                               Visibility="{Binding HasAntlerRemovalNotice, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                               ToolTip="{Binding AntlerRemovalNoticeText}">
+                                             <Viewbox Stretch="Uniform"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center">
+                                                 <Image Source="/NPC Plugin Chooser 2;component/Resources/No Antlers.png" />
+                                             </Viewbox>
+                                         </Grid>
+
+                                         </StackPanel>
 
                                          <!-- FaceGen-stats text overlay (TextOverlay display mode).
                                               Stacked TextBlocks, one per enabled metric. FontSize
