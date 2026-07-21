@@ -529,6 +529,77 @@ public class Auxilliary : IDisposable
     }
 
     /// <summary>
+    /// Parses a Race filter term. A trailing '~' means "exact match" (whole-string),
+    /// e.g. "NordRace~" matches only "NordRace", not "NordRaceVampire". Returns the
+    /// bare term (terminator and surrounding whitespace stripped) plus whether exact
+    /// matching was requested.
+    /// </summary>
+    public static (string Term, bool Exact) ParseRaceSearchTerm(string? searchText)
+    {
+        var trimmed = (searchText ?? string.Empty).Trim();
+        bool exact = trimmed.EndsWith("~", StringComparison.Ordinal);
+        if (exact) trimmed = trimmed.TrimEnd('~').Trim();
+        return (trimmed, exact);
+    }
+
+    /// <summary>
+    /// Formats a race's Name + EditorID as a single "Name (EditorID)" label for the Race
+    /// filter combo — matching what <see cref="BuildRaceFilterOptions"/> lists. Falls back
+    /// to whichever part exists, and collapses "X (X)" to "X" when Name and EditorID are
+    /// the same. Returns null when both are blank.
+    /// </summary>
+    public static string? CombineRaceLabel(string? name, string? editorId)
+    {
+        name = name?.Trim();
+        editorId = editorId?.Trim();
+        bool hasName = !string.IsNullOrEmpty(name);
+        bool hasId = !string.IsNullOrEmpty(editorId);
+        if (hasName && hasId)
+            return string.Equals(name, editorId, StringComparison.OrdinalIgnoreCase) ? name : $"{name} ({editorId})";
+        if (hasId) return editorId;
+        if (hasName) return name;
+        return null;
+    }
+
+    /// <summary>
+    /// Matches a resolved race against a Race filter term. The term is tested against the
+    /// race's Name, its EditorID, and the combined "Name (EditorID)" label — so typing a
+    /// raw Name/EditorID and picking a combined dropdown entry both work. Partial
+    /// (case-insensitive Contains) unless <paramref name="exact"/>, in which case one of
+    /// those three must equal the term exactly (case-insensitive).
+    /// </summary>
+    public static bool RaceMatches(string? raceName, string? raceEditorId, string term, bool exact)
+    {
+        if (string.IsNullOrEmpty(term)) return false;
+        var combined = CombineRaceLabel(raceName, raceEditorId);
+        if (exact)
+        {
+            return string.Equals(raceEditorId, term, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raceName, term, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(combined, term, StringComparison.OrdinalIgnoreCase);
+        }
+        return (raceEditorId?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (raceName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (combined?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    /// <summary>
+    /// Builds the sorted, distinct list of "Name (EditorID)" labels that populates the
+    /// Race filter's editable combo (one entry per race). Blank pairs are dropped and
+    /// duplicates are collapsed case-insensitively.
+    /// </summary>
+    public static List<string> BuildRaceFilterOptions(IEnumerable<(string? Name, string? EditorId)> races)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, editorId) in races)
+        {
+            var label = CombineRaceLabel(name, editorId);
+            if (!string.IsNullOrWhiteSpace(label)) set.Add(label);
+        }
+        return set.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
     /// Sortable key over NPC-record fields that predict which renderer assets
     /// will overlap between adjacent renders (skeleton/body/skin/head). Sorting
     /// a list of NPCs by this key — without parsing any NIF — clusters NPCs

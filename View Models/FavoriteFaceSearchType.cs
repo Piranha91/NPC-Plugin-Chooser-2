@@ -26,6 +26,9 @@ namespace NPC_Plugin_Chooser_2.View_Models
         [Description("Mod")]
         Mod,
 
+        [Description("Race")]
+        Race,
+
         [Description("Gender")]
         Gender,
 

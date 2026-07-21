@@ -223,6 +223,9 @@
                                                 <DataTrigger Binding="{Binding IsGenderSearch1}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsRaceSearch1}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsTemplateSearch1}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
@@ -246,6 +249,7 @@
                                    <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                                </ComboBox>
                                <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter1, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch1, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                               <ComboBox VerticalAlignment="Center" IsEditable="True" IsTextSearchEnabled="False" ItemsSource="{Binding AvailableRaces}" Text="{Binding SearchText1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Filter by race Name or EditorID. Append ~ for an exact match (e.g. NordRace~)." Visibility="{Binding IsRaceSearch1, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                            </Grid>
                         </Grid>
                         <!-- Search Term 2 -->
@@ -275,6 +279,9 @@
                                                 <DataTrigger Binding="{Binding IsGenderSearch2}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsRaceSearch2}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsTemplateSearch2}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
@@ -298,6 +305,7 @@
                                     <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                                 </ComboBox>
                                 <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter2, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch2, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <ComboBox VerticalAlignment="Center" IsEditable="True" IsTextSearchEnabled="False" ItemsSource="{Binding AvailableRaces}" Text="{Binding SearchText2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Filter by race Name or EditorID. Append ~ for an exact match (e.g. NordRace~)." Visibility="{Binding IsRaceSearch2, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                            </Grid>
                         </Grid>
                         <!-- Search Term 3 -->
@@ -327,6 +335,9 @@
                                                  <DataTrigger Binding="{Binding IsGenderSearch3}" Value="True">
                                                      <Setter Property="Visibility" Value="Collapsed"/>
                                                  </DataTrigger>
+                                                 <DataTrigger Binding="{Binding IsRaceSearch3}" Value="True">
+                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                 </DataTrigger>
                                                  <DataTrigger Binding="{Binding IsTemplateSearch3}" Value="True">
                                                      <Setter Property="Visibility" Value="Collapsed"/>
                                                  </DataTrigger>
@@ -350,6 +361,7 @@
                                       <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                                   </ComboBox>
                                  <ComboBox VerticalAlignment="Center" ItemsSource="{Binding AvailableNpcGroups}" SelectedItem="{Binding SelectedGroupFilter3, Mode=TwoWay}" ToolTip="Select group to filter by" Visibility="{Binding IsGroupSearch3, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                 <ComboBox VerticalAlignment="Center" IsEditable="True" IsTextSearchEnabled="False" ItemsSource="{Binding AvailableRaces}" Text="{Binding SearchText3, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ToolTip="Filter by race Name or EditorID. Append ~ for an exact match (e.g. NordRace~)." Visibility="{Binding IsRaceSearch3, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                              </Grid>
                          </Grid>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">

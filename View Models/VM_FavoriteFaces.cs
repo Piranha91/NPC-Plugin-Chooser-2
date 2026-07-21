@@ -92,6 +92,13 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
     [ObservableAsProperty] public bool IsGroupSearch1 { get; }
     [ObservableAsProperty] public bool IsGroupSearch2 { get; }
     [ObservableAsProperty] public bool IsGroupSearch3 { get; }
+    [ObservableAsProperty] public bool IsRaceSearch1 { get; }
+    [ObservableAsProperty] public bool IsRaceSearch2 { get; }
+    [ObservableAsProperty] public bool IsRaceSearch3 { get; }
+
+    // Distinct race Names + EditorIDs for the Race filter's editable combo, read from
+    // Settings.CachedFilterRaces (the NPCs menu populates that cache during init).
+    public ObservableCollection<string> AvailableRaces { get; } = new();
 
     public ReactiveCommand<Unit, Unit> ClearFiltersCommand { get; }
 
@@ -274,6 +281,16 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
             .ToPropertyEx(this, x => x.IsGroupSearch2).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SearchType3).Select(t => t == FavoriteFaceSearchType.Group)
             .ToPropertyEx(this, x => x.IsGroupSearch3).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SearchType1).Select(t => t == FavoriteFaceSearchType.Race)
+            .ToPropertyEx(this, x => x.IsRaceSearch1).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SearchType2).Select(t => t == FavoriteFaceSearchType.Race)
+            .ToPropertyEx(this, x => x.IsRaceSearch2).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SearchType3).Select(t => t == FavoriteFaceSearchType.Race)
+            .ToPropertyEx(this, x => x.IsRaceSearch3).DisposeWith(_disposables);
+
+        // Seed the Race combo from the shared cache the NPCs menu builds during init.
+        foreach (var race in _settings.CachedFilterRaces)
+            AvailableRaces.Add(race);
 
         // When a row's type changes, clear inputs that no longer apply so a hidden
         // filter can't silently keep narrowing results (mirrors NpcsView).
@@ -377,6 +394,10 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
                 var groupPredicate = BuildGroupPredicate(groupFilter);
                 if (groupPredicate != null) predicates.Add(groupPredicate);
                 break;
+            case FavoriteFaceSearchType.Race:
+                var racePredicate = BuildRacePredicate(searchText);
+                if (racePredicate != null) predicates.Add(racePredicate);
+                break;
             default:
                 var textPredicate = BuildTextPredicate(type, searchText);
                 if (textPredicate != null) predicates.Add(textPredicate);
@@ -470,6 +491,35 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
             .GroupBy(n => n.NpcFormKey)
             .ToDictionary(g => g.Key, g => g.First());
         return _sourceNpcMap.TryGetValue(sourceNpcFormKey, out var vm) ? vm : null;
+    }
+
+    // Matches a favorite by its source NPC's race Name or EditorID. A trailing '~'
+    // means exact match (e.g. "NordRace~" excludes "NordRaceVampire"). Mirrors the
+    // NPCs menu's Race filter (Auxilliary.ParseRaceSearchTerm / RaceMatches).
+    private Func<VM_SummaryMugshot, bool>? BuildRacePredicate(string? searchText)
+    {
+        if (string.IsNullOrWhiteSpace(searchText)) return null;
+        var (term, exact) = Auxilliary.ParseRaceSearchTerm(searchText);
+        if (string.IsNullOrEmpty(term)) return null;
+        var raceInfoCache = new Dictionary<FormKey, (string? Name, string? EditorId)>();
+        return mugshot =>
+        {
+            var raceKey = GetSourceNpc(mugshot.SourceNpcFormKey)?.NpcData?.RaceFormKey;
+            if (raceKey == null || raceKey.Value.IsNull) return false;
+            var info = GetRaceInfo(raceKey.Value, raceInfoCache);
+            return Auxilliary.RaceMatches(info.Name, info.EditorId, term, exact);
+        };
+    }
+
+    private (string? Name, string? EditorId) GetRaceInfo(
+        FormKey raceKey, Dictionary<FormKey, (string? Name, string? EditorId)> cache)
+    {
+        if (cache.TryGetValue(raceKey, out var cached)) return cached;
+        (string? Name, string? EditorId) result = (null, null);
+        if (_environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(raceKey, out var race))
+            result = (race.Name?.String, race.EditorID);
+        cache[raceKey] = result;
+        return result;
     }
 
     // --- Favorite group storage helpers (keyed per favorite: source NPC + mod) ---

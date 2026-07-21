@@ -42,6 +42,7 @@ public class NpcDisplayDataTests
         data.IsUnique.Should().BeFalse();
         // Gender enum default ordinal is 0 == Female (see Auxilliary.Gender).
         data.Gender.Should().Be(Gender.Female);
+        data.RaceFormKey.Should().Be(FormKey.Null);
     }
 
     [Fact]
@@ -135,6 +136,27 @@ public class NpcDisplayDataTests
 
         data.IsUnique.Should().BeTrue();
         data.Gender.Should().Be(Gender.Female);
+    }
+
+    // ---- FromGetter: RaceFormKey (copied from the NPC's Race link) ---------
+
+    [Fact]
+    public void FromGetter_CopiesRaceFormKey()
+    {
+        var mod = MutagenFixtures.NewMod("App.esp");
+        var race = MutagenFixtures.NewRace(mod, editorId: "NordRace");
+        var npc = MutagenFixtures.NewNpc(mod, editorId: "Guard", race: race);
+
+        NpcDisplayData.FromGetter(npc).RaceFormKey.Should().Be(race.FormKey);
+    }
+
+    [Fact]
+    public void FromGetter_NoRace_RaceFormKeyIsNull()
+    {
+        var mod = MutagenFixtures.NewMod("App.esp");
+        var npc = MutagenFixtures.NewNpc(mod, editorId: "Guard");
+
+        NpcDisplayData.FromGetter(npc).RaceFormKey.Should().Be(FormKey.Null);
     }
 
     // ---- FromGetter: template / IsTemplateUser (Auxilliary.IsValidTemplatedNpc) ----

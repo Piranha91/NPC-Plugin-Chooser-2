@@ -329,6 +329,11 @@ public class Settings
     public HashSet<string> HiddenModNames { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> HiddenModsPerNpc { get; set; } = new();
     public HashSet<FormKey> CachedSkyPatcherTemplates { get; set; } = new();
+    // Sorted, distinct race Names + EditorIDs across the NPCs in the menu (their
+    // winning-override races), used to populate the Race filter's editable combo.
+    // Cached so the combo populates instantly at startup without re-scanning;
+    // recomputed at the end of NPC-list initialization (i.e. on load and Refresh).
+    public List<string> CachedFilterRaces { get; set; } = new();
     public Dictionary<FormKey, HashSet<string>> NpcGroupAssignments { get; set; } = new();
     public Dictionary<FormKey, OutfitOverride> NpcOutfitOverrides { get; set; } = new();
 

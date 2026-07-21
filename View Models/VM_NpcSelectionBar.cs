@@ -183,6 +183,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     [ObservableAsProperty] public bool IsGenderSearch3 { get; }
     [Reactive] public GenderFilterType SelectedGenderFilter3 { get; set; } = GenderFilterType.Female;
 
+    // Race Visibility (Race uses an editable combo of AvailableRaces bound to SearchTextN)
+    [ObservableAsProperty] public bool IsRaceSearch1 { get; }
+    [ObservableAsProperty] public bool IsRaceSearch2 { get; }
+    [ObservableAsProperty] public bool IsRaceSearch3 { get; }
+
     // Template Status Visibility & Selection
     [ObservableAsProperty] public bool IsTemplateSearch1 { get; }
     [Reactive] public TemplateFilterType SelectedTemplateFilter1 { get; set; } = TemplateFilterType.BaseHasTemplate;
@@ -255,6 +260,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, bool> AddAllVisibleNpcsToGroupCommand { get; }
     public ReactiveCommand<Unit, bool> RemoveAllVisibleNpcsFromGroupCommand { get; }
     // --- End NPC Group Properties ---
+
+    // Distinct race Names + EditorIDs (winning-override) for the Race filter's editable
+    // combo. Seeded from Settings.CachedFilterRaces for instant availability, then
+    // rebuilt from the finalized NPC list at the end of InitializeAsync (load/Refresh).
+    public ObservableCollection<string> AvailableRaces { get; } = new();
 
     // --- NEW: Compare/Hide/Deselect Functionality ---
     [ObservableAsProperty] public int CheckedMugshotCount { get; }
@@ -735,6 +745,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ToPropertyEx(this, x => x.IsGenderSearch3).DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SearchType1)
+            .Select(type => type == NpcSearchType.Race)
+            .ToPropertyEx(this, x => x.IsRaceSearch1).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SearchType2)
+            .Select(type => type == NpcSearchType.Race)
+            .ToPropertyEx(this, x => x.IsRaceSearch2).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SearchType3)
+            .Select(type => type == NpcSearchType.Race)
+            .ToPropertyEx(this, x => x.IsRaceSearch3).DisposeWith(_disposables);
+
+        this.WhenAnyValue(x => x.SearchType1)
             .Select(type => type == NpcSearchType.Template)
             .ToPropertyEx(this, x => x.IsTemplateSearch1).DisposeWith(_disposables);
 
@@ -932,6 +952,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .DisposeWith(_disposables);
 
         UpdateAvailableNpcGroups();
+
+        // Seed the Race combo from the cached scan so it is populated immediately at
+        // startup; ComputeRaceFilterOptions rebuilds it once the NPC list is finalized.
+        foreach (var race in _settings.CachedFilterRaces)
+            AvailableRaces.Add(race);
 
         this.WhenAnyValue(x => x.NpcsViewZoomLevel)
             .Skip(1)
@@ -2774,7 +2799,19 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             }
         }
         RefreshAllNpcDisplayNames();
-        await Application.Current.Dispatcher.InvokeAsync(() => ApplyFilter(initializing: true));
+
+        // Rebuild the Race filter dropdown from the finalized NPC list (winning-override
+        // races) and cache it so it populates instantly on the next startup. Computed
+        // off-UI; the ObservableCollection is refilled on the UI thread below.
+        var raceOptions = ComputeRaceFilterOptions();
+        _settings.CachedFilterRaces = raceOptions;
+
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            AvailableRaces.Clear();
+            foreach (var race in raceOptions) AvailableRaces.Add(race);
+            ApplyFilter(initializing: true);
+        });
 
         // 6. Restore selection (unchanged)
         VM_NpcsMenuSelection? npcToSelectOnLoad = null;
@@ -3211,11 +3248,54 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     npc.NpcFormKey.ModKey.FileName.String.Contains(searchText, StringComparison.OrdinalIgnoreCase);
             case NpcSearchType.FormKey:
                 return npc => npc.NpcFormKey.ToString().Contains(searchText, StringComparison.OrdinalIgnoreCase);
+            case NpcSearchType.Race:
+            {
+                var (term, exact) = Auxilliary.ParseRaceSearchTerm(searchText);
+                if (string.IsNullOrEmpty(term)) return null;
+                // One race-info cache per filter pass, shared across all NPCs. Cheap:
+                // there are only a few dozen distinct races, so each resolves once.
+                var raceInfoCache = new Dictionary<FormKey, (string? Name, string? EditorId)>();
+                return npc =>
+                {
+                    var raceKey = npc.NpcData?.RaceFormKey;
+                    if (raceKey == null || raceKey.Value.IsNull) return false;
+                    var info = GetRaceInfo(raceKey.Value, raceInfoCache);
+                    return Auxilliary.RaceMatches(info.Name, info.EditorId, term, exact);
+                };
+            }
             default:
                 return null;
         }
     }
-    
+
+    /// <summary>Resolves a race FormKey to its (Name, EditorID) for the Race filter,
+    /// memoized in the supplied per-filter-pass cache.</summary>
+    private (string? Name, string? EditorId) GetRaceInfo(
+        FormKey raceKey, Dictionary<FormKey, (string? Name, string? EditorId)> cache)
+    {
+        if (cache.TryGetValue(raceKey, out var cached)) return cached;
+        (string? Name, string? EditorId) result = (null, null);
+        if (_environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(raceKey, out var race))
+            result = (race.Name?.String, race.EditorID);
+        cache[raceKey] = result;
+        return result;
+    }
+
+    /// <summary>Builds the sorted, distinct Race-filter option list from the finalized
+    /// NPC list (each NPC's winning-override race, Name + EditorID). Resolves each
+    /// distinct race once. Pure of UI state, so it is safe to call off the UI thread.</summary>
+    private List<string> ComputeRaceFilterOptions()
+    {
+        var cache = new Dictionary<FormKey, (string? Name, string? EditorId)>();
+        var pairs = AllNpcs
+            .Select(n => n.NpcData?.RaceFormKey)
+            .Where(k => k != null && !k.Value.IsNull)
+            .Select(k => k!.Value)
+            .Distinct()
+            .Select(k => GetRaceInfo(k, cache));
+        return Auxilliary.BuildRaceFilterOptions(pairs);
+    }
+
     private async Task<ObservableCollection<VM_NpcsMenuMugshot>> CreateMugShotViewModelsAsync(VM_NpcsMenuSelection selectionVm,
         Dictionary<FormKey, List<(string ModName, string ImagePath)>> mugshotData)
     {

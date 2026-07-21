@@ -18,6 +18,10 @@ public record NpcDisplayData
     public bool IsInLoadOrder { get; init; }
     public bool IsUnique { get; init; }
     public Gender Gender { get; init; }
+    /// <summary>The NPC record's Race link (FormKey.Null when unset). Cached here so
+    /// the Race filter can resolve the race's Name/EditorID without re-reading the
+    /// full NPC getter per keystroke.</summary>
+    public FormKey RaceFormKey { get; init; }
 
     /// <summary>
     /// Creates an NpcDisplayData instance from a full INpcGetter record.
@@ -34,6 +38,7 @@ public record NpcDisplayData
             IsInLoadOrder = true,
             IsUnique = npcGetter.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Unique),
             Gender = Auxilliary.GetGender(npcGetter),
+            RaceFormKey = npcGetter.Race.FormKey,
         };
     }
 

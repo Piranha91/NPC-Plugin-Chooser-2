@@ -377,7 +377,7 @@ public class VM_NpcSelectionBarPureTests
     [Fact]
     public void NpcSearchType_HasExpectedMembersAndOrdinals()
     {
-        Enum.GetValues<NpcSearchType>().Should().HaveCount(12);
+        Enum.GetValues<NpcSearchType>().Should().HaveCount(13);
         ((int)NpcSearchType.Name).Should().Be(0);
         ((int)NpcSearchType.EditorID).Should().Be(1);
         ((int)NpcSearchType.InAppearanceMod).Should().Be(2);
@@ -387,9 +387,10 @@ public class VM_NpcSelectionBarPureTests
         ((int)NpcSearchType.SelectionState).Should().Be(6);
         ((int)NpcSearchType.ShareStatus).Should().Be(7);
         ((int)NpcSearchType.Uniqueness).Should().Be(8);
-        ((int)NpcSearchType.Gender).Should().Be(9);
-        ((int)NpcSearchType.Group).Should().Be(10);
-        ((int)NpcSearchType.Template).Should().Be(11);
+        ((int)NpcSearchType.Race).Should().Be(9);
+        ((int)NpcSearchType.Gender).Should().Be(10);
+        ((int)NpcSearchType.Group).Should().Be(11);
+        ((int)NpcSearchType.Template).Should().Be(12);
     }
 
     [Theory]
@@ -402,6 +403,7 @@ public class VM_NpcSelectionBarPureTests
     [InlineData(NpcSearchType.SelectionState, "Selection State")]
     [InlineData(NpcSearchType.ShareStatus, "Shared/Guest Appearance")]
     [InlineData(NpcSearchType.Uniqueness, "Uniqueness")]
+    [InlineData(NpcSearchType.Race, "Race")]
     [InlineData(NpcSearchType.Gender, "Gender")]
     [InlineData(NpcSearchType.Group, "Group")]
     [InlineData(NpcSearchType.Template, "Template")]
