@@ -107,31 +107,68 @@
                                    FontWeight="Bold" Margin="0,0,0,4"/>
                         <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="#CCCCCC" FontSize="11"
                                    Margin="0,0,0,6"
-                                   Text="Hover a head part to highlight it in the preview. Check the antlers to strip them from the output — this mod's Antler Handling Mode must be Remove for the removal to apply."/>
+                                   Text="Hover a head part or shape to highlight it in the preview. Check a shape to strip it from the output; check a whole head part to remove all of its shapes. This mod's Antler Handling Mode must be Remove for the removal to apply."/>
                         <ListBox ItemsSource="{Binding AntlerHeadPartCandidates}" Background="Transparent"
                                  BorderThickness="0" MaxHeight="300"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="ListBoxItem">
-                                    <EventSetter Event="MouseEnter" Handler="AntlerCandidate_MouseEnter"/>
-                                    <EventSetter Event="MouseLeave" Handler="AntlerCandidate_MouseLeave"/>
                                     <Setter Property="Background" Value="Transparent"/>
-                                    <Setter Property="Padding" Value="2,1"/>
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                 </Style>
                             </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Orientation="Horizontal">
-                                        <CheckBox IsChecked="{Binding IsDesignated, Mode=TwoWay}"
-                                                  IsEnabled="{Binding CanToggle}" VerticalAlignment="Center"/>
-                                        <TextBlock Text="{Binding DisplayName}" Foreground="White"
-                                                   Margin="6,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="{Binding TypeLabel}" Foreground="#999999" FontSize="10"
-                                                   Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="(auto)" Foreground="#66CCFF" FontSize="10"
-                                                   Margin="6,0,0,0" VerticalAlignment="Center"
-                                                   ToolTip="Keyword-detected antler — always removed when the mode is Remove."
-                                                   Visibility="{Binding IsAutoDetected, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}"/>
+                                    <StackPanel Orientation="Vertical">
+                                        <!-- Parent head-part row: check = remove the WHOLE head
+                                             part (record + every baked shape). Hover highlights the
+                                             whole head part. Tri-state for display: indeterminate
+                                             when only some ExtraParts below are stripped. -->
+                                        <Border Background="Transparent" Padding="2,1"
+                                                MouseEnter="AntlerCandidate_MouseEnter"
+                                                MouseLeave="AntlerCandidate_MouseLeave">
+                                            <StackPanel Orientation="Horizontal">
+                                                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                                          IsThreeState="False"
+                                                          IsEnabled="{Binding CanToggle}" VerticalAlignment="Center"
+                                                          ToolTip="Remove the entire head part (its record reference and all baked shapes)."/>
+                                                <TextBlock Text="{Binding DisplayName}" Foreground="White"
+                                                           Margin="6,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding TypeLabel}" Foreground="#999999" FontSize="10"
+                                                           Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="(auto)" Foreground="#66CCFF" FontSize="10"
+                                                           Margin="6,0,0,0" VerticalAlignment="Center"
+                                                           ToolTip="Keyword-detected antler — always removed when the mode is Remove."
+                                                           Visibility="{Binding IsAutoDetected, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <!-- ExtraPart child rows (only when the head part has any).
+                                             Each strips one baked ExtraPart shape (and removes it
+                                             from the record); hover highlights just that shape.
+                                             Disabled while the whole head part is being removed. -->
+                                        <ItemsControl ItemsSource="{Binding ExtraShapes}" Margin="20,0,0,0"
+                                                      Visibility="{Binding HasExtras, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="Transparent" Padding="2,1"
+                                                            MouseEnter="AntlerCandidate_MouseEnter"
+                                                            MouseLeave="AntlerCandidate_MouseLeave">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <CheckBox IsChecked="{Binding IsDesignated, Mode=TwoWay}"
+                                                                      IsEnabled="{Binding DataContext.ExtrasEnabled, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                      VerticalAlignment="Center"/>
+                                                            <TextBlock Text="{Binding DisplayName}" Foreground="#DDDDDD"
+                                                                       Margin="6,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="(auto)" Foreground="#66CCFF" FontSize="10"
+                                                                       Margin="6,0,0,0" VerticalAlignment="Center"
+                                                                       ToolTip="Keyword-detected antler — always removed when the mode is Remove."
+                                                                       Visibility="{Binding IsAutoDetected, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
                                     </StackPanel>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>

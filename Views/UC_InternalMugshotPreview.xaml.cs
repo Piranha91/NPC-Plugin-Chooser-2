@@ -594,13 +594,13 @@ public partial class UC_InternalMugshotPreview : UserControl
     // baked head shape(s) in the viewport (VM_CharacterViewer.SetHighlightedShapeNames).
     private void AntlerCandidate_MouseEnter(object sender, MouseEventArgs e)
     {
-        if (sender is FrameworkElement fe && fe.DataContext is VM_AntlerHeadPartCandidate vm)
+        if (sender is FrameworkElement fe && fe.DataContext is IAntlerHoverTarget vm)
             vm.RaiseHover(true);
     }
 
     private void AntlerCandidate_MouseLeave(object sender, MouseEventArgs e)
     {
-        if (sender is FrameworkElement fe && fe.DataContext is VM_AntlerHeadPartCandidate vm)
+        if (sender is FrameworkElement fe && fe.DataContext is IAntlerHoverTarget vm)
             vm.RaiseHover(false);
     }
 

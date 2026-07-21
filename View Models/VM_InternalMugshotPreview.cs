@@ -83,7 +83,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     /// head parts. The Settings-tab embedded preview (active selection) omits it.</summary>
     [Reactive] public bool IsAntlerSelectorAvailable { get; private set; }
     [Reactive] public bool ShowAntlerSelector { get; set; }
-    public System.Collections.ObjectModel.ObservableCollection<VM_AntlerHeadPartCandidate>
+    public System.Collections.ObjectModel.ObservableCollection<VM_AntlerHeadPartGroup>
         AntlerHeadPartCandidates { get; } = new();
     public ReactiveCommand<Unit, Unit> ToggleAntlerSelectorCommand { get; }
 
@@ -667,12 +667,14 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             return;
         }
 
-        foreach (var c in _resolver.GetAntlerHeadPartCandidates(formKey, modSetting))
+        foreach (var g in _resolver.GetAntlerHeadPartCandidates(formKey, modSetting))
         {
-            var vm = new VM_AntlerHeadPartCandidate(c);
-            vm.DesignationChanged += OnCandidateDesignationChanged;
-            vm.HoverChanged += OnCandidateHoverChanged;
-            AntlerHeadPartCandidates.Add(vm);
+            var group = new VM_AntlerHeadPartGroup(g);
+            group.DesignationsChanged += OnGroupDesignationsChanged;
+            group.HoverChanged += OnCandidateHoverChanged;
+            foreach (var shape in group.ExtraShapes)
+                shape.HoverChanged += OnCandidateHoverChanged;
+            AntlerHeadPartCandidates.Add(group);
         }
         IsAntlerSelectorAvailable = AntlerHeadPartCandidates.Count > 0;
         if (!IsAntlerSelectorAvailable) ShowAntlerSelector = false;
@@ -688,38 +690,59 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
 
     private void ClearAntlerSelectorItems()
     {
-        foreach (var vm in AntlerHeadPartCandidates)
+        foreach (var group in AntlerHeadPartCandidates)
         {
-            vm.DesignationChanged -= OnCandidateDesignationChanged;
-            vm.HoverChanged -= OnCandidateHoverChanged;
+            group.DesignationsChanged -= OnGroupDesignationsChanged;
+            group.HoverChanged -= OnCandidateHoverChanged;
+            foreach (var shape in group.ExtraShapes)
+                shape.HoverChanged -= OnCandidateHoverChanged;
+            group.Detach();
         }
         AntlerHeadPartCandidates.Clear();
     }
 
     /// <summary>Row hover → glow-highlight the matching baked head shape(s) in the
-    /// viewport (cleared on leave).</summary>
-    private void OnCandidateHoverChanged(VM_AntlerHeadPartCandidate c, bool entered)
+    /// viewport (cleared on leave). A parent-group row highlights the whole head
+    /// part; a shape row highlights just that shape.</summary>
+    private void OnCandidateHoverChanged(IAntlerHoverTarget target, bool entered)
     {
-        try { Viewer.SetHighlightedShapeNames(entered ? c.ShapeNames : null); }
+        try { Viewer.SetHighlightedShapeNames(entered ? target.ShapeNames : null); }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: antler highlight failed: " + ex.Message);
         }
     }
 
-    /// <summary>Checkbox toggle → update this mod's manual antler head-part set
-    /// (persisted on Settings, keyed by mod name), make the mod's Antler Handling
-    /// dropdown appear, and reload so the head part hides / the notice updates.</summary>
-    private async void OnCandidateDesignationChanged(VM_AntlerHeadPartCandidate c)
+    /// <summary>A designation change within a head-part group (the parent
+    /// whole-head-part toggle or an ExtraPart child toggle) → re-sync the manual
+    /// designations (persisted on Settings, keyed by EditorID: the head part's own
+    /// EditorID for whole removal, each ExtraPart's for a single shape), make the
+    /// mod's Antler Handling dropdown appear, and reload once so the hides / notice
+    /// update.</summary>
+    private async void OnGroupDesignationsChanged(VM_AntlerHeadPartGroup group)
     {
         var mod = _antlerSelectorModSetting;
-        if (mod == null || string.IsNullOrEmpty(c.EditorId)) return;
+        if (mod == null) return;
         string modName = mod.DisplayName;
 
-        if (c.IsDesignated)
-            _settings.AddManualAntlerHeadPart(c.EditorId, modName, _antlerSelectorNpcFormKey);
-        else
-            _settings.RemoveManualAntlerHeadPart(c.EditorId, modName, _antlerSelectorNpcFormKey);
+        // Parent = "remove whole head part", keyed on the head part's own EditorID.
+        if (group.CanToggle && !string.IsNullOrEmpty(group.MainShapeName))
+        {
+            if (group.IsMainDesignated)
+                _settings.AddManualAntlerHeadPart(group.MainShapeName, modName, _antlerSelectorNpcFormKey);
+            else
+                _settings.RemoveManualAntlerHeadPart(group.MainShapeName, modName, _antlerSelectorNpcFormKey);
+        }
+
+        // ExtraPart children, keyed on each ExtraPart's EditorID.
+        foreach (var shape in group.ExtraShapes)
+        {
+            if (!shape.CanToggle || string.IsNullOrEmpty(shape.ShapeName)) continue; // auto shapes owned by the scan
+            if (shape.IsDesignated)
+                _settings.AddManualAntlerHeadPart(shape.ShapeName, modName, _antlerSelectorNpcFormKey);
+            else
+                _settings.RemoveManualAntlerHeadPart(shape.ShapeName, modName, _antlerSelectorNpcFormKey);
+        }
         PersistThrottled();
 
         // A manual-only mod needs its Antler Handling dropdown to appear so the

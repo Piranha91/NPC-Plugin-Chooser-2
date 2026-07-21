@@ -487,6 +487,95 @@ public class WigForwarderTests
         f.OutputMod.HeadParts.Should().NotContain(h => h.EditorID == WigForwarder.BaldHairEditorId);
     }
 
+    // ── Source 3: antlers baked as an ExtraPart of another head part (e.g. the
+    //    hair), stripped per-shape. The ExtraPart must leave BOTH the baked NIF and
+    //    the parent head-part record (a record/NIF ExtraParts mismatch dark-faces
+    //    the NPC, engine-verified), so the parent head part is duplicated minus the
+    //    ExtraPart. Scope decides shared (SeedDuplicateMapping) vs per-NPC repoint. ──
+
+    [Fact]
+    public void AntlerRemove_WholeHeadPart_RemovesRecord_AndStripsAllShapes()
+    {
+        // Designating the head part's OWN EditorID = "remove the whole head part":
+        // record dropped + its own shape AND every ExtraPart shape stripped.
+        var f = Make(WigHandlingMode.None, AntlerHandlingMode.Remove);
+        f.Settings.AddManualAntlerHeadPart("FoxGloveHairMesh", f.ModSetting.DisplayName, f.DonorNpc.FormKey);
+
+        var result = Apply(f, mergeIn: false)!;
+
+        result.DonorAntlerHeadPartKeys.Should().BeEquivalentTo(new[] { f.HairHeadPart.FormKey });
+        result.FaceGenShapeNamesToStrip.Should().Contain(new[] { "FoxGloveHairMesh", "FoxGloveHairline" },
+            "removing the whole head part strips its own shape and every ExtraPart shape");
+        result.AntlerHeadPartRepoints.Should().BeEmpty();
+
+        var patchNpc = f.OutputMod.Npcs.AddNew();
+        patchNpc.HeadParts.Add(f.HairHeadPart.ToLink());
+        patchNpc.HeadParts.Add(f.EyesHeadPart.ToLink());
+        f.Forwarder.FinalizeNpcRecord(result, patchNpc, "TestNpc", (_, _, _) => { });
+
+        patchNpc.HeadParts.Select(h => h.FormKey).Should().BeEquivalentTo(new[] { f.EyesHeadPart.FormKey },
+            "the whole head part is removed (no bald replacement — it is not Hair-slot wig removal)");
+    }
+
+    [Fact]
+    public void AntlerRemove_ExtraPart_AllNpcsScope_DuplicatesParentAndSeedsSharedRemap()
+    {
+        // The antler is the hair head part's ExtraPart ("FoxGloveHairline"). Under
+        // AllNpcs scope, the parent head part is duplicated (minus the ExtraPart) and
+        // every reference redirected via SeedDuplicateMapping — the hair stays.
+        var f = Make(WigHandlingMode.None, AntlerHandlingMode.Remove);
+        f.Settings.ManualAntlerBlockScope = AntlerBlockScope.AllNpcs;
+        f.Settings.AddManualAntlerHeadPart("FoxGloveHairline", f.ModSetting.DisplayName, f.DonorNpc.FormKey);
+
+        var result = Apply(f, mergeIn: false)!;
+
+        result.DonorAntlerHeadPartKeys.Should().BeEmpty("the hair head part stays; only its ExtraPart is stripped");
+        result.FaceGenShapeNamesToStrip.Should().Contain("FoxGloveHairline");
+        result.FaceGenShapeNamesToStrip.Should().NotContain("FoxGloveHairMesh");
+        result.AntlerHeadPartRepoints.Should().BeEmpty("shared scope redirects via SeedDuplicateMapping, not a per-NPC repoint");
+
+        // A stripped-hair duplicate (same EditorID, minus the antler ExtraPart) exists,
+        var dup = f.OutputMod.HeadParts.Single(h =>
+            string.Equals(h.EditorID, "FoxGloveHairMesh", System.StringComparison.OrdinalIgnoreCase));
+        dup.FormKey.Should().NotBe(f.HairHeadPart.FormKey);
+        dup.ExtraParts.Select(p => p.FormKey).Should().NotContain(f.HairlinePart.FormKey);
+        dup.ExtraParts.Should().BeEmpty("the only ExtraPart was the stripped antler");
+
+        // and every reference to the original hair head part redirects to it.
+        f.RecordHandler.TryGetDuplicateMapping(f.HairHeadPart.FormKey, out var mapped).Should().BeTrue();
+        mapped.Should().Be(dup.FormKey);
+    }
+
+    [Fact]
+    public void AntlerRemove_ExtraPart_SpecificNpcScope_DuplicatesParentAndRepointsThisNpcOnly()
+    {
+        // Under SpecificNpc scope the parent head part is duplicated per-NPC and only
+        // THIS NPC is repointed — no global remap, so other NPCs keep their antlers.
+        var f = Make(WigHandlingMode.None, AntlerHandlingMode.Remove);
+        f.Settings.ManualAntlerBlockScope = AntlerBlockScope.SpecificNpc;
+        f.Settings.AddManualAntlerHeadPart("FoxGloveHairline", f.ModSetting.DisplayName, f.DonorNpc.FormKey);
+
+        var result = Apply(f, mergeIn: false)!;
+
+        result.AntlerHeadPartRepoints.Should().ContainKey(f.HairHeadPart.FormKey);
+        var dupKey = result.AntlerHeadPartRepoints[f.HairHeadPart.FormKey];
+        f.RecordHandler.TryGetDuplicateMapping(f.HairHeadPart.FormKey, out _).Should().BeFalse(
+            "SpecificNpc must not globally redirect the head part — other NPCs keep their antlers");
+
+        var dup = f.OutputMod.HeadParts.Single(h => h.FormKey == dupKey);
+        dup.EditorID.Should().Be("FoxGloveHairMesh");
+        dup.ExtraParts.Select(p => p.FormKey).Should().NotContain(f.HairlinePart.FormKey);
+
+        // FinalizeNpcRecord repoints THIS NPC's hair head part to the duplicate.
+        var patchNpc = f.OutputMod.Npcs.AddNew();
+        patchNpc.HeadParts.Add(f.HairHeadPart.ToLink());
+        patchNpc.HeadParts.Add(f.EyesHeadPart.ToLink());
+        f.Forwarder.FinalizeNpcRecord(result, patchNpc, "TestNpc", (_, _, _) => { });
+
+        patchNpc.HeadParts.Select(h => h.FormKey).Should().BeEquivalentTo(new[] { dupKey, f.EyesHeadPart.FormKey },
+            "the original hair head part is repointed to the stripped duplicate for this NPC only");
+    }
+
     // ── Include-Outfit strip variants ──
 
     [Fact]

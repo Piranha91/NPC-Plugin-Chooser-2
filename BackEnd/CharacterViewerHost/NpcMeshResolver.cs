@@ -546,17 +546,27 @@ public class NpcMeshResolver
         {
             if (hpLink == null || hpLink.IsNull) continue;
             var hpRec = ResolveRecord<IHeadPartGetter>(hpLink, linkCache, context);
-            if (!_settings.IsAntlerHeadPart(modSetting, hpLink.FormKey, hpRec?.EditorID, npcGetter.FormKey))
-                continue;
             if (hpRec == null) continue;
-            if (!string.IsNullOrEmpty(hpRec.EditorID)) names.Add(hpRec.EditorID);
+
+            // Mirror WigForwarder.CollectAntlerHeadPartRemoval: the whole head part is
+            // an antler (keyword-detected OR its own EditorID designated = "remove the
+            // whole head part") → hide its own shape AND every ExtraPart shape; else
+            // hide only the individually-designated ExtraPart shapes.
+            bool groupAuto = modSetting.DetectedAntlerHeadParts.Contains(hpLink.FormKey);
+            bool mainRemoved = groupAuto ||
+                _settings.IsManualAntlerHeadPart(hpRec.EditorID, modSetting.DisplayName, npcGetter.FormKey);
+
+            if (mainRemoved && !string.IsNullOrEmpty(hpRec.EditorID)) names.Add(hpRec.EditorID);
             if (hpRec.ExtraParts != null)
             {
                 foreach (var extraLink in hpRec.ExtraParts)
                 {
                     if (extraLink == null || extraLink.IsNull) continue;
                     var extraRec = ResolveRecord<IHeadPartGetter>(extraLink, linkCache, context);
-                    if (!string.IsNullOrEmpty(extraRec?.EditorID)) names.Add(extraRec.EditorID);
+                    if (string.IsNullOrEmpty(extraRec?.EditorID)) continue;
+                    if (mainRemoved ||
+                        _settings.IsManualAntlerHeadPart(extraRec.EditorID, modSetting.DisplayName, npcGetter.FormKey))
+                        names.Add(extraRec.EditorID);
                 }
             }
         }
@@ -646,12 +656,26 @@ public class NpcMeshResolver
         var npc = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
         if (npc == null) return false;
 
-        // Source 3: antler head part on the NPC (keyword-detected or designated).
+        // Source 3: an antler baked shape on the NPC — the whole head part is
+        // keyword-detected, or the user designated its main shape or any of its
+        // ExtraPart shapes (per-shape, mirroring CollectAntlerHeadPartRemoval).
         foreach (var hp in npc.HeadParts)
         {
             if (hp == null || hp.IsNull) continue;
+            if (modSetting.DetectedAntlerHeadParts.Contains(hp.FormKey)) return true;
             var hpRec = ResolveRecord<IHeadPartGetter>(hp, linkCache, context);
-            if (_settings.IsAntlerHeadPart(modSetting, hp.FormKey, hpRec?.EditorID, npc.FormKey)) return true;
+            if (hpRec == null) continue;
+            if (_settings.IsManualAntlerHeadPart(hpRec.EditorID, modSetting.DisplayName, npc.FormKey)) return true;
+            if (hpRec.ExtraParts != null)
+            {
+                foreach (var extraLink in hpRec.ExtraParts)
+                {
+                    if (extraLink == null || extraLink.IsNull) continue;
+                    var extraRec = ResolveRecord<IHeadPartGetter>(extraLink, linkCache, context);
+                    if (_settings.IsManualAntlerHeadPart(extraRec?.EditorID, modSetting.DisplayName, npc.FormKey))
+                        return true;
+                }
+            }
         }
 
         // Source 2: antler ArmorAddon baked into the WornArmor.
@@ -675,26 +699,43 @@ public class NpcMeshResolver
         return false;
     }
 
-    /// <summary>One head part of the previewed NPC, for the "Set Antler Head
-    /// Parts" selector. <see cref="ShapeNames"/> are the baked FaceGen shape names
-    /// (head part EditorID + ExtraParts EditorIDs) used to highlight/hide the
-    /// geometry. <see cref="IsAutoDetected"/> = keyword-detected (locked on);
-    /// <see cref="IsDesignated"/> = in the effective antler set (auto OR manual).</summary>
-    public sealed record AntlerHeadPartCandidate(
-        FormKey FormKey,
-        string EditorId,
+    /// <summary>One ExtraPart baked shape of a head part, for a child row of the
+    /// "Set Antler Head Parts" selector. <see cref="ShapeName"/> is the baked NIF
+    /// shape name (= the ExtraPart's EditorID); it is the highlight key AND the
+    /// manual-designation key. Designating it strips the baked geometry AND removes
+    /// the ExtraPart link from the parent head-part record (leaving the link while
+    /// its shape is gone dark-faces the NPC — engine-verified).</summary>
+    public sealed record AntlerHeadPartShape(
+        FormKey HeadPartFormKey,
+        string ShapeName,
         string DisplayName,
-        string TypeLabel,
-        IReadOnlyList<string> ShapeNames,
         bool IsAutoDetected,
         bool IsDesignated);
 
-    /// <summary>Enumerates the previewed NPC's head parts as antler-selector
-    /// candidates (resolved through the mod scope, matching the rendered NIF).
-    /// Empty when the NPC or environment can't be resolved.</summary>
-    public IReadOnlyList<AntlerHeadPartCandidate> GetAntlerHeadPartCandidates(FormKey npcFormKey, ModSetting? modSetting)
+    /// <summary>One top-level head part of the previewed NPC (the selector's parent
+    /// row). Checking the parent removes the WHOLE head part — the record reference
+    /// AND every baked shape — keyed on <see cref="MainShapeName"/> (the head part's
+    /// own EditorID). <see cref="ExtraShapes"/> are its ExtraParts, each an
+    /// independently strippable child. <see cref="IsAutoDetected"/> = the whole head
+    /// part is keyword-detected (locked on).</summary>
+    public sealed record AntlerHeadPartGroup(
+        FormKey HeadPartFormKey,
+        string MainShapeName,
+        string DisplayName,
+        string TypeLabel,
+        bool IsAutoDetected,
+        bool IsMainDesignated,
+        IReadOnlyList<AntlerHeadPartShape> ExtraShapes);
+
+    /// <summary>Enumerates the previewed NPC's head parts as antler-selector groups
+    /// (resolved through the mod scope, matching the rendered NIF). Each group is a
+    /// top-level head part (parent = remove the whole head part); its
+    /// <see cref="AntlerHeadPartGroup.ExtraShapes"/> are the ExtraParts the user can
+    /// strip individually (e.g. antlers baked as an ExtraPart of the hair). Empty
+    /// when the NPC or environment can't be resolved.</summary>
+    public IReadOnlyList<AntlerHeadPartGroup> GetAntlerHeadPartCandidates(FormKey npcFormKey, ModSetting? modSetting)
     {
-        var result = new List<AntlerHeadPartCandidate>();
+        var result = new List<AntlerHeadPartGroup>();
         if (modSetting == null) return result;
         var linkCache = _env.LinkCache;
         if (linkCache == null) return result;
@@ -702,33 +743,42 @@ public class NpcMeshResolver
         var npc = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
         if (npc == null) return result;
 
-        var seen = new HashSet<FormKey>();
+        var seenHeadParts = new HashSet<FormKey>();
         foreach (var hpLink in npc.HeadParts)
         {
-            if (hpLink == null || hpLink.IsNull || !seen.Add(hpLink.FormKey)) continue;
+            if (hpLink == null || hpLink.IsNull || !seenHeadParts.Add(hpLink.FormKey)) continue;
             var hp = ResolveRecord<IHeadPartGetter>(hpLink, linkCache, context);
-            if (hp == null) continue;
+            if (hp == null || string.IsNullOrEmpty(hp.EditorID)) continue;
 
-            var shapeNames = new List<string>();
-            if (!string.IsNullOrEmpty(hp.EditorID)) shapeNames.Add(hp.EditorID);
+            bool groupAuto = modSetting.DetectedAntlerHeadParts.Contains(hpLink.FormKey);
+            bool mainDesignated = groupAuto ||
+                _settings.IsManualAntlerHeadPart(hp.EditorID, modSetting.DisplayName, npcFormKey);
+
+            var extras = new List<AntlerHeadPartShape>();
+            var seenShapeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { hp.EditorID };
             if (hp.ExtraParts != null)
             {
                 foreach (var extraLink in hp.ExtraParts)
                 {
                     if (extraLink == null || extraLink.IsNull) continue;
                     var extraRec = ResolveRecord<IHeadPartGetter>(extraLink, linkCache, context);
-                    if (!string.IsNullOrEmpty(extraRec?.EditorID)) shapeNames.Add(extraRec.EditorID);
+                    if (string.IsNullOrEmpty(extraRec?.EditorID) || !seenShapeNames.Add(extraRec.EditorID)) continue;
+                    // An ExtraPart is "designated" when the whole head part is (auto or
+                    // main) — it goes with it — or when that specific ExtraPart is.
+                    bool designated = mainDesignated ||
+                        _settings.IsManualAntlerHeadPart(extraRec.EditorID, modSetting.DisplayName, npcFormKey);
+                    string extraDisplay = extraRec.Name?.String;
+                    if (string.IsNullOrEmpty(extraDisplay)) extraDisplay = extraRec.EditorID;
+                    extras.Add(new AntlerHeadPartShape(extraLink.FormKey, extraRec.EditorID, extraDisplay,
+                        groupAuto, designated));
                 }
             }
 
             string display = hp.Name?.String ?? string.Empty;
-            if (string.IsNullOrEmpty(display)) display = hp.EditorID ?? string.Empty;
-            if (string.IsNullOrEmpty(display)) display = hpLink.FormKey.ToString();
+            if (string.IsNullOrEmpty(display)) display = hp.EditorID;
 
-            bool auto = modSetting.DetectedAntlerHeadParts.Contains(hpLink.FormKey);
-            bool designated = _settings.IsAntlerHeadPart(modSetting, hpLink.FormKey, hp.EditorID, npcFormKey);
-            result.Add(new AntlerHeadPartCandidate(hpLink.FormKey, hp.EditorID ?? string.Empty, display,
-                hp.Type?.ToString() ?? "Misc", shapeNames, auto, designated));
+            result.Add(new AntlerHeadPartGroup(hpLink.FormKey, hp.EditorID, display,
+                hp.Type?.ToString() ?? "Misc", groupAuto, mainDesignated, extras));
         }
         return result;
     }

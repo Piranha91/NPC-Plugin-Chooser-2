@@ -35,6 +35,10 @@ public class WigForwarder
     // NPCs sharing the same donor WNAM/outfit + same wig set get the same duplicate.
     private readonly Dictionary<(FormKey Source, string WigSet), FormKey> _skinDuplicates = new();
     private readonly Dictionary<(FormKey Source, string WigSet), FormKey> _outfitDuplicates = new();
+    // Antler ExtraPart record-strip head-part duplicates. Key folds the parent
+    // head part, the stripped ExtraPart set, and (SpecificNpc scope only) the NPC,
+    // so shared scopes reuse ONE stripped head part while SpecificNpc gets a per-NPC copy.
+    private readonly Dictionary<string, FormKey> _antlerHeadPartDuplicates = new();
     private readonly object _lock = new();
 
     public WigForwarder(EnvironmentStateProvider environmentStateProvider, RecordHandler recordHandler,
@@ -73,6 +77,16 @@ public class WigForwarder
         /// ExtraParts' EditorIDs — baked FaceGen shapes are named after the head
         /// part EditorIDs.</summary>
         public HashSet<string> FaceGenShapeNamesToStrip { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Per-NPC head-part repoints (SpecificNpc antler scope): a donor
+        /// parent head-part key → the isolated duplicate (minus the stripped antler
+        /// ExtraPart) this NPC's HeadParts entry is repointed to in
+        /// <see cref="FinalizeNpcRecord"/>. Removing the ExtraPart from the record —
+        /// not just the baked NIF — is required (a record/NIF ExtraPart mismatch
+        /// dark-faces the NPC, engine-verified). Shared scopes (AllNpcs / SameMod)
+        /// instead redirect every reference via <c>SeedDuplicateMapping</c> during the
+        /// merge walker and leave this empty.</summary>
+        public Dictionary<FormKey, FormKey> AntlerHeadPartRepoints { get; } = new();
 
         /// <summary>Points the patched NPC at the +Wig duplicates. Called AFTER
         /// CopyAppearanceData (whose non-merge path resets WNAM to the donor
@@ -169,6 +183,23 @@ public class WigForwarder
                     false, false);
             }
         }
+
+        // Per-NPC antler ExtraPart strip (SpecificNpc scope): repoint the parent head
+        // part to the isolated duplicate that lacks the stripped antler ExtraPart, so
+        // the record's ExtraParts match the stripped baked NIF for THIS NPC without
+        // cross-contaminating other NPCs that keep their antlers. Shared scopes are
+        // handled by the seeded merge remap instead (nothing to do here).
+        foreach (var (donorParentKey, dupKey) in result.AntlerHeadPartRepoints)
+        {
+            var candidates = ExpandWithDuplicateMappings(new HashSet<FormKey> { donorParentKey });
+            int repointed = patchNpc.HeadParts.RemoveAll(l => l != null && candidates.Contains(l.FormKey));
+            if (repointed > 0 && patchNpc.HeadParts.All(l => l.FormKey != dupKey))
+            {
+                patchNpc.HeadParts.Add(dupKey.ToLink<IHeadPartGetter>());
+                appendLog($"      Antler handling: repointed {npcIdentifier}'s head part to {dupKey} " +
+                          "(antler ExtraPart removed from the record for this NPC).", false, false);
+            }
+        }
     }
 
     /// <summary>Donor head-part keys plus any output duplicates the merge remapped
@@ -193,6 +224,7 @@ public class WigForwarder
         {
             _skinDuplicates.Clear();
             _outfitDuplicates.Clear();
+            _antlerHeadPartDuplicates.Clear();
         }
     }
 
@@ -320,7 +352,8 @@ public class WigForwarder
         // them for record removal (no bald replacement) + FaceGen shape strip.
         if (antlerRemove)
         {
-            CollectAntlerHeadPartRemoval(donorNpc, appearanceModSetting, modFolderPaths, result);
+            CollectAntlerHeadPartRemoval(donorNpc, appearanceModSetting, donorContextModKey, modFolderPaths,
+                mergeInDependencyRecords, result, appendLog);
         }
 
         // 2) Outfit forward — add pieces routed to the worn outfit (and strip
@@ -356,8 +389,11 @@ public class WigForwarder
         }
 
         if (result.SkinDuplicateKey == null && result.OutfitDuplicateKey == null &&
-            result.DonorHairHeadPartKeys.Count == 0 && result.DonorAntlerHeadPartKeys.Count == 0)
+            result.DonorHairHeadPartKeys.Count == 0 && result.DonorAntlerHeadPartKeys.Count == 0 &&
+            result.FaceGenShapeNamesToStrip.Count == 0)
         {
+            // FaceGenShapeNamesToStrip can be the ONLY work: an ExtraPart-only
+            // antler designation strips a baked shape without any record edit.
             return null;
         }
         return result;
@@ -734,24 +770,168 @@ public class WigForwarder
         }
     }
 
-    /// <summary>Collects the donor NPC's antler head parts (source 3) into
-    /// <paramref name="result"/> for removal — record keys (no bald replacement)
-    /// and FaceGen shape names to strip. A head part qualifies when the scan
-    /// flagged it OR the user manually designated its EditorID for this mod+NPC
-    /// under the current scope (<see cref="Settings.IsAntlerHeadPart"/>). Called
-    /// only when the effective antler mode is Remove.</summary>
+    /// <summary>Collects the donor NPC's antler baked shapes (source 3) into
+    /// <paramref name="result"/> for removal, at per-shape granularity. A baked
+    /// shape qualifies when the whole head part was keyword-detected OR the user
+    /// manually designated that specific shape's EditorID for this mod+NPC under
+    /// the current scope. Two cases:
+    /// <list type="bullet">
+    /// <item>The head part's OWN shape (main) qualifies → strip the baked shape
+    /// AND remove the head part from the NPC record (a top-level head part).</item>
+    /// <item>An ExtraPart shape qualifies → strip the baked NIF geometry only; no
+    /// record edit is needed (the ExtraPart still hangs off the head part but its
+    /// shape is gone from the shipped FaceGen NIF).</item>
+    /// </list>
+    /// Called only when the effective antler mode is Remove.</summary>
     private void CollectAntlerHeadPartRemoval(INpcGetter donorNpc, ModSetting appearanceModSetting,
-        HashSet<string> modFolderPaths, Result result)
+        ModKey donorContextModKey, HashSet<string> modFolderPaths, bool mergeInDependencyRecords,
+        Result result, Action<string, bool, bool> appendLog)
     {
         foreach (var hpLink in donorNpc.HeadParts)
         {
             if (hpLink == null || hpLink.IsNull) continue;
             var hpRec = ResolveFromModsOrWinner<IHeadPartGetter>(hpLink,
                 appearanceModSetting.CorrespondingModKeys, modFolderPaths);
-            if (!_settings.IsAntlerHeadPart(appearanceModSetting, hpLink.FormKey, hpRec?.EditorID, donorNpc.FormKey))
+            if (hpRec == null) continue;
+
+            // Whole head part is an antler (keyword-detected, or the user designated
+            // its own EditorID = "remove the whole head part"): drop it from the NPC
+            // record and strip its own shape plus every ExtraPart shape from the NIF.
+            // No per-ExtraPart record edit is needed — the head-part reference is gone.
+            bool groupAuto = appearanceModSetting.DetectedAntlerHeadParts.Contains(hpLink.FormKey);
+            bool mainRemoved = groupAuto ||
+                _settings.IsManualAntlerHeadPart(hpRec.EditorID, appearanceModSetting.DisplayName, donorNpc.FormKey);
+            if (mainRemoved)
+            {
+                result.DonorAntlerHeadPartKeys.Add(hpLink.FormKey);
+                if (!string.IsNullOrEmpty(hpRec.EditorID)) result.FaceGenShapeNamesToStrip.Add(hpRec.EditorID);
+                foreach (var extraRec in ResolveExtraParts(hpRec, appearanceModSetting, modFolderPaths))
+                    if (!string.IsNullOrEmpty(extraRec.EditorID)) result.FaceGenShapeNamesToStrip.Add(extraRec.EditorID);
                 continue;
-            result.DonorAntlerHeadPartKeys.Add(hpLink.FormKey);
-            if (hpRec != null) AddShapeNames(hpRec, appearanceModSetting, modFolderPaths, result);
+            }
+
+            // Head part kept. Any designated ExtraPart is stripped from the baked NIF
+            // AND removed from the parent head-part RECORD — leaving the ExtraPart in
+            // the record while its baked shape is gone dark-faces the NPC (engine
+            // validates the ExtraParts structure against the FaceGen).
+            var antlerExtraKeys = new List<FormKey>();
+            foreach (var extraRec in ResolveExtraParts(hpRec, appearanceModSetting, modFolderPaths))
+            {
+                if (string.IsNullOrEmpty(extraRec.EditorID)) continue;
+                if (_settings.IsManualAntlerHeadPart(extraRec.EditorID, appearanceModSetting.DisplayName, donorNpc.FormKey))
+                {
+                    result.FaceGenShapeNamesToStrip.Add(extraRec.EditorID);
+                    antlerExtraKeys.Add(extraRec.FormKey);
+                }
+            }
+            if (antlerExtraKeys.Count > 0)
+            {
+                StripAntlerExtraPartsFromParentHeadPart(hpRec, antlerExtraKeys, donorNpc, appearanceModSetting,
+                    donorContextModKey, modFolderPaths, mergeInDependencyRecords, result, appendLog);
+            }
+        }
+    }
+
+    /// <summary>Resolves a head part's ExtraPart links through the mod scope (skips
+    /// null/unresolvable links). The baked FaceGen shapes are named after these
+    /// records' EditorIDs.</summary>
+    private IEnumerable<IHeadPartGetter> ResolveExtraParts(IHeadPartGetter hpRec,
+        ModSetting appearanceModSetting, HashSet<string> modFolderPaths)
+    {
+        if (hpRec.ExtraParts == null) yield break;
+        foreach (var extraLink in hpRec.ExtraParts)
+        {
+            if (extraLink == null || extraLink.IsNull) continue;
+            var extraRec = ResolveFromModsOrWinner<IHeadPartGetter>(extraLink,
+                appearanceModSetting.CorrespondingModKeys, modFolderPaths);
+            if (extraRec != null) yield return extraRec;
+        }
+    }
+
+    /// <summary>Removes the designated antler ExtraPart link(s) from the parent head
+    /// part's RECORD (the baked NIF shapes are stripped separately) so the record's
+    /// ExtraParts match the stripped FaceGen. Two mechanisms by
+    /// <see cref="Settings.ManualAntlerBlockScope"/>:
+    /// <list type="bullet">
+    /// <item><b>AllNpcs / SameMod</b>: duplicate the parent head part once (minus the
+    /// ExtraParts), keep its EditorID, and <c>SeedDuplicateMapping</c> so the merge
+    /// walker redirects EVERY referencing NPC to the stripped copy — the "usual"
+    /// merge algorithm, exactly like the +Wig WNAM.</item>
+    /// <item><b>SpecificNpc</b>: make a per-NPC duplicate and record an
+    /// <see cref="Result.AntlerHeadPartRepoints"/> entry so only THIS NPC is repointed
+    /// (in <see cref="FinalizeNpcRecord"/>), leaving other NPCs' antlers intact.</item>
+    /// </list></summary>
+    private void StripAntlerExtraPartsFromParentHeadPart(IHeadPartGetter parentHp, List<FormKey> antlerExtraKeys,
+        INpcGetter donorNpc, ModSetting appearanceModSetting, ModKey donorContextModKey,
+        HashSet<string> modFolderPaths, bool mergeInDependencyRecords, Result result,
+        Action<string, bool, bool> appendLog)
+    {
+        bool perNpc = _settings.ManualAntlerBlockScope == AntlerBlockScope.SpecificNpc;
+        var extraSet = new HashSet<FormKey>(antlerExtraKeys);
+        string cacheKey = parentHp.FormKey + "|" + BuildKeySetId(extraSet) +
+                          (perNpc ? "|npc:" + donorNpc.FormKey : "|shared");
+
+        FormKey dupKey = FormKey.Null;
+        lock (_lock)
+        {
+            if (_antlerHeadPartDuplicates.TryGetValue(cacheKey, out var existing)) dupKey = existing;
+        }
+
+        if (dupKey.IsNull)
+        {
+            if (!Auxilliary.TryDuplicateGenericRecordAsNew(parentHp, _environmentStateProvider.OutputMod,
+                    out dynamic? dupDyn, out string err) || dupDyn is not HeadPart dup)
+            {
+                appendLog($"      Antler handling ERROR: could not duplicate head part '{parentHp.EditorID}' " +
+                          $"{parentHp.FormKey} to strip its antler ExtraPart(s): {err}", true, true);
+                return;
+            }
+
+            // Keep the donor EditorID — the baked main shape is named after it, and
+            // OutputValidator compares head parts by resolved EditorID.
+            dup.EditorID = parentHp.EditorID;
+            int removed = dup.ExtraParts.RemoveAll(l => l != null && extraSet.Contains(l.FormKey));
+            dupKey = dup.FormKey;
+
+            _recordHandler.RecordMergedRecordOrigin(parentHp.FormKey, dupKey, parentHp.EditorID);
+            RecordProvenanceDiag.RecordMergedAsNew(parentHp.FormKey, parentHp.EditorID, "HeadPart", dupKey, null);
+            result.MergedRecords.Add(dup);
+            lock (_lock) { _antlerHeadPartDuplicates[cacheKey] = dupKey; }
+
+            if (mergeInDependencyRecords)
+            {
+                List<string> exceptions = new();
+                var merged = _recordHandler.DuplicateFromOnlyReferencedGetters(
+                    _environmentStateProvider.OutputMod, dup, appearanceModSetting.CorrespondingModKeys,
+                    donorContextModKey, onlySubRecords: true, appearanceModSetting.HandleInjectedRecords,
+                    modFolderPaths, ref exceptions);
+                result.MergedRecords.AddRange(merged);
+                if (exceptions.Any())
+                {
+                    appendLog("Exceptions during antler ExtraPart head-part strip merge for " +
+                              Auxilliary.GetLogString(donorNpc, _settings.LocalizationLanguage) + ":" +
+                              Environment.NewLine + string.Join(Environment.NewLine, exceptions), true, false);
+                }
+            }
+
+            appendLog($"      Antler handling: duplicated head part '{parentHp.EditorID}' {parentHp.FormKey} " +
+                      $"as {dupKey} minus {removed} baked antler ExtraPart(s) — the head part stays, its antler " +
+                      $"shape is stripped from the record and the NIF ({(perNpc ? "this NPC only" : "shared across NPCs")}).",
+                false, false);
+        }
+
+        if (perNpc)
+        {
+            // Isolate to THIS NPC: FinalizeNpcRecord repoints its head-part reference
+            // to the duplicate (no global seed — other NPCs keep their antlers).
+            result.AntlerHeadPartRepoints[parentHp.FormKey] = dupKey;
+        }
+        else
+        {
+            // AllNpcs / SameMod: redirect every reference to the parent head part to
+            // the stripped duplicate via the merge walker (re-seed on cache reuse — a
+            // later batch record may have overwritten the mapping).
+            _recordHandler.SeedDuplicateMapping(parentHp.FormKey, dupKey);
         }
     }
 
