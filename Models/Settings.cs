@@ -861,6 +861,23 @@ public sealed class InternalMugshotSettings
     // tone-mapping.
     public bool EnableShadows { get; set; } = true;
 
+    // Hair-shadow "brow ridge" mitigations (CharacterViewer.Rendering 2.6.x).
+    // Bangs cast a hard shadow onto the forehead whose edge the slope-scaled
+    // shadow bias warps into an embossed ridge; the same bias over-darkens
+    // the neck under the jaw. Three independent, combinable approaches (see
+    // the Shader Troubleshooting UI):
+    //   A (ExcludeHairShadowCaster): drop hair from the shadow caster set.
+    //   B (SoftenShadowEdges): constant bias + wider PCF kernel; the shipped
+    //     default — de-warps the edge and relieves the neck darkening.
+    //   C (TightShadowFrustum): shrink the light frustum so the bias resolves
+    //     to fewer world units.
+    // Pixel-affecting -> included in the mugshot staleness hash (schema v15).
+    public bool ExcludeHairShadowCaster { get; set; } = false;
+    public bool SoftenShadowEdges { get; set; } = true;
+    public float ShadowPcfRadius { get; set; } = 1.5f;
+    public bool TightShadowFrustum { get; set; } = false;
+    public float ShadowFrustumRadius { get; set; } = 100f;
+
     // Screen-space ambient occlusion toggle (2.5.11+). Adds soft shadowing
     // in concave crevices (eye sockets, nostrils, lip line, ear creases)
     // by sampling depth in a hemisphere around each fragment. Smaller

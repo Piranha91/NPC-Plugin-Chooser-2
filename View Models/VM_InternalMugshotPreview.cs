@@ -236,6 +236,16 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             .Subscribe(b => { _settings.InternalMugshot.EnableToneMapping = b; PersistThrottled(); }).DisposeWith(_disposables);
         Viewer.WhenAnyValue(x => x.EnableShadows).Skip(1)
             .Subscribe(b => { _settings.InternalMugshot.EnableShadows = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.ExcludeHairShadowCaster).Skip(1)
+            .Subscribe(b => { _settings.InternalMugshot.ExcludeHairShadowCaster = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.SoftenShadowEdges).Skip(1)
+            .Subscribe(b => { _settings.InternalMugshot.SoftenShadowEdges = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.ShadowPcfRadius).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.ShadowPcfRadius = v; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.TightShadowFrustum).Skip(1)
+            .Subscribe(b => { _settings.InternalMugshot.TightShadowFrustum = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.ShadowFrustumRadius).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.ShadowFrustumRadius = v; PersistThrottled(); }).DisposeWith(_disposables);
         Viewer.WhenAnyValue(x => x.EnableAmbientOcclusion).Skip(1)
             .Subscribe(b => { _settings.InternalMugshot.EnableAmbientOcclusion = b; PersistThrottled(); }).DisposeWith(_disposables);
         Viewer.WhenAnyValue(x => x.SsaoRadius).Skip(1)
@@ -292,6 +302,11 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Viewer.RenderMissingTextureAsWireframe = c.RenderMissingTextureAsWireframe;
         Viewer.EnableToneMapping = c.EnableToneMapping;
         Viewer.EnableShadows = c.EnableShadows;
+        Viewer.ExcludeHairShadowCaster = c.ExcludeHairShadowCaster;
+        Viewer.SoftenShadowEdges = c.SoftenShadowEdges;
+        Viewer.ShadowPcfRadius = c.ShadowPcfRadius;
+        Viewer.TightShadowFrustum = c.TightShadowFrustum;
+        Viewer.ShadowFrustumRadius = c.ShadowFrustumRadius;
         Viewer.EnableAmbientOcclusion = c.EnableAmbientOcclusion;
         Viewer.SsaoRadius = c.SsaoRadius;
         Viewer.SsaoBias = c.SsaoBias;

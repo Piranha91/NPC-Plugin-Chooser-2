@@ -98,9 +98,17 @@ public static class InternalMugshotMetadata
     /// un-attenuated hair). Unlike prior additions the default (1.0) changes
     /// output for white-tint hair, but a v13 tile compared at schemaVersion=13
     /// excludes it and stays valid until regenerated.</item>
+    /// <item>15: added the hair-shadow "brow ridge" mitigations
+    /// <c>ExcludeHairShadowCaster</c> (A), <c>SoftenShadowEdges</c> +
+    /// <c>ShadowPcfRadius</c> (B), <c>TightShadowFrustum</c> +
+    /// <c>ShadowFrustumRadius</c> (C). B defaults ON and softens the cast
+    /// shadow (de-warps the forehead ridge, relieves the neck-under-jaw
+    /// darkening), so like v14 the default changes output for new tiles; a
+    /// v14 tile compared at schemaVersion=14 excludes these and stays valid
+    /// until regenerated.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 14;
+    public const int PipelineSchemaVersion = 15;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -162,6 +170,11 @@ public static class InternalMugshotMetadata
             ["render_missing_texture_as_wireframe"] = cfg.RenderMissingTextureAsWireframe,
             ["enable_tone_mapping"] = cfg.EnableToneMapping,
             ["enable_shadows"] = cfg.EnableShadows,
+            ["exclude_hair_shadow_caster"] = cfg.ExcludeHairShadowCaster,
+            ["soften_shadow_edges"] = cfg.SoftenShadowEdges,
+            ["shadow_pcf_radius"] = cfg.ShadowPcfRadius,
+            ["tight_shadow_frustum"] = cfg.TightShadowFrustum,
+            ["shadow_frustum_radius"] = cfg.ShadowFrustumRadius,
             ["enable_ambient_occlusion"] = cfg.EnableAmbientOcclusion,
             ["ssao_radius"] = cfg.SsaoRadius,
             ["ssao_bias"] = cfg.SsaoBias,
@@ -510,6 +523,21 @@ public static class InternalMugshotMetadata
         if (schemaVersion >= 14)
         {
             sb.Append('|').Append(cfg.HairAlbedoCompensate.ToString("R", inv));
+        }
+
+        // === schema v15 fields (hair-shadow brow-ridge mitigations A/B/C) ===
+        // B (SoftenShadowEdges) defaults ON and changes the cast-shadow look;
+        // A/C default OFF and their radii are inert until their toggle is on.
+        // Only relevant when EnableShadows is on, but hashed unconditionally
+        // (matching the SSAO tunables). A v14 tile compared at schemaVersion=14
+        // excludes these entries and stays valid until regenerated.
+        if (schemaVersion >= 15)
+        {
+            sb.Append('|').Append(cfg.ExcludeHairShadowCaster ? '1' : '0');
+            sb.Append('|').Append(cfg.SoftenShadowEdges ? '1' : '0');
+            sb.Append('|').Append(cfg.ShadowPcfRadius.ToString("R", inv));
+            sb.Append('|').Append(cfg.TightShadowFrustum ? '1' : '0');
+            sb.Append('|').Append(cfg.ShadowFrustumRadius.ToString("R", inv));
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

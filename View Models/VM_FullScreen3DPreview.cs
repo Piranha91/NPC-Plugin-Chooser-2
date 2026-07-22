@@ -37,6 +37,11 @@ public class VM_FullScreen3DPreview : ReactiveObject
     // --- Render-quality flags ---
     private readonly bool _initialEnableToneMapping;
     private readonly bool _initialEnableShadows;
+    private readonly bool _initialExcludeHairShadowCaster;
+    private readonly bool _initialSoftenShadowEdges;
+    private readonly float _initialShadowPcfRadius;
+    private readonly bool _initialTightShadowFrustum;
+    private readonly float _initialShadowFrustumRadius;
     private readonly bool _initialEnableAmbientOcclusion;
     private readonly bool _initialEnableEyeCatchlight;
     private readonly bool _initialRenderMissingTextureAsWireframe;
@@ -87,6 +92,11 @@ public class VM_FullScreen3DPreview : ReactiveObject
 
         _initialEnableToneMapping = cfg.EnableToneMapping;
         _initialEnableShadows = cfg.EnableShadows;
+        _initialExcludeHairShadowCaster = cfg.ExcludeHairShadowCaster;
+        _initialSoftenShadowEdges = cfg.SoftenShadowEdges;
+        _initialShadowPcfRadius = cfg.ShadowPcfRadius;
+        _initialTightShadowFrustum = cfg.TightShadowFrustum;
+        _initialShadowFrustumRadius = cfg.ShadowFrustumRadius;
         _initialEnableAmbientOcclusion = cfg.EnableAmbientOcclusion;
         _initialEnableEyeCatchlight = cfg.EnableEyeCatchlight;
         _initialRenderMissingTextureAsWireframe = cfg.RenderMissingTextureAsWireframe;
@@ -131,6 +141,11 @@ public class VM_FullScreen3DPreview : ReactiveObject
         // Render-quality flags
         if (cfg.EnableToneMapping != _initialEnableToneMapping) return true;
         if (cfg.EnableShadows != _initialEnableShadows) return true;
+        if (cfg.ExcludeHairShadowCaster != _initialExcludeHairShadowCaster) return true;
+        if (cfg.SoftenShadowEdges != _initialSoftenShadowEdges) return true;
+        if (cfg.ShadowPcfRadius != _initialShadowPcfRadius) return true;
+        if (cfg.TightShadowFrustum != _initialTightShadowFrustum) return true;
+        if (cfg.ShadowFrustumRadius != _initialShadowFrustumRadius) return true;
         if (cfg.EnableAmbientOcclusion != _initialEnableAmbientOcclusion) return true;
         if (cfg.EnableEyeCatchlight != _initialEnableEyeCatchlight) return true;
         if (cfg.RenderMissingTextureAsWireframe != _initialRenderMissingTextureAsWireframe) return true;
@@ -175,6 +190,11 @@ public class VM_FullScreen3DPreview : ReactiveObject
 
         cfg.EnableToneMapping = _initialEnableToneMapping;
         cfg.EnableShadows = _initialEnableShadows;
+        cfg.ExcludeHairShadowCaster = _initialExcludeHairShadowCaster;
+        cfg.SoftenShadowEdges = _initialSoftenShadowEdges;
+        cfg.ShadowPcfRadius = _initialShadowPcfRadius;
+        cfg.TightShadowFrustum = _initialTightShadowFrustum;
+        cfg.ShadowFrustumRadius = _initialShadowFrustumRadius;
         cfg.EnableAmbientOcclusion = _initialEnableAmbientOcclusion;
         cfg.EnableEyeCatchlight = _initialEnableEyeCatchlight;
         cfg.RenderMissingTextureAsWireframe = _initialRenderMissingTextureAsWireframe;
