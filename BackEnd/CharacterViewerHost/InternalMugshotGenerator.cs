@@ -257,6 +257,7 @@ public sealed class InternalMugshotGenerator
                 SkinSaturationBoost = cfg.SkinSaturationBoost,
                 Exposure = cfg.Exposure,
                 TonemapHairRelief = cfg.TonemapHairRelief,
+                HairAlbedoCompensate = cfg.HairAlbedoCompensate,
                 DaylightBoost = cfg.DaylightBoost,
                 DaylightBoostIntensity = cfg.DaylightBoostIntensity,
                 EnableBloom = cfg.EnableBloom,

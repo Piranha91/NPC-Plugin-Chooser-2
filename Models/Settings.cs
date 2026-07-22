@@ -967,6 +967,14 @@ public sealed class InternalMugshotSettings
     // the mugshot staleness hash (pipeline_schema v11).
     public bool TonemapHairRelief { get; set; } = true;
 
+    // Neutral-white-tint hair albedo compensation (default ON at full 1.0). The
+    // renderer lights on raw sRGB texels, so a hair whose baked tint is a neutral
+    // white keeps its albedo ~3x too bright and clips (a red wig reads pink); this
+    // applies the sRGB->linear the pipeline skips, keyed on tint neutrality so
+    // dark-tint and warm-blonde hair are exempt. Pixel-affecting -> included in
+    // the mugshot staleness hash (pipeline_schema v14).
+    public float HairAlbedoCompensate { get; set; } = 1.0f;
+
     // Daylight boost (default ON at a gentle 1.1 gain). Scales the directional
     // lights by DaylightBoostIntensity + slight warmth (ambient untouched),
     // lifting blonde hair toward its in-game daylight look without hand-tuning

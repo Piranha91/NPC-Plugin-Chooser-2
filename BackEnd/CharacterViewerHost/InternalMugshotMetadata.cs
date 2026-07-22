@@ -90,9 +90,17 @@ public static class InternalMugshotMetadata
     /// re-stale the tile. Pre-v12 PNGs lack the field and are compared at
     /// their stamped schema, so the feature's introduction regenerates
     /// nothing by itself.</item>
+    /// <item>13: added <c>SsaoThickness</c> + <c>SsaoHairGap</c>. Thickness
+    /// default 1.5 reproduces the prior hardcoded value; a v12 tile compared at
+    /// schemaVersion=12 stays valid.</item>
+    /// <item>14: added <c>HairAlbedoCompensate</c> — neutral-white-tint hair
+    /// albedo compensation (the sRGB->linear the gamma-space pipeline skips for
+    /// un-attenuated hair). Unlike prior additions the default (1.0) changes
+    /// output for white-tint hair, but a v13 tile compared at schemaVersion=13
+    /// excludes it and stays valid until regenerated.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 13;
+    public const int PipelineSchemaVersion = 14;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -165,6 +173,7 @@ public static class InternalMugshotMetadata
             ["skin_saturation_boost"] = cfg.SkinSaturationBoost,
             ["exposure"] = cfg.Exposure,
             ["tonemap_hair_relief"] = cfg.TonemapHairRelief,
+            ["hair_albedo_compensate"] = cfg.HairAlbedoCompensate,
             ["daylight_boost"] = cfg.DaylightBoost,
             ["daylight_boost_intensity"] = cfg.DaylightBoostIntensity,
             ["enable_bloom"] = cfg.EnableBloom,
@@ -489,6 +498,18 @@ public static class InternalMugshotMetadata
         {
             sb.Append('|').Append(cfg.SsaoThickness.ToString("R", inv));
             sb.Append('|').Append(cfg.SsaoHairGap.ToString("R", inv));
+        }
+
+        // === schema v14 fields (neutral-white-tint hair albedo compensation) ===
+        // Unlike the earlier no-op-default additions, this default (1.0 = full)
+        // DOES change output for hair with a neutral-white baked tint (a red wig
+        // renders deep instead of clipping to pink). A v13 tile is compared at
+        // schemaVersion=13 (which excludes this entry), so existing tiles stay
+        // valid until regenerated; the corrected rendering applies to new tiles,
+        // and changing the field re-stales v14 tiles.
+        if (schemaVersion >= 14)
+        {
+            sb.Append('|').Append(cfg.HairAlbedoCompensate.ToString("R", inv));
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));

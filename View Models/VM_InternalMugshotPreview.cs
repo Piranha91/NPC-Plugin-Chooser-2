@@ -262,6 +262,8 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             .Subscribe(v => { _settings.InternalMugshot.Exposure = v; PersistThrottled(); }).DisposeWith(_disposables);
         Viewer.WhenAnyValue(x => x.TonemapHairRelief).Skip(1)
             .Subscribe(b => { _settings.InternalMugshot.TonemapHairRelief = b; PersistThrottled(); }).DisposeWith(_disposables);
+        Viewer.WhenAnyValue(x => x.HairAlbedoCompensate).Skip(1)
+            .Subscribe(v => { _settings.InternalMugshot.HairAlbedoCompensate = v; PersistThrottled(); }).DisposeWith(_disposables);
         Viewer.WhenAnyValue(x => x.DaylightBoost).Skip(1)
             .Subscribe(b => { _settings.InternalMugshot.DaylightBoost = b; PersistThrottled(); }).DisposeWith(_disposables);
         Viewer.WhenAnyValue(x => x.DaylightBoostIntensity).Skip(1)
@@ -303,6 +305,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         Viewer.SkinSaturationBoost = c.SkinSaturationBoost;
         Viewer.Exposure = c.Exposure;
         Viewer.TonemapHairRelief = c.TonemapHairRelief;
+        Viewer.HairAlbedoCompensate = c.HairAlbedoCompensate;
         Viewer.DaylightBoost = c.DaylightBoost;
         Viewer.DaylightBoostIntensity = c.DaylightBoostIntensity;
         Viewer.EnableBloom = c.EnableBloom;
