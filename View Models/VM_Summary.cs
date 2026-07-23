@@ -265,6 +265,15 @@ namespace NPC_Plugin_Chooser_2.View_Models;
                 {
                     resolvedPath = autoGenPath;
                 }
+                // Freshness probe said stale (or its identity inputs weren't
+                // resolvable) but a cached render still exists — show it rather
+                // than the placeholder, mirroring the NPCs-menu fallback.
+                else if (resolvedPath == null
+                    && modSetting != null
+                    && _batchMugshotGenerator.TryGetExistingAutoGenPath(sourceNpcKey, modSetting, out var anyAutoGenPath))
+                {
+                    resolvedPath = anyAutoGenPath;
+                }
 
                 string imagePath = resolvedPath ?? placeholderPath;
                 bool hasMugshot = !imagePath.Equals(placeholderPath, StringComparison.OrdinalIgnoreCase);

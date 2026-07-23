@@ -89,7 +89,21 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     private Dictionary<FormKey, HashSet<string>> _hiddenModsPerNpc = new();
     private Dictionary<FormKey, List<(string ModName, string ImagePath)>> _downloadedMugshotData = new();
     private readonly Subject<Unit> _refreshImageSizesSubject = new Subject<Unit>();
+    // Fired (throttled) when a mugshot tile finishes loading its image and sets
+    // its source dimensions, so the ImagePacker re-runs once the async bitmap
+    // decodes have actually landed. See NotifyTileImageReady + the throttle
+    // wiring in the constructor. Guarded by _tileImageReadyGate because tiles
+    // decode off the UI thread and may signal concurrently.
+    private readonly Subject<Unit> _tileImageReadySubject = new Subject<Unit>();
+    private readonly object _tileImageReadyGate = new();
     private CancellationTokenSource? _mugshotGenerationCts;
+    // True whenever CurrentNpcAppearanceMods has been (re)built since the last
+    // generation kick. TriggerAsyncMugshotGeneration only cancels the in-flight
+    // batch when this is set (i.e. the tiles it was working for are gone);
+    // same-collection re-triggers — which now happen on every repack, including
+    // the repacks fired as each tile's image lands — top up un-started tiles
+    // without aborting renders already in progress. Main-thread only.
+    private bool _generationTilesDirty = true;
 
     // --- TEMP: auto-advance for memory profiling ---
     // Drives the browse flow automatically (Ctrl+Shift+A in the NPCs view; Escape to stop) so the opt-in
@@ -231,6 +245,30 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, string?> LoadDescriptionCommand { get; }
     [ObservableAsProperty] public bool IsLoadingDescription { get; }
     public IObservable<Unit> RefreshImageSizesObservable => _refreshImageSizesSubject.AsObservable();
+
+    /// <summary>Called by a mugshot tile once it has loaded an image and set its
+    /// source dimensions. Coalesced by a throttle in the constructor into a
+    /// single ImagePacker re-run, so tiles get correctly sized after their async
+    /// bitmap decodes complete (the CurrentNpcAppearanceMods throttle alone races
+    /// those decodes on a cold launch, so the packer would otherwise skip an
+    /// all-0×0 set and never re-run). Thread-safe: tiles decode off the UI thread
+    /// and may call this concurrently.</summary>
+    public void NotifyTileImageReady()
+    {
+        lock (_tileImageReadyGate)
+        {
+            try
+            {
+                _tileImageReadySubject.OnNext(Unit.Default);
+            }
+            catch (ObjectDisposedException)
+            {
+                // A tile's background image load can outlive this VM at app
+                // shutdown; a signal into the disposed subject is meaningless
+                // then — swallow rather than fault the worker thread.
+            }
+        }
+    }
 
     // --- NEW: Zoom Control Properties & Commands for NpcsView ---
     [Reactive] public double NpcsViewZoomLevel { get; set; }
@@ -623,6 +661,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                         tile.Dispose();
                     }
                 }
+                // The tile set is being swapped — the next generation trigger
+                // must cancel the old batch and mint a fresh token.
+                _generationTilesDirty = true;
                 Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms CurrentNpcAppearanceMods bound (count={vms.Count})");
 
                 // Opt-in memory sample, one row per NPC switch (no-op unless LogMemory.txt is present).
@@ -639,6 +680,23 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .Throttle(TimeSpan.FromMilliseconds(100))
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => TriggerAsyncMugshotGeneration())
+            .DisposeWith(_disposables);
+
+        // Re-pack after the current NPC's tiles finish loading their images.
+        // Tile image loads are async (LoadInitialImageAsync / SetImageSource
+        // decode their bitmap off the UI thread), so the 50ms
+        // CurrentNpcAppearanceMods throttle below can fire RefreshImageSizes
+        // while every tile is still 0×0 — RefreshImageSizes then finds nothing
+        // packable and early-returns, and nothing else re-triggers it, leaving
+        // the mugshots at full display size until the user forces a refresh.
+        // Each tile signals via NotifyTileImageReady once its dimensions are
+        // set; the throttle coalesces the burst of loads into one re-pack shortly
+        // after they settle. This does NOT feed back on itself: the packer's
+        // crop step reassigns MugshotSource but never calls NotifyTileImageReady.
+        _tileImageReadySubject
+            .Throttle(TimeSpan.FromMilliseconds(150), RxApp.MainThreadScheduler)
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(_ => _refreshImageSizesSubject.OnNext(Unit.Default))
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.CurrentNpcAppearanceMods)
@@ -1124,6 +1182,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
         
         _refreshImageSizesSubject.DisposeWith(_disposables);
+        _tileImageReadySubject.DisposeWith(_disposables);
         _requestScrollToNpcSubject.DisposeWith(_disposables);
     }
 
@@ -3721,15 +3780,33 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
     private void TriggerAsyncMugshotGeneration()
     {
-        // Cancel any generation tasks initiated for the previously selected NPC.
-        _mugshotGenerationCts?.Cancel();
-        _mugshotGenerationCts = new CancellationTokenSource();
-        var token = _mugshotGenerationCts.Token;
+        // Only cancel the in-flight batch when the tile collection has actually
+        // been swapped since the last kick (NPC switch / rebuild). This trigger
+        // fires repeatedly for the SAME tiles — the 50ms collection backstop,
+        // the throttled PackingCompleted event, and (since the tile-image-ready
+        // re-pack wiring) another PackingCompleted every time a tile's image
+        // lands. Cancelling unconditionally meant each finishing tile aborted
+        // its still-rendering neighbors' multi-second GL renders, which then
+        // restarted from scratch on the re-kick — the tiles that genuinely
+        // needed a render could be starved for a long time (kept showing the
+        // placeholder) while fast tiles churned the trigger.
+        // Handled BEFORE the empty-collection return below so that switching
+        // away from an NPC with renders in flight still cancels them even when
+        // the newly-selected NPC has no appearance options (parity with the
+        // old cancel-unconditionally behavior).
+        if (_generationTilesDirty || _mugshotGenerationCts == null
+                                  || _mugshotGenerationCts.IsCancellationRequested)
+        {
+            _mugshotGenerationCts?.Cancel();
+            _mugshotGenerationCts = new CancellationTokenSource();
+            _generationTilesDirty = false;
+        }
 
         if (CurrentNpcAppearanceMods == null || !CurrentNpcAppearanceMods.Any())
         {
             return;
         }
+        var token = _mugshotGenerationCts.Token;
 
         Debug.WriteLine("ImagePacker has completed. Triggering background mugshot generation.");
 
@@ -3743,16 +3820,29 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         int kicked = 0;
         int skippedHasMugshot = 0;
         int skippedInvisible = 0;
+        int skippedInFlight = 0;
         foreach (var mugshotVM in CurrentNpcAppearanceMods)
         {
             if (!mugshotVM.IsVisible) { skippedInvisible++; continue; }
             if (mugshotVM.HasMugshot) { skippedHasMugshot++; continue; }
+            // Don't stack a second run on a tile whose generation is already
+            // queued or executing — same-collection re-triggers only top up
+            // tiles that aren't covered yet.
+            if (mugshotVM.IsGenerationInFlight) { skippedInFlight++; continue; }
+            // Latch synchronously (this method runs on the UI thread) so the
+            // next trigger can't double-kick before the task starts; the tile's
+            // finally releases it.
+            mugshotVM.IsGenerationInFlight = true;
             // Fire and forget. The VM will update its own image when the task completes.
+            // Deliberately NOT passing the token to Task.Run: a cancelled token
+            // would suppress the delegate entirely, leaving the in-flight latch
+            // set forever. GenerateMugshotAsync checks the token internally and
+            // its finally clears the latch.
             var vmCapture = mugshotVM;
-            _ = Task.Run(() => vmCapture.GenerateMugshotAsync(token), token);
+            _ = Task.Run(() => vmCapture.GenerateMugshotAsync(token));
             kicked++;
         }
-        Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms TriggerAsyncMugshotGeneration kicked={kicked} skipped-hasMugshot={skippedHasMugshot} skipped-invisible={skippedInvisible}");
+        Debug.WriteLine($"[NpcPerf] T+{SelectionPerfSw.ElapsedMilliseconds}ms TriggerAsyncMugshotGeneration kicked={kicked} skipped-hasMugshot={skippedHasMugshot} skipped-invisible={skippedInvisible} skipped-inFlight={skippedInFlight}");
     }
 
     /// <summary>Re-renders the currently-displayed NPC's autogen mugshots when it

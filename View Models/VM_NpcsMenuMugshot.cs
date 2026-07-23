@@ -66,6 +66,20 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     }
     private bool _isImageLoadingOrLoaded = false;
     private readonly object _imageLoadLock = new();
+    private volatile bool _generationInFlight = false;
+
+    /// <summary>True while a <see cref="GenerateMugshotAsync"/> run for this tile
+    /// is queued or executing. Set synchronously at the kick site
+    /// (TriggerAsyncMugshotGeneration, main thread) and again at method entry
+    /// (covers direct RegenerateAsync calls); cleared in the method's finally.
+    /// Lets the trigger re-fire freely — repacks now happen every time a tile
+    /// image lands — without cancelling and restarting in-flight renders or
+    /// double-kicking a tile whose task hasn't started yet.</summary>
+    public bool IsGenerationInFlight
+    {
+        get => _generationInFlight;
+        set => _generationInFlight = value;
+    }
 
 
     // --- Existing properties ---
@@ -638,13 +652,54 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 // the priority loop's Downloaded step; skip over it.
                 if (source == MugshotSourceType.DownloadedMugshots) continue;
 
+                // Skip DISABLED generated sources entirely — they can't produce
+                // anything in the priority loop either (its branches gate on the
+                // same flags), so they must not consume the single "first
+                // probable source" consultation below. Without this, the default
+                // priority order [Downloaded, FaceFinder, AutoGeneration] with
+                // FaceFinder disabled made the loop consult the inert FaceFinder
+                // slot and break — the AutoGeneration probes below never ran on
+                // any normal view, so every launch / NPC switch started at the
+                // placeholder even with a perfectly fresh cached render on disk.
+                // (The per-NPC AG override radio "fixed" it by moving
+                // AutoGeneration to index 0, which is what gave this away.)
+                if (source == MugshotSourceType.FaceFinder
+                    && !_settings.UseFaceFinderFallback) continue;
                 if (source == MugshotSourceType.AutoGeneration
-                    && _batchGenerator.TryGetExistingFreshAutoGenPath(
-                           SourceNpcFormKey, AssociatedModSetting, out var freshAutoGen, _targetNpcFormKey))
+                    && !_settings.UsePortraitCreatorFallback) continue;
+
+                if (source == MugshotSourceType.AutoGeneration)
                 {
-                    ImagePath = freshAutoGen!;
-                    realMugshotExists = true;
-                    HasMugshot = true;
+                    if (_batchGenerator.TryGetExistingFreshAutoGenPath(
+                            SourceNpcFormKey, AssociatedModSetting, out var freshAutoGen, _targetNpcFormKey))
+                    {
+                        // Fresh cached render — display it and let the tile skip
+                        // regeneration entirely (HasMugshot=true).
+                        ImagePath = freshAutoGen!;
+                        realMugshotExists = true;
+                        HasMugshot = true;
+                    }
+                    else if (_batchGenerator.TryGetExistingAutoGenPath(
+                                 SourceNpcFormKey, AssociatedModSetting, out var staleAutoGen))
+                    {
+                        // A cached render EXISTS but the freshness probe judged it
+                        // stale. Display it now instead of the placeholder: the
+                        // verdict may be genuine (a settings / renderer / schema
+                        // change since the PNG was stamped) or spurious (the
+                        // outfit/wig identity inputs weren't fully resolvable at
+                        // probe time — e.g. Settings.ModSettings not yet synced),
+                        // and in both cases an existing render beats a placeholder.
+                        // HasMugshot stays FALSE so the priority loop still runs
+                        // AutoGeneration: RunSelectedRendererAsync re-checks
+                        // staleness and either re-confirms this same file
+                        // (AlreadyCurrent) or renders and swaps in the fresh PNG.
+                        ImagePath = staleAutoGen!;
+                        realMugshotExists = true;
+                        // HasMugshot intentionally left false — regeneration must run.
+                        _eventLogger.Log(
+                            $"Displaying existing (stale-flagged) cached mugshot for {ModName}; regeneration will run in the background",
+                            "IMAGE_LOAD");
+                    }
                 }
                 else if (source == MugshotSourceType.FaceFinder
                     && _batchGenerator.TryGetExistingFreshFaceFinderPath(
@@ -797,6 +852,13 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             {
                 _eventLogger.Log($"Successfully loaded real mugshot for {ModName} from {pathToLoad}", "IMAGE_LOAD");
             }
+
+            // Dimensions are now set — ask the selection bar to (re-)pack. The
+            // decode above ran off the UI thread and may have finished after the
+            // NPC-switch re-pack already fired against an all-0×0 tile set, so
+            // without this nudge the tile can stay at full display size. Throttled
+            // on the VM side, so N tiles loading in a burst cause a single re-pack.
+            _vmNpcSelectionBar.NotifyTileImageReady();
         }
 
         // HasMugshot=true means TriggerAsyncMugshotGeneration will skip this tile,
@@ -1453,6 +1515,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     {
         long genStartMs = VM_NpcSelectionBar.SelectionPerfSw.ElapsedMilliseconds;
         Debug.WriteLine($"[NpcPerf] T+{genStartMs}ms GenerateMugshotAsync ENTER {ModName}");
+        IsGenerationInFlight = true; // idempotent re-set; kick site set it already
         try
         {
             _eventLogger.Log($"Loading mugshot for {SourceNpcFormKey} from {ModName}", "Load_START");
@@ -1535,6 +1598,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             {
                 IsLoading = false;
             }
+
+            // Always release the in-flight latch, whatever the outcome, so the
+            // trigger can re-kick this tile if it still has no image.
+            IsGenerationInFlight = false;
         }
     }
 
@@ -1836,8 +1903,27 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         this.MugshotSource = bitmap;
         this.ImagePath = path;
         this.HasMugshot = true;
+
+        // Keep the packer's source dimensions in sync with the image we just
+        // swapped in. This path (the renderer / fresh-PNG reuse) previously left
+        // OriginalDip* at whatever the placeholder set, so a tile that first
+        // showed the placeholder and then had its real render assigned here was
+        // sized/cropped by the ImagePacker against the placeholder's aspect
+        // ratio. Mirrors SetImageSourceFromMemory + LoadInitialImageAsync.
+        var (pixelWidth, pixelHeight, dipWidth, dipHeight) = ImagePacker.GetImageDimensions(path);
+        if (pixelWidth > 0 && pixelHeight > 0)
+        {
+            OriginalPixelWidth = pixelWidth;
+            OriginalPixelHeight = pixelHeight;
+            OriginalDipWidth = dipWidth;
+            OriginalDipHeight = dipHeight;
+            OriginalDipDiagonal = Math.Sqrt(dipWidth * dipWidth + dipHeight * dipHeight);
+        }
+
+        // Newly-loaded image with fresh dimensions — trigger a (throttled) re-pack.
+        _vmNpcSelectionBar.NotifyTileImageReady();
     }
-    
+
     private void SetImageSourceFromMemory(byte[] imageData)
     {
         if (imageData == null || imageData.Length == 0) return;
@@ -1864,6 +1950,9 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         OriginalDipWidth = info.Width;
         OriginalDipHeight = info.Height;
         OriginalDipDiagonal = Math.Sqrt(OriginalDipWidth * OriginalDipWidth + OriginalDipHeight * OriginalDipHeight);
+
+        // Newly-loaded image with fresh dimensions — trigger a (throttled) re-pack.
+        _vmNpcSelectionBar.NotifyTileImageReady();
     }
 
     public void Dispose()

@@ -509,6 +509,31 @@ public sealed class BatchMugshotGenerator
         return true;
     }
 
+    /// <summary>Staleness-agnostic sibling of <see cref="TryGetExistingFreshAutoGenPath"/>:
+    /// returns true (and the path) whenever a previously-generated autogen PNG
+    /// exists at the canonical save path, fresh OR stale. Lets a freshly-built
+    /// tile display the existing cached render immediately instead of the
+    /// placeholder while any staleness-driven re-render proceeds in the
+    /// background. This decouples "what to show right now" from the staleness
+    /// verdict, so neither a launch-time false-positive stale verdict (the outfit
+    /// / wig identity it compares depends on link-cache + config state that is
+    /// still warming when the first NPC view is built) nor a render that gets
+    /// cancelled by startup layout churn can leave an already-cached NPC showing
+    /// the placeholder. No render, no NIF lookup, no network — just a file probe.</summary>
+    public bool TryGetExistingAutoGenPath(
+        FormKey npcFormKey, VM_ModSetting modSetting, out string? path)
+    {
+        path = null;
+        if (!_settings.UsePortraitCreatorFallback) return false;
+        if (modSetting == null) return false;
+
+        var savePath = GetAutoGenSavePath(_settings, modSetting.DisplayName, npcFormKey);
+        if (!File.Exists(savePath)) return false;
+
+        path = savePath;
+        return true;
+    }
+
     public async Task<GenerationResult> RunSelectedRendererAsync(
         FormKey npcFormKey,
         VM_ModSetting modSetting,

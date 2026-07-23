@@ -1548,6 +1548,32 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             }
             StartupLogger.Log("Mod population complete");
 
+            // Sync the freshly-populated VM mod list into Settings.ModSettings NOW,
+            // before Step 2 restores the last-viewed NPC and builds its mugshot
+            // tiles. Each tile probes the autogen cache on construction
+            // (VM_NpcsMenuMugshot.LoadInitialImageAsync →
+            // BatchMugshotGenerator.TryGetExistingFreshAutoGenPath), and that
+            // probe's freshness check derives an outfit/wig identity by resolving
+            // the source mod from the PERSISTED _settings.ModSettings
+            // (MakeOutfitIdentityProvider). Until this sync runs, that list is
+            // empty on launch, so the provider resolves no mod and computes the
+            // winning-override outfit identity instead of the donor's — a spurious
+            // mismatch against the PNG's stamped identity that fails the freshness
+            // probe. The tile still displays the cached PNG (stale-display
+            // fallback), but every cached tile would kick a needless background
+            // re-render on every launch. The post-InitializeAsync sync in
+            // App.xaml.cs stays as the authoritative pre-BSA-warm sync (this is
+            // idempotent).
+            try
+            {
+                _lazyModListVM.Value.SaveModSettingsToModel();
+                StartupLogger.Log("VM_Mods → Settings.ModSettings pre-sync (before NPC bar) complete");
+            }
+            catch (Exception ex)
+            {
+                StartupLogger.Log("VM_Mods → Settings.ModSettings pre-sync failed: " + ex.Message, "WARN");
+            }
+
             // --- STEP 2 ---
             StartupLogger.LogPhase("Settings Init - Step 2: NPC Selection Bar");
             splashReporter?.UpdateStep($"Step 2 of {totalSteps}: Initializing NPC selection bar...");
