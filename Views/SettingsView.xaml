@@ -288,94 +288,6 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <TextBlock Text="Default Wig Handling Mode:" Margin="0,5,0,2"/>
-                    <ComboBox ItemsSource="{Binding WigHandlingModes}"
-                              SelectedItem="{Binding SelectedDefaultWigHandlingMode, Mode=TwoWay}"
-                              MinWidth="120" HorizontalAlignment="Left"
-                              Margin="0,0,0,10">
-                        <ComboBox.ToolTip>
-                            <ToolTip>
-                                <TextBlock TextWrapping="Wrap" Width="340">
-                                    How detected hair-slot wig armors (in a mod's Default Outfits) are handled during
-                                    patching. Applies in Create and Patch mode and in SkyPatcher mode; individual mods
-                                    can override this in the Mods menu when a wig is detected. Antlers are controlled
-                                    separately (below).
-                                    <LineBreak/><LineBreak/>
-                                    ForwardToSkin: the wig becomes part of the NPC's skin (WornArmor), so it shows
-                                    no matter what outfit the NPC wears. Falls back to ForwardToOutfit if the
-                                    appearance plugin assigns no WornArmor.
-                                    <LineBreak/><LineBreak/>
-                                    ForwardToOutfit: the outfit the NPC actually wears in game is duplicated and
-                                    the wig added to the duplicate (no change if it already contains the wig).
-                                    <LineBreak/><LineBreak/>
-                                    None: the wig is treated like any other outfit element — forwarded only if
-                                    Include Outfits is selected.
-                                    <LineBreak/><LineBreak/>
-                                    ConvertToHeadParts: the wig armor is discarded entirely and the wig becomes the
-                                    NPC's hair — new head part records are generated and the wig mesh is baked into
-                                    the FaceGen file (HDT-SMP physics is preserved). Survives outfit changes and
-                                    helmets hide it like normal hair. Falls back to ForwardToSkin per NPC when the
-                                    bake would be unsafe (e.g. the appearance mod ships no baked hair to replace).
-                                </TextBlock>
-                            </ToolTip>
-                        </ComboBox.ToolTip>
-                    </ComboBox>
-
-                    <TextBlock Text="Default Antler Handling Mode:" Margin="0,5,0,2"/>
-                    <ComboBox ItemsSource="{Binding AntlerHandlingModes}"
-                              SelectedItem="{Binding SelectedDefaultAntlerHandlingMode, Mode=TwoWay}"
-                              MinWidth="120" HorizontalAlignment="Left"
-                              Margin="0,0,0,10">
-                        <ComboBox.ToolTip>
-                            <ToolTip>
-                                <TextBlock TextWrapping="Wrap" Width="340">
-                                    How detected antler armors/head parts are handled during patching. Applies in
-                                    Create and Patch mode and in SkyPatcher mode; individual mods can override this
-                                    in the Mods menu when an antler is detected.
-                                    <LineBreak/><LineBreak/>
-                                    ForwardToSkin: the antler becomes part of the NPC's skin (WornArmor), so it shows
-                                    no matter what outfit the NPC wears. Falls back to ForwardToOutfit if the
-                                    appearance plugin assigns no WornArmor. (The pre-split default — leave this to keep
-                                    existing behavior.)
-                                    <LineBreak/><LineBreak/>
-                                    ForwardToOutfit: the outfit the NPC actually wears in game is duplicated and
-                                    the antler added to the duplicate.
-                                    <LineBreak/><LineBreak/>
-                                    Remove: keep the antler OFF the NPC entirely — stripped from a forwarded outfit,
-                                    from the worn armor, and from the FaceGen (keyword-detected antler head parts).
-                                    Antlers baked into an outfit the load order owns (not forwarded) can't be reached.
-                                    <LineBreak/><LineBreak/>
-                                    None: the antler is treated like any other outfit element — forwarded only if
-                                    Include Outfits is selected.
-                                </TextBlock>
-                            </ToolTip>
-                        </ComboBox.ToolTip>
-                    </ComboBox>
-
-                    <TextBlock Text="Manual Antler Block Scope:" Margin="0,5,0,2"/>
-                    <ComboBox ItemsSource="{Binding AntlerBlockScopes}"
-                              SelectedValuePath="Key" DisplayMemberPath="Value"
-                              SelectedValue="{Binding SelectedAntlerBlockScope, Mode=TwoWay}"
-                              MinWidth="120" HorizontalAlignment="Left"
-                              Margin="0,0,0,10">
-                        <ComboBox.ToolTip>
-                            <ToolTip>
-                                <TextBlock TextWrapping="Wrap" Width="340">
-                                    How broadly a head part you manually designate as an antler (via the 3D preview's
-                                    "Set Antler Head Parts" button) is blocked. This controls scope only — a head part
-                                    is still removed only when its mod's Antler Handling Mode is Remove.
-                                    <LineBreak/><LineBreak/>
-                                    All NPCs (any mod): block that head part's EditorID wherever it appears (the default).
-                                    <LineBreak/><LineBreak/>
-                                    Same mod only: block it only in the mod it was designated in.
-                                    <LineBreak/><LineBreak/>
-                                    Specific NPC(s) only: block it only on the NPC(s) it was designated on, regardless
-                                    of which mod supplies that NPC's appearance.
-                                </TextBlock>
-                            </ToolTip>
-                        </ComboBox.ToolTip>
-                    </ComboBox>
-
                     <CheckBox Content="SkyPatcher Mode"
                               IsChecked="{Binding UseSkyPatcherMode, Mode=TwoWay}"
                               Margin="0,5,0,0"
@@ -413,6 +325,103 @@
                             <TextBlock Text="Max # NPCs" VerticalAlignment="Center" Margin="5,0,0,0"/>
                         </StackPanel>
                     </StackPanel>
+
+                    <!-- Head Editing: wig/antler handling defaults + the manual antler
+                         designation scope. Nested under Output Settings because these
+                         only affect what the patcher writes. -->
+                    <GroupBox Header="Head Editing" Margin="0,10,0,0" Padding="5">
+                        <StackPanel>
+                            <TextBlock Text="Default Wig Handling Mode:" Margin="0,0,0,2"/>
+                            <ComboBox ItemsSource="{Binding WigHandlingModes}"
+                                      SelectedValuePath="Key" DisplayMemberPath="Value"
+                                      SelectedValue="{Binding SelectedDefaultWigHandlingMode, Mode=TwoWay}"
+                                      MinWidth="120" HorizontalAlignment="Left"
+                                      Margin="0,0,0,10">
+                                <ComboBox.ToolTip>
+                                    <ToolTip>
+                                        <TextBlock TextWrapping="Wrap" Width="340">
+                                            How detected hair-slot wig armors (in a mod's Default Outfits) are handled during
+                                            patching. Applies in Create and Patch mode and in SkyPatcher mode; individual mods
+                                            can override this in the Mods menu when a wig is detected. Antlers are controlled
+                                            separately (below).
+                                            <LineBreak/><LineBreak/>
+                                            Forward To Skin: the wig becomes part of the NPC's skin (WornArmor), so it shows
+                                            no matter what outfit the NPC wears. Falls back to Forward To Outfit if the
+                                            appearance plugin assigns no WornArmor.
+                                            <LineBreak/><LineBreak/>
+                                            Forward To Outfit: the outfit the NPC actually wears in game is duplicated and
+                                            the wig added to the duplicate (no change if it already contains the wig).
+                                            <LineBreak/><LineBreak/>
+                                            Convert To Headparts (EXPERIMENTAL): the wig armor is discarded entirely and the
+                                            wig becomes the NPC's hair — new head part records are generated and the wig mesh
+                                            is baked into the FaceGen file (HDT-SMP physics is preserved). Survives outfit
+                                            changes and helmets hide it like normal hair. Falls back to Forward To Skin per
+                                            NPC when the bake would be unsafe (e.g. the appearance mod ships no baked hair
+                                            to replace).
+                                            <LineBreak/><LineBreak/>
+                                            None: the wig is treated like any other outfit element — forwarded only if
+                                            Include Outfits is selected.
+                                        </TextBlock>
+                                    </ToolTip>
+                                </ComboBox.ToolTip>
+                            </ComboBox>
+
+                            <TextBlock Text="Default Antler Handling Mode:" Margin="0,0,0,2"/>
+                            <ComboBox ItemsSource="{Binding AntlerHandlingModes}"
+                                      SelectedValuePath="Key" DisplayMemberPath="Value"
+                                      SelectedValue="{Binding SelectedDefaultAntlerHandlingMode, Mode=TwoWay}"
+                                      MinWidth="120" HorizontalAlignment="Left"
+                                      Margin="0,0,0,10">
+                                <ComboBox.ToolTip>
+                                    <ToolTip>
+                                        <TextBlock TextWrapping="Wrap" Width="340">
+                                            How detected antler armors/head parts are handled during patching. Applies in
+                                            Create and Patch mode and in SkyPatcher mode; individual mods can override this
+                                            in the Mods menu when an antler is detected.
+                                            <LineBreak/><LineBreak/>
+                                            Forward To Skin: the antler becomes part of the NPC's skin (WornArmor), so it shows
+                                            no matter what outfit the NPC wears. Falls back to Forward To Outfit if the
+                                            appearance plugin assigns no WornArmor. (The pre-split default — leave this to keep
+                                            existing behavior.)
+                                            <LineBreak/><LineBreak/>
+                                            Forward To Outfit: the outfit the NPC actually wears in game is duplicated and
+                                            the antler added to the duplicate.
+                                            <LineBreak/><LineBreak/>
+                                            Remove: keep the antler OFF the NPC entirely — stripped from a forwarded outfit,
+                                            from the worn armor, and from the FaceGen (keyword-detected antler head parts).
+                                            Antlers baked into an outfit the load order owns (not forwarded) can't be reached.
+                                            <LineBreak/><LineBreak/>
+                                            None: the antler is treated like any other outfit element — forwarded only if
+                                            Include Outfits is selected.
+                                        </TextBlock>
+                                    </ToolTip>
+                                </ComboBox.ToolTip>
+                            </ComboBox>
+
+                            <TextBlock Text="Manual Antler Block Scope:" Margin="0,0,0,2"/>
+                            <ComboBox ItemsSource="{Binding AntlerBlockScopes}"
+                                      SelectedValuePath="Key" DisplayMemberPath="Value"
+                                      SelectedValue="{Binding SelectedAntlerBlockScope, Mode=TwoWay}"
+                                      MinWidth="120" HorizontalAlignment="Left">
+                                <ComboBox.ToolTip>
+                                    <ToolTip>
+                                        <TextBlock TextWrapping="Wrap" Width="340">
+                                            How broadly a head part you manually designate as an antler (via the 3D preview's
+                                            "Set Antler Head Parts" button) is blocked. This controls scope only — a head part
+                                            is still removed only when its mod's Antler Handling Mode is Remove.
+                                            <LineBreak/><LineBreak/>
+                                            All NPCs (any mod): block that head part's EditorID wherever it appears (the default).
+                                            <LineBreak/><LineBreak/>
+                                            Same mod only: block it only in the mod it was designated in.
+                                            <LineBreak/><LineBreak/>
+                                            Specific NPC(s) only: block it only on the NPC(s) it was designated on, regardless
+                                            of which mod supplies that NPC's appearance.
+                                        </TextBlock>
+                                    </ToolTip>
+                                </ComboBox.ToolTip>
+                            </ComboBox>
+                        </StackPanel>
+                    </GroupBox>
                 </StackPanel>
             </GroupBox>
 

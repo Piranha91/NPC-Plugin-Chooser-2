@@ -30,3 +30,7 @@ NPC Plugin Chooser 2_azcom00l_wpftmp.csproj
 # locally by the harness configs in Docs/RenderReference.
 Docs/Screenshots/OutfitAudit/
 Docs/RenderReference/baseline/
+
+# Session handoff notes (machine-local working docs; kept out of the repo)
+docs/WigConvertToHeadParts-Handoff-2026-07.md
+docs/SkinWigConvert-Handoff-2026-07.md

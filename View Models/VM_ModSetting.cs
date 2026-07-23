@@ -143,15 +143,17 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     [Reactive] public bool IsWigHandlingVisible { get; set; }
     [Reactive] public bool IsAntlerHandlingVisible { get; set; }
 
+    // Friendly names in display order (None last; see HandlingModeDisplay), with
+    // the null-keyed "Default" entry first — matching the global Settings
+    // dropdowns so both menus read identically.
     public IEnumerable<KeyValuePair<WigHandlingMode?, string>> WigHandlingModes { get; }
         = new[]
             {
                 new KeyValuePair<WigHandlingMode?, string>(null, "Default")
             }
-            .Concat(Enum.GetValues(typeof(WigHandlingMode))
-                .Cast<WigHandlingMode>()
+            .Concat(HandlingModeDisplay.WigModesInDisplayOrder
                 .Select(e =>
-                    new KeyValuePair<WigHandlingMode?, string>(e, e.ToString())
+                    new KeyValuePair<WigHandlingMode?, string>(e, HandlingModeDisplay.ToDisplayString(e))
                 ));
 
     public IEnumerable<KeyValuePair<AntlerHandlingMode?, string>> AntlerHandlingModes { get; }
@@ -159,10 +161,9 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             {
                 new KeyValuePair<AntlerHandlingMode?, string>(null, "Default")
             }
-            .Concat(Enum.GetValues(typeof(AntlerHandlingMode))
-                .Cast<AntlerHandlingMode>()
+            .Concat(HandlingModeDisplay.AntlerModesInDisplayOrder
                 .Select(e =>
-                    new KeyValuePair<AntlerHandlingMode?, string>(e, e.ToString())
+                    new KeyValuePair<AntlerHandlingMode?, string>(e, HandlingModeDisplay.ToDisplayString(e))
                 ));
 
     // SelectedItem bridges — same null-key display fix as
@@ -693,6 +694,37 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             })
             .DisposeWith(_disposables);
         ;
+
+        // Convert To Headparts is experimental — confirm before enabling it for
+        // THIS mod (mirrors the override-handling-mode confirmation above).
+        // Buffer(2,1) yields (previous, current) pairs starting with the first
+        // change after the model load, and a decline reverts to the previous
+        // selection (usually "Default") rather than always to null.
+        this.WhenAnyValue(x => x.OverrideWigHandlingMode)
+            .Buffer(2, 1)
+            .Subscribe(pair =>
+            {
+                var previous = pair[0];
+                var current = pair[1];
+                if (current != WigHandlingMode.ConvertToHeadParts ||
+                    previous == WigHandlingMode.ConvertToHeadParts ||
+                    _isLoadingFromModel ||
+                    IsPerformingBatchAction ||
+                    _parentVm.SuppressPopupWarnings)
+                {
+                    return;
+                }
+
+                if (!ScrollableMessageBox.Confirm(HandlingModeDisplay.ConvertToHeadPartsWarning,
+                        HandlingModeDisplay.ConvertToHeadPartsWarningTitle, MessageBoxImage.Warning))
+                {
+                    // Revert on the UI thread after a short delay so the ComboBox
+                    // finishes processing the selection first.
+                    Observable.Timer(TimeSpan.FromMilliseconds(1), RxApp.MainThreadScheduler)
+                        .Subscribe(_ => { OverrideWigHandlingMode = previous; });
+                }
+            })
+            .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.IncludeOutfits)
             .Skip(1) // Skip the initial value loaded from the model

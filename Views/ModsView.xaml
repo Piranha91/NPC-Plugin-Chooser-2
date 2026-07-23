@@ -553,20 +553,20 @@
                                                              <LineBreak/><LineBreak/>
                                                              Default: Use the default setting from the Settings tab.
                                                              <LineBreak/>
-                                                             ForwardToSkin: transfer the wig into the NPC's skin (WornArmor) so it shows
-                                                             regardless of the outfit worn. Falls back to ForwardToOutfit if the appearance
+                                                             Forward To Skin: transfer the wig into the NPC's skin (WornArmor) so it shows
+                                                             regardless of the outfit worn. Falls back to Forward To Outfit if the appearance
                                                              plugin assigns no WornArmor.
                                                              <LineBreak/>
-                                                             ForwardToOutfit: duplicate the outfit the NPC actually wears in game and add
+                                                             Forward To Outfit: duplicate the outfit the NPC actually wears in game and add
                                                              the wig to the duplicate (no change if it already contains the wig).
+                                                             <LineBreak/>
+                                                             Convert To Headparts (EXPERIMENTAL): discard the wig armor and make the wig the
+                                                             NPC's hair — generated head part records + the wig mesh baked into the FaceGen
+                                                             file (HDT-SMP preserved; helmets hide it like normal hair). Falls back to
+                                                             Forward To Skin per NPC when the bake would be unsafe.
                                                              <LineBreak/>
                                                              None: the wig is treated like any other outfit element — forwarded only if
                                                              Include Outfits is selected.
-                                                             <LineBreak/>
-                                                             ConvertToHeadParts: discard the wig armor and make the wig the NPC's hair —
-                                                             generated head part records + the wig mesh baked into the FaceGen file
-                                                             (HDT-SMP preserved; helmets hide it like normal hair). Falls back to
-                                                             ForwardToSkin per NPC when the bake would be unsafe.
                                                          </TextBlock>
                                                      </ToolTip>
                                                  </TextBlock.ToolTip>
@@ -599,11 +599,11 @@
                                                              <LineBreak/><LineBreak/>
                                                              Default: Use the default setting from the Settings tab.
                                                              <LineBreak/>
-                                                             ForwardToSkin: transfer the antler into the NPC's skin (WornArmor) so it shows
-                                                             regardless of the outfit worn. Falls back to ForwardToOutfit if the appearance
+                                                             Forward To Skin: transfer the antler into the NPC's skin (WornArmor) so it shows
+                                                             regardless of the outfit worn. Falls back to Forward To Outfit if the appearance
                                                              plugin assigns no WornArmor.
                                                              <LineBreak/>
-                                                             ForwardToOutfit: duplicate the outfit the NPC actually wears in game and add
+                                                             Forward To Outfit: duplicate the outfit the NPC actually wears in game and add
                                                              the antler to the duplicate.
                                                              <LineBreak/>
                                                              Remove: keep the antler OFF the NPC entirely — stripped from a forwarded outfit,

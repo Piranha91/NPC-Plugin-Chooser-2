@@ -342,15 +342,22 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
     // Global default Wig / Antler Handling Modes (per-mod entries with "Default"
     // resolve to these; see Models.WigHandlingMode / Models.AntlerHandlingMode /
-    // Settings.GetEffectiveWigMode / GetEffectiveAntlerMode).
+    // Settings.GetEffectiveWigMode / GetEffectiveAntlerMode). The dropdown lists
+    // carry friendly display names in display order (None last — see
+    // HandlingModeDisplay); the XAML binds SelectedValue/Key like the antler
+    // block scope dropdown, so the persisted enum stays the source of truth.
     [Reactive] public WigHandlingMode SelectedDefaultWigHandlingMode { get; set; }
     [Reactive] public AntlerHandlingMode SelectedDefaultAntlerHandlingMode { get; set; }
 
-    public IEnumerable<WigHandlingMode> WigHandlingModes { get; } =
-        Enum.GetValues(typeof(WigHandlingMode)).Cast<WigHandlingMode>();
+    public IEnumerable<KeyValuePair<WigHandlingMode, string>> WigHandlingModes { get; } =
+        HandlingModeDisplay.WigModesInDisplayOrder
+            .Select(m => new KeyValuePair<WigHandlingMode, string>(m, HandlingModeDisplay.ToDisplayString(m)))
+            .ToList();
 
-    public IEnumerable<AntlerHandlingMode> AntlerHandlingModes { get; } =
-        Enum.GetValues(typeof(AntlerHandlingMode)).Cast<AntlerHandlingMode>();
+    public IEnumerable<KeyValuePair<AntlerHandlingMode, string>> AntlerHandlingModes { get; } =
+        HandlingModeDisplay.AntlerModesInDisplayOrder
+            .Select(m => new KeyValuePair<AntlerHandlingMode, string>(m, HandlingModeDisplay.ToDisplayString(m)))
+            .ToList();
 
     // Scope of manually-designated antler head-part blocking (Settings.ManualAntlerBlockScope):
     // how broadly a designated EditorID is treated as an antler across the load order.
@@ -1093,6 +1100,35 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedDefaultWigHandlingMode).Skip(1)
             .Subscribe(m => _model.DefaultWigHandlingMode = m).DisposeWith(_disposables);
+        // Convert To Headparts is experimental — confirm before enabling it as the
+        // GLOBAL default (mirrors the override-handling-mode confirmation). Buffer(2,1)
+        // yields (previous, current) pairs starting with the first user change (the
+        // model-loaded value is the first buffered emission, never a trigger), and a
+        // decline reverts to the previous selection rather than a hardcoded default.
+        this.WhenAnyValue(x => x.SelectedDefaultWigHandlingMode)
+            .Buffer(2, 1)
+            .Subscribe(pair =>
+            {
+                var previous = pair[0];
+                var current = pair[1];
+                if (current != WigHandlingMode.ConvertToHeadParts ||
+                    previous == WigHandlingMode.ConvertToHeadParts ||
+                    SuppressPopupWarnings)
+                {
+                    return;
+                }
+
+                if (!ScrollableMessageBox.Confirm(HandlingModeDisplay.ConvertToHeadPartsWarning,
+                        HandlingModeDisplay.ConvertToHeadPartsWarningTitle, MessageBoxImage.Warning))
+                {
+                    // Revert on the UI thread after a short delay so the ComboBox
+                    // finishes processing the selection first (same pattern as the
+                    // override-handling-mode revert).
+                    Observable.Timer(TimeSpan.FromMilliseconds(1), RxApp.MainThreadScheduler)
+                        .Subscribe(_ => { SelectedDefaultWigHandlingMode = previous; });
+                }
+            })
+            .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedDefaultAntlerHandlingMode).Skip(1)
             .Subscribe(m => _model.DefaultAntlerHandlingMode = m).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedAntlerBlockScope).Skip(1)
