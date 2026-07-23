@@ -36,10 +36,9 @@ public class UpdateHandler
         if (string.IsNullOrWhiteSpace(_settings.ProgramVersion))
         {
             Debug.WriteLine("New user or fresh settings, skipping update check.");
-            // Fresh settings have no stale analysis caches; mark flag-guarded one-shot
-            // migrations as already applied so they don't fire on the second launch.
-            _settings.RecordlessFaceGenRescanVersion = RecordlessFaceGenRescanTarget;
-            _settings.WigScanRescanVersion = WigScanRescanTarget;
+            // Fresh settings have no stale analysis caches, and every migration is now
+            // version-gated. A fresh user's ProgramVersion is stamped to current on first
+            // save, so none of the < X.Y.Z gates re-fire — nothing to pre-stamp here.
             return;
         }
 
@@ -60,7 +59,7 @@ public class UpdateHandler
             UpdateTo2_0_4_Initial();
         }
 
-        if (settingsVersion < "2.0.7" && !_settings.HasUpdatedTo2_0_7)
+        if (settingsVersion < "2.0.7")
         {
             UpdateTo2_0_7_Initial();
         }
@@ -79,13 +78,12 @@ public class UpdateHandler
             UpdateTo2_2_1_Initial();
         }
 
-        if (_settings.RecordlessFaceGenRescanVersion < RecordlessFaceGenRescanTarget)
+        // 2.2.3: re-run analysis on mods whose cached snapshot would otherwise hit and skip
+        // the current record-less-FaceGen and wig/antler detection. Both null every mod's
+        // LastKnownState; calling them together is idempotent.
+        if (settingsVersion < "2.2.3")
         {
             InvalidateAnalysisCachesForRecordlessFaceGenNpcs_Initial();
-        }
-
-        if (_settings.WigScanRescanVersion < WigScanRescanTarget)
-        {
             InvalidateAnalysisCachesForWigScan_Initial();
         }
 
@@ -135,7 +133,7 @@ public class UpdateHandler
             await UpdateTo2_0_5_Final(modsVm, splashReporter);
         }
 
-        if (settingsVersion < "2.0.9" && !_settings.HasUpdatedTo2_0_7_templates)
+        if (settingsVersion < "2.0.9")
         {
             await UpdateTo2_0_7_Final(modsVm, npcsVm, splashReporter);
         }
@@ -160,7 +158,7 @@ public class UpdateHandler
             await UpdateTo2_1_7_Final(modsVm, splashReporter);
         }
 
-        if (settingsVersion < "2.2.2" && !_settings.HasUpdatedTo2_2_2)
+        if (settingsVersion < "2.2.2")
         {
             await UpdateTo2_2_2_Final(modsVm, splashReporter);
         }
@@ -283,8 +281,8 @@ public class UpdateHandler
     /// <c>HasBaseGameAssetPaths</c>/<c>BaseGameAssetPathCount</c> flags that make the checkbox
     /// appear. Mods imported or refreshed after this migration are scanned by
     /// <see cref="VM_Mods.AnalyzeModSettingsAsync"/> / <see cref="VM_Mods.RefreshSingleModSettingAsync"/>
-    /// and never need it. Guarded by <c>Settings.HasUpdatedTo2_2_2</c> so dev builds still
-    /// versioned below 2.2.2 don't re-run the full-mod-list scan on every launch.
+    /// and never need it. Gated by <c>settingsVersion &lt; "2.2.2"</c>, so it runs once when
+    /// upgrading from an older release and never again after the version stamp advances.
     /// </summary>
     private async Task UpdateTo2_2_2_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
     {
@@ -318,8 +316,6 @@ public class UpdateHandler
             }).ToList();
             await Task.WhenAll(scanTasks);
         }
-
-        _settings.HasUpdatedTo2_2_2 = true;
 
         // Mirror the existing post-migration save pattern so the scan results are written back
         // through the model before the next throttled SaveSettings.
@@ -958,9 +954,6 @@ public class UpdateHandler
 
             Debug.WriteLine("Portrait Creator settings reset to 1.0.7 defaults.");
         }
-
-        // Always mark as updated, even if user declined the reset
-        _settings.HasUpdatedTo2_0_7 = true;
     }
 
     /// <summary>
@@ -1016,33 +1009,15 @@ public class UpdateHandler
     }
 
     /// <summary>
-    /// Target for <c>Settings.RecordlessFaceGenRescanVersion</c>. Bump this whenever the
-    /// record-less FaceGen NPC detection in RefreshNpcLists changes in a way that requires
-    /// re-analyzing mods whose cached snapshot is still valid. History: 1 = initial
-    /// detection; 2 = resource-only plugins' records now count as record-backed (v1 flooded
-    /// mods that list dependency folders, e.g. CotR overhauls, with spurious NPCs);
-    /// 3 = reworded the persisted FaceGenOnly notification tooltip.
-    /// </summary>
-    private const int RecordlessFaceGenRescanTarget = 3;
-
-    /// <summary>
-    /// Target for <c>Settings.WigScanRescanVersion</c>. Bump this whenever
-    /// <see cref="WigDetector"/>'s keywords or slot guard change in a way that
-    /// requires re-scanning mods whose cached analysis snapshot is still valid.
-    /// History: 1 = initial wig/antler detection; 2 = antler detection extended
-    /// to WornArmor-baked ArmorAddons and FaceGen head parts (new persisted
-    /// DetectedAntlerArmatures / DetectedAntlerHeadParts sets need populating).
-    /// </summary>
-    private const int WigScanRescanTarget = 2;
-
-    /// <summary>
-    /// One-time invalidation of every mod's analysis cache (LastKnownState) so
-    /// the next population pass runs <see cref="VM_ModSetting.ScanForWigs"/> on
-    /// existing mods. Without this, mods with a valid cached snapshot would
-    /// never get wig/antler detection and the Wig Handling Mode dropdown would
-    /// never appear for them. Guarded by <c>Settings.WigScanRescanVersion</c>
-    /// rather than a program version gate so dev builds don't re-run the full
-    /// re-analysis on every launch.
+    /// One-time (2.2.3) invalidation of every mod's analysis cache (LastKnownState)
+    /// so the next population pass runs <see cref="VM_ModSetting.ScanForWigs"/> on
+    /// existing mods. Without this, mods with a valid cached snapshot would never
+    /// get wig/antler detection and the Wig Handling Mode dropdown would never
+    /// appear for them. Gated by the settings <c>ProgramVersion</c> (&lt; 2.2.3),
+    /// consistent with the other one-time migrations. Covers both the initial
+    /// wig/antler detection and the later extension to WornArmor-baked ArmorAddons
+    /// and FaceGen head parts (persisted DetectedAntlerArmatures /
+    /// DetectedAntlerHeadParts), since both landed in the 2.2.3 cycle.
     /// </summary>
     private void InvalidateAnalysisCachesForWigScan_Initial()
     {
@@ -1051,19 +1026,20 @@ public class UpdateHandler
             modSetting.LastKnownState = null;
         }
 
-        _settings.WigScanRescanVersion = WigScanRescanTarget;
         Debug.WriteLine(
             "One-time analysis-cache invalidation applied so wig/antler detection runs on this launch.");
     }
 
     /// <summary>
-    /// One-time invalidation of every mod's analysis cache (LastKnownState) so the next
-    /// population pass re-runs RefreshNpcLists, which now detects FaceGen files shipped
+    /// One-time (&lt; 2.2.3) invalidation of every mod's analysis cache (LastKnownState) so
+    /// the next population pass re-runs RefreshNpcLists, which detects FaceGen files shipped
     /// without a plugin record inside plugin-backed mods and surfaces those NPCs as
     /// selectable FaceGen-only entries (with an issue-notification icon). Without this,
     /// mods with a valid cached snapshot would never recompute FaceGenOnlyNpcFormKeys.
-    /// Guarded by <c>Settings.RecordlessFaceGenRescanVersion</c> rather than a program
-    /// version gate so dev builds don't re-run the full re-analysis on every launch.
+    /// Gated by the settings <c>ProgramVersion</c> (&lt; 2.2.3), consistent with the other
+    /// one-time migrations. (Historically counter-guarded to force re-scans as the detection
+    /// evolved — resource-only records counting as record-backed, tooltip rewording — but all
+    /// of that predates 2.2.3, so a single version gate now covers every upgrader.)
     /// </summary>
     private void InvalidateAnalysisCachesForRecordlessFaceGenNpcs_Initial()
     {
@@ -1072,7 +1048,6 @@ public class UpdateHandler
             modSetting.LastKnownState = null;
         }
 
-        _settings.RecordlessFaceGenRescanVersion = RecordlessFaceGenRescanTarget;
         Debug.WriteLine(
             "One-time analysis-cache invalidation applied so record-less FaceGen NPCs get discovered on this launch.");
     }
@@ -1124,7 +1099,6 @@ public class UpdateHandler
             "Previous versions of NPC Plugin Chooser allowed you to select appearances for NPCs with invalid templates using the Select All From Mod batch action. This could result in bugged appearances in-game for those NPCs. Would you like to scan and automatically de-select these NPCs?";
         if (!ScrollableMessageBox.Confirm(messageStr, "2.0.7 Update"))
         {
-            _settings.HasUpdatedTo2_0_7_templates = true;
             return;
         }
 
@@ -1199,8 +1173,6 @@ public class UpdateHandler
         {
             Debug.WriteLine("No invalid NPC selections found during update check.");
         }
-
-        _settings.HasUpdatedTo2_0_7_templates = true;
     }
 
     private async Task UpdateTo2_1_1_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)

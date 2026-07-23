@@ -605,25 +605,14 @@ public class Settings
     public double MainWindowWidth { get; set; } = 1000; // Default to your design width
     public WindowState MainWindowState { get; set; } = WindowState.Normal;
     
-    // --- Manual Update Logging
-    public bool HasUpdatedTo2_0_7 { get; set; } = false;
-    public bool HasUpdatedTo2_0_7_templates { get; set; } = false;
-    // One-shot guard for the 2.2.2 base-game-asset scan migration, so dev builds still
-    // versioned below 2.2.2 don't re-run the full-mod-list scan on every launch.
-    public bool HasUpdatedTo2_2_2 { get; set; } = false;
-    // Guard for the record-less FaceGen NPC rescan: when below
-    // UpdateHandler.RecordlessFaceGenRescanTarget, every mod's analysis cache
-    // (LastKnownState) is invalidated once so RefreshNpcLists re-discovers FaceGen files
-    // shipped without plugin records inside plugin-backed mods. Versioned (not a bool) so
-    // a revision to the detection logic can force another rescan by bumping the target.
-    public int RecordlessFaceGenRescanVersion { get; set; } = 0;
-    // Guard for the wig/antler detection rescan: when below
-    // UpdateHandler.WigScanRescanTarget, every mod's analysis cache (LastKnownState)
-    // is invalidated once so the next population pass runs ScanForWigs on mods whose
-    // snapshot would otherwise hit and skip detection forever. Versioned (not a bool)
-    // so a revision to the detection keywords/slot guard can force another rescan.
-    public int WigScanRescanVersion { get; set; } = 0;
-    
+    // --- Update migration bookkeeping ---
+    // The former one-shot flags/counters here — HasUpdatedTo2_0_7, HasUpdatedTo2_0_7_templates,
+    // HasUpdatedTo2_2_2, RecordlessFaceGenRescanVersion, WigScanRescanVersion — were removed in
+    // favor of gating every migration on the settings ProgramVersion (< X.Y.Z) in UpdateHandler,
+    // matching the other version-gated migrations. Any leftover property of those names in an
+    // existing Settings.json is harmlessly ignored on load (Newtonsoft defaults to
+    // MissingMemberHandling.Ignore), so removing them neither throws nor wipes settings.
+
     // --- Troubleshooting / Logging ---
     public bool LogActivity { get; set; } = false;
     public bool LogStartup { get; set; } = false;

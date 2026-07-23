@@ -22,8 +22,8 @@ namespace NPC_Plugin_Chooser_2.Tests.Harness;
 /// NOTE: All *_Final steps + MaybeMoveLegacyMugshotFiles_Initial not covered: they
 ///   require VM_Mods / VM_NpcSelectionBar / PluginProvider / EnvironmentStateProvider
 ///   (a live load order) and/or show dialogs — those belong to the integration wave.
-///   Exception: the GATE around <c>UpdateTo2_2_2_Final</c> (version + one-shot
-///   <c>HasUpdatedTo2_2_2</c> flag) is exercised below via null-service probes.
+///   Exception: the version GATE around <c>UpdateTo2_2_2_Final</c> is exercised below via
+///   null-service probes.
 /// </summary>
 public class UpdateHandlerMigrationTests
 {
@@ -171,7 +171,7 @@ public class UpdateHandlerMigrationTests
     // shouldReset stays true and no ScrollableMessageBox.Confirm is shown.
 
     [Fact]
-    public void UpdateTo2_0_7_Initial_ResetsCoreFields_AndMarksFlag()
+    public void UpdateTo2_0_7_Initial_ResetsCoreFields()
     {
         var s = new Settings();
         s.UsePortraitCreatorFallback.Should().BeFalse("the dialog-free path requires this default");
@@ -183,7 +183,6 @@ public class UpdateHandlerMigrationTests
         s.CamYaw = 12.5f;
         s.SelectedCameraMode = PortraitCameraMode.Fixed;
         s.EnableNormalMapHack = false;
-        s.HasUpdatedTo2_0_7 = false;
 
         Reflect.InvokeVoid(Make(s), "UpdateTo2_0_7_Initial");
 
@@ -193,7 +192,6 @@ public class UpdateHandlerMigrationTests
         s.CamYaw.Should().Be(90.0f);
         s.SelectedCameraMode.Should().Be(PortraitCameraMode.Portrait);
         s.EnableNormalMapHack.Should().BeTrue();
-        s.HasUpdatedTo2_0_7.Should().BeTrue();
     }
 
     [Fact]
@@ -233,17 +231,6 @@ public class UpdateHandlerMigrationTests
     }
 
     [Fact]
-    public void UpdateTo2_0_7_Initial_AlwaysMarksFlag_EvenWhenAlreadyTrue()
-    {
-        var s = new Settings();
-        s.HasUpdatedTo2_0_7 = true;
-
-        Reflect.InvokeVoid(Make(s), "UpdateTo2_0_7_Initial");
-
-        s.HasUpdatedTo2_0_7.Should().BeTrue();
-    }
-
-    [Fact]
     public void UpdateTo2_0_7_Initial_DoesNotTouchSubsurfaceStrength()
     {
         // The 2.0.7 reset is orthogonal to the later SSS migrations.
@@ -266,7 +253,6 @@ public class UpdateHandlerMigrationTests
         // Seed values the various migrations WOULD overwrite if they ran, to prove the
         // new-user fast path skips all of them (no dialogs, no DI).
         s.InternalMugshot.SubsurfaceStrength = 2.0f;
-        s.HasUpdatedTo2_0_7 = false;
         s.VerticalFOV = 99f;
 
         // splashReporter is optional (defaults to null); empty version returns before any
@@ -274,7 +260,6 @@ public class UpdateHandlerMigrationTests
         await Make(s).InitialCheckForUpdatesAndPatch();
 
         s.InternalMugshot.SubsurfaceStrength.Should().Be(2.0f, "no migration ran for a new user");
-        s.HasUpdatedTo2_0_7.Should().BeFalse();
         s.VerticalFOV.Should().Be(99f);
     }
 
@@ -307,39 +292,27 @@ public class UpdateHandlerMigrationTests
     // so whether the null modsVm gets dereferenced tells us whether the 2.2.2 gate opened.
 
     [Fact]
-    public async Task FinalCheck_From2_2_1_FlagAlreadySet_SkipsBaseGameScan()
-    {
-        var s = new Settings { ProgramVersion = "2.2.1", HasUpdatedTo2_2_2 = true };
-
-        // Gate closed by the one-shot flag: completes without touching the null services.
-        await Make(s).FinalCheckForUpdatesAndPatch(
-            npcsVm: null!, modsVm: null!, pluginProvider: null!, aux: null!,
-            environmentStateProvider: null!, splashReporter: null);
-
-        s.HasUpdatedTo2_2_2.Should().BeTrue();
-    }
-
-    [Fact]
     public async Task FinalCheck_From2_2_2_OrNewer_SkipsBaseGameScan()
     {
-        var s = new Settings { ProgramVersion = "2.2.2", HasUpdatedTo2_2_2 = false };
+        var s = new Settings { ProgramVersion = "2.2.2" };
 
-        await Make(s).FinalCheckForUpdatesAndPatch(
+        // Gate closed by version (2.2.2 is not < 2.2.2): the migration doesn't run, so the
+        // null services are never dereferenced.
+        var act = () => Make(s).FinalCheckForUpdatesAndPatch(
             npcsVm: null!, modsVm: null!, pluginProvider: null!, aux: null!,
             environmentStateProvider: null!, splashReporter: null);
 
-        // Gate closed by version: the migration didn't run, so the flag stays false.
-        s.HasUpdatedTo2_2_2.Should().BeFalse();
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
-    public async Task FinalCheck_From2_2_1_WithoutFlag_OpensBaseGameScanGate()
+    public async Task FinalCheck_From2_2_1_OpensBaseGameScanGate()
     {
-        var s = new Settings { ProgramVersion = "2.2.1", HasUpdatedTo2_2_2 = false };
+        var s = new Settings { ProgramVersion = "2.2.1" };
 
-        // Gate-open probe: UpdateTo2_2_2_Final immediately enumerates modsVm.AllModSettings,
-        // so the null modsVm faulting proves the gate fired (the real scan belongs to the
-        // integration wave).
+        // Gate-open probe: with the version below 2.2.2, UpdateTo2_2_2_Final immediately
+        // enumerates modsVm.AllModSettings, so the null modsVm faulting proves the gate fired
+        // (the real scan belongs to the integration wave).
         var act = () => Make(s).FinalCheckForUpdatesAndPatch(
             npcsVm: null!, modsVm: null!, pluginProvider: null!, aux: null!,
             environmentStateProvider: null!, splashReporter: null);
