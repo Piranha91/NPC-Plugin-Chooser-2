@@ -745,15 +745,21 @@ public class OutputValidator
         return false;
     }
 
-    /// <summary>Mirrors <see cref="WigForwarder"/>'s ForwardToSkin hair-removal
-    /// applicability for validation: active wig mode, a donor WNAM to forward
-    /// into, and a detected (hair-slot) wig among the donor outfit's items.</summary>
+    /// <summary>Mirrors the wig handling's hair-removal applicability for
+    /// validation: ForwardToSkin (needs a donor WNAM to forward into) replaces
+    /// the donor hair with the modeless bald record, and ConvertToHeadParts
+    /// (no WNAM requirement) replaces it with the minted wig parent — both are
+    /// Hair-type on the output side, so excluding Hair-type parts from BOTH
+    /// sides of the comparison covers either replacement (and the converter's
+    /// per-NPC ForwardToSkin fallback, which this record-level check cannot
+    /// distinguish).</summary>
     private bool WigForwardingRemovesHair(INpcGetter donor, ModSetting sourceMod,
         ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
     {
-        if (_settings.GetEffectiveWigMode(sourceMod) != WigHandlingMode.ForwardToSkin) return false;
+        var wigMode = _settings.GetEffectiveWigMode(sourceMod);
+        if (wigMode != WigHandlingMode.ForwardToSkin && wigMode != WigHandlingMode.ConvertToHeadParts) return false;
         if (sourceMod.DetectedWigArmors.Count == 0) return false;
-        if (donor.WornArmor.IsNull) return false;
+        if (wigMode == WigHandlingMode.ForwardToSkin && donor.WornArmor.IsNull) return false;
         if (donor.DefaultOutfit == null || donor.DefaultOutfit.IsNull) return false;
 
         IOutfitGetter? outfit =

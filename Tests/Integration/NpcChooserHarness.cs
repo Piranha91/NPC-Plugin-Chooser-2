@@ -38,6 +38,7 @@ public sealed class NpcChooserHarness : IDisposable
         builder.RegisterType<AssetHandler>().AsSelf().SingleInstance();
         builder.RegisterType<BackEnd.OutfitDistribution.OutfitDisplayResolver>().AsSelf().SingleInstance();
         builder.RegisterType<WigForwarder>().AsSelf().SingleInstance();
+        builder.RegisterType<HeadPartWigConverter>().AsSelf().SingleInstance();
         builder.RegisterType<Validator>().AsSelf().SingleInstance();
         builder.RegisterType<Patcher>().AsSelf().SingleInstance();
         // AssetHandler depends on Lazy<VM_Run>; VM_Run is a heavy UI VM not registered here.

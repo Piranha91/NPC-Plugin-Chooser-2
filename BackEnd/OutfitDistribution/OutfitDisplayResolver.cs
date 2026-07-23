@@ -464,14 +464,16 @@ public class OutfitDisplayResolver
         var sb = new StringBuilder();
 
         // Wig segment — content-based (mode + sorted keys) so adding/removing a wig
-        // re-stales too. ForwardToSkin depicts regardless of the outfit toggle; a
+        // re-stales too. ForwardToSkin and ConvertToHeadParts depict regardless of
+        // the outfit toggle (post-patch the wig is skin / baked FaceGen hair); a
         // ForwardToOutfit wig (incl. the no-WNAM fallback) only with the outfit on.
         if (wigMode != WigHandlingMode.None && wigKeys.Count > 0)
         {
             var effWig = (wigMode == WigHandlingMode.ForwardToSkin && !hasWnam)
                 ? WigHandlingMode.ForwardToOutfit
                 : wigMode;
-            if (effWig == WigHandlingMode.ForwardToSkin || includeDefaultOutfitRenderFlag)
+            if (effWig == WigHandlingMode.ForwardToSkin || effWig == WigHandlingMode.ConvertToHeadParts ||
+                includeDefaultOutfitRenderFlag)
             {
                 sb.Append("+wig[" + effWig + ":" + string.Join(",", wigKeys) + "]");
             }

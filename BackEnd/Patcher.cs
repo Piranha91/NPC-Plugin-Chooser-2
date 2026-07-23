@@ -30,6 +30,7 @@ public class Patcher : OptionalUIModule
     private readonly BsaHandler _bsaHandler;
     private readonly SkyPatcherInterface _skyPatcherInterface;
     private readonly WigForwarder _wigForwarder;
+    private readonly HeadPartWigConverter _headPartWigConverter;
 
     // FaceGen NIFs that need their baked hair shape(s) stripped after the
     // asset copy completes (ForwardToSkin wig handling; see WigForwarder).
@@ -37,6 +38,16 @@ public class Patcher : OptionalUIModule
     // MonitorAndWaitForAllTasks.
     private readonly System.Collections.Concurrent.ConcurrentBag<(string NifPath, HashSet<string> ShapeNames, string NpcIdentifier)>
         _pendingWigNifEdits = new();
+
+    // FaceGen NIFs that need the wig scene BAKED in after the asset copy
+    // completes (ConvertToHeadParts wig handling; see HeadPartWigConverter).
+    // The bake itself strips the donor hair shapes (the strip list rides in the
+    // Result), so these NPCs are deliberately NOT also queued through
+    // _pendingWigNifEdits for hair. Drained destructively (TryTake) because
+    // RunPatchingLogic runs once per output plugin and re-baking an
+    // already-baked FaceGen would duplicate the wig shapes.
+    private readonly System.Collections.Concurrent.ConcurrentBag<(string NifPath, HeadPartWigConverter.Result Convert, string NpcIdentifier)>
+        _pendingWigBakes = new();
 
     private Dictionary<string, ModSetting> _modSettingsMap;
     private string _currentRunOutputAssetPath = string.Empty;
@@ -60,7 +71,7 @@ public class Patcher : OptionalUIModule
     public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator,
         AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher,
         PluginProvider pluginProvider, BsaHandler bsaHandler, SkyPatcherInterface skyPatcherInterface,
-        WigForwarder wigForwarder)
+        WigForwarder wigForwarder, HeadPartWigConverter headPartWigConverter)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -73,6 +84,7 @@ public class Patcher : OptionalUIModule
         _bsaHandler = bsaHandler;
         _skyPatcherInterface = skyPatcherInterface;
         _wigForwarder = wigForwarder;
+        _headPartWigConverter = headPartWigConverter;
     }
 
     public async Task PreInitializationLogicAsync()
@@ -313,6 +325,8 @@ public class Patcher : OptionalUIModule
                 _patchedRecordTypes.Clear();
                 _recordHandler.ResetMergedRecordTracking();
                 _pendingWigNifEdits.Clear();
+                _pendingWigBakes.Clear();
+                _headPartWigConverter.ResetSession(); // collision guards + temp BSA extractions from the last run
                 RecordProvenanceDiag.Reset(); // opt-in per-run record provenance report (no-op unless enabled)
             }
 
@@ -450,6 +464,7 @@ public class Patcher : OptionalUIModule
                             _recordHandler.PrimeLinkCachesFor(modKeysForBatch, currentModFolderPaths);
                             _recordHandler.ResetMapping();
                             _wigForwarder.ResetCache();
+                            _headPartWigConverter.ResetCache();
                             _bsaHandler.OpenBsaReadersFor(currentModSetting, _settings.SkyrimRelease.ToGameRelease());
                         }
                         else
@@ -590,6 +605,7 @@ public class Patcher : OptionalUIModule
 
                             Npc? patchNpc = null;
                             WigForwarder.Result? wigForward = null;
+                            HeadPartWigConverter.Result? wigConvert = null;
                             var mergeInDependencyRecords = appearanceModSetting?.MergeInDependencyRecords ?? false;
                             var recordOverrideHandlingMode = appearanceModSetting?.ModRecordOverrideHandlingMode ??
                                                              _settings.DefaultRecordOverrideHandlingMode;
@@ -714,12 +730,38 @@ public class Patcher : OptionalUIModule
                                 // (whose non-merge path would otherwise reset them). Inert unless
                                 // the mod has detected wigs and the output mode activates it
                                 // (GetEffectiveWigMode).
+                                //
+                                // ConvertToHeadParts routes the wig class through the converter
+                                // instead (minted HDPT records + post-copy FaceGen bake); the
+                                // forwarder still runs after it for antler handling and to STRIP
+                                // the converted wig from any forwarded outfit. A converter
+                                // decline (bald donor, unresolvable wig NIF, …) downgrades that
+                                // NPC to the proven ForwardToSkin flow via wigModeOverride.
                                 if (!isFaceGenOnly && appearanceModSetting != null &&
                                     _settings.WigOrAntlerHandlingActive(appearanceModSetting))
                                 {
+                                    WigHandlingMode? wigModeOverride = null;
+                                    if (_settings.GetEffectiveWigMode(appearanceModSetting) ==
+                                        WigHandlingMode.ConvertToHeadParts)
+                                    {
+                                        wigConvert = _headPartWigConverter.Apply(appearanceNpcRecord,
+                                            appearanceModSetting, currentModFolderPaths, npcIdentifier,
+                                            AppendLog, out bool fallBackToForwardToSkin);
+                                        if (wigConvert != null)
+                                        {
+                                            RegisterRecordOwnerships(npcFormKey, wigConvert.MintedRecords,
+                                                npcContributions);
+                                        }
+                                        else if (fallBackToForwardToSkin)
+                                        {
+                                            wigModeOverride = WigHandlingMode.ForwardToSkin;
+                                        }
+                                    }
+
                                     wigForward = _wigForwarder.Apply(npcFormKey, appearanceNpcRecord,
                                         appearanceModSetting, appearanceModKey.Value, currentModFolderPaths,
-                                        mergeInDependencyRecords, includeOutfit, npcIdentifier, AppendLog);
+                                        mergeInDependencyRecords, includeOutfit, npcIdentifier, AppendLog,
+                                        wigModeOverride);
                                     if (wigForward != null)
                                     {
                                         RegisterRecordOwnerships(npcFormKey, wigForward.MergedRecords,
@@ -776,6 +818,15 @@ public class Patcher : OptionalUIModule
                                         if (wigForward != null)
                                         {
                                             _wigForwarder.FinalizeNpcRecord(wigForward, patchNpc,
+                                                npcIdentifier, AppendLog);
+                                        }
+
+                                        // ConvertToHeadParts: replace the copied hair head-part
+                                        // links with the minted wig parent (no bald back-fill —
+                                        // the parent IS the Hair part).
+                                        if (wigConvert != null)
+                                        {
+                                            _headPartWigConverter.FinalizeNpcRecord(wigConvert, patchNpc,
                                                 npcIdentifier, AppendLog);
                                         }
 
@@ -1080,6 +1131,15 @@ public class Patcher : OptionalUIModule
                                                 npcIdentifier, AppendLog);
                                         }
 
+                                        // ConvertToHeadParts on the SkyPatcher surrogate: swap the
+                                        // donor hair links for the minted wig parent BEFORE the
+                                        // merge walker, same as the forwarder's hair removal above.
+                                        if (wigConvert != null)
+                                        {
+                                            _headPartWigConverter.FinalizeNpcRecord(wigConvert, patchNpc,
+                                                npcIdentifier, AppendLog);
+                                        }
+
                                         if (mergeInDependencyRecords)
                                         {
                                             List<string> mergeInExceptions = new();
@@ -1300,8 +1360,27 @@ public class Patcher : OptionalUIModule
                                         Path.Combine(_currentRunOutputAssetPath, wigFaceGenNifRelPath),
                                         wigForward.FaceGenShapeNamesToStrip, npcIdentifier));
                                 }
-                                
+
                                 var (_, faceTintPath) = Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, true);
+
+                                // ConvertToHeadParts: schedule the wig NIF (HDPT Model target,
+                                // whose copy also pulls its textures + original physics XML) and
+                                // the rewritten physics XML, then queue the post-copy bake into
+                                // this NPC's copied FaceGen. The bake strips the donor hair
+                                // shapes itself (the strip list rides in wigConvert), so nothing
+                                // is queued through _pendingWigNifEdits for the hair.
+                                if (wigConvert != null)
+                                {
+                                    _assetHandler.ScheduleWigConversionAssets(wigConvert, appearanceModSetting,
+                                        _currentRunOutputAssetPath, faceTintPath, npcFormKey,
+                                        appearanceNpcRecord, npcIdentifier);
+
+                                    var (bakeFaceGenRelPath, _) =
+                                        Auxilliary.GetFaceGenSubPathStrings(patchNpc.FormKey, true);
+                                    _pendingWigBakes.Add((
+                                        Path.Combine(_currentRunOutputAssetPath, bakeFaceGenRelPath),
+                                        wigConvert, npcIdentifier));
+                                }
                                 
                                 await _assetHandler.ScheduleCopyAssetLinkFiles(assetLinks, appearanceModSetting,
                                     _currentRunOutputAssetPath, faceTintPath,
@@ -1360,6 +1439,8 @@ public class Patcher : OptionalUIModule
                     _assetHandler.LogTrueCopyFailures();
 
                     ApplyPendingWigNifEdits();
+
+                    ApplyPendingWigBakes();
 
                     // Opt-in asset-provenance report (AssetProvenance.csv): why each file was copied
                     // and which NPCs/mods/records pulled it in. No-op unless enabled (Settings
@@ -1699,6 +1780,70 @@ public class Patcher : OptionalUIModule
             catch (Exception ex)
             {
                 AppendLog($"  ERROR stripping baked hair/antler for {npcIdentifier} ({nifPath}): {ex.Message}",
+                    true, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Bakes the wig scene into each queued NPC's copied FaceGen NIF
+    /// (ConvertToHeadParts wig handling; see <see cref="HeadPartWigConverter"/> /
+    /// <see cref="NifHandler.BakeWigIntoFaceGen"/>). Runs after all asset
+    /// copy/extraction tasks have finished so the destination FaceGen files
+    /// exist, and after <see cref="ApplyPendingWigNifEdits"/> (an NPC can carry
+    /// both: an antler strip there and the wig bake here — disjoint shape sets,
+    /// but one load/save each keeps them independent). Drains destructively:
+    /// RunPatchingLogic is invoked once per output plugin, and re-baking an
+    /// already-baked file would duplicate the wig shapes. A failed bake is a
+    /// dark-face risk (the minted records expect the baked shapes), so it is
+    /// logged as an ERROR with the recovery options.
+    /// </summary>
+    private void ApplyPendingWigBakes()
+    {
+        if (_pendingWigBakes.IsEmpty) return;
+
+        AppendLog($"Baking wig scenes into {_pendingWigBakes.Count} FaceGen NIF(s) (wig ConvertToHeadParts)...",
+            false, true);
+        while (_pendingWigBakes.TryTake(out var pending))
+        {
+            var (nifPath, convert, npcIdentifier) = pending;
+            try
+            {
+                if (!File.Exists(nifPath))
+                {
+                    AppendLog($"  ERROR: {npcIdentifier}: FaceGen NIF not found for wig bake: {nifPath}. " +
+                              $"The minted head parts ('{convert.ParentEditorId}' + extras) expect baked shapes — " +
+                              "this NPC will dark-face in game. Ensure the appearance mod provides FaceGen for it, " +
+                              "or switch the mod's Wig Handling Mode to ForwardToSkin.", true, true);
+                    continue;
+                }
+
+                int baked = NifHandler.BakeWigIntoFaceGen(new NifHandler.WigBakeInstruction(
+                        nifPath,
+                        convert.WigNifSourcePath,
+                        convert.ShapeRenames,
+                        convert.FaceGenShapeNamesToStrip,
+                        convert.PhysicsXmlNewDataRelPath),
+                    msg => AppendLog("    " + msg, false, false));
+
+                if (baked > 0)
+                {
+                    AppendLog($"  {npcIdentifier}: baked {baked} wig shape(s) from " +
+                              $"{Path.GetFileName(convert.WigNifSourcePath)} into {Path.GetFileName(nifPath)} " +
+                              $"(donor hair [{string.Join(", ", convert.FaceGenShapeNamesToStrip)}] stripped).",
+                        false, true);
+                }
+                else
+                {
+                    AppendLog($"  ERROR: {npcIdentifier}: wig bake produced no shapes for {Path.GetFileName(nifPath)} " +
+                              "(file left untouched). The minted head parts expect baked shapes — this NPC will " +
+                              "dark-face in game. Re-run with the mod's Wig Handling Mode set to ForwardToSkin, " +
+                              "or report this wig so the converter can be taught to handle it.", true, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"  ERROR baking wig for {npcIdentifier} ({nifPath}): {ExceptionLogger.GetExceptionStack(ex)}",
                     true, true);
             }
         }

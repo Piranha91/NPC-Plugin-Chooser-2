@@ -519,8 +519,10 @@ public class AssetHandler : OptionalUIModule
     /// Normalizes a physics-XML reference (as stored in an NiStringExtraData or an XML include) into a
     /// Data-relative path suitable for <see cref="FindAssetSource"/>. Handles forward slashes, a leading
     /// "...\data\" prefix, and a bare filename (resolved relative to the analyzed NIF/XML's own folder).
+    /// Internal (not private) so <see cref="HeadPartWigConverter"/> resolves a wig NIF's physics
+    /// reference through the exact same rules.
     /// </summary>
-    private static bool TryNormalizePhysicsXmlPath(string rawValue, string analyzedFilePath, out string xmlRelPath)
+    internal static bool TryNormalizePhysicsXmlPath(string rawValue, string analyzedFilePath, out string xmlRelPath)
     {
         xmlRelPath = string.Empty;
         if (string.IsNullOrWhiteSpace(rawValue)) return false;
@@ -753,6 +755,77 @@ public class AssetHandler : OptionalUIModule
         }
     }
     
+    /// <summary>
+    /// Schedules the file-side outputs of one wig→HeadPart conversion (see
+    /// <see cref="HeadPartWigConverter"/>):
+    /// <list type="bullet">
+    /// <item>The wig NIF at its original data-relative path — it is the minted
+    /// HDPT records' Model target. The normal copy pipeline post-processes it,
+    /// which also scans it for textures and schedules its ORIGINAL physics XML —
+    /// necessary because the FaceGen texture scan runs on the pre-bake copy and
+    /// never sees the wig's textures.</item>
+    /// <item>The REWRITTEN physics XML (shape entries renamed to the minted
+    /// HeadPart EditorIDs, see <see cref="SmpXmlRewriter"/>) at the NPC2-owned
+    /// path the baked FaceGen's physics extra-data points at, plus any sibling
+    /// XML includes of the source config (same follow-up
+    /// <see cref="PostProcessSmpXmlIncludes"/> the plain XML copy path runs).</item>
+    /// </list>
+    /// Deduped per (file, mod) through the same task cache as every other asset,
+    /// so NPCs sharing a wig schedule the work once and
+    /// <see cref="MonitorAndWaitForAllTasks"/> waits for it.
+    /// </summary>
+    public void ScheduleWigConversionAssets(HeadPartWigConverter.Result convertResult,
+        ModSetting appearanceModSetting, string outputBasePath, string faceTintSubPath,
+        FormKey targetNpcFormKey, INpcGetter appearanceNpcRecord, string npcIdentifier)
+    {
+        var ctx = new AssetRequestContext(npcIdentifier, targetNpcFormKey, appearanceNpcRecord.FormKey,
+            appearanceNpcRecord.EditorID, "WigConvert");
+
+        // 1. The wig NIF (HDPT Model target). PostProcessCopiedFile handles the
+        //    texture scan + original-physics-XML follow-up when CopyAssets is on.
+        _ = RequestAssetCopyAsync(convertResult.WigNifDataRelPath, appearanceModSetting, outputBasePath,
+            faceTintSubPath, ctx);
+
+        // 2. The rewritten physics XML (SMP wigs only).
+        if (convertResult.PhysicsXmlSourcePath == null || convertResult.PhysicsXmlNewDataRelPath == null)
+        {
+            return;
+        }
+
+        string destRel = convertResult.PhysicsXmlNewDataRelPath;
+        string sourcePath = convertResult.PhysicsXmlSourcePath;
+        var renames = new Dictionary<string, string>(convertResult.ShapeRenames, StringComparer.OrdinalIgnoreCase);
+        var xmlCtx = ctx.WithReason("WigConvert", Path.GetFileName(sourcePath));
+
+        // Reference recorded per NPC (before the dedup) so the provenance report
+        // lists every NPC the wig serves; the transform itself runs once.
+        AssetProvenanceDiag.RecordReference(destRel, appearanceModSetting.DisplayName, xmlCtx);
+
+        string cacheKey = $"{destRel}|{appearanceModSetting.DisplayName}";
+        _processedAssetTasks.GetOrAdd(cacheKey, _ => Task.Run(() =>
+        {
+            try
+            {
+                string destPath = Path.Combine(outputBasePath, destRel);
+                int renamed = SmpXmlRewriter.RewriteShapeNames(sourcePath, destPath, renames);
+                AssetProvenanceDiag.RecordSource(destRel, appearanceModSetting.DisplayName,
+                    "Generated", sourcePath);
+                AppendLog($"      Wig conversion: wrote rewritten physics XML '{destRel}' " +
+                          $"({renamed} shape entr{(renamed == 1 ? "y" : "ies")} renamed).", false, false);
+
+                // Sibling includes of the SOURCE config (the rewrite only touches
+                // shape names, so the include references are unchanged) — copied
+                // at their original rel paths like the plain XML copy path does.
+                PostProcessSmpXmlIncludes(sourcePath, appearanceModSetting, outputBasePath, faceTintSubPath, xmlCtx);
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"      ERROR writing rewritten wig physics XML '{destRel}': " +
+                          $"{ExceptionLogger.GetExceptionStack(ex)}", true, true);
+            }
+        }));
+    }
+
     /// <summary>
     /// Waits for all scheduled asset operations to finish while providing periodic status updates.
     /// </summary>

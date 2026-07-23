@@ -240,6 +240,7 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<RecordHandler>().AsSelf().SingleInstance();
             builder.RegisterType<RecordDeltaPatcher>().AsSelf().SingleInstance();
             builder.RegisterType<WigForwarder>().AsSelf().SingleInstance();
+            builder.RegisterType<HeadPartWigConverter>().AsSelf().SingleInstance();
             builder.RegisterType<NpcConsistencyProvider>().AsSelf().SingleInstance();
             builder.RegisterType<NpcDescriptionProvider>().AsSelf().SingleInstance();
             builder.RegisterType<PluginProvider>().AsSelf().SingleInstance();

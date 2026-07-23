@@ -562,6 +562,11 @@
                                                              <LineBreak/>
                                                              None: the wig is treated like any other outfit element — forwarded only if
                                                              Include Outfits is selected.
+                                                             <LineBreak/>
+                                                             ConvertToHeadParts: discard the wig armor and make the wig the NPC's hair —
+                                                             generated head part records + the wig mesh baked into the FaceGen file
+                                                             (HDT-SMP preserved; helmets hide it like normal hair). Falls back to
+                                                             ForwardToSkin per NPC when the bake would be unsafe.
                                                          </TextBlock>
                                                      </ToolTip>
                                                  </TextBlock.ToolTip>

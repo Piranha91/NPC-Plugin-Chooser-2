@@ -203,6 +203,36 @@ public class NifHandler
     }
 
     /// <summary>
+    /// Whether any of the named shapes in a NIF carries dismember partition data
+    /// (<c>GetShapePartitions</c> succeeds). Mirrors the partition-template
+    /// harvest at the top of <see cref="BakeWigIntoFaceGen"/>: the bake
+    /// transplants the donor hair's BSDismemberSkinInstance partition entry onto
+    /// the wig shapes, and without one the baked shapes keep their source
+    /// skin-instance types (dark-face risk — see the bake's invariant 4). The
+    /// wig→HeadPart converter probes this BEFORE minting records so a
+    /// partition-less donor can fall back to ForwardToSkin instead of shipping a
+    /// risky bake.
+    /// </summary>
+    public static bool HasShapeWithPartitions(string nifPath, IReadOnlyCollection<string> shapeNames)
+    {
+        if (shapeNames.Count == 0) return false;
+        var wanted = shapeNames as ISet<string> ??
+                     new HashSet<string>(shapeNames, StringComparer.OrdinalIgnoreCase);
+        using NifFile nif = new NifFile();
+        if (nif.Load(nifPath) != 0) return false;
+        using var shapes = nif.GetShapes();
+        foreach (var shape in shapes)
+        {
+            string? name = shape.name?.get();
+            if (string.IsNullOrEmpty(name) || !wanted.Contains(name)) continue;
+            using var template = new NiVectorBSDismemberSkinInstancePartitionInfo();
+            using var triParts = new vectorint();
+            if (nif.GetShapePartitions(shape, template, triParts)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Merges an entire wig NIF scene into a FaceGen NIF (the wig→HeadPart
     /// conversion bake). Strips the donor hair shapes, then clones the wig's full
     /// block tree (render shapes, SMP bone-chain NiNodes with hierarchy intact,

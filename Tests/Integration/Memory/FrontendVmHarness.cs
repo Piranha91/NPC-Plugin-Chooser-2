@@ -66,6 +66,8 @@ public sealed class FrontendVmHarness : IDisposable
         builder.RegisterType<NpcDescriptionProvider>().AsSelf().SingleInstance();
         builder.RegisterType<PluginProvider>().AsSelf().SingleInstance();
         builder.RegisterType<SkyPatcherInterface>().AsSelf().SingleInstance();
+        builder.RegisterType<WigForwarder>().AsSelf().SingleInstance();
+        builder.RegisterType<HeadPartWigConverter>().AsSelf().SingleInstance();
         builder.RegisterType<OutputValidator>().AsSelf().SingleInstance();
         builder.RegisterType<EasyNpcTranslator>().AsSelf().SingleInstance();
         builder.RegisterType<FaceFinderClient>().AsSelf().SingleInstance();

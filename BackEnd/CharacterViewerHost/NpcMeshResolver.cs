@@ -817,10 +817,15 @@ public class NpcMeshResolver
         outfitDisplay = OutfitDisplayResult.NoOutfit;
         // Wig/antler handling: the mugshot depicts the POST-PATCH NPC, so a
         // ForwardToSkin mode renders the forwarded piece even with the outfit
-        // toggle off — it is part of the skin after patching.
+        // toggle off — it is part of the skin after patching. ConvertToHeadParts
+        // is depicted the same way: post-patch the wig is baked into the FaceGen
+        // (the renderer never loads HDPT Models and the baked file doesn't exist
+        // at preview time), so the wig ARMA mesh stands in for it regardless of
+        // the outfit toggle.
         var wigMode = _settings.GetEffectiveRenderWigMode(modSetting);
         var antlerMode = _settings.GetEffectiveRenderAntlerMode(modSetting);
         bool anySkinForward = wigMode == WigHandlingMode.ForwardToSkin ||
+                              wigMode == WigHandlingMode.ConvertToHeadParts ||
                               antlerMode == AntlerHandlingMode.ForwardToSkin;
         if (!includeDefaultOutfit && !includeHeadgear && !anySkinForward)
             return Array.Empty<MeshOverride>();
@@ -854,6 +859,7 @@ public class NpcMeshResolver
         bool maybeWigsOrAntlers = (wigMode != WigHandlingMode.None || antlerMode != AntlerHandlingMode.None)
                                   && modSetting != null;
         bool anySkinForward = wigMode == WigHandlingMode.ForwardToSkin ||
+                              wigMode == WigHandlingMode.ConvertToHeadParts ||
                               antlerMode == AntlerHandlingMode.ForwardToSkin;
         if (!includeDefaultOutfit && !includeHeadgear && !(maybeWigsOrAntlers && anySkinForward))
         {
@@ -1092,6 +1098,14 @@ public class NpcMeshResolver
                         break;
                     case WigHandlingMode.ForwardToOutfit:
                         AddRenderPiece(plan, item.FormKey, false, PieceForward.Outfit, linkCache, context);
+                        break;
+                    case WigHandlingMode.ConvertToHeadParts:
+                        // Post-patch the wig is baked into the FaceGen (the NPC's
+                        // hair head part), so it shows regardless of outfit — the
+                        // ForwardToSkin visual, with no WNAM requirement (the bake
+                        // doesn't need one; the converter's own per-NPC fallback
+                        // isn't knowable here and ForwardToSkin looks identical).
+                        AddRenderPiece(plan, item.FormKey, false, PieceForward.Skin, linkCache, context);
                         break;
                     // None: legacy passthrough.
                 }

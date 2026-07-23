@@ -30,5 +30,18 @@ public enum WigHandlingMode
     /// No special handling — the wig is forwarded only if Include Outfit is
     /// selected, like any other outfit element.
     /// </summary>
-    None
+    None,
+
+    /// <summary>
+    /// Discard the wig armor system entirely and deliver the wig as HeadParts:
+    /// mint one Hair-type parent HDPT (+ one IsExtraPart HDPT per additional
+    /// wig render shape), replace the donor's Hair head parts with the parent,
+    /// and bake the wig scene into the copied FaceGen NIF (see
+    /// <c>BackEnd.HeadPartWigConverter</c> / <c>NifHandler.BakeWigIntoFaceGen</c>).
+    /// The wig ARMO is stripped from any forwarded outfit. Falls back to
+    /// <see cref="ForwardToSkin"/> per NPC when the bake would be risky (no
+    /// donor hair to harvest dismember partitions from, unresolvable wig NIF).
+    /// Appended after <see cref="None"/> — persisted integer values must not shift.
+    /// </summary>
+    ConvertToHeadParts
 }

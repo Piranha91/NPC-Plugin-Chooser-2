@@ -242,7 +242,17 @@ public class WigForwarder
     /// from a forwarded outfit (source 1), from the WornArmor duplicate (source 2:
     /// baked-in ARMAs), and from the NPC record + FaceGen (source 3: baked head
     /// parts). A single NPC may need both a skin duplicate and an outfit
-    /// duplicate (e.g. wig→skin + antler→outfit).</para>
+    /// duplicate (e.g. wig→skin + antler→outfit). ConvertToHeadParts does no
+    /// wig forwarding here at all — <see cref="HeadPartWigConverter"/> owns the
+    /// records and the bake — but the wig items are still STRIPPED from any
+    /// forwarded/duplicated outfit so the armor wig isn't equipped on top of
+    /// the baked one; hair removal is the converter's (no bald back-fill).</para>
+    ///
+    /// <para><paramref name="wigModeOverride"/> replaces the settings-derived
+    /// wig mode for this call: the Patcher passes ForwardToSkin when
+    /// <see cref="HeadPartWigConverter.Apply"/> declined an NPC (bald donor,
+    /// unresolvable wig NIF, …) so that NPC gets the proven forwarding flow
+    /// instead.</para>
     /// </summary>
     public Result? Apply(
         FormKey targetNpcFormKey,
@@ -253,9 +263,10 @@ public class WigForwarder
         bool mergeInDependencyRecords,
         bool includeOutfit,
         string npcIdentifier,
-        Action<string, bool, bool> appendLog)
+        Action<string, bool, bool> appendLog,
+        WigHandlingMode? wigModeOverride = null)
     {
-        var wigMode = _settings.GetEffectiveWigMode(appearanceModSetting);
+        var wigMode = wigModeOverride ?? _settings.GetEffectiveWigMode(appearanceModSetting);
         var antlerMode = _settings.GetEffectiveAntlerMode(appearanceModSetting);
         if (wigMode == WigHandlingMode.None && antlerMode == AntlerHandlingMode.None) return null;
 
@@ -320,6 +331,9 @@ public class WigForwarder
 
         var outfitStripPieces = new List<(FormKey Key, bool IsAntler)>();
         if (wigToSkin) outfitStripPieces.AddRange(wigItems);
+        // ConvertToHeadParts: the wig becomes head parts (HeadPartWigConverter),
+        // so it must NOT also be worn — strip it from any forwarded outfit.
+        if (wigMode == WigHandlingMode.ConvertToHeadParts) outfitStripPieces.AddRange(wigItems);
         if (antlerToSkin || antlerRemove) outfitStripPieces.AddRange(antlerItems);
 
         // Source 2: antler ArmorAddons baked directly into the WornArmor — antler
