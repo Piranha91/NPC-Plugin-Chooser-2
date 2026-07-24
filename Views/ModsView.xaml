@@ -573,7 +573,7 @@
                                                              to Forward To Skin per NPC when the bake would be unsafe; a skin-carried
                                                              wig is left as-is instead.
                                                              <LineBreak/>
-                                                             None: wigs are treated like any other outfit/skin element — an outfit wig
+                                                             Leave As Is: wigs are treated like any other outfit/skin element — an outfit wig
                                                              is forwarded only if Include Outfits is selected; a skin-carried wig stays
                                                              in the skin.
                                                          </TextBlock>
@@ -619,7 +619,7 @@
                                                              from the worn armor, and from the FaceGen. An outfit the load order owns (not
                                                              forwarded) can't be reached.
                                                              <LineBreak/>
-                                                             None: the antler is treated like any other outfit element — forwarded only if
+                                                             Leave As Is: the antler is treated like any other outfit element — forwarded only if
                                                              Include Outfits is selected.
                                                          </TextBlock>
                                                      </ToolTip>

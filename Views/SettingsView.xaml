@@ -364,9 +364,34 @@
                                             the bake would be unsafe (e.g. the appearance mod ships no baked hair to
                                             replace); a skin-carried wig is left as-is instead.
                                             <LineBreak/><LineBreak/>
-                                            None: wigs are treated like any other outfit/skin element — an outfit wig is
+                                            Leave As Is: wigs are treated like any other outfit/skin element — an outfit wig is
                                             forwarded only if Include Outfits is selected; a skin-carried wig stays in the
                                             skin.
+                                        </TextBlock>
+                                    </ToolTip>
+                                </ComboBox.ToolTip>
+                            </ComboBox>
+
+                            <TextBlock Text="Manual Wig Designation Scope:" Margin="0,0,0,2"/>
+                            <ComboBox ItemsSource="{Binding WigBlockScopes}"
+                                      SelectedValuePath="Key" DisplayMemberPath="Value"
+                                      SelectedValue="{Binding SelectedWigBlockScope, Mode=TwoWay}"
+                                      MinWidth="120" HorizontalAlignment="Left"
+                                      Margin="0,0,0,10">
+                                <ComboBox.ToolTip>
+                                    <ToolTip>
+                                        <TextBlock TextWrapping="Wrap" Width="340">
+                                            How broadly a skin-carried hair mesh you manually mark as a wig — or as NOT a
+                                            wig — (via the 3D preview's "Set Wig Meshes" button) applies. This controls
+                                            scope only — a wig is still converted only when its mod's Wig Handling Mode
+                                            is Convert To Head Parts.
+                                            <LineBreak/><LineBreak/>
+                                            All NPCs (any mod): apply the designation to that mesh's EditorID wherever it
+                                            appears (the default).
+                                            <LineBreak/><LineBreak/>
+                                            Same mod only: apply it only in the mod it was designated in.
+                                            <LineBreak/><LineBreak/>
+                                            Specific NPC(s) only: apply it only on the NPC(s) it was designated on.
                                         </TextBlock>
                                     </ToolTip>
                                 </ComboBox.ToolTip>
@@ -397,7 +422,7 @@
                                             from the worn armor, and from the FaceGen (keyword-detected antler head parts).
                                             Antlers baked into an outfit the load order owns (not forwarded) can't be reached.
                                             <LineBreak/><LineBreak/>
-                                            None: the antler is treated like any other outfit element — forwarded only if
+                                            Leave As Is: the antler is treated like any other outfit element — forwarded only if
                                             Include Outfits is selected.
                                         </TextBlock>
                                     </ToolTip>
@@ -422,30 +447,6 @@
                                             <LineBreak/><LineBreak/>
                                             Specific NPC(s) only: block it only on the NPC(s) it was designated on, regardless
                                             of which mod supplies that NPC's appearance.
-                                        </TextBlock>
-                                    </ToolTip>
-                                </ComboBox.ToolTip>
-                            </ComboBox>
-
-                            <TextBlock Text="Manual Wig Designation Scope:" Margin="0,6,0,2"/>
-                            <ComboBox ItemsSource="{Binding WigBlockScopes}"
-                                      SelectedValuePath="Key" DisplayMemberPath="Value"
-                                      SelectedValue="{Binding SelectedWigBlockScope, Mode=TwoWay}"
-                                      MinWidth="120" HorizontalAlignment="Left">
-                                <ComboBox.ToolTip>
-                                    <ToolTip>
-                                        <TextBlock TextWrapping="Wrap" Width="340">
-                                            How broadly a skin-carried hair mesh you manually mark as a wig — or as NOT a
-                                            wig — (via the 3D preview's "Set Wig Meshes" button) applies. This controls
-                                            scope only — a wig is still converted only when its mod's Wig Handling Mode
-                                            is Convert To Head Parts.
-                                            <LineBreak/><LineBreak/>
-                                            All NPCs (any mod): apply the designation to that mesh's EditorID wherever it
-                                            appears (the default).
-                                            <LineBreak/><LineBreak/>
-                                            Same mod only: apply it only in the mod it was designated in.
-                                            <LineBreak/><LineBreak/>
-                                            Specific NPC(s) only: apply it only on the NPC(s) it was designated on.
                                         </TextBlock>
                                     </ToolTip>
                                 </ComboBox.ToolTip>

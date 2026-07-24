@@ -18,7 +18,7 @@ public static class HandlingModeDisplay
         WigHandlingMode.ForwardToSkin => "Forward To Skin",
         WigHandlingMode.ForwardToOutfit => "Forward To Outfit",
         WigHandlingMode.ConvertToHeadParts => "Convert To Headparts",
-        WigHandlingMode.None => "None",
+        WigHandlingMode.None => "Leave As Is",
         _ => mode.ToString(),
     };
 
@@ -27,7 +27,7 @@ public static class HandlingModeDisplay
         AntlerHandlingMode.ForwardToSkin => "Forward To Skin",
         AntlerHandlingMode.ForwardToOutfit => "Forward To Outfit",
         AntlerHandlingMode.Remove => "Remove",
-        AntlerHandlingMode.None => "None",
+        AntlerHandlingMode.None => "Leave As Is",
         _ => mode.ToString(),
     };
 
