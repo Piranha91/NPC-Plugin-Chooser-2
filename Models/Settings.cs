@@ -385,6 +385,36 @@ public class Settings
         return modSetting.HasWigSources || ModHasManualWigDesignation(modSetting.DisplayName);
     }
 
+    /// <summary>The scan-recorded wig sources <paramref name="npcFormKey"/>
+    /// actually carries in <paramref name="modSetting"/>, filtered to the ones
+    /// that are EFFECTIVE wigs right now: WornArmor candidates pass through
+    /// <see cref="IsWigArmature"/> (scan detection + manual promotions and
+    /// vetoes), Outfit entries through
+    /// <see cref="ModSetting.DetectedWigArmors"/> membership. A pure lookup
+    /// over the per-NPC association map persisted at analysis time
+    /// (<see cref="ModSetting.NpcWigSources"/>) — no record resolution and no
+    /// environment dependency, so it is safe anywhere including VM
+    /// constructors. Drives the mugshot tile's "has wig" badge; entry order is
+    /// preserved from the scan (WornArmor entries before Outfit ones).</summary>
+    public List<NpcWigSource> GetEffectiveNpcWigSources(ModSetting? modSetting, FormKey npcFormKey)
+    {
+        var result = new List<NpcWigSource>();
+        if (modSetting == null) return result;
+        if (!modSetting.NpcWigSources.TryGetValue(npcFormKey, out var entries) || entries == null)
+        {
+            return result;
+        }
+        foreach (var entry in entries)
+        {
+            if (entry == null) continue;
+            bool effective = entry.Kind == NpcWigSourceKind.WornArmor
+                ? IsWigArmature(modSetting, entry.RecordFormKey, entry.EditorId, npcFormKey)
+                : modSetting.DetectedWigArmors.Contains(entry.RecordFormKey);
+            if (effective) result.Add(entry);
+        }
+        return result;
+    }
+
     /// <summary>True when either wig or antler handling will act on
     /// <paramref name="modSetting"/> this run — the patcher's outer gate.</summary>
     public bool WigOrAntlerHandlingActive(ModSetting? modSetting) =>

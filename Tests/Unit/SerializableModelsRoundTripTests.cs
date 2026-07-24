@@ -82,6 +82,16 @@ public class SerializableModelsRoundTripTests
             DetectedAntlerArmors = new HashSet<FormKey> { Npc2 },
             DetectedAntlerArmatures = new HashSet<FormKey> { Npc1 },
             DetectedAntlerHeadParts = new HashSet<FormKey> { Npc2 },
+            NpcWigSources = new Dictionary<FormKey, List<NpcWigSource>>
+            {
+                [Npc1] = new()
+                {
+                    new NpcWigSource
+                        { Kind = NpcWigSourceKind.WornArmor, RecordFormKey = Npc3, EditorId = "FoxGloveHairArma" },
+                    new NpcWigSource
+                        { Kind = NpcWigSourceKind.Outfit, RecordFormKey = Npc2, EditorId = string.Empty },
+                },
+            },
             ModWigHandlingMode = WigHandlingMode.ForwardToOutfit,
             ModAntlerHandlingMode = AntlerHandlingMode.Remove,
             NpcFormKeysToNotifications = new Dictionary<FormKey,
@@ -130,6 +140,22 @@ public class SerializableModelsRoundTripTests
         clone.HasWigArmors.Should().BeTrue();
         clone.HasWigSources.Should().BeTrue();
         clone.HasAntlers.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ModSetting_NpcWigSources_SurviveRoundTrip()
+    {
+        var clone = RoundTrip(MakeRichModSetting());
+
+        clone.NpcWigSources.Should().ContainKey(Npc1);
+        var entries = clone.NpcWigSources[Npc1];
+        entries.Should().HaveCount(2);
+        entries[0].Kind.Should().Be(NpcWigSourceKind.WornArmor);
+        entries[0].RecordFormKey.Should().Be(Npc3);
+        entries[0].EditorId.Should().Be("FoxGloveHairArma");
+        entries[1].Kind.Should().Be(NpcWigSourceKind.Outfit);
+        entries[1].RecordFormKey.Should().Be(Npc2);
+        entries[1].EditorId.Should().BeEmpty();
     }
 
     [Fact]

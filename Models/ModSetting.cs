@@ -6,6 +6,38 @@ using NPC_Plugin_Chooser_2.View_Models;
 
 namespace NPC_Plugin_Chooser_2.Models;
 
+/// <summary>Which record source supplies a wig carried by a specific NPC:
+/// a hair-slot ArmorAddon in the NPC's WornArmor (WNAM / skin-carried), or a
+/// wig ARMO in the NPC's Default Outfit. Drives the mugshot tile's per-source
+/// tooltip wording.</summary>
+public enum NpcWigSourceKind
+{
+    WornArmor,
+    Outfit
+}
+
+/// <summary>One wig-relevant record association for one NPC, emitted by the
+/// analysis scan (<c>WigDetector.Scan</c>) and persisted in
+/// <see cref="ModSetting.NpcWigSources"/>. This records only the NPC→record
+/// ASSOCIATION (the part that is expensive to recompute live); wig
+/// CLASSIFICATION stays with the detection sets + manual designation lists and
+/// is folded in at read time by <see cref="Settings.GetEffectiveNpcWigSources"/>,
+/// so a 3D-preview designation changes the effective result without a
+/// re-scan. WornArmor entries are candidates (every plausible hair-slot ARMA,
+/// detected or not — what makes read-time manual promotion possible);
+/// Outfit entries are scan-detected wig ARMOs.</summary>
+public class NpcWigSource
+{
+    public NpcWigSourceKind Kind { get; set; }
+    /// <summary>The ARMA (WornArmor) or ARMO (Outfit) FormKey. The
+    /// classification key for detection-set membership.</summary>
+    public FormKey RecordFormKey { get; set; }
+    /// <summary>The record's EditorID — the manual-designation key for
+    /// WornArmor candidates (<see cref="Settings.IsWigArmature"/>), display
+    /// detail for Outfit entries.</summary>
+    public string EditorId { get; set; } = string.Empty;
+}
+
 [DebuggerDisplay("{DisplayName}")]
 public class ModSetting
 {
@@ -90,6 +122,15 @@ public class ModSetting
     public HashSet<FormKey> DetectedAntlerArmors { get; set; } = new();
     public HashSet<FormKey> DetectedAntlerArmatures { get; set; } = new();
     public HashSet<FormKey> DetectedAntlerHeadParts { get; set; } = new();
+    // Per-NPC wig-source map (same scan/persistence lifecycle as the detection
+    // sets above): NPC FormKey → the wig-relevant records that NPC actually
+    // carries. Only the NPC→record association is stored; whether each entry
+    // is an EFFECTIVE wig is decided at read time from the detection sets +
+    // manual designations (Settings.GetEffectiveNpcWigSources), keeping the
+    // mugshot tile's "has wig" badge a pure record-derived lookup with no
+    // live plugin resolution. Sparse: NPCs with no plausible wig records
+    // have no entry.
+    public Dictionary<FormKey, List<NpcWigSource>> NpcWigSources { get; set; } = new();
     public WigHandlingMode? ModWigHandlingMode { get; set; } = null;
     public AntlerHandlingMode? ModAntlerHandlingMode { get; set; } = null;
 

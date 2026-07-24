@@ -190,6 +190,10 @@
       <Resource Include="Resources\No Antlers.png">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Resource>
+      <None Remove="Resources\Has Wig.png" />
+      <Resource Include="Resources\Has Wig.png">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Resource>
       <None Remove="Resources\Contains Overrides.png" />
       <Resource Include="Resources\Contains Overrides.png">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

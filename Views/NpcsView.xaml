@@ -747,19 +747,20 @@
                                                 TextTrimming="CharacterEllipsis" ToolTip="{Binding ModName}"/>
                                      
                                      <!-- Top-left vertical stack: an icon row (issue-notification
-                                          "!" and, beside it, the "no antlers" badge) on top, with
-                                          the FaceGen-stats text overlay below. Each child controls
-                                          its own Visibility so any can show alone without leaving
-                                          an empty slot; the horizontal row lets the antler badge
-                                          shift right to clear the "!" only when both are shown. -->
+                                          "!" and, beside it, the "no antlers" and "has wig" head-
+                                          editing badges) on top, with the FaceGen-stats text overlay
+                                          below. Each child controls its own Visibility so any can
+                                          show alone without leaving an empty slot; the horizontal row
+                                          lets each badge shift right to clear the ones before it,
+                                          only when they are shown. -->
                                      <StackPanel Orientation="Vertical"
                                                  HorizontalAlignment="Left"
                                                  VerticalAlignment="Top">
 
                                          <!-- Top-left icon row: issue "!" (left) then the
-                                              antlers-removed badge (right). A collapsed child
-                                              takes zero width, so the badge sits flush-left when
-                                              no issue icon is present. -->
+                                              antlers-removed and has-wig badges (right). A collapsed
+                                              child takes zero width, so the badges sit flush-left
+                                              when no earlier icon is present. -->
                                          <StackPanel Orientation="Horizontal">
 
                                          <!-- Outer Container for Issue Notification Indicator -->
@@ -813,13 +814,44 @@
                                               and Multi-plugin badges) rather than the 10% issue
                                               indicator, so it reads at the same scale. -->
                                          <Grid Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
-                                               Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}"
+                                               Height="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
                                                Visibility="{Binding HasAntlerRemovalNotice, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                ToolTip="{Binding AntlerRemovalNoticeText}">
                                              <Viewbox Stretch="Uniform"
                                                       HorizontalAlignment="Center"
                                                       VerticalAlignment="Center">
                                                  <Image Source="/NPC Plugin Chooser 2;component/Resources/No Antlers.png" />
+                                             </Viewbox>
+                                         </Grid>
+
+                                         <!-- Has-wig badge: this NPC wears a wig this mod supplies
+                                              (a hair-slot armor via its skin/WornArmor or its Default
+                                              Outfit). Informational and mode-independent — it flags
+                                              that the depicted appearance includes a wig. Sits to the
+                                              right of the antlers badge in the same head-editing row;
+                                              a collapsed sibling takes zero width, so whichever badges
+                                              apply stay flush-left. Sized to 20% to match the antler
+                                              badge. -->
+                                         <Grid Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                               Height="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
+                                               Visibility="{Binding HasWigNotice, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                               ToolTip="{Binding WigNoticeText}">
+                                             <Viewbox Stretch="Uniform"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center">
+                                                 <!-- White glow: the icon is thin dark line art, and in
+                                                      the second row slot it lands on the mugshot's hair
+                                                      region, which is often just as dark — without a
+                                                      halo it camouflages entirely. The effect goes on
+                                                      the Viewbox, not the Image: inside the Viewbox it
+                                                      would be authored at the bitmap's natural size and
+                                                      scale down with it, shrinking the blur to
+                                                      sub-pixel invisibility. -->
+                                                 <Viewbox.Effect>
+                                                     <DropShadowEffect Color="White" ShadowDepth="0"
+                                                                       BlurRadius="6" Opacity="0.9"/>
+                                                 </Viewbox.Effect>
+                                                 <Image Source="/NPC Plugin Chooser 2;component/Resources/Has Wig.png" />
                                              </Viewbox>
                                          </Grid>
 

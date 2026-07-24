@@ -1,5 +1,6 @@
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
+using NPC_Plugin_Chooser_2.Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -35,13 +36,17 @@ public static class WigDetector
     /// <c>Remove</c> can reach all of them:
     /// an antler ARMO in an outfit (<see cref="AntlerArmors"/>), antler
     /// ArmorAddon(s) baked into a WornArmor (<see cref="AntlerArmatures"/>), and
-    /// an antler head part baked into the FaceGen (<see cref="AntlerHeadParts"/>).</summary>
+    /// an antler head part baked into the FaceGen (<see cref="AntlerHeadParts"/>).
+    /// <see cref="NpcWigSources"/> is the per-NPC association map (NPC →
+    /// wig-relevant records that NPC actually carries) persisted for the
+    /// mugshot tile's "has wig" badge — see <see cref="ModSetting.NpcWigSources"/>.</summary>
     public readonly record struct WigScanResult(
         HashSet<FormKey> Wigs,
         HashSet<FormKey> WigArmatures,
         HashSet<FormKey> AntlerArmors,
         HashSet<FormKey> AntlerArmatures,
-        HashSet<FormKey> AntlerHeadParts);
+        HashSet<FormKey> AntlerHeadParts,
+        Dictionary<FormKey, List<NpcWigSource>> NpcWigSources);
 
     /// <summary>
     /// Scans every ARMO / ARMA / HeadPart / NPC in <paramref name="plugins"/> (a
@@ -61,17 +66,20 @@ public static class WigDetector
         IReadOnlyCollection<ISkyrimModGetter> plugins,
         Func<FormKey, IArmorAddonGetter?>? fallbackArmaResolver = null,
         Func<FormKey, IArmorGetter?>? fallbackArmorResolver = null,
-        Func<FormKey, IRaceGetter?>? fallbackRaceResolver = null)
+        Func<FormKey, IRaceGetter?>? fallbackRaceResolver = null,
+        Func<FormKey, IOutfitGetter?>? fallbackOutfitResolver = null)
     {
         var wigs = new HashSet<FormKey>();
         var wigArmatures = new HashSet<FormKey>();
         var antlerArmors = new HashSet<FormKey>();
         var antlerArmatures = new HashSet<FormKey>();
         var antlerHeadParts = new HashSet<FormKey>();
+        var npcWigSources = new Dictionary<FormKey, List<NpcWigSource>>();
 
         var localArmas = new Dictionary<FormKey, IArmorAddonGetter>();
         var localArmors = new Dictionary<FormKey, IArmorGetter>();
         var localRaces = new Dictionary<FormKey, IRaceGetter>();
+        var localOutfits = new Dictionary<FormKey, IOutfitGetter>();
         foreach (var plugin in plugins)
         {
             foreach (var arma in plugin.ArmorAddons)
@@ -85,6 +93,10 @@ public static class WigDetector
             foreach (var race in plugin.Races)
             {
                 localRaces[race.FormKey] = race;
+            }
+            foreach (var outfit in plugin.Outfits)
+            {
+                localOutfits[outfit.FormKey] = outfit;
             }
         }
 
@@ -234,7 +246,135 @@ public static class WigDetector
             }
         }
 
-        return new WigScanResult(wigs, wigArmatures, antlerArmors, antlerArmatures, antlerHeadParts);
+        // Per-NPC wig-source association pass. Runs LAST so it sees the final
+        // wig / antler classification sets. Records which wig-relevant records
+        // each NPC actually carries, so consumers (the mugshot tile's "has wig"
+        // badge) never have to re-resolve NPC records live:
+        //   - WornArmor entries: every plausible hair-slot ARMA in the NPC's
+        //     WNAM — detected or not, which is what makes read-time manual
+        //     promotion possible — race-filtered to the NPC, antler-classified
+        //     ARMAs excluded, and race anatomy excluded via the same two
+        //     race-skin guards as detection pass 1 (an NPC whose WNAM is its
+        //     race's default skin stores nothing; a shared SkinNaked-style ARMA
+        //     is skipped per-ARMA). Effectiveness is decided at read time by
+        //     Settings.IsWigArmature.
+        //   - Outfit entries: the Default Outfit's direct items that classified
+        //     as wig ARMOs (nested leveled lists are not walked — detection is
+        //     outfit-item based by design, matching WigForwarder).
+        // Later plugin wins: an override of the same NPC REPLACES its entry
+        // list (including replacing it with nothing), matching intra-mod
+        // override order.
+        foreach (var plugin in plugins)
+        {
+            foreach (var npc in plugin.Npcs)
+            {
+                var entries = new List<NpcWigSource>();
+                FormKey? npcRaceKey = npc.Race.IsNull ? null : npc.Race.FormKey;
+
+                if (!npc.WornArmor.IsNull)
+                {
+                    bool wnamIsRaceSkin = false;
+                    if (npcRaceKey != null)
+                    {
+                        var race = localRaces.TryGetValue(npcRaceKey.Value, out var localRace)
+                            ? localRace
+                            : fallbackRaceResolver?.Invoke(npcRaceKey.Value);
+                        wnamIsRaceSkin = race != null && !race.Skin.IsNull &&
+                                         race.Skin.FormKey == npc.WornArmor.FormKey;
+                    }
+
+                    if (!wnamIsRaceSkin)
+                    {
+                        var wnam = localArmors.TryGetValue(npc.WornArmor.FormKey, out var localWnam)
+                            ? localWnam
+                            : fallbackArmorResolver?.Invoke(npc.WornArmor.FormKey);
+                        if (wnam?.Armature != null)
+                        {
+                            var seenArmas = new HashSet<FormKey>();
+                            foreach (var armaLink in wnam.Armature)
+                            {
+                                if (armaLink == null || armaLink.IsNull || !seenArmas.Add(armaLink.FormKey)) continue;
+                                if (antlerArmatures.Contains(armaLink.FormKey)) continue;
+                                var arma = localArmas.TryGetValue(armaLink.FormKey, out var localArma)
+                                    ? localArma
+                                    : fallbackArmaResolver?.Invoke(armaLink.FormKey);
+                                if (arma?.BodyTemplate == null) continue;
+                                if ((arma.BodyTemplate.FirstPersonFlags & HairSlots) == 0) continue;
+                                if (!IsArmatureForRace(arma, npcRaceKey)) continue;
+                                if (IsRaceDefaultSkinArma(arma, localArmors, localRaces,
+                                        fallbackArmorResolver, fallbackRaceResolver))
+                                {
+                                    continue;
+                                }
+                                entries.Add(new NpcWigSource
+                                {
+                                    Kind = NpcWigSourceKind.WornArmor,
+                                    RecordFormKey = armaLink.FormKey,
+                                    EditorId = arma.EditorID ?? string.Empty
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if (!npc.DefaultOutfit.IsNull)
+                {
+                    var outfit = localOutfits.TryGetValue(npc.DefaultOutfit.FormKey, out var localOutfit)
+                        ? localOutfit
+                        : fallbackOutfitResolver?.Invoke(npc.DefaultOutfit.FormKey);
+                    if (outfit?.Items != null)
+                    {
+                        var seenItems = new HashSet<FormKey>();
+                        foreach (var item in outfit.Items)
+                        {
+                            if (item == null || item.IsNull || !seenItems.Add(item.FormKey)) continue;
+                            if (!wigs.Contains(item.FormKey)) continue;
+                            var armo = localArmors.TryGetValue(item.FormKey, out var localArmo)
+                                ? localArmo
+                                : fallbackArmorResolver?.Invoke(item.FormKey);
+                            entries.Add(new NpcWigSource
+                            {
+                                Kind = NpcWigSourceKind.Outfit,
+                                RecordFormKey = item.FormKey,
+                                EditorId = armo?.EditorID ?? string.Empty
+                            });
+                        }
+                    }
+                }
+
+                if (entries.Count > 0)
+                {
+                    npcWigSources[npc.FormKey] = entries;
+                }
+                else
+                {
+                    npcWigSources.Remove(npc.FormKey);
+                }
+            }
+        }
+
+        return new WigScanResult(wigs, wigArmatures, antlerArmors, antlerArmatures, antlerHeadParts,
+            npcWigSources);
+    }
+
+    /// <summary>Whether an ARMA declares itself applicable to
+    /// <paramref name="npcRaceKey"/> (Race / AdditionalRaces). True when the
+    /// NPC's race is unknown (template-inherited) — an unfiltered candidate
+    /// beats a wrongly-dropped one. Mirrors the renderer-side race filter the
+    /// wig selector uses (NpcMeshResolver.IsArmatureForRace).</summary>
+    private static bool IsArmatureForRace(IArmorAddonGetter arma, FormKey? npcRaceKey)
+    {
+        if (npcRaceKey == null) return true;
+        if (arma.Race != null && !arma.Race.IsNull &&
+            arma.Race.FormKey.Equals(npcRaceKey.Value)) return true;
+        if (arma.AdditionalRaces != null)
+        {
+            foreach (var addRace in arma.AdditionalRaces)
+            {
+                if (!addRace.IsNull && addRace.FormKey.Equals(npcRaceKey.Value)) return true;
+            }
+        }
+        return false;
     }
 
     private static bool ContainsWigKeyword(string? s) =>

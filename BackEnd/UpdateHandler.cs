@@ -1017,10 +1017,12 @@ public class UpdateHandler
     /// consistent with the other one-time migrations. Covers the initial
     /// wig/antler detection, the later extension to WornArmor-baked ArmorAddons
     /// and FaceGen head parts (persisted DetectedAntlerArmatures /
-    /// DetectedAntlerHeadParts), and the skin-carried WNAM wig scan (persisted
-    /// DetectedWigArmatures), since all landed in the 2.2.3 cycle. If any of
-    /// these detection sets gains a source AFTER 2.2.3 ships, add a NEW
-    /// version-gated invalidation rather than reusing this one.
+    /// DetectedAntlerHeadParts), the skin-carried WNAM wig scan (persisted
+    /// DetectedWigArmatures), and the per-NPC wig-source association map
+    /// (persisted NpcWigSources, driving the NPC-menu "has wig" badge), since
+    /// all landed in the 2.2.3 cycle. If any of these detection sets gains a
+    /// source AFTER 2.2.3 ships, add a NEW version-gated invalidation rather
+    /// than reusing this one.
     /// </summary>
     private void InvalidateAnalysisCachesForWigScan_Initial()
     {

@@ -7,6 +7,7 @@ using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Tests.TestSupport;
 using Xunit;
 
@@ -356,5 +357,110 @@ public class WigDetectorTests
 
         asWig.Should().BeEquivalentTo(new[] { hairArma.FormKey });
         asAntler.Should().BeEquivalentTo(new[] { hairArma.FormKey, bodyArma.FormKey });
+    }
+
+    // ---- Per-NPC wig-source association map (NpcWigSources) ---------------
+    // The scan's last pass records which wig-relevant records each NPC
+    // actually carries, so the mugshot tile's "has wig" badge is a pure
+    // persisted-data lookup (association here; CLASSIFICATION stays with the
+    // detection sets + manual designations at read time).
+
+    private static Outfit NewOutfit(SkyrimMod mod, params Armor[] items)
+    {
+        var outfit = mod.Outfits.AddNew();
+        outfit.Items = new();
+        foreach (var item in items)
+        {
+            outfit.Items.Add(new FormLink<IOutfitTargetGetter>(item.FormKey));
+        }
+        return outfit;
+    }
+
+    [Fact]
+    public void NpcWigSources_OutfitWig_IsAssociatedToWearer()
+    {
+        var mod = MutagenFixtures.NewMod("FoxGloveAuri.esp");
+        var wig = NewArmor(mod, "Auri Red Wig", "FoxGloveWigArmo", NewArma(mod, BipedObjectFlag.Hair));
+        var dress = NewArmor(mod, "Forest Dress", "ForestDress", NewArma(mod, BipedObjectFlag.Body));
+        var outfit = NewOutfit(mod, wig, dress);
+        var npc = MutagenFixtures.NewNpc(mod, editorId: "Auri");
+        npc.DefaultOutfit.SetTo(outfit);
+
+        var r = Scan(mod);
+
+        r.NpcWigSources.Should().ContainKey(npc.FormKey);
+        var entries = r.NpcWigSources[npc.FormKey];
+        entries.Should().ContainSingle();
+        entries[0].Kind.Should().Be(NpcWigSourceKind.Outfit);
+        entries[0].RecordFormKey.Should().Be(wig.FormKey);
+        entries[0].EditorId.Should().Be("FoxGloveWigArmo");
+    }
+
+    [Fact]
+    public void NpcWigSources_WnamHairArma_IsStoredAsWornArmorCandidate()
+    {
+        // The HPNO pattern: bald FaceGen + skin-carried hair ARMA. The map
+        // stores the association; effectiveness is decided at read time.
+        var mod = MutagenFixtures.NewMod("HPNO.esp");
+        var hairArma = NewArma(mod, BipedObjectFlag.Hair, editorId: "0SkinArma205");
+        var bodyArma = NewArma(mod, BipedObjectFlag.Body, editorId: "0SkinArmaBody");
+        var skin = NewArmor(mod, null, "0Skin205", hairArma, bodyArma);
+        var npc = NewNpcWithWnam(mod, skin);
+
+        var r = Scan(mod);
+
+        r.NpcWigSources.Should().ContainKey(npc.FormKey);
+        var entries = r.NpcWigSources[npc.FormKey];
+        entries.Should().ContainSingle("only the hair-slot ARMA is a wig candidate");
+        entries[0].Kind.Should().Be(NpcWigSourceKind.WornArmor);
+        entries[0].RecordFormKey.Should().Be(hairArma.FormKey);
+        entries[0].EditorId.Should().Be("0SkinArma205");
+    }
+
+    [Fact]
+    public void NpcWigSources_RaceDefaultSkinWnam_StoresNothing()
+    {
+        // Race anatomy is not a wig: an NPC whose WNAM IS its race's default
+        // skin stores no WornArmor candidates (same guard as detection).
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var arma = NewArma(mod, BipedObjectFlag.Hair, editorId: "ManeArma");
+        var skin = NewArmor(mod, null, "RaceSkin", arma);
+        var race = mod.Races.AddNew();
+        race.EditorID = "CustomBeastRace";
+        race.Skin.SetTo(skin);
+        NewNpcWithWnam(mod, skin, race);
+
+        Scan(mod).NpcWigSources.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void NpcWigSources_NpcWithoutWigRecords_HasNoEntry()
+    {
+        // Sparse map: a plain NPC (no WNAM, wigless outfit) stores nothing.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var dress = NewArmor(mod, "Forest Dress", null, NewArma(mod, BipedObjectFlag.Body));
+        var npc = MutagenFixtures.NewNpc(mod, editorId: "Plain");
+        npc.DefaultOutfit.SetTo(NewOutfit(mod, dress));
+
+        Scan(mod).NpcWigSources.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void NpcWigSources_LaterPluginOverride_ReplacesEntries()
+    {
+        // Later plugin wins: an override that swaps the outfit for a wigless
+        // one clears the earlier association.
+        var mod1 = MutagenFixtures.NewMod("Base.esp");
+        var wig = NewArmor(mod1, "Red Wig", "WigArmo", NewArma(mod1, BipedObjectFlag.Hair));
+        var npc = MutagenFixtures.NewNpc(mod1, editorId: "Wearer");
+        npc.DefaultOutfit.SetTo(NewOutfit(mod1, wig));
+
+        var mod2 = MutagenFixtures.NewMod("Patch.esp");
+        var dress = NewArmor(mod2, "Forest Dress", null, NewArma(mod2, BipedObjectFlag.Body));
+        var npcOverride = mod2.Npcs.GetOrAddAsOverride(npc);
+        npcOverride.DefaultOutfit.SetTo(NewOutfit(mod2, dress));
+
+        WigDetector.Scan(new[] { mod1 }).NpcWigSources.Should().ContainKey(npc.FormKey);
+        WigDetector.Scan(new ISkyrimModGetter[] { mod1, mod2 }).NpcWigSources.Should().BeEmpty();
     }
 }
