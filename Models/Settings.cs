@@ -614,14 +614,28 @@ public class Settings
     public bool AutoUpdateStaleMugshots { get; set; } = true;
 
     /// <summary>When on, an Internal-renderer mugshot whose stamped metadata
-    /// records any missing meshes or textures is treated as stale, prompting
-    /// the next session to re-render it (and pick up newly-installed assets).
-    /// Off keeps the wireframe/placeholder PNG in place across sessions.
-    /// Independent of <see cref="AutoUpdateStaleMugshots"/>, which gates the
-    /// settings-hash drift check.</summary>
+    /// records any missing BASE NPC assets (the NPC's own head/body/hair meshes
+    /// or textures, or a FaceGen mismatch) is treated as stale, prompting the
+    /// next session to re-render it (and pick up newly-installed assets). Off
+    /// keeps the wireframe/placeholder PNG in place across sessions. Missing
+    /// OUTFIT/headgear assets have their own toggle
+    /// (<see cref="AutoUpdateMugshotsWithMissingOutfitAssets"/>). Independent of
+    /// <see cref="AutoUpdateStaleMugshots"/>, which gates the settings-hash
+    /// drift check.</summary>
     [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
     [DefaultValue(true)]
     public bool AutoUpdateMugshotsWithMissingAssets { get; set; } = true;
+
+    /// <summary>The outfit-side counterpart of
+    /// <see cref="AutoUpdateMugshotsWithMissingAssets"/>: when on, a mugshot whose
+    /// stamped metadata records missing outfit/headgear meshes or textures is
+    /// re-rendered on the next session so newly-installed attire assets fill in.
+    /// (Broken outfit physics links are excluded — nothing you install can fix a
+    /// stale link inside the mod, so they never re-render.) Off keeps the PNG in
+    /// place across sessions.</summary>
+    [JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+    [DefaultValue(true)]
+    public bool AutoUpdateMugshotsWithMissingOutfitAssets { get; set; } = true;
 
     /// <summary>Controls the "Generate All Mugshots" batch: when on, NPCs whose
     /// Internal-renderer render reports any missing meshes or textures are
@@ -942,11 +956,14 @@ public sealed class InternalMugshotSettings
     // the information was never recorded; those refresh only when something
     // else re-stales them.
     //
-    // ShowMissingNpcAssetsIcon: the missing meshes/textures/FaceGen-mismatch
-    // overlay. NOTE: while off, newly-rendered PNGs record no missing assets,
-    // so the "Re-render When: Missing Assets" auto-update has no signal for
-    // them. ShowMissingOutfitAssetsIcon: the stale-physics-config (broken
-    // SMP/HDT xml link) icon.
+    // ShowMissingNpcAssetsIcon: the base NPC's missing meshes/textures/FaceGen-
+    // mismatch overlay (head/body/hair). NOTE: while off, newly-rendered PNGs
+    // record no missing assets, so the "Re-render When: Missing Assets" auto-
+    // update has no signal for them. ShowMissingOutfitAssetsIcon: the outfit-
+    // asset icon — missing outfit/headgear meshes+textures (re-render-eligible,
+    // stamped under "missing_outfit_assets") AND stale-physics-config links
+    // (informational, staleness-neutral "physics_config_notices"). Same
+    // while-off caveat applies to the re-render-eligible outfit assets.
     public bool ShowMissingNpcAssetsIcon { get; set; } = true;
     public bool ShowMissingOutfitAssetsIcon { get; set; } = true;
 

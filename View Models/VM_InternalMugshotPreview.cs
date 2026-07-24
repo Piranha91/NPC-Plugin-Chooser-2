@@ -51,15 +51,15 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     [Reactive] public bool HasMissingAssets { get; private set; }
     [Reactive] public string MissingAssetNotificationText { get; private set; } = string.Empty;
 
-    /// <summary>Stale-physics-config surface: the attire mesh links an SMP/HDT
-    /// physics XML that doesn't exist (a stale link in the mod itself), but its
-    /// physics bones were classified via a sibling config so the render is
-    /// correct. Informational only — kept separate from
-    /// <see cref="HasMissingAssets"/> because it is NOT a missing asset, gets
-    /// its own (placeholder) icon, and must never mark a cached mugshot
-    /// stale.</summary>
-    [Reactive] public bool HasPhysicsConfigNotice { get; private set; }
-    [Reactive] public string PhysicsConfigNoticeText { get; private set; } = string.Empty;
+    /// <summary>Outfit-asset surface. In the preview every mesh-override warning
+    /// is attire (outfit/headgear), so both unrenderable attire meshes and
+    /// stale-physics-config links (an attire mesh links an SMP/HDT XML that
+    /// doesn't exist — the render is still correct) share this one badge. Kept
+    /// separate from <see cref="HasMissingAssets"/> (the base NPC surface, unused
+    /// in the preview). The physics part is informational and never marks a
+    /// cached mugshot stale.</summary>
+    [Reactive] public bool HasMissingOutfitAssets { get; private set; }
+    [Reactive] public string MissingOutfitAssetsText { get; private set; } = string.Empty;
 
     /// <summary>Outfit-conflict banner: set when "Include Outfit" is overridden
     /// at runtime by a SkyPatcher/SPID config, or (SkyPatcher mode) NPC2's own
@@ -382,36 +382,40 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
                 (w.Kind == MeshOverrideWarningKind.StalePhysicsConfig
                     ? physicsNotices : assetWarnings).Add(w.Message);
 
-        if (assetWarnings.Count == 0)
+        // All mesh-override warnings are attire (outfit/headgear); the preview has
+        // no base-NPC missing-asset surface, so everything routes to the outfit
+        // badge. Unrenderable attire meshes and stale-physics links share one icon;
+        // the tooltip enumerates each under its own heading.
+        HasMissingAssets = false;
+        MissingAssetNotificationText = string.Empty;
+
+        if (assetWarnings.Count == 0 && physicsNotices.Count == 0)
         {
-            HasMissingAssets = false;
-            MissingAssetNotificationText = string.Empty;
-        }
-        else
-        {
-            HasMissingAssets = true;
-            MissingAssetNotificationText =
-                "Some attire/headgear preview meshes couldn't be rendered correctly "
-                + "(mesh not found, missing skinning bones, or an incompatible/absent skeleton):"
-                + Environment.NewLine + " - "
-                + string.Join(Environment.NewLine + " - ", assetWarnings);
+            HasMissingOutfitAssets = false;
+            MissingOutfitAssetsText = string.Empty;
+            return;
         }
 
-        if (physicsNotices.Count == 0)
+        var sb = new System.Text.StringBuilder();
+        if (assetWarnings.Count > 0)
         {
-            HasPhysicsConfigNotice = false;
-            PhysicsConfigNoticeText = string.Empty;
+            sb.Append("Some attire/headgear preview meshes couldn't be rendered correctly ")
+              .Append("(mesh not found, missing skinning bones, or an incompatible/absent skeleton):")
+              .Append(Environment.NewLine).Append(" - ")
+              .Append(string.Join(Environment.NewLine + " - ", assetWarnings));
         }
-        else
+        if (physicsNotices.Count > 0)
         {
-            HasPhysicsConfigNotice = true;
-            PhysicsConfigNoticeText =
-                "An attire mesh references an SMP/HDT physics config that doesn't exist "
-                + "(a stale link inside the mod). The preview is rendered correctly; "
-                + "in game the piece's physics likely won't load:"
-                + Environment.NewLine + " - "
-                + string.Join(Environment.NewLine + " - ", physicsNotices);
+            if (assetWarnings.Count > 0) sb.Append(Environment.NewLine).Append(Environment.NewLine);
+            sb.Append("An attire mesh references an SMP/HDT physics config that doesn't exist ")
+              .Append("(a stale link inside the mod). The preview is rendered correctly; ")
+              .Append("in game the piece's physics likely won't load:")
+              .Append(Environment.NewLine).Append(" - ")
+              .Append(string.Join(Environment.NewLine + " - ", physicsNotices));
         }
+
+        HasMissingOutfitAssets = true;
+        MissingOutfitAssetsText = sb.ToString();
     }
 
     private void OnViewerSceneCommitted()

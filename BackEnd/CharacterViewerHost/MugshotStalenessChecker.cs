@@ -277,7 +277,22 @@ public sealed class MugshotStalenessChecker
                 out var missingTextures);
             if (missingMeshes.Count > 0 || missingTextures.Count > 0)
             {
-                Trace($"  Internal: missing-asset drift meshes={missingMeshes.Count} textures={missingTextures.Count}");
+                Trace($"  Internal: missing NPC-asset drift meshes={missingMeshes.Count} textures={missingTextures.Count}");
+                return true;
+            }
+        }
+
+        // Missing outfit/headgear assets have their own re-render toggle. Like the
+        // NPC arrays they are installable — the render re-stamps and re-flags until
+        // the file is present or the toggle is off. (The stale-physics notices are
+        // read by a different key and stay neutral: nothing the user installs can
+        // fix a broken mod link.)
+        if (_settings.AutoUpdateMugshotsWithMissingOutfitAssets)
+        {
+            var missingOutfitAssets = InternalMugshotMetadata.TryReadMissingOutfitAssets(parametersJson);
+            if (missingOutfitAssets.Count > 0)
+            {
+                Trace($"  Internal: missing outfit-asset drift outfit={missingOutfitAssets.Count}");
                 return true;
             }
         }
@@ -303,9 +318,10 @@ public sealed class MugshotStalenessChecker
             }
         }
         if (!_settings.InternalMugshot.ShowMissingOutfitAssetsIcon &&
-            InternalMugshotMetadata.TryReadPhysicsConfigNotices(parametersJson).Count > 0)
+            (InternalMugshotMetadata.TryReadPhysicsConfigNotices(parametersJson).Count > 0 ||
+             InternalMugshotMetadata.TryReadMissingOutfitAssets(parametersJson).Count > 0))
         {
-            Trace("  Internal: outfit-assets icon disabled but PNG carries physics-config notices");
+            Trace("  Internal: outfit-assets icon disabled but PNG carries outfit-asset stamps");
             return true;
         }
 

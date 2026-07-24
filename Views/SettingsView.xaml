@@ -899,8 +899,9 @@
 
                             <!-- Re-render triggers: each toggle gates one staleness check -
                                  renderer/program-version drift, settings/condition drift, and
-                                 recorded missing-asset drift. All default on; turn one off to
-                                 stop that class of automatic regeneration. Backing gates live in
+                                 recorded missing-asset drift (split into base NPC assets vs
+                                 outfit/headgear assets). All default on; turn one off to stop
+                                 that class of automatic regeneration. Backing gates live in
                                  MugshotStalenessChecker (Internal) / PortraitCreator (Legacy). -->
                             <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <TextBlock Text="Re-render When:" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -912,10 +913,14 @@
                                           IsChecked="{Binding AutoUpdateStaleMugshots, Mode=TwoWay}"
                                           VerticalAlignment="Center" Margin="0,0,12,0"
                                           ToolTip="When on (default), a mugshot is re-rendered when the settings it was generated with - lighting, camera / framing, background, resolution and render options - no longer match your current settings. Turn off to keep existing mugshots in place even after you change these settings."/>
-                                <CheckBox Content="Missing Assets"
+                                <CheckBox Content="Missing NPC Assets"
                                           IsChecked="{Binding AutoUpdateMugshotsWithMissingAssets, Mode=TwoWay}"
+                                          VerticalAlignment="Center" Margin="0,0,12,0"
+                                          ToolTip="When on (default), a previously-generated mugshot whose stamped metadata records missing BASE NPC assets — the NPC's own head/body/hair meshes or textures, or a FaceGen mismatch — is treated as stale and re-rendered on the next session, giving newly-installed assets a chance to fill in the wireframe / placeholder areas automatically. Turn off to keep the existing PNG in place even when it depicts an incomplete model."/>
+                                <CheckBox Content="Missing Outfit Assets"
+                                          IsChecked="{Binding AutoUpdateMugshotsWithMissingOutfitAssets, Mode=TwoWay}"
                                           VerticalAlignment="Center"
-                                          ToolTip="When on (default), a previously-generated mugshot whose stamped metadata records any missing meshes or textures is treated as stale and re-rendered on the next session — giving newly-installed assets a chance to fill in the wireframe / placeholder areas automatically. Turn off to keep the existing PNG in place even when it depicts an incomplete model."/>
+                                          ToolTip="When on (default), a mugshot whose stamped metadata records missing outfit/headgear meshes or textures is re-rendered on the next session so newly-installed attire assets fill in the wireframe / placeholder areas. (Broken outfit physics links are excluded: nothing you install can fix a stale link inside the mod.) Turn off to keep the existing PNG in place."/>
                             </WrapPanel>
 
                             <!-- Warning-icon visibility: each gates one mugshot-tile warning
@@ -931,7 +936,7 @@
                                 <CheckBox Content="Show Missing Outfit Assets Icon"
                                           IsChecked="{Binding InternalShowMissingOutfitAssetsIcon, Mode=TwoWay}"
                                           VerticalAlignment="Center"
-                                          ToolTip="When on (default), a mugshot whose outfit references a physics config that doesn't exist (a broken SMP/HDT link inside the mod — the render itself is correct) shows the outfit-assets warning icon, recorded in the PNG so it survives restarts. Unchecking hides the icon and re-renders the affected mugshots once so their recorded state is cleared."/>
+                                          ToolTip="When on (default), a mugshot whose outfit/headgear is missing meshes or textures — or references a physics config that doesn't exist (a broken SMP/HDT link inside the mod; the render itself is correct) — shows the outfit-assets warning icon, recorded in the PNG so it survives restarts. The missing meshes/textures re-render when you install the assets (via 'Re-render When: Missing Assets'); the broken physics link is informational. Unchecking hides the icon and re-renders the affected mugshots once so their recorded state is cleared."/>
                             </WrapPanel>
 
                             <!-- Attire defaults: apply to both the mugshot renderer and

@@ -218,6 +218,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     [Reactive] public bool AutoUpdateOldMugshots { get; set; }
     [Reactive] public bool AutoUpdateStaleMugshots { get; set; }
     [Reactive] public bool AutoUpdateMugshotsWithMissingAssets { get; set; }
+    [Reactive] public bool AutoUpdateMugshotsWithMissingOutfitAssets { get; set; }
     [Reactive] public bool AssetValidatedMugshotsOnly { get; set; }
     [Reactive] public PortraitCameraMode SelectedCameraMode { get; set; }
     public IEnumerable<PortraitCameraMode> CameraModes { get; } = Enum.GetValues(typeof(PortraitCameraMode)).Cast<PortraitCameraMode>();
@@ -666,6 +667,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         AutoUpdateOldMugshots = _model.AutoUpdateOldMugshots;
         AutoUpdateStaleMugshots = _model.AutoUpdateStaleMugshots;
         AutoUpdateMugshotsWithMissingAssets = _model.AutoUpdateMugshotsWithMissingAssets;
+        AutoUpdateMugshotsWithMissingOutfitAssets = _model.AutoUpdateMugshotsWithMissingOutfitAssets;
         AssetValidatedMugshotsOnly = _model.AssetValidatedMugshotsOnly;
         MugshotBackgroundColor = new SolidColorBrush(_model.MugshotBackgroundColor);
         if (MugshotBackgroundColor.CanFreeze) MugshotBackgroundColor.Freeze(); // Good practice
@@ -1077,6 +1079,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => _model.AutoUpdateStaleMugshots = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AutoUpdateMugshotsWithMissingAssets).Skip(1)
             .Subscribe(b => _model.AutoUpdateMugshotsWithMissingAssets = b).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.AutoUpdateMugshotsWithMissingOutfitAssets).Skip(1)
+            .Subscribe(b => _model.AutoUpdateMugshotsWithMissingOutfitAssets = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AssetValidatedMugshotsOnly).Skip(1)
             .Subscribe(b => _model.AssetValidatedMugshotsOnly = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedCameraMode).Skip(1)

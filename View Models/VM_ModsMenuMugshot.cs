@@ -96,12 +96,12 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
 
     [Reactive] public bool HasMissingAssets { get; set; } = false;
     [Reactive] public string MissingAssetNotificationText { get; set; } = string.Empty;
-    /// <summary>Informational stale-physics-config badge (an attire mesh links
-    /// an SMP/HDT physics XML that doesn't exist — a broken link in the mod
-    /// itself; the render is correct). Never counted as a missing asset and
-    /// never re-stales the mugshot; see VM_NpcsMenuMugshot.</summary>
-    [Reactive] public bool HasPhysicsConfigNotice { get; set; } = false;
-    [Reactive] public string PhysicsConfigNoticeText { get; set; } = string.Empty;
+    /// <summary>Outfit-asset badge: the outfit/headgear is missing meshes/textures
+    /// (re-render-eligible) and/or has a stale-physics-config link (informational —
+    /// render correct, never re-stales). Kept separate from the base NPC's
+    /// <see cref="HasMissingAssets"/>; see VM_NpcsMenuMugshot.</summary>
+    [Reactive] public bool HasMissingOutfitAssets { get; set; } = false;
+    [Reactive] public string MissingOutfitAssetsText { get; set; } = string.Empty;
     /// <summary>Outfit-conflict badge (Include Outfit overridden at runtime by
     /// SkyPatcher/SPID, or NPC2's SkyPatcher ini not conflict-winning) —
     /// computed live from current configs; see VM_NpcsMenuMugshot.</summary>
@@ -402,6 +402,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 List<string> meshes = new();
                 List<string> textures = new();
                 List<string> physicsNotices = new();
+                List<string> missingOutfitAssets = new();
                 string? faceGenMismatch = null;
                 if (tryReadAssetMeta)
                 {
@@ -411,6 +412,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                         InternalMugshotMetadata.TryReadMissingAssets(json, out meshes, out textures);
                         faceGenMismatch = InternalMugshotMetadata.TryReadFaceGenMismatch(json);
                         physicsNotices = InternalMugshotMetadata.TryReadPhysicsConfigNotices(json);
+                        missingOutfitAssets = InternalMugshotMetadata.TryReadMissingOutfitAssets(json);
                     }
                 }
 
@@ -419,7 +421,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
                 // the Mods menu).
                 string outfitNotice = ComputeOutfitNoticeSafe();
 
-                return (bmp, dimensions, meshes, textures, physicsNotices, faceGenMismatch, outfitNotice);
+                return (bmp, dimensions, meshes, textures, physicsNotices, missingOutfitAssets, faceGenMismatch, outfitNotice);
             });
 
             // Always apply (even with empty lists) so a re-load of a tile whose
@@ -428,7 +430,7 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             if (tryReadAssetMeta)
             {
                 ApplyMissingAssetNotifications(loadResult.meshes, loadResult.textures, loadResult.faceGenMismatch);
-                ApplyPhysicsConfigNotices(loadResult.physicsNotices);
+                ApplyOutfitAssetNotices(loadResult.missingOutfitAssets, loadResult.physicsNotices);
             }
 
             OutfitNoticeText = loadResult.outfitNotice;
@@ -920,13 +922,15 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             var missingTextures = new List<string>();
             var faceGenMismatch = new List<string>();
             var physicsNotices = new List<string>();
+            var missingOutfitAssets = new List<string>();
             generated = await _internalMugshotGenerator.GenerateAsync(
                 NpcFormKey, sourceMod, pngSavePath, _cancellationToken,
                 missingMeshes, missingTextures, faceGenMismatchOut: faceGenMismatch,
-                physicsConfigNoticesOut: physicsNotices);
+                physicsConfigNoticesOut: physicsNotices,
+                missingOutfitAssetsOut: missingOutfitAssets);
             ApplyMissingAssetNotifications(missingMeshes, missingTextures,
                 faceGenMismatch.Count > 0 ? faceGenMismatch[0] : null);
-            ApplyPhysicsConfigNotices(physicsNotices);
+            ApplyOutfitAssetNotices(missingOutfitAssets, physicsNotices);
             _ = RefreshOutfitNoticeAsync();
         }
         else if (!string.IsNullOrWhiteSpace(nifPath))
@@ -1040,20 +1044,41 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
         MissingAssetNotificationText = sb.ToString();
     }
 
-    /// <summary>Sets the informational stale-physics-config badge from render
-    /// output or stamped metadata. Always applied (even empty) so regenerating
-    /// a fixed mod clears a previous notice.</summary>
-    private void ApplyPhysicsConfigNotices(IReadOnlyList<string>? notices)
+    /// <summary>Sets the outfit-asset badge from render output or stamped
+    /// metadata: missing outfit/headgear meshes+textures (re-render-eligible) and/or
+    /// stale-physics-config links (informational). Always applied (even with both
+    /// empty) so regenerating a fixed mod clears a previous notice.</summary>
+    private void ApplyOutfitAssetNotices(
+        IReadOnlyList<string>? missingOutfitAssets,
+        IReadOnlyList<string>? physicsNotices)
     {
-        bool has = notices is { Count: > 0 }
-                   && _settings.InternalMugshot.ShowMissingOutfitAssetsIcon;
-        HasPhysicsConfigNotice = has;
-        PhysicsConfigNoticeText = has
-            ? "An outfit mesh references a physics config that doesn't exist "
-              + "(a broken link inside the mod). The mugshot is rendered correctly; "
-              + "in game the piece's physics likely won't load:\n - "
-              + string.Join("\n - ", notices!)
-            : string.Empty;
+        bool hasAssets = missingOutfitAssets is { Count: > 0 };
+        bool hasPhysics = physicsNotices is { Count: > 0 };
+        if ((!hasAssets && !hasPhysics)
+            || !_settings.InternalMugshot.ShowMissingOutfitAssetsIcon)
+        {
+            HasMissingOutfitAssets = false;
+            MissingOutfitAssetsText = string.Empty;
+            return;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        if (hasAssets)
+        {
+            sb.Append("The following outfit assets could not be found:");
+            foreach (var p in missingOutfitAssets!) sb.Append('\n').Append(p);
+        }
+        if (hasPhysics)
+        {
+            if (hasAssets) sb.Append("\n\n");
+            sb.Append("An outfit mesh references a physics config that doesn't exist ")
+              .Append("(a broken link inside the mod). The mugshot is rendered correctly; ")
+              .Append("in game the piece's physics likely won't load:\n - ")
+              .Append(string.Join("\n - ", physicsNotices!));
+        }
+
+        HasMissingOutfitAssets = true;
+        MissingOutfitAssetsText = sb.ToString();
     }
 
     /// <summary>Builds the placeholder tooltip body listing where NPC2 looks

@@ -833,13 +833,15 @@
                                             </Viewbox>
                                         </Grid>
 
-                                        <!-- Stale-physics-config indicator (Top-Right): an outfit mesh
-                                             links an SMP/HDT physics XML that doesn't exist (broken link
-                                             inside the mod). Informational only — the render is correct
-                                             and this never re-stales the mugshot. -->
+                                        <!-- Missing-outfit-assets indicator (Top-Right): the outfit/
+                                             headgear is missing meshes or textures (installable —
+                                             re-render picks them up), and/or an outfit mesh links an
+                                             SMP/HDT physics XML that doesn't exist (informational — the
+                                             render is correct). Separate from the base missing-asset
+                                             icon above. -->
                                         <Grid HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0 0 0 0"
-                                              Visibility="{Binding HasPhysicsConfigNotice, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                              ToolTip="{Binding PhysicsConfigNoticeText}"
+                                              Visibility="{Binding HasMissingOutfitAssets, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                              ToolTip="{Binding MissingOutfitAssetsText}"
                                               Width="{Binding RelativeSource={RelativeSource AncestorType=Grid}, Path=ActualWidth, Converter={StaticResource PercentageSizingConverter}, ConverterParameter='20'}"
                                               Height="{Binding RelativeSource={RelativeSource Self}, Path=Width}">
                                             <Viewbox Stretch="Uniform">

@@ -127,6 +127,16 @@ public static class InternalMugshotMetadata
     // consulted by MugshotStalenessChecker — this key must never make a cached
     // mugshot stale (nothing the user installs can clear it).
     private const string PhysicsConfigNoticesKey = "physics_config_notices";
+    // Missing outfit/headgear ASSETS — attire-override meshes that didn't resolve
+    // (or produced no renderable shapes / needed absent skeleton bones) plus attire
+    // textures the override build couldn't decode. Kept separate from the base NPC's
+    // missing_meshes/missing_textures so they route to the outfit-asset icon rather
+    // than the main missing-asset icon. Unlike PhysicsConfigNoticesKey these ARE
+    // real missing assets: MugshotStalenessChecker treats them as re-render-eligible
+    // under AutoUpdateMugshotsWithMissingOutfitAssets (installing the file clears
+    // them), like the base arrays under AutoUpdateMugshotsWithMissingAssets. Not
+    // folded into the settings hash (a render output, not an input).
+    private const string MissingOutfitAssetsKey = "missing_outfit_assets";
     public const string PipelineSchemaKey = "pipeline_schema";
     /// <summary>JSON key of the depicted-outfit identity stamp (v12+).</summary>
     public const string EffectiveOutfitKey = "effective_outfit";
@@ -143,7 +153,8 @@ public static class InternalMugshotMetadata
         IReadOnlyList<string>? missingMeshes = null,
         IReadOnlyList<string>? missingTextures = null,
         string? faceGenMismatch = null,
-        IReadOnlyList<string>? physicsConfigNotices = null)
+        IReadOnlyList<string>? physicsConfigNotices = null,
+        IReadOnlyList<string>? missingOutfitAssets = null)
     {
         var obj = new JObject
         {
@@ -227,6 +238,10 @@ public static class InternalMugshotMetadata
         {
             obj[PhysicsConfigNoticesKey] = new JArray(physicsConfigNotices);
         }
+        if (missingOutfitAssets != null && missingOutfitAssets.Count > 0)
+        {
+            obj[MissingOutfitAssetsKey] = new JArray(missingOutfitAssets);
+        }
 
         return obj.ToString(Newtonsoft.Json.Formatting.None);
     }
@@ -279,6 +294,29 @@ public static class InternalMugshotMetadata
             // Malformed JSON — treat as "no notices recorded".
         }
         return notices;
+    }
+
+    /// <summary>Parses the missing outfit/headgear assets out of a
+    /// previously-stamped "Parameters" JSON. Empty when absent (older PNGs, or
+    /// renders whose attire resolved cleanly) or on any parse error. Unlike
+    /// <see cref="TryReadPhysicsConfigNotices"/> these ARE missing assets — the
+    /// staleness checker treats them as re-render-eligible under
+    /// AutoUpdateMugshotsWithMissingOutfitAssets, like the base arrays read by
+    /// <see cref="TryReadMissingAssets"/> (gated by AutoUpdateMugshotsWithMissingAssets).</summary>
+    public static List<string> TryReadMissingOutfitAssets(string parametersJson)
+    {
+        var assets = new List<string>();
+        if (string.IsNullOrWhiteSpace(parametersJson)) return assets;
+        try
+        {
+            var obj = JObject.Parse(parametersJson);
+            ReadStringArray(obj, MissingOutfitAssetsKey, assets);
+        }
+        catch
+        {
+            // Malformed JSON — treat as "no missing outfit assets recorded".
+        }
+        return assets;
     }
 
     /// <summary>Parses the FaceGen-mismatch reason out of a previously-stamped

@@ -74,6 +74,14 @@ public sealed record GenerationResult(
     /// so existing constructor call sites are unaffected.</summary>
     public IReadOnlyList<string> PhysicsConfigNotices { get; init; } = Array.Empty<string>();
 
+    /// <summary>Missing outfit/headgear assets (attire-override meshes that didn't
+    /// resolve/render, plus attire textures the override build couldn't decode),
+    /// detected at render time or read back from a cached PNG's metadata. Unlike
+    /// <see cref="PhysicsConfigNotices"/> these are real missing assets — they route
+    /// to the outfit-asset icon and are re-render-eligible. Non-positional so
+    /// existing constructor call sites are unaffected.</summary>
+    public IReadOnlyList<string> MissingOutfitAssets { get; init; } = Array.Empty<string>();
+
     public bool ProducedFile => OutputPath != null && (Generated || AlreadyCurrent);
     public bool ProducedAnything => ProducedFile || InMemoryImageBytes != null;
 }
@@ -565,6 +573,7 @@ public sealed class BatchMugshotGenerator
                     List<string> existingMeshes = new();
                     List<string> existingTextures = new();
                     List<string> existingPhysicsNotices = new();
+                    List<string> existingOutfitAssets = new();
                     string? existingFaceGenMismatch = null;
                     if (!string.IsNullOrWhiteSpace(json))
                     {
@@ -572,6 +581,7 @@ public sealed class BatchMugshotGenerator
                             json, out existingMeshes, out existingTextures);
                         existingFaceGenMismatch = InternalMugshotMetadata.TryReadFaceGenMismatch(json);
                         existingPhysicsNotices = InternalMugshotMetadata.TryReadPhysicsConfigNotices(json);
+                        existingOutfitAssets = InternalMugshotMetadata.TryReadMissingOutfitAssets(json);
                     }
                     return new GenerationResult(
                         Generated: false, AlreadyCurrent: true, OutputPath: savePath,
@@ -580,16 +590,18 @@ public sealed class BatchMugshotGenerator
                         MissingTextures: existingTextures,
                         FaceFinderExternalUrl: null,
                         InMemoryImageBytes: null)
-                    { FaceGenMismatch = existingFaceGenMismatch, PhysicsConfigNotices = existingPhysicsNotices };
+                    { FaceGenMismatch = existingFaceGenMismatch, PhysicsConfigNotices = existingPhysicsNotices, MissingOutfitAssets = existingOutfitAssets };
                 }
 
                 var missingMeshes = new List<string>();
                 var missingTextures = new List<string>();
                 var faceGenMismatch = new List<string>();
                 var physicsNotices = new List<string>();
+                var missingOutfitAssets = new List<string>();
                 bool generated = await _internalGenerator.GenerateAsync(
                     npcFormKey, sourceMod, savePath, token, missingMeshes, missingTextures,
-                    assetValidatedOnly, faceGenMismatch, targetNpcFormKey, physicsNotices);
+                    assetValidatedOnly, faceGenMismatch, targetNpcFormKey, physicsNotices,
+                    missingOutfitAssets);
                 return new GenerationResult(
                     Generated: generated,
                     AlreadyCurrent: false,
@@ -599,7 +611,7 @@ public sealed class BatchMugshotGenerator
                     MissingTextures: missingTextures,
                     FaceFinderExternalUrl: null,
                     InMemoryImageBytes: null)
-                { FaceGenMismatch = faceGenMismatch.Count > 0 ? faceGenMismatch[0] : null, PhysicsConfigNotices = physicsNotices };
+                { FaceGenMismatch = faceGenMismatch.Count > 0 ? faceGenMismatch[0] : null, PhysicsConfigNotices = physicsNotices, MissingOutfitAssets = missingOutfitAssets };
             }
             else
             {

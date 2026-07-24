@@ -95,6 +95,15 @@ public sealed class InternalMugshotGenerator
     /// receive texture game-paths the NIFs referenced that couldn't be
     /// decoded — those shapes render as a wireframe placeholder and the
     /// list drives a parallel "missing texture" tile overlay.</para>
+    /// <para>Pass <paramref name="missingOutfitAssetsOut"/> to receive the
+    /// outfit/headgear (attire-override) asset problems as pre-formatted display
+    /// strings: override meshes that didn't resolve / render, plus attire
+    /// textures the override build couldn't decode. These route to the
+    /// outfit-asset tile icon rather than the base missing-asset icon, and — like
+    /// the base lists but unlike the stale-physics notices — count as re-render-
+    /// eligible missing assets. <paramref name="missingMeshPathsOut"/> and
+    /// <paramref name="missingTexturePathsOut"/> stay limited to the base NPC's
+    /// own head/body/hair meshes and textures.</para>
     /// <para>When <paramref name="assetValidatedOnly"/> is true and the
     /// renderer reported any missing meshes or textures, the rendered
     /// bytes are discarded — no PNG is written, no tracker entry is
@@ -113,7 +122,8 @@ public sealed class InternalMugshotGenerator
         bool assetValidatedOnly = false,
         List<string>? faceGenMismatchOut = null,
         FormKey? targetNpcFormKey = null,
-        List<string>? physicsConfigNoticesOut = null)
+        List<string>? physicsConfigNoticesOut = null,
+        List<string>? missingOutfitAssetsOut = null)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int tid = Environment.CurrentManagedThreadId;
@@ -190,6 +200,10 @@ public sealed class InternalMugshotGenerator
                 npcFormKey, modSetting, effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear,
                 targetNpcFormKey, out var outfitDisplay);
             var meshOverrideWarningsOut = new List<MeshOverrideWarning>();
+            // Attire (outfit/headgear) textures the override build couldn't decode.
+            // The renderer attributes these as the post-override delta of its
+            // missing-texture set, keeping them out of the base missingTexturePathsOut.
+            var missingOutfitTextures = new List<string>();
 
             // Opt-in per-render phase timing (drop a LogRenderTimings.txt file
             // next to the exe). Pure data, no logging — so timings are
@@ -222,6 +236,7 @@ public sealed class InternalMugshotGenerator
                 Cancellation = token,
                 MissingMeshPathsOut = missingMeshPathsOut,
                 MissingTexturePathsOut = missingTexturePathsOut,
+                MissingOutfitTexturePathsOut = missingOutfitTextures,
                 // Per-render extraction cache clearing was removed: it raced
                 // with concurrent interactive 3D-preview loads (both share the
                 // resolver's extraction directory), causing the preview to lose
@@ -312,20 +327,23 @@ public sealed class InternalMugshotGenerator
 
             // Attire/headgear override warnings are surfaced for display only,
             // AFTER the validated-only gate above — a helmet that needs an absent
-            // skeleton shouldn't discard an otherwise-complete face mugshot. Fold
-            // them into the persisted missing-mesh list so the tile's existing
-            // missing-asset overlay (and the cached metadata) shows them.
-            // StalePhysicsConfig is deliberately NOT folded: the mod's own
-            // physics-XML link is broken but the render is correct, and nothing
-            // the user installs can clear it — persisting it as a missing asset
-            // would re-stale this mugshot every session. It is stamped under its
-            // own staleness-neutral metadata key instead, so the tile can show
-            // the informational outfit-asset icon across restarts.
+            // skeleton shouldn't discard an otherwise-complete face mugshot.
+            // These are OUTFIT assets, so they route to the outfit-asset surface
+            // (its own icon + metadata key), NOT the base NPC missing-mesh list —
+            // missingMeshPathsOut stays limited to the NPC's own head/body/hair.
+            // StalePhysicsConfig is split off further: the mod's own physics-XML
+            // link is broken but the render is correct, and nothing the user
+            // installs can clear it — persisting it as a missing asset would
+            // re-stale this mugshot every session. It is stamped under its own
+            // staleness-neutral metadata key instead, so the tile can show the
+            // informational outfit notice across restarts while the real missing
+            // outfit assets stay re-render-eligible.
+            var missingOutfitAssets = new List<string>();
             List<string>? physicsConfigNotices = null;
             if (meshOverrideWarningsOut.Count > 0)
             {
                 Trace($"  meshOverrideWarnings tid={Environment.CurrentManagedThreadId} count={meshOverrideWarningsOut.Count}");
-                missingMeshPathsOut?.AddRange(meshOverrideWarningsOut
+                missingOutfitAssets.AddRange(meshOverrideWarningsOut
                     .Where(w => w.Kind != MeshOverrideWarningKind.StalePhysicsConfig)
                     .Select(w => w.Message));
                 physicsConfigNotices = meshOverrideWarningsOut
@@ -334,6 +352,13 @@ public sealed class InternalMugshotGenerator
                 if (physicsConfigNotices.Count > 0)
                     physicsConfigNoticesOut?.AddRange(physicsConfigNotices);
             }
+            // Attire textures the override build couldn't decode (renderer delta).
+            // Formatted so they read clearly beside the mesh lines in the shared
+            // outfit-asset tooltip.
+            foreach (var texPath in missingOutfitTextures)
+                missingOutfitAssets.Add("Outfit texture not found: " + texPath);
+            if (missingOutfitAssets.Count > 0)
+                missingOutfitAssetsOut?.AddRange(missingOutfitAssets);
 
             // FaceGen-vs-records consistency. CV.R renders the baked FaceGen geometry
             // directly, so a perfectly-rendered mugshot can still hide the in-game
@@ -384,7 +409,7 @@ public sealed class InternalMugshotGenerator
                 // MugshotStalenessChecker's toggle-off check settle after one
                 // regeneration instead of looping.
                 bool stampNpcAssets = _settings.InternalMugshot.ShowMissingNpcAssetsIcon;
-                bool stampOutfitNotices = _settings.InternalMugshot.ShowMissingOutfitAssetsIcon;
+                bool stampOutfitAssets = _settings.InternalMugshot.ShowMissingOutfitAssetsIcon;
                 // The attire identity = effective outfit + the wig-forwarding
                 // contribution (WigHandlingMode) — same composition the
                 // staleness checker's identity providers use, so a mode or
@@ -397,7 +422,8 @@ public sealed class InternalMugshotGenerator
                     stampNpcAssets ? missingMeshPathsOut : null,
                     stampNpcAssets ? missingTexturePathsOut : null,
                     stampNpcAssets ? faceGenMismatch : null,
-                    stampOutfitNotices ? physicsConfigNotices : null);
+                    stampOutfitAssets ? physicsConfigNotices : null,
+                    stampOutfitAssets ? missingOutfitAssets : null);
                 MugshotPngMetadata.InjectParameters(outputPath, parametersJson);
             }
             catch (Exception metaEx)
