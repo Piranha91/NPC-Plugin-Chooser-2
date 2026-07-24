@@ -292,4 +292,135 @@ public class WigHandlingModeResolutionTests
         settings.RemoveManualAntlerHeadPart("Antler01", "FoxGlove", NpcB);
         settings.ManualAntlerHeadParts.Should().BeEmpty("the entry is dropped when its last source is gone");
     }
+
+    // ── Skin-carried (WNAM) wig armatures: gating + IsWigArmature matrix ──
+
+    private static readonly FormKey ArmaKey = MutagenFixtures.Fk("000B10:HPNO.esp");
+
+    private static ModSetting ModWithWigArmature() => new()
+    {
+        DisplayName = "HPNO",
+        DetectedWigArmatures = { ArmaKey },
+    };
+
+    [Fact]
+    public void WnamOnlyMod_ActivatesWigHandling()
+    {
+        // The coarse gate must fold DetectedWigArmatures — a mod with only
+        // skin-carried wigs (no outfit wig ARMOs) still gets a wig mode.
+        var settings = NewSettings(PatchingMode.CreateAndPatch,
+            globalDefault: WigHandlingMode.ConvertToHeadParts);
+
+        settings.GetEffectiveWigMode(ModWithWigArmature())
+            .Should().Be(WigHandlingMode.ConvertToHeadParts);
+        settings.GetEffectiveRenderWigMode(ModWithWigArmature())
+            .Should().Be(WigHandlingMode.ConvertToHeadParts);
+    }
+
+    [Fact]
+    public void ManualPositiveDesignationOnly_ActivatesWigHandling()
+    {
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+        var mod = new ModSetting { DisplayName = "HPNO" }; // no scan detections
+
+        settings.ModHasWigs(mod).Should().BeFalse();
+        settings.GetEffectiveWigMode(mod).Should().Be(WigHandlingMode.None);
+
+        settings.AddManualWigArmature("0Sky205Addon", "HPNO", NpcA, isWig: true);
+
+        settings.ModHasWigs(mod).Should().BeTrue("a positive designation made in the mod counts");
+        settings.GetEffectiveWigMode(mod).Should().Be(WigHandlingMode.ForwardToSkin,
+            "manual-only mod resolves to the global default until a per-mod mode is set");
+    }
+
+    [Fact]
+    public void NegativeDesignation_DoesNotDeactivateTheCoarseGate_ButVetoesTheArma()
+    {
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+        var mod = ModWithWigArmature();
+
+        settings.IsWigArmature(mod, ArmaKey, "0Sky205Addon", NpcA).Should().BeTrue("scan-detected");
+
+        settings.AddManualWigArmature("0Sky205Addon", "HPNO", NpcA, isWig: false);
+
+        settings.IsWigArmature(mod, ArmaKey, "0Sky205Addon", NpcA)
+            .Should().BeFalse("the veto suppresses the detection");
+        settings.ModHasWigs(mod).Should().BeTrue(
+            "the coarse gate stays open (the detection set is unchanged; only eligibility is refined)");
+    }
+
+    [Fact]
+    public void IsWigArmature_PositivePromotion_WinsOverNoDetection()
+    {
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+        var mod = new ModSetting { DisplayName = "HPNO" };
+
+        settings.IsWigArmature(mod, ArmaKey, "0Sky205Addon", NpcA).Should().BeFalse();
+        settings.AddManualWigArmature("0Sky205Addon", "HPNO", NpcA, isWig: true);
+        settings.IsWigArmature(mod, ArmaKey, "0Sky205Addon", NpcA).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AddManualWigArmature_SwitchingDirection_RemovesTheOppositeEntry()
+    {
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+
+        settings.AddManualWigArmature("0Sky205Addon", "HPNO", NpcA, isWig: false);
+        settings.ManualNonWigArmatures.Should().ContainSingle();
+
+        settings.AddManualWigArmature("0Sky205Addon", "HPNO", NpcA, isWig: true);
+
+        settings.ManualWigArmatures.Should().ContainSingle();
+        settings.ManualNonWigArmatures.Should().BeEmpty(
+            "a designation is a single checkbox — never both directions at once");
+    }
+
+    [Fact]
+    public void WigScope_Matrix_AppliesToBothDirections()
+    {
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+        settings.AddManualWigArmature("Addon01", "HPNO", NpcA, isWig: true);
+        settings.AddManualWigArmature("Veto01", "HPNO", NpcA, isWig: false);
+
+        settings.ManualWigBlockScope = AntlerBlockScope.AllNpcs;
+        settings.IsManualWigArmature("Addon01", "OtherMod", NpcB).Should().BeTrue();
+        settings.IsManualNonWigArmature("Veto01", "OtherMod", NpcB).Should().BeTrue();
+        settings.IsManualWigArmature("addon01", "OtherMod", NpcB).Should().BeTrue("case-insensitive");
+
+        settings.ManualWigBlockScope = AntlerBlockScope.SameMod;
+        settings.IsManualWigArmature("Addon01", "HPNO", NpcB).Should().BeTrue("same mod, any NPC");
+        settings.IsManualWigArmature("Addon01", "OtherMod", NpcA).Should().BeFalse("different mod");
+        settings.IsManualNonWigArmature("Veto01", "OtherMod", NpcA).Should().BeFalse();
+
+        settings.ManualWigBlockScope = AntlerBlockScope.SpecificNpc;
+        settings.IsManualWigArmature("Addon01", "OtherMod", NpcA).Should().BeTrue("same NPC, any mod");
+        settings.IsManualWigArmature("Addon01", "HPNO", NpcB).Should().BeFalse("different NPC");
+    }
+
+    [Fact]
+    public void RemoveManualWigArmature_DropsOnlyThatSource_AndDirection()
+    {
+        var settings = NewSettings(PatchingMode.CreateAndPatch);
+        settings.ManualWigBlockScope = AntlerBlockScope.SpecificNpc;
+        settings.AddManualWigArmature("Addon01", "HPNO", NpcA, isWig: true);
+        settings.AddManualWigArmature("Addon01", "HPNO", NpcB, isWig: true);
+
+        settings.RemoveManualWigArmature("Addon01", "HPNO", NpcA, isWig: true);
+
+        settings.IsManualWigArmature("Addon01", "HPNO", NpcA).Should().BeFalse();
+        settings.IsManualWigArmature("Addon01", "HPNO", NpcB).Should().BeTrue();
+
+        settings.RemoveManualWigArmature("Addon01", "HPNO", NpcB, isWig: true);
+        settings.ManualWigArmatures.Should().BeEmpty("the entry is dropped when its last source is gone");
+    }
+
+    [Fact]
+    public void ModSetting_HasWigSources_ReflectsEitherWigSet()
+    {
+        new ModSetting().HasWigSources.Should().BeFalse();
+        new ModSetting { DetectedWigArmors = { WigKey } }.HasWigSources.Should().BeTrue();
+        new ModSetting { DetectedWigArmatures = { ArmaKey } }.HasWigSources.Should().BeTrue();
+        new ModSetting { DetectedWigArmatures = { ArmaKey } }.HasWigArmors
+            .Should().BeFalse("HasWigArmors stays outfit-ARMO-only for its existing consumers");
+    }
 }

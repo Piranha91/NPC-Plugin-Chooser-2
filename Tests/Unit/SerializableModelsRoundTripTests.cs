@@ -78,6 +78,7 @@ public class SerializableModelsRoundTripTests
             HasBaseGameAssetPaths = true,
             BaseGameAssetPathCount = 42,
             DetectedWigArmors = new HashSet<FormKey> { Npc1 },
+            DetectedWigArmatures = new HashSet<FormKey> { Npc3 },
             DetectedAntlerArmors = new HashSet<FormKey> { Npc2 },
             DetectedAntlerArmatures = new HashSet<FormKey> { Npc1 },
             DetectedAntlerHeadParts = new HashSet<FormKey> { Npc2 },
@@ -122,10 +123,12 @@ public class SerializableModelsRoundTripTests
         clone.ModWigHandlingMode.Should().Be(WigHandlingMode.ForwardToOutfit);
         clone.ModAntlerHandlingMode.Should().Be(AntlerHandlingMode.Remove);
         clone.DetectedWigArmors.Should().BeEquivalentTo(new[] { Npc1 });
+        clone.DetectedWigArmatures.Should().BeEquivalentTo(new[] { Npc3 });
         clone.DetectedAntlerArmors.Should().BeEquivalentTo(new[] { Npc2 });
         clone.DetectedAntlerArmatures.Should().BeEquivalentTo(new[] { Npc1 });
         clone.DetectedAntlerHeadParts.Should().BeEquivalentTo(new[] { Npc2 });
         clone.HasWigArmors.Should().BeTrue();
+        clone.HasWigSources.Should().BeTrue();
         clone.HasAntlers.Should().BeTrue();
     }
 
@@ -505,6 +508,43 @@ public class SerializableModelsRoundTripTests
         entry.Sources.Should().HaveCount(2);
         entry.Sources.Should().Contain(s => s.ModName == "FoxGlove" && s.NpcFormKey == Npc1);
         entry.Sources.Should().Contain(s => s.ModName == "OtherMod" && s.NpcFormKey == Npc2);
+    }
+
+    [Fact]
+    public void Settings_ManualWigArmatures_SurviveRoundTrip()
+    {
+        var settings = new Settings
+        {
+            ManualWigBlockScope = AntlerBlockScope.SameMod,
+            ManualWigArmatures = new List<ManualWigArmature>
+            {
+                new()
+                {
+                    EditorId = "0Sky205Addon",
+                    Sources = { new WigArmatureSource { ModName = "HPNO", NpcFormKey = Npc1 } },
+                },
+            },
+            ManualNonWigArmatures = new List<ManualWigArmature>
+            {
+                new()
+                {
+                    EditorId = "FeatherHoodAddon",
+                    Sources = { new WigArmatureSource { ModName = "HPNO", NpcFormKey = Npc2 } },
+                },
+            },
+        };
+
+        var clone = RoundTrip(settings);
+
+        clone.ManualWigBlockScope.Should().Be(AntlerBlockScope.SameMod);
+        clone.ManualWigArmatures.Should().ContainSingle();
+        clone.ManualWigArmatures[0].EditorId.Should().Be("0Sky205Addon");
+        clone.ManualWigArmatures[0].Sources.Should().ContainSingle(
+            s => s.ModName == "HPNO" && s.NpcFormKey == Npc1);
+        clone.ManualNonWigArmatures.Should().ContainSingle();
+        clone.ManualNonWigArmatures[0].EditorId.Should().Be("FeatherHoodAddon");
+        clone.ManualNonWigArmatures[0].Sources.Should().ContainSingle(
+            s => s.ModName == "HPNO" && s.NpcFormKey == Npc2);
     }
 
     [Fact]

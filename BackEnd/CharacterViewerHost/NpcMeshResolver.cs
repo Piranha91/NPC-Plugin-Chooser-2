@@ -393,11 +393,12 @@ public class NpcMeshResolver
                     LogVerbose("CharacterViewer: Armature[Feet]=" + armaLink.FormKey + ", WorldModel=" + meshPath);
                     if (txstPaths.Count > 0) txstTextures["Feet"] = txstPaths;
                 }
-                // Hair (biped slot 31): NPC overhauls like High Poly NPC
-                // Overhaul ship a "bald" FaceGen scalp + a wig ARMO whose
-                // ARMA occupies this slot. Without picking it up here the
-                // NPC renders hairless.
-                if (hairPath == null && flags.HasFlag(BipedObjectFlag.Hair))
+                // Hair (biped slots 31 Hair / 41 LongHair): NPC overhauls like
+                // High Poly NPC Overhaul ship a "bald" FaceGen scalp + a wig
+                // ARMO whose ARMA occupies a hair slot. Without picking it up
+                // here the NPC renders hairless. Both slots match, mirroring
+                // WigDetector.HairSlots (detection/conversion parity).
+                if (hairPath == null && (flags & WigDetector.HairSlots) != 0)
                 {
                     hairPath = meshPath;
                     chains["Hair"] = npcName + " → " + armorSource + " → Armature(Hair):" + armaLink.FormKey +
@@ -472,6 +473,21 @@ public class NpcMeshResolver
         var hideHeadShapeNames = ComputeAntlerHideHeadShapeNames(npcGetter, modSetting, linkCache, context);
         if (hideHeadShapeNames.Count > 0)
             LogVerbose("CharacterViewer: hiding baked antler head shape(s): " + string.Join(", ", hideHeadShapeNames));
+
+        // Skin-carried (WNAM) wig ConvertToHeadParts parity: the patch strips the
+        // donor's Hair-type head parts and bakes the skin wig instead; the preview
+        // already draws that wig through the Hair channel (WornArmor walk above),
+        // so hiding the donor's baked hair shapes makes the preview depict the
+        // output — and makes is/is-not-a-wig designations visibly change it.
+        var wigHideNames = ComputeWigHideHeadShapeNames(npcGetter, modSetting, linkCache, context, npcRaceKey);
+        if (wigHideNames.Count > 0)
+        {
+            var union = new HashSet<string>(hideHeadShapeNames, StringComparer.OrdinalIgnoreCase);
+            union.UnionWith(wigHideNames);
+            hideHeadShapeNames = union;
+            LogVerbose("CharacterViewer: hiding donor hair shape(s) superseded by the skin-carried wig: " +
+                       string.Join(", ", wigHideNames));
+        }
 
         // Final pass: rebase any path that exists as a loose file under one of
         // the context's mod folders to its absolute disk path. The renderer's
@@ -568,6 +584,68 @@ public class NpcMeshResolver
                         _settings.IsManualAntlerHeadPart(extraRec.EditorID, modSetting.DisplayName, npcGetter.FormKey))
                         names.Add(extraRec.EditorID);
                 }
+            }
+        }
+        return names;
+    }
+
+    /// <summary>Shape names to hide from the FaceGen head when the effective
+    /// RENDER wig mode is ConvertToHeadParts and the donor's skin carries the
+    /// NPC's wig (the WNAM source): the donor's Hair-type head parts' EditorIDs
+    /// plus their ExtraParts' EditorIDs. Mirrors
+    /// <see cref="HeadPartWigConverter"/>'s WNAM-path gates — exactly one
+    /// race-applicable effective wig ARMA (<see cref="Settings.IsWigArmature"/>),
+    /// and no detected outfit wig (the outfit-wig render plan owns that case).
+    /// Empty when nothing applies.</summary>
+    private IReadOnlySet<string> ComputeWigHideHeadShapeNames(INpcGetter npcGetter, ModSetting? modSetting,
+        ILinkCache linkCache, NpcResolutionContext? context, FormKey? npcRaceKey)
+    {
+        if (modSetting == null) return EmptyShapeNameSet;
+        if (_settings.GetEffectiveRenderWigMode(modSetting) != WigHandlingMode.ConvertToHeadParts)
+            return EmptyShapeNameSet;
+        if (npcGetter.WornArmor.IsNull) return EmptyShapeNameSet;
+
+        // An outfit wig converting for this NPC owns the donor-hair hiding
+        // (BuildWigRenderPlan flow) — don't double-cover.
+        if (!npcGetter.DefaultOutfit.IsNull)
+        {
+            var outfit = ResolveRecord<IOutfitGetter>(npcGetter.DefaultOutfit, linkCache, context);
+            if (outfit?.Items != null && outfit.Items.Any(i =>
+                    i != null && !i.IsNull && modSetting.DetectedWigArmors.Contains(i.FormKey)))
+            {
+                return EmptyShapeNameSet;
+            }
+        }
+
+        var wnam = ResolveRecord<IArmorGetter>(npcGetter.WornArmor, linkCache, context);
+        if (wnam?.Armature == null) return EmptyShapeNameSet;
+        int applicableWigArmas = 0;
+        foreach (var armaLink in wnam.Armature)
+        {
+            if (armaLink == null || armaLink.IsNull) continue;
+            var arma = ResolveRecord<IArmorAddonGetter>(armaLink, linkCache, context);
+            if (arma == null || !IsArmatureForRace(arma, npcRaceKey)) continue;
+            if (_settings.IsWigArmature(modSetting, armaLink.FormKey, arma.EditorID, npcGetter.FormKey))
+                applicableWigArmas++;
+        }
+
+        // The converter declines zero or multiple applicable wig ARMAs — the
+        // donor state is then preserved, so the preview must not hide anything.
+        if (applicableWigArmas != 1) return EmptyShapeNameSet;
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var hpLink in npcGetter.HeadParts)
+        {
+            if (hpLink == null || hpLink.IsNull) continue;
+            var hpRec = ResolveRecord<IHeadPartGetter>(hpLink, linkCache, context);
+            if (hpRec?.Type != HeadPart.TypeEnum.Hair) continue;
+            if (!string.IsNullOrEmpty(hpRec.EditorID)) names.Add(hpRec.EditorID);
+            if (hpRec.ExtraParts == null) continue;
+            foreach (var extraLink in hpRec.ExtraParts)
+            {
+                if (extraLink == null || extraLink.IsNull) continue;
+                var extraRec = ResolveRecord<IHeadPartGetter>(extraLink, linkCache, context);
+                if (!string.IsNullOrEmpty(extraRec?.EditorID)) names.Add(extraRec.EditorID);
             }
         }
         return names;
@@ -779,6 +857,75 @@ public class NpcMeshResolver
 
             result.Add(new AntlerHeadPartGroup(hpLink.FormKey, hp.EditorID, display,
                 hp.Type?.ToString() ?? "Misc", groupAuto, mainDesignated, extras));
+        }
+        return result;
+    }
+
+    /// <summary>One hair-slot ArmorAddon carried in the previewed NPC's
+    /// WornArmor, for a row of the "Set Wig Meshes" selector.
+    /// <see cref="EditorId"/> is the manual-designation key;
+    /// <see cref="ShapeNames"/> are the resolved hair NIF's render shape names
+    /// (the hover-highlight keys on the preview's Hair channel — empty when the
+    /// mesh could not be read, leaving the row toggleable without a glow).
+    /// <see cref="IsEffectiveWig"/> folds scan detection, manual vetoes and
+    /// manual promotions (<see cref="Settings.IsWigArmature"/>).</summary>
+    public sealed record WigArmatureCandidate(
+        FormKey ArmaFormKey,
+        string EditorId,
+        string DisplayName,
+        bool IsAutoDetected,
+        bool IsEffectiveWig,
+        IReadOnlyList<string> ShapeNames);
+
+    /// <summary>Enumerates the previewed NPC's WNAM hair-slot ArmorAddons as
+    /// wig-selector rows (resolved through the mod scope, matching the rendered
+    /// NIF). ALL race-applicable hair-slot ARMAs are candidates — including
+    /// slot-only ones the scan did not auto-detect, which is what makes manual
+    /// promotion possible. Antler-classified ARMAs are excluded (the antler flow
+    /// owns them). Empty when the NPC or environment can't be resolved.</summary>
+    public IReadOnlyList<WigArmatureCandidate> GetWigArmatureCandidates(FormKey npcFormKey, ModSetting? modSetting)
+    {
+        var result = new List<WigArmatureCandidate>();
+        if (modSetting == null) return result;
+        var linkCache = _env.LinkCache;
+        if (linkCache == null) return result;
+        var context = BuildContext(npcFormKey, modSetting);
+        var npc = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
+        if (npc == null || npc.WornArmor.IsNull) return result;
+        var wnam = ResolveRecord<IArmorGetter>(npc.WornArmor, linkCache, context);
+        if (wnam?.Armature == null) return result;
+
+        FormKey? npcRaceKey = npc.Race.IsNull ? null : npc.Race.FormKey;
+        var sex = Auxilliary.IsFemale(npc) ? Sex.Female : Sex.Male;
+        var seen = new HashSet<FormKey>();
+        foreach (var armaLink in wnam.Armature)
+        {
+            if (armaLink == null || armaLink.IsNull || !seen.Add(armaLink.FormKey)) continue;
+            if (modSetting.DetectedAntlerArmatures.Contains(armaLink.FormKey)) continue;
+            var arma = ResolveRecord<IArmorAddonGetter>(armaLink, linkCache, context);
+            if (arma?.BodyTemplate == null || string.IsNullOrEmpty(arma.EditorID)) continue;
+            if ((arma.BodyTemplate.FirstPersonFlags & WigDetector.HairSlots) == 0) continue;
+            if (!IsArmatureForRace(arma, npcRaceKey)) continue;
+
+            bool isAuto = modSetting.DetectedWigArmatures.Contains(armaLink.FormKey);
+            bool isEffective = _settings.IsWigArmature(modSetting, armaLink.FormKey, arma.EditorID, npcFormKey);
+
+            // Highlight keys: the resolved hair NIF's render shape names. Loose
+            // files only (a BSA-resident mesh just yields no glow).
+            IReadOnlyList<string> shapeNames = Array.Empty<string>();
+            string? meshPath = GetWorldModelPath(arma, sex);
+            if (meshPath != null)
+            {
+                string? absolute = RebaseToAbsoluteIfPresent(meshPath, context);
+                if (absolute != null && File.Exists(absolute))
+                {
+                    try { shapeNames = NifHandler.GetRenderShapeNames(absolute); }
+                    catch { /* unreadable NIF — row stays toggleable without a glow */ }
+                }
+            }
+
+            result.Add(new WigArmatureCandidate(armaLink.FormKey, arma.EditorID, arma.EditorID,
+                isAuto, isEffective, shapeNames));
         }
         return result;
     }

@@ -539,34 +539,43 @@
                                          </ComboBox>
 
                                          <!-- Wig Handling Mode: only shown when the analysis scan detected
-                                              hair-slot wig armors in this mod AND wig handling is active for the
-                                              current output mode (Create and Patch, or SkyPatcher mode). -->
+                                              wigs in this mod (hair-slot wig armors in Default Outfits, or hair
+                                              meshes carried in NPC skins/WornArmor) AND wig handling is active
+                                              for the current output mode (Create and Patch, or SkyPatcher mode). -->
                                          <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,0"
                                                      Visibility="{Binding IsWigHandlingVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                                              <TextBlock Text="Wig Handling Mode" VerticalAlignment="Center">
                                                  <TextBlock.ToolTip>
                                                      <ToolTip>
                                                          <TextBlock TextWrapping="Wrap" Width="340">
-                                                             This mod ships hair-slot wig armors in its Default Outfits.
-                                                             Controls how they are handled during patching — and how mugshots and the
-                                                             3D preview depict the NPC. Antlers are controlled separately.
+                                                             This mod ships wigs: hair-slot wig armors in its Default Outfits, and/or
+                                                             hair meshes carried directly in an NPC's skin (worn armor — the High Poly
+                                                             NPC Overhaul pattern). Controls how they are handled during patching — and
+                                                             how mugshots and the 3D preview depict the NPC. Antlers are controlled
+                                                             separately.
                                                              <LineBreak/><LineBreak/>
                                                              Default: Use the default setting from the Settings tab.
                                                              <LineBreak/>
-                                                             Forward To Skin: transfer the wig into the NPC's skin (WornArmor) so it shows
-                                                             regardless of the outfit worn. Falls back to Forward To Outfit if the appearance
-                                                             plugin assigns no WornArmor.
+                                                             Forward To Skin: transfer an outfit wig into the NPC's skin (WornArmor) so
+                                                             it shows regardless of the outfit worn (falls back to Forward To Outfit if
+                                                             the appearance plugin assigns no WornArmor). A skin-carried wig is already
+                                                             in this state and is left as-is.
                                                              <LineBreak/>
-                                                             Forward To Outfit: duplicate the outfit the NPC actually wears in game and add
-                                                             the wig to the duplicate (no change if it already contains the wig).
+                                                             Forward To Outfit: duplicate the outfit the NPC actually wears in game and
+                                                             add the wig to the duplicate (no change if it already contains the wig). A
+                                                             skin-carried wig is moved into that outfit as a generated wig armor.
                                                              <LineBreak/>
-                                                             Convert To Headparts (EXPERIMENTAL): discard the wig armor and make the wig the
-                                                             NPC's hair — generated head part records + the wig mesh baked into the FaceGen
-                                                             file (HDT-SMP preserved; helmets hide it like normal hair). Falls back to
-                                                             Forward To Skin per NPC when the bake would be unsafe.
+                                                             Convert To Headparts (EXPERIMENTAL): discard the wig armor and make the wig
+                                                             the NPC's hair — generated head part records + the wig mesh baked into the
+                                                             FaceGen file (HDT-SMP preserved; helmets hide it like normal hair). Works
+                                                             for outfit wigs AND skin-carried wigs (the 3D preview's "Set Wig Meshes"
+                                                             button corrects which skin meshes count as wigs). An outfit wig falls back
+                                                             to Forward To Skin per NPC when the bake would be unsafe; a skin-carried
+                                                             wig is left as-is instead.
                                                              <LineBreak/>
-                                                             None: the wig is treated like any other outfit element — forwarded only if
-                                                             Include Outfits is selected.
+                                                             None: wigs are treated like any other outfit/skin element — an outfit wig
+                                                             is forwarded only if Include Outfits is selected; a skin-carried wig stays
+                                                             in the skin.
                                                          </TextBlock>
                                                      </ToolTip>
                                                  </TextBlock.ToolTip>

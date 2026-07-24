@@ -157,6 +157,19 @@ public class Settings
     public AntlerBlockScope ManualAntlerBlockScope { get; set; } = AntlerBlockScope.AllNpcs;
     public List<ManualAntlerHeadPart> ManualAntlerHeadParts { get; set; } = new();
 
+    // User wig designations from the 3D preview's "Set Wig Meshes" selector —
+    // per-ArmorAddon, both directions: ManualWigArmatures promotes a hair-slot
+    // ARMA the scan missed (or a false negative) to wig status; ManualNonWig-
+    // Armatures vetoes a scan detection (false positive). Keyed by EditorID
+    // with (mod, NPC) provenance, scope-filtered by ManualWigBlockScope
+    // (reuses the AntlerBlockScope enum TYPE — the semantics are identical).
+    // Stored on the root Settings (not ModSetting) so they survive
+    // VM_Mods.SaveModSettingsToModel. Eligibility only — what actually happens
+    // to an effective wig ARMA is gated by the mod's effective wig mode.
+    public AntlerBlockScope ManualWigBlockScope { get; set; } = AntlerBlockScope.AllNpcs;
+    public List<ManualWigArmature> ManualWigArmatures { get; set; } = new();
+    public List<ManualWigArmature> ManualNonWigArmatures { get; set; } = new();
+
     /// <summary>True when wig/antler handling is active for the current output
     /// mode: Create-and-Patch record mode, or SkyPatcher output in either
     /// PatchingMode. Inert in plain Create record mode.</summary>
@@ -167,14 +180,15 @@ public class Settings
     /// The wig handling mode that will actually apply to
     /// <paramref name="modSetting"/> on the next patch run: the per-mod override
     /// when set, else the global default — and None whenever wig handling is inert
-    /// (no wig ARMOs detected, or plain Create record mode; Create-and-Patch and
-    /// SkyPatcher output both activate it). Wig-class only (antlers are gated
+    /// (no wigs detected from any source nor manually designated, or plain Create
+    /// record mode; Create-and-Patch and SkyPatcher output both activate it).
+    /// Wig-class only (antlers are gated
     /// separately by <see cref="GetEffectiveAntlerMode"/>). Centralized so the
     /// patcher, renderer, metadata stamp, and staleness checker all agree.
     /// </summary>
     public WigHandlingMode GetEffectiveWigMode(ModSetting? modSetting)
     {
-        if (modSetting == null || !modSetting.HasWigArmors) return WigHandlingMode.None;
+        if (modSetting == null || !ModHasWigs(modSetting)) return WigHandlingMode.None;
         if (!WigHandlingActiveForOutputMode) return WigHandlingMode.None;
         return modSetting.ModWigHandlingMode ?? DefaultWigHandlingMode;
     }
@@ -273,6 +287,104 @@ public class Settings
         return modSetting.HasDetectedAntlers || ModHasManualAntlerDesignation(modSetting.DisplayName);
     }
 
+    /// <summary>Scope-filtered lookup in one of the manual wig lists.</summary>
+    private bool IsInManualWigList(List<ManualWigArmature> list, string? editorId, string? modName,
+        FormKey npcFormKey)
+    {
+        if (string.IsNullOrEmpty(editorId)) return false;
+        var entry = list.FirstOrDefault(
+            d => string.Equals(d.EditorId, editorId, StringComparison.OrdinalIgnoreCase));
+        if (entry == null || entry.Sources.Count == 0) return false;
+        return ManualWigBlockScope switch
+        {
+            AntlerBlockScope.SameMod => !string.IsNullOrEmpty(modName) &&
+                entry.Sources.Any(s => string.Equals(s.ModName, modName, StringComparison.OrdinalIgnoreCase)),
+            AntlerBlockScope.SpecificNpc => entry.Sources.Any(s => s.NpcFormKey == npcFormKey),
+            _ => true, // AllNpcs
+        };
+    }
+
+    /// <summary>Whether an ArmorAddon EditorID is USER-designated as a wig for
+    /// (<paramref name="modName"/>, <paramref name="npcFormKey"/>) under the
+    /// current <see cref="ManualWigBlockScope"/>.</summary>
+    public bool IsManualWigArmature(string? editorId, string? modName, FormKey npcFormKey)
+        => IsInManualWigList(ManualWigArmatures, editorId, modName, npcFormKey);
+
+    /// <summary>Whether an ArmorAddon EditorID is USER-designated as NOT a wig
+    /// (a vetoed scan false positive) for (<paramref name="modName"/>,
+    /// <paramref name="npcFormKey"/>) under the current
+    /// <see cref="ManualWigBlockScope"/>.</summary>
+    public bool IsManualNonWigArmature(string? editorId, string? modName, FormKey npcFormKey)
+        => IsInManualWigList(ManualNonWigArmatures, editorId, modName, npcFormKey);
+
+    /// <summary>Whether a WNAM-carried ArmorAddon is an EFFECTIVE wig for
+    /// <paramref name="modSetting"/>: scan-detected (by FormKey) and not
+    /// manually vetoed, OR manually designated (by EditorID, scope-filtered).
+    /// This is ELIGIBILITY, mode independent; callers gate what happens on the
+    /// effective wig mode. The single per-ARMA wig test for
+    /// patcher/renderer/validator.</summary>
+    public bool IsWigArmature(ModSetting modSetting, FormKey armaFormKey, string? armaEditorId,
+        FormKey npcFormKey)
+    {
+        if (IsManualWigArmature(armaEditorId, modSetting.DisplayName, npcFormKey)) return true;
+        return modSetting.DetectedWigArmatures.Contains(armaFormKey) &&
+               !IsManualNonWigArmature(armaEditorId, modSetting.DisplayName, npcFormKey);
+    }
+
+    /// <summary>Whether the user made any positive wig designation IN
+    /// <paramref name="modName"/>. Gates that mod's wig handling + dropdown so
+    /// a manual-only mod can still pick a wig mode.</summary>
+    public bool ModHasManualWigDesignation(string? modName)
+        => !string.IsNullOrEmpty(modName) && ManualWigArmatures.Any(
+            d => d.Sources.Any(s => string.Equals(s.ModName, modName, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>Adds a manual wig designation (<paramref name="isWig"/> true =
+    /// the positive list, false = the not-a-wig veto list) for an ArmorAddon
+    /// EditorID, tagged with the mod + NPC it was made on (idempotent per
+    /// source). Adding to one list removes the same (EditorID, source) from the
+    /// other — a designation is a single checkbox, never both directions.</summary>
+    public void AddManualWigArmature(string editorId, string modName, FormKey npcFormKey, bool isWig)
+    {
+        if (string.IsNullOrEmpty(editorId)) return;
+        RemoveManualWigArmature(editorId, modName, npcFormKey, !isWig);
+        var list = isWig ? ManualWigArmatures : ManualNonWigArmatures;
+        var entry = list.FirstOrDefault(
+            d => string.Equals(d.EditorId, editorId, StringComparison.OrdinalIgnoreCase));
+        if (entry == null)
+        {
+            entry = new ManualWigArmature { EditorId = editorId };
+            list.Add(entry);
+        }
+        if (!entry.Sources.Any(s => s.NpcFormKey == npcFormKey &&
+                string.Equals(s.ModName, modName, StringComparison.OrdinalIgnoreCase)))
+        {
+            entry.Sources.Add(new WigArmatureSource { ModName = modName, NpcFormKey = npcFormKey });
+        }
+    }
+
+    /// <summary>Removes the (mod, NPC) source of a manual wig designation from
+    /// the requested list; drops the whole entry when its last source is gone.</summary>
+    public void RemoveManualWigArmature(string editorId, string modName, FormKey npcFormKey, bool isWig)
+    {
+        if (string.IsNullOrEmpty(editorId)) return;
+        var list = isWig ? ManualWigArmatures : ManualNonWigArmatures;
+        var entry = list.FirstOrDefault(
+            d => string.Equals(d.EditorId, editorId, StringComparison.OrdinalIgnoreCase));
+        if (entry == null) return;
+        entry.Sources.RemoveAll(s => s.NpcFormKey == npcFormKey &&
+            string.Equals(s.ModName, modName, StringComparison.OrdinalIgnoreCase));
+        if (entry.Sources.Count == 0) list.Remove(entry);
+    }
+
+    /// <summary>Whether a mod has any wigs at all — scan-detected (either
+    /// source) OR manually designated in it. Gates wig handling and the per-mod
+    /// dropdown (a manual-only mod still needs the mode dropdown).</summary>
+    public bool ModHasWigs(ModSetting? modSetting)
+    {
+        if (modSetting == null) return false;
+        return modSetting.HasWigSources || ModHasManualWigDesignation(modSetting.DisplayName);
+    }
+
     /// <summary>True when either wig or antler handling will act on
     /// <paramref name="modSetting"/> this run — the patcher's outer gate.</summary>
     public bool WigOrAntlerHandlingActive(ModSetting? modSetting) =>
@@ -288,7 +400,7 @@ public class Settings
     /// </summary>
     public WigHandlingMode GetEffectiveRenderWigMode(ModSetting? modSetting)
     {
-        if (modSetting == null || !modSetting.HasWigArmors) return WigHandlingMode.None;
+        if (modSetting == null || !ModHasWigs(modSetting)) return WigHandlingMode.None;
         if (InternalMugshot.WigModeOverride is { } forced) return forced;
         return GetEffectiveWigMode(modSetting);
     }

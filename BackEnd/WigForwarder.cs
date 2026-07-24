@@ -39,6 +39,11 @@ public class WigForwarder
     // head part, the stripped ExtraPart set, and (SpecificNpc scope only) the NPC,
     // so shared scopes reuse ONE stripped head part while SpecificNpc gets a per-NPC copy.
     private readonly Dictionary<string, FormKey> _antlerHeadPartDuplicates = new();
+
+    // Minted wearable wig ARMOs for skin-carried (WNAM) wig ARMAs relocated to
+    // the outfit under ForwardToOutfit — one per ARMA, shared by every NPC whose
+    // skin carries that ARMA.
+    private readonly Dictionary<FormKey, FormKey> _mintedWigArmors = new();
     private readonly object _lock = new();
 
     public WigForwarder(EnvironmentStateProvider environmentStateProvider, RecordHandler recordHandler,
@@ -225,8 +230,48 @@ public class WigForwarder
             _skinDuplicates.Clear();
             _outfitDuplicates.Clear();
             _antlerHeadPartDuplicates.Clear();
+            _mintedWigArmors.Clear();
         }
     }
+
+    /// <summary>Returns (minting on first use) the wearable wig ARMO that
+    /// carries a skin-carried wig ARMA relocated into the outfit under
+    /// ForwardToOutfit: Armature = [the ARMA], BOD2 slots copied from the ARMA
+    /// (the engine only dresses slots the ARMO's own mask declares),
+    /// non-playable clothing so it never shows in inventory UI. Cached per ARMA
+    /// so all NPCs sharing the skin hair share one ARMO.</summary>
+    private FormKey GetOrMintWigArmorForArma(IArmorAddonGetter arma, Result result, string npcIdentifier,
+        Action<string, bool, bool> appendLog)
+    {
+        lock (_lock)
+        {
+            if (_mintedWigArmors.TryGetValue(arma.FormKey, out var cached)) return cached;
+
+            var armo = _environmentStateProvider.OutputMod.Armors.AddNew();
+            armo.EditorID = "NPC2WigArmor_" +
+                            (HeadPartWigConverter.SanitizeForEditorId(arma.EditorID) ??
+                             arma.FormKey.ID.ToString("X8"));
+            armo.Armature.Add(arma.FormKey.ToLink<IArmorAddonGetter>());
+            armo.BodyTemplate = new BodyTemplate
+            {
+                FirstPersonFlags = arma.BodyTemplate?.FirstPersonFlags ?? WigDetector.HairSlots,
+                ArmorType = ArmorType.Clothing,
+                Flags = BodyTemplate.Flag.NonPlayable,
+            };
+            armo.Race.SetTo(arma.Race.IsNull ? DefaultRaceKey : arma.Race.FormKey);
+            RecordProvenanceDiag.RecordGenerated(armo.FormKey, armo.EditorID, "Armor");
+            result.MergedRecords.Add(armo);
+            _mintedWigArmors[arma.FormKey] = armo.FormKey;
+
+            appendLog($"      Wig handling (ForwardToOutfit): minted wearable wig armor '{armo.EditorID}' " +
+                      $"({armo.FormKey}) for skin-carried ArmorAddon {arma.FormKey} ({npcIdentifier}).",
+                false, false);
+            return armo.FormKey;
+        }
+    }
+
+    /// <summary>DefaultRace [RACE:000019] — the RNAM vanilla clothing uses.</summary>
+    private static readonly FormKey DefaultRaceKey = FormKey.Factory("000019:Skyrim.esm");
 
     /// <summary>
     /// Applies the effective wig AND antler handling modes for one NPC,
@@ -253,6 +298,16 @@ public class WigForwarder
     /// <see cref="HeadPartWigConverter.Apply"/> declined an NPC (bald donor,
     /// unresolvable wig NIF, …) so that NPC gets the proven forwarding flow
     /// instead.</para>
+    ///
+    /// <para><b>Skin-carried (WNAM) wigs:</b> under ConvertToHeadParts the
+    /// converter owns them and hands its superseded ARMA keys back through
+    /// <paramref name="wnamConvertedWigStrips"/> — they are stripped from the
+    /// WNAM duplicate here (composing with antler Remove on the one shared
+    /// duplicate). Under ForwardToOutfit an effective skin wig ARMA
+    /// (<see cref="Settings.IsWigArmature"/>) is relocated into the worn
+    /// outfit via a minted wearable wig ARMO and likewise stripped from the
+    /// WNAM duplicate. Under ForwardToSkin a skin-carried wig is already in
+    /// its end state — a documented no-op.</para>
     /// </summary>
     public Result? Apply(
         FormKey targetNpcFormKey,
@@ -264,7 +319,8 @@ public class WigForwarder
         bool includeOutfit,
         string npcIdentifier,
         Action<string, bool, bool> appendLog,
-        WigHandlingMode? wigModeOverride = null)
+        WigHandlingMode? wigModeOverride = null,
+        IReadOnlyCollection<FormKey>? wnamConvertedWigStrips = null)
     {
         var wigMode = wigModeOverride ?? _settings.GetEffectiveWigMode(appearanceModSetting);
         var antlerMode = _settings.GetEffectiveAntlerMode(appearanceModSetting);
@@ -336,9 +392,15 @@ public class WigForwarder
         if (wigMode == WigHandlingMode.ConvertToHeadParts) outfitStripPieces.AddRange(wigItems);
         if (antlerToSkin || antlerRemove) outfitStripPieces.AddRange(antlerItems);
 
-        // Source 2: antler ArmorAddons baked directly into the WornArmor — antler
-        // Remove strips them from the WNAM duplicate.
-        var wnamAntlerRemovals = new HashSet<FormKey>();
+        // Source 2: ArmorAddons baked directly into the WornArmor that must come
+        // OFF the WNAM duplicate — antler Remove strips the detected antler
+        // ARMAs, and converter-superseded skin wigs (ConvertToHeadParts handed
+        // their keys in via wnamConvertedWigStrips) are stripped so they don't
+        // double-render against the baked shapes. Both compose on the one
+        // shared duplicate. Converted-wig keys are intersected against the
+        // resolved WNAM's actual armature list so a stale key can't poison the
+        // duplicate reuse key.
+        var wnamRemovals = new HashSet<FormKey>();
         if (antlerRemove && wnamGetter?.Armature != null)
         {
             foreach (var armaLink in wnamGetter.Armature)
@@ -346,20 +408,57 @@ public class WigForwarder
                 if (armaLink != null && !armaLink.IsNull &&
                     appearanceModSetting.DetectedAntlerArmatures.Contains(armaLink.FormKey))
                 {
-                    wnamAntlerRemovals.Add(armaLink.FormKey);
+                    wnamRemovals.Add(armaLink.FormKey);
+                }
+            }
+        }
+
+        if (wnamConvertedWigStrips is { Count: > 0 } && wnamGetter?.Armature != null)
+        {
+            foreach (var armaLink in wnamGetter.Armature)
+            {
+                if (armaLink != null && !armaLink.IsNull && wnamConvertedWigStrips.Contains(armaLink.FormKey))
+                {
+                    wnamRemovals.Add(armaLink.FormKey);
                 }
             }
         }
 
         var result = new Result();
 
+        // Skin-carried (WNAM) wigs under ForwardToOutfit: relocate each effective
+        // wig ARMA (IsWigArmature — scan minus vetoes plus manual designations)
+        // into the worn outfit via a minted wearable wig ARMO, and strip it from
+        // the WNAM duplicate. ForwardToSkin needs no branch here: a skin-carried
+        // wig is already in its end state (documented no-op).
+        if (wigMode == WigHandlingMode.ForwardToOutfit && wnamGetter?.Armature != null)
+        {
+            foreach (var armaLink in wnamGetter.Armature)
+            {
+                if (armaLink == null || armaLink.IsNull) continue;
+                var arma = ResolveFromModsOrWinner<IArmorAddonGetter>(
+                    armaLink.FormKey.ToLink<IArmorAddonGetter>(), modKeys, modFolderPaths);
+                if (arma == null) continue;
+                if (!_settings.IsWigArmature(appearanceModSetting, arma.FormKey, arma.EditorID,
+                        donorNpc.FormKey))
+                {
+                    continue;
+                }
+
+                FormKey mintedArmoKey = GetOrMintWigArmorForArma(arma, result, npcIdentifier, appendLog);
+                outfitAddPieces.Add((mintedArmoKey, false));
+                wnamRemovals.Add(arma.FormKey);
+            }
+        }
+
         // 1) Skin duplicate — built when there are pieces to ADD (skinPieces) or
-        //    antler ARMAs to REMOVE from the WornArmor (source 2 Remove).
-        if (skinPieces.Count > 0 || wnamAntlerRemovals.Count > 0)
+        //    ARMAs to REMOVE from the WornArmor (source 2: antler Remove and/or
+        //    converted/relocated skin wigs).
+        if (skinPieces.Count > 0 || wnamRemovals.Count > 0)
         {
             BuildSkinDuplicate(donorNpc, wnamKey, wnamGetter!, appearanceModSetting, donorContextModKey,
                 modFolderPaths, mergeInDependencyRecords, wigMode, antlerMode, skinPieces,
-                wnamAntlerRemovals, result, npcIdentifier, appendLog);
+                wnamRemovals, result, npcIdentifier, appendLog);
         }
 
         // Source 3: antler head parts baked into the FaceGen — Remove collects
@@ -431,7 +530,7 @@ public class WigForwarder
         WigHandlingMode wigMode,
         AntlerHandlingMode antlerMode,
         List<(FormKey Key, bool IsAntler)> skinPieces,
-        HashSet<FormKey> wnamAntlerRemovals,
+        HashSet<FormKey> wnamRemovals,
         Result result,
         string npcIdentifier,
         Action<string, bool, bool> appendLog)
@@ -455,7 +554,7 @@ public class WigForwarder
         // Reuse key folds both modes, the added set, and the removed set — two
         // NPCs sharing the same WNAM + config + sets share the duplicate.
         string skinKey = ModePairTag(wigMode, antlerMode) + "|add:" + BuildWigSetId(skinPieces) +
-                         "|rm:" + BuildKeySetId(wnamAntlerRemovals);
+                         "|rm:" + BuildKeySetId(wnamRemovals);
         lock (_lock)
         {
             if (_skinDuplicates.TryGetValue((wnamKey, skinKey), out var existing))
@@ -500,13 +599,14 @@ public class WigForwarder
             dup.BodyTemplate.FirstPersonFlags |= appendedSlots;
         }
 
-        // Source 2 (antler Remove): drop the baked-in antler ArmorAddons from the
-        // duplicate's Armature. The BOD2 mask is left as-is — removing addons just
-        // gives the engine fewer to dress; narrowing the mask is unnecessary.
+        // Source 2 (antler Remove ARMAs + converter-superseded / outfit-relocated
+        // skin wig ARMAs): drop them from the duplicate's Armature. The BOD2 mask
+        // is left as-is — removing addons just gives the engine fewer to dress;
+        // narrowing the mask is unnecessary.
         int removedArmas = 0;
-        if (wnamAntlerRemovals.Count > 0)
+        if (wnamRemovals.Count > 0)
         {
-            removedArmas = dup.Armature.RemoveAll(a => a != null && wnamAntlerRemovals.Contains(a.FormKey));
+            removedArmas = dup.Armature.RemoveAll(a => a != null && wnamRemovals.Contains(a.FormKey));
         }
 
         // A skin-carried hair-slot wig does NOT suppress the NPC's head part hair
@@ -544,7 +644,7 @@ public class WigForwarder
         }
 
         string addPart = appended > 0 ? $"transferred {appended} wig/antler ArmorAddon(s)" : "no ArmorAddons transferred";
-        string rmPart = removedArmas > 0 ? $", stripped {removedArmas} baked antler ArmorAddon(s)" : "";
+        string rmPart = removedArmas > 0 ? $", stripped {removedArmas} baked-in ArmorAddon(s)" : "";
         appendLog($"      Wig/antler handling (skin): duplicated WNAM {wnamKey} as {dup.FormKey} — {addPart}{rmPart}.",
             false, false);
     }

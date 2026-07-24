@@ -758,10 +758,15 @@ public class Patcher : OptionalUIModule
                                         }
                                     }
 
+                                    // The converter's superseded skin-carried wig ARMAs are
+                                    // stripped from the WNAM duplicate by the forwarder (sole
+                                    // duplicate owner). A ForwardToSkin downgrade passes null —
+                                    // nothing was converted.
                                     wigForward = _wigForwarder.Apply(npcFormKey, appearanceNpcRecord,
                                         appearanceModSetting, appearanceModKey.Value, currentModFolderPaths,
                                         mergeInDependencyRecords, includeOutfit, npcIdentifier, AppendLog,
-                                        wigModeOverride);
+                                        wigModeOverride,
+                                        wnamConvertedWigStrips: wigConvert?.WnamArmatureKeysToStrip);
                                     if (wigForward != null)
                                     {
                                         RegisterRecordOwnerships(npcFormKey, wigForward.MergedRecords,
@@ -1823,14 +1828,17 @@ public class Patcher : OptionalUIModule
                         convert.WigNifSourcePath,
                         convert.ShapeRenames,
                         convert.FaceGenShapeNamesToStrip,
-                        convert.PhysicsXmlNewDataRelPath),
+                        convert.PhysicsXmlNewDataRelPath,
+                        SynthesizeHairPartitionIfNoDonor: convert.SynthesizeHairPartitionTemplate),
                     msg => AppendLog("    " + msg, false, false));
 
                 if (baked > 0)
                 {
                     AppendLog($"  {npcIdentifier}: baked {baked} wig shape(s) from " +
                               $"{Path.GetFileName(convert.WigNifSourcePath)} into {Path.GetFileName(nifPath)} " +
-                              $"(donor hair [{string.Join(", ", convert.FaceGenShapeNamesToStrip)}] stripped).",
+                              (convert.FaceGenShapeNamesToStrip.Count > 0
+                                  ? $"(donor hair [{string.Join(", ", convert.FaceGenShapeNamesToStrip)}] stripped)."
+                                  : "(bald donor — synthesized hair partition)."),
                         false, true);
                 }
                 else

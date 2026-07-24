@@ -370,6 +370,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         new KeyValuePair<AntlerBlockScope, string>(AntlerBlockScope.SpecificNpc, "Specific NPC(s) only"),
     };
 
+    // Scope of manual is/is-not-a-wig ArmorAddon designations
+    // (Settings.ManualWigBlockScope) — same semantics as the antler scope,
+    // applied to the "Set Wig Meshes" selector's entries.
+    [Reactive] public AntlerBlockScope SelectedWigBlockScope { get; set; }
+
+    public IEnumerable<KeyValuePair<AntlerBlockScope, string>> WigBlockScopes => AntlerBlockScopes;
+
     public ReactiveCommand<Unit, Unit> ShowOverrideHandlingModeHelpCommand { get; }
 
     // --- New EasyNPC Transfer Properties ---
@@ -693,6 +700,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SelectedDefaultWigHandlingMode = _model.DefaultWigHandlingMode;
         SelectedDefaultAntlerHandlingMode = _model.DefaultAntlerHandlingMode;
         SelectedAntlerBlockScope = _model.ManualAntlerBlockScope;
+        SelectedWigBlockScope = _model.ManualWigBlockScope;
         DefaultMaxNestedIntervalDepth = _model.DefaultMaxNestedIntervalDepth;
         DefaultIncludeAllOverrides = _model.DefaultIncludeAllOverrides;
         UpdateDefaultOverrideVisibility(); // Initialize visibility state
@@ -1133,6 +1141,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(m => _model.DefaultAntlerHandlingMode = m).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedAntlerBlockScope).Skip(1)
             .Subscribe(s => _model.ManualAntlerBlockScope = s).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedWigBlockScope).Skip(1)
+            .Subscribe(s => _model.ManualWigBlockScope = s).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b)
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.BatFilePreCommands).Skip(1).Subscribe(s => _model.BatFilePreCommands = s)

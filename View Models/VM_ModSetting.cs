@@ -133,10 +133,14 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     // active for the current output mode (Create-and-Patch or SkyPatcher). Wigs
     // and antlers are controlled independently.
     public HashSet<FormKey> DetectedWigArmors { get; set; } = new();
+    public HashSet<FormKey> DetectedWigArmatures { get; set; } = new();
     public HashSet<FormKey> DetectedAntlerArmors { get; set; } = new();
     public HashSet<FormKey> DetectedAntlerArmatures { get; set; } = new();
     public HashSet<FormKey> DetectedAntlerHeadParts { get; set; } = new();
     [Reactive] public bool HasWigArmors { get; set; }
+    /// <summary>Wig-class gate: scan detections (outfit ARMOs or WNAM hair
+    /// ARMAs) or manual designations. Recomputed by <see cref="RecomputeHasWigs"/>.</summary>
+    [Reactive] public bool HasWigs { get; set; }
     [Reactive] public bool HasAntlers { get; set; }
     [Reactive] public WigHandlingMode? OverrideWigHandlingMode { get; set; }
     [Reactive] public AntlerHandlingMode? OverrideAntlerHandlingMode { get; set; }
@@ -326,10 +330,12 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         IncludeAllOverrides = model.IncludeAllOverrides;
         MaxNestedIntervalDepth = model.MaxNestedIntervalDepth;
         DetectedWigArmors = new HashSet<FormKey>(model.DetectedWigArmors ?? new HashSet<FormKey>());
+        DetectedWigArmatures = new HashSet<FormKey>(model.DetectedWigArmatures ?? new HashSet<FormKey>());
         DetectedAntlerArmors = new HashSet<FormKey>(model.DetectedAntlerArmors ?? new HashSet<FormKey>());
         DetectedAntlerArmatures = new HashSet<FormKey>(model.DetectedAntlerArmatures ?? new HashSet<FormKey>());
         DetectedAntlerHeadParts = new HashSet<FormKey>(model.DetectedAntlerHeadParts ?? new HashSet<FormKey>());
         HasWigArmors = DetectedWigArmors.Count > 0;
+        RecomputeHasWigs();
         RecomputeHasAntlers();
         OverrideWigHandlingMode = model.ModWigHandlingMode;
         OverrideAntlerHandlingMode = model.ModAntlerHandlingMode;
@@ -788,7 +794,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         // PatchingMode (mirrors Settings.GetEffectiveWigMode/GetEffectiveAntlerMode).
         // Wigs and antlers are gated on their own detection sets (not the union),
         // so a mod with antlers-only shows only the Antler dropdown and vice versa.
-        this.WhenAnyValue(x => x.HasWigArmors)
+        this.WhenAnyValue(x => x.HasWigs)
             .CombineLatest(
                 _lazySettingsVm.Value.WhenAnyValue(x => x.SelectedPatchingMode, x => x.UseSkyPatcherMode),
                 (hasWigs, output) => hasWigs &&
@@ -895,17 +901,41 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     /// </summary>
     public void ScanForWigs(IReadOnlyCollection<ISkyrimModGetter> plugins)
     {
-        var scan = WigDetector.Scan(plugins, formKey =>
-            _environmentStateProvider.LinkCache != null &&
-            _environmentStateProvider.LinkCache.TryResolve<IArmorAddonGetter>(formKey, out var arma)
-                ? arma
-                : null);
+        var scan = WigDetector.Scan(plugins,
+            formKey =>
+                _environmentStateProvider.LinkCache != null &&
+                _environmentStateProvider.LinkCache.TryResolve<IArmorAddonGetter>(formKey, out var arma)
+                    ? arma
+                    : null,
+            formKey =>
+                _environmentStateProvider.LinkCache != null &&
+                _environmentStateProvider.LinkCache.TryResolve<IArmorGetter>(formKey, out var armor)
+                    ? armor
+                    : null,
+            formKey =>
+                _environmentStateProvider.LinkCache != null &&
+                _environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(formKey, out var race)
+                    ? race
+                    : null);
         DetectedWigArmors = scan.Wigs;
+        DetectedWigArmatures = scan.WigArmatures;
         DetectedAntlerArmors = scan.AntlerArmors;
         DetectedAntlerArmatures = scan.AntlerArmatures;
         DetectedAntlerHeadParts = scan.AntlerHeadParts;
         HasWigArmors = scan.Wigs.Count > 0;
+        RecomputeHasWigs();
         RecomputeHasAntlers();
+    }
+
+    /// <summary>HasWigs = scan-detected wigs (outfit ARMOs or WNAM hair ARMAs)
+    /// OR user-designated manual wig armatures for this mod. Recomputed after
+    /// detection changes and after a manual designation via the 3D preview
+    /// selector (so the Wig Handling dropdown appears for a manual-only mod
+    /// without a restart).</summary>
+    public void RecomputeHasWigs()
+    {
+        HasWigs = DetectedWigArmors.Count > 0 || DetectedWigArmatures.Count > 0 ||
+                  _parentVm.HasManualWigDesignations(DisplayName);
     }
 
     /// <summary>HasAntlers = scan-detected antlers (any source) OR user-designated
@@ -951,6 +981,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             ModRecordOverrideHandlingMode = OverrideRecordOverrideHandlingMode,
             MaxNestedIntervalDepth = MaxNestedIntervalDepth,
             DetectedWigArmors = new HashSet<FormKey>(DetectedWigArmors),
+            DetectedWigArmatures = new HashSet<FormKey>(DetectedWigArmatures),
             DetectedAntlerArmors = new HashSet<FormKey>(DetectedAntlerArmors),
             DetectedAntlerArmatures = new HashSet<FormKey>(DetectedAntlerArmatures),
             DetectedAntlerHeadParts = new HashSet<FormKey>(DetectedAntlerHeadParts),

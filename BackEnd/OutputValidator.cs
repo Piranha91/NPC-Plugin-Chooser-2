@@ -752,12 +752,48 @@ public class OutputValidator
     /// Hair-type on the output side, so excluding Hair-type parts from BOTH
     /// sides of the comparison covers either replacement (and the converter's
     /// per-NPC ForwardToSkin fallback, which this record-level check cannot
-    /// distinguish).</summary>
+    /// distinguish). The WNAM branch covers the skin-carried wig source under
+    /// ConvertToHeadParts: an effective wig ARMA in the donor's WornArmor means
+    /// the minted parent replaced the donor hair. A declined WNAM conversion
+    /// (multi-ARMA, beast race, unresolvable NIF) leaves the donor hair intact
+    /// — the same accepted record-level imprecision as the outfit note above.</summary>
     private bool WigForwardingRemovesHair(INpcGetter donor, ModSetting sourceMod,
         ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
     {
         var wigMode = _settings.GetEffectiveWigMode(sourceMod);
         if (wigMode != WigHandlingMode.ForwardToSkin && wigMode != WigHandlingMode.ConvertToHeadParts) return false;
+
+        // Skin-carried (WNAM) wig source — ConvertToHeadParts only.
+        if (wigMode == WigHandlingMode.ConvertToHeadParts && !donor.WornArmor.IsNull)
+        {
+            IArmorGetter? wnam =
+                _recordHandler.TryGetRecordFromMods(donor.WornArmor, src.ModKeys, src.Folders,
+                    RecordHandler.RecordLookupFallBack.Origin, out var wnamRec) && wnamRec is IArmorGetter scopedWnam
+                    ? scopedWnam
+                    : linkCache.TryResolve<IArmorGetter>(donor.WornArmor.FormKey, out var wnamWinner)
+                        ? wnamWinner
+                        : null;
+            if (wnam?.Armature != null)
+            {
+                foreach (var armaLink in wnam.Armature)
+                {
+                    if (armaLink == null || armaLink.IsNull) continue;
+                    string? armaEditorId =
+                        _recordHandler.TryGetRecordFromMods(armaLink, src.ModKeys, src.Folders,
+                            RecordHandler.RecordLookupFallBack.Origin, out var armaRec) &&
+                        armaRec is IArmorAddonGetter scopedArma
+                            ? scopedArma.EditorID
+                            : linkCache.TryResolve<IArmorAddonGetter>(armaLink.FormKey, out var armaWinner)
+                                ? armaWinner.EditorID
+                                : null;
+                    if (_settings.IsWigArmature(sourceMod, armaLink.FormKey, armaEditorId, donor.FormKey))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
         if (sourceMod.DetectedWigArmors.Count == 0) return false;
         if (wigMode == WigHandlingMode.ForwardToSkin && donor.WornArmor.IsNull) return false;
         if (donor.DefaultOutfit == null || donor.DefaultOutfit.IsNull) return false;

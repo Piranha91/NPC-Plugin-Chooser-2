@@ -161,7 +161,7 @@ public class HeadPartWigConverterTests : IDisposable
         }
 
         var bsaHandler = new BsaHandler(env);
-        f.Converter = new HeadPartWigConverter(env, f.RecordHandler, bsaHandler)
+        f.Converter = new HeadPartWigConverter(env, f.RecordHandler, bsaHandler, f.Settings)
         {
             RenderShapeNamesProvider = _ => WigShapes,
             PartitionProbe = (_, _) => true,
@@ -506,6 +506,199 @@ public class HeadPartWigConverterTests : IDisposable
         var dup = f.OutputMod.Armors.Single(a => a.FormKey == result.SkinDuplicateKey);
         dup.Armature.Select(a => a.FormKey).Should().Contain(f.WigArma.FormKey,
             "the wig ARMA transfers into the WNAM duplicate");
+    }
+
+    // ---- Skin-carried (WNAM) wig source ------------------------------------------------------
+    // WNAM-path contract: a bald donor is LEGAL (synthesized partition template),
+    // and EVERY decline keeps fallBackToForwardToSkin = false — a skin-carried
+    // wig is already in its ForwardToSkin end state, so declining preserves the
+    // donor's correct in-game appearance.
+
+    private (Armor Skin, ArmorAddon WnamWigArma) AddWnamWig(Fixture f,
+        string armaEditorId = "0SkinWigAddon", bool detect = true, string? nifPath = null)
+    {
+        var bodyArma = f.DonorMod.ArmorAddons.AddNew();
+        bodyArma.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Body };
+        var wigArma = f.DonorMod.ArmorAddons.AddNew();
+        wigArma.EditorID = armaEditorId;
+        wigArma.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Hair };
+        wigArma.WorldModel = new GenderedItem<Model?>(
+            new Model { File = nifPath ?? WigNifRecordPath },
+            new Model { File = nifPath ?? WigNifRecordPath });
+        var skin = f.DonorMod.Armors.AddNew();
+        skin.EditorID = "AuriSkin";
+        skin.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Body };
+        skin.Armature.Add(bodyArma.ToLink());
+        skin.Armature.Add(wigArma.ToLink());
+        f.DonorNpc.WornArmor.SetTo(skin);
+        if (detect) f.ModSetting.DetectedWigArmatures.Add(wigArma.FormKey);
+        return (skin, wigArma);
+    }
+
+    private static void RemoveOutfitWig(Fixture f) =>
+        f.DonorOutfit.Items!.RemoveAll(i => i.FormKey == f.WigArmor.FormKey);
+
+    [Fact]
+    public void Apply_WnamWig_BaldDonor_ConvertsWithSynthesizedPartition()
+    {
+        var f = Make(donorHasHair: false);
+        RemoveOutfitWig(f);
+        var (_, wigArma) = AddWnamWig(f);
+
+        var result = Apply(f, out bool fallback);
+
+        fallback.Should().BeFalse("WNAM declines/conversions never reroute to ForwardToSkin");
+        result.Should().NotBeNull("a bald donor is legal for the WNAM source");
+        result!.SynthesizeHairPartitionTemplate.Should().BeTrue("nothing to harvest from a bald donor");
+        result.DonorHairHeadPartKeys.Should().BeEmpty();
+        result.FaceGenShapeNamesToStrip.Should().BeEmpty();
+        result.WnamArmatureKeysToStrip.Should().BeEquivalentTo(new[] { wigArma.FormKey });
+
+        var parent = f.OutputMod.HeadParts.Single(h => h.FormKey == result.ParentHeadPartKey);
+        parent.EditorID.Should().Be("NPC2Wig_0SkinWigAddon_01b",
+            "the WNAM source's minted EDIDs derive from the ARMA EditorID");
+        parent.Type.Should().Be(HeadPart.TypeEnum.Hair);
+
+        // FinalizeNpcRecord: nothing to remove; the parent simply becomes the Hair part.
+        var patchNpc = f.OutputMod.Npcs.GetOrAddAsOverride(f.DonorNpc);
+        f.Converter.FinalizeNpcRecord(result, patchNpc, "TestNpc", (_, _, _) => { });
+        patchNpc.HeadParts.Select(h => h.FormKey).Should().Contain(result.ParentHeadPartKey);
+        patchNpc.HeadParts.Select(h => h.FormKey).Should().Contain(f.EyesHeadPart.FormKey);
+    }
+
+    [Fact]
+    public void Apply_WnamWig_DonorWithHair_HarvestsWhenProbePasses()
+    {
+        var f = Make();
+        RemoveOutfitWig(f);
+        AddWnamWig(f);
+
+        var result = Apply(f, out bool fallback);
+
+        fallback.Should().BeFalse();
+        result.Should().NotBeNull();
+        result!.SynthesizeHairPartitionTemplate.Should().BeFalse("the donor hair carries partitions to harvest");
+        result.DonorHairHeadPartKeys.Should().BeEquivalentTo(new[] { f.HairHeadPart.FormKey });
+        result.FaceGenShapeNamesToStrip.Should().BeEquivalentTo(
+            new[] { "FoxGloveHairMesh", "FoxGloveHairlineMesh" });
+    }
+
+    [Fact]
+    public void Apply_WnamWig_ProbeFails_SynthesizesInsteadOfDeclining()
+    {
+        // Contrast with the outfit path, where a failed partition probe declines.
+        var f = Make();
+        RemoveOutfitWig(f);
+        AddWnamWig(f);
+        f.Converter.PartitionProbe = (_, _) => false;
+
+        var result = Apply(f, out bool fallback);
+
+        fallback.Should().BeFalse();
+        result.Should().NotBeNull();
+        result!.SynthesizeHairPartitionTemplate.Should().BeTrue();
+        result.FaceGenShapeNamesToStrip.Should().NotBeEmpty("the donor hair is still stripped");
+    }
+
+    [Fact]
+    public void Apply_OutfitWig_AlsoStripsDetectedWnamWigArmas()
+    {
+        // Outfit wig converts (proven path, byte-identical) AND any effective
+        // skin-carried wig ARMA is reported for the WNAM-duplicate strip so the
+        // two never double-render.
+        var f = Make();
+        var (_, wigArma) = AddWnamWig(f);
+
+        var result = Apply(f, out bool fallback);
+
+        fallback.Should().BeFalse();
+        result.Should().NotBeNull();
+        result!.SynthesizeHairPartitionTemplate.Should().BeFalse("the outfit path always harvests");
+        result.WnamArmatureKeysToStrip.Should().BeEquivalentTo(new[] { wigArma.FormKey });
+        f.OutputMod.HeadParts.Single(h => h.FormKey == result.ParentHeadPartKey)
+            .EditorID.Should().StartWith("NPC2Wig_FoxGlove_Wig_", "the outfit wig owns the conversion");
+    }
+
+    [Fact]
+    public void Apply_MultipleWnamWigArmas_DeclinesWithoutFallback()
+    {
+        var f = Make(donorHasHair: false);
+        RemoveOutfitWig(f);
+        var (skin, _) = AddWnamWig(f);
+        var second = f.DonorMod.ArmorAddons.AddNew();
+        second.EditorID = "0SkinWigAddon2";
+        second.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.LongHair };
+        skin.Armature.Add(second.ToLink());
+        f.ModSetting.DetectedWigArmatures.Add(second.FormKey);
+
+        var result = Apply(f, out bool fallback);
+
+        result.Should().BeNull("only a single wig can become the Hair head part");
+        fallback.Should().BeFalse("a WNAM decline preserves the donor state (ForwardToSkin is a no-op)");
+        f.OutputMod.HeadParts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Apply_WnamWig_BeastRace_DeclinesWithoutFallback()
+    {
+        var f = Make(donorHasHair: false);
+        RemoveOutfitWig(f);
+        AddWnamWig(f);
+        var race = f.DonorMod.Races.AddNew();
+        race.EditorID = "KhajiitRace";
+        f.DonorNpc.Race.SetTo(race);
+        f.Converter.HeadPartRaceAllowedProbe = _ => false; // not in HeadPartsAllRacesMinusBeast
+
+        var result = Apply(f, out bool fallback);
+
+        result.Should().BeNull("the minted parent's ValidRaces excludes beast races");
+        fallback.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_WnamWig_MissingNif_DeclinesWithoutFallback()
+    {
+        var f = Make(donorHasHair: false);
+        RemoveOutfitWig(f);
+        AddWnamWig(f, nifPath: @"actors\TestWig\missing_1.nif");
+
+        var result = Apply(f, out bool fallback);
+
+        result.Should().BeNull();
+        fallback.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_WnamWig_NegativeDesignation_SuppressesDetection()
+    {
+        var f = Make(donorHasHair: false);
+        RemoveOutfitWig(f);
+        AddWnamWig(f); // detected by the scan
+
+        f.Settings.AddManualWigArmature("0SkinWigAddon", "FoxGlove", f.DonorNpc.FormKey, isWig: false);
+
+        var result = Apply(f, out bool fallback);
+
+        result.Should().BeNull("the veto removes the only effective wig — nothing to convert");
+        fallback.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_WnamWig_PositiveDesignation_PromotesUndetectedArma()
+    {
+        var f = Make(donorHasHair: false);
+        RemoveOutfitWig(f);
+        var (_, wigArma) = AddWnamWig(f, detect: false); // the scan missed it
+
+        Apply(f, out _).Should().BeNull("not detected and not designated");
+
+        f.Settings.AddManualWigArmature("0SkinWigAddon", "FoxGlove", f.DonorNpc.FormKey, isWig: true);
+
+        var result = Apply(f, out bool fallback);
+
+        fallback.Should().BeFalse();
+        result.Should().NotBeNull("the manual promotion makes it an effective wig");
+        result!.WnamArmatureKeysToStrip.Should().BeEquivalentTo(new[] { wigArma.FormKey });
     }
 
     // ---- EditorID sanitation -----------------------------------------------------------------

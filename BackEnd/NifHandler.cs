@@ -173,13 +173,20 @@ public class NifHandler
     /// <param name="OnlyRenderShapes">When non-null, bake ONLY these source
     /// render shapes (others are dropped from the merge like collision meshes).
     /// Diagnostic/bisect hook — null bakes every render shape.</param>
+    /// <param name="SynthesizeHairPartitionIfNoDonor">When the partition-template
+    /// harvest finds no donor hair shape (the WNAM skin-carried wig pattern:
+    /// bald FaceGen + hair ARMA in the skin), synthesize the SBP_131_HAIR
+    /// template via <see cref="CreateSyntheticHairPartitionTemplate"/> instead
+    /// of baking partition-less (dark-face risk, invariant 4). Default off —
+    /// the proven outfit-wig path always harvests.</param>
     public sealed record WigBakeInstruction(
         string FaceGenNifPath,
         string WigNifPath,
         IReadOnlyDictionary<string, string> ShapeRenames,
         IReadOnlyCollection<string> ShapeNamesToStrip,
         string? PhysicsXmlNewDataRelPath,
-        IReadOnlyCollection<string>? OnlyRenderShapes = null);
+        IReadOnlyCollection<string>? OnlyRenderShapes = null,
+        bool SynthesizeHairPartitionIfNoDonor = false);
 
     /// <summary>
     /// Names of the render shapes (shapes carrying a shader property) in a NIF, in
@@ -230,6 +237,36 @@ public class NifHandler
             if (nif.GetShapePartitions(shape, template, triParts)) return true;
         }
         return false;
+    }
+
+    /// <summary>SSE facegen hair dismember partition (SBP_131_HAIR) — the ID
+    /// helmets key on to hide hair.</summary>
+    private const ushort HairDismemberPartitionId = 131;
+
+    /// <summary>First-partition flags: PF_EDITOR_VISIBLE (0x0001) |
+    /// PF_START_NET_BONESET (0x0100).</summary>
+    private const ushort HairDismemberPartitionFlags = 0x0101;
+
+    /// <summary>
+    /// Builds a synthetic single-partition dismember template for facegen hair,
+    /// for bakes with no donor hair shape to harvest from (the WNAM skin-carried
+    /// wig pattern: bald FaceGen + hair ARMA in the skin). Values verified
+    /// against real facegen NIFs (2026-07-23, NifDump partition dump over the
+    /// FoxGlove Auri facegen and two CK-generated replacer facegens — BB's
+    /// Companions 00013BB6/0001A68E): every hair shape carries exactly one
+    /// partition, partID=131, flags=0x0101; multi-partition head shapes carry
+    /// 0x0101 on the FIRST entry and 0x0001 on the rest, so a single-entry
+    /// template takes the start-net-boneset bit. Caller owns disposal (same as
+    /// a harvested template).
+    /// </summary>
+    internal static NiVectorBSDismemberSkinInstancePartitionInfo CreateSyntheticHairPartitionTemplate()
+    {
+        var template = new NiVectorBSDismemberSkinInstancePartitionInfo();
+        using var info = new BSDismemberSkinInstance.PartitionInfo();
+        info.partID = HairDismemberPartitionId;
+        info.flags = (PartitionFlags)HairDismemberPartitionFlags;
+        template.push_back(info);
+        return template;
     }
 
     /// <summary>
@@ -336,7 +373,13 @@ public class NifHandler
             }
             template.Dispose();
         }
-        if (hairPartitionTemplate == null)
+        if (hairPartitionTemplate == null && ins.SynthesizeHairPartitionIfNoDonor)
+        {
+            hairPartitionTemplate = CreateSyntheticHairPartitionTemplate();
+            log?.Invoke("BakeWigIntoFaceGen: no donor hair shape with partitions; " +
+                        "synthesized SBP_131_HAIR partition template.");
+        }
+        else if (hairPartitionTemplate == null)
         {
             log?.Invoke("BakeWigIntoFaceGen: WARNING - no donor hair shape with partitions found; " +
                         "wig shapes keep their source skin-instance types.");

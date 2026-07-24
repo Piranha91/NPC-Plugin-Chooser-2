@@ -1014,10 +1014,13 @@ public class UpdateHandler
     /// existing mods. Without this, mods with a valid cached snapshot would never
     /// get wig/antler detection and the Wig Handling Mode dropdown would never
     /// appear for them. Gated by the settings <c>ProgramVersion</c> (&lt; 2.2.3),
-    /// consistent with the other one-time migrations. Covers both the initial
-    /// wig/antler detection and the later extension to WornArmor-baked ArmorAddons
+    /// consistent with the other one-time migrations. Covers the initial
+    /// wig/antler detection, the later extension to WornArmor-baked ArmorAddons
     /// and FaceGen head parts (persisted DetectedAntlerArmatures /
-    /// DetectedAntlerHeadParts), since both landed in the 2.2.3 cycle.
+    /// DetectedAntlerHeadParts), and the skin-carried WNAM wig scan (persisted
+    /// DetectedWigArmatures), since all landed in the 2.2.3 cycle. If any of
+    /// these detection sets gains a source AFTER 2.2.3 ships, add a NEW
+    /// version-gated invalidation rather than reusing this one.
     /// </summary>
     private void InvalidateAnalysisCachesForWigScan_Initial()
     {

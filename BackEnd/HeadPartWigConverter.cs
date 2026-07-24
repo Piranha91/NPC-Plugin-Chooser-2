@@ -29,20 +29,38 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 /// sets are cached per (wig ARMO, resolved NIF path) so all NPCs sharing a wig
 /// share one record set and identical baked shape names.</para>
 ///
-/// <para><b>Per-NPC fallback:</b> when the conversion would be risky — no donor
-/// Hair head part to harvest dismember partitions from (the bake transplants the
-/// donor hair's partition entry; without one the baked shapes keep their source
-/// skin-instance types and may dark-face), an unresolvable wig NIF, zero render
-/// shapes, or an ambiguous multi-wig outfit — <see cref="Apply"/> returns null
-/// with <c>fallBackToForwardToSkin</c> set, and the Patcher routes that NPC
-/// through the proven <see cref="WigForwarder"/> ForwardToSkin flow instead
-/// (which itself falls back to ForwardToOutfit when the donor has no WNAM).</para>
+/// <para><b>Two wig sources.</b> The original source is the donor OUTFIT's wig
+/// ARMO (<see cref="ModSetting.DetectedWigArmors"/>). The second source is a
+/// skin-carried wig: an effective wig ArmorAddon
+/// (<see cref="Settings.IsWigArmature"/>) carried directly in the donor's
+/// WornArmor (WNAM) — the High Poly NPC Overhaul pattern (bald FaceGen + skin
+/// hair ARMA). An outfit wig takes precedence (its path is engine-proven); any
+/// skin-carried wig ARMAs are then reported via
+/// <see cref="Result.WnamArmatureKeysToStrip"/> so the forwarder strips them
+/// from the WNAM duplicate (they would double-render against the baked wig).</para>
+///
+/// <para><b>Per-NPC fallback (outfit source only):</b> when the conversion
+/// would be risky — no donor Hair head part to harvest dismember partitions
+/// from (the bake transplants the donor hair's partition entry; without one the
+/// baked shapes keep their source skin-instance types and may dark-face), an
+/// unresolvable wig NIF, zero render shapes, or an ambiguous multi-wig outfit —
+/// <see cref="Apply"/> returns null with <c>fallBackToForwardToSkin</c> set,
+/// and the Patcher routes that NPC through the proven <see cref="WigForwarder"/>
+/// ForwardToSkin flow instead (which itself falls back to ForwardToOutfit when
+/// the donor has no WNAM). A WNAM-source decline NEVER sets the fallback: a
+/// skin-carried wig is already in its ForwardToSkin end state, so declining
+/// just leaves the donor's correct in-game state. The WNAM source also
+/// tolerates a bald donor (empty hair-removal set is legal — the minted parent
+/// simply becomes the Hair part) by synthesizing the SBP_131_HAIR partition
+/// template in the bake
+/// (<see cref="NifHandler.WigBakeInstruction"/>.SynthesizeHairPartitionIfNoDonor).</para>
 /// </summary>
 public class HeadPartWigConverter
 {
     private readonly EnvironmentStateProvider _environmentStateProvider;
     private readonly RecordHandler _recordHandler;
     private readonly BsaHandler _bsaHandler;
+    private readonly Settings _settings;
 
     /// <summary>Prefix of every minted HeadPart EditorID (and therefore every
     /// baked FaceGen shape name): NPC2Wig_&lt;sanitized wig EDID&gt;_&lt;sanitized
@@ -84,11 +102,48 @@ public class HeadPartWigConverter
         = path => NifHandler.GetPhysicsXmlPathsFromNif(path);
 
     public HeadPartWigConverter(EnvironmentStateProvider environmentStateProvider, RecordHandler recordHandler,
-        BsaHandler bsaHandler)
+        BsaHandler bsaHandler, Settings settings)
     {
         _environmentStateProvider = environmentStateProvider;
         _recordHandler = recordHandler;
         _bsaHandler = bsaHandler;
+        _settings = settings;
+        HeadPartRaceAllowedProbe = IsRaceInHeadPartsAllRacesMinusBeast;
+    }
+
+    /// <summary>Whether a race may wear the minted parts
+    /// (<see cref="Result"/> ValidRaces = HeadPartsAllRacesMinusBeast) —
+    /// the WNAM source's beast-race guard. Seam for tests; production resolves
+    /// the FLST via the link cache (unresolvable counts as allowed).</summary>
+    internal Func<FormKey, bool> HeadPartRaceAllowedProbe { get; set; }
+
+    private HashSet<FormKey>? _headPartAllowedRaces;
+    private bool _headPartAllowedRacesResolved;
+
+    private bool IsRaceInHeadPartsAllRacesMinusBeast(FormKey raceKey)
+    {
+        lock (_lock)
+        {
+            if (!_headPartAllowedRacesResolved)
+            {
+                _headPartAllowedRacesResolved = true;
+                var lc = _environmentStateProvider.LinkCache;
+                if (lc != null &&
+                    lc.TryResolve<IFormListGetter>(HeadPartsAllRacesMinusBeastKey, out var flst) &&
+                    flst?.Items != null)
+                {
+                    _headPartAllowedRaces = flst.Items
+                        .Where(i => i != null && !i.IsNull)
+                        .Select(i => i.FormKey)
+                        .ToHashSet();
+                }
+            }
+
+            // Unresolvable FLST (no environment / missing master) → allow;
+            // blocking on a resolution failure would wrongly decline every
+            // conversion, and the engine checks ValidRaces at runtime anyway.
+            return _headPartAllowedRaces == null || _headPartAllowedRaces.Contains(raceKey);
+        }
     }
 
     /// <summary>One minted HDPT set, shared by every NPC wearing the same wig
@@ -161,6 +216,22 @@ public class HeadPartWigConverter
         /// emitted to; the bake repoints the FaceGen's physics extra-data here.
         /// Null for non-SMP wigs.</summary>
         public string? PhysicsXmlNewDataRelPath { get; init; }
+
+        /// <summary>ARMA FormKeys of donor-WNAM wig armatures superseded by this
+        /// conversion — removed from the WNAM duplicate by
+        /// <see cref="WigForwarder.BuildSkinDuplicate"/> (the forwarder stays
+        /// sole owner of the duplicate; the Patcher threads this set into
+        /// <see cref="WigForwarder.Apply"/>). Populated on BOTH source paths:
+        /// the WNAM source's converted ARMA, and (outfit source) any effective
+        /// skin-carried wig ARMAs that would double-render against the baked
+        /// outfit wig.</summary>
+        public HashSet<FormKey> WnamArmatureKeysToStrip { get; } = new();
+
+        /// <summary>True when the bake should synthesize the SBP_131_HAIR
+        /// partition template because the donor has no harvestable hair shape
+        /// (the WNAM bald-donor pattern). Threaded into
+        /// <see cref="NifHandler.WigBakeInstruction"/>.</summary>
+        public bool SynthesizeHairPartitionTemplate { get; init; }
     }
 
     /// <summary>
@@ -203,7 +274,22 @@ public class HeadPartWigConverter
             }
         }
 
-        if (wigItemKeys.Count == 0) return null; // nothing to convert; not a fallback
+        // WNAM source: effective wig ARMAs carried directly in the donor's skin
+        // (the High Poly NPC Overhaul pattern). Collected regardless of which
+        // source converts: when an outfit wig converts, a skin-carried wig ARMA
+        // must still be stripped from the WNAM duplicate or both would render.
+        var wnamWigArmas = CollectWnamWigArmas(donorNpc, appearanceModSetting, modFolderPaths);
+
+        if (wigItemKeys.Count == 0)
+        {
+            if (wnamWigArmas.Count == 0) return null; // nothing to convert; not a fallback
+
+            // Every WNAM-source decline keeps fallBackToForwardToSkin=false: a
+            // skin-carried wig is already in its ForwardToSkin end state, so a
+            // declined conversion just leaves the donor's correct in-game state.
+            return ApplyWnamConversion(donorNpc, appearanceModSetting, modFolderPaths, npcIdentifier,
+                appendLog, wnamWigArmas);
+        }
 
         if (wigItemKeys.Count > 1)
         {
@@ -286,7 +372,7 @@ public class HeadPartWigConverter
         }
 
         // 4. Mint (or reuse) the per-wig HDPT set.
-        MintedWigSet? set = GetOrMintWigSet(wigArmor, wigKey, wigNifSourcePath, wigNifDataRelPath,
+        MintedWigSet? set = GetOrMintWigSet(wigArmor.EditorID, wigKey, wigNifSourcePath, wigNifDataRelPath,
             wigNifRecordPath, appearanceModSetting, npcIdentifier, appendLog);
         if (set == null)
         {
@@ -309,10 +395,159 @@ public class HeadPartWigConverter
         result.DonorHairHeadPartKeys.UnionWith(donorHairKeys);
         result.FaceGenShapeNamesToStrip.UnionWith(stripNames);
 
+        // A skin-carried wig ARMA alongside the converted outfit wig would
+        // double-render against the baked shapes — strip it from the WNAM
+        // duplicate.
+        foreach (var wnamArma in wnamWigArmas) result.WnamArmatureKeysToStrip.Add(wnamArma.FormKey);
+
         appendLog($"      Wig conversion: {npcIdentifier} → wig '{wigArmor.EditorID ?? wigKey.ToString()}' " +
                   $"as head parts ('{set.ParentEditorId}' + {set.ShapeRenames.Count - 1} extra(s)); " +
                   $"donor hair {string.Join(", ", stripNames)} will be stripped and the wig baked into the " +
                   "copied FaceGen after asset copy.", false, false);
+        return result;
+    }
+
+    /// <summary>Effective wig ArmorAddons (<see cref="Settings.IsWigArmature"/>)
+    /// carried in the donor's WornArmor. Empty when the donor has no WNAM.</summary>
+    private List<IArmorAddonGetter> CollectWnamWigArmas(INpcGetter donorNpc,
+        ModSetting appearanceModSetting, HashSet<string> modFolderPaths)
+    {
+        var found = new List<IArmorAddonGetter>();
+        if (donorNpc.WornArmor.IsNull) return found;
+        var wnam = ResolveFromModsOrWinner<IArmorGetter>(donorNpc.WornArmor,
+            appearanceModSetting.CorrespondingModKeys, modFolderPaths);
+        if (wnam?.Armature == null) return found;
+        foreach (var armaLink in wnam.Armature)
+        {
+            if (armaLink == null || armaLink.IsNull) continue;
+            var arma = ResolveFromModsOrWinner<IArmorAddonGetter>(armaLink.FormKey.ToLink<IArmorAddonGetter>(),
+                appearanceModSetting.CorrespondingModKeys, modFolderPaths);
+            if (arma == null) continue;
+            if (_settings.IsWigArmature(appearanceModSetting, arma.FormKey, arma.EditorID, donorNpc.FormKey))
+            {
+                found.Add(arma);
+            }
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// The WNAM (skin-carried) wig source: converts the donor skin's single
+    /// effective wig ARMA into the NPC's Hair head part. Differences from the
+    /// outfit path: a bald donor is LEGAL (empty hair-removal set — the minted
+    /// parent simply becomes the Hair part, and the bake synthesizes the
+    /// SBP_131_HAIR partition template instead of harvesting), a beast-race
+    /// donor is declined (the minted parent's ValidRaces excludes beast races),
+    /// and every decline returns null WITHOUT the ForwardToSkin fallback (the
+    /// wig is already in its end state; declining preserves the donor's correct
+    /// in-game appearance).
+    /// </summary>
+    private Result? ApplyWnamConversion(INpcGetter donorNpc, ModSetting appearanceModSetting,
+        HashSet<string> modFolderPaths, string npcIdentifier, Action<string, bool, bool> appendLog,
+        List<IArmorAddonGetter> wnamWigArmas)
+    {
+        var raceKey = donorNpc.Race.IsNull ? (FormKey?)null : donorNpc.Race.FormKey;
+        var applicable = wnamWigArmas.Where(a => IsArmatureForRace(a, raceKey)).ToList();
+        if (applicable.Count == 0)
+        {
+            appendLog($"      Wig conversion: {npcIdentifier}'s skin-carried wig ArmorAddon(s) are not " +
+                      "applicable to the NPC's race — leaving the skin-carried hair as-is.", false, true);
+            return null;
+        }
+
+        if (applicable.Count > 1)
+        {
+            appendLog($"      Wig conversion: {npcIdentifier}'s skin carries {applicable.Count} wig " +
+                      "ArmorAddons — only a single wig can become the Hair head part. Leaving the " +
+                      "skin-carried hair as-is (marking the extras as 'not a wig' in the 3D preview's " +
+                      "Set Wig Meshes selector can thin the set to one).", false, true);
+            return null;
+        }
+
+        var arma = applicable[0];
+
+        // Beast-race guard: the minted parent's ValidRaces is
+        // HeadPartsAllRacesMinusBeast; converting a beast-race NPC would leave
+        // it with no valid Hair head part (engine back-fills or bares the head).
+        if (raceKey != null && !HeadPartRaceAllowedProbe(raceKey.Value))
+        {
+            appendLog($"      Wig conversion: {npcIdentifier}'s race is not in HeadPartsAllRacesMinusBeast — " +
+                      "a minted Hair head part would be invalid for it. Leaving the skin-carried hair as-is.",
+                false, true);
+            return null;
+        }
+
+        // Donor hair removal — EMPTY IS LEGAL for this source (typically a bald
+        // FaceGen): the minted parent then becomes the NPC's Hair part with
+        // nothing to strip or remove.
+        var donorHairKeys = new HashSet<FormKey>();
+        var stripNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        CollectHairRemoval(donorNpc, appearanceModSetting, modFolderPaths, donorHairKeys, stripNames);
+
+        string armaLabel = $"skin-carried wig ArmorAddon '{arma.EditorID ?? arma.FormKey.ToString()}'";
+        string? wigNifRecordPath = ResolveArmaNifRecordPath(arma, donorNpc, appearanceModSetting,
+            npcIdentifier, armaLabel, appendLog);
+        if (wigNifRecordPath == null) return null;
+
+        if (!Auxilliary.TryRegularizePath(wigNifRecordPath, out var wigNifDataRelPath))
+        {
+            appendLog($"      Wig conversion: could not regularize wig NIF path '{wigNifRecordPath}' for " +
+                      $"{npcIdentifier}. Leaving the skin-carried hair as-is.", false, true);
+            return null;
+        }
+
+        string? wigNifSourcePath = MaterializeDataRelFile(wigNifDataRelPath, appearanceModSetting);
+        if (wigNifSourcePath == null)
+        {
+            appendLog($"      Wig conversion: wig NIF '{wigNifDataRelPath}' was not found in " +
+                      $"'{appearanceModSetting.DisplayName}' (loose or BSA) for {npcIdentifier}. " +
+                      "Leaving the skin-carried hair as-is.", false, true);
+            return null;
+        }
+
+        // The donor FaceGen must exist — it is the bake target.
+        var (donorFaceGenRelPath, _) = Auxilliary.GetFaceGenSubPathStrings(donorNpc.FormKey, regularized: true);
+        string? donorFaceGenPath = MaterializeDataRelFile(donorFaceGenRelPath, appearanceModSetting);
+        if (donorFaceGenPath == null)
+        {
+            appendLog($"      Wig conversion: {npcIdentifier}'s donor FaceGen was not found — there is no " +
+                      "FaceGen to bake the wig into. Leaving the skin-carried hair as-is.", false, true);
+            return null;
+        }
+
+        // Partition template: harvest when the donor has strippable hair WITH
+        // dismember partitions; otherwise the bake synthesizes SBP_131_HAIR
+        // (engine invariants verified by spike variant I).
+        bool synthesize = stripNames.Count == 0 || !PartitionProbe(donorFaceGenPath, stripNames);
+
+        MintedWigSet? set = GetOrMintWigSet(arma.EditorID, arma.FormKey, wigNifSourcePath, wigNifDataRelPath,
+            wigNifRecordPath, appearanceModSetting, npcIdentifier, appendLog);
+        if (set == null) return null;
+
+        var result = new Result
+        {
+            ParentHeadPartKey = set.ParentKey,
+            ParentEditorId = set.ParentEditorId,
+            MintedRecords = set.MintedRecords,
+            ShapeRenames = set.ShapeRenames,
+            WigNifSourcePath = set.WigNifSourcePath,
+            WigNifDataRelPath = set.WigNifDataRelPath,
+            PhysicsXmlSourcePath = set.PhysicsXmlSourcePath,
+            PhysicsXmlSourceDataRelPath = set.PhysicsXmlSourceDataRelPath,
+            PhysicsXmlNewDataRelPath = set.PhysicsXmlNewDataRelPath,
+            SynthesizeHairPartitionTemplate = synthesize,
+        };
+        result.DonorHairHeadPartKeys.UnionWith(donorHairKeys);
+        result.FaceGenShapeNamesToStrip.UnionWith(stripNames);
+        result.WnamArmatureKeysToStrip.Add(arma.FormKey);
+
+        appendLog($"      Wig conversion: {npcIdentifier} → {armaLabel} as head parts " +
+                  $"('{set.ParentEditorId}' + {set.ShapeRenames.Count - 1} extra(s)); " +
+                  (stripNames.Count > 0
+                      ? $"donor hair {string.Join(", ", stripNames)} will be stripped and "
+                      : "bald donor (synthesized hair partition) — ") +
+                  "the wig is baked into the copied FaceGen after asset copy; the skin duplicate loses the " +
+                  "converted ArmorAddon.", false, false);
         return result;
     }
 
@@ -366,6 +601,8 @@ public class HeadPartWigConverter
             _mintedSets.Clear();
             _renamePrefixOwners.Clear();
             _usedPhysicsXmlRelPaths.Clear();
+            _headPartAllowedRaces = null;
+            _headPartAllowedRacesResolved = false;
         }
 
         try
@@ -425,14 +662,24 @@ public class HeadPartWigConverter
             return null;
         }
 
-        var arma = hairArmas[0];
+        return ResolveArmaNifRecordPath(hairArmas[0], donorNpc, appearanceModSetting, npcIdentifier,
+            "wig ArmorAddon", appendLog);
+    }
+
+    /// <summary>Shared ARMA→NIF tail of both wig sources: the addon's per-sex
+    /// WorldModel with the weight-matched _0/_1 variant. Null (with a log line)
+    /// when unresolvable — each caller decides its own fallback semantics.</summary>
+    private string? ResolveArmaNifRecordPath(IArmorAddonGetter arma, INpcGetter donorNpc,
+        ModSetting appearanceModSetting, string npcIdentifier, string sourceLabel,
+        Action<string, bool, bool> appendLog)
+    {
         bool isFemale = Auxilliary.IsFemale(donorNpc);
         string? recordPath = GetWorldModelRecordPath(arma, female: isFemale)
                              ?? GetWorldModelRecordPath(arma, female: !isFemale); // shared/single-sex meshes
         if (recordPath == null)
         {
-            appendLog($"      Wig conversion: wig ArmorAddon {arma.FormKey} has no WorldModel path for " +
-                      $"{npcIdentifier}. Falling back to ForwardToSkin.", false, true);
+            appendLog($"      Wig conversion: {sourceLabel} {arma.FormKey} has no WorldModel path for " +
+                      $"{npcIdentifier}.", false, true);
             return null;
         }
 
@@ -449,8 +696,7 @@ public class HeadPartWigConverter
         }
 
         appendLog($"      Wig conversion: no weight variant of wig NIF '{recordPath}' exists in " +
-                  $"'{appearanceModSetting.DisplayName}' for {npcIdentifier}. Falling back to ForwardToSkin.",
-            false, true);
+                  $"'{appearanceModSetting.DisplayName}' for {npcIdentifier}.", false, true);
         return null;
     }
 
@@ -494,8 +740,12 @@ public class HeadPartWigConverter
     /// <summary>Returns the cached minted set for (wig, NIF) or mints a fresh
     /// one: parent HDPT (Type=Hair, Model, ExtraParts) + modeled IsExtraPart
     /// extras, EDID == future baked shape name for every part. Null when the
-    /// wig NIF yields no usable render shapes (caller falls back).</summary>
-    private MintedWigSet? GetOrMintWigSet(IArmorGetter wigArmor, FormKey wigKey, string wigNifSourcePath,
+    /// wig NIF yields no usable render shapes (each caller decides its own
+    /// fallback). Source-agnostic: <paramref name="wigKey"/> is the outfit wig
+    /// ARMO's key or the skin-carried wig ARMA's key (FormKeys are globally
+    /// unique so both share <see cref="_mintedSets"/>), and
+    /// <paramref name="sourceEditorId"/> seeds the minted EDID prefix.</summary>
+    private MintedWigSet? GetOrMintWigSet(string? sourceEditorId, FormKey wigKey, string wigNifSourcePath,
         string wigNifDataRelPath, string wigNifRecordPath, ModSetting appearanceModSetting,
         string npcIdentifier, Action<string, bool, bool> appendLog)
     {
@@ -508,14 +758,14 @@ public class HeadPartWigConverter
         if (renderShapes.Count == 0)
         {
             appendLog($"      Wig conversion: wig NIF '{wigNifDataRelPath}' contains no render shapes " +
-                      $"(shader-bearing) for {npcIdentifier}. Falling back to ForwardToSkin.", false, true);
+                      $"(shader-bearing) for {npcIdentifier}. Skipping conversion for this wig.", false, true);
             return null;
         }
 
         if (renderShapes.Distinct(StringComparer.OrdinalIgnoreCase).Count() != renderShapes.Count)
         {
             appendLog($"      Wig conversion: wig NIF '{wigNifDataRelPath}' has duplicate render shape names — " +
-                      "EDID==shape-name reconciliation would be ambiguous. Falling back to ForwardToSkin.",
+                      "EDID==shape-name reconciliation would be ambiguous. Skipping conversion for this wig.",
                 false, true);
             return null;
         }
@@ -525,7 +775,7 @@ public class HeadPartWigConverter
         // baked names. A prefix already claimed by a DIFFERENT wig mesh (same
         // EditorID in another plugin, or a per-sex mesh pair) gets a short
         // disambiguator so EDIDs stay unique per set.
-        string wigId = SanitizeForEditorId(wigArmor.EditorID) ?? SanitizeForEditorId(wigKey.ToString())!;
+        string wigId = SanitizeForEditorId(sourceEditorId) ?? SanitizeForEditorId(wigKey.ToString())!;
         string prefix = MintedEditorIdPrefix + wigId + "_";
         lock (_lock)
         {
@@ -632,7 +882,7 @@ public class HeadPartWigConverter
         }
 
         appendLog($"      Wig conversion: minted {set.MintedRecords.Count} head part record(s) for wig " +
-                  $"'{wigArmor.EditorID ?? wigKey.ToString()}' (parent '{set.ParentEditorId}').", false, false);
+                  $"'{sourceEditorId ?? wigKey.ToString()}' (parent '{set.ParentEditorId}').", false, false);
         return set;
     }
 

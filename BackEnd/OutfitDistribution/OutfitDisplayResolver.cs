@@ -439,66 +439,167 @@ public class OutfitDisplayResolver
         if (linkCache == null) return string.Empty;
 
         var donor = ResolveDonorNpc(sourceNpcFormKey, modSetting, linkCache);
-        if (donor?.DefaultOutfit == null || donor.DefaultOutfit.IsNull) return string.Empty;
+        if (donor == null) return string.Empty;
         bool hasWnam = donor.WornArmor != null && !donor.WornArmor.IsNull;
 
-        IOutfitGetter? donorOutfit = null;
         var folders = modSetting.CorrespondingFolderPaths.ToHashSet();
-        if (_recordHandler.TryGetRecordFromMods(donor.DefaultOutfit, modSetting.CorrespondingModKeys, folders,
-                RecordHandler.RecordLookupFallBack.Winner, out var outfitRec) && outfitRec is IOutfitGetter scoped)
-        {
-            donorOutfit = scoped;
-        }
-        else
-        {
-            linkCache.TryResolve<IOutfitGetter>(donor.DefaultOutfit.FormKey, out donorOutfit);
-        }
-        if (donorOutfit?.Items == null) return string.Empty;
-
-        var itemKeys = donorOutfit.Items.Where(i => i != null && !i.IsNull).Select(i => i.FormKey).ToList();
-        var wigKeys = itemKeys.Where(k => modSetting.DetectedWigArmors.Contains(k))
-            .Select(k => k.ToString()).OrderBy(s => s, StringComparer.Ordinal).ToList();
-        var antlerKeys = itemKeys.Where(k => modSetting.DetectedAntlerArmors.Contains(k))
-            .Select(k => k.ToString()).OrderBy(s => s, StringComparer.Ordinal).ToList();
-
         var sb = new StringBuilder();
+        bool outfitHasDetectedWig = false;
 
-        // Wig segment — content-based (mode + sorted keys) so adding/removing a wig
-        // re-stales too. ForwardToSkin and ConvertToHeadParts depict regardless of
-        // the outfit toggle (post-patch the wig is skin / baked FaceGen hair); a
-        // ForwardToOutfit wig (incl. the no-WNAM fallback) only with the outfit on.
-        if (wigMode != WigHandlingMode.None && wigKeys.Count > 0)
+        // Outfit (source 1) segments — unchanged semantics; skipped (not bailed)
+        // for an outfit-less donor so the WNAM segment below can still emit.
+        if (donor.DefaultOutfit != null && !donor.DefaultOutfit.IsNull)
         {
-            var effWig = (wigMode == WigHandlingMode.ForwardToSkin && !hasWnam)
-                ? WigHandlingMode.ForwardToOutfit
-                : wigMode;
-            if (effWig == WigHandlingMode.ForwardToSkin || effWig == WigHandlingMode.ConvertToHeadParts ||
-                includeDefaultOutfitRenderFlag)
+            IOutfitGetter? donorOutfit = null;
+            if (_recordHandler.TryGetRecordFromMods(donor.DefaultOutfit, modSetting.CorrespondingModKeys, folders,
+                    RecordHandler.RecordLookupFallBack.Winner, out var outfitRec) && outfitRec is IOutfitGetter scoped)
             {
-                sb.Append("+wig[" + effWig + ":" + string.Join(",", wigKeys) + "]");
+                donorOutfit = scoped;
+            }
+            else
+            {
+                linkCache.TryResolve<IOutfitGetter>(donor.DefaultOutfit.FormKey, out donorOutfit);
+            }
+
+            if (donorOutfit?.Items != null)
+            {
+                var itemKeys = donorOutfit.Items.Where(i => i != null && !i.IsNull).Select(i => i.FormKey).ToList();
+                var wigKeys = itemKeys.Where(k => modSetting.DetectedWigArmors.Contains(k))
+                    .Select(k => k.ToString()).OrderBy(s => s, StringComparer.Ordinal).ToList();
+                var antlerKeys = itemKeys.Where(k => modSetting.DetectedAntlerArmors.Contains(k))
+                    .Select(k => k.ToString()).OrderBy(s => s, StringComparer.Ordinal).ToList();
+                outfitHasDetectedWig = wigKeys.Count > 0;
+
+                // Wig segment — content-based (mode + sorted keys) so adding/removing a wig
+                // re-stales too. ForwardToSkin and ConvertToHeadParts depict regardless of
+                // the outfit toggle (post-patch the wig is skin / baked FaceGen hair); a
+                // ForwardToOutfit wig (incl. the no-WNAM fallback) only with the outfit on.
+                if (wigMode != WigHandlingMode.None && wigKeys.Count > 0)
+                {
+                    var effWig = (wigMode == WigHandlingMode.ForwardToSkin && !hasWnam)
+                        ? WigHandlingMode.ForwardToOutfit
+                        : wigMode;
+                    if (effWig == WigHandlingMode.ForwardToSkin || effWig == WigHandlingMode.ConvertToHeadParts ||
+                        includeDefaultOutfitRenderFlag)
+                    {
+                        sb.Append("+wig[" + effWig + ":" + string.Join(",", wigKeys) + "]");
+                    }
+                }
+
+                // Antler segment — the outfit (source 1) antlers the preview reflects.
+                // Skin shows always; Remove changes the depiction (hidden) so switching to
+                // it re-stales; ForwardToOutfit only with the outfit on. (Sources 2/3 —
+                // baked WornArmor/FaceGen antlers — are not depicted in the preview yet, so
+                // they're deliberately left out to avoid needless re-renders.)
+                if (antlerMode != AntlerHandlingMode.None && antlerKeys.Count > 0)
+                {
+                    var effAntler = (antlerMode == AntlerHandlingMode.ForwardToSkin && !hasWnam)
+                        ? AntlerHandlingMode.ForwardToOutfit
+                        : antlerMode;
+                    bool depicted = effAntler == AntlerHandlingMode.ForwardToSkin ||
+                                    effAntler == AntlerHandlingMode.Remove ||
+                                    includeDefaultOutfitRenderFlag;
+                    if (depicted)
+                    {
+                        sb.Append("+antler[" + effAntler + ":" + string.Join(",", antlerKeys) + "]");
+                    }
+                }
             }
         }
 
-        // Antler segment — the outfit (source 1) antlers the preview reflects.
-        // Skin shows always; Remove changes the depiction (hidden) so switching to
-        // it re-stales; ForwardToOutfit only with the outfit on. (Sources 2/3 —
-        // baked WornArmor/FaceGen antlers — are not depicted in the preview yet, so
-        // they're deliberately left out to avoid needless re-renders.)
-        if (antlerMode != AntlerHandlingMode.None && antlerKeys.Count > 0)
+        // Skin-carried (WNAM) wig segment — ConvertToHeadParts only, and only
+        // when the conversion changes the depicted image: the preview hides the
+        // donor's facegen hair in favor of the skin wig (NpcMeshResolver.
+        // ComputeWigHideHeadShapeNames). Mirrors its gates — exactly one
+        // effective wig ARMA (Settings.IsWigArmature, race-filtered), no
+        // detected outfit wig (that flow's segment is above), and the donor
+        // actually HAS Hair-type head parts to hide. Content-based (the
+        // effective ARMA key) so a manual is/is-not designation re-stales
+        // exactly when it changes the depiction. A bald donor (the High Poly
+        // NPC Overhaul pattern) previews identically pre/post conversion and
+        // deliberately emits nothing — populating DetectedWigArmatures on
+        // upgrade must not mass-re-render tiles whose image cannot change.
+        if (wigMode == WigHandlingMode.ConvertToHeadParts && hasWnam && !outfitHasDetectedWig)
         {
-            var effAntler = (antlerMode == AntlerHandlingMode.ForwardToSkin && !hasWnam)
-                ? AntlerHandlingMode.ForwardToOutfit
-                : antlerMode;
-            bool depicted = effAntler == AntlerHandlingMode.ForwardToSkin ||
-                            effAntler == AntlerHandlingMode.Remove ||
-                            includeDefaultOutfitRenderFlag;
-            if (depicted)
+            IArmorGetter? wnamGetter = null;
+            if (_recordHandler.TryGetRecordFromMods(donor.WornArmor!, modSetting.CorrespondingModKeys, folders,
+                    RecordHandler.RecordLookupFallBack.Winner, out var wnamRec) && wnamRec is IArmorGetter scopedWnam)
             {
-                sb.Append("+antler[" + effAntler + ":" + string.Join(",", antlerKeys) + "]");
+                wnamGetter = scopedWnam;
+            }
+            else
+            {
+                linkCache.TryResolve<IArmorGetter>(donor.WornArmor!.FormKey, out wnamGetter);
+            }
+
+            if (wnamGetter?.Armature != null)
+            {
+                FormKey? raceKey = donor.Race.IsNull ? null : donor.Race.FormKey;
+                var effectiveArmaKeys = new List<string>();
+                foreach (var armaLink in wnamGetter.Armature)
+                {
+                    if (armaLink == null || armaLink.IsNull) continue;
+                    IArmorAddonGetter? arma = null;
+                    if (_recordHandler.TryGetRecordFromMods(armaLink, modSetting.CorrespondingModKeys, folders,
+                            RecordHandler.RecordLookupFallBack.Winner, out var armaRec) &&
+                        armaRec is IArmorAddonGetter scopedArma)
+                    {
+                        arma = scopedArma;
+                    }
+                    else
+                    {
+                        linkCache.TryResolve<IArmorAddonGetter>(armaLink.FormKey, out arma);
+                    }
+                    if (arma == null || !ArmaAppliesToRace(arma, raceKey)) continue;
+                    if (_settings.IsWigArmature(modSetting, armaLink.FormKey, arma.EditorID, donor.FormKey))
+                    {
+                        effectiveArmaKeys.Add(armaLink.FormKey.ToString());
+                    }
+                }
+
+                if (effectiveArmaKeys.Count == 1 && DonorHasHairHeadPart(donor, modSetting, folders, linkCache))
+                {
+                    sb.Append("+wnamwig[" + WigHandlingMode.ConvertToHeadParts + ":" + effectiveArmaKeys[0] + "]");
+                }
             }
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>Race applicability mirror of the converter's ARMA filter (null
+    /// race / no restrictions = universal).</summary>
+    private static bool ArmaAppliesToRace(IArmorAddonGetter arma, FormKey? npcRaceKey)
+    {
+        if (npcRaceKey == null) return true;
+        if (arma.Race.IsNull && (arma.AdditionalRaces == null || arma.AdditionalRaces.Count == 0)) return true;
+        if (!arma.Race.IsNull && arma.Race.FormKey == npcRaceKey.Value) return true;
+        return arma.AdditionalRaces != null &&
+               arma.AdditionalRaces.Any(r => r != null && !r.IsNull && r.FormKey == npcRaceKey.Value);
+    }
+
+    /// <summary>Whether the donor has any Hair-type head part (mod-scoped
+    /// resolution first) — the WNAM wig segment only depicts when there is
+    /// facegen hair to hide.</summary>
+    private bool DonorHasHairHeadPart(INpcGetter donor, ModSetting modSetting, HashSet<string> folders,
+        ILinkCache linkCache)
+    {
+        foreach (var hpLink in donor.HeadParts)
+        {
+            if (hpLink == null || hpLink.IsNull) continue;
+            IHeadPartGetter? hp = null;
+            if (_recordHandler.TryGetRecordFromMods(hpLink, modSetting.CorrespondingModKeys, folders,
+                    RecordHandler.RecordLookupFallBack.Winner, out var hpRec) && hpRec is IHeadPartGetter scopedHp)
+            {
+                hp = scopedHp;
+            }
+            else
+            {
+                linkCache.TryResolve<IHeadPartGetter>(hpLink.FormKey, out hp);
+            }
+            if (hp?.Type == HeadPart.TypeEnum.Hair) return true;
+        }
+        return false;
     }
 
     private static string DescribeOutfit(FormKey outfit, ILinkCache linkCache)

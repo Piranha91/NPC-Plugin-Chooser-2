@@ -64,9 +64,18 @@ public class ModSetting
 
     // Wig/antler detection results (computed during mod analysis on cache miss,
     // persisted so cache hits keep them — same lifecycle as HasBaseGameAssetPaths).
-    // DetectedWigArmors: ARMOs whose Name contains "wig"/"hair" AND whose ARMA(s)
-    // occupy a hair biped slot (31 Hair / 41 LongHair). Antlers are detected from
-    // three sources so Remove can reach all of them:
+    // Wigs are detected from two sources:
+    //   DetectedWigArmors        — ARMOs whose Name contains "wig"/"hair" AND whose
+    //                              ARMA(s) occupy a hair biped slot (31 Hair /
+    //                              41 LongHair), carried in an outfit.
+    //   DetectedWigArmatures     — hair-slot ARMAs carried directly in an NPC's
+    //                              WornArmor (WNAM; the High Poly NPC Overhaul
+    //                              bald-FaceGen + skin-hair pattern), slot-first
+    //                              NPC-scoped detection plus a keyword pass.
+    //                              Manual is/is-not designations
+    //                              (Settings.IsWigArmature) refine this set at
+    //                              consumption time.
+    // Antlers are detected from three sources so Remove can reach all of them:
     //   DetectedAntlerArmors     — ARMOs whose EditorID/Name contains "antler"
     //                              (in an outfit; no slot guard).
     //   DetectedAntlerArmatures  — ARMAs whose EditorID contains "antler" (baked
@@ -77,6 +86,7 @@ public class ModSetting
     // ModWigHandlingMode / ModAntlerHandlingMode: per-mod overrides of the global
     // Settings.DefaultWigHandlingMode / DefaultAntlerHandlingMode (null = default).
     public HashSet<FormKey> DetectedWigArmors { get; set; } = new();
+    public HashSet<FormKey> DetectedWigArmatures { get; set; } = new();
     public HashSet<FormKey> DetectedAntlerArmors { get; set; } = new();
     public HashSet<FormKey> DetectedAntlerArmatures { get; set; } = new();
     public HashSet<FormKey> DetectedAntlerHeadParts { get; set; } = new();
@@ -85,6 +95,13 @@ public class ModSetting
 
     [JsonIgnore]
     public bool HasWigArmors => DetectedWigArmors.Count > 0;
+
+    /// <summary>Whether the analysis SCAN detected wigs from either source
+    /// (outfit ARMOs or WNAM-carried hair ARMAs). User designations (persisted
+    /// on <see cref="Settings.ManualWigArmatures"/>) are folded in by
+    /// <see cref="Settings.ModHasWigs"/> — use that for effective checks.</summary>
+    [JsonIgnore]
+    public bool HasWigSources => DetectedWigArmors.Count > 0 || DetectedWigArmatures.Count > 0;
 
     /// <summary>Whether the analysis SCAN detected antlers (any of the three
     /// sources). User-designated antlers (persisted on
@@ -97,9 +114,6 @@ public class ModSetting
 
     [JsonIgnore]
     public bool HasAntlers => HasDetectedAntlers;
-
-    [JsonIgnore]
-    public bool HasWigs => HasWigArmors || HasAntlers;
 
     public Dictionary<FormKey, (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)> 
         NpcFormKeysToNotifications

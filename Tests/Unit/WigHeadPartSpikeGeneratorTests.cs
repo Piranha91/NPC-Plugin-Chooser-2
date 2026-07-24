@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using Xunit;
@@ -186,6 +187,304 @@ public class WigHeadPartSpikeGeneratorTests
             if (!loadOrderKeys.Contains(master)) loadOrderKeys.Add(master);
         }
         await spike.BeginWrite.ToPath(Path.Combine(SingleShapeStagingDir, SpikePluginName))
+            .WithLoadOrder(loadOrderKeys
+                .Select(mk => (ISkyrimModGetter)new SkyrimMod(mk, SkyrimRelease.SkyrimSE)).ToArray())
+            .WriteAsync();
+    }
+
+    private const string SynthPartitionStagingDir =
+        @"S:\Skyrim NPC Selection\NPC2 WigSpike Staging\NPC2 WigSpike I - SynthPartition";
+
+    /// <summary>
+    /// Diagnostic I: the WNAM (skin-carried) wig pattern — a BALD donor facegen
+    /// (hair shapes pre-stripped, so the bake has NO donor shape to harvest a
+    /// partition template from) with one wig sub-shape baked as the sole Hair
+    /// head part using the SYNTHESIZED SBP_131_HAIR template
+    /// (<see cref="NifHandler.WigBakeInstruction"/>.SynthesizeHairPartitionIfNoDonor).
+    /// Otherwise identical to variant B. In-game checklist: no dark face, tint
+    /// correct, the partial hair renders, a HELMET HIDES the baked hair (the
+    /// hair partition classification is exactly what helmets key on), SMP sway
+    /// intact. If B is clean and I dark-faces or the helmet fails to hide the
+    /// hair, the synthetic template values are wrong.
+    /// </summary>
+    [Fact]
+    public async Task GenerateSynthesizedPartitionVariant()
+    {
+        if (SpecimensMissing) return;
+
+        if (Directory.Exists(SynthPartitionStagingDir)) Directory.Delete(SynthPartitionStagingDir, true);
+        string meshesDir = Path.Combine(SynthPartitionStagingDir, "meshes");
+        Directory.CreateDirectory(meshesDir);
+
+        using var foxGlove = SkyrimMod.CreateFromBinaryOverlay(FoxGloveEsp, SkyrimRelease.SkyrimSE);
+        using var auri = SkyrimMod.CreateFromBinaryOverlay(AuriEsp, SkyrimRelease.SkyrimSE);
+        var donorNpc = foxGlove.Npcs.First();
+
+        string wigVariant = donorNpc.Weight >= 50f ? "22a_1.nif" : "22a_0.nif";
+        string wigNifSource = Path.Combine(FoxGloveModRoot, "meshes", WigNifRelPath, wigVariant);
+
+        var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [BisectShape] = RenamePrefix + BisectShape,
+        };
+
+        SmpXmlRewriter.RewriteShapeNames(
+            Path.Combine(FoxGloveModRoot, "meshes", WigNifRelPath, "22a.xml"),
+            Path.Combine(SynthPartitionStagingDir, NewPhysicsXmlRelPath), renames);
+
+        string faceGenDest = Path.Combine(meshesDir, FaceGenRelDir, "00000D63.NIF");
+        Directory.CreateDirectory(Path.GetDirectoryName(faceGenDest)!);
+        File.Copy(Path.Combine(FoxGloveModRoot, "meshes", FaceGenRelDir, "00000D63.NIF"), faceGenDest);
+
+        // Pre-strip the donor hair so the copied facegen matches the bald-donor
+        // WNAM pattern before the bake ever sees it.
+        var stripLog = new List<string>();
+        NifHandler.RemoveShapesByName(faceGenDest,
+                new[] { "FoxGloveHairMesh", "FoxGloveHairlineMesh", "FoxGloveHairScalp" }, stripLog.Add)
+            .Should().Be(3, string.Join(Environment.NewLine, stripLog));
+
+        var bakeLog = new List<string>();
+        int baked = NifHandler.BakeWigIntoFaceGen(new NifHandler.WigBakeInstruction(
+                faceGenDest, wigNifSource, renames,
+                Array.Empty<string>(),
+                NewPhysicsXmlRelPath,
+                OnlyRenderShapes: new[] { BisectShape },
+                SynthesizeHairPartitionIfNoDonor: true),
+            bakeLog.Add);
+        baked.Should().Be(1, string.Join(Environment.NewLine, bakeLog));
+        bakeLog.Should().Contain(l => l.Contains("synthesized SBP_131_HAIR"),
+            "the bald facegen must trigger the synthetic template, not a harvest");
+
+        // Readback: the baked shape must carry the synthetic hair partition.
+        using (var check = new nifly.NifFile())
+        {
+            check.Load(faceGenDest).Should().Be(0);
+            nifly.NiShape? bakedShape = null;
+            using var shapes = check.GetShapes();
+            foreach (var shape in shapes)
+            {
+                if (renames[BisectShape].Equals(shape.name?.get(), StringComparison.OrdinalIgnoreCase))
+                {
+                    bakedShape = shape;
+                    break;
+                }
+            }
+            bakedShape.Should().NotBeNull("the renamed wig shape must exist in the baked facegen");
+            using var partitions = new nifly.NiVectorBSDismemberSkinInstancePartitionInfo();
+            using var triParts = new nifly.vectorint();
+            check.GetShapePartitions(bakedShape, partitions, triParts)
+                .Should().BeTrue("the baked shape must carry dismember partitions");
+            using var items = partitions.items();
+            items.Count.Should().BeGreaterThan(0);
+            for (int pi = 0; pi < items.Count; pi++)
+            {
+                ((int)items[pi].partID).Should().Be(131, "every partition must be SBP_131_HAIR");
+            }
+            ((ushort)items[0].flags).Should().Be((ushort)0x0101,
+                "first partition takes PF_EDITOR_VISIBLE | PF_START_NET_BONESET");
+        }
+
+        string wigNifDest = Path.Combine(meshesDir, WigNifRelPath, wigVariant);
+        Directory.CreateDirectory(Path.GetDirectoryName(wigNifDest)!);
+        File.Copy(wigNifSource, wigNifDest);
+
+        var spike = new SkyrimMod(ModKey.FromNameAndExtension(SpikePluginName), SkyrimRelease.SkyrimSE);
+        var hp = spike.HeadParts.AddNew();
+        hp.EditorID = renames[BisectShape];
+        hp.Type = HeadPart.TypeEnum.Hair;
+        hp.Flags = HeadPart.Flag.Male | HeadPart.Flag.Female;
+        hp.ValidRaces.SetTo(HeadPartsAllRacesMinusBeastKey);
+        hp.Model = new Model { File = Path.Combine(WigNifRelPath, wigVariant) };
+
+        var patchNpc = spike.Npcs.GetOrAddAsOverride(donorNpc);
+        var headPartsByKey = foxGlove.HeadParts.Concat(auri.HeadParts)
+            .GroupBy(h => h.FormKey).ToDictionary(g => g.Key, g => g.First());
+        patchNpc.HeadParts.RemoveAll(l =>
+            l != null && headPartsByKey.TryGetValue(l.FormKey, out var rec) &&
+            rec.Type == HeadPart.TypeEnum.Hair).Should().BeGreaterThan(0);
+        patchNpc.HeadParts.Add(hp.FormKey.ToLink<IHeadPartGetter>());
+
+        var wigArmorKeys = foxGlove.Armors
+            .Where(a => a.EditorID?.Contains("Wig", StringComparison.OrdinalIgnoreCase) == true)
+            .Select(a => a.FormKey).ToHashSet();
+        var donorOutfit = foxGlove.Outfits.Concat(auri.Outfits)
+            .FirstOrDefault(o => o.FormKey == donorNpc.DefaultOutfit.FormKey);
+        if (donorOutfit != null)
+        {
+            var outfitDup = spike.Outfits.AddNew();
+            outfitDup.EditorID = "NPC2_WigSpike_Outfit";
+            foreach (var item in donorOutfit.Items ?? Enumerable.Empty<IFormLinkGetter<IOutfitTargetGetter>>())
+            {
+                if (!wigArmorKeys.Contains(item.FormKey))
+                {
+                    outfitDup.Items ??= new();
+                    outfitDup.Items.Add(item.FormKey.ToLink<IOutfitTargetGetter>());
+                }
+            }
+            patchNpc.DefaultOutfit.SetTo(outfitDup.FormKey);
+        }
+
+        var loadOrderKeys = new List<ModKey>();
+        foreach (var master in auri.ModHeader.MasterReferences.Select(m => m.Master)
+                     .Concat(foxGlove.ModHeader.MasterReferences.Select(m => m.Master))
+                     .Append(auri.ModKey).Append(foxGlove.ModKey))
+        {
+            if (!loadOrderKeys.Contains(master)) loadOrderKeys.Add(master);
+        }
+        await spike.BeginWrite.ToPath(Path.Combine(SynthPartitionStagingDir, SpikePluginName))
+            .WithLoadOrder(loadOrderKeys
+                .Select(mk => (ISkyrimModGetter)new SkyrimMod(mk, SkyrimRelease.SkyrimSE)).ToArray())
+            .WriteAsync();
+    }
+
+    private const string WnamSpecimenStagingDir =
+        @"S:\Skyrim NPC Selection\NPC2 WigSpike Staging\NPC2 WigSpike W - WnamSpecimen";
+
+    private const string WnamSpecimenPluginName = "NPC2_WnamSpecimen.esp";
+
+    private const string HpnoResourcesEsp =
+        @"S:\Skyrim NPC Selection\mods\High Poly NPC Overhaul - Resources\High Poly NPC Overhaul - Resources.esp";
+
+    /// <summary>
+    /// WNAM-wig specimen: rebuilds the FoxGlove Auri donor as the skin-carried
+    /// wig pattern (the High Poly NPC Overhaul shape) — a BALD FaceGen (hair
+    /// shapes stripped), a modeless bald Hair head part replacing the donor
+    /// hair, and the wig delivered as a hair-slot ArmorAddon inside a WNAM skin
+    /// instead of an outfit ARMO. Install the emitted folder in MO2 and add it
+    /// as an NPC2 appearance mod: the scan must detect the skin wig
+    /// (DetectedWigArmatures), the "Set Wig Meshes" selector must list it, and
+    /// a ConvertToHeadParts patch run must convert it end-to-end (synthesized
+    /// SBP_131_HAIR partition — the bald-donor path) with the ARMA stripped
+    /// from the output's WNAM duplicate. The specimen skin's body ArmorAddons
+    /// are copied from a real HPNO wig skin (engine-proven vanilla naked-body
+    /// links) rather than hardcoded FormKeys, so this fact also skips
+    /// gracefully when HPNO Resources is absent.
+    /// </summary>
+    [Fact]
+    public async Task GenerateWnamWigSpecimenModFolder()
+    {
+        if (SpecimensMissing || !File.Exists(HpnoResourcesEsp)) return;
+
+        if (Directory.Exists(WnamSpecimenStagingDir)) Directory.Delete(WnamSpecimenStagingDir, true);
+        string meshesDir = Path.Combine(WnamSpecimenStagingDir, "meshes");
+        Directory.CreateDirectory(meshesDir);
+
+        using var foxGlove = SkyrimMod.CreateFromBinaryOverlay(FoxGloveEsp, SkyrimRelease.SkyrimSE);
+        using var auri = SkyrimMod.CreateFromBinaryOverlay(AuriEsp, SkyrimRelease.SkyrimSE);
+        using var hpnoResources = SkyrimMod.CreateFromBinaryOverlay(HpnoResourcesEsp, SkyrimRelease.SkyrimSE);
+        var donorNpc = foxGlove.Npcs.First();
+
+        // Bald facegen: copy the donor FaceGen and strip its hair shapes —
+        // exactly the state a WNAM-wig mod ships (nothing for the bake's
+        // partition harvest; the converter must synthesize).
+        string faceGenDest = Path.Combine(meshesDir, FaceGenRelDir, "00000D63.NIF");
+        Directory.CreateDirectory(Path.GetDirectoryName(faceGenDest)!);
+        File.Copy(Path.Combine(FoxGloveModRoot, "meshes", FaceGenRelDir, "00000D63.NIF"), faceGenDest);
+        NifHandler.RemoveShapesByName(faceGenDest,
+                new[] { "FoxGloveHairMesh", "FoxGloveHairlineMesh", "FoxGloveHairScalp" })
+            .Should().Be(3);
+
+        // Wig NIF + its SMP physics XML at their original rel paths.
+        string wigVariant = donorNpc.Weight >= 50f ? "22a_1.nif" : "22a_0.nif";
+        string wigRecordPath = Path.Combine(WigNifRelPath, wigVariant);
+        string wigNifDest = Path.Combine(meshesDir, WigNifRelPath, wigVariant);
+        Directory.CreateDirectory(Path.GetDirectoryName(wigNifDest)!);
+        File.Copy(Path.Combine(FoxGloveModRoot, "meshes", WigNifRelPath, wigVariant), wigNifDest);
+        File.Copy(Path.Combine(FoxGloveModRoot, "meshes", WigNifRelPath, "22a.xml"),
+            Path.Combine(meshesDir, WigNifRelPath, "22a.xml"));
+
+        // Vanilla naked-body ARMA links, copied from a real HPNO wig skin (the
+        // non-HighPoly_WigAA_ armature entries) — engine-proven references.
+        var hpnoWigSkin = hpnoResources.Armors.First(a =>
+            a.Armature != null &&
+            a.Armature.Any(l => l != null && !l.IsNull &&
+                hpnoResources.ArmorAddons.Any(ad => ad.FormKey == l.FormKey &&
+                    ad.EditorID?.StartsWith("HighPoly_WigAA_", StringComparison.OrdinalIgnoreCase) == true)));
+        var bodyArmaLinks = hpnoWigSkin.Armature!
+            .Where(l => l != null && !l.IsNull &&
+                        !hpnoResources.ArmorAddons.Any(ad => ad.FormKey == l.FormKey &&
+                            ad.EditorID?.StartsWith("HighPoly_WigAA_", StringComparison.OrdinalIgnoreCase) == true))
+            .Select(l => l.FormKey)
+            .ToList();
+        bodyArmaLinks.Should().NotBeEmpty("the HPNO skin must carry vanilla body ARMAs to copy");
+
+        var spike = new SkyrimMod(ModKey.FromNameAndExtension(WnamSpecimenPluginName), SkyrimRelease.SkyrimSE);
+
+        // The wig as a skin-carried ARMA (hair slot, WorldModel = the wig NIF).
+        var wigArma = spike.ArmorAddons.AddNew();
+        wigArma.EditorID = "NPC2Spec_WigAA_Auri";
+        wigArma.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Hair };
+        wigArma.WorldModel = new GenderedItem<Model?>(
+            new Model { File = wigRecordPath }, new Model { File = wigRecordPath });
+
+        // The WNAM skin: vanilla body ARMAs + the wig ARMA, BOD2 widened to
+        // cover the hair slot (the engine only dresses declared slots).
+        var skin = spike.Armors.AddNew();
+        skin.EditorID = "NPC2Spec_AuriSkin";
+        skin.BodyTemplate = new BodyTemplate
+        {
+            FirstPersonFlags = BipedObjectFlag.Body | BipedObjectFlag.Hands |
+                               BipedObjectFlag.Feet | BipedObjectFlag.Hair,
+            ArmorType = ArmorType.Clothing,
+        };
+        foreach (var bodyKey in bodyArmaLinks) skin.Armature.Add(bodyKey.ToLink<IArmorAddonGetter>());
+        skin.Armature.Add(wigArma.ToLink());
+
+        // Modeless bald Hair head part (the HPNO HighPoly_HairBald pattern): an
+        // NPC with NO Hair part back-fills a random race hair, so the donor
+        // hair is REPLACED, not just removed.
+        var bald = spike.HeadParts.AddNew();
+        bald.EditorID = "NPC2Spec_HairBald";
+        bald.Type = HeadPart.TypeEnum.Hair;
+        bald.Flags = HeadPart.Flag.Male | HeadPart.Flag.Female;
+        bald.ValidRaces.SetTo(HeadPartsAllRacesMinusBeastKey);
+
+        var patchNpc = spike.Npcs.GetOrAddAsOverride(donorNpc);
+        var headPartsByKey = foxGlove.HeadParts.Concat(auri.HeadParts)
+            .GroupBy(h => h.FormKey).ToDictionary(g => g.Key, g => g.First());
+        patchNpc.HeadParts.RemoveAll(l =>
+            l != null && headPartsByKey.TryGetValue(l.FormKey, out var rec) &&
+            rec.Type == HeadPart.TypeEnum.Hair).Should().BeGreaterThan(0);
+        patchNpc.HeadParts.Add(bald.FormKey.ToLink<IHeadPartGetter>());
+        patchNpc.WornArmor.SetTo(skin);
+
+        // Outfit without the wig ARMO — the wig lives ONLY in the skin here.
+        var wigArmorKeys = foxGlove.Armors
+            .Where(a => a.EditorID?.Contains("Wig", StringComparison.OrdinalIgnoreCase) == true)
+            .Select(a => a.FormKey).ToHashSet();
+        var donorOutfit = foxGlove.Outfits.Concat(auri.Outfits)
+            .FirstOrDefault(o => o.FormKey == donorNpc.DefaultOutfit.FormKey);
+        if (donorOutfit != null)
+        {
+            var outfitDup = spike.Outfits.AddNew();
+            outfitDup.EditorID = "NPC2Spec_Outfit";
+            foreach (var item in donorOutfit.Items ?? Enumerable.Empty<IFormLinkGetter<IOutfitTargetGetter>>())
+            {
+                if (!wigArmorKeys.Contains(item.FormKey))
+                {
+                    outfitDup.Items ??= new();
+                    outfitDup.Items.Add(item.FormKey.ToLink<IOutfitTargetGetter>());
+                }
+            }
+            patchNpc.DefaultOutfit.SetTo(outfitDup.FormKey);
+        }
+
+        // Sanity: the production scan must classify the specimen as a WNAM wig
+        // (both the NPC-scoped slot pass and the keyword net reach it).
+        var scan = WigDetector.Scan(new ISkyrimModGetter[] { spike });
+        scan.WigArmatures.Should().Contain(wigArma.FormKey,
+            "the specimen exists to exercise DetectedWigArmatures end-to-end");
+        scan.Wigs.Should().BeEmpty("no outfit wig ARMO may remain");
+
+        var loadOrderKeys = new List<ModKey>();
+        foreach (var master in auri.ModHeader.MasterReferences.Select(m => m.Master)
+                     .Concat(foxGlove.ModHeader.MasterReferences.Select(m => m.Master))
+                     .Concat(hpnoResources.ModHeader.MasterReferences.Select(m => m.Master))
+                     .Append(auri.ModKey).Append(foxGlove.ModKey).Append(hpnoResources.ModKey))
+        {
+            if (!loadOrderKeys.Contains(master)) loadOrderKeys.Add(master);
+        }
+        await spike.BeginWrite.ToPath(Path.Combine(WnamSpecimenStagingDir, WnamSpecimenPluginName))
             .WithLoadOrder(loadOrderKeys
                 .Select(mk => (ISkyrimModGetter)new SkyrimMod(mk, SkyrimRelease.SkyrimSE)).ToArray())
             .WriteAsync();

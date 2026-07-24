@@ -91,6 +91,22 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     private FormKey _antlerSelectorNpcFormKey = FormKey.Null;
     private bool _suppressAntlerRepopulate;
 
+    // --- "Set Wig Meshes" selector (per-tile 3D popup only) ---
+    /// <summary>Whether the skin-carried-wig selector can be offered: the preview
+    /// was loaded through an explicit mod (the per-tile 3D popup) and that NPC's
+    /// WornArmor carries hair-slot ArmorAddon(s). Rows are the WNAM hair ARMAs;
+    /// checking marks one as a wig, unchecking an auto-detected one vetoes the
+    /// scan (both directions persisted on Settings, keyed by ARMA EditorID).</summary>
+    [Reactive] public bool IsWigSelectorAvailable { get; private set; }
+    [Reactive] public bool ShowWigSelector { get; set; }
+    public System.Collections.ObjectModel.ObservableCollection<VM_WigArmatureCandidate>
+        WigArmatureCandidates { get; } = new();
+    public ReactiveCommand<Unit, Unit> ToggleWigSelectorCommand { get; }
+
+    private ModSetting? _wigSelectorModSetting;
+    private FormKey _wigSelectorNpcFormKey = FormKey.Null;
+    private bool _suppressWigRepopulate;
+
     // Non-persistent override state for the full-screen popup (see
     // PersistAttireToggles). Seeded from the persisted defaults at construction.
     private bool _localIncludeDefaultOutfit;
@@ -206,6 +222,8 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         LoadSelectedNpcCommand = ReactiveCommand.CreateFromTask(LoadSelectedNpcAsync).DisposeWith(_disposables);
         ResetCommand = ReactiveCommand.Create(ResetSettingsToDefaults).DisposeWith(_disposables);
         ToggleAntlerSelectorCommand = ReactiveCommand.Create(() => { ShowAntlerSelector = !ShowAntlerSelector; })
+            .DisposeWith(_disposables);
+        ToggleWigSelectorCommand = ReactiveCommand.Create(() => { ShowWigSelector = !ShowWigSelector; })
             .DisposeWith(_disposables);
 
         // When the host UC's GL context is reset (WPF recreated the UC; see
@@ -549,6 +567,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             ApplyOutfitNotice(outfitDisplay);
             SetAntlerRemovalNotice(_resolver.AntlerRemovalAppliesForActiveSelection(formKey));
             ClearAntlerSelector(); // no explicit mod scope on the active-selection path
+            ClearWigSelector();
 
             PreviewLoaded?.Invoke();
         }
@@ -615,6 +634,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             ApplyOutfitNotice(outfitDisplay);
             SetAntlerRemovalNotice(_resolver.AntlerRemovalApplies(formKey, modSetting));
             PopulateAntlerSelector(modSetting, formKey);
+            PopulateWigSelector(modSetting, formKey);
 
             PreviewLoaded?.Invoke();
         }
@@ -782,6 +802,99 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: antler designation reload failed: " + ex.Message);
         }
         finally { _suppressAntlerRepopulate = false; }
+    }
+
+    /// <summary>Rebuilds the skin-carried-wig selector list for the loaded NPC
+    /// (explicit-mod / popup path only). Skipped during a designation-triggered
+    /// reload so the list the user is interacting with isn't rebuilt underneath
+    /// them.</summary>
+    private void PopulateWigSelector(ModSetting? modSetting, FormKey formKey)
+    {
+        if (_suppressWigRepopulate) return;
+        ClearWigSelectorItems();
+        _wigSelectorModSetting = modSetting;
+        _wigSelectorNpcFormKey = formKey;
+        if (modSetting == null)
+        {
+            IsWigSelectorAvailable = false;
+            ShowWigSelector = false;
+            return;
+        }
+
+        foreach (var c in _resolver.GetWigArmatureCandidates(formKey, modSetting))
+        {
+            var row = new VM_WigArmatureCandidate(c);
+            row.UserToggled += OnWigCandidateToggled;
+            row.HoverChanged += OnCandidateHoverChanged;
+            WigArmatureCandidates.Add(row);
+        }
+        IsWigSelectorAvailable = WigArmatureCandidates.Count > 0;
+        if (!IsWigSelectorAvailable) ShowWigSelector = false;
+    }
+
+    private void ClearWigSelector()
+    {
+        ClearWigSelectorItems();
+        _wigSelectorModSetting = null;
+        IsWigSelectorAvailable = false;
+        ShowWigSelector = false;
+    }
+
+    private void ClearWigSelectorItems()
+    {
+        foreach (var row in WigArmatureCandidates)
+        {
+            row.UserToggled -= OnWigCandidateToggled;
+            row.HoverChanged -= OnCandidateHoverChanged;
+        }
+        WigArmatureCandidates.Clear();
+    }
+
+    /// <summary>A wig-row toggle → persist the designation in the right
+    /// direction (auto-detected rows toggle the "is NOT a wig" veto list;
+    /// undetected rows toggle the positive list), make the mod's Wig Handling
+    /// dropdown appear, and reload once so the facegen-hair hide parity
+    /// reflects the new effective wig set.</summary>
+    private async void OnWigCandidateToggled(VM_WigArmatureCandidate row)
+    {
+        var mod = _wigSelectorModSetting;
+        if (mod == null || string.IsNullOrEmpty(row.EditorId)) return;
+        string modName = mod.DisplayName;
+
+        if (row.IsAutoDetected)
+        {
+            // Scan says wig: unchecking records a veto, re-checking clears it.
+            if (row.IsChecked)
+                _settings.RemoveManualWigArmature(row.EditorId, modName, _wigSelectorNpcFormKey, isWig: false);
+            else
+                _settings.AddManualWigArmature(row.EditorId, modName, _wigSelectorNpcFormKey, isWig: false);
+        }
+        else
+        {
+            // Scan missed it: checking promotes, unchecking withdraws.
+            if (row.IsChecked)
+                _settings.AddManualWigArmature(row.EditorId, modName, _wigSelectorNpcFormKey, isWig: true);
+            else
+                _settings.RemoveManualWigArmature(row.EditorId, modName, _wigSelectorNpcFormKey, isWig: true);
+        }
+        PersistThrottled();
+
+        // A manual-only mod needs its Wig Handling dropdown to appear so the
+        // user can pick ConvertToHeadParts.
+        Locator.Current.GetService<VM_Mods>()?.RefreshModSettingWigState(modName);
+
+        // Reload so the facegen-hair hide (ConvertToHeadParts parity) reflects
+        // the new effective set; the hide applies at mesh-install time so the
+        // same-NPC reload must force a full rebuild.
+        try { Viewer.SetHighlightedShapeNames(null); } catch { /* best-effort */ }
+        Viewer.ForceRebuildNextLoad();
+        _suppressWigRepopulate = true;
+        try { await ReloadCurrentAsync(); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("VM_InternalMugshotPreview: wig designation reload failed: " + ex.Message);
+        }
+        finally { _suppressWigRepopulate = false; }
     }
 
     /// <summary>Begins a render-log session for one preview load: closes any

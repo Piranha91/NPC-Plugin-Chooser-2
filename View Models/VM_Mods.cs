@@ -3524,6 +3524,22 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
         _allModSettingsInternal.FirstOrDefault(m => m.DisplayName == modName)?.RecomputeHasAntlers();
     }
 
+    /// <summary>Whether the user manually designated any wig armature IN
+    /// <paramref name="modName"/> (see
+    /// <see cref="Settings.ModHasManualWigDesignation"/>). Lets a per-mod VM
+    /// show its Wig Handling dropdown even when the scan detected no wigs.</summary>
+    public bool HasManualWigDesignations(string? modName) =>
+        _settings.ModHasManualWigDesignation(modName);
+
+    /// <summary>Recomputes the HasWigs flag of the mod named
+    /// <paramref name="modName"/> (so its Wig Handling dropdown appears/hides
+    /// after a manual wig designation in the 3D preview).</summary>
+    public void RefreshModSettingWigState(string? modName)
+    {
+        if (string.IsNullOrEmpty(modName)) return;
+        _allModSettingsInternal.FirstOrDefault(m => m.DisplayName == modName)?.RecomputeHasWigs();
+    }
+
     // Save Logic
     public void SaveModSettingsToModel()
     {

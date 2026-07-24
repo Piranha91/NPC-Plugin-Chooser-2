@@ -175,6 +175,56 @@
                         </ListBox>
                     </DockPanel>
                 </Border>
+
+                <!-- "Set Wig Meshes" selector (per-tile 3D popup only; hidden when
+                     the NPC's WornArmor carries no hair-slot ArmorAddons). Unlike
+                     the antler selector, auto-detected rows stay toggleable:
+                     unchecking one vetoes a scan false positive. -->
+                <Button Content="Set Wig Meshes…" Margin="0,6,0,0" HorizontalAlignment="Left" Padding="6,2"
+                        Command="{Binding ToggleWigSelectorCommand}"
+                        Visibility="{Binding IsWigSelectorAvailable, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}"/>
+
+                <Border Margin="0,6,0,0" Width="300" MaxHeight="380"
+                        Background="#E0202020" CornerRadius="4" Padding="8"
+                        Visibility="{Binding ShowWigSelector, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="Skin-carried wig meshes" Foreground="White"
+                                   FontWeight="Bold" Margin="0,0,0,4"/>
+                        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Foreground="#CCCCCC" FontSize="11"
+                                   Margin="0,0,0,6"
+                                   Text="Hair meshes carried in this NPC's skin (worn armor). Hover a row to highlight it in the preview. Checked rows are treated as wigs — with this mod's Wig Handling Mode set to Convert To Head Parts they become real hair on the patched NPC. Uncheck an auto-detected row if it is not actually a wig."/>
+                        <ListBox ItemsSource="{Binding WigArmatureCandidates}" Background="Transparent"
+                                 BorderThickness="0" MaxHeight="300"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="Transparent" Padding="2,1"
+                                            MouseEnter="AntlerCandidate_MouseEnter"
+                                            MouseLeave="AntlerCandidate_MouseLeave">
+                                        <StackPanel Orientation="Horizontal">
+                                            <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                                      VerticalAlignment="Center"
+                                                      ToolTip="Checked = this skin-carried hair mesh is a wig (converted to head parts when the mod's Wig Handling Mode is Convert To Head Parts)."/>
+                                            <TextBlock Text="{Binding DisplayName}" Foreground="White"
+                                                       Margin="6,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="(auto)" Foreground="#66CCFF" FontSize="10"
+                                                       Margin="6,0,0,0" VerticalAlignment="Center"
+                                                       ToolTip="Detected by the scan (hair biped slot in the worn armor). Uncheck to mark it as NOT a wig."
+                                                       Visibility="{Binding IsAutoDetected, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
             </StackPanel>
 
             <!-- Missing-asset warning (attire/headgear mesh-override failures)

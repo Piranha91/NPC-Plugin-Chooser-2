@@ -4,6 +4,7 @@ using System.Linq;
 using FluentAssertions;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Tests.TestSupport;
@@ -184,6 +185,157 @@ public class WigDetectorTests
 
         Scan(mod, fk => fk == masterArma.FormKey ? masterArma : null).Wigs
             .Should().BeEquivalentTo(new[] { armor.FormKey });
+    }
+
+    // ---- Skin-carried (WNAM) wig armatures --------------------------------
+    // Policy (user-decided): slot-based AUTO-detection — any hair-slot ARMA
+    // reachable from an NPC's WornArmor detects with no keyword requirement
+    // (manual "is NOT a wig" designations are the false-positive safety valve).
+    // The keyword pass is a plugin-wide net for hair-slot ARMAs whose wearing
+    // NPC lives outside the scanned plugins; keyword alone never detects.
+
+    private static Npc NewNpcWithWnam(SkyrimMod mod, Armor wnam, Race? race = null)
+    {
+        var npc = MutagenFixtures.NewNpc(mod, editorId: "Wearer_" + Guid.NewGuid().ToString("N")[..8]);
+        npc.WornArmor.SetTo(wnam);
+        if (race != null) npc.Race.SetTo(race);
+        return npc;
+    }
+
+    [Fact]
+    public void WnamHairSlotArma_AutoDetects_WithoutAnyKeyword()
+    {
+        var mod = MutagenFixtures.NewMod("HPNO.esp");
+        var arma = NewArma(mod, BipedObjectFlag.Hair, editorId: "0SkinArma205"); // no wig/hair keyword
+        var skin = NewArmor(mod, null, "0Skin205", arma);
+        NewNpcWithWnam(mod, skin);
+
+        var r = Scan(mod);
+
+        r.WigArmatures.Should().BeEquivalentTo(new[] { arma.FormKey });
+        r.Wigs.Should().BeEmpty("the WNAM source is ARMA-level, not an outfit wig ARMO");
+    }
+
+    [Fact]
+    public void WnamLongHairSlotArma_AutoDetects()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var arma = NewArma(mod, BipedObjectFlag.LongHair, editorId: "0SkinArmaLong");
+        var skin = NewArmor(mod, null, "0SkinLong", arma);
+        NewNpcWithWnam(mod, skin);
+
+        Scan(mod).WigArmatures.Should().BeEquivalentTo(new[] { arma.FormKey });
+    }
+
+    [Fact]
+    public void RaceDefaultSkinAsWnam_IsSkipped()
+    {
+        // Beast-race manes / custom-race anatomy: a WNAM that IS the NPC's race
+        // default skin is the race's body, never a wig.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var arma = NewArma(mod, BipedObjectFlag.Hair, editorId: "ManeArma");
+        var skin = NewArmor(mod, null, "RaceSkin", arma);
+        var race = mod.Races.AddNew();
+        race.EditorID = "CustomBeastRace";
+        race.Skin.SetTo(skin);
+        NewNpcWithWnam(mod, skin, race);
+
+        Scan(mod).WigArmatures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void RaceDefaultSkinArma_IsSkipped_EvenWhenTheNpcRaceIsTemplateInherited()
+    {
+        // The werewolf-form case found by the HPNO benchmark: the NPC's own Race
+        // is unset (template-inherited), so the WNAM==race.Skin check can't
+        // fire — but the ARMA itself declares its race, whose default skin
+        // carries it. That relationship is authoritative anatomy evidence.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var arma = NewArma(mod, BipedObjectFlag.Hair | BipedObjectFlag.Body, editorId: "NakedTorsoWerewolfBeast");
+        var skin = NewArmor(mod, null, "SkinNakedWerewolfBeast", arma);
+        var beastRace = mod.Races.AddNew();
+        beastRace.EditorID = "WerewolfBeastRace";
+        beastRace.Skin.SetTo(skin);
+        arma.Race.SetTo(beastRace);
+
+        var npc = MutagenFixtures.NewNpc(mod, editorId: "FarkasWolf");
+        npc.WornArmor.SetTo(skin); // Race deliberately unset (template-inherited)
+
+        Scan(mod).WigArmatures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void UnreferencedKeywordlessHairSlotArma_IsNotDetected()
+    {
+        // No NPC WNAM reaches it and it carries no wig/hair keyword — the
+        // NPC-scoping is what keeps arbitrary hair-slot ARMAs out.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        NewArma(mod, BipedObjectFlag.Hair, editorId: "0Sky205Addon");
+
+        Scan(mod).WigArmatures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void UnreferencedHairSlotArma_WithKeyword_DetectsViaKeywordPass()
+    {
+        // Pass 2: keyword + slot, no NPC required (the wearing NPC may live in
+        // a plugin outside this mod).
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var byEid = NewArma(mod, BipedObjectFlag.Hair, editorId: "KS_HairAddon_Ponytail");
+        var byPath = NewArma(mod, BipedObjectFlag.LongHair, editorId: "0Sky310Addon");
+        byPath.WorldModel = new GenderedItem<Model?>(
+            new Model { File = @"actors\character\FoxGlove\Wig\22a_1.nif" }, null);
+        NewArma(mod, BipedObjectFlag.Hair, editorId: "0Sky311Addon"); // keyword-less control
+
+        var r = Scan(mod);
+
+        r.WigArmatures.Should().BeEquivalentTo(new[] { byEid.FormKey, byPath.FormKey });
+    }
+
+    [Fact]
+    public void KeywordWithoutHairSlot_IsNotDetected()
+    {
+        // The slot requirement stays mandatory in the keyword pass too.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        NewArma(mod, BipedObjectFlag.Body, editorId: "BodyHairAddon");
+
+        Scan(mod).WigArmatures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AntlerClassifiedArma_IsExcludedFromWigArmatures()
+    {
+        // An ARMA the antler flow owns must not double-classify, even when an
+        // NPC's WNAM carries it on a hair slot.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var arma = NewArma(mod, BipedObjectFlag.Hair, editorId: "AntlerHairAddon");
+        var skin = NewArmor(mod, null, "Skin", arma);
+        NewNpcWithWnam(mod, skin);
+
+        var r = Scan(mod);
+
+        r.AntlerArmatures.Should().Contain(arma.FormKey);
+        r.WigArmatures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void MasterInheritedWnamAndArma_ResolveThroughFallbacks()
+    {
+        var master = MutagenFixtures.NewMod("Master.esp");
+        var masterArma = NewArma(master, BipedObjectFlag.Hair, editorId: "0MasterSkinArma");
+        var masterSkin = NewArmor(master, null, "0MasterSkin", masterArma);
+
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = MutagenFixtures.NewNpc(mod, editorId: "Wearer");
+        npc.WornArmor.SetTo(masterSkin);
+
+        // Without the armor fallback the WNAM link is unresolvable → no detection.
+        Scan(mod).WigArmatures.Should().BeEmpty();
+
+        WigDetector.Scan(new[] { mod },
+                fallbackArmaResolver: fk => fk == masterArma.FormKey ? masterArma : null,
+                fallbackArmorResolver: fk => fk == masterSkin.FormKey ? masterSkin : null)
+            .WigArmatures.Should().BeEquivalentTo(new[] { masterArma.FormKey });
     }
 
     [Fact]

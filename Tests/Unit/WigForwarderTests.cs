@@ -630,4 +630,157 @@ public class WigForwarderTests
             "hair removal is per-NPC and must not be lost on a duplicate-reuse cache hit");
         second.FaceGenShapeNamesToStrip.Should().Contain("FoxGloveHairMesh");
     }
+
+    // ---- Skin-carried (WNAM) wigs ------------------------------------------------------------
+
+    /// <summary>Adds a hair-slot wig ARMA directly into the fixture's skin
+    /// (the High Poly NPC Overhaul WNAM pattern) and detects it.</summary>
+    private static ArmorAddon AddWnamWigArma(Fixture f, string editorId = "0SkinWigAddon")
+    {
+        var arma = f.DonorMod.ArmorAddons.AddNew();
+        arma.EditorID = editorId;
+        arma.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Hair };
+        f.SkinArmor.Armature.Add(arma.ToLink());
+        f.ModSetting.DetectedWigArmatures.Add(arma.FormKey);
+        return arma;
+    }
+
+    private static WigForwarder.Result? ApplyWithStrips(Fixture f, IReadOnlyCollection<FormKey>? strips,
+        bool includeOutfit = false) =>
+        f.Forwarder.Apply(f.DonorNpc.FormKey, f.DonorNpc, f.ModSetting, DonorKey,
+            new HashSet<string>(), mergeInDependencyRecords: false, includeOutfit, "TestNpc",
+            (_, _, _) => { }, wigModeOverride: null, wnamConvertedWigStrips: strips);
+
+    [Fact]
+    public void ConvertedWnamWigStrips_RemoveTheArmaFromTheSkinDuplicate()
+    {
+        var f = Make(WigHandlingMode.ConvertToHeadParts, AntlerHandlingMode.None);
+        var wigArma = AddWnamWigArma(f);
+
+        var result = ApplyWithStrips(f, new[] { wigArma.FormKey });
+
+        result.Should().NotBeNull("the converter's strip set alone must trigger the skin duplicate");
+        result!.SkinDuplicateKey.Should().NotBeNull();
+        var dup = f.OutputMod.Armors.Single(a => a.FormKey == result.SkinDuplicateKey);
+        dup.Armature.Select(a => a.FormKey).Should().NotContain(wigArma.FormKey,
+            "the converted skin wig would double-render against the baked shapes");
+        dup.Armature.Select(a => a.FormKey).Should().Contain(f.SkinArma.FormKey,
+            "the body ARMA is untouched");
+        dup.EditorID.Should().Be("AuriSkin");
+    }
+
+    [Fact]
+    public void ConvertedWigStrips_ComposeWithAntlerRemove_OnOneSharedDuplicate()
+    {
+        var f = Make(WigHandlingMode.ConvertToHeadParts, AntlerHandlingMode.Remove, wnamBakedAntler: true);
+        var wigArma = AddWnamWigArma(f);
+
+        var result = ApplyWithStrips(f, new[] { wigArma.FormKey });
+
+        result!.SkinDuplicateKey.Should().NotBeNull();
+        f.OutputMod.Armors.Should().HaveCount(1, "both removals share the ONE WNAM duplicate");
+        var dup = f.OutputMod.Armors.First();
+        dup.Armature.Select(a => a.FormKey).Should().NotContain(wigArma.FormKey);
+        dup.Armature.Select(a => a.FormKey).Should().NotContain(f.WnamAntlerArma!.FormKey);
+        dup.Armature.Select(a => a.FormKey).Should().Contain(f.SkinArma.FormKey);
+    }
+
+    [Fact]
+    public void ConvertedWigStrips_DistinctSets_ProduceDistinctCacheEntries()
+    {
+        var f = Make(WigHandlingMode.ConvertToHeadParts, AntlerHandlingMode.None);
+        var wigArma = AddWnamWigArma(f);
+
+        var stripped = ApplyWithStrips(f, new[] { wigArma.FormKey });
+        var unstripped = ApplyWithStrips(f, null, includeOutfit: true);
+
+        stripped!.SkinDuplicateKey.Should().NotBeNull();
+        (unstripped?.SkinDuplicateKey).Should().NotBe(stripped.SkinDuplicateKey,
+            "an NPC without the strip must not reuse the stripped duplicate (rm-set is in the cache key)");
+    }
+
+    [Fact]
+    public void ConvertedWigStrips_StaleKey_DoesNothing()
+    {
+        var f = Make(WigHandlingMode.ConvertToHeadParts, AntlerHandlingMode.None);
+        var unrelated = MutagenFixtures.Fk("0FFFFF:Other.esp");
+
+        var result = ApplyWithStrips(f, new[] { unrelated });
+
+        result.Should().BeNull("a key not present in the WNAM's armature is ignored (intersection guard)");
+        f.OutputMod.Armors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ConvertedWigStrips_NoWnamDonor_DoesNothing()
+    {
+        var f = Make(WigHandlingMode.ConvertToHeadParts, AntlerHandlingMode.None, donorHasWnam: false);
+
+        var result = ApplyWithStrips(f, new[] { MutagenFixtures.Fk("000B10:FoxGloveAuri.esp") });
+
+        result.Should().BeNull();
+        f.OutputMod.Armors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ForwardToOutfit_WnamWig_MintsWigArmor_AddsToOutfit_StripsFromSkin()
+    {
+        var f = Make(WigHandlingMode.ForwardToOutfit, AntlerHandlingMode.None);
+        var wigArma = AddWnamWigArma(f);
+
+        var result = Apply(f, mergeIn: false, includeOutfit: false);
+
+        result.Should().NotBeNull();
+
+        // The minted wearable wig ARMO: Armature = the skin's wig ARMA, BOD2
+        // slots copied from it, non-playable clothing.
+        var minted = f.OutputMod.Armors.Single(a => a.EditorID == "NPC2WigArmor_0SkinWigAddon");
+        minted.Armature.Select(a => a.FormKey).Should().BeEquivalentTo(new[] { wigArma.FormKey });
+        minted.BodyTemplate.Should().NotBeNull();
+        minted.BodyTemplate!.FirstPersonFlags.Should().Be(BipedObjectFlag.Hair);
+        minted.BodyTemplate.Flags.Should().HaveFlag(BodyTemplate.Flag.NonPlayable);
+        minted.BodyTemplate.ArmorType.Should().Be(ArmorType.Clothing);
+
+        // It rides the forwarded outfit (authored wig-only outfit here — the
+        // fixture env has no effective outfit) alongside the outfit wig ARMO.
+        result!.OutfitDuplicateKey.Should().NotBeNull();
+        var outfit = f.OutputMod.Outfits.Single(o => o.FormKey == result.OutfitDuplicateKey);
+        outfit.Items!.Select(i => i.FormKey).Should().Contain(minted.FormKey);
+
+        // And the ARMA comes OFF the skin duplicate.
+        result.SkinDuplicateKey.Should().NotBeNull("the relocated ARMA must be stripped from the WNAM");
+        var skinDup = f.OutputMod.Armors.Single(a => a.FormKey == result.SkinDuplicateKey);
+        skinDup.Armature.Select(a => a.FormKey).Should().NotContain(wigArma.FormKey);
+        skinDup.Armature.Select(a => a.FormKey).Should().Contain(f.SkinArma.FormKey);
+    }
+
+    [Fact]
+    public void ForwardToOutfit_WnamWig_MintReusedAcrossNpcsSharingTheSkin()
+    {
+        var f = Make(WigHandlingMode.ForwardToOutfit, AntlerHandlingMode.None);
+        AddWnamWigArma(f);
+
+        Apply(f, mergeIn: false);
+        Apply(f, mergeIn: false);
+
+        f.OutputMod.Armors.Where(a => a.EditorID!.StartsWith("NPC2WigArmor_"))
+            .Should().HaveCount(1, "one minted ARMO per ARMA, shared across NPCs");
+    }
+
+    [Fact]
+    public void ForwardToSkin_WnamWig_IsANoOp()
+    {
+        // A skin-carried wig is already in its ForwardToSkin end state: no
+        // strip, no mint, no extra work beyond the outfit wig's own forwarding.
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.None);
+        var wigArma = AddWnamWigArma(f);
+
+        var result = Apply(f, mergeIn: false);
+
+        result!.SkinDuplicateKey.Should().NotBeNull("the OUTFIT wig still forwards to the skin");
+        var dup = f.OutputMod.Armors.Single(a => a.FormKey == result.SkinDuplicateKey);
+        dup.Armature.Select(a => a.FormKey).Should().Contain(wigArma.FormKey,
+            "the skin-carried wig ARMA stays exactly where it is");
+        f.OutputMod.Armors.Should().NotContain(a => a.EditorID!.StartsWith("NPC2WigArmor_"));
+    }
 }
