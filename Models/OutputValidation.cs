@@ -38,7 +38,11 @@ public enum ValidationCheckKind
     SkyPatcher,
 
     /// FaceGen geometry .nif vs. the NPC's resolved head parts (dark-face detection).
-    FaceGen
+    FaceGen,
+
+    /// The NPC inherits its appearance from another NPC via the Traits template flag, so the
+    /// appearance checks were redirected to (or deferred to) that template.
+    Template
 }
 
 /// <summary>

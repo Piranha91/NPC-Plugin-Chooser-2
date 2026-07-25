@@ -142,6 +142,8 @@ public class OutputValidator
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         int total = npcsToValidate.Count;
+        // Lets a Traits-templated NPC defer to its template's own rows instead of duplicating them.
+        var scopedNpcs = npcsToValidate.ToHashSet();
         var run = new RunContext
         {
             Release = _settings.SkyrimRelease.ToGameRelease(),
@@ -162,7 +164,7 @@ public class OutputValidator
                 try
                 {
                     using (ContextualPerformanceTracer.Trace("ValidateNpc"))
-                        ValidateNpc(npcFk, linkCache, listings, modSettingsByName, skyIndex, npc2IniMap, dataFolder, run, result, log);
+                        ValidateNpc(npcFk, linkCache, listings, modSettingsByName, skyIndex, npc2IniMap, dataFolder, scopedNpcs, run, result, log);
                 }
                 catch (Exception ex)
                 {
@@ -266,6 +268,7 @@ public class OutputValidator
         SkyPatcherIndex skyIndex,
         Dictionary<string, Npc2SkyPatcherLine>? npc2IniMap,
         string dataFolder,
+        IReadOnlySet<FormKey> scopedNpcs,
         RunContext run,
         ValidationRunResult result,
         StringBuilder log)
@@ -281,14 +284,44 @@ public class OutputValidator
         // Resolve the recipient's conflict winner (winner-first) — for display, its EditorID, and the
         // record-mode comparison.
         var winningCtx = linkCache.ResolveAllContexts<INpc, INpcGetter>(npcFk).FirstOrDefault();
-        INpcGetter? winningRecord = winningCtx?.Record;
+        INpcGetter? recipientRecord = winningCtx?.Record;
         ModKey winningModKey = winningCtx?.ModKey ?? npcFk.ModKey;
 
-        string displayName = winningRecord != null
-            ? Auxilliary.GetLogString(winningRecord, _settings.LocalizationLanguage)
+        // The record + FaceGen the game actually renders for this NPC. Same as the recipient
+        // unless a Traits template redirects them (below).
+        INpcGetter? winningRecord = recipientRecord;
+        FormKey subjectFk = npcFk;
+
+        string displayName = recipientRecord != null
+            ? Auxilliary.GetLogString(recipientRecord, _settings.LocalizationLanguage)
             : npcFk.ToString();
 
         log.AppendLine($"NPC {displayName} [{npcFk}] -> '{selectedModName}' (donor {donorFk}, winner {winningModKey.FileName})");
+
+        // --- Traits template --------------------------------------------------------------
+        // An NPC with the Traits flag renders the TEMPLATE's appearance: the game never loads
+        // this record's head parts nor this FormID's FaceGen, and the user's selection here has
+        // no effect at all. Checking its own record/mesh reports files the game never touches —
+        // e.g. a leftover facegeom .nif from an unrelated mod flagged as a head-part mismatch.
+        // So follow the chain and validate what actually renders.
+        // In SkyPatcher mode the recipient's record is never patched — this app emits an .ini line
+        // that copies a surrogate's visual style onto it at runtime — so there is nothing of ours
+        // to re-target on the recipient. Report the inheritance and let the .ini/surrogate checks
+        // run; the surrogate gets the same treatment inside ValidateNpcSkyPatcher.
+        if (recipientRecord != null && Auxilliary.IsValidTemplatedNpc(recipientRecord))
+        {
+            if (_settings.UseSkyPatcherMode)
+            {
+                NoteSkyPatcherRecipientTemplate(npcFk, recipientRecord, displayName, selectedModName, linkCache, result, log);
+            }
+            else if (!TryRedirectToTemplate(
+                         npcFk, recipientRecord, displayName, ref selectedModName, ref donorFk,
+                         ref winningRecord, ref winningModKey, ref subjectFk,
+                         linkCache, dataFolder, scopedNpcs, result, log))
+            {
+                return; // Deferred to the template's own rows, unresolvable, or consistency-only.
+            }
+        }
 
         if (!modSettingsByName.TryGetValue(selectedModName, out var modSetting))
         {
@@ -310,7 +343,7 @@ public class OutputValidator
             // NPC (a copy of the donor) in the output plugin and an .ini line that copies the
             // surrogate's visual style onto the recipient at runtime. So validate the .ini line and
             // the surrogate — not the recipient's record/FaceGen.
-            ValidateNpcSkyPatcher(npcFk, donorFk, selectedModName, displayName, winningRecord,
+            ValidateNpcSkyPatcher(npcFk, donorFk, selectedModName, displayName, recipientRecord,
                 modSetting, npc2IniMap ?? new(), linkCache, listings, skyIndex, dataFolder, run, result, log);
             return;
         }
@@ -335,13 +368,367 @@ public class OutputValidator
                 CheckRecord(npcFk, displayName, selectedModName, donorFk, modSetting, winningRecord, winningModKey, listings, linkCache, result, log);
         }
 
-        // Check 2: the recipient's deployed FaceGen should match the selected mod's.
+        // Check 2: the deployed FaceGen should match the selected mod's. subjectFk is the NPC whose
+        // FaceGen the game actually loads — the recipient, or its Traits template.
         using (ContextualPerformanceTracer.Trace("CheckFaceGen"))
-            CheckFaceGen(npcFk, npcFk, donorFk, displayName, selectedModName, modSetting, dataFolder, linkCache, run, result, log);
+            CheckFaceGen(npcFk, subjectFk, donorFk, displayName, selectedModName, modSetting, dataFolder, linkCache, run, result, log);
 
-        // Check 3: any SkyPatcher mod that would override this NPC at runtime.
+        // Check 3: any SkyPatcher mod that would override this NPC at runtime. Filters (race,
+        // faction, keyword...) match on the RECIPIENT's own record, not the template's.
         using (ContextualPerformanceTracer.Trace("CheckSkyPatcher"))
-            CheckSkyPatcher(npcFk, displayName, selectedModName, winningRecord, linkCache, skyIndex, result);
+            CheckSkyPatcher(npcFk, displayName, selectedModName, recipientRecord, linkCache, skyIndex, result);
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Traits templates
+    // ----------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Emits the explanatory row for a Traits-templated NPC and points the appearance checks at
+    /// the NPC the game actually renders. Returns true when the caller should continue with the
+    /// (re-targeted) checks, false when this NPC is finished — because the template is validated
+    /// on its own rows, could not be followed, or has no selection to compare against (in which
+    /// case the selection-independent head-part scan is run here first).
+    /// </summary>
+    private bool TryRedirectToTemplate(
+        FormKey npcFk,
+        INpcGetter recipientRecord,
+        string displayName,
+        ref string selectedModName,
+        ref FormKey donorFk,
+        ref INpcGetter? winningRecord,
+        ref ModKey winningModKey,
+        ref FormKey subjectFk,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        string dataFolder,
+        IReadOnlySet<FormKey> scopedNpcs,
+        ValidationRunResult result,
+        StringBuilder log)
+    {
+        var (templateRecord, templateModKey, chain, failure) = ResolveTraitsAppearanceSource(recipientRecord, linkCache);
+        string chainText = "Template chain: " + string.Join(" -> ", chain.Prepend(npcFk));
+
+        const string preamble =
+            "This NPC takes its appearance from another NPC (the Traits template flag), so the game shows the " +
+            "template's face and ignores this NPC's own head parts and FaceGen — whatever you select here has no effect. ";
+
+        if (templateRecord == null)
+        {
+            result.Issues.Add(new ValidationIssue
+            {
+                Severity = ValidationSeverity.Info,
+                Check = ValidationCheckKind.Template,
+                NpcDisplayName = displayName,
+                NpcFormKey = npcFk.ToString(),
+                SelectedMod = selectedModName,
+                Issue = preamble + "Its appearance could not be checked because " + failure + ".",
+                Details = chainText,
+            });
+            log.AppendLine($"  TEMPLATE unresolved ({failure}); {chainText}");
+            return false;
+        }
+
+        FormKey templateFk = templateRecord.FormKey;
+        string templateName = DescribeNpc(templateRecord);
+        bool templateInReport = scopedNpcs.Contains(templateFk);
+        bool templateHasSelection = _settings.SelectedAppearanceMods.TryGetValue(templateFk, out var templateSelection)
+                                    && !string.IsNullOrEmpty(templateSelection.ModName);
+
+        // The inheritance only matters to the user when it changes what they get. If the template
+        // is set to the same mod they picked here — the normal case after a batch selection — the
+        // face in game IS the one they asked for, so say nothing and just check the right files.
+        bool selectionHonoured = templateHasSelection &&
+            string.Equals(templateSelection.ModName, selectedModName, StringComparison.OrdinalIgnoreCase);
+
+        if (!selectionHonoured)
+        {
+            string tail = templateInReport
+                ? $" '{templateName}' is validated separately in this report — see its own rows."
+                : templateHasSelection
+                    ? $" The checks below were run against '{templateName}' and '{templateSelection.ModName}' instead."
+                    : " Only its FaceGen was checked.";
+
+            result.Issues.Add(new ValidationIssue
+            {
+                Severity = ValidationSeverity.Warning,
+                Check = ValidationCheckKind.Template,
+                NpcDisplayName = displayName,
+                NpcFormKey = npcFk.ToString(),
+                SelectedMod = selectedModName,
+                Issue = templateHasSelection
+                    ? $"You selected '{selectedModName}' for this NPC, but it takes its appearance from another NPC (the Traits template flag): " +
+                      $"'{templateName}', which is set to '{templateSelection.ModName}'. The face shown in game will be the one from " +
+                      $"'{templateSelection.ModName}'. To change it, select '{selectedModName}' for '{templateName}' as well." + tail
+                    : $"You selected '{selectedModName}' for this NPC, but it takes its appearance from another NPC (the Traits template flag): " +
+                      $"'{templateName}', which has no appearance selection in this app. The face shown in game will be whatever wins in your " +
+                      $"load order, not '{selectedModName}'. To change it, select an appearance for '{templateName}'." + tail,
+                WinningSource = $"{templateName} [{templateFk}]",
+                Details = chainText,
+            });
+        }
+        log.AppendLine($"  TEMPLATE -> {templateName} [{templateFk}] (inReport={templateInReport}, hasSelection={templateHasSelection}, honoured={selectionHonoured})");
+
+        if (templateInReport) return false;
+
+        subjectFk = templateFk;
+        winningRecord = templateRecord;
+        winningModKey = templateModKey;
+
+        if (!templateHasSelection)
+        {
+            // Nothing to compare the template against, but the head-part scan needs no selection
+            // and is exactly the check that would otherwise have run against the wrong .nif.
+            var (relMesh, _) = Auxilliary.GetFaceGenSubPathStrings(subjectFk, regularized: true);
+            string nifPath = Path.Combine(dataFolder, relMesh);
+            if (File.Exists(nifPath))
+            {
+                using (ContextualPerformanceTracer.Trace("FaceGenConsistency"))
+                    CheckFaceGenHeadPartConsistency(npcFk, subjectFk, nifPath, relMesh, displayName, selectedModName, linkCache, result);
+            }
+            return false;
+        }
+
+        selectedModName = templateSelection.ModName;
+        donorFk = templateSelection.NpcFormKey;
+        return true;
+    }
+
+    /// <summary><see cref="Auxilliary.GetLogString"/> appends " | " after the EditorID for a record
+    /// with no Name; trim it so a row reads as a name rather than a fragment.</summary>
+    private string DescribeNpc(INpcGetter npc) =>
+        Auxilliary.GetLogString(npc, _settings.LocalizationLanguage).TrimEnd(' ', '|');
+
+    /// <summary>
+    /// SkyPatcher-mode recipient: nothing of this app's can be re-targeted (the record is never
+    /// patched — an .ini line copies a surrogate's visual style onto it at runtime), so this only
+    /// reports the inheritance, and only when it changes what the user gets.
+    /// </summary>
+    private void NoteSkyPatcherRecipientTemplate(
+        FormKey npcFk,
+        INpcGetter record,
+        string displayName,
+        string selectedModName,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        ValidationRunResult result,
+        StringBuilder log)
+    {
+        var (templateRecord, _, chain, failure) = ResolveTraitsAppearanceSource(record, linkCache);
+        string chainText = "Template chain: " + string.Join(" -> ", chain.Prepend(npcFk));
+
+        if (templateRecord == null)
+        {
+            result.Issues.Add(new ValidationIssue
+            {
+                Severity = ValidationSeverity.Info,
+                Check = ValidationCheckKind.Template,
+                NpcDisplayName = displayName,
+                NpcFormKey = npcFk.ToString(),
+                SelectedMod = selectedModName,
+                Issue = "This NPC takes its appearance from another NPC (the Traits template flag), so the game shows the template's face. " +
+                        "The chain could not be followed: " + failure + ".",
+                Details = chainText,
+            });
+            log.AppendLine($"  TEMPLATE unresolved for {npcFk} ({failure})");
+            return;
+        }
+
+        string templateName = DescribeNpc(templateRecord);
+        bool hasSelection = _settings.SelectedAppearanceMods.TryGetValue(templateRecord.FormKey, out var templateSelection)
+                            && !string.IsNullOrEmpty(templateSelection.ModName);
+        if (hasSelection && string.Equals(templateSelection.ModName, selectedModName, StringComparison.OrdinalIgnoreCase))
+        {
+            // Template carries the same choice — the user gets what they picked. Nothing to say.
+            log.AppendLine($"  TEMPLATE -> {templateName} (same selection '{selectedModName}'); no row");
+            return;
+        }
+
+        result.Issues.Add(new ValidationIssue
+        {
+            Severity = ValidationSeverity.Warning,
+            Check = ValidationCheckKind.Template,
+            NpcDisplayName = displayName,
+            NpcFormKey = npcFk.ToString(),
+            SelectedMod = selectedModName,
+            Issue = hasSelection
+                ? $"You selected '{selectedModName}' for this NPC, but it takes its appearance from another NPC (the Traits template flag): " +
+                  $"'{templateName}', which is set to '{templateSelection.ModName}'. The face shown in game will be the one from " +
+                  $"'{templateSelection.ModName}'. To change it, select '{selectedModName}' for '{templateName}' as well."
+                : $"You selected '{selectedModName}' for this NPC, but it takes its appearance from another NPC (the Traits template flag): " +
+                  $"'{templateName}', which has no appearance selection in this app. The face shown in game will be whatever wins in your " +
+                  $"load order, not '{selectedModName}'. To change it, select an appearance for '{templateName}'.",
+            WinningSource = $"{templateName} [{templateRecord.FormKey}]",
+            Details = chainText,
+        });
+        log.AppendLine($"  TEMPLATE -> {templateName} [{templateRecord.FormKey}] (hasSelection={hasSelection}); warned");
+    }
+
+    /// <summary>What <see cref="RedirectSurrogateToTemplate"/> decided about a SkyPatcher surrogate.</summary>
+    private enum SurrogateRedirect
+    {
+        /// The surrogate is not templated; validate it directly.
+        None,
+
+        /// Subject and donor were both re-pointed at their template roots; run all checks.
+        Redirected,
+
+        /// The subject root is known but the selected mod supplies no record for it, so there is
+        /// nothing to compare against — run only the selection-independent head-part scan.
+        ConsistencyOnly,
+
+        /// The chain could not be followed; the rendered face is unknown, so skip the checks.
+        Unresolved
+    }
+
+    /// <summary>
+    /// Applies the same Traits-template rule to a SkyPatcher surrogate. The surrogate is a copy of
+    /// the donor, so a templated donor produces a templated surrogate — and then neither the
+    /// surrogate's head parts nor its FaceGen are what the game renders. Follows both chains (the
+    /// surrogate through the load order, the donor through the selected mod) so checks B and C see
+    /// the records and the .nif that actually apply.
+    /// </summary>
+    private SurrogateRedirect RedirectSurrogateToTemplate(
+        FormKey npcFk,
+        string displayName,
+        string selectedModName,
+        ModSetting modSetting,
+        INpcGetter surrogateRec,
+        ref INpcGetter subjectRec,
+        ref ModKey subjectModKey,
+        ref FormKey subjectFk,
+        ref FormKey subjectDonorFk,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        ValidationRunResult result,
+        StringBuilder log)
+    {
+        if (!Auxilliary.IsValidTemplatedNpc(surrogateRec)) return SurrogateRedirect.None;
+
+        var (rootRec, rootModKey, chain, failure) = ResolveTraitsAppearanceSource(surrogateRec, linkCache);
+        string chainText = "Surrogate template chain: " + string.Join(" -> ", chain.Prepend(surrogateRec.FormKey));
+
+        const string preamble =
+            "SkyPatcher mode: the surrogate NPC this app created takes its appearance from another NPC " +
+            "(the Traits template flag), so its own head parts and FaceGen are not what the game renders. ";
+
+        void AddRow(string tail, string winningSource) => result.Issues.Add(new ValidationIssue
+        {
+            Severity = ValidationSeverity.Info,
+            Check = ValidationCheckKind.Template,
+            NpcDisplayName = displayName,
+            NpcFormKey = npcFk.ToString(),
+            SelectedMod = selectedModName,
+            Issue = preamble + tail,
+            WinningSource = winningSource,
+            Details = chainText,
+        });
+
+        if (rootRec == null)
+        {
+            AddRow("Its appearance could not be checked because " + failure + ".", string.Empty);
+            log.AppendLine($"  SKYPATCHER surrogate template unresolved ({failure}); {chainText}");
+            return SurrogateRedirect.Unresolved;
+        }
+
+        string rootName = DescribeNpc(rootRec);
+        subjectRec = rootRec;
+        subjectModKey = rootModKey;
+        subjectFk = rootRec.FormKey;
+
+        // Donor side: the mod's own version of the face that renders.
+        var donorRootFk = ResolveDonorAppearanceRoot(modSetting, subjectDonorFk, linkCache);
+        if (donorRootFk.IsNull || TryResolveSelectedSourceNpc(modSetting, donorRootFk) == null)
+        {
+            AddRow($"The face it shows comes from '{rootName}', but '{selectedModName}' supplies no record for that NPC, " +
+                   $"so the appearance could not be compared against '{selectedModName}' — only its FaceGen was checked. " +
+                   "That usually means the selected mod does not change the face this NPC actually shows.",
+                   $"{rootName} [{subjectFk}]");
+            log.AppendLine($"  SKYPATCHER surrogate -> {rootName} [{subjectFk}]; donor root unresolved in '{selectedModName}'");
+            return SurrogateRedirect.ConsistencyOnly;
+        }
+
+        // Both sides resolved: the checks below now look at the right record and the right .nif,
+        // and will speak up if either is wrong. A redirect that worked is not news — stay silent.
+        subjectDonorFk = donorRootFk;
+        log.AppendLine($"  SKYPATCHER surrogate -> {rootName} [{subjectFk}]; donor root {donorRootFk}");
+        return SurrogateRedirect.Redirected;
+    }
+
+    /// <summary>
+    /// Walks the donor's Traits chain inside the SELECTED MOD (falling back to the load order for
+    /// links the mod does not override), so the FaceGen comparison uses the file the mod ships for
+    /// the face that actually renders. Returns a null FormKey when the chain cannot be followed.
+    /// </summary>
+    private FormKey ResolveDonorAppearanceRoot(
+        ModSetting modSetting,
+        FormKey donorFk,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        int maxDepth = 25)
+    {
+        var visited = new HashSet<FormKey> { donorFk };
+        FormKey currentFk = donorFk;
+        INpcGetter? current = TryResolveSelectedSourceNpc(modSetting, donorFk);
+        if (current == null) linkCache.TryResolve<INpcGetter>(donorFk, out current);
+
+        for (int depth = 0; depth < maxDepth && current != null; depth++)
+        {
+            if (!Auxilliary.IsValidTemplatedNpc(current)) return currentFk;
+
+            var nextFk = current.Template.FormKey;
+            if (!visited.Add(nextFk)) return FormKey.Null;
+
+            var nextRec = TryResolveSelectedSourceNpc(modSetting, nextFk);
+            if (nextRec == null && !linkCache.TryResolve<INpcGetter>(nextFk, out nextRec)) return FormKey.Null;
+
+            currentFk = nextFk;
+            current = nextRec;
+        }
+
+        return FormKey.Null;
+    }
+
+    /// <summary>
+    /// Walks the Traits template chain to the NPC whose appearance is actually rendered: the
+    /// first record in the chain that does not itself carry the flag. Each link resolves
+    /// winner-first, so the chain follows the deployed load order.
+    /// Returns a null record when the chain cannot be followed — a Leveled NPC template (the
+    /// appearance is picked at runtime), an unresolvable link, a loop, or an absurd depth —
+    /// with <c>Failure</c> phrased for the report.
+    /// </summary>
+    private static (INpcGetter? Record, ModKey ModKey, List<FormKey> Chain, string? Failure)
+        ResolveTraitsAppearanceSource(
+            INpcGetter start,
+            ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+            int maxDepth = 25)
+    {
+        var chain = new List<FormKey>();
+        var visited = new HashSet<FormKey> { start.FormKey };
+        INpcGetter current = start;
+        ModKey currentModKey = start.FormKey.ModKey;
+
+        for (int depth = 0; depth < maxDepth; depth++)
+        {
+            if (!Auxilliary.IsValidTemplatedNpc(current))
+                return (current, currentModKey, chain, null);
+
+            var templateFk = current.Template.FormKey;
+            chain.Add(templateFk);
+
+            if (!visited.Add(templateFk))
+                return (null, default, chain, "its template chain loops back on itself");
+
+            var ctx = linkCache.ResolveAllContexts<INpc, INpcGetter>(templateFk).FirstOrDefault();
+            if (ctx == null)
+            {
+                bool isLeveled = linkCache.TryResolve<ILeveledNpcGetter>(templateFk, out _);
+                return (null, default, chain, isLeveled
+                    ? "its template is a Leveled NPC, so the game picks the appearance at runtime"
+                    : $"its template ({templateFk}) could not be found in your load order");
+            }
+
+            current = ctx.Record;
+            currentModKey = ctx.ModKey;
+        }
+
+        return (null, default, chain, "its template chain is unreasonably long");
     }
 
     // ----------------------------------------------------------------------------------
@@ -387,6 +774,13 @@ public class OutputValidator
         }
         FormKey surrogateFk = iniLine.Surrogate;
 
+        // Whose record and FaceGen the game actually uses for the surrogate, and which donor
+        // FormKey the selected mod supplies them under. Both move to the template root when the
+        // surrogate carries the Traits flag (see RedirectSurrogateToTemplate).
+        FormKey subjectFk = surrogateFk;
+        FormKey subjectDonorFk = donorFk;
+        var redirect = SurrogateRedirect.None;
+
         // ---- Check B: the surrogate template's appearance must match the donor ----
         var surrogateCtx = linkCache.ResolveAllContexts<INpc, INpcGetter>(surrogateFk).FirstOrDefault();
         INpcGetter? surrogateRec = surrogateCtx?.Record;
@@ -406,46 +800,79 @@ public class OutputValidator
         }
         else
         {
-            var donorRec = TryResolveSelectedSourceNpc(modSetting, donorFk);
-            if (donorRec == null)
+            // A templated surrogate renders its template's face, not its own — re-point both
+            // sides at the root before comparing anything.
+            INpcGetter subjectRec = surrogateRec;
+            ModKey subjectModKey = surrogateCtx!.ModKey;
+            redirect = RedirectSurrogateToTemplate(
+                npcFk, displayName, selectedModName, modSetting, surrogateRec,
+                ref subjectRec, ref subjectModKey, ref subjectFk, ref subjectDonorFk,
+                linkCache, result, log);
+
+            if (redirect is SurrogateRedirect.None or SurrogateRedirect.Redirected)
             {
-                if (!modSetting.IsFaceGenOnlyEntry && !modSetting.FaceGenOnlyNpcFormKeys.Contains(donorFk))
+                var donorRec = TryResolveSelectedSourceNpc(modSetting, subjectDonorFk);
+                if (donorRec == null)
                 {
-                    result.Issues.Add(new ValidationIssue
+                    if (!modSetting.IsFaceGenOnlyEntry && !modSetting.FaceGenOnlyNpcFormKeys.Contains(subjectDonorFk))
                     {
-                        Severity = ValidationSeverity.Warning,
-                        Check = ValidationCheckKind.Record,
-                        NpcDisplayName = displayName,
-                        NpcFormKey = npcFk.ToString(),
-                        SelectedMod = selectedModName,
-                        Issue = "SkyPatcher mode: could not resolve the selected mod's appearance NPC to compare against the surrogate template.",
-                        Details = $"Donor FormKey {donorFk}",
-                    });
+                        result.Issues.Add(new ValidationIssue
+                        {
+                            Severity = ValidationSeverity.Warning,
+                            Check = ValidationCheckKind.Record,
+                            NpcDisplayName = displayName,
+                            NpcFormKey = npcFk.ToString(),
+                            SelectedMod = selectedModName,
+                            Issue = "SkyPatcher mode: could not resolve the selected mod's appearance NPC to compare against the surrogate template.",
+                            Details = $"Donor FormKey {subjectDonorFk}",
+                        });
+                    }
                 }
-            }
-            else
-            {
-                var diffs = CompareAppearance(surrogateRec, donorRec, linkCache, modSetting);
-                if (diffs.Count > 0)
+                else
                 {
-                    result.Issues.Add(new ValidationIssue
+                    var diffs = CompareAppearance(subjectRec, donorRec, linkCache, modSetting);
+                    if (diffs.Count > 0)
                     {
-                        Severity = ValidationSeverity.Error,
-                        Check = ValidationCheckKind.Record,
-                        NpcDisplayName = displayName,
-                        NpcFormKey = npcFk.ToString(),
-                        SelectedMod = selectedModName,
-                        Issue = "SkyPatcher mode: the surrogate template's appearance does not match the selected mod's appearance NPC, so the visual style copied at runtime will be wrong.",
-                        WinningSource = DescribeWinner(surrogateCtx!.ModKey, modSetting, listings),
-                        Details = "Differing fields: " + string.Join(" | ", diffs),
-                    });
-                    log.AppendLine($"  SKYPATCHER surrogate mismatch ({string.Join(" | ", diffs)})");
+                        result.Issues.Add(new ValidationIssue
+                        {
+                            Severity = ValidationSeverity.Error,
+                            Check = ValidationCheckKind.Record,
+                            NpcDisplayName = displayName,
+                            NpcFormKey = npcFk.ToString(),
+                            SelectedMod = selectedModName,
+                            Issue = redirect == SurrogateRedirect.Redirected
+                                ? "SkyPatcher mode: the appearance the surrogate inherits from its template does not match the selected mod's appearance NPC, so the face shown in game will be wrong."
+                                : "SkyPatcher mode: the surrogate template's appearance does not match the selected mod's appearance NPC, so the visual style copied at runtime will be wrong.",
+                            WinningSource = DescribeWinner(subjectModKey, modSetting, listings),
+                            Details = "Differing fields: " + string.Join(" | ", diffs),
+                        });
+                        log.AppendLine($"  SKYPATCHER surrogate mismatch ({string.Join(" | ", diffs)})");
+                    }
                 }
             }
         }
 
-        // ---- Check C: the surrogate's deployed FaceGen must match the donor's FaceGen ----
-        CheckFaceGen(npcFk, surrogateFk, donorFk, displayName, selectedModName, modSetting, dataFolder, linkCache, run, result, log);
+        // ---- Check C: the deployed FaceGen of whatever renders must match the donor's FaceGen ----
+        switch (redirect)
+        {
+            case SurrogateRedirect.Unresolved:
+                break; // Rendered face unknown — checking any .nif would be guesswork.
+
+            case SurrogateRedirect.ConsistencyOnly:
+                // No mod-side counterpart to compare against, but the head-part scan needs none.
+                var (relMesh, _) = Auxilliary.GetFaceGenSubPathStrings(subjectFk, regularized: true);
+                string nifPath = Path.Combine(dataFolder, relMesh);
+                if (File.Exists(nifPath))
+                {
+                    using (ContextualPerformanceTracer.Trace("FaceGenConsistency"))
+                        CheckFaceGenHeadPartConsistency(npcFk, subjectFk, nifPath, relMesh, displayName, selectedModName, linkCache, result);
+                }
+                break;
+
+            default:
+                CheckFaceGen(npcFk, subjectFk, subjectDonorFk, displayName, selectedModName, modSetting, dataFolder, linkCache, run, result, log);
+                break;
+        }
 
         // ---- Check 3: other SkyPatcher mods that also set this NPC's visual style ----
         CheckSkyPatcher(npcFk, displayName, selectedModName, recipientRecord, linkCache, skyIndex, result);
@@ -1097,6 +1524,11 @@ public class OutputValidator
 
         if (!analysis.HasMismatch) return;
 
+        // Name the plugin whose NPC record is currently winning: the message's first remedy is
+        // about the record conflict, and this is the single fact that tells the user whether the
+        // appearance mod won it. Best-effort — a missing winner just leaves the column blank.
+        var winnerModKey = linkCache.ResolveAllContexts<INpc, INpcGetter>(subjectFk).FirstOrDefault()?.ModKey;
+
         result.Issues.Add(new ValidationIssue
         {
             Severity = ValidationSeverity.Warning,
@@ -1105,6 +1537,9 @@ public class OutputValidator
             NpcFormKey = npcFk.ToString(),
             SelectedMod = selectedModName,
             Issue = analysis.BuildReason(),
+            WinningSource = winnerModKey.HasValue
+                ? $"NPC record from '{winnerModKey.Value.FileName}'"
+                : string.Empty,
             Details = relMeshPath,
         });
     }
