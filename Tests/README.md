@@ -75,6 +75,14 @@ Pieces:
 All 12 reference combos (including the two SkyPatcher+Include cases, 08 and 11) are captured from the fixed
 patcher, so every combo is compared in full. `GoldenCombos.IsStaleForChildClothesFix` is kept as a hook to
 tolerate a single known deviation should a future fix invalidate a reference until it is regenerated.
+
+**Base-game-overwrite opt-in.** `GoldenComboSettingsBuilder` sets `OverwriteBaseGameAssets = true` on every
+golden mod (see `GoldenOverwriteBaseGameAssets`). The reference predates commit af0b564, which made the
+patcher skip non-FaceGen assets landing on vanilla paths unless a mod opts in; with the default (off), 11 of
+12 combos report ~34 missing vanilla HeadPart files (beards/brows/eyes/hair/eyecubemap) — the new behaviour
+working, not a regression. Opting in was chosen over regenerating because it keeps the June reference valid,
+which positively proves nothing *else* in the patcher drifted; regenerating would bake in today's output and
+could conceal a real regression behind the skip. The skip decision has its own unit coverage.
 `PatcherAppearanceLinksTests` (no game needed) locks the contract of the helper the fix turns on.
 
 ### Reference mod versions
