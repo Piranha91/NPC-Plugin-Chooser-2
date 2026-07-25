@@ -35,6 +35,51 @@ public enum OutfitDisplaySource
     Spid,
 }
 
+/// <summary>
+/// Which runtime distributors carry an outfit assignment for this NPC —
+/// independent of which one finally WINS. <see cref="OutfitDisplayResult.Source"/>
+/// answers "what gets worn"; this answers "who else is competing for the slot",
+/// which is what the patcher needs when it has to republish a forwarded
+/// wig/antler outfit through those same channels (see
+/// <see cref="ForwardedOutfitDistributor"/>).
+/// </summary>
+public sealed record RuntimeOutfitContest
+{
+    /// <summary>An EXTERNAL SkyPatcher config assigns this NPC an
+    /// <c>outfitDefault</c> (NPC2's own simulated entry doesn't count — it is
+    /// not something NPC2 has to fight).</summary>
+    public bool SkyPatcher { get; init; }
+    public string? SkyPatcherDetail { get; init; }
+
+    /// <summary>True when that winning external SkyPatcher line is read AFTER
+    /// NPC2's own ini slot in the config walk. SkyPatcher applies the LAST
+    /// matching assignment, so in that case an NPC2 <c>outfitDefault</c>
+    /// directive would be overwritten rather than winning.</summary>
+    public bool SkyPatcherOutranksNpc2Ini { get; init; }
+
+    /// <summary>A SPID <c>*_DISTR.ini</c> entry distributes an outfit to this
+    /// NPC. Reported even when the SkyPatcher layer suspends it in the CURRENT
+    /// setup: republishing changes what the record and the runtime layers hold,
+    /// which can lift that suspension, so the patcher must still cover SPID.</summary>
+    public bool Spid { get; init; }
+    public string? SpidDetail { get; init; }
+
+    /// <summary>File name of the contesting <c>*_DISTR.ini</c>. SPID applies the
+    /// FIRST matching entry in ordinal file-name order, so NPC2's own file has to
+    /// sort before this one to win.</summary>
+    public string? SpidSourceFile { get; init; }
+
+    /// <summary>The config that actually supplied this NPC's outfit BEFORE NPC2
+    /// republished it — the conflict winner of the runtime stack (SkyPatcher outranks
+    /// SPID), matching <see cref="OutfitDisplayResult.SourceDetail"/>. Recorded as a
+    /// comment on each generated line so the provenance is readable in the ini.</summary>
+    public string? WinningSourceDetail { get; init; }
+
+    public bool Any => SkyPatcher || Spid;
+
+    public static readonly RuntimeOutfitContest None = new();
+}
+
 /// <summary>The outcome of outfit-display resolution for one NPC.</summary>
 public sealed record OutfitDisplayResult
 {
@@ -58,6 +103,10 @@ public sealed record OutfitDisplayResult
     /// <summary>Filters the simulation could not evaluate at record level;
     /// appended to tooltips so approximations are visible.</summary>
     public IReadOnlyList<string> Approximations { get; init; } = Array.Empty<string>();
+
+    /// <summary>Every runtime distributor competing for this NPC's outfit slot,
+    /// not just the winner. Consumed by the wig/antler outfit republishing pass.</summary>
+    public RuntimeOutfitContest Contest { get; init; } = RuntimeOutfitContest.None;
 
     /// <summary>Cache-identity stamp: the resolved outfit FormKey string, or
     /// "none". Deliberately excludes Source/mode so switching patching modes
@@ -216,6 +265,11 @@ public class OutfitDisplayResolver
         string? skySourceFile = null;
         int skySourceLine = 0;
         bool skyIsNpc2 = false;
+        // Whether the winning EXTERNAL SkyPatcher line sits after NPC2's own ini
+        // slot in the walk — i.e. whether an NPC2 outfitDefault directive would be
+        // overwritten by it (last assignment wins).
+        bool markerPassed = false;
+        bool skyMatchAfterMarker = false;
         var approximations = new List<string>();
 
         if (facts != null)
@@ -224,6 +278,7 @@ public class OutfitDisplayResolver
             {
                 if (entry.IsNpc2Marker)
                 {
+                    markerPassed = true;
                     if (npc2IniActive)
                     {
                         // NPC2 writes filterByNPCs=<target>:outfitDefault=<donor
@@ -256,17 +311,23 @@ public class OutfitDisplayResolver
                 skySourceFile = instruction.SourceFile;
                 skySourceLine = instruction.LineNumber;
                 skyIsNpc2 = false;
+                skyMatchAfterMarker = markerPassed;
                 foreach (var a in match.Approximations) approximations.Add($"SkyPatcher {instruction.SourceFile}: {a}");
             }
         }
 
-        // 4. SPID — suspended when SkyPatcher changed the outfit away from the
-        // record's initial value (OutfitManager::IsSuspendedReplacement).
+        // 4. SPID — suspended for DISPLAY when SkyPatcher changed the outfit away
+        // from the record's initial value (OutfitManager::IsSuspendedReplacement:
+        // SPID snapshots defaultOutfit at TESNPC::InitItemImpl, SkyPatcher patches
+        // later at kDataLoaded, so the two differ and SPID stands down). The match
+        // itself is still evaluated so the contest report can list SPID: once NPC2
+        // republishes the outfit that suspension may no longer hold.
         FormKey? spidOutfit = null;
         string? spidSourceFile = null;
         int spidSourceLine = 0;
         bool spidSuspended = skyOutfit != null && !Equals(skyOutfit, pluginLevel);
-        if (facts != null && !spidSuspended)
+        var spidApproximations = new List<string>();
+        if (facts != null)
         {
             foreach (var entry in GetConfigs().SpidEntries)
             {
@@ -284,10 +345,11 @@ public class OutfitDisplayResolver
                 spidOutfit = outfitKey;
                 spidSourceFile = entry.SourceFile;
                 spidSourceLine = entry.LineNumber;
-                foreach (var a in match.Approximations) approximations.Add($"SPID {entry.SourceFile}: {a}");
+                foreach (var a in match.Approximations) spidApproximations.Add($"SPID {entry.SourceFile}: {a}");
                 break; // for_first_form: first passing entry wins
             }
         }
+        if (!spidSuspended) approximations.AddRange(spidApproximations);
 
         // 5. Final pick: SkyPatcher > SPID > plugin level.
         FormKey? finalOutfit;
@@ -303,7 +365,7 @@ public class OutfitDisplayResolver
                 : $"SkyPatcher: {skySourceFile} (line {skySourceLine})";
             modScoped = skyIsNpc2; // NPC2's directive points at donor content
         }
-        else if (spidOutfit != null)
+        else if (spidOutfit != null && !spidSuspended)
         {
             finalOutfit = spidOutfit;
             finalSource = OutfitDisplaySource.Spid;
@@ -343,6 +405,7 @@ public class OutfitDisplayResolver
             }
         }
 
+        bool skyContests = skyOutfit != null && !skyIsNpc2;
         return new OutfitDisplayResult
         {
             OutfitFormKey = finalOutfit,
@@ -351,6 +414,19 @@ public class OutfitDisplayResolver
             SourceDetail = sourceDetail,
             WarningText = warning,
             Approximations = approximations.Count > 0 ? approximations.Distinct().ToList() : Array.Empty<string>(),
+            Contest = new RuntimeOutfitContest
+            {
+                SkyPatcher = skyContests,
+                SkyPatcherDetail = skyContests ? $"{skySourceFile} (line {skySourceLine})" : null,
+                SkyPatcherOutranksNpc2Ini = skyContests && skyMatchAfterMarker,
+                Spid = spidOutfit != null,
+                SpidDetail = spidOutfit != null ? $"{spidSourceFile} (line {spidSourceLine})" : null,
+                SpidSourceFile = spidSourceFile,
+                WinningSourceDetail = finalSource is OutfitDisplaySource.SkyPatcher or OutfitDisplaySource.Spid
+                    or OutfitDisplaySource.Npc2SkyPatcherIni
+                    ? sourceDetail
+                    : null,
+            },
         };
     }
 
@@ -663,7 +739,12 @@ public class OutfitDisplayResolver
             IsPluginInstalled,
             rel => rel.StartsWith(Npc2SkyPatcherSubfolder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
                    rel.StartsWith(Npc2SkyPatcherSubfolder + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
-        var spid = _spidParser.DiscoverConfigFiles(_env.DataFolderPath.ToString());
+        // NPC2's own _DISTR.ini from a previous run is likewise excluded: it points
+        // at a previous output plugin's outfits and would read back as an external
+        // contest for every NPC this run is about to republish.
+        var spid = _spidParser.DiscoverConfigFiles(_env.DataFolderPath.ToString())
+            .Where(f => !ForwardedOutfitDistributor.IsNpc2SpidConfig(Path.GetFileName(f)))
+            .ToList();
         return (sky, spid);
     }
 

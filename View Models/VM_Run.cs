@@ -105,7 +105,8 @@ public class VM_Run : ReactiveObject, IDisposable
         Auxilliary aux,
         PluginProvider pluginProvider,
         RecordHandler recordHandler,
-        MasterAnalyzer masterAnalyzer)
+        MasterAnalyzer masterAnalyzer,
+        NPC_Plugin_Chooser_2.BackEnd.OutfitDistribution.ForwardedOutfitDistributor forwardedOutfitDistributor)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -128,6 +129,7 @@ public class VM_Run : ReactiveObject, IDisposable
         _bsaHandler.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         _recordDeltaPatcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         _skyPatcherInterface.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
+        forwardedOutfitDistributor.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
 
         this.WhenAnyValue(x => x.IsRunning)
             .Select(isRunning => isRunning ? "Cancel Patching" : "Run Patch Generation")

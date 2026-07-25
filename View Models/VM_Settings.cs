@@ -378,6 +378,11 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
 
     public IEnumerable<KeyValuePair<AntlerBlockScope, string>> WigBlockScopes => AntlerBlockScopes;
 
+    // Settings.PublishForwardedOutfitsToDistributors: whether a wig/antler outfit
+    // forwarded onto an NPC whose outfit is assigned by SkyPatcher/SPID gets
+    // republished through that distributor (otherwise it is overwritten in game).
+    [Reactive] public bool PublishForwardedOutfitsToDistributors { get; set; }
+
     public ReactiveCommand<Unit, Unit> ShowOverrideHandlingModeHelpCommand { get; }
 
     // --- New EasyNPC Transfer Properties ---
@@ -703,6 +708,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SelectedDefaultAntlerHandlingMode = _model.DefaultAntlerHandlingMode;
         SelectedAntlerBlockScope = _model.ManualAntlerBlockScope;
         SelectedWigBlockScope = _model.ManualWigBlockScope;
+        PublishForwardedOutfitsToDistributors = _model.PublishForwardedOutfitsToDistributors;
         DefaultMaxNestedIntervalDepth = _model.DefaultMaxNestedIntervalDepth;
         DefaultIncludeAllOverrides = _model.DefaultIncludeAllOverrides;
         UpdateDefaultOverrideVisibility(); // Initialize visibility state
@@ -1147,6 +1153,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(s => _model.ManualAntlerBlockScope = s).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedWigBlockScope).Skip(1)
             .Subscribe(s => _model.ManualWigBlockScope = s).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.PublishForwardedOutfitsToDistributors).Skip(1)
+            .Subscribe(b => _model.PublishForwardedOutfitsToDistributors = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.AddMissingNpcsOnUpdate).Skip(1).Subscribe(b => _model.AddMissingNpcsOnUpdate = b)
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.BatFilePreCommands).Skip(1).Subscribe(s => _model.BatFilePreCommands = s)

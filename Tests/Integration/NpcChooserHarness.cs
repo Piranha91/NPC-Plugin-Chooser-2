@@ -37,6 +37,7 @@ public sealed class NpcChooserHarness : IDisposable
         builder.RegisterType<SkyPatcherInterface>().AsSelf().SingleInstance();
         builder.RegisterType<AssetHandler>().AsSelf().SingleInstance();
         builder.RegisterType<BackEnd.OutfitDistribution.OutfitDisplayResolver>().AsSelf().SingleInstance();
+        builder.RegisterType<BackEnd.OutfitDistribution.ForwardedOutfitDistributor>().AsSelf().SingleInstance();
         builder.RegisterType<WigForwarder>().AsSelf().SingleInstance();
         builder.RegisterType<HeadPartWigConverter>().AsSelf().SingleInstance();
         builder.RegisterType<Validator>().AsSelf().SingleInstance();

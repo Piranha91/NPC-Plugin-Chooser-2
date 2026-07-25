@@ -12,6 +12,7 @@ using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Plugins.Utility;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
+using NPC_Plugin_Chooser_2.BackEnd.OutfitDistribution;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.View_Models;
 
@@ -31,6 +32,7 @@ public class Patcher : OptionalUIModule
     private readonly SkyPatcherInterface _skyPatcherInterface;
     private readonly WigForwarder _wigForwarder;
     private readonly HeadPartWigConverter _headPartWigConverter;
+    private readonly ForwardedOutfitDistributor _forwardedOutfitDistributor;
 
     // FaceGen NIFs that need their baked hair shape(s) stripped after the
     // asset copy completes (ForwardToSkin wig handling; see WigForwarder).
@@ -71,7 +73,8 @@ public class Patcher : OptionalUIModule
     public Patcher(EnvironmentStateProvider environmentStateProvider, Settings settings, Validator validator,
         AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher,
         PluginProvider pluginProvider, BsaHandler bsaHandler, SkyPatcherInterface skyPatcherInterface,
-        WigForwarder wigForwarder, HeadPartWigConverter headPartWigConverter)
+        WigForwarder wigForwarder, HeadPartWigConverter headPartWigConverter,
+        ForwardedOutfitDistributor forwardedOutfitDistributor)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -85,6 +88,7 @@ public class Patcher : OptionalUIModule
         _skyPatcherInterface = skyPatcherInterface;
         _wigForwarder = wigForwarder;
         _headPartWigConverter = headPartWigConverter;
+        _forwardedOutfitDistributor = forwardedOutfitDistributor;
     }
 
     public async Task PreInitializationLogicAsync()
@@ -378,8 +382,14 @@ public class Patcher : OptionalUIModule
                 return;
             }
 
-            _skyPatcherInterface.Reinitialize(
-                _currentRunOutputAssetPath); // reinitialize whether in SkyPatcher mode or not to avoid stale output 
+            // Reinitialize whether in SkyPatcher mode or not, to avoid stale output. On the
+            // first iteration both sweep EVERY ini they have ever generated rather than just
+            // this plugin's: the directory clear below spares non-asset folders (so SKSE\ is
+            // never touched), and a run that splits into fewer plugins than the last one
+            // would otherwise leave orphaned configs still applying in game.
+            _skyPatcherInterface.Reinitialize(_currentRunOutputAssetPath, isFirstIteration);
+            _forwardedOutfitDistributor.Reinitialize(_currentRunOutputAssetPath,
+                _environmentStateProvider.OutputMod.ModKey, isFirstIteration);
 
             // IMPORTANT: The OutputMod is now created and set by VM_Run before this method is called.
             // We no longer create it here, we just use the one that's already set.
@@ -755,6 +765,15 @@ public class Patcher : OptionalUIModule
                                         RegisterRecordOwnerships(npcFormKey, wigForward.MergedRecords,
                                             npcContributions);
                                         _aux.CollectShallowAssetLinks(wigForward.MergedRecords, assetLinks);
+
+                                        // A record-level DefaultOutfit loses to SkyPatcher/SPID at
+                                        // runtime, so a forwarded outfit whose slot is contested has
+                                        // to be republished through those same distributors.
+                                        if (wigForward.OutfitDuplicateKey is { } forwardedOutfitKey)
+                                        {
+                                            _forwardedOutfitDistributor.Publish(npcFormKey, forwardedOutfitKey,
+                                                wigForward.OutfitContest, npcIdentifier);
+                                        }
                                     }
                                 }
 
@@ -1516,15 +1535,28 @@ public class Patcher : OptionalUIModule
                         return;
                     }
 
-                    if (_settings.UseSkyPatcherMode)
+                    // Runtime-distributor configs. In SkyPatcher mode the ini carries the
+                    // appearance directives; in record mode it is written only when the
+                    // wig/antler pass had to republish a forwarded outfit past a contesting
+                    // SkyPatcher config (see ForwardedOutfitDistributor), and the generated
+                    // SPID ini likewise only when a SPID entry contested one.
+                    bool writeSkyPatcherIni = _settings.UseSkyPatcherMode || _skyPatcherInterface.HasEntries;
+                    if (writeSkyPatcherIni || _forwardedOutfitDistributor.HasSpidEntries)
                     {
-                        // If auto-split relocated surrogate template records into "<name>_2.esp"/etc.,
-                        // the .ini's in-memory FormKeys (all "<name>.esp|ID") are stale. Build a map to
-                        // their true post-split files so WriteIni can rewrite them.
-                        var skyPatcherRemap = _settings.AutoSplitOutput
+                        // If auto-split relocated output records into "<name>_2.esp"/etc., the
+                        // configs' in-memory FormKeys (all "<name>.esp|ID") are stale — surrogate
+                        // templates for the SkyPatcher ini, outfit duplicates for both. Build a map
+                        // to their true post-split files so the writers can rewrite them.
+                        var outputFormKeyRemap = _settings.AutoSplitOutput
                             ? BuildSplitFormKeyRemap(outputPluginPath)
                             : null;
-                        _skyPatcherInterface.WriteIni(_currentRunOutputAssetPath, skyPatcherRemap);
+                        if (writeSkyPatcherIni)
+                        {
+                            _skyPatcherInterface.WriteIni(_currentRunOutputAssetPath, outputFormKeyRemap);
+                        }
+
+                        _forwardedOutfitDistributor.WriteSpidConfig(_currentRunOutputAssetPath,
+                            _environmentStateProvider.OutputMod.ModKey, outputFormKeyRemap);
                     }
                 }
                 else

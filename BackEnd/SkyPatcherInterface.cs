@@ -20,6 +20,12 @@ public class SkyPatcherInterface : OptionalUIModule
         public FormKey NpcFormKey { get; set; }
         public List<SkyPatcherAction> Actions { get; set; } = new();
 
+        /// <summary>Optional provenance note emitted as a WHOLE ';' line above this
+        /// NPC's directive line. It cannot be a trailing comment: SkyPatcher's key
+        /// regex captures everything after '=' up to the next ':', so trailing text
+        /// would be swallowed into the directive's value.</summary>
+        public string? Comment { get; set; }
+
         public NpcContainer(FormKey npcFormKey)
         {
             NpcFormKey = npcFormKey;
@@ -51,14 +57,50 @@ public class SkyPatcherInterface : OptionalUIModule
         _environmentStateProvider = environmentStateProvider;
     }
 
-    public void Reinitialize(string outputRootDir)
+    /// <param name="clearAllGeneratedInis">
+    /// Sweep EVERY ini in NPC2's SkyPatcher folder, not just the current output plugin's.
+    /// Pass true on the first patching iteration: the run's directory clear deliberately
+    /// spares non-asset folders (so it never touches SKSE\), which would otherwise leave a
+    /// previous run's "&lt;name&gt;_2.ini"/"_3.ini" behind when this run splits into fewer
+    /// plugins — stale directives that still apply in game.
+    /// </param>
+    public void Reinitialize(string outputRootDir, bool clearAllGeneratedInis = false)
     {
         _outputs.Clear();
         _keyOriginalValSurrogate.Clear();
         _keySurrogateValOrriginal.Clear();
+
+        if (clearAllGeneratedInis)
+        {
+            ClearAllGeneratedInis(outputRootDir);
+            return;
+        }
+
         if (!ClearIni(_environmentStateProvider.OutputMod.ModKey, outputRootDir, out string exceptionStr))
         {
             AppendLog(exceptionStr);
+        }
+    }
+
+    /// <summary>Deletes every ini NPC2 has ever generated in its own SkyPatcher
+    /// subfolder. Only NPC2's folder is touched — external configs live elsewhere in
+    /// the game's SkyPatcher tree, not in the output mod.</summary>
+    private void ClearAllGeneratedInis(string outputRootFolder)
+    {
+        var outputDir = GetOutputDir(outputRootFolder);
+        if (!Directory.Exists(outputDir)) return;
+
+        foreach (var file in Directory.EnumerateFiles(outputDir, "*.ini"))
+        {
+            try
+            {
+                File.Delete(file);
+            }
+            catch (Exception e)
+            {
+                AppendLog("Failed to clear stale SkyPatcher ini at " + file + Environment.NewLine +
+                          ExceptionLogger.GetExceptionStack(e), true, true);
+            }
         }
     }
 
@@ -205,6 +247,38 @@ public class SkyPatcherInterface : OptionalUIModule
         }
         npcContainer.Actions.Add(new SkyPatcherAction("outfitDefault", outfitFk));
     }
+
+    /// <summary>
+    /// Adds an <c>outfitDefault</c> directive for an NPC that has NO surrogate entry —
+    /// i.e. a record-mode run, where nothing calls <see cref="CreateSkyPatcherNpc"/>.
+    /// Used by <see cref="OutfitDistribution.ForwardedOutfitDistributor"/> to republish a
+    /// forwarded wig/antler outfit past a SkyPatcher config that would otherwise
+    /// overwrite the NPC record's DefaultOutfit at runtime. Creates the NPC's line on
+    /// first use, so the ini can carry outfit-only entries with no appearance directives.
+    /// </summary>
+    /// <param name="comment">Optional provenance note, written as its own ';' line
+    /// above the NPC's directive line (SkyPatcher has no trailing-comment syntax).</param>
+    public void SetOutfitStandalone(FormKey applyTo, FormKey outfitFk, string? comment = null)
+    {
+        if (applyTo.IsNull || outfitFk.IsNull)
+        {
+            return;
+        }
+
+        if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
+        {
+            npcContainer = new NpcContainer(applyTo);
+            _outputs[applyTo] = npcContainer;
+        }
+
+        npcContainer.Actions.Add(new SkyPatcherAction("outfitDefault", outfitFk));
+        if (!string.IsNullOrWhiteSpace(comment)) npcContainer.Comment = comment;
+    }
+
+    /// <summary>Whether any NPC line would be written. Unlike
+    /// <see cref="HasSkinEntries"/>'s intent this is also true for a record-mode ini
+    /// that carries only outfit directives.</summary>
+    public bool HasEntries => _outputs.Any();
     
     public void ApplyKeywords(FormKey surrogateFk, IEnumerable<string> keywords)
     {
@@ -252,6 +326,14 @@ public class SkyPatcherInterface : OptionalUIModule
 
             foreach (var entry in _outputs.Values)
             {
+                if (entry.Comment != null)
+                {
+                    // Whole-line comment: SkyPatcher skips lines starting with ';' but has
+                    // no trailing-comment syntax (its key regex would eat the text).
+                    sb.Append("; ").Append(entry.Comment.Replace('\r', ' ').Replace('\n', ' '))
+                      .Append(Environment.NewLine);
+                }
+
                 string npc = FormatFormKeyForSkyPatcher(entry.NpcFormKey);
                 sb.Append($"filterByNPCs={npc}:");
                 sb.Append(string.Join(",", entry.Actions.Select(a => RenderAction(a, formKeyRemap)).Order()));
@@ -272,10 +354,13 @@ public class SkyPatcherInterface : OptionalUIModule
         }
     }
 
+    private static string GetOutputDir(string outputRootFolder) =>
+        Path.Combine(outputRootFolder, "SKSE", "Plugins", "SkyPatcher", "npc", "NPC Plugin Chooser");
+
     private (string outputDir, string outputPath) GetOutputPath(ModKey outputPlugin, string outputRootFolder)
     {
         string outputName = $"{outputPlugin.Name}.ini";
-        string outputDir = Path.Combine(outputRootFolder, "SKSE", "Plugins", "SkyPatcher", "npc", "NPC Plugin Chooser");
+        string outputDir = GetOutputDir(outputRootFolder);
         string outputPath = Path.Combine(outputDir, outputName);
         return (outputDir, outputPath);
     }

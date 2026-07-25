@@ -209,6 +209,122 @@ public class SkyPatcherInterfaceTests
         File.ReadAllText(IniPath(tmp.Path)).Should().BeEmpty();
     }
 
+    // ── SetOutfitStandalone (record-mode outfit republishing) ─────────────────
+
+    [Fact]
+    public void SetOutfitStandalone_OnUnseededTarget_CreatesTheLine()
+    {
+        using var tmp = new TempDir();
+        var spi = NewInterface(out _);
+        var target = FormKey.Factory("013295:Skyrim.esm");
+
+        // Record mode: nothing ever calls CreateSkyPatcherNpc, so SetOutfit would
+        // early-return. The standalone entry point has to mint the container itself.
+        spi.SetOutfit(target, FormKey.Factory("000801:NPCTest.esp"));
+        spi.HasEntries.Should().BeFalse("SetOutfit only decorates an existing surrogate line");
+
+        spi.SetOutfitStandalone(target, FormKey.Factory("000801:NPCTest.esp"));
+
+        spi.HasEntries.Should().BeTrue();
+        spi.WriteIni(tmp.Path).Should().BeTrue();
+        File.ReadAllText(IniPath(tmp.Path)).TrimEnd('\r', '\n')
+            .Should().Be("filterByNPCs=Skyrim.esm|13295:outfitDefault=NPCTest.esp|801");
+    }
+
+    [Fact]
+    public void SetOutfitStandalone_Comment_IsWrittenAsItsOwnLineAboveTheDirective()
+    {
+        using var tmp = new TempDir();
+        var spi = NewInterface(out _);
+
+        // SkyPatcher has no trailing-comment syntax: its key regex captures everything
+        // after '=' up to the next ':', so a note on the directive line would be parsed
+        // as part of the outfit identifier.
+        spi.SetOutfitStandalone(FormKey.Factory("013295:Skyrim.esm"), FormKey.Factory("000801:NPCTest.esp"),
+            "Ataf — patched from SPID: kco_brd_DISTR.ini (line 7)");
+        spi.WriteIni(tmp.Path);
+
+        File.ReadAllLines(IniPath(tmp.Path)).Where(l => l.Length > 0).Should().Equal(
+            "; Ataf — patched from SPID: kco_brd_DISTR.ini (line 7)",
+            "filterByNPCs=Skyrim.esm|13295:outfitDefault=NPCTest.esp|801");
+    }
+
+    [Fact]
+    public void Reinitialize_ClearAllGeneratedInis_SweepsOtherOutputPluginsFiles()
+    {
+        using var tmp = new TempDir();
+        var spi = NewInterface(out _);
+        var dir = Path.Combine(tmp.Path, "SKSE", "Plugins", "SkyPatcher", "npc", "NPC Plugin Chooser");
+        Directory.CreateDirectory(dir);
+
+        // A previous run split into more plugins than this one will produce. The run's
+        // directory clear spares non-asset folders, so SKSE\ is never touched by it.
+        File.WriteAllText(Path.Combine(dir, "NPCTest.ini"), "x");
+        File.WriteAllText(Path.Combine(dir, "NPCTest_2.ini"), "x");
+        File.WriteAllText(Path.Combine(dir, "NPCTest_3.ini"), "x");
+
+        spi.Reinitialize(tmp.Path, clearAllGeneratedInis: true);
+
+        Directory.EnumerateFiles(dir, "*.ini").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Reinitialize_Default_OnlyClearsTheCurrentOutputPluginsIni()
+    {
+        using var tmp = new TempDir();
+        var spi = NewInterface(out _);
+        var dir = Path.Combine(tmp.Path, "SKSE", "Plugins", "SkyPatcher", "npc", "NPC Plugin Chooser");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "NPCTest.ini"), "x");
+        File.WriteAllText(Path.Combine(dir, "NPCTest_2.ini"), "x");
+
+        // Split output: a later iteration must not delete what an earlier one wrote.
+        spi.Reinitialize(tmp.Path);
+
+        File.Exists(Path.Combine(dir, "NPCTest.ini")).Should().BeFalse();
+        File.Exists(Path.Combine(dir, "NPCTest_2.ini")).Should().BeTrue();
+    }
+
+    [Fact]
+    public void SetOutfitStandalone_NullArguments_AreNoOps()
+    {
+        var spi = NewInterface(out _);
+
+        spi.SetOutfitStandalone(FormKey.Null, FormKey.Factory("000801:NPCTest.esp"));
+        spi.SetOutfitStandalone(FormKey.Factory("013295:Skyrim.esm"), FormKey.Null);
+
+        spi.HasEntries.Should().BeFalse();
+    }
+
+    [Fact]
+    public void SetOutfitStandalone_OnASeededSurrogate_AppendsToTheSameLine()
+    {
+        using var tmp = new TempDir();
+        var spi = NewInterface(out _);
+        var target = FormKey.Factory("000801:T.esp");
+        spi.CreateSkyPatcherNpc(target, MakeDonor());
+
+        spi.ApplyFace(target, FormKey.Factory("000800:Skyrim.esm"));
+        spi.SetOutfitStandalone(target, FormKey.Factory("000900:NPCTest.esp"));
+        spi.WriteIni(tmp.Path);
+
+        // One line per NPC; directives are written comma-joined in alphabetical order.
+        File.ReadAllText(IniPath(tmp.Path)).TrimEnd('\r', '\n')
+            .Should().Be("filterByNPCs=T.esp|801:copyVisualStyle=Skyrim.esm|800,outfitDefault=NPCTest.esp|900");
+    }
+
+    [Fact]
+    public void SetOutfitStandalone_Reinitialize_ClearsTheEntry()
+    {
+        using var tmp = new TempDir();
+        var spi = NewInterface(out _);
+        spi.SetOutfitStandalone(FormKey.Factory("013295:Skyrim.esm"), FormKey.Factory("000801:NPCTest.esp"));
+
+        spi.Reinitialize(tmp.Path);
+
+        spi.HasEntries.Should().BeFalse("each output plugin starts from a clean directive set");
+    }
+
     [Fact]
     public void ApplyFace_NullFaceTemplate_IsNoOp()
     {

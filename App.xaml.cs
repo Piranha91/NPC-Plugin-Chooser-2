@@ -279,6 +279,7 @@ namespace NPC_Plugin_Chooser_2
             // staleness. Caches parsed distributor configs; self-invalidates on
             // LinkCache identity changes and config-file mtime drift.
             builder.RegisterType<BackEnd.OutfitDistribution.OutfitDisplayResolver>().AsSelf().SingleInstance();
+            builder.RegisterType<BackEnd.OutfitDistribution.ForwardedOutfitDistributor>().AsSelf().SingleInstance();
             builder.RegisterType<GeneratedMugshotTracker>().AsSelf().SingleInstance();
             builder.RegisterType<FaceFinderCacheTracker>().AsSelf().SingleInstance();
             builder.RegisterType<MeshSurveyRunner>().AsSelf().SingleInstance();

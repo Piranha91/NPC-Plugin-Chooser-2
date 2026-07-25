@@ -62,6 +62,14 @@ public class WigForwarder
         public List<MajorRecord> MergedRecords { get; } = new();
         public bool OutfitForwarded => OutfitDuplicateKey != null;
 
+        /// <summary>The runtime distributors (SkyPatcher / SPID) that also assign
+        /// this NPC an outfit. When <see cref="OutfitDuplicateKey"/> is set and this
+        /// is non-empty, pointing the NPC record at the duplicate is not enough —
+        /// the duplicate has to be republished through the same channels or the
+        /// distributor overwrites it in game (see
+        /// <see cref="ForwardedOutfitDistributor"/>).</summary>
+        public RuntimeOutfitContest OutfitContest { get; set; } = RuntimeOutfitContest.None;
+
         /// <summary>Donor-side FormKeys of the Hair-type head parts to remove
         /// from the patched NPC record and REPLACE with the modeless bald hair
         /// (ForwardToSkin with a hair-slot wig only — the skin-carried wig does
@@ -676,6 +684,10 @@ public class WigForwarder
         var display = _outfitDisplayResolver.ResolveForDisplay(
             targetNpcFormKey, donorNpc.FormKey, appearanceModSetting, includeDefaultOutfitRenderFlag: true);
 
+        // Recorded before any early return so the Patcher sees it on the duplicate-
+        // reuse path too (the contest is per-NPC; the duplicate is shared).
+        result.OutfitContest = display.Contest;
+
         IOutfitGetter? effectiveOutfit = null;
         if (display.OutfitFormKey is { } effectiveKey)
         {
@@ -781,11 +793,18 @@ public class WigForwarder
                   $"(effective outfit source: {display.Source}{(display.SourceDetail != null ? ", " + display.SourceDetail : "")}).",
             false, false);
 
-        if (display.Source is OutfitDisplaySource.SkyPatcher or OutfitDisplaySource.Spid)
+        // A record-level DefaultOutfit assignment does not survive a runtime
+        // distributor. The duplicate is republished through the contesting
+        // distributor(s) after the plugin is written (ForwardedOutfitDistributor);
+        // this line just names them at the point of duplication.
+        if (display.Contest.Any)
         {
-            appendLog($"      WARNING: {npcIdentifier}'s outfit is distributed at runtime by " +
-                      $"{display.Source} ({display.SourceDetail ?? "unknown config"}); the forwarded wig/antler outfit " +
-                      "may be overridden in game depending on distributor load order.", false, true);
+            var who = new List<string>();
+            if (display.Contest.SkyPatcher) who.Add($"SkyPatcher ({display.Contest.SkyPatcherDetail})");
+            if (display.Contest.Spid) who.Add($"SPID ({display.Contest.SpidDetail})");
+            appendLog($"      Note: {npcIdentifier}'s outfit is also distributed at runtime by " +
+                      string.Join(" and ", who) + " — the forwarded outfit must be republished there to stick.",
+                false, false);
         }
     }
 

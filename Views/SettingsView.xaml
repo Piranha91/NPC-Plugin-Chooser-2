@@ -451,6 +451,30 @@
                                     </ToolTip>
                                 </ComboBox.ToolTip>
                             </ComboBox>
+
+                            <CheckBox Content="Publish forwarded outfits to SkyPatcher/SPID"
+                                      IsChecked="{Binding PublishForwardedOutfitsToDistributors, Mode=TwoWay}"
+                                      Margin="0,10,0,0">
+                                <CheckBox.ToolTip>
+                                    <ToolTip>
+                                        <TextBlock TextWrapping="Wrap" Width="340">
+                                            Some NPCs have their outfit assigned at runtime by SkyPatcher or SPID rather
+                                            than by a plugin record. For those NPCs a wig or antler forwarded to the
+                                            outfit would be wiped out in game, because the distributor overwrites the
+                                            outfit the patch assigned.
+                                            <LineBreak/><LineBreak/>
+                                            With this on, the patcher writes its own config for exactly those NPCs — a
+                                            SkyPatcher entry when a SkyPatcher config contests the outfit, a generated
+                                            *_DISTR.ini when a SPID config does — pointing at the duplicated outfit that
+                                            carries the wig/antler, so it survives. Nothing is written for NPCs whose
+                                            outfit no distributor touches.
+                                            <LineBreak/><LineBreak/>
+                                            With this off, those NPCs are only warned about in the patch log and the
+                                            forwarded wig/antler will most likely not appear in game.
+                                        </TextBlock>
+                                    </ToolTip>
+                                </CheckBox.ToolTip>
+                            </CheckBox>
                         </StackPanel>
                     </GroupBox>
                 </StackPanel>

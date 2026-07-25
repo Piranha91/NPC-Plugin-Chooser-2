@@ -170,6 +170,13 @@ public class Settings
     public List<ManualWigArmature> ManualWigArmatures { get; set; } = new();
     public List<ManualWigArmature> ManualNonWigArmatures { get; set; } = new();
 
+    // When a wig/antler is forwarded to an NPC's outfit but that outfit is assigned
+    // at runtime by SkyPatcher or SPID, the record-level DefaultOutfit is overwritten
+    // in game and the forwarded piece disappears. With this on, the patcher republishes
+    // the outfit duplicate through whichever distributor contests it (see
+    // ForwardedOutfitDistributor); with it off the NPC is only warned about.
+    public bool PublishForwardedOutfitsToDistributors { get; set; } = true;
+
     /// <summary>True when wig/antler handling is active for the current output
     /// mode: Create-and-Patch record mode, or SkyPatcher output in either
     /// PatchingMode. Inert in plain Create record mode.</summary>
