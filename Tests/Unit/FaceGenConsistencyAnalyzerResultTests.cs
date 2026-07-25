@@ -114,9 +114,11 @@ public class FaceGenConsistencyAnalyzerResultTests
     [Fact]
     public void HasMismatch_OrphanBakedShapesOnly_IsFalse()
     {
-        // Regression guard: orphan baked shapes are corroborating detail only and must NOT,
-        // on their own, raise the high-confidence flag (a hand-named custom shape would
-        // otherwise false-positive).
+        // Regression guard: the flag is forward-direction only. A .nif carrying a shape with no
+        // matching head part was observed in game WITHOUT the dark-face bug (2026-07-24), and the
+        // reference detector for this bug (the "Dark Face Issue Reporter" xEdit script) likewise
+        // only checks that every HeadPart in the record is present in the .nif. Orphans stay
+        // corroborating detail — raising the flag on them would report NPCs that render fine.
         var r = new FaceGenConsistencyAnalyzer.Result
         {
             OrphanBakedShapes = new[] { "SomeCustomShape", "AnotherOne" },
@@ -158,6 +160,81 @@ public class FaceGenConsistencyAnalyzerResultTests
         r.UnresolvedHeadParts.Should().NotBeNull().And.BeEmpty();
     }
 
+    // ---- Result.Kind (cause classification) -------------------------------------------------
+    //
+    // The classifier is what keeps the message honest: "generated against a different version"
+    // is only plausible for a single-slot difference. Anything broader is a different-source
+    // mismatch (a lost plugin conflict or a lost FaceGen file conflict).
+
+    [Fact]
+    public void Kind_EmptyResult_IsNone()
+    {
+        new FaceGenConsistencyAnalyzer.Result().Kind.Should().Be(FaceGenConsistencyAnalyzer.MismatchKind.None);
+    }
+
+    [Fact]
+    public void Kind_SingleMissingNoOrphans_IsSingleHeadPartDifference()
+    {
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[] { new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "Brows") },
+        };
+        r.Kind.Should().Be(FaceGenConsistencyAnalyzer.MismatchKind.SingleHeadPartDifference);
+    }
+
+    [Fact]
+    public void Kind_SingleMissingWithSingleOrphan_IsStillSingleHeadPartDifference()
+    {
+        // One slot swapped (missing X / baked Y) is still a one-part difference.
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[] { new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "Brows") },
+            OrphanBakedShapes = new[] { "SomeOtherBrows" },
+        };
+        r.Kind.Should().Be(FaceGenConsistencyAnalyzer.MismatchKind.SingleHeadPartDifference);
+    }
+
+    [Fact]
+    public void Kind_SingleMissingWithManyOrphans_IsDifferentSource()
+    {
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[] { new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "Brows") },
+            OrphanBakedShapes = new[] { "PAN_Hair", "PAN_Hairline" },
+        };
+        r.Kind.Should().Be(FaceGenConsistencyAnalyzer.MismatchKind.DifferentSource);
+    }
+
+    [Fact]
+    public void Kind_MultipleMissing_IsDifferentSource()
+    {
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "Hair"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpB, "HairLine"),
+            },
+        };
+        r.Kind.Should().Be(FaceGenConsistencyAnalyzer.MismatchKind.DifferentSource);
+    }
+
+    [Fact]
+    public void Kind_UnresolvedOrNullOnly_IsBrokenHeadPartLinks()
+    {
+        new FaceGenConsistencyAnalyzer.Result { UnresolvedHeadParts = new[] { HpC } }
+            .Kind.Should().Be(FaceGenConsistencyAnalyzer.MismatchKind.BrokenHeadPartLinks);
+        new FaceGenConsistencyAnalyzer.Result { NullHeadPartLinks = 1 }
+            .Kind.Should().Be(FaceGenConsistencyAnalyzer.MismatchKind.BrokenHeadPartLinks);
+    }
+
+    [Fact]
+    public void Kind_OrphansOnly_IsExtraBakedShapesOnly()
+    {
+        new FaceGenConsistencyAnalyzer.Result { OrphanBakedShapes = new[] { "Floater" } }
+            .Kind.Should().Be(FaceGenConsistencyAnalyzer.MismatchKind.ExtraBakedShapesOnly);
+    }
+
     // ---- Result.BuildReason -----------------------------------------------------------------
 
     [Fact]
@@ -167,22 +244,41 @@ public class FaceGenConsistencyAnalyzerResultTests
     }
 
     [Fact]
-    public void BuildReason_OrphansOnly_StillProducesText()
+    public void BuildReason_OrphansOnly_ReportsNothingAtAll()
     {
-        // BuildReason emits even when !HasMismatch, as long as there are orphan baked shapes.
+        // Validation reports only what the user can see in game. A purely additive .nif produces
+        // no visible defect (see HasMismatch_OrphanBakedShapesOnly_IsFalse for the evidence), so
+        // it must produce no row and no tooltip — not a softened one.
         var r = new FaceGenConsistencyAnalyzer.Result
         {
+            OrphanBakedShapes = new[] { "Floater", "AnotherFloater" },
+        };
+        r.BuildReason().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void BuildReason_MixedMissingAndOrphans_StillWarnsAboutDarkFace()
+    {
+        // Guard the boundary: once a head part the record needs IS missing, the dark-face warning
+        // and the remedies come back, orphans or not.
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "Hair"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpB, "HairLine"),
+            },
             OrphanBakedShapes = new[] { "Floater" },
         };
         var reason = r.BuildReason();
-        reason.Should().NotBeEmpty();
-        reason.Should().StartWith("FaceGen / plugin mismatch");
-        reason.Should().Contain("baked shape(s) with no matching head part");
+
+        reason.Should().Contain("dark-face bug");
+        reason.Should().Contain("Likely cause(s)");
         reason.Should().Contain("Floater");
     }
 
     [Fact]
-    public void BuildReason_MissingBakedShape_MentionsEditorIdFormKeyAndPlugin()
+    public void BuildReason_SingleMissingBakedShape_MentionsEditorIdFormKeyAndVersionMismatch()
     {
         var r = new FaceGenConsistencyAnalyzer.Result
         {
@@ -190,21 +286,120 @@ public class FaceGenConsistencyAnalyzerResultTests
         };
         var reason = r.BuildReason();
 
-        reason.Should().Contain("Head part 'MaleHeadNord'");
+        reason.Should().Contain("'MaleHeadNord'");
         reason.Should().Contain(HpA.ToString());
         reason.Should().Contain(HpA.ModKey.FileName.ToString());
-        reason.Should().Contain("no matching shape in the FaceGen mesh");
+        reason.Should().Contain("uses one head part that isn't in the FaceGen .nif");
+        reason.Should().Contain("Version mismatch");
+        // No "you can probably ignore this" reassurance — we can't tell whether the game will
+        // tolerate the mismatch, so the message must not imply that it will.
+        reason.Should().NotContain("ignore this");
     }
 
     [Fact]
-    public void BuildReason_NullLinks_ReportsCount()
+    public void BuildReason_MultipleMissing_BlamesConflictsNotPluginVersion()
+    {
+        // Regression guard for the reported case: several unmatched head parts plus foreign
+        // baked shapes must be reported as a source mismatch (lost plugin / file conflict),
+        // never as "the FaceGen was generated against a different version of Skyrim.esm".
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(FormKey.Factory("051148:Skyrim.esm"), "HairFemaleNord07"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(FormKey.Factory("0510BB:Skyrim.esm"), "HairLineFemaleNord07"),
+            },
+            OrphanBakedShapes = new[] { "PAN_AbeloneHair", "PAN_AbeloneHairline" },
+        };
+        var reason = r.BuildReason();
+
+        reason.Should().NotContain("different version");
+        reason.Should().Contain("different set of head parts than the NPC's .esp plugin record");
+        reason.Should().Contain("Plugin conflict");
+        reason.Should().Contain("Asset conflict");
+        // The load-order remedies must never name the plugins that DEFINE the unmatched head
+        // parts: that is usually a resource master (High Poly Head.esm), not the record winner,
+        // so it read as a plugin conflict that wasn't happening. Winning Source names the winner.
+        // (The headline legitimately says "not coming from the same appearance mod", so this is
+        // asserted against the remedy section alone.)
+        var remedies = reason[reason.IndexOf("Likely cause(s)", StringComparison.Ordinal)..];
+        remedies.Should().NotContain("coming from");
+        remedies.Should().NotContain("Skyrim.esm");
+    }
+
+    [Fact]
+    public void BuildReason_LoadOrderRemedies_NameNoPlugins()
+    {
+        // The two conflict remedies are about NPC2's own output winning; naming plugins here was
+        // noise at best and misleading at worst (see the regression guard above).
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "Hair"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpB, "HairLine"),
+            },
+        };
+        var reason = r.BuildReason();
+
+        reason.Should().Contain("Plugin conflict");
+        reason.Should().Contain("Asset conflict");
+        // 'HeadParts.esp' may still appear in the EVIDENCE list (the FormKeys), but never in the
+        // remedies. Check the remedy section alone.
+        var remedies = reason[reason.IndexOf("Likely cause(s)", StringComparison.Ordinal)..];
+        remedies.Should().NotContain("HeadParts.esp");
+        remedies.Should().NotContain("vanilla Skyrim");
+    }
+
+    [Fact]
+    public void BuildReason_SelectedModScope_GivesModScopedRemedies()
+    {
+        // The mugshot path resolves head parts mod-scoped, so load-order remedies would be wrong.
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "Hair"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpB, "HairLine"),
+            },
+        };
+        var reason = r.BuildReason(scope: FaceGenConsistencyAnalyzer.ReasonScope.SelectedMod);
+
+        reason.Should().Contain("The mod's own .esp and .nif don't match");
+        reason.Should().Contain("Run Validate Output");
+        reason.Should().NotContain("load order");
+    }
+
+    [Fact]
+    public void BuildReason_SelectedModScope_AllVanillaParts_PointsAtTheMissingRecord()
+    {
+        // Mod-scoped resolution landing on vanilla head parts means the mod supplied the mesh
+        // but no matching NPC record — a version-mismatch remedy would be misleading here.
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(FormKey.Factory("051148:Skyrim.esm"), "HairFemaleNord07"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(FormKey.Factory("0510BB:Skyrim.esm"), "HairLineFemaleNord07"),
+            },
+        };
+        var reason = r.BuildReason(scope: FaceGenConsistencyAnalyzer.ReasonScope.SelectedMod);
+
+        reason.Should().Contain("all vanilla Skyrim ones");
+        reason.Should().Contain("no matching plugin record");
+    }
+
+    [Fact]
+    public void BuildReason_NullLinks_ReportsCountAndFix()
     {
         var r = new FaceGenConsistencyAnalyzer.Result { NullHeadPartLinks = 4 };
-        r.BuildReason().Should().Contain("4 null head part reference(s)");
+        var reason = r.BuildReason();
+        reason.Should().Contain("4 empty entry(s)");
+        reason.Should().Contain("clean it in xEdit");
     }
 
     [Fact]
-    public void BuildReason_UnresolvedHeadPart_ReportsFormKeyAndContext()
+    public void BuildReason_UnresolvedHeadPart_ReportsFormKeyAndNamesThePluginToInstall()
     {
         var r = new FaceGenConsistencyAnalyzer.Result
         {
@@ -212,7 +407,9 @@ public class FaceGenConsistencyAnalyzerResultTests
         };
         var reason = r.BuildReason();
         reason.Should().Contain(HpC.ToString());
-        reason.Should().Contain("does not resolve in the current load order");
+        reason.Should().Contain("no plugin in your load order has them");
+        reason.Should().Contain("Install and enable the mod that owns these head parts");
+        reason.Should().Contain(HpC.ModKey.FileName.ToString());
     }
 
     [Fact]
@@ -227,8 +424,8 @@ public class FaceGenConsistencyAnalyzerResultTests
         };
         var reason = r.BuildReason();
 
-        reason.Should().Contain("Head part 'Brows'");
-        reason.Should().Contain("2 null head part reference(s)");
+        reason.Should().Contain("'Brows'");
+        reason.Should().Contain("2 empty entry(s)");
         reason.Should().Contain(HpC.ToString());
         reason.Should().Contain("Orphan1");
     }
@@ -280,19 +477,27 @@ public class FaceGenConsistencyAnalyzerResultTests
         reason.Should().Contain("…and 4 more unresolved head part(s).");
     }
 
+    // Orphans only render as corroborating detail, so these two need a missing head part to
+    // get past the "nothing the user can see" guard.
+    private static readonly FaceGenConsistencyAnalyzer.HeadPartRef[] OneMissing =
+        { new(HpA, "Brows") };
+
     [Fact]
     public void BuildReason_OrphanBakedShapes_TruncatesWithPlusNMore()
     {
         // Orphans use a different truncation suffix: ", +N more".
         var orphans = Enumerable.Range(0, 7).Select(i => "Orphan" + i).ToArray();
-        var r = new FaceGenConsistencyAnalyzer.Result { OrphanBakedShapes = orphans };
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = OneMissing,
+            OrphanBakedShapes = orphans,
+        };
 
         var reason = r.BuildReason(maxPerCategory: 2);
 
         reason.Should().Contain("Orphan0");
         reason.Should().Contain("Orphan1");
-        reason.Should().Contain(", +5 more");
-        reason.Should().EndWith("."); // the orphan section closes with a period
+        reason.Should().Contain(", +5 more."); // the orphan section closes with a period
     }
 
     [Fact]
@@ -300,6 +505,7 @@ public class FaceGenConsistencyAnalyzerResultTests
     {
         var r = new FaceGenConsistencyAnalyzer.Result
         {
+            MissingBakedShapes = OneMissing,
             OrphanBakedShapes = new[] { "A", "B", "C" },
         };
         // Under the default cap (8) all three are shown, comma-separated, no "+N more".
@@ -313,7 +519,27 @@ public class FaceGenConsistencyAnalyzerResultTests
     {
         var r = new FaceGenConsistencyAnalyzer.Result { NullHeadPartLinks = 1 };
         var reason = r.BuildReason();
-        reason.Should().StartWith("FaceGen / plugin mismatch (a common cause of the in-game dark-face bug):");
+        reason.Should().StartWith("Broken head part references (a common cause of the in-game dark-face bug):");
+    }
+
+    [Fact]
+    public void BuildReason_OrdersSections_EvidenceThenRemedies()
+    {
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "Hair"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpB, "HairLine"),
+            },
+            OrphanBakedShapes = new[] { "Orphan1" },
+        };
+        var reason = r.BuildReason();
+
+        reason.IndexOf("in the .esp but not the .nif", StringComparison.Ordinal)
+            .Should().BeLessThan(reason.IndexOf("in the .nif but not the .esp", StringComparison.Ordinal));
+        reason.IndexOf("in the .nif but not the .esp", StringComparison.Ordinal)
+            .Should().BeLessThan(reason.IndexOf("Likely cause(s), most common first:", StringComparison.Ordinal));
     }
 
     [Fact]

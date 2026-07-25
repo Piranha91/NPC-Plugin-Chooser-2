@@ -379,7 +379,10 @@ public sealed class InternalMugshotGenerator
                         var analysis = _faceGenConsistency.Analyze(npcForCheck, resolveHeadPart, resolveRace, headNif);
                         if (analysis.HasMismatch)
                         {
-                            faceGenMismatch = analysis.BuildReason();
+                            // Mod-scoped resolution (the tile's own mod first), so the remedies
+                            // must talk about that mod's files — not load-order conflict winners.
+                            faceGenMismatch = analysis.BuildReason(
+                                scope: FaceGenConsistencyAnalyzer.ReasonScope.SelectedMod);
                             faceGenMismatchOut?.Add(faceGenMismatch);
                             Trace($"  facegen-mismatch tid={Environment.CurrentManagedThreadId} npc={npcFormKey} missing={analysis.MissingBakedShapes.Count} unresolved={analysis.UnresolvedHeadParts.Count} null={analysis.NullHeadPartLinks} orphans={analysis.OrphanBakedShapes.Count}");
                         }
