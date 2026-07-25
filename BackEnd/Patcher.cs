@@ -635,42 +635,25 @@ public class Patcher : OptionalUIModule
                                     Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, regularized: true);
                                 if (!_assetHandler.AssetExists(faceMeshRelativePath, appearanceModSetting))
                                 {
+                                    if (Auxilliary.IsValidTemplatedNpc(appearanceNpcRecord))
+                                    {
+                                        // Expected, not a risk: the game renders the TEMPLATE's face and never loads a
+                                        // FaceGen under this NPC's own FormID, so head-data edits here are inert.
+                                        AppendLog(
+                                            $"      Note: '{appearanceModSetting.DisplayName}' provides no FaceGen for {npcIdentifier}, which is expected — its appearance is inherited from template {appearanceNpcRecord.Template.FormKey} (Traits flag).");
+                                    }
                                     // If the mesh is missing, perform the more expensive check to see if the plugin *actually* changed head data.
                                     // Resolve the original base record for the appearance DONOR (e.g., from Skyrim.esm).
                                     // The output carries the donor's head data, so the diff that signals a black-face
                                     // risk must be measured against the donor's own base, not the target's.
-                                    if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(
-                                            appearanceNpcFormKey,
-                                            out var baseNpcGetter, ResolveTarget.Origin))
+                                    else if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(
+                                                 appearanceNpcFormKey,
+                                                 out var baseNpcGetter, ResolveTarget.Origin) &&
+                                             ChangesHeadDataThatNeedsFaceGen(appearanceNpcRecord, baseNpcGetter))
                                     {
-                                        // Compare the head-related properties of the appearance record to the base record.
-                                        // Use static Equals() for top-level properties to safely handle any potential nulls.
-                                        bool faceMorphsDiffer = !Equals(baseNpcGetter.FaceMorph,
-                                            appearanceNpcRecord.FaceMorph);
-                                        bool facePartsDiffer = !Equals(baseNpcGetter.FaceParts,
-                                            appearanceNpcRecord.FaceParts);
-
-                                        // fast head part equality check
-                                        var appearanceHeadParts = appearanceNpcRecord.HeadParts.Select(x => x.FormKey)
-                                            .ToHashSet();
-                                        var baseHeadParts = baseNpcGetter.HeadParts.Select(x => x.FormKey).ToHashSet();
-                                        bool headPartsDiffer = false;
-                                        foreach (var hp in appearanceHeadParts)
-                                        {
-                                            if (!baseHeadParts.Contains(hp))
-                                            {
-                                                headPartsDiffer = true;
-                                                break;
-                                            }
-                                        }
-
-                                        // If any of the head data properties differ, log the critical warning.
-                                        if (faceMorphsDiffer || facePartsDiffer || headPartsDiffer)
-                                        {
-                                            AppendLog(
-                                                $"      CRITICAL WARNING: Mod '{appearanceModSetting.DisplayName}' modifies head data for {npcIdentifier} but does not provide the corresponding FaceGen mesh ({faceMeshRelativePath}). THIS WILL LIKELY CAUSE THE 'BLACK FACE' BUG.",
-                                                true, true);
-                                        }
+                                        AppendLog(
+                                            $"      CRITICAL WARNING: Mod '{appearanceModSetting.DisplayName}' modifies head data for {npcIdentifier} but does not provide the corresponding FaceGen mesh ({faceMeshRelativePath}). THIS WILL LIKELY CAUSE THE 'BLACK FACE' BUG.",
+                                            true, true);
                                     }
                                 }
 
@@ -1895,10 +1878,7 @@ public class Patcher : OptionalUIModule
             targetNpc.Race.SetTo(raceToSet);
         }
 
-        if (ShouldChangeTraitsStatus(targetNpc, sourceNpc, out bool hasTraitsStatus))
-        {
-            SetTraitsFlag(targetNpc, hasTraitsStatus);
-        }
+        SyncTemplateInheritance(targetNpc, sourceNpc);
 
         List<MajorRecord> mergedInRecords = new();
         var importSourceModKeys = appearanceModSetting.CorrespondingModKeys
@@ -2078,9 +2058,28 @@ public class Patcher : OptionalUIModule
             _skyPatcherInterface.ApplyRace(npcFormKey, raceToSet.Value);
         }
 
-        if (ShouldChangeTraitsStatus(winningNpcOverride, patchNpc, out bool hasTraitsStatus))
+        // Traits is handled ASYMMETRICALLY here, unlike record mode, because the directive lands on
+        // the RECIPIENT (filterByNPCs=recipient) while the appearance arrives via the surrogate.
+        //
+        // Per SkyPatcher's source (github.com/Zzyxz/SkyPatcher npc_patcher.cpp @ main),
+        // copyVisualStyle assigns `curobj->faceNPC = bo` — the recipient's face NPC becomes the
+        // surrogate — plus height/weight/tintLayers/bodyTintColor/headRelatedData and the head
+        // parts. It never walks a template chain and never writes a TPLT. The surrogate is a
+        // DeepCopyIn of the donor (SkyPatcherInterface.CreateSkyPatcherNpc), so it carries the
+        // donor's Traits flag AND its TPLT, and an inherited face resolves from there — the
+        // SkyPatcher-mode equivalent of what SyncTemplateInheritance writes in record mode.
+        //
+        // CLEARING the bit is therefore real work: a recipient that inherits its own face would
+        // otherwise keep showing the template's, not the appearance the user picked.
+        //
+        // SETTING it is not, and can do harm. SkyPatcher cannot re-point the recipient's TPLT, so
+        // the flag could only ever make the recipient inherit from ITS OWN template — never the
+        // donor's. That is inert when the recipient has no TPLT, and wrong when it has one set for
+        // inventory/AI inheritance with the Traits bit deliberately off. Actions are written
+        // alphabetically ordered, so it would also apply after copyVisualStyle rather than before.
+        if (ShouldChangeTraitsStatus(winningNpcOverride, patchNpc, out bool hasTraitsStatus) && !hasTraitsStatus)
         {
-            _skyPatcherInterface.ToggleTemplateTraitsStatus(npcFormKey, hasTraitsStatus);
+            _skyPatcherInterface.ToggleTemplateTraitsStatus(npcFormKey, false);
         }
 
         if (includeOutfit)
@@ -2132,6 +2131,69 @@ public class Patcher : OptionalUIModule
         {
             // Clear Female bit
             targetNpc.Configuration.Flags &= ~NpcConfiguration.Flag.Female;
+        }
+    }
+
+    /// <summary>
+    /// Does this appearance record change head data that the game will need a FaceGen for? Used to
+    /// decide whether a missing FaceGen mesh is a black-face risk or a non-event.
+    ///
+    /// <para>An inherited appearance (Traits flag + template) is a non-event: the game renders the
+    /// TEMPLATE's face and never loads a FaceGen under this NPC's FormID, so its own head-part /
+    /// FaceMorph / FaceParts values are inert no matter how far they drift from the base record.
+    /// Warning about those buried the real cases — one run produced ~200 of them, almost all on
+    /// generic template users (Enc*Template, TreasCorpse*, "Redguard Woman"...).</para>
+    ///
+    /// <para>The diff is measured against the DONOR's own origin record, not the target's, because
+    /// the output carries the donor's head data.</para>
+    /// </summary>
+    private static bool ChangesHeadDataThatNeedsFaceGen(INpcGetter appearanceNpcRecord, INpcGetter donorBaseRecord)
+    {
+        // Guard, not dead code: keeps the rule with the decision if another caller appears.
+        if (Auxilliary.IsValidTemplatedNpc(appearanceNpcRecord)) return false;
+
+        // Static Equals() for the top-level records so nulls are handled safely.
+        if (!Equals(donorBaseRecord.FaceMorph, appearanceNpcRecord.FaceMorph)) return true;
+        if (!Equals(donorBaseRecord.FaceParts, appearanceNpcRecord.FaceParts)) return true;
+
+        var baseHeadParts = donorBaseRecord.HeadParts.Select(x => x.FormKey).ToHashSet();
+        return appearanceNpcRecord.HeadParts.Any(hp => !baseHeadParts.Contains(hp.FormKey));
+    }
+
+    /// <summary>
+    /// Mirrors the donor's appearance inheritance onto the patched record. The Traits flag and the
+    /// TPLT link are ONE unit: an NPC with Traits set and a null Template has no face to inherit,
+    /// and its own head parts/FaceGen are then inconsistent with everything. Setting the flag
+    /// without the link produced exactly that (e.g. Redguard Woman 0B85AB, whose donor inherits
+    /// from TreasCorpseCommonerRedguardFemale 048117) — so whenever the donor inherits, the output
+    /// must point at the same template, and it must be re-pointed even when the flag itself does
+    /// not change (donor and recipient can both inherit, from DIFFERENT templates).
+    ///
+    /// <para>The link is deliberately NOT cleared when the flag is cleared: TPLT also drives
+    /// non-appearance inheritance (inventory, AI packages, factions...) whose flags this app does
+    /// not touch, so dropping it would break unrelated behaviour.</para>
+    /// </summary>
+    private void SyncTemplateInheritance(Npc targetNpc, INpcGetter sourceNpc)
+    {
+        if (ShouldChangeTraitsStatus(targetNpc, sourceNpc, out bool hasTraitsStatus))
+        {
+            SetTraitsFlag(targetNpc, hasTraitsStatus);
+        }
+
+        if (!Auxilliary.HasTraitsFlag(sourceNpc)) return;
+
+        if (sourceNpc.Template.IsNull)
+        {
+            // Donor is itself malformed (Traits with no template). Nothing to copy; say so rather
+            // than silently leaving whatever link the recipient had.
+            AppendLog($"      WARNING: appearance source {sourceNpc.FormKey} has the Traits flag but no template record, so no template could be applied to {targetNpc.FormKey}.");
+            return;
+        }
+
+        if (targetNpc.Template.FormKey != sourceNpc.Template.FormKey)
+        {
+            targetNpc.Template.SetTo(sourceNpc.Template.FormKey);
+            AppendLog($"      Set template of {targetNpc.FormKey} to {sourceNpc.Template.FormKey} (its appearance is inherited from that NPC).");
         }
     }
 
