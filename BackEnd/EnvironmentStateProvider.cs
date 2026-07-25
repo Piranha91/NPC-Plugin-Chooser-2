@@ -67,6 +67,22 @@ public class EnvironmentStateProvider : ReactiveObject
     [Reactive] public int CreationClubPluginsCount { get; private set; }
     [Reactive] public int CreationClubPluginsInLoadOrderCount { get; private set; }
 
+    // True when the resolved load order contains ONLY base-game and Creation Club plugins - i.e. not
+    // a single third-party plugin. Purely advisory: the environment is still Valid (data folder,
+    // Plugins.txt and Skyrim.esm all resolved), so nothing is gated off this flag.
+    //
+    // The usual cause is launching outside a mod manager. Mutagen resolves the load order from
+    // %LOCALAPPDATA%\<Game>\Plugins.txt; under MO2/Vortex the VFS redirects that path to the active
+    // profile, but without the manager in the loop it reads the vanilla launcher's file instead. Every
+    // check in UpdateEnvironmentCore still passes, so the app reports a healthy environment while
+    // seeing a handful of plugins.
+    //
+    // Note what this does NOT break: appearance mods are still discovered, because VM_Mods scans the
+    // Mods folder directly rather than going through the load order. What breaks is everything
+    // downstream of it - the output plugin gets patched against the wrong conflict winners, and any
+    // NPC outside the base game / Creation Club never reaches the NPCs menu.
+    [Reactive] public bool LoadOrderIsVanillaOnly { get; private set; }
+
     public enum CreationClubListingsSourceKind
     {
         NotFound,
@@ -226,8 +242,9 @@ public class EnvironmentStateProvider : ReactiveObject
             Status = EnvironmentStatus.Valid;
             NumPlugins = LoadOrder.ListedOrder.Count();
             NumActivePlugins = LoadOrder.ListedOrder.Count(p => p.Enabled);
+            LoadOrderIsVanillaOnly = ComputeLoadOrderIsVanillaOnly();
 
-            StartupLogger.Log($"Environment resolved: DataFolder='{DataFolderPath}', LoadOrderFile='{LoadOrderFilePath}' (exists={LoadOrderFileExists}), CreationClubFile='{CreationClubListingsFilePath}' (exists={CreationClubListingsFileExists}, source={CreationClubListingsSource}), CC parsed={CreationClubPluginsCount}, CC in LoadOrder={CreationClubPluginsInLoadOrderCount}, NumPlugins={NumPlugins}, NumActive={NumActivePlugins}");
+            StartupLogger.Log($"Environment resolved: DataFolder='{DataFolderPath}', LoadOrderFile='{LoadOrderFilePath}' (exists={LoadOrderFileExists}), CreationClubFile='{CreationClubListingsFilePath}' (exists={CreationClubListingsFileExists}, source={CreationClubListingsSource}), CC parsed={CreationClubPluginsCount}, CC in LoadOrder={CreationClubPluginsInLoadOrderCount}, NumPlugins={NumPlugins}, NumActive={NumActivePlugins}, VanillaOnly={LoadOrderIsVanillaOnly}");
         }
         catch (Exception ex)
         {
@@ -271,6 +288,60 @@ public class EnvironmentStateProvider : ReactiveObject
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// True when not one enabled plugin in the resolved load order comes from outside the base game
+    /// or Creation Club. See <see cref="LoadOrderIsVanillaOnly"/> for why that is worth flagging.
+    /// This is a diagnostic only, so it never throws and never blocks initialization: on any
+    /// unexpected state it returns false, leaving the warning off.
+    /// </summary>
+    private bool ComputeLoadOrderIsVanillaOnly()
+    {
+        try
+        {
+            var baseGame = BaseGamePlugins; // property re-derives from Implicits on each read
+            var creationClub = CreationClubPlugins;
+            var ownOutput = OutputMod?.ModKey;
+
+            // Enabled-only: a disabled third-party plugin contributes nothing, so a load order whose
+            // only mods are unticked is just as broken for our purposes as one with no mods at all.
+            var listed = LoadOrder?.ListedOrder;
+            if (listed == null) return false;
+
+            // Enabled-only: a disabled third-party plugin contributes nothing, so a load order whose
+            // only mods are unticked is just as broken for our purposes as one with no mods at all.
+            return IsVanillaOnlyLoadOrder(
+                listed.Where(p => p.Enabled).Select(p => p.ModKey),
+                baseGame,
+                creationClub,
+                ownOutput);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Pure predicate behind <see cref="LoadOrderIsVanillaOnly"/>, split out so it can be tested
+    /// without standing up a real game environment.
+    /// </summary>
+    internal static bool IsVanillaOnlyLoadOrder(
+        IEnumerable<ModKey> enabledModKeys,
+        ISet<ModKey> baseGamePlugins,
+        ISet<ModKey> creationClubPlugins,
+        ModKey? ownOutputModKey)
+    {
+        var enabled = enabledModKeys.ToList();
+        if (enabled.Count == 0) return false; // an empty load order is already reported as Invalid
+
+        // Our own output plugin is normally filtered out pre-load (GetOwnOutputModKeys), but a rename
+        // between runs can leave a stale one listed - don't let that mask the warning.
+        return !enabled.Any(k =>
+            !baseGamePlugins.Contains(k)
+            && !creationClubPlugins.Contains(k)
+            && (!ownOutputModKey.HasValue || k != ownOutputModKey.Value));
     }
 
     // Mutagen's default Skyrim.ccc discovery uses registry-based game lookup, which

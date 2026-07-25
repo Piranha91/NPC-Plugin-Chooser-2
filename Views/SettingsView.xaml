@@ -73,6 +73,16 @@
                                         <DataTrigger Binding="{Binding EnvironmentStatus}" Value="Pending">
                                             <Setter Property="Foreground" Value="{DynamicResource StatusPendingForeground}"/>
                                         </DataTrigger>
+                                        <!-- Valid, but the load order holds no mod plugins at all. Declared
+                                             last so it overrides the plain Valid trigger above. -->
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding EnvironmentStatus}" Value="Valid"/>
+                                                <Condition Binding="{Binding EnvironmentLoadOrderIsVanillaOnly}" Value="True"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Foreground" Value="{DynamicResource StatusWarningForeground}"/>
+                                            <Setter Property="Text" Value="Valid (no mod plugins found)"/>
+                                        </MultiDataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </Run.Style>
@@ -87,6 +97,39 @@
                             </Run.Text>
                         </Run>
                     </TextBlock>
+                    <!-- Advisory (not an error - the environment is usable): the resolved load order
+                         contains only base-game / Creation Club plugins. Nearly always means N.P.C.2 was
+                         launched outside the mod manager, so Mutagen read Windows' own Plugins.txt rather
+                         than the manager's profile. Appearance mods are still found (those are scanned
+                         straight from the Mods folder); what breaks is everything downstream of the load
+                         order - patching against the right conflict winners, and the NPCs menu, which
+                         only ever sees base-game / CC NPCs. Detail lives in the tooltip. -->
+                    <TextBlock TextWrapping="Wrap" Margin="0,4,0,0"
+                               ToolTipService.ShowDuration="60000"
+                               Foreground="{DynamicResource StatusWarningForeground}"
+                               Text="Your load order contains only base game and Creation Club plugins. Relaunch N.P.C.2 through your mod manager, and check that the Skyrim Game Data Path above matches the one set in your mod manager's settings.">
+                        <TextBlock.ToolTip>
+                            <ToolTip>
+                                <TextBlock TextWrapping="Wrap" MaxWidth="460"
+                                           Text="N.P.C.2 reads the load order from Windows' own Plugins.txt (path shown below). Mod managers such as MO2 and Vortex redirect that file to the active profile's load order, but only for programs launched through them - otherwise the Skyrim launcher's own list is used instead.&#10;&#10;Your appearance mods are still detected, since those are read directly from the Mods folder. What breaks is everything that depends on the load order: the output plugin will not be patched against the correct conflict winners, and NPCs from anything other than the base game and Creation Club will not appear in the NPCs menu."/>
+                            </ToolTip>
+                        </TextBlock.ToolTip>
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding EnvironmentStatus}" Value="Valid"/>
+                                            <Condition Binding="{Binding EnvironmentLoadOrderIsVanillaOnly}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
                     <TextBlock Text="{Binding EnvironmentErrorText}" Foreground="{DynamicResource StatusErrorForeground}" TextWrapping="Wrap" MaxHeight="100" ScrollViewer.VerticalScrollBarVisibility="Auto">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">

@@ -108,6 +108,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public string EnvironmentCreationClubListingsSource => _environmentStateProvider.CreationClubListingsSource.ToString();
     public int EnvironmentCreationClubPluginsCount => _environmentStateProvider.CreationClubPluginsCount;
     public int EnvironmentCreationClubPluginsInLoadOrderCount => _environmentStateProvider.CreationClubPluginsInLoadOrderCount;
+    public bool EnvironmentLoadOrderIsVanillaOnly => _environmentStateProvider.LoadOrderIsVanillaOnly;
 
     // --- Existing & Modified Properties ---
     [Reactive] public string ModsFolder { get; set; }
@@ -542,6 +543,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
                 this.RaisePropertyChanged(nameof(EnvironmentCreationClubListingsSource));
                 this.RaisePropertyChanged(nameof(EnvironmentCreationClubPluginsCount));
                 this.RaisePropertyChanged(nameof(EnvironmentCreationClubPluginsInLoadOrderCount));
+                this.RaisePropertyChanged(nameof(EnvironmentLoadOrderIsVanillaOnly));
             })
             .DisposeWith(_disposables);
 
