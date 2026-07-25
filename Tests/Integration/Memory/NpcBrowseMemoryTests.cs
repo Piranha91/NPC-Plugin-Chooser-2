@@ -103,45 +103,72 @@ public class NpcBrowseMemoryTests
             await harness.DriveStartupPopulationAsync();
             var bar = harness.NpcSelectionBar;
 
-            // Browse to the first NPC that yields tiles; capture that tile set.
-            VM_NpcsMenuMugshot[]? firstTiles = null;
-            int browsedAway = 0;
             const int browseAwayTarget = 3;
             const int maxScan = 250;
+            // A tile set worth asserting on. Taking the *first* NPC that yields any tiles picks a
+            // vanilla NPC with only the "Base Game" source — a single tile, which cannot distinguish
+            // "disposes the whole set" from "disposes the first one". Keep scanning for a genuinely
+            // multi-source NPC and stop early once one is good enough, so the run stays quick.
+            const int goodEnoughTiles = 3;
+
+            // Phase 1: find the NPC with the most appearance sources. Only the count is recorded —
+            // browsing on is what disposes the tiles, so the instances themselves can't be held here.
+            VM_NpcsMenuSelection? richest = null;
+            int richestCount = 0;
             int scanned = 0;
             foreach (var npc in bar.AllNpcs)
             {
                 if (scanned++ >= maxScan) break;
                 var current = await harness.SelectAndWaitAsync(npc);
-                if ((current?.Count ?? 0) == 0) continue;
-
-                if (firstTiles == null)
+                int count = current?.Count ?? 0;
+                if (count > richestCount)
                 {
-                    firstTiles = current!.ToArray();
-                    // While these tiles belong to the displayed NPC they must be live (not disposed).
-                    firstTiles.Should().OnlyContain(t => !IsTileDisposed(t),
-                        "the currently-displayed NPC's tiles must not be disposed");
+                    richest = npc;
+                    richestCount = count;
                 }
-                else
-                {
-                    browsedAway++;
-                    if (browsedAway >= browseAwayTarget) break;
-                }
-                current = null;
+                if (richestCount >= goodEnoughTiles) break;
             }
 
-            if (firstTiles == null || browsedAway < browseAwayTarget)
+            if (richest == null || richestCount == 0)
             {
-                _out.WriteLine($"SKIP: not enough tiled NPCs to browse ({scanned} scanned). " +
+                _out.WriteLine($"SKIP: no NPC yielded tiles ({scanned} scanned). " +
                                $"Configure {CuratedMugshotsFolder} or appearance mods.");
                 return;
             }
 
-            var stillLive = firstTiles.Count(t => !IsTileDisposed(t));
-            _out.WriteLine($"First NPC had {firstTiles.Length} tiles; after browsing {browsedAway} NPCs away, " +
-                           $"{firstTiles.Length - stillLive}/{firstTiles.Length} disposed.");
+            // Phase 2: go back to that NPC for a fresh tile set, then browse away from it.
+            var tiles = (await harness.SelectAndWaitAsync(richest))?.ToArray();
+            if (tiles == null || tiles.Length == 0)
+            {
+                _out.WriteLine("SKIP: re-selecting the richest NPC yielded no tiles.");
+                return;
+            }
 
-            firstTiles.Should().OnlyContain(t => IsTileDisposed(t),
+            // While these tiles belong to the displayed NPC they must be live (not disposed).
+            tiles.Should().OnlyContain(t => !IsTileDisposed(t),
+                "the currently-displayed NPC's tiles must not be disposed");
+
+            int browsedAway = 0;
+            foreach (var npc in bar.AllNpcs)
+            {
+                if (ReferenceEquals(npc, richest)) continue;
+                await harness.SelectAndWaitAsync(npc);
+                if (++browsedAway >= browseAwayTarget) break;
+            }
+
+            browsedAway.Should().BeGreaterThan(0, "the bar should hold more than one NPC to browse between");
+
+            var stillLive = tiles.Count(t => !IsTileDisposed(t));
+            _out.WriteLine($"Richest of {scanned} scanned NPCs ('{richest.DisplayName}') had {tiles.Length} tiles; " +
+                           $"after browsing {browsedAway} NPCs away, {tiles.Length - stillLive}/{tiles.Length} disposed.");
+
+            if (tiles.Length == 1)
+            {
+                _out.WriteLine("NOTE: only a single-tile NPC was reachable — this run cannot distinguish " +
+                               "'disposes the whole set' from 'disposes the first tile'.");
+            }
+
+            tiles.Should().OnlyContain(t => IsTileDisposed(t),
                 "browsing away from an NPC must dispose its VM_NpcsMenuMugshot tiles — each tile's subscription " +
                 "to the singleton NpcConsistencyProvider is what rooted it for the app's lifetime, so a tile " +
                 "left undisposed is the leak fixed in commit 2312cb6 regressing");
