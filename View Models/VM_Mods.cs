@@ -3626,6 +3626,29 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 new HashSet<FormKey>(), new HashSet<FormKey>());
 
             ApplyFilters(); // Refresh the ModSettingsList (left panel)
+
+            // Dispose the removed VM so its subscriptions to the SingleInstance VM_Settings (and the
+            // other singletons it observes) are severed. An undisposed VM_ModSetting stays rooted for
+            // the life of the app -- the leak class fixed in 2312cb6, which covered the population /
+            // prune / consolidation / blank-slate paths but left this one out. It matters more now
+            // that RefreshSingleModSettingAsync drops rejected entries (own-output token, no
+            // appearance data) through here, so it runs on every refresh, not just a manual delete.
+            //
+            // Deferred to the next scheduler tick rather than disposed inline: VM_ModSetting.Delete
+            // and VM_ModSetting.RefreshAsync both call this from INSIDE one of the VM's own
+            // ReactiveCommands, and those commands live in the composite being disposed -- tearing
+            // one down while its execution pipeline is still unwinding faults the command (and its
+            // ThrownExceptions channel is disposed too, so the fault escalates to the default
+            // handler). The membership re-check keeps a re-added instance from being disposed out
+            // from under the list.
+            var vmToDispose = modSettingToRemove;
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                if (!_allModSettingsInternal.Contains(vmToDispose))
+                {
+                    vmToDispose.Dispose();
+                }
+            });
         }
         else
         {

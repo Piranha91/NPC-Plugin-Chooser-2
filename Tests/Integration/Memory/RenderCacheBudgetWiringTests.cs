@@ -22,6 +22,20 @@ public class RenderCacheBudgetWiringTests
     private readonly ITestOutputHelper _out;
     public RenderCacheBudgetWiringTests(WpfStaFixture sta, ITestOutputHelper output) => _out = output;
 
+    /// <summary>
+    /// The pixel cache's share of the budget pool, read from the renderer's own constant rather than
+    /// duplicated here. It is a tuning value (retuned 0.5 -> 0.75 by CV.R commit 6df409d0, "Retune
+    /// decode-cache ratio to 75:9:1"), and a hard-coded copy silently goes stale on the next retune —
+    /// which is exactly how this test came to fail. Reading the source of truth keeps the assertion
+    /// about the *wiring* (does the mode reach the budget?) instead of the tuning.
+    /// </summary>
+    private static double PixelCacheFraction()
+    {
+        var field = typeof(CharacterPreviewCache)
+            .GetField("PixelCacheFreeRamFraction", BindingFlags.NonPublic | BindingFlags.Static);
+        return field is null ? 0.75 : (double)field.GetValue(null)!;
+    }
+
     private static long PixelBudgetFor(RenderCacheMode mode, double fixedGb)
     {
         var settings = new Settings { SkyrimRelease = SkyrimRelease.SkyrimSE };
@@ -56,10 +70,10 @@ public class RenderCacheBudgetWiringTests
         // Disabled → zero budget (caches retain nothing).
         disabled.Should().Be(0);
 
-        // Fixed 4 GB → pixel cache gets its 0.5 fraction of the 4 GB pool = ~2 GB (subject to the
+        // Fixed 4 GB → pixel cache gets its fraction of the 4 GB pool (subject to the
         // fraction-of-total-RAM ceiling on a small machine).
         double gb = 1024.0 * 1024 * 1024;
-        long expectedFixed = (long)(4.0 * 0.5 * gb);
+        long expectedFixed = (long)(4.0 * PixelCacheFraction() * gb);
         fixed4.Should().BeGreaterThan(0);
         fixed4.Should().BeLessThanOrEqualTo(expectedFixed + 1,
             "the fixed pool times the pixel fraction is the target (a low-RAM machine may clamp it lower)");
