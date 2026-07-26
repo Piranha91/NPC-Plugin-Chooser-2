@@ -563,16 +563,32 @@ public class NpcMeshResolver
     /// mode so the harness override and the output-mode gate are honored.</summary>
     private IReadOnlySet<string> ComputeAntlerHideHeadShapeNames(INpcGetter npcGetter, ModSetting? modSetting,
         ILinkCache linkCache, NpcResolutionContext? context)
+        => CollectAntlerHiddenShapeNames(npcGetter, modSetting, _settings,
+            link => ResolveRecord<IHeadPartGetter>(link, linkCache, context));
+
+    /// <summary>
+    /// The FaceGen shape names antler Remove hides, resolved through a
+    /// caller-supplied head-part resolver. Shared with
+    /// <c>OutfitDisplayResolver.ComputeWigIdentitySuffix</c>, which folds the
+    /// result into the mugshot's depicted-content identity stamp: hiding baked
+    /// antlers changes the image, so the tile must go stale when the set changes
+    /// (switching a mod to Remove, or designating a head part in the 3D preview).
+    /// Keeping both callers on one implementation is the point — a private copy
+    /// in the identity resolver would silently drift from what is drawn.
+    /// </summary>
+    internal static IReadOnlySet<string> CollectAntlerHiddenShapeNames(
+        INpcGetter npcGetter, ModSetting? modSetting, Settings settings,
+        Func<IFormLinkGetter<IHeadPartGetter>, IHeadPartGetter?> resolveHeadPart)
     {
         if (modSetting == null) return EmptyShapeNameSet;
-        if (_settings.GetEffectiveRenderAntlerMode(modSetting) != AntlerHandlingMode.Remove)
+        if (settings.GetEffectiveRenderAntlerMode(modSetting) != AntlerHandlingMode.Remove)
             return EmptyShapeNameSet;
 
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var hpLink in npcGetter.HeadParts)
         {
             if (hpLink == null || hpLink.IsNull) continue;
-            var hpRec = ResolveRecord<IHeadPartGetter>(hpLink, linkCache, context);
+            var hpRec = resolveHeadPart(hpLink);
             if (hpRec == null) continue;
 
             // Mirror WigForwarder.CollectAntlerHeadPartRemoval: the whole head part is
@@ -581,7 +597,7 @@ public class NpcMeshResolver
             // hide only the individually-designated ExtraPart shapes.
             bool groupAuto = modSetting.DetectedAntlerHeadParts.Contains(hpLink.FormKey);
             bool mainRemoved = groupAuto ||
-                _settings.IsManualAntlerHeadPart(hpRec.EditorID, modSetting.DisplayName, npcGetter.FormKey);
+                settings.IsManualAntlerHeadPart(hpRec.EditorID, modSetting.DisplayName, npcGetter.FormKey);
 
             if (mainRemoved && !string.IsNullOrEmpty(hpRec.EditorID)) names.Add(hpRec.EditorID);
             if (hpRec.ExtraParts != null)
@@ -589,10 +605,10 @@ public class NpcMeshResolver
                 foreach (var extraLink in hpRec.ExtraParts)
                 {
                     if (extraLink == null || extraLink.IsNull) continue;
-                    var extraRec = ResolveRecord<IHeadPartGetter>(extraLink, linkCache, context);
+                    var extraRec = resolveHeadPart(extraLink);
                     if (string.IsNullOrEmpty(extraRec?.EditorID)) continue;
                     if (mainRemoved ||
-                        _settings.IsManualAntlerHeadPart(extraRec.EditorID, modSetting.DisplayName, npcGetter.FormKey))
+                        settings.IsManualAntlerHeadPart(extraRec.EditorID, modSetting.DisplayName, npcGetter.FormKey))
                         names.Add(extraRec.EditorID);
                 }
             }

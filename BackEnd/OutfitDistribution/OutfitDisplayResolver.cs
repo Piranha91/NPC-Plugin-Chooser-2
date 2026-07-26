@@ -508,18 +508,35 @@ public class OutfitDisplayResolver
         bool includeDefaultOutfitRenderFlag)
     {
         if (modSetting == null) return string.Empty;
+
+        // RaceMenu tint-emulation marker. The emulation only repaints a WORN
+        // hair-slot wig, so it belongs on the per-tile identity rather than the
+        // global settings hash — hashing it for everyone made one toggle flip
+        // re-render the whole library. It is emitted here, LIVE from the current
+        // wig detections, deliberately NOT from a value stamped into the PNG: a
+        // stamped "this NPC has no wig" goes wrong the moment a mod updates to
+        // add one, and would then suppress the very re-render that update needs.
+        // Computed before the handling-mode gate below because a worn wig is
+        // repainted whatever the handling mode is — including None, and
+        // including plain Create record mode where wig handling is inert.
+        string tintMarker =
+            _settings.InternalMugshot.EmulateRaceMenuHairSlotTint &&
+            _settings.GetEffectiveNpcWigSources(modSetting, sourceNpcFormKey).Count > 0
+                ? "+wigtint"
+                : string.Empty;
+
         var wigMode = _settings.GetEffectiveRenderWigMode(modSetting);
         var antlerMode = _settings.GetEffectiveRenderAntlerMode(modSetting);
-        if (wigMode == WigHandlingMode.None && antlerMode == AntlerHandlingMode.None) return string.Empty;
+        if (wigMode == WigHandlingMode.None && antlerMode == AntlerHandlingMode.None) return tintMarker;
         var linkCache = _env.LinkCache;
-        if (linkCache == null) return string.Empty;
+        if (linkCache == null) return tintMarker;
 
         var donor = ResolveDonorNpc(sourceNpcFormKey, modSetting, linkCache);
-        if (donor == null) return string.Empty;
+        if (donor == null) return tintMarker;
         bool hasWnam = donor.WornArmor != null && !donor.WornArmor.IsNull;
 
         var folders = modSetting.CorrespondingFolderPaths.ToHashSet();
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(tintMarker);
         bool outfitHasDetectedWig = false;
 
         // Outfit (source 1) segments — unchanged semantics; skipped (not bailed)
@@ -638,6 +655,24 @@ public class OutfitDisplayResolver
                     sb.Append("+wnamwig[" + WigHandlingMode.ConvertToHeadParts + ":" + effectiveArmaKeys[0] + "]");
                 }
             }
+        }
+
+        // FaceGen-baked antler segment (antler source 3). Remove hides these
+        // shapes from the rendered head (NpcMeshResolver.HideHeadShapeNames), so
+        // switching a mod to Remove — or designating a head part through the 3D
+        // preview's "Set Antler Head Parts" — changes the image and must
+        // re-stale the tile. The outfit-antler segment above only covers ARMOs
+        // in the donor's outfit (source 1); source 2 (a WornArmor antler ARMA)
+        // stays out because the preview never draws those slots.
+        // Deliberately shares NpcMeshResolver's collector rather than mirroring
+        // it, so the stamp cannot drift from what is actually hidden.
+        var hiddenAntlerShapes = CharacterViewerHost.NpcMeshResolver.CollectAntlerHiddenShapeNames(
+            donor, modSetting, _settings,
+            link => linkCache.TryResolve<IHeadPartGetter>(link.FormKey, out var hp) ? hp : null);
+        if (hiddenAntlerShapes.Count > 0)
+        {
+            sb.Append("+fgantler[" + string.Join(",",
+                hiddenAntlerShapes.OrderBy(s => s, StringComparer.OrdinalIgnoreCase)) + "]");
         }
 
         return sb.ToString();

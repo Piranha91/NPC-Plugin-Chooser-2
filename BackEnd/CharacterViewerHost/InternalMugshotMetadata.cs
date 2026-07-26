@@ -119,9 +119,26 @@ public static class InternalMugshotMetadata
     /// falls back to the record, doubles it (the CK bakes 2x HCLR — measured
     /// exactly on 336 of 344 High Poly NPC Overhaul FaceGens). v16 tiles
     /// otherwise hash-match and would never regenerate.</item>
+    /// <item>18: added the SELECTED lighting preset's resolved CONTENTS (layout
+    /// angles/intensities + colour scheme RGB). v0 hashes only the preset NAME,
+    /// so saving over a user preset or deleting the selected one changed every
+    /// pixel without drifting the hash. Built-in presets are compile-time
+    /// constants, so tiles using one never drift from this; a v17 tile compared
+    /// at schemaVersion=17 excludes the entries and stays valid until
+    /// regenerated.</item>
+    /// <item>19: RETIRED the v16/v17 RaceMenu tint-emulation entries. The
+    /// emulation only repaints a WORN hair-slot wig, so hashing it globally
+    /// meant flipping the toggle re-rendered the whole library to reproduce
+    /// identical pixels for every NPC without one. It moved to the per-tile wig
+    /// identity suffix (<c>OutfitDisplayResolver.ComputeWigIdentitySuffix</c>,
+    /// "+wigtint"), which is recomputed LIVE at check time from the current wig
+    /// detections — so a mod that later adds a wig starts emitting the marker
+    /// and the tile goes stale, which a value stamped into the PNG could never
+    /// do. Tiles stamped 16-18 keep the entries and still reproduce their
+    /// stamped hash.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 17;
+    public const int PipelineSchemaVersion = 19;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -156,6 +173,7 @@ public static class InternalMugshotMetadata
     /// <summary>Identity value stamped when no outfit is depicted (attire
     /// toggle off, or the NPC resolves to no outfit).</summary>
     public const string NoOutfitIdentity = "none";
+
 
     public static string Build(
         FormKey npcFormKey,
@@ -601,10 +619,55 @@ public static class InternalMugshotMetadata
         // as-is); appending inside the v16 boundary changes the hash a v16 tile
         // reproduces, so exactly those tiles go stale. v15 and older are
         // untouched — they never had the entry.
-        if (schemaVersion >= 16)
+        // Retired at v19: the RaceMenu tint emulation only repaints a WORN
+        // hair-slot wig, so hashing it globally made one toggle flip re-render
+        // the entire library. It moved to the per-tile wig identity suffix
+        // (OutfitDisplayResolver.ComputeWigIdentitySuffix, "+wigtint"), which is
+        // recomputed live at check time. Tiles stamped 16-18 still need these
+        // entries to reproduce their stamped hash.
+        if (schemaVersion >= 16 && schemaVersion < 19)
         {
             sb.Append('|').Append(cfg.EmulateRaceMenuHairSlotTint ? '1' : '0');
             sb.Append("|hairslot-v17");
+        }
+
+        // === schema v18 fields (lighting preset CONTENTS) ===
+        // The v0 entries hash the selected preset's NAME, which misses every way
+        // the light rig can change under a stable name: saving over a user preset
+        // (the editor offers "A user preset named 'X' already exists. Overwrite
+        // it?"), or deleting the selected preset so the name silently resolves to
+        // the default. Both change every pixel. Resolving the name the same way
+        // the renderer does and hashing the resolved VALUES closes all of those,
+        // and costs nothing for built-ins (their values are compile-time
+        // constants, so tiles on a built-in preset never drift from this).
+        // Only the SELECTED preset is hashed — adding or editing an unrelated
+        // saved preset must not re-stale the whole library.
+        if (schemaVersion >= 18)
+        {
+            var layout = CharacterViewerLightingPresets.FindLayoutOrDefault(
+                cfg.LightingLayoutName ?? "", cfg.UserLightingLayouts);
+            sb.Append('|').Append(layout.Ambient.ToString("R", inv));
+            sb.Append(',').Append(layout.KeyAzimuth.ToString("R", inv));
+            sb.Append(',').Append(layout.KeyElevation.ToString("R", inv));
+            sb.Append(',').Append(layout.KeyIntensity.ToString("R", inv));
+            sb.Append(',').Append(layout.FillAzimuth.ToString("R", inv));
+            sb.Append(',').Append(layout.FillElevation.ToString("R", inv));
+            sb.Append(',').Append(layout.FillIntensity.ToString("R", inv));
+            sb.Append(',').Append(layout.RimAzimuth.ToString("R", inv));
+            sb.Append(',').Append(layout.RimElevation.ToString("R", inv));
+            sb.Append(',').Append(layout.RimIntensity.ToString("R", inv));
+
+            var scheme = CharacterViewerLightingPresets.FindColorSchemeOrDefault(
+                cfg.LightingColorSchemeName ?? "", cfg.UserLightingColorSchemes);
+            sb.Append('|').Append(scheme.KeyR.ToString("R", inv));
+            sb.Append(',').Append(scheme.KeyG.ToString("R", inv));
+            sb.Append(',').Append(scheme.KeyB.ToString("R", inv));
+            sb.Append(',').Append(scheme.FillR.ToString("R", inv));
+            sb.Append(',').Append(scheme.FillG.ToString("R", inv));
+            sb.Append(',').Append(scheme.FillB.ToString("R", inv));
+            sb.Append(',').Append(scheme.RimR.ToString("R", inv));
+            sb.Append(',').Append(scheme.RimG.ToString("R", inv));
+            sb.Append(',').Append(scheme.RimB.ToString("R", inv));
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
