@@ -1844,7 +1844,9 @@ public class Patcher : OptionalUIModule
                         convert.ShapeRenames,
                         convert.FaceGenShapeNamesToStrip,
                         convert.PhysicsXmlNewDataRelPath,
-                        SynthesizeHairPartitionIfNoDonor: convert.SynthesizeHairPartitionTemplate),
+                        SynthesizeHairPartitionIfNoDonor: convert.SynthesizeHairPartitionTemplate,
+                        HairTintMode: convert.HairTintMode,
+                        HairTintRgb: convert.HairTintRgb),
                     msg => AppendLog("    " + msg, false, false));
 
                 if (baked > 0)

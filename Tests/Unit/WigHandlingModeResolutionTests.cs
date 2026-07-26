@@ -414,6 +414,49 @@ public class WigHandlingModeResolutionTests
         settings.ManualWigArmatures.Should().BeEmpty("the entry is dropped when its last source is gone");
     }
 
+    // --- Converted-wig hair tint (Settings.GetEffectiveWigHairTintMode) ---
+    // Same override-beats-default shape as the handling modes, but deliberately
+    // NOT gated on the output mode: it is only ever read by the wig→HeadPart
+    // converter, which already runs behind GetEffectiveWigMode.
+
+    [Fact]
+    public void WigHairTint_DefaultsToAuto()
+    {
+        new Settings().DefaultWigHairTintMode.Should().Be(WigHairTintMode.Auto);
+        new Settings().GetEffectiveWigHairTintMode(ModWithWig()).Should().Be(WigHairTintMode.Auto);
+    }
+
+    [Fact]
+    public void WigHairTint_UsesGlobalDefault_WhenPerModIsNull()
+    {
+        var settings = new Settings { DefaultWigHairTintMode = WigHairTintMode.Always };
+
+        settings.GetEffectiveWigHairTintMode(ModWithWig()).Should().Be(WigHairTintMode.Always);
+    }
+
+    [Fact]
+    public void WigHairTint_PerModOverrideBeatsGlobalDefault()
+    {
+        var settings = new Settings { DefaultWigHairTintMode = WigHairTintMode.Always };
+        var mod = ModWithWig();
+        mod.ModWigHairTintMode = WigHairTintMode.Never;
+
+        settings.GetEffectiveWigHairTintMode(mod).Should().Be(WigHairTintMode.Never);
+    }
+
+    [Fact]
+    public void WigHairTint_FallsBackToTheGlobalDefault_WithoutAMod()
+    {
+        // A mod with no wigs (or none at all) can't carry a meaningful override,
+        // so the global default answers — never None, since there is no
+        // "inactive" state for a color choice.
+        var settings = new Settings { DefaultWigHairTintMode = WigHairTintMode.Never };
+
+        settings.GetEffectiveWigHairTintMode(null).Should().Be(WigHairTintMode.Never);
+        settings.GetEffectiveWigHairTintMode(new ModSetting { DisplayName = "Plain" })
+            .Should().Be(WigHairTintMode.Never);
+    }
+
     [Fact]
     public void ModSetting_HasWigSources_ReflectsEitherWigSet()
     {

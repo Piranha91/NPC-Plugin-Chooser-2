@@ -134,6 +134,11 @@ public class ModSetting
     public WigHandlingMode? ModWigHandlingMode { get; set; } = null;
     public AntlerHandlingMode? ModAntlerHandlingMode { get; set; } = null;
 
+    /// <summary>Per-mod override of <see cref="Settings.DefaultWigHairTintMode"/>
+    /// (null = use the global default). Only meaningful when this mod's
+    /// effective wig mode is <see cref="WigHandlingMode.ConvertToHeadParts"/>.</summary>
+    public WigHairTintMode? ModWigHairTintMode { get; set; } = null;
+
     [JsonIgnore]
     public bool HasWigArmors => DetectedWigArmors.Count > 0;
 

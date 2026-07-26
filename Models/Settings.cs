@@ -140,6 +140,13 @@ public class Settings
     public bool DefaultIncludeAllOverrides { get; set; } = false;
     public WigHandlingMode DefaultWigHandlingMode { get; set; } = WigHandlingMode.ForwardToSkin;
 
+    // Whether ConvertToHeadParts re-tints a converted wig with the NPC's hair
+    // color (see WigHairTintMode). Auto fixes the placeholder-tint mods without
+    // touching wigs whose textures are already pre-colored; an absent field in
+    // an old Settings.json deserializes to Auto (no migration).
+    public WigHairTintMode DefaultWigHairTintMode { get; set; } = WigHairTintMode.Auto;
+
+
     // Antlers are handled independently of hair-slot wigs (see AntlerHandlingMode).
     // Default ForwardToSkin preserves the pre-split behavior (the old unified mode
     // forwarded antlers to the skin), so existing installs are unchanged; an absent
@@ -198,6 +205,22 @@ public class Settings
         if (modSetting == null || !ModHasWigs(modSetting)) return WigHandlingMode.None;
         if (!WigHandlingActiveForOutputMode) return WigHandlingMode.None;
         return modSetting.ModWigHandlingMode ?? DefaultWigHandlingMode;
+    }
+
+    /// <summary>
+    /// The wig hair-tint mode that will actually apply to
+    /// <paramref name="modSetting"/>: the per-mod override when set, else the
+    /// global default. Gated on wig detection like
+    /// <see cref="GetEffectiveWigMode"/>, but NOT on the output mode — the
+    /// caller (the wig→HeadPart converter) only runs when
+    /// <see cref="GetEffectiveWigMode"/> already returned
+    /// <see cref="WigHandlingMode.ConvertToHeadParts"/>, and the renderer needs
+    /// the same answer while previewing.
+    /// </summary>
+    public WigHairTintMode GetEffectiveWigHairTintMode(ModSetting? modSetting)
+    {
+        if (modSetting == null || !ModHasWigs(modSetting)) return DefaultWigHairTintMode;
+        return modSetting.ModWigHairTintMode ?? DefaultWigHairTintMode;
     }
 
     /// <summary>
@@ -1146,6 +1169,17 @@ public sealed class InternalMugshotSettings
     // dark-tint and warm-blonde hair are exempt. Pixel-affecting -> included in
     // the mugshot staleness hash (pipeline_schema v14).
     public float HairAlbedoCompensate { get; set; } = 1.0f;
+
+    // RaceMenu's skee64 automatically tints WORN hair-slot items that use the
+    // HairTint shader (bEnableTintHairSlot); the vanilla engine does not. Wig
+    // meshes are routinely authored with a near-black placeholder tint on that
+    // assumption, so without emulating it every render of such a mod (High Poly
+    // NPC Overhaul most visibly) is black-haired while the game shows the right
+    // color. On by default — turn it off for a load order with no RaceMenu,
+    // where the black hair IS what the game renders. Applies to worn hair-slot
+    // items only; FaceGen-baked hair keeps the engine's baked-tint-wins rule.
+    // Pixel-affecting -> included in the mugshot staleness hash (v16).
+    public bool EmulateRaceMenuHairSlotTint { get; set; } = true;
 
     // Daylight boost (default ON at a gentle 1.1 gain). Scales the directional
     // lights by DaylightBoostIntensity + slight warmth (ambient untouched),

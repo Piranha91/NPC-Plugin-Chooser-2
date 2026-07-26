@@ -179,6 +179,16 @@ public class NifHandler
     /// template via <see cref="CreateSyntheticHairPartitionTemplate"/> instead
     /// of baking partition-less (dark-face risk, invariant 4). Default off —
     /// the proven outfit-wig path always harvests.</param>
+    /// <param name="HairTintMode">Whether to overwrite the baked wig's
+    /// <c>hairTintColor</c> with this NPC's hair color — see
+    /// <see cref="Models.WigHairTintMode"/> for why a converted wig needs it
+    /// (skee64 stops tinting geometry that is no longer worn armor).</param>
+    /// <param name="HairTintRgb">The NPC record's resolved HCLR as sRGB 0..1 —
+    /// the space <c>hairTintColor</c> is stored in. This is the value skee64
+    /// would have applied to the wig while it was still worn, so baking it
+    /// reproduces the pre-conversion in-game appearance exactly. Null falls back
+    /// to the hair color harvested from the donor FaceGen's own HairTint
+    /// shapes.</param>
     public sealed record WigBakeInstruction(
         string FaceGenNifPath,
         string WigNifPath,
@@ -186,7 +196,9 @@ public class NifHandler
         IReadOnlyCollection<string> ShapeNamesToStrip,
         string? PhysicsXmlNewDataRelPath,
         IReadOnlyCollection<string>? OnlyRenderShapes = null,
-        bool SynthesizeHairPartitionIfNoDonor = false);
+        bool SynthesizeHairPartitionIfNoDonor = false,
+        Models.WigHairTintMode HairTintMode = Models.WigHairTintMode.Auto,
+        (float R, float G, float B)? HairTintRgb = null);
 
     /// <summary>
     /// Names of the render shapes (shapes carrying a shader property) in a NIF, in
@@ -237,6 +249,128 @@ public class NifHandler
             if (nif.GetShapePartitions(shape, template, triParts)) return true;
         }
         return false;
+    }
+
+    /// <summary>BSLightingShaderProperty shader type for hair (BSLSP_HAIRTINT).
+    /// The engine multiplies the diffuse by <c>hairTintColor</c> on these
+    /// shapes and on no others.</summary>
+    private const uint HairTintShaderType = 6;
+
+    /// <summary>A baked tint at or above this on every channel counts as
+    /// neutral white — a no-op multiply, i.e. the author pre-colored the
+    /// texture and wants no engine tinting (see
+    /// <see cref="Models.WigHairTintMode.Auto"/>).</summary>
+    private const float NeutralTintThreshold = 0.98f;
+
+    private static bool IsNeutralTint((float R, float G, float B) tint) =>
+        tint.R >= NeutralTintThreshold &&
+        tint.G >= NeutralTintThreshold &&
+        tint.B >= NeutralTintThreshold;
+
+    /// <summary>The shape's baked <c>hairTintColor</c>, or null when it carries
+    /// no BSLightingShaderProperty or is not a HairTint shape.</summary>
+    private static (float R, float G, float B)? TryGetHairTint(NiHeader header, NiShape shape)
+    {
+        var shaderRef = shape.ShaderPropertyRef();
+        if (shaderRef == null || shaderRef.IsEmpty()) return null;
+        if (header.GetBlockById(shaderRef.index) is not BSLightingShaderProperty bslsp) return null;
+        if (bslsp.bslspShaderType != HairTintShaderType) return null;
+        var tint = bslsp.hairTintColor;
+        if (tint == null) return null;
+        return (tint.x, tint.y, tint.z);
+    }
+
+    /// <summary>Writes <paramref name="rgb"/> into the shape's HairTint shader.
+    /// No-op (returns false) for shapes that aren't HairTint.</summary>
+    private static bool TrySetHairTint(NiHeader header, NiShape shape, (float R, float G, float B) rgb)
+    {
+        var shaderRef = shape.ShaderPropertyRef();
+        if (shaderRef == null || shaderRef.IsEmpty()) return false;
+        if (header.GetBlockById(shaderRef.index) is not BSLightingShaderProperty bslsp) return false;
+        if (bslsp.bslspShaderType != HairTintShaderType) return false;
+        using var tint = new Vector3();
+        tint.x = rgb.R;
+        tint.y = rgb.G;
+        tint.z = rgb.B;
+        bslsp.hairTintColor = tint;
+        return true;
+    }
+
+    /// <summary>
+    /// The hair color the CK baked into this FaceGen — read off its own HairTint
+    /// shapes. <paramref name="preferredShapeNames"/> (the donor hair about to be
+    /// stripped) wins; otherwise any HairTint shape does, which on a bald FaceGen
+    /// means the brows or beard. Those carry the same hair color the CK writes to
+    /// hair, so a converted wig tinted from them matches the rest of the NPC's
+    /// hair-colored geometry. Neutral-white tints are skipped as uninformative.
+    /// Must run BEFORE the donor hair strip.
+    /// </summary>
+    private static (float R, float G, float B)? HarvestFaceGenHairTint(
+        NifFile faceGen, IReadOnlyCollection<string> preferredShapeNames, Action<string>? log = null)
+    {
+        NiHeader header = faceGen.GetHeader();
+        var preferred = preferredShapeNames as ISet<string> ??
+                        new HashSet<string>(preferredShapeNames, StringComparer.OrdinalIgnoreCase);
+        (float R, float G, float B)? fallback = null;
+        string fallbackName = string.Empty;
+
+        using var shapes = faceGen.GetShapes();
+        foreach (var shape in shapes)
+        {
+            var tint = TryGetHairTint(header, shape);
+            if (tint == null || IsNeutralTint(tint.Value)) continue;
+            string name = shape.name?.get() ?? string.Empty;
+            if (preferred.Contains(name))
+            {
+                log?.Invoke($"BakeWigIntoFaceGen: harvested hair tint " +
+                            $"({tint.Value.R:F4}, {tint.Value.G:F4}, {tint.Value.B:F4}) from donor hair '{name}'.");
+                return tint;
+            }
+            if (fallback == null)
+            {
+                fallback = tint;
+                fallbackName = name;
+            }
+        }
+
+        if (fallback != null)
+        {
+            log?.Invoke($"BakeWigIntoFaceGen: harvested hair tint " +
+                        $"({fallback.Value.R:F4}, {fallback.Value.G:F4}, {fallback.Value.B:F4}) " +
+                        $"from FaceGen HairTint shape '{fallbackName}' (no donor hair shape).");
+        }
+        return fallback;
+    }
+
+    /// <summary>
+    /// Converts an HCLR record color to the FaceGen <c>hairTintColor</c> space:
+    /// the CK bakes <b>2 ×</b> the hair color. Measured over the 344 High Poly
+    /// NPC Overhaul FaceGens whose NPC has a resolvable HCLR — 336 are exactly
+    /// 2× on all three channels (the 8 outliers are NPCs whose FaceGen was
+    /// exported against a different hair color than the record now carries).
+    /// Alvor is the clean case: <c>HairColor05DarkBlond</c> = (56, 59, 44) and
+    /// his baked brow/beard tint is (112, 118, 88).
+    ///
+    /// <para>Baking the raw record value instead leaves a converted wig at half
+    /// the brightness of the same NPC's beard and brows.</para>
+    /// </summary>
+    public static (float R, float G, float B) HclrToFaceGenTint((float R, float G, float B) hclr) =>
+        (Math.Min(hclr.R * 2f, 1f), Math.Min(hclr.G * 2f, 1f), Math.Min(hclr.B * 2f, 1f));
+
+    /// <summary>
+    /// The hair color the CK baked into a FaceGen NIF, read off its HairTint
+    /// shapes (hair if present, else brows/beard — the CK writes the NPC's hair
+    /// color to all of them). Null when the file can't be loaded or carries no
+    /// informative HairTint shape. Used by the renderer to tint a worn hair-slot
+    /// wig the way RaceMenu does, matching what
+    /// <see cref="BakeWigIntoFaceGen"/> would bake for the same NPC.
+    /// </summary>
+    public static (float R, float G, float B)? GetFaceGenHairTint(string faceGenNifPath)
+    {
+        if (string.IsNullOrWhiteSpace(faceGenNifPath) || !File.Exists(faceGenNifPath)) return null;
+        using NifFile nif = new NifFile();
+        if (nif.Load(faceGenNifPath) != 0) return null;
+        return HarvestFaceGenHairTint(nif, Array.Empty<string>());
     }
 
     /// <summary>SSE facegen hair dismember partition (SBP_131_HAIR) — the ID
@@ -383,6 +517,43 @@ public class NifHandler
         {
             log?.Invoke("BakeWigIntoFaceGen: WARNING - no donor hair shape with partitions found; " +
                         "wig shapes keep their source skin-instance types.");
+        }
+
+        // 0a-2. Decide the hair color to bake into the wig, BEFORE the donor hair
+        //       strip (the harvest fallback reads shapes the strip removes). A
+        //       hair-slot wig is tinted at runtime by RaceMenu's skee64
+        //       (bEnableTintHairSlot) from the actor's hair color; baking it into
+        //       the FaceGen puts it out of skee64's reach, so its placeholder
+        //       tint would become permanent. Writing the NPC's hair color in is
+        //       what the CK does when it exports FaceGen for a real hair part —
+        //       which is exactly what the wig is becoming.
+        //
+        //       The FaceGen's OWN HairTint shapes win over the HCLR record: the
+        //       CK wrote the same hair color to the hair, brows and beard, so
+        //       harvesting from them makes the converted wig match the rest of
+        //       that NPC's hair-colored geometry BY CONSTRUCTION. The record is
+        //       only a fallback, because the two genuinely disagree when a mod
+        //       later in the load order overrides the color record after the
+        //       appearance mod exported its FaceGen (Alvor: FaceGen baked from
+        //       HairColor05DarkBlond (56,59,44), winning override (54,41,37) —
+        //       using the record gave him red hair over a dark-blond beard).
+        (float R, float G, float B)? bakedHairTint = null;
+        if (ins.HairTintMode != Models.WigHairTintMode.Never)
+        {
+            bakedHairTint = HarvestFaceGenHairTint(faceGen, ins.ShapeNamesToStrip, log);
+            if (bakedHairTint == null && ins.HairTintRgb != null)
+            {
+                bakedHairTint = HclrToFaceGenTint(ins.HairTintRgb.Value);
+                log?.Invoke($"BakeWigIntoFaceGen: no FaceGen HairTint shape; hair tint from the NPC " +
+                            $"record HCLR ({ins.HairTintRgb.Value.R:F4}, {ins.HairTintRgb.Value.G:F4}, " +
+                            $"{ins.HairTintRgb.Value.B:F4}) x2 = ({bakedHairTint.Value.R:F4}, " +
+                            $"{bakedHairTint.Value.G:F4}, {bakedHairTint.Value.B:F4}).");
+            }
+            else if (bakedHairTint == null)
+            {
+                log?.Invoke("BakeWigIntoFaceGen: the FaceGen carries no HairTint shape and the NPC has " +
+                            "no hair color record; wig keeps its baked tint.");
+            }
         }
 
         // 0b. Normalize the wig scene in memory (never saved back to its path):
@@ -581,6 +752,41 @@ public class NifHandler
                 !string.IsNullOrEmpty(newName))
             {
                 NifFile.RenameShape(dest, newName);
+            }
+        }
+
+        // 5b. Re-tint the baked wig with this NPC's hair color. Only the CLONED
+        //     shapes in this FaceGen copy are touched — the wig NIF itself is
+        //     shared by every NPC wearing it and must keep its authored tint.
+        if (bakedHairTint != null)
+        {
+            int tinted = 0, skipped = 0;
+            foreach (var (_, dest, isRender) in clonedShapePairs)
+            {
+                if (!isRender) continue;
+                var current = TryGetHairTint(destHeader, dest);
+                if (current == null) continue; // not a HairTint shape
+                if (ins.HairTintMode == Models.WigHairTintMode.Auto && IsNeutralTint(current.Value))
+                {
+                    skipped++;
+                    continue;
+                }
+                if (TrySetHairTint(destHeader, dest, bakedHairTint.Value))
+                {
+                    tinted++;
+                    log?.Invoke($"BakeWigIntoFaceGen: hair tint '{dest.name?.get()}' " +
+                                $"({current.Value.R:F4}, {current.Value.G:F4}, {current.Value.B:F4}) -> " +
+                                $"({bakedHairTint.Value.R:F4}, {bakedHairTint.Value.G:F4}, {bakedHairTint.Value.B:F4}).");
+                }
+            }
+            if (skipped > 0)
+            {
+                log?.Invoke($"BakeWigIntoFaceGen: left {skipped} neutral-white wig shape(s) untinted " +
+                            $"(WigHairTintMode.Auto — the texture is pre-colored).");
+            }
+            if (tinted == 0 && skipped == 0)
+            {
+                log?.Invoke("BakeWigIntoFaceGen: no HairTint shapes in the baked wig; nothing re-tinted.");
             }
         }
 

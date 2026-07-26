@@ -415,6 +415,55 @@
                                 </ComboBox.ToolTip>
                             </ComboBox>
 
+                            <TextBlock Text="Converted Wig Hair Color:" Margin="0,0,0,2"/>
+                            <ComboBox ItemsSource="{Binding WigHairTintModes}"
+                                      SelectedValuePath="Key" DisplayMemberPath="Value"
+                                      SelectedValue="{Binding SelectedDefaultWigHairTintMode, Mode=TwoWay}"
+                                      MinWidth="120" HorizontalAlignment="Left"
+                                      Margin="0,0,0,10">
+                                <ComboBox.ToolTip>
+                                    <ToolTip>
+                                        <TextBlock TextWrapping="Wrap" Width="340">
+                                            Only applies to wigs handled with Convert To Headparts. Many wig meshes are
+                                            authored with a near-black placeholder hair color because they expect RaceMenu
+                                            to recolor them in game (RaceMenu automatically tints worn hair-slot items — it
+                                            is why some mods, notably High Poly NPC Overhaul, give every NPC black hair
+                                            until RaceMenu is installed). Once a wig is baked into the FaceGen file it is no
+                                            longer a worn item, so RaceMenu stops recoloring it and the placeholder becomes
+                                            permanent. This setting bakes the NPC's own hair color in instead, which is what
+                                            the Creation Kit does for normal hair.
+                                            <LineBreak/><LineBreak/>
+                                            Auto: recolor only wigs that carry a placeholder tint. Wigs whose textures are
+                                            already colored by their author (a neutral white tint) are left alone. The
+                                            default, and the safe choice.
+                                            <LineBreak/><LineBreak/>
+                                            Always: recolor every converted wig with the NPC's hair color, exactly as
+                                            RaceMenu would have done to the original worn wig.
+                                            <LineBreak/><LineBreak/>
+                                            Never: leave the wig's baked hair color untouched.
+                                        </TextBlock>
+                                    </ToolTip>
+                                </ComboBox.ToolTip>
+                            </ComboBox>
+
+                            <CheckBox Content="Preview worn wigs the way RaceMenu tints them"
+                                      IsChecked="{Binding EmulateRaceMenuHairSlotTint, Mode=TwoWay}"
+                                      Margin="0,0,0,10">
+                                <CheckBox.ToolTip>
+                                    <ToolTip>
+                                        <TextBlock TextWrapping="Wrap" Width="340">
+                                            Affects mugshots and the 3D preview only — never the patch output. RaceMenu
+                                            automatically recolors worn hair-slot items that use the Hair Tint shader,
+                                            which the base game does not; wig meshes are usually authored with a
+                                            near-black placeholder color that relies on it. With this on, wigs are
+                                            previewed using the NPC's hair color, matching what you see in game with
+                                            RaceMenu installed. Turn it off if you don't use RaceMenu — then the black
+                                            hair shown here is what the game really renders.
+                                        </TextBlock>
+                                    </ToolTip>
+                                </CheckBox.ToolTip>
+                            </CheckBox>
+
                             <TextBlock Text="Manual Wig Designation Scope:" Margin="0,0,0,2"/>
                             <ComboBox ItemsSource="{Binding WigBlockScopes}"
                                       SelectedValuePath="Key" DisplayMemberPath="Value"

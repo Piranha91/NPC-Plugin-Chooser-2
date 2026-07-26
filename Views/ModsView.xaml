@@ -501,7 +501,12 @@
                                         </StackPanel>
                                     </WrapPanel>
                                      
-                                     <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
+                                     <!-- WrapPanel (not StackPanel): with the wig dropdowns shown this row
+                                          runs wider than the panel and a StackPanel would clip the last one.
+                                          Each label + ComboBox pair is its own inner StackPanel so a wrap
+                                          never splits a dropdown from its label — same shape as row 6. -->
+                                     <WrapPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" Margin="0,5,0,0">
+                                       <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,3">
                                          <TextBlock Text="Record Override Handling Mode" VerticalAlignment="Center">
                                              <TextBlock.ToolTip>
                                                  <ToolTip>
@@ -537,12 +542,13 @@
                                                  </DataTemplate>
                                              </ComboBox.ItemTemplate>
                                          </ComboBox>
+                                       </StackPanel>
 
                                          <!-- Wig Handling Mode: only shown when the analysis scan detected
                                               wigs in this mod (hair-slot wig armors in Default Outfits, or hair
                                               meshes carried in NPC skins/WornArmor) AND wig handling is active
                                               for the current output mode (Create and Patch, or SkyPatcher mode). -->
-                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,0"
+                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,3"
                                                      Visibility="{Binding IsWigHandlingVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                                              <TextBlock Text="Wig Handling Mode" VerticalAlignment="Center">
                                                  <TextBlock.ToolTip>
@@ -593,10 +599,52 @@
                                              </ComboBox>
                                          </StackPanel>
 
+                                         <!-- Converted Wig Hair Color: same visibility gate as the wig dropdown
+                                              above (it is a sub-option of Convert To Headparts). -->
+                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,3"
+                                                     Visibility="{Binding IsWigHandlingVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                             <TextBlock Text="Converted Wig Hair Color" VerticalAlignment="Center">
+                                                 <TextBlock.ToolTip>
+                                                     <ToolTip>
+                                                         <TextBlock TextWrapping="Wrap" Width="340">
+                                                             Only applies when this mod's Wig Handling Mode resolves to Convert To
+                                                             Headparts. Many wig meshes carry a near-black placeholder hair color and
+                                                             rely on RaceMenu to recolor them in game (RaceMenu automatically tints worn
+                                                             hair-slot items — that is why High Poly NPC Overhaul gives every NPC black
+                                                             hair until RaceMenu is installed). A wig baked into the FaceGen file is no
+                                                             longer a worn item, so RaceMenu stops recoloring it and the placeholder
+                                                             sticks. This bakes the NPC's own hair color in instead.
+                                                             <LineBreak/><LineBreak/>
+                                                             Default: Use the default setting from the Settings tab.
+                                                             <LineBreak/>
+                                                             Auto: recolor only wigs carrying a placeholder tint; leave wigs whose
+                                                             textures are already colored by their author alone.
+                                                             <LineBreak/>
+                                                             Always use NPC's hair color: recolor every converted wig, exactly as
+                                                             RaceMenu would have done to the original worn wig.
+                                                             <LineBreak/>
+                                                             Keep the wig's own color: never touch the wig's baked hair color.
+                                                         </TextBlock>
+                                                     </ToolTip>
+                                                 </TextBlock.ToolTip>
+                                             </TextBlock>
+
+                                             <ComboBox
+                                                 ItemsSource="{Binding WigHairTintModes}"
+                                                 SelectedItem="{Binding SelectedWigHairTintItem, Mode=TwoWay}"
+                                                 Margin="5 0 0 0">
+                                                 <ComboBox.ItemTemplate>
+                                                     <DataTemplate>
+                                                         <TextBlock Text="{Binding Value}"/>
+                                                     </DataTemplate>
+                                                 </ComboBox.ItemTemplate>
+                                             </ComboBox>
+                                         </StackPanel>
+
                                          <!-- Antler Handling Mode: shown when the analysis scan detected antler
                                               armors / addons / head parts in this mod AND antler handling is active
                                               for the current output mode. Independent of the wig dropdown. -->
-                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,0"
+                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,3"
                                                      Visibility="{Binding IsAntlerHandlingVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                                              <TextBlock Text="Antler Handling Mode" VerticalAlignment="Center">
                                                  <TextBlock.ToolTip>
@@ -637,9 +685,9 @@
                                                  </ComboBox.ItemTemplate>
                                              </ComboBox>
                                          </StackPanel>
-                                     </StackPanel>
-                                     
-                                     <StackPanel Grid.Row="8" Orientation="Horizontal" 
+                                     </WrapPanel>
+
+                                     <StackPanel Grid.Row="8" Orientation="Horizontal"
                                                 Visibility="{Binding IsOverrideHandlingControlsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <!-- Max Nested Search Layers - hidden when Include All is checked -->
                                         <StackPanel Orientation="Horizontal" 

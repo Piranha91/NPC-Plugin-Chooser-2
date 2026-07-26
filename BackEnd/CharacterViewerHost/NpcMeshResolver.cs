@@ -538,6 +538,17 @@ public class NpcMeshResolver
             NpcWeight = weight,
             NpcBaseHeight = baseHeight,
             HairColorRgb = hairRgb,
+            // Emulate RaceMenu's automatic tinting of worn hair-slot items
+            // (skee64 bEnableTintHairSlot) so a wig authored with a placeholder
+            // tint previews the way the game draws it. Non-null also ENABLES the
+            // emulation; the renderer prefers the FaceGen's own baked hair color
+            // over this and only falls back here when the FaceGen has none. x2
+            // because that is the space FaceGen tints live in (see
+            // NifHandler.HclrToFaceGenTint) — the same value the wig→HeadPart
+            // bake writes, so the preview matches the patch output.
+            WornHairSlotTintRgb = _settings.InternalMugshot.EmulateRaceMenuHairSlotTint && hairRgb != null
+                ? NifHandler.HclrToFaceGenTint(hairRgb.Value)
+                : null,
             EyeShapeNames = eyeShapeNames,
             HideHeadShapeNames = hideHeadShapeNames,
         };

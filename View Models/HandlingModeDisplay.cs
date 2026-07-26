@@ -31,6 +31,21 @@ public static class HandlingModeDisplay
         _ => mode.ToString(),
     };
 
+    public static string ToDisplayString(WigHairTintMode mode) => mode switch
+    {
+        WigHairTintMode.Auto => "Auto (placeholder tints only)",
+        WigHairTintMode.Always => "Always use NPC's hair color",
+        WigHairTintMode.Never => "Keep the wig's own color",
+        _ => mode.ToString(),
+    };
+
+    public static readonly IReadOnlyList<WigHairTintMode> WigHairTintModesInDisplayOrder = new[]
+    {
+        WigHairTintMode.Auto,
+        WigHairTintMode.Always,
+        WigHairTintMode.Never,
+    };
+
     public static readonly IReadOnlyList<WigHandlingMode> WigModesInDisplayOrder = new[]
     {
         WigHandlingMode.ForwardToSkin,

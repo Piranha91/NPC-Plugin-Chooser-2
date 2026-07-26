@@ -361,6 +361,20 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Select(m => new KeyValuePair<AntlerHandlingMode, string>(m, HandlingModeDisplay.ToDisplayString(m)))
             .ToList();
 
+    // Global default for whether a Convert To Headparts wig is re-tinted with the
+    // NPC's hair color (Settings.DefaultWigHairTintMode; per-mod entries with
+    // "Default" resolve to this via Settings.GetEffectiveWigHairTintMode).
+    [Reactive] public WigHairTintMode SelectedDefaultWigHairTintMode { get; set; }
+
+    // Settings.EmulateRaceMenuHairSlotTint: render-only RaceMenu hair-slot tint
+    // emulation for worn wigs (mugshots + 3D preview; never the patch output).
+    [Reactive] public bool EmulateRaceMenuHairSlotTint { get; set; }
+
+    public IEnumerable<KeyValuePair<WigHairTintMode, string>> WigHairTintModes { get; } =
+        HandlingModeDisplay.WigHairTintModesInDisplayOrder
+            .Select(m => new KeyValuePair<WigHairTintMode, string>(m, HandlingModeDisplay.ToDisplayString(m)))
+            .ToList();
+
     // Scope of manually-designated antler head-part blocking (Settings.ManualAntlerBlockScope):
     // how broadly a designated EditorID is treated as an antler across the load order.
     [Reactive] public AntlerBlockScope SelectedAntlerBlockScope { get; set; }
@@ -708,6 +722,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SelectedRecordOverrideHandlingMode = _model.DefaultRecordOverrideHandlingMode;
         SelectedDefaultWigHandlingMode = _model.DefaultWigHandlingMode;
         SelectedDefaultAntlerHandlingMode = _model.DefaultAntlerHandlingMode;
+        SelectedDefaultWigHairTintMode = _model.DefaultWigHairTintMode;
+        EmulateRaceMenuHairSlotTint = _model.InternalMugshot.EmulateRaceMenuHairSlotTint;
         SelectedAntlerBlockScope = _model.ManualAntlerBlockScope;
         SelectedWigBlockScope = _model.ManualWigBlockScope;
         PublishForwardedOutfitsToDistributors = _model.PublishForwardedOutfitsToDistributors;
@@ -1151,6 +1167,10 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedDefaultAntlerHandlingMode).Skip(1)
             .Subscribe(m => _model.DefaultAntlerHandlingMode = m).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedDefaultWigHairTintMode).Skip(1)
+            .Subscribe(m => _model.DefaultWigHairTintMode = m).DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.EmulateRaceMenuHairSlotTint).Skip(1)
+            .Subscribe(b => _model.InternalMugshot.EmulateRaceMenuHairSlotTint = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedAntlerBlockScope).Skip(1)
             .Subscribe(s => _model.ManualAntlerBlockScope = s).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedWigBlockScope).Skip(1)

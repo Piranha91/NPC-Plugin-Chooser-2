@@ -232,6 +232,33 @@ public class HeadPartWigConverter
         /// (the WNAM bald-donor pattern). Threaded into
         /// <see cref="NifHandler.WigBakeInstruction"/>.</summary>
         public bool SynthesizeHairPartitionTemplate { get; init; }
+
+        /// <summary>This mod's effective <see cref="Models.WigHairTintMode"/> —
+        /// whether the bake re-tints the wig with the NPC's hair color once it
+        /// leaves skee64's reach. Threaded into
+        /// <see cref="NifHandler.WigBakeInstruction"/>.</summary>
+        public Models.WigHairTintMode HairTintMode { get; init; } = Models.WigHairTintMode.Auto;
+
+        /// <summary>The donor NPC's resolved HCLR as sRGB 0..1 — the color
+        /// skee64 applied to the wig while it was still worn, and so what the
+        /// bake writes into it. Null when the NPC has no hair color record; the
+        /// bake then harvests the FaceGen's own hair tint instead.</summary>
+        public (float R, float G, float B)? HairTintRgb { get; init; }
+    }
+
+    /// <summary>The NPC's hair color (HCLR → CLFM) as sRGB 0..1 — the same
+    /// space <c>BSLightingShaderProperty.hairTintColor</c> is stored in, so the
+    /// byte channels divide straight through with no gamma rebase (mirrors
+    /// <c>NpcMeshResolver</c>'s resolve for the renderer).</summary>
+    private (float R, float G, float B)? ResolveHairColorRgb(
+        INpcGetter donorNpc, ModSetting appearanceModSetting, HashSet<string> modFolderPaths)
+    {
+        if (donorNpc.HairColor == null || donorNpc.HairColor.IsNull) return null;
+        var hclr = ResolveFromModsOrWinner<IColorRecordGetter>(donorNpc.HairColor,
+            appearanceModSetting.CorrespondingModKeys, modFolderPaths);
+        if (hclr == null) return null;
+        var c = hclr.Color;
+        return (c.R / 255f, c.G / 255f, c.B / 255f);
     }
 
     /// <summary>
@@ -397,6 +424,8 @@ public class HeadPartWigConverter
             PhysicsXmlSourcePath = set.PhysicsXmlSourcePath,
             PhysicsXmlSourceDataRelPath = set.PhysicsXmlSourceDataRelPath,
             PhysicsXmlNewDataRelPath = set.PhysicsXmlNewDataRelPath,
+            HairTintMode = _settings.GetEffectiveWigHairTintMode(appearanceModSetting),
+            HairTintRgb = ResolveHairColorRgb(donorNpc, appearanceModSetting, modFolderPaths),
         };
         result.DonorHairHeadPartKeys.UnionWith(donorHairKeys);
         result.FaceGenShapeNamesToStrip.UnionWith(stripNames);
@@ -541,6 +570,8 @@ public class HeadPartWigConverter
             PhysicsXmlSourceDataRelPath = set.PhysicsXmlSourceDataRelPath,
             PhysicsXmlNewDataRelPath = set.PhysicsXmlNewDataRelPath,
             SynthesizeHairPartitionTemplate = synthesize,
+            HairTintMode = _settings.GetEffectiveWigHairTintMode(appearanceModSetting),
+            HairTintRgb = ResolveHairColorRgb(donorNpc, appearanceModSetting, modFolderPaths),
         };
         result.DonorHairHeadPartKeys.UnionWith(donorHairKeys);
         result.FaceGenShapeNamesToStrip.UnionWith(stripNames);

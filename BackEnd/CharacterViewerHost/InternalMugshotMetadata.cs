@@ -106,9 +106,22 @@ public static class InternalMugshotMetadata
     /// darkening), so like v14 the default changes output for new tiles; a
     /// v14 tile compared at schemaVersion=14 excludes these and stays valid
     /// until regenerated.</item>
+    /// <item>16: added <c>EmulateRaceMenuHairSlotTint</c> — renders WORN
+    /// hair-slot items that use the HairTint shader with the NPC's hair color,
+    /// emulating RaceMenu's skee64 (bEnableTintHairSlot) which the vanilla
+    /// engine doesn't do. Defaults ON and changes output for wig mods shipping a
+    /// placeholder tint (High Poly NPC Overhaul rendered black-haired without
+    /// it), so those tiles regenerate; a v15 tile compared at schemaVersion=15
+    /// excludes it and stays valid until regenerated.</item>
+    /// <item>17: no new field — the v16 emulation's tint SOURCE changed, so v16
+    /// tiles must not be trusted. v16 used the NPC record's hair color as-is;
+    /// v17 prefers the hair color baked into that NPC's own FaceGen and, when it
+    /// falls back to the record, doubles it (the CK bakes 2x HCLR — measured
+    /// exactly on 336 of 344 High Poly NPC Overhaul FaceGens). v16 tiles
+    /// otherwise hash-match and would never regenerate.</item>
     /// </list>
     /// </para></summary>
-    public const int PipelineSchemaVersion = 15;
+    public const int PipelineSchemaVersion = 17;
 
     // JSON keys for the missing-asset arrays embedded in the "Parameters"
     // tEXt chunk. Kept as constants so the read path in
@@ -576,6 +589,22 @@ public static class InternalMugshotMetadata
             sb.Append('|').Append(cfg.ShadowPcfRadius.ToString("R", inv));
             sb.Append('|').Append(cfg.TightShadowFrustum ? '1' : '0');
             sb.Append('|').Append(cfg.ShadowFrustumRadius.ToString("R", inv));
+        }
+
+        // === schema v16 field (RaceMenu worn-hair-slot tint emulation) ===
+        // Defaults ON and changes output for wig mods that ship a placeholder
+        // hair tint, so their tiles regenerate once; a v15 tile compared at
+        // schemaVersion=15 excludes this entry and stays valid until then.
+        // === schema v17 (tint-source correction) ===
+        // Gated at >= 16 ON PURPOSE, breaking the usual append-only rule. v16
+        // stamped tiles rendered with the WRONG tint source (the record color
+        // as-is); appending inside the v16 boundary changes the hash a v16 tile
+        // reproduces, so exactly those tiles go stale. v15 and older are
+        // untouched — they never had the entry.
+        if (schemaVersion >= 16)
+        {
+            sb.Append('|').Append(cfg.EmulateRaceMenuHairSlotTint ? '1' : '0');
+            sb.Append("|hairslot-v17");
         }
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
