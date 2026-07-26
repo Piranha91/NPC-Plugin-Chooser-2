@@ -197,6 +197,19 @@ public class HeadPartWigConverterTests : IDisposable
         f.Converter.Apply(f.DonorNpc, f.ModSetting, new HashSet<string>(), "TestNpc",
             (_, _, _) => { }, out fallback);
 
+    private static HeadPartWigConverter.Result? Apply(Fixture f, out bool fallback,
+        List<(string Message, bool IsError, bool ForceLog)> log) =>
+        f.Converter.Apply(f.DonorNpc, f.ModSetting, new HashSet<string>(), "TestNpc",
+            (m, isError, force) => log.Add((m, isError, force)), out fallback);
+
+    /// <summary>Makes the donor inherit Traits from a template — such an NPC has no FaceGen of its own.</summary>
+    private static void TemplateDonorTraits(Fixture f)
+    {
+        var template = MutagenFixtures.NewNpc(f.DonorMod, editorId: "AuriTemplate");
+        f.DonorNpc.Configuration.TemplateFlags |= NpcConfiguration.TemplateFlag.Traits;
+        f.DonorNpc.Template.SetTo(template.FormKey);
+    }
+
     // ---- Persisted enum stability ------------------------------------------------------------
 
     [Fact]
@@ -402,6 +415,56 @@ public class HeadPartWigConverterTests : IDisposable
 
         result.Should().BeNull();
         fallback.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Apply_MissingDonorFaceGen_UntemplatedDonor_LogsForced()
+    {
+        // A non-templated NPC that has no FaceGen IS a real problem — it must
+        // stay visible in the default (non-verbose) log.
+        var f = Make(createFaceGen: false);
+        var log = new List<(string Message, bool IsError, bool ForceLog)>();
+        Apply(f, out _, log);
+
+        var line = log.Should().ContainSingle(l => l.Message.Contains("donor FaceGen was not found")).Subject;
+        line.ForceLog.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Apply_MissingDonorFaceGen_TemplatedDonor_LogsVerboseOnly()
+    {
+        // Whole vanilla NPC classes inherit Traits and so have no FaceGen of
+        // their own — expected, not a problem, and 500+ forced lines of it would
+        // bury the untemplated case above.
+        var f = Make(createFaceGen: false);
+        TemplateDonorTraits(f);
+        var log = new List<(string Message, bool IsError, bool ForceLog)>();
+        var result = Apply(f, out bool fallback, log);
+
+        result.Should().BeNull();
+        fallback.Should().BeTrue("the wig still has to reach the NPC via ForwardToSkin");
+        log.Should().NotContain(l => l.Message.Contains("donor FaceGen was not found"));
+        var line = log.Should().ContainSingle(l => l.Message.Contains("inherits Traits from template")).Subject;
+        line.ForceLog.Should().BeFalse("the decline is expected for a templated NPC");
+        line.IsError.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_FaceGenWithoutPartitions_StillLogsForced()
+    {
+        // The partition-probe failure shares a code path with the missing-FaceGen
+        // decline but is a genuine problem regardless of templating.
+        var f = Make();
+        TemplateDonorTraits(f);
+        f.Converter.PartitionProbe = (_, _) => false;
+        var log = new List<(string Message, bool IsError, bool ForceLog)>();
+        Apply(f, out bool fallback, log);
+
+        fallback.Should().BeTrue();
+        var line = log.Should()
+            .ContainSingle(l => l.Message.Contains("no hair shape with dismember partitions")).Subject;
+        line.ForceLog.Should().BeTrue();
+        line.Message.Should().NotContain("was not found", "the two declines must stay distinguishable");
     }
 
     [Fact]
@@ -666,6 +729,43 @@ public class HeadPartWigConverterTests : IDisposable
 
         result.Should().BeNull();
         fallback.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_WnamWig_MissingDonorFaceGen_TemplatedDonor_LogsVerboseOnly()
+    {
+        // The skin-carried source is where the templated NPCs pile up (an NPC
+        // overhaul's generic encounter actors carry the wig in WNAM), so the
+        // same verbose-only treatment applies here.
+        var f = Make(donorHasHair: false, createFaceGen: false);
+        RemoveOutfitWig(f);
+        AddWnamWig(f);
+        TemplateDonorTraits(f);
+        var log = new List<(string Message, bool IsError, bool ForceLog)>();
+
+        var result = Apply(f, out bool fallback, log);
+
+        result.Should().BeNull();
+        fallback.Should().BeFalse("a WNAM decline never reroutes to ForwardToSkin");
+        log.Should().NotContain(l => l.Message.Contains("donor FaceGen was not found"));
+        log.Should().ContainSingle(l => l.Message.Contains("inherits Traits from template"))
+            .Which.ForceLog.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_WnamWig_MissingDonorFaceGen_UntemplatedDonor_LogsForced()
+    {
+        var f = Make(donorHasHair: false, createFaceGen: false);
+        RemoveOutfitWig(f);
+        AddWnamWig(f);
+        var log = new List<(string Message, bool IsError, bool ForceLog)>();
+
+        var result = Apply(f, out bool fallback, log);
+
+        result.Should().BeNull();
+        fallback.Should().BeFalse();
+        log.Should().ContainSingle(l => l.Message.Contains("donor FaceGen was not found"))
+            .Which.ForceLog.Should().BeTrue();
     }
 
     [Fact]

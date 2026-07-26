@@ -361,12 +361,18 @@ public class HeadPartWigConverter
         //    dark-face risk — so fall back instead.
         var (donorFaceGenRelPath, _) = Auxilliary.GetFaceGenSubPathStrings(donorNpc.FormKey, regularized: true);
         string? donorFaceGenPath = MaterializeDataRelFile(donorFaceGenRelPath, appearanceModSetting);
-        if (donorFaceGenPath == null || !PartitionProbe(donorFaceGenPath, stripNames))
+        if (donorFaceGenPath == null)
         {
-            appendLog($"      Wig conversion: {npcIdentifier}'s donor FaceGen " +
-                      $"{(donorFaceGenPath == null ? "was not found" : "has no hair shape with dismember partitions")} " +
-                      "— the bake cannot normalize the wig shapes to CK skin data. Falling back to ForwardToSkin.",
-                false, true);
+            LogMissingDonorFaceGen(donorNpc, npcIdentifier, "Falling back to ForwardToSkin.", appendLog);
+            fallBackToForwardToSkin = true;
+            return null;
+        }
+
+        if (!PartitionProbe(donorFaceGenPath, stripNames))
+        {
+            appendLog($"      Wig conversion: {npcIdentifier}'s donor FaceGen has no hair shape with dismember " +
+                      "partitions — the bake cannot normalize the wig shapes to CK skin data. " +
+                      "Falling back to ForwardToSkin.", false, true);
             fallBackToForwardToSkin = true;
             return null;
         }
@@ -510,8 +516,7 @@ public class HeadPartWigConverter
         string? donorFaceGenPath = MaterializeDataRelFile(donorFaceGenRelPath, appearanceModSetting);
         if (donorFaceGenPath == null)
         {
-            appendLog($"      Wig conversion: {npcIdentifier}'s donor FaceGen was not found — there is no " +
-                      "FaceGen to bake the wig into. Leaving the skin-carried hair as-is.", false, true);
+            LogMissingDonorFaceGen(donorNpc, npcIdentifier, "Leaving the skin-carried hair as-is.", appendLog);
             return null;
         }
 
@@ -549,6 +554,33 @@ public class HeadPartWigConverter
                   "the wig is baked into the copied FaceGen after asset copy; the skin duplicate loses the " +
                   "converted ArmorAddon.", false, false);
         return result;
+    }
+
+    /// <summary>
+    /// Reports a conversion decline caused by a missing donor FaceGen. An NPC
+    /// that inherits Traits from a template has NO FaceGen of its own by design
+    /// — the engine renders its template's face — so for those the decline is
+    /// expected rather than a problem, and it is logged verbose-only. Whole
+    /// vanilla NPC classes are templated (generic encounter/leveled actors:
+    /// Vigilants of Stendarr, Dremora, …), so forcing that line into the log
+    /// buries the genuinely missing-FaceGen case it shares wording with — which
+    /// stays a forced entry.
+    /// </summary>
+    private static void LogMissingDonorFaceGen(INpcGetter donorNpc, string npcIdentifier, string outcome,
+        Action<string, bool, bool> appendLog)
+    {
+        if (Auxilliary.HasTraitsFlag(donorNpc))
+        {
+            string template = donorNpc.Template is { IsNull: false }
+                ? donorNpc.Template.FormKey.ToString()
+                : "(none)";
+            appendLog($"      Wig conversion: {npcIdentifier} inherits Traits from template {template}, so it " +
+                      $"has no FaceGen of its own to bake the wig into. {outcome}", false, false);
+            return;
+        }
+
+        appendLog($"      Wig conversion: {npcIdentifier}'s donor FaceGen was not found — there is no " +
+                  $"FaceGen to bake the wig into. {outcome}", false, true);
     }
 
     /// <summary>
