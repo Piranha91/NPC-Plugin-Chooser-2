@@ -1445,9 +1445,15 @@ public class Patcher : OptionalUIModule
                     // Verify any cached file access errors to see if they were actual failures.
                     _assetHandler.LogTrueCopyFailures();
 
-                    ApplyPendingWigNifEdits();
+                    // CPU-bound NIF edits over potentially thousands of files (one per
+                    // wig-wearing NPC); without Task.Run they resume on the UI thread's
+                    // sync context after the await above and freeze the window.
+                    await Task.Run(() =>
+                    {
+                        ApplyPendingWigNifEdits();
 
-                    ApplyPendingWigBakes();
+                        ApplyPendingWigBakes();
+                    }, ct);
 
                     // Opt-in asset-provenance report (AssetProvenance.csv): why each file was copied
                     // and which NPCs/mods/records pulled it in. No-op unless enabled (Settings
@@ -1463,6 +1469,7 @@ public class Patcher : OptionalUIModule
 
                     string outputPluginPath = Path.Combine(_currentRunOutputAssetPath,
                         _environmentStateProvider.OutputMod.ModKey.FileName);
+                    UpdateProgress(totalToProcess, totalToProcess, "Saving output plugin...");
                     AppendLog($"Attempting to save output mod to: {outputPluginPath}", false);
                     try
                     {
@@ -1762,9 +1769,10 @@ public class Patcher : OptionalUIModule
     /// head part was removed for a forwarded wig, and/or an antler head part was
     /// removed by antler Remove; the baked FaceGen shape would otherwise still
     /// render in game). Runs once per patch run, after all asset copy/extraction
-    /// tasks have finished so the destination files exist. Per-file failures are
-    /// logged and skipped — a surviving baked shape clashes visually but breaks
-    /// nothing.
+    /// tasks have finished so the destination files exist. Files are processed
+    /// in parallel (each entry owns its NPC's FaceGen copy). Per-file failures
+    /// are logged and skipped — a surviving baked shape clashes visually but
+    /// breaks nothing.
     /// </summary>
     private void ApplyPendingWigNifEdits()
     {
@@ -1772,15 +1780,21 @@ public class Patcher : OptionalUIModule
 
         AppendLog($"Stripping baked hair/antler shapes from {_pendingWigNifEdits.Count} FaceGen NIF(s) (wig/antler forwarding)...",
             false, true);
-        foreach (var (nifPath, shapeNames, npcIdentifier) in _pendingWigNifEdits)
+        var pendingEdits = _pendingWigNifEdits.ToList();
+        int stripTotal = pendingEdits.Count;
+        int stripDone = 0;
+
+        void StripOne((string NifPath, HashSet<string> ShapeNames, string NpcIdentifier) item)
         {
+            var (nifPath, shapeNames, npcIdentifier) = item;
+            UpdateProgress(Interlocked.Increment(ref stripDone), stripTotal, "Stripping baked hair/antler shapes...");
             try
             {
                 if (!File.Exists(nifPath))
                 {
                     AppendLog($"  WARNING: {npcIdentifier}: FaceGen NIF not found for baked-hair strip: {nifPath}",
                         false, true);
-                    continue;
+                    return;
                 }
 
                 int removed = NifHandler.RemoveShapesByName(nifPath, shapeNames,
@@ -1803,6 +1817,13 @@ public class Patcher : OptionalUIModule
                     true, true);
             }
         }
+
+        // Each entry edits a different NPC's FaceGen copy and nifly is safe for
+        // concurrent loads on separate NifFile instances. The first file runs
+        // alone to prime nifly's native singletons before fanning out.
+        StripOne(pendingEdits[0]);
+        Parallel.ForEach(pendingEdits.Skip(1),
+            new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, StripOne);
     }
 
     /// <summary>
@@ -1812,7 +1833,9 @@ public class Patcher : OptionalUIModule
     /// copy/extraction tasks have finished so the destination FaceGen files
     /// exist, and after <see cref="ApplyPendingWigNifEdits"/> (an NPC can carry
     /// both: an antler strip there and the wig bake here — disjoint shape sets,
-    /// but one load/save each keeps them independent). Drains destructively:
+    /// but one load/save each keeps them independent; the two phases stay
+    /// sequential relative to each other for that reason, while the files
+    /// WITHIN each phase are processed in parallel). Drains destructively:
     /// RunPatchingLogic is invoked once per output plugin, and re-baking an
     /// already-baked file would duplicate the wig shapes. A failed bake is a
     /// dark-face risk (the minted records expect the baked shapes), so it is
@@ -1824,9 +1847,18 @@ public class Patcher : OptionalUIModule
 
         AppendLog($"Baking wig scenes into {_pendingWigBakes.Count} FaceGen NIF(s) (wig ConvertToHeadParts)...",
             false, true);
-        while (_pendingWigBakes.TryTake(out var pending))
+
+        // Drain destructively up front (see doc comment), then fan out below.
+        var pendingBakes = new List<(string NifPath, HeadPartWigConverter.Result Convert, string NpcIdentifier)>();
+        while (_pendingWigBakes.TryTake(out var pending)) pendingBakes.Add(pending);
+
+        int bakeTotal = pendingBakes.Count;
+        int bakeDone = 0;
+
+        void BakeOne((string NifPath, HeadPartWigConverter.Result Convert, string NpcIdentifier) item)
         {
-            var (nifPath, convert, npcIdentifier) = pending;
+            UpdateProgress(Interlocked.Increment(ref bakeDone), bakeTotal, "Baking wig meshes into FaceGen...");
+            var (nifPath, convert, npcIdentifier) = item;
             try
             {
                 if (!File.Exists(nifPath))
@@ -1835,7 +1867,7 @@ public class Patcher : OptionalUIModule
                               $"The minted head parts ('{convert.ParentEditorId}' + extras) expect baked shapes — " +
                               "this NPC will dark-face in game. Ensure the appearance mod provides FaceGen for it, " +
                               "or switch the mod's Wig Handling Mode to ForwardToSkin.", true, true);
-                    continue;
+                    return;
                 }
 
                 int baked = NifHandler.BakeWigIntoFaceGen(new NifHandler.WigBakeInstruction(
@@ -1872,6 +1904,13 @@ public class Patcher : OptionalUIModule
                     true, true);
             }
         }
+
+        // Each bake reads the shared donor wig NIF and writes only its own NPC's
+        // FaceGen copy, on NifFile instances local to the call — safe to fan out.
+        // The first bake runs alone to prime nifly's native singletons.
+        BakeOne(pendingBakes[0]);
+        Parallel.ForEach(pendingBakes.Skip(1),
+            new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, BakeOne);
     }
 
     private List<MajorRecord> CopyAppearanceData(INpcGetter sourceNpc, Npc targetNpc, ModSetting appearanceModSetting,
