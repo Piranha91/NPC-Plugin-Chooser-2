@@ -24,6 +24,7 @@ public class PortraitCreator
     private readonly EnvironmentStateProvider _environmentProvider;
     private readonly BsaHandler _bsaHandler;
     private readonly GeneratedMugshotTracker _tracker;
+    private readonly NpcMeshResolver _meshResolver;
     private readonly string _executablePath;
     private string _executableVersion = "0.0.0"; // Default if query fails
     private readonly SemaphoreSlim _renderSemaphore;
@@ -34,12 +35,14 @@ public class PortraitCreator
 
     public readonly string TempExtractionPath = Path.Combine(AppContext.BaseDirectory, "tmpExtraction");
 
-    public PortraitCreator(Settings settings, EnvironmentStateProvider environmentProvider, BsaHandler bsaHandler, GeneratedMugshotTracker tracker)
+    public PortraitCreator(Settings settings, EnvironmentStateProvider environmentProvider, BsaHandler bsaHandler,
+        GeneratedMugshotTracker tracker, NpcMeshResolver meshResolver)
     {
         _settings = settings;
         _environmentProvider = environmentProvider;
         _bsaHandler = bsaHandler;
         _tracker = tracker;
+        _meshResolver = meshResolver;
         _executablePath = Path.Combine(AppContext.BaseDirectory, "NPC Portrait Creator", "NPCPortraitCreator.exe");
 
         // Initialize the semaphore with the value from settings.
@@ -117,6 +120,18 @@ public class PortraitCreator
             return string.Empty;
         }
 
+        // Built once here and reused by the BSA branch below, which used to rebuild it
+        // on every folder iteration.
+        var modSettingModel = modSetting.SaveToModel();
+
+        // A Traits-templated NPC has no FaceGen of its own — the game draws its
+        // template's face, and that is the NIF this renderer must portray. Resolved
+        // through the mod's own records so a mod that re-points the template wins; an
+        // unfollowable chain returns the NPC unchanged and we fail to find a NIF exactly
+        // as before. Everything downstream (plugin disambiguation, the BSA's owning
+        // ModKey) then keys off the template, which is where its FaceGen ships.
+        npcFormKey = _meshResolver.ResolveAppearanceNpcKey(npcFormKey, modSettingModel);
+
         // 1. Construct the relative path based on FaceGen conventions.
         string pluginName = npcFormKey.ModKey.FileName;
         string nifFileName = $"{npcFormKey.ID:X8}.nif";
@@ -153,7 +168,6 @@ public class PortraitCreator
             //    associated BSAs.
             else
             {
-                var modSettingModel = modSetting.SaveToModel();
                 var gameRelease = _environmentProvider.SkyrimVersion.ToGameRelease();
                 await _bsaHandler.AddMissingModToCache(modSettingModel, gameRelease);
 

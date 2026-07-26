@@ -171,7 +171,40 @@ public class NpcMeshResolver
     {
         var linkCache = _env.LinkCache;
         if (linkCache == null) return null;
-        return Resolve(npcFormKey, linkCache, BuildContext(npcFormKey, modSetting), modSetting);
+        // A Traits-templated NPC has no appearance of its own — resolve the whole
+        // render (record, FaceGen NIF, FaceTint, skin) against the record at the end
+        // of its template chain, exactly as the game does.
+        var appearanceKey = ResolveAppearanceNpcKey(npcFormKey, modSetting);
+        return Resolve(appearanceKey, linkCache, BuildContext(appearanceKey, modSetting), modSetting);
+    }
+
+    /// <summary>
+    /// The NPC whose appearance is actually drawn for <paramref name="npcFormKey"/> under
+    /// <paramref name="modSetting"/>'s record scope: itself normally, or the end of its
+    /// Traits template chain when it inherits — a templated NPC ships no FaceGen, head
+    /// parts or skin of its own, so the game renders the template's face for it.
+    ///
+    /// <para>Every hop resolves through the same mod-scoped path the render uses, so a mod
+    /// that re-points an NPC's template is honoured (and two mods may legitimately answer
+    /// differently for the same NPC). A chain that can't be followed — dangling link,
+    /// Leveled-NPC terminus, cycle — yields <paramref name="npcFormKey"/> unchanged, so
+    /// callers fall back to their existing "no FaceGen" behaviour.</para>
+    /// </summary>
+    public FormKey ResolveAppearanceNpcKey(FormKey npcFormKey, ModSetting? modSetting)
+    {
+        var linkCache = _env.LinkCache;
+        if (linkCache == null) return npcFormKey;
+
+        var appearanceKey = Auxilliary.ResolveAppearanceTemplateTerminus(
+            npcFormKey,
+            fk => ResolveRecord<INpcGetter>(fk.ToLink<INpcGetter>(), linkCache, BuildContext(fk, modSetting)));
+
+        if (!appearanceKey.Equals(npcFormKey))
+        {
+            LogVerbose("CharacterViewer: " + npcFormKey + " inherits its traits from template "
+                + appearanceKey + " — rendering the template's appearance.");
+        }
+        return appearanceKey;
     }
 
     /// <summary>
@@ -187,8 +220,11 @@ public class NpcMeshResolver
     {
         var linkCache = _env.LinkCache;
         if (linkCache == null) return (null, _ => null, _ => null);
-        var context = BuildContext(npcFormKey, modSetting);
-        var npc = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
+        // The rendered NIF belongs to the appearance source (a templated NPC renders
+        // its template's FaceGen), so compare against THAT record's head parts.
+        var appearanceKey = ResolveAppearanceNpcKey(npcFormKey, modSetting);
+        var context = BuildContext(appearanceKey, modSetting);
+        var npc = ResolveRecord<INpcGetter>(appearanceKey.ToLink<INpcGetter>(), linkCache, context);
         Func<FormKey, IHeadPartGetter?> resolveHeadPart =
             fk => ResolveRecord<IHeadPartGetter>(fk.ToLink<IHeadPartGetter>(), linkCache, context);
         Func<FormKey, IRaceGetter?> resolveRace =
@@ -276,8 +312,11 @@ public class NpcMeshResolver
     /// </summary>
     public bool FaceGenExists(FormKey npcFormKey, ModSetting? modSetting)
     {
-        var context = BuildContext(npcFormKey, modSetting);
-        string facegenPath = BuildFaceGenPath(npcFormKey);
+        // FaceGen is keyed by the record that owns the appearance: a templated NPC's
+        // face ships under its template's FormID, so probe for that one.
+        var appearanceKey = ResolveAppearanceNpcKey(npcFormKey, modSetting);
+        var context = BuildContext(appearanceKey, modSetting);
+        string facegenPath = BuildFaceGenPath(appearanceKey);
 
         // Loose-file probe under any preferred mod folder rebases to absolute;
         // if that absolute path lands on disk, we're done.
@@ -757,8 +796,11 @@ public class NpcMeshResolver
         if (_settings.GetEffectiveRenderAntlerMode(modSetting) != AntlerHandlingMode.Remove) return false;
         var linkCache = _env.LinkCache;
         if (linkCache == null) return false;
-        var context = BuildContext(npcFormKey, modSetting);
-        var npc = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
+        // Head parts and the WornArmor skin are traits-inherited — for a templated NPC
+        // the antlers on screen belong to the template's record, so check that one.
+        var appearanceKey = ResolveAppearanceNpcKey(npcFormKey, modSetting);
+        var context = BuildContext(appearanceKey, modSetting);
+        var npc = ResolveRecord<INpcGetter>(appearanceKey.ToLink<INpcGetter>(), linkCache, context);
         if (npc == null) return false;
 
         // Source 3: an antler baked shape on the NPC — the whole head part is
@@ -1012,8 +1054,19 @@ public class NpcMeshResolver
         outfitDisplay = _outfitDisplayResolver.ResolveForDisplay(
             targetNpcFormKey ?? npcFormKey, npcFormKey, modSetting, includeDefaultOutfit);
 
-        return ResolveAttireMeshOverrides(npcFormKey, linkCache,
-            BuildContext(npcFormKey, modSetting), includeDefaultOutfit, includeHeadgear, outfitDisplay,
+        // The effective OUTFIT above stays keyed to this NPC — the Traits flag doesn't
+        // inherit inventory, so a templated NPC wears its own. Everything the walk below
+        // reads off the NPC RECORD is traits-inherited (race + sex for the armature
+        // filter, and the WornArmor skin the head-slot scan uses), so it has to come from
+        // the appearance source, matching the body and face already rendered from it.
+        // The wig/antler plan follows that record too: its forwarding targets are the skin
+        // and the baked FaceGen, both of which a templated NPC inherits along with the
+        // face. (The exception is a ForwardToOutfit piece off the TEMPLATE's own outfit —
+        // that lands in an outfit this NPC doesn't wear. Narrow enough to accept rather
+        // than split the record in two.)
+        var appearanceKey = ResolveAppearanceNpcKey(npcFormKey, modSetting);
+        return ResolveAttireMeshOverrides(appearanceKey, linkCache,
+            BuildContext(appearanceKey, modSetting), includeDefaultOutfit, includeHeadgear, outfitDisplay,
             wigMode, antlerMode, modSetting);
     }
 
@@ -1179,7 +1232,14 @@ public class NpcMeshResolver
     /// <summary>Passthrough to
     /// <see cref="OutfitDisplayResolver.ComputeWigIdentitySuffix"/> for hosts
     /// that hold this resolver but not the outfit-display resolver (the
-    /// offscreen generator's metadata stamp).</summary>
+    /// offscreen generator's metadata stamp).
+    /// <para>Deliberately NOT template-substituted (unlike the render paths above):
+    /// the other callers of ComputeWigIdentitySuffix — the staleness checker's
+    /// identity providers — go straight to the outfit resolver, and a stamp
+    /// computed on a different NPC than the comparison would re-stale the tile on
+    /// every pass. The cost is that changing a wig designation on a TEMPLATE
+    /// doesn't auto-restale the mugshots of the NPCs inheriting from it; substitute
+    /// here only together with every other call site.</para></summary>
     public string ComputeWigIdentitySuffix(FormKey sourceNpcFormKey, ModSetting? modSetting,
         bool includeDefaultOutfit)
         => _outfitDisplayResolver.ComputeWigIdentitySuffix(sourceNpcFormKey, modSetting, includeDefaultOutfit);

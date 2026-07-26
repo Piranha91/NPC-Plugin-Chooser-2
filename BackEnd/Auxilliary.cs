@@ -664,9 +664,56 @@ public class Auxilliary : IDisposable
     public static bool IsValidTemplatedNpc(INpcGetter? npc)
     {
         return npc != null &&
-               HasTraitsFlag(npc) && 
-               npc.Template != null && 
+               HasTraitsFlag(npc) &&
+               npc.Template != null &&
                !npc.Template.IsNull;
+    }
+
+    /// <summary>
+    /// Walks an NPC's Traits template chain and returns the FormKey of the record whose
+    /// appearance is actually drawn. A Traits-templated NPC carries no FaceGen (nor head
+    /// parts / skin / hair colour) of its own — everything visible comes from the record
+    /// at the end of the chain, which is why such an NPC has no mugshot of its own to
+    /// render until you follow the chain.
+    ///
+    /// <para>Returns <paramref name="npcFormKey"/> unchanged when the NPC does not inherit
+    /// its traits, and whenever the chain cannot be followed to a concrete NPC record — a
+    /// null / dangling template link, a link that resolves to something other than an NPC
+    /// (a Leveled NPC, whose appearance isn't fixed), a cycle, or a chain longer than
+    /// <paramref name="maxDepth"/> records. Callers therefore keep their existing "no
+    /// appearance data" behaviour instead of rendering a guess (a mid-chain record's face
+    /// would be the wrong face).</para>
+    ///
+    /// <para><paramref name="resolveNpc"/> supplies the record for each hop; pass a resolver
+    /// scoped to whichever mod's records the caller cares about, since a mod may re-point an
+    /// NPC's template.</para>
+    /// </summary>
+    public static FormKey ResolveAppearanceTemplateTerminus(
+        FormKey npcFormKey,
+        Func<FormKey, INpcGetter?> resolveNpc,
+        int maxDepth = 50)
+    {
+        var current = resolveNpc(npcFormKey);
+        if (current == null) return npcFormKey;
+
+        var visited = new HashSet<FormKey> { npcFormKey };
+        var terminus = npcFormKey;
+
+        for (int depth = 0; depth < maxDepth; depth++)
+        {
+            // Own traits (or a Traits flag with no template to follow) — this is
+            // the record the appearance comes from.
+            if (!IsValidTemplatedNpc(current)) return terminus;
+
+            var next = current.Template.FormKey;
+            if (!visited.Add(next)) return npcFormKey; // cycle
+            var nextNpc = resolveNpc(next);
+            if (nextNpc == null) return npcFormKey;    // dangling link, or a Leveled NPC
+            terminus = next;
+            current = nextNpc;
+        }
+
+        return npcFormKey; // pathologically long chain
     }
 
     /// <summary>

@@ -167,12 +167,16 @@ public sealed class InternalMugshotGenerator
             await Task.Run(() => _bsa.EnsureAllArchivesOpened(), token).ConfigureAwait(false);
             Trace($"  EnsureAllArchivesOpened tid={Environment.CurrentManagedThreadId} elapsed={sw.ElapsedMilliseconds - preEnsure}ms");
 
-            // Templated NPCs ship no exported FaceGen NIF; rendering them would
-            // produce a headless body since every other mesh (body / hands /
-            // skin) resolves cleanly off the race/armature. Abort here so the
-            // caller leaves the placeholder up instead of writing a misleading
-            // PNG. Mirrors the Legacy path's FindNpcNifPath null-check in
+            // No FaceGen anywhere in this mod's scope: rendering would produce a
+            // headless body, since every other mesh (body / hands / skin) resolves
+            // cleanly off the race/armature. Abort so the caller leaves the
+            // placeholder up instead of writing a misleading PNG. Mirrors the
+            // Legacy path's FindNpcNifPath null-check in
             // BatchMugshotGenerator.RunSelectedRendererAsync.
+            // A Traits-templated NPC is NOT this case — the probe (like Resolve
+            // above) follows the template chain and finds the face the game draws
+            // for it. Only a chain that can't be followed (Leveled-NPC terminus,
+            // dangling link) or a genuinely FaceGen-less NPC lands here.
             if (!_resolver.FaceGenExists(npcFormKey, modSetting))
             {
                 Trace($"EXIT tid={Environment.CurrentManagedThreadId} npc={npcFormKey} no-facegen totalElapsed={sw.ElapsedMilliseconds}ms");
