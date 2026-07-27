@@ -48,6 +48,9 @@ public class SerializableModelsRoundTripTests
             DisplayName = "Rich Mod",
             CorrespondingModKeys = new List<ModKey> { ModA, ModB },
             ResourceOnlyModKeys = new HashSet<ModKey> { ModC },
+            // Sparse per-plugin merge overrides. Both values are present on purpose: `false` must
+            // survive as an explicit choice, not be indistinguishable from "no entry".
+            PluginMergeInOverrides = new Dictionary<ModKey, bool> { [ModC] = true, [ModB] = false },
             CorrespondingFolderPaths = new List<string> { @"C:\Mods\Base", @"C:\Mods\Override" },
             MugShotFolderPaths = new List<string> { @"C:\Mugshots\Rich" },
             IsFaceGenOnlyEntry = true,
@@ -172,6 +175,22 @@ public class SerializableModelsRoundTripTests
         clone.AmbiguousNpcFormKeys.Should().BeEquivalentTo(new[] { Npc1 });
         clone.PluginsWithOverrideRecords.Should().BeEquivalentTo(new[] { ModA });
         clone.Keywords.Should().BeEquivalentTo(new[] { "follower", "vanilla" });
+    }
+
+    [Fact]
+    public void ModSetting_PluginMergeInOverrides_SurviveRoundTripAsModKeyedTriState()
+    {
+        var clone = RoundTrip(MakeRichModSetting());
+
+        // ModKey as a dictionary KEY is the risky part — a broken key round-trip would silently
+        // drop every per-plugin merge choice and reinstate the pre-2.2.3 all-or-nothing behaviour.
+        clone.PluginMergeInOverrides.Should().HaveCount(2);
+        clone.PluginMergeInOverrides.Should().ContainKey(ModC);
+        clone.PluginMergeInOverrides[ModC].Should().BeTrue();
+        clone.PluginMergeInOverrides[ModB].Should().BeFalse();
+
+        // Plugins with no entry stay absent — that's what keeps their default live.
+        clone.PluginMergeInOverrides.Should().NotContainKey(ModA);
     }
 
     [Fact]

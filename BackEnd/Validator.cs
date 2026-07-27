@@ -228,6 +228,19 @@ public class Validator : OptionalUIModule
                 else if (appearanceModSetting.AvailablePluginsForNpcs.TryGetValue(appearanceNpcFormKey, out var availablePlugins) && availablePlugins.Any())
                 {
                     sourcePlugin = availablePlugins.FirstOrDefault();
+
+                    // The patcher makes this choice differently (it walks CorrespondingModKeys
+                    // from the bottom up and takes the first plugin that actually carries the
+                    // record), so screening can end up vetting a different plugin's masters than
+                    // the one the patch run uses. Record the full candidate list so that gap is
+                    // visible when a screened-clean NPC still breaks the save.
+                    if (NpcDiagnosticLogger.IsActive && availablePlugins.Count > 1)
+                    {
+                        NpcDiagnosticLogger.Log(
+                            $"  Master check: {availablePlugins.Count} plugin(s) in this mod carry the record " +
+                            $"[{string.Join(", ", availablePlugins.Select(p => p.FileName.String))}]; screening the first " +
+                            $"('{sourcePlugin.Value.FileName}'). The patcher picks the LAST one that carries the record.");
+                    }
                 }
 
                 if (sourcePlugin.HasValue && !sourcePlugin.Value.IsNull)
@@ -239,6 +252,28 @@ public class Validator : OptionalUIModule
                         // If not cached, call the provider and store the result in the cache.
                         masters = _pluginProvider.GetMasterPlugins(sourcePlugin.Value, appearanceModSetting.CorrespondingFolderPaths);
                         _masterPluginCache[sourcePlugin.Value] = masters;
+                    }
+
+                    // Which plugin was checked, and the verdict per master. A selection that
+                    // passes here can still produce an unsavable output plugin (a master that is
+                    // only accepted because it belongs to the same ModSetting group is NOT in the
+                    // load order, so records pointing into it dangle), so the per-NPC log has to
+                    // show the reasoning, not just "screening passed".
+                    if (NpcDiagnosticLogger.IsActive)
+                    {
+                        NpcDiagnosticLogger.Log(
+                            $"  Master check: source plugin '{sourcePlugin.Value.FileName}' declares {masters.Count} master(s).");
+                        foreach (var master in masters)
+                        {
+                            string verdict =
+                                loadOrderList.Contains(master) ? "in load order" :
+                                appearanceModSetting.CorrespondingModKeys.Contains(master)
+                                    ? "NOT in load order — accepted because it belongs to this same mod entry; " +
+                                      "records referencing it CANNOT be written to the output plugin" :
+                                implicitMasters.Contains(master) ? "implicitly active (vanilla/CC)" :
+                                "MISSING";
+                            NpcDiagnosticLogger.Log($"    - {master.FileName}: {verdict}");
+                        }
                     }
 
                     bool mastersAreValid = true;

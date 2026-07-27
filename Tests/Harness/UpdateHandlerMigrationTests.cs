@@ -466,6 +466,99 @@ public class UpdateHandlerMigrationTests
         await act.Should().ThrowAsync<NullReferenceException>();
     }
 
+    // ---- MaterializeResourcePluginMergeToggles_Initial (2.2.3) ------------------------
+
+    private static ModSetting MergeMod(string name, bool mergeIn, ModKey[] plugins,
+        ModKey[]? resourceOnly = null, FormKey[]? npcs = null,
+        Dictionary<ModKey, bool>? overrides = null) => new()
+    {
+        DisplayName = name,
+        MergeInDependencyRecords = mergeIn,
+        CorrespondingModKeys = plugins.ToList(),
+        ResourceOnlyModKeys = new HashSet<ModKey>(resourceOnly ?? Array.Empty<ModKey>()),
+        NpcFormKeys = new HashSet<FormKey>(npcs ?? Array.Empty<FormKey>()),
+        PluginMergeInOverrides = overrides ?? new Dictionary<ModKey, bool>(),
+    };
+
+    private static readonly ModKey MergeNpcPlugin = ModKey.FromFileName("BanditWar.esp");
+    private static readonly ModKey MergeResourcePlugin = ModKey.FromFileName("ProjectJaKhaJay.esp");
+    private static readonly FormKey MergeNpcKey = FormKey.Factory("000801:BanditWar.esp");
+
+    [Fact]
+    public void MaterializeResourcePluginMergeToggles_StampsOnlyResourceOnlyPlugins()
+    {
+        var s = new Settings();
+        s.ModSettings.Add(MergeMod("Lawless", mergeIn: false,
+            new[] { MergeNpcPlugin, MergeResourcePlugin },
+            resourceOnly: new[] { MergeResourcePlugin },
+            npcs: new[] { MergeNpcKey }));
+
+        Reflect.InvokeVoid(Make(s), "MaterializeResourcePluginMergeToggles_Initial");
+
+        var overrides = s.ModSettings[0].PluginMergeInOverrides;
+        overrides.Should().ContainKey(MergeResourcePlugin);
+        overrides[MergeResourcePlugin].Should().BeTrue("an unclaimed resource plugin defaults to merging");
+        // NPC plugins must stay unset so they keep following the mod's own toggle.
+        overrides.Should().NotContainKey(MergeNpcPlugin);
+    }
+
+    [Fact]
+    public void MaterializeResourcePluginMergeToggles_InheritsFromTheOwningModEntry()
+    {
+        var s = new Settings();
+        s.ModSettings.Add(MergeMod("Lawless", mergeIn: false,
+            new[] { MergeNpcPlugin, MergeResourcePlugin },
+            resourceOnly: new[] { MergeResourcePlugin },
+            npcs: new[] { MergeNpcKey }));
+        // The resource plugin is its own mod entry elsewhere in the list, with merge OFF.
+        s.ModSettings.Add(MergeMod("Project ja-Kha'jay", mergeIn: false,
+            new[] { MergeResourcePlugin },
+            npcs: new[] { FormKey.Factory("0008C4:ProjectJaKhaJay.esp") }));
+
+        Reflect.InvokeVoid(Make(s), "MaterializeResourcePluginMergeToggles_Initial");
+
+        s.ModSettings[0].PluginMergeInOverrides[MergeResourcePlugin].Should().BeFalse(
+            "the owning mod entry says it stays in the load order");
+    }
+
+    [Fact]
+    public void MaterializeResourcePluginMergeToggles_NeverOverwritesAnExistingChoice()
+    {
+        var s = new Settings();
+        s.ModSettings.Add(MergeMod("Lawless", mergeIn: false,
+            new[] { MergeNpcPlugin, MergeResourcePlugin },
+            resourceOnly: new[] { MergeResourcePlugin },
+            npcs: new[] { MergeNpcKey },
+            overrides: new Dictionary<ModKey, bool> { [MergeResourcePlugin] = false }));
+
+        Reflect.InvokeVoid(Make(s), "MaterializeResourcePluginMergeToggles_Initial");
+
+        s.ModSettings[0].PluginMergeInOverrides[MergeResourcePlugin].Should().BeFalse();
+    }
+
+    [Fact]
+    public void MaterializeResourcePluginMergeToggles_IsIdempotentAndSkipsModsWithNoResourcePlugins()
+    {
+        var s = new Settings();
+        s.ModSettings.Add(MergeMod("Plain", mergeIn: true, new[] { MergeNpcPlugin }, npcs: new[] { MergeNpcKey }));
+
+        var handler = Make(s);
+        Reflect.InvokeVoid(handler, "MaterializeResourcePluginMergeToggles_Initial");
+        Reflect.InvokeVoid(handler, "MaterializeResourcePluginMergeToggles_Initial");
+
+        s.ModSettings[0].PluginMergeInOverrides.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void MaterializeResourcePluginMergeToggles_ToleratesEmptySettings()
+    {
+        var s = new Settings();
+
+        Action act = () => Reflect.InvokeVoid(Make(s), "MaterializeResourcePluginMergeToggles_Initial");
+
+        act.Should().NotThrow();
+    }
+
     // ---- Constructor sanity ----------------------------------------------------------
 
     [Fact]

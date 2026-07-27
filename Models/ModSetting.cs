@@ -56,7 +56,16 @@ public class ModSetting
     public Dictionary<FormKey, string> NpcFormKeysToDisplayName { get; set; } = new();
 
     public bool MergeInDependencyRecords { get; set; } = true;
-    public bool HasAlteredMergeLogic { get; set; } = false; 
+
+    // Per-plugin merge-in overrides, set from the "Set Resource-Only Plugins" dialog.
+    // SPARSE and tri-state by design: a plugin absent from this map follows the default
+    // rule in MergeEligibility (non-resource plugins mirror MergeInDependencyRecords;
+    // resource-only plugins inherit from the mod entry that owns them, or default to
+    // merging). Storing only explicit choices keeps those defaults live, so flipping a
+    // mod's own Merge Dependencies still propagates to the resource plugins it owns.
+    public Dictionary<ModKey, bool> PluginMergeInOverrides { get; set; } = new();
+
+    public bool HasAlteredMergeLogic { get; set; } = false;
     public bool HandleInjectedRecords { get; set; } = false;
     public bool HasAlteredHandleInjectedRecordsLogic { get; set; } = false;
     public HashSet<string> Keywords { get; set; } = new();

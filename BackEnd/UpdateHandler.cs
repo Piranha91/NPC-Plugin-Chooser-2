@@ -86,6 +86,7 @@ public class UpdateHandler
             InvalidateAnalysisCachesForRecordlessFaceGenNpcs_Initial();
             InvalidateAnalysisCachesForWigScan_Initial();
             RemoveSelfSharedAppearances_Initial();
+            MaterializeResourcePluginMergeToggles_Initial();
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -1115,6 +1116,58 @@ public class UpdateHandler
 
         Debug.WriteLine($"2.2.3 Update: removed {removed} self-shared appearance(s) across " +
                         $"{affectedNpcs.Count} NPC(s) that could not be unshared.");
+    }
+
+    /// <summary>
+    /// 2.2.3 migration: writes the new per-plugin merge-in toggles for every resource-only
+    /// plugin in every existing mod entry.
+    ///
+    /// <para>Before 2.2.3, merge-in was a single per-mod switch. A mod whose switch was OFF
+    /// (because its NPC plugins stay in the load order) also refused to merge records from its
+    /// bundled resource-only plugins — and those frequently AREN'T in the load order, so the
+    /// output plugin ended up referencing a master that cannot be written and the save failed
+    /// outright. <see cref="MergeEligibility"/> now resolves the two independently.</para>
+    ///
+    /// <para>New behaviour applies to upgrading users automatically (an absent override falls
+    /// through to the live default), so this pass exists to make the resulting state explicit
+    /// and auditable in the Set Resource-Only Plugins dialog rather than to change it. Only
+    /// resource-only plugins get an entry: non-resource plugins mirror the mod's own toggle by
+    /// design and must stay unset so they keep following it. Nothing is written where an entry
+    /// already exists, so re-running is a no-op and a user's own choices are never clobbered.</para>
+    /// </summary>
+    private void MaterializeResourcePluginMergeToggles_Initial()
+    {
+        if (_settings.ModSettings == null || _settings.ModSettings.Count == 0) return;
+
+        var ownerIndex = MergeEligibility.BuildNpcProvidingOwnerIndex(_settings.ModSettings);
+
+        int stamped = 0;
+        int modsTouched = 0;
+
+        foreach (var mod in _settings.ModSettings)
+        {
+            if (mod?.ResourceOnlyModKeys == null || mod.ResourceOnlyModKeys.Count == 0) continue;
+            if (mod.CorrespondingModKeys == null) continue;
+
+            mod.PluginMergeInOverrides ??= new Dictionary<ModKey, bool>();
+
+            bool touched = false;
+            foreach (var plugin in mod.CorrespondingModKeys.Distinct())
+            {
+                if (!mod.ResourceOnlyModKeys.Contains(plugin)) continue;
+                if (mod.PluginMergeInOverrides.ContainsKey(plugin)) continue; // never overwrite a user choice
+
+                mod.PluginMergeInOverrides[plugin] =
+                    MergeEligibility.IsPluginMergeEligible(mod, plugin, ownerIndex);
+                stamped++;
+                touched = true;
+            }
+
+            if (touched) modsTouched++;
+        }
+
+        Debug.WriteLine($"2.2.3 Update: set per-plugin merge-in toggles for {stamped} resource-only " +
+                        $"plugin(s) across {modsTouched} mod(s).");
     }
 
     private async Task UpdateTo2_0_4_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)
