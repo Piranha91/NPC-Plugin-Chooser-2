@@ -92,6 +92,10 @@ public class Validator : OptionalUIModule
         var implicitMasters = new HashSet<ModKey>(_environmentStateProvider.BaseGamePlugins);
         implicitMasters.UnionWith(_environmentStateProvider.CreationClubPlugins);
 
+        // Same cross-mod index the patcher builds, so screening judges a missing master by the
+        // rule that will actually be applied to it (see the master check below).
+        var npcProvidingOwnersByPlugin = MergeEligibility.BuildNpcProvidingOwnerIndex(_settings.ModSettings);
+
         for (int i = 0; i < totalToScreen; i++)
         {
             ct.ThrowIfCancellationRequested();
@@ -227,19 +231,17 @@ public class Validator : OptionalUIModule
                 }
                 else if (appearanceModSetting.AvailablePluginsForNpcs.TryGetValue(appearanceNpcFormKey, out var availablePlugins) && availablePlugins.Any())
                 {
-                    sourcePlugin = availablePlugins.FirstOrDefault();
+                    // Must match the plugin the PATCHER will use, or screening vets the wrong
+                    // plugin's masters and clears a selection that then fails the save. See
+                    // ResolvePatcherSourcePlugin.
+                    sourcePlugin = ResolvePatcherSourcePlugin(appearanceModSetting, availablePlugins);
 
-                    // The patcher makes this choice differently (it walks CorrespondingModKeys
-                    // from the bottom up and takes the first plugin that actually carries the
-                    // record), so screening can end up vetting a different plugin's masters than
-                    // the one the patch run uses. Record the full candidate list so that gap is
-                    // visible when a screened-clean NPC still breaks the save.
                     if (NpcDiagnosticLogger.IsActive && availablePlugins.Count > 1)
                     {
                         NpcDiagnosticLogger.Log(
                             $"  Master check: {availablePlugins.Count} plugin(s) in this mod carry the record " +
-                            $"[{string.Join(", ", availablePlugins.Select(p => p.FileName.String))}]; screening the first " +
-                            $"('{sourcePlugin.Value.FileName}'). The patcher picks the LAST one that carries the record.");
+                            $"[{string.Join(", ", availablePlugins.Select(p => p.FileName.String))}]; the patcher would " +
+                            $"use '{sourcePlugin?.FileName}', so its masters are the ones screened.");
                     }
                 }
 
@@ -254,43 +256,33 @@ public class Validator : OptionalUIModule
                         _masterPluginCache[sourcePlugin.Value] = masters;
                     }
 
-                    // Which plugin was checked, and the verdict per master. A selection that
-                    // passes here can still produce an unsavable output plugin (a master that is
-                    // only accepted because it belongs to the same ModSetting group is NOT in the
-                    // load order, so records pointing into it dangle), so the per-NPC log has to
-                    // show the reasoning, not just "screening passed".
+                    // Which plugin was checked, and the verdict per master, so the per-NPC log
+                    // shows the reasoning rather than a bare "screening passed".
                     if (NpcDiagnosticLogger.IsActive)
                     {
                         NpcDiagnosticLogger.Log(
                             $"  Master check: source plugin '{sourcePlugin.Value.FileName}' declares {masters.Count} master(s).");
                         foreach (var master in masters)
                         {
-                            string verdict =
-                                loadOrderList.Contains(master) ? "in load order" :
-                                appearanceModSetting.CorrespondingModKeys.Contains(master)
-                                    ? "NOT in load order — accepted because it belongs to this same mod entry; " +
-                                      "records referencing it CANNOT be written to the output plugin" :
-                                implicitMasters.Contains(master) ? "implicitly active (vanilla/CC)" :
-                                "MISSING";
-                            NpcDiagnosticLogger.Log($"    - {master.FileName}: {verdict}");
+                            NpcDiagnosticLogger.Log(
+                                $"    - {master.FileName}: {DescribeMasterVerdict(master, appearanceModSetting, loadOrderList, implicitMasters, npcProvidingOwnersByPlugin)}");
                         }
                     }
 
                     bool mastersAreValid = true;
                     foreach (var master in masters)
                     {
-                        // A master is valid if it's in the load order, part of the same ModSetting group,
-                        // or an implicitly-active vanilla/CC master that Skyrim loads even without a plugins.txt entry.
-                        if (!loadOrderList.Contains(master)
-                            && !appearanceModSetting.CorrespondingModKeys.Contains(master)
-                            && !implicitMasters.Contains(master))
+                        if (IsMasterSatisfied(master, appearanceModSetting, loadOrderList, implicitMasters,
+                                npcProvidingOwnersByPlugin, out var rejectionDetail))
                         {
-                            var errorMsg = $"For NPC {npcIdentifier}, the selected plugin '{sourcePlugin.Value.FileName}' is missing a required master: '{master.FileName}'. This selection is invalid.";
-                            AppendLog($"  SCREENING ERROR: {errorMsg}", true);
-                            invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Missing required master: {master.FileName})");
-                            mastersAreValid = false;
-                            break; // A single missing master invalidates the selection.
+                            continue;
                         }
+
+                        var errorMsg = $"For NPC {npcIdentifier}, the selected plugin '{sourcePlugin.Value.FileName}' is missing a required master: '{master.FileName}'{rejectionDetail}. This selection is invalid.";
+                        AppendLog($"  SCREENING ERROR: {errorMsg}", true);
+                        invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Missing required master: {master.FileName})");
+                        mastersAreValid = false;
+                        break; // A single missing master invalidates the selection.
                     }
                     if (!mastersAreValid)
                     {
@@ -335,5 +327,81 @@ public class Validator : OptionalUIModule
         // The logic for showing the popup is removed from this class.
         // We now simply return the list of invalid selections.
         return new ValidationReport(invalidSelections);
+    }
+
+    /// <summary>
+    /// The plugin the PATCHER will treat as this NPC's appearance source, so screening vets the
+    /// masters of the right plugin. The patcher walks <see cref="ModSetting.CorrespondingModKeys"/>
+    /// from the bottom up (lowest wins), skipping resource-only plugins, and takes the first that
+    /// carries the record; screening used to take the FIRST available plugin instead, so with more
+    /// than one candidate it could clear a selection whose actual source has a missing master.
+    /// <paramref name="availablePlugins"/> is the record-carrying set, so intersecting the two
+    /// reproduces the patcher's choice without loading any plugin.
+    /// </summary>
+    private static ModKey? ResolvePatcherSourcePlugin(ModSetting appearanceModSetting, List<ModKey> availablePlugins)
+    {
+        for (int i = appearanceModSetting.CorrespondingModKeys.Count - 1; i >= 0; i--)
+        {
+            var candidate = appearanceModSetting.CorrespondingModKeys[i];
+            if (appearanceModSetting.ResourceOnlyModKeys.Contains(candidate)) continue;
+            if (availablePlugins.Contains(candidate)) return candidate;
+        }
+
+        // No candidate is listed in CorrespondingModKeys (stale analysis data). Fall back to the
+        // old behaviour rather than skipping the master check entirely.
+        return availablePlugins.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Whether a master declared by the appearance plugin will actually be satisfiable at write
+    /// time. Beyond the load order and the implicitly-active vanilla/CC masters, a master that
+    /// belongs to this same mod entry is acceptable ONLY if that plugin's records get merged into
+    /// the output (<see cref="MergeEligibility"/>): merging copies them, so nothing ends up
+    /// referencing the absent plugin. A non-merged sibling is NOT acceptable — its records stay as
+    /// references, and Mutagen cannot write a master that isn't in the load order, which fails the
+    /// entire save at the end of the run rather than just this NPC.
+    /// </summary>
+    private static bool IsMasterSatisfied(ModKey master, ModSetting appearanceModSetting,
+        List<ModKey> loadOrderList, HashSet<ModKey> implicitMasters,
+        IReadOnlyDictionary<ModKey, ModSetting> npcProvidingOwnersByPlugin, out string rejectionDetail)
+    {
+        rejectionDetail = string.Empty;
+
+        if (loadOrderList.Contains(master)) return true;
+        if (implicitMasters.Contains(master)) return true;
+
+        if (appearanceModSetting.CorrespondingModKeys.Contains(master))
+        {
+            if (MergeEligibility.IsPluginMergeEligible(appearanceModSetting, master, npcProvidingOwnersByPlugin))
+            {
+                return true; // its records are copied into the output, so the master isn't needed
+            }
+
+            rejectionDetail =
+                $" (it belongs to this mod entry but is not in your load order, and its records are not set to " +
+                $"merge in — enable 'Merge In' for '{master.FileName}' under Set Resource Plugins, or enable the plugin)";
+            return false;
+        }
+
+        return false;
+    }
+
+    /// <summary>Human-readable form of <see cref="IsMasterSatisfied"/>, for the per-NPC log.</summary>
+    private static string DescribeMasterVerdict(ModKey master, ModSetting appearanceModSetting,
+        List<ModKey> loadOrderList, HashSet<ModKey> implicitMasters,
+        IReadOnlyDictionary<ModKey, ModSetting> npcProvidingOwnersByPlugin)
+    {
+        if (loadOrderList.Contains(master)) return "in load order";
+        if (implicitMasters.Contains(master)) return "implicitly active (vanilla/CC)";
+
+        if (appearanceModSetting.CorrespondingModKeys.Contains(master))
+        {
+            return MergeEligibility.IsPluginMergeEligible(appearanceModSetting, master, npcProvidingOwnersByPlugin)
+                ? "NOT in load order, but belongs to this mod entry and its records merge in — OK"
+                : "NOT in load order, belongs to this mod entry, and does NOT merge in — records referencing it " +
+                  "cannot be written to the output plugin";
+        }
+
+        return "MISSING";
     }
 }
