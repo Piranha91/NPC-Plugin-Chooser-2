@@ -31,7 +31,10 @@ namespace NPC_Plugin_Chooser_2.Views
         private const double _maxZoomPercentage = 1000.0;
         private const double _zoomStepPercentage = 2.5; // For +/- buttons and scroll wheel
         private bool _isInitialLayout = true; // Flag for one-time initial sizing
-        private bool _userHasAdjustedSplitter = false; // Flag to track user interaction
+        // Set once the user drags the splitter, so the load-time default (a persisted
+        // position, else 25% of width) never overrides a position they chose by hand.
+        // Purely a layout concern — it must not influence zoom/packing decisions.
+        private bool _userHasAdjustedSplitter = false;
 
         public ModsView()
         {
@@ -106,7 +109,11 @@ namespace NPC_Plugin_Chooser_2.Views
                     {
                         Debug.WriteLine(
                             $"ModsView: _sizeChangedSubject (Throttled ScrollViewer.SizeChanged) triggered. New Size: {args.NewSize.Width}x{args.NewSize.Height}");
-                        if (ViewModel != null && !ViewModel.ModsViewIsZoomLocked && !_userHasAdjustedSplitter)
+                        // Matches NpcsView.ImageDisplayScrollViewer_SizeChanged: any size change
+                        // hands control back to the packer unless the zoom is explicitly locked.
+                        // Deliberately NOT gated on _userHasAdjustedSplitter — a splitter drag is
+                        // a resize, not a zoom, so it must still refit the mugshots.
+                        if (ViewModel != null && !ViewModel.ModsViewIsZoomLocked)
                         {
                             ViewModel.ModsViewHasUserManuallyZoomed = false;
                         }
@@ -123,11 +130,14 @@ namespace NPC_Plugin_Chooser_2.Views
                     .ObserveOn(RxApp.MainThreadScheduler)
                     .Subscribe(ep =>
                     {
+                        // Records that the user owns the splitter position, so the 25% default
+                        // never overrides it on a later load. NOT a zoom signal: leaving
+                        // ModsViewHasUserManuallyZoomed alone lets the packer refit the mugshots
+                        // to the new pane width, the same way the NPCs view behaves.
                         _userHasAdjustedSplitter = true;
                         Debug.WriteLine("ModsView: ColumnSplitter_DragCompleted. User has adjusted.");
                         if (ViewModel != null)
                         {
-                            ViewModel.ModsViewHasUserManuallyZoomed = true; // Keep user's intent
                             // Remember the splitter position across sessions.
                             ViewModel.LeftPanelWidth = LeftColumnForModList.ActualWidth;
                         }
