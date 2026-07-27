@@ -47,6 +47,11 @@ public static class AssetProvenanceDiag
     /// mod's "Overwrite Base Game Assets" option is unchecked, so nothing was written.</summary>
     public const string SkippedBaseGameOverwriteKind = "SkippedBaseGameOverwrite";
 
+    /// <summary>SourceKind recorded when a copy was skipped because another mod already
+    /// claimed the same destination file this run (two mods shipping the same asset path);
+    /// the claiming mod's row shows where the bytes actually came from.</summary>
+    public const string SkippedDuplicateDestinationKind = "SkippedDuplicateDestination";
+
     /// <summary>Effective on/off state. Hot-path call sites check this to skip all
     /// record-keeping when nobody is listening. Driven by the user setting via
     /// <see cref="SetEnabled"/>, and force-on by the dev file trigger.</summary>
@@ -175,6 +180,7 @@ public static class AssetProvenanceDiag
         "LooseFile" => "Loose",
         "BsaFile" => "BSA",
         SkippedBaseGameOverwriteKind => SkippedBaseGameOverwriteKind,
+        SkippedDuplicateDestinationKind => SkippedDuplicateDestinationKind,
         _ => "NotFound",
     };
 

@@ -429,6 +429,19 @@ public class BsaHandler : OptionalUIModule
         return false;
     }
     
+    /// <summary>Marker prefix on <see cref="ExtractFileFromBsa"/> error strings whose cause was
+    /// the destination file being locked by another process, so callers can apply the same
+    /// deferred file-in-use handling the loose-copy path uses (verify at end of run instead of
+    /// treating the failure as immediately fatal).</summary>
+    public const string SharingViolationPrefix = "SHARING VIOLATION";
+
+    /// <summary>True when an IOException is a Win32 sharing/lock violation (file in use).</summary>
+    private static bool IsFileLockError(IOException ex)
+    {
+        int win32Code = ex.HResult & 0xFFFF;
+        return win32Code == 32 /* ERROR_SHARING_VIOLATION */ || win32Code == 33 /* ERROR_LOCK_VIOLATION */;
+    }
+
     public (bool ok, string? error) ExtractFileFromBsa(IArchiveFile file, string destPath)
     {
         string? dirPath = Path.GetDirectoryName(destPath);
@@ -455,11 +468,20 @@ public class BsaHandler : OptionalUIModule
             }
             return (true, null);
         }
+        catch (IOException ioEx) when (IsFileLockError(ioEx))
+        {
+            // Destination locked by another process (mod manager, antivirus, a duplicate
+            // extraction). Usually benign — the file is typically already in place — so log
+            // without the error flag; callers defer judgment to end-of-run verification.
+            string msg = $"{SharingViolationPrefix} extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ioEx)}";
+            AppendLog(msg, false, true);
+            return (false, msg);
+        }
         catch (IOException ioEx) // Catch specific IO errors
         {
             string msg = $"IO ERROR extracting BSA file: {file.Path} to {destPath}. Error: {ExceptionLogger.GetExceptionStack(ioEx)}";
             AppendLog(msg, true);
-            // Common issues: File locked, disk full, path too long
+            // Common issues: disk full, path too long
             return (false, msg);
         }
         catch (UnauthorizedAccessException authEx) // Catch permission errors
