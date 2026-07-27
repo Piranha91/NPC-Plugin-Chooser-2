@@ -116,6 +116,10 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
     public ReactiveCommand<Unit, Unit> AddAllVisibleFavoritesToGroupCommand { get; }
     public ReactiveCommand<Unit, Unit> RemoveAllVisibleFavoritesFromGroupCommand { get; }
 
+    // --- Batch actions (whole-mod favorite add/remove) ---
+    public ReactiveCommand<Unit, Unit> AddAllFavoritesFromModCommand { get; }
+    public ReactiveCommand<Unit, Unit> RemoveAllFavoritesFromModCommand { get; }
+
     // Lazily-built source-NPC lookup used to resolve Gender/Uniqueness for a
     // favorite from the main menu's NPC view models (same semantics as the NPCs
     // menu). AllNpcs is stable for the window's lifetime, so building it once is safe.
@@ -221,6 +225,12 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
             ReactiveCommand.Create(AddAllVisibleFavoritesToGroup, canActOnVisibleFavorites).DisposeWith(_disposables);
         RemoveAllVisibleFavoritesFromGroupCommand =
             ReactiveCommand.Create(RemoveAllVisibleFavoritesFromGroup, canActOnVisibleFavorites).DisposeWith(_disposables);
+
+        // --- Batch action commands (always available: they pick their own mod) ---
+        AddAllFavoritesFromModCommand =
+            ReactiveCommand.Create(() => RunBatchModFavoriteAction(FavoriteBatchAction.Add)).DisposeWith(_disposables);
+        RemoveAllFavoritesFromModCommand =
+            ReactiveCommand.Create(() => RunBatchModFavoriteAction(FavoriteBatchAction.Remove)).DisposeWith(_disposables);
 
         // Clear Filters Command — resets the filter *values*, leaving the chosen
         // search-field types in place.
@@ -661,6 +671,113 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
         }
 
         SelectedFavoriteGroupName = selectionStillExists ? currentSelection! : string.Empty;
+    }
+
+    // --- Batch actions: favorite (or un-favorite) every appearance a mod provides ---
+
+    /// <summary>
+    /// Prompts for a mod, then adds or removes all of its appearances in one step. The picker is
+    /// rebuilt on every invocation so its per-mod counts reflect the favorites as they stand now.
+    /// </summary>
+    private void RunBatchModFavoriteAction(FavoriteBatchAction action)
+    {
+        var selectorVm = new VM_FavoriteBatchModSelector(
+            action, _modsViewModel.AllModSettings, _settings.FavoriteFaces);
+
+        if (selectorVm.AvailableMods.Count == 0)
+        {
+            // An empty dropdown would leave the user with nothing to do and no explanation.
+            ScrollableMessageBox.ShowWarning(
+                action == FavoriteBatchAction.Add
+                    ? "No mods with appearances are available. Populate the Mods menu first."
+                    : "You have no favorites to remove.",
+                "Nothing To Do");
+            selectorVm.Dispose();
+            return;
+        }
+
+        var selectorView = new FavoriteBatchModSelectorWindow { DataContext = selectorVm, ViewModel = selectorVm };
+        // Own the dialog by whichever window is active (normally this Favorites window, which
+        // may itself be modal), falling back to the main window.
+        selectorView.Owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+                             ?? Application.Current?.MainWindow;
+        selectorView.ShowDialog();
+
+        bool confirmed = selectorVm.Confirmed;
+        var chosenMod = selectorVm.SelectedMod;
+        selectorVm.Dispose();
+        if (!confirmed || chosenMod == null) return;
+
+        if (action == FavoriteBatchAction.Add)
+        {
+            AddAllFavoritesFromMod(chosenMod.ModName);
+        }
+        else
+        {
+            RemoveAllFavoritesFromMod(chosenMod.ModName);
+        }
+    }
+
+    private void AddAllFavoritesFromMod(string modName)
+    {
+        var modSetting = _modsViewModel.AllModSettings.FirstOrDefault(m =>
+            m.DisplayName.Equals(modName, StringComparison.OrdinalIgnoreCase));
+        if (modSetting == null) return;
+
+        // Key each favorite off the mod's own DisplayName, exactly as the mugshot tiles'
+        // favorite toggle does, so a batch-added entry is indistinguishable from a manual one.
+        int added = 0;
+        foreach (var npcFormKey in modSetting.NpcFormKeysToDisplayName.Keys)
+        {
+            if (_settings.FavoriteFaces.Add((npcFormKey, modSetting.DisplayName))) added++;
+        }
+
+        if (added > 0) ReloadAfterBatchChange();
+
+        int alreadyPresent = modSetting.NpcFormKeysToDisplayName.Count - added;
+        ScrollableMessageBox.Show(
+            $"Added {added} appearance(s) from '{modSetting.DisplayName}' to your favorites." +
+            (alreadyPresent > 0 ? $"{Environment.NewLine}{alreadyPresent} were already favorited." : string.Empty),
+            "Favorites Updated");
+    }
+
+    private void RemoveAllFavoritesFromMod(string modName)
+    {
+        var toRemove = _settings.FavoriteFaces
+            .Where(f => string.Equals(f.ModName, modName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (toRemove.Count == 0)
+        {
+            ScrollableMessageBox.ShowWarning($"You have no favorites from '{modName}'.", "Nothing To Remove");
+            return;
+        }
+
+        if (!ScrollableMessageBox.Confirm(
+                $"Remove all {toRemove.Count} favorite(s) from '{modName}'?",
+                "Confirm Remove Favorites"))
+        {
+            return;
+        }
+
+        foreach (var favorite in toRemove)
+        {
+            _settings.FavoriteFaces.Remove(favorite);
+            // Drop group memberships alongside the favorite, as removing a single favorite
+            // does, so no orphaned assignment lingers in settings.
+            var groupRecord = FindFavoriteGroupRecord(favorite.NpcFormKey, favorite.ModName);
+            if (groupRecord != null) _settings.FavoriteFacesGroupAssignments.Remove(groupRecord);
+        }
+
+        UpdateAvailableFavoriteGroups();
+        ReloadAfterBatchChange();
+    }
+
+    /// <summary>Rebuilds the mugshot list after a batch change, dropping the now-stale selection.</summary>
+    private void ReloadAfterBatchChange()
+    {
+        SelectedMugshot = null;
+        if (!IsZoomLocked) HasUserManuallyZoomed = false;
+        _ = LoadFavoritesAsync();
     }
 
     private async Task LoadFavoritesAsync()

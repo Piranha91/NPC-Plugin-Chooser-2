@@ -57,27 +57,42 @@
         <Border Grid.Row="0" BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="5" Margin="0,0,0,5">
             <StackPanel Orientation="Vertical">
 
-                <!-- Favorite Groups management -->
-                <GroupBox Header="Favorite Groups" Margin="0,0,0,5" Padding="2">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
-                        <TextBlock Text="Group:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                        <ComboBox MinWidth="120" MaxWidth="200" Margin="0,0,5,0" VerticalAlignment="Center"
-                                  IsEditable="True"
-                                  ItemsSource="{Binding AvailableFavoriteGroups}"
-                                  Text="{Binding SelectedFavoriteGroupName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                  ToolTip="Select or type a favorite-group name"/>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0">
-                            <Button Content="Add" Padding="3,1" Margin="0,0,1,0" Command="{Binding AddCurrentFavoriteToGroupCommand}" ToolTip="Add the selected favorite to the specified group"/>
-                            <Button Content="Remove" Padding="3,1" Margin="0,0,2,0" Command="{Binding RemoveCurrentFavoriteFromGroupCommand}" ToolTip="Remove the selected favorite from the specified group"/>
-                            <TextBlock Text="Current" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <!-- Favorite Groups management + whole-mod batch actions, side by side.
+                     A WrapPanel so the Batch Actions box drops to its own line rather than
+                     clipping when the window is narrow. -->
+                <WrapPanel Orientation="Horizontal" Margin="0,0,0,5">
+
+                    <!-- Favorite Groups management -->
+                    <GroupBox Header="Favorite Groups" Margin="0,0,5,0" Padding="2">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
+                            <TextBlock Text="Group:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <ComboBox MinWidth="120" MaxWidth="200" Margin="0,0,5,0" VerticalAlignment="Center"
+                                      IsEditable="True"
+                                      ItemsSource="{Binding AvailableFavoriteGroups}"
+                                      Text="{Binding SelectedFavoriteGroupName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      ToolTip="Select or type a favorite-group name"/>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0">
+                                <Button Content="Add" Padding="3,1" Margin="0,0,1,0" Command="{Binding AddCurrentFavoriteToGroupCommand}" ToolTip="Add the selected favorite to the specified group"/>
+                                <Button Content="Remove" Padding="3,1" Margin="0,0,2,0" Command="{Binding RemoveCurrentFavoriteFromGroupCommand}" ToolTip="Remove the selected favorite from the specified group"/>
+                                <TextBlock Text="Current" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0">
+                                <Button Content="Add" Padding="3,1" Margin="0,0,1,0" Command="{Binding AddAllVisibleFavoritesToGroupCommand}" ToolTip="Add all favorites currently visible below to the specified group"/>
+                                <Button Content="Remove" Padding="3,1" Margin="0,0,2,0" Command="{Binding RemoveAllVisibleFavoritesFromGroupCommand}" ToolTip="Remove all favorites currently visible below from the specified group"/>
+                                <TextBlock Text="Visible" VerticalAlignment="Center"/>
+                            </StackPanel>
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0">
-                            <Button Content="Add" Padding="3,1" Margin="0,0,1,0" Command="{Binding AddAllVisibleFavoritesToGroupCommand}" ToolTip="Add all favorites currently visible below to the specified group"/>
-                            <Button Content="Remove" Padding="3,1" Margin="0,0,2,0" Command="{Binding RemoveAllVisibleFavoritesFromGroupCommand}" ToolTip="Remove all favorites currently visible below from the specified group"/>
-                            <TextBlock Text="Visible" VerticalAlignment="Center"/>
+                    </GroupBox>
+
+                    <!-- Batch Actions: favorite / un-favorite every appearance a mod provides -->
+                    <GroupBox Header="Batch Actions" Padding="2">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
+                            <Button Content="Add" Padding="3,1" Margin="0,0,1,0" Command="{Binding AddAllFavoritesFromModCommand}" ToolTip="Pick a mod and add every appearance it provides to your favorites"/>
+                            <Button Content="Remove" Padding="3,1" Margin="0,0,2,0" Command="{Binding RemoveAllFavoritesFromModCommand}" ToolTip="Pick a mod and remove all of its appearances from your favorites"/>
+                            <TextBlock Text="All From Mod" VerticalAlignment="Center"/>
                         </StackPanel>
-                    </StackPanel>
-                </GroupBox>
+                    </GroupBox>
+                </WrapPanel>
 
                 <!-- Search Term 1 -->
                 <Grid Margin="0,0,0,5">
