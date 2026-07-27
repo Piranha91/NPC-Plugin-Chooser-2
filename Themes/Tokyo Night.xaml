@@ -62,7 +62,7 @@
     <Style TargetType="Control">
         <Setter Property="Foreground"  Value="{StaticResource PrimaryForeground}"/>
         <Setter Property="FontFamily"  Value="Segoe UI, sans-serif"/>
-        <Setter Property="FontSize"    Value="13"/>
+        <Setter Property="FontSize"    Value="12"/>
     </Style>
 
     <Style x:Key="ThemedWindowStyle" TargetType="Window">
@@ -72,7 +72,7 @@
     <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>
         <Setter Property="FontFamily" Value="Segoe UI, sans-serif"/>
-        <Setter Property="FontSize"   Value="13"/>
+        <Setter Property="FontSize"   Value="12"/>
     </Style>
 
     <!-- TEXTBOX -->
@@ -85,7 +85,7 @@
         <Setter Property="BorderThickness"  Value="1"/>
         <Setter Property="Padding"          Value="6,4"/>
         <Setter Property="FontFamily"       Value="Segoe UI, sans-serif"/>
-        <Setter Property="FontSize"         Value="13"/>
+        <Setter Property="FontSize"         Value="12"/>
         <Style.Triggers>
             <Trigger Property="IsFocused" Value="True">
                 <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
@@ -101,7 +101,7 @@
         <Setter Property="Padding"      Value="10,5"/>
         <Setter Property="Cursor"       Value="Hand"/>
         <Setter Property="FontFamily"   Value="Segoe UI, sans-serif"/>
-        <Setter Property="FontSize"     Value="13"/>
+        <Setter Property="FontSize"     Value="12"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -161,7 +161,7 @@
         <Setter Property="Foreground" Value="{StaticResource PrimaryForeground}"/>
         <Setter Property="Cursor"     Value="Hand"/>
         <Setter Property="FontFamily" Value="Segoe UI, sans-serif"/>
-        <Setter Property="FontSize"   Value="13"/>
+        <Setter Property="FontSize"   Value="12"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="CheckBox">
@@ -172,7 +172,7 @@
                                 BorderThickness="1.5"
                                 BorderBrush="{StaticResource BorderBrush}"
                                 Background="Transparent"
-                                Margin="0,0,7,0">
+                                Margin="0,0,4,0">
                             <Path x:Name="CheckMark"
                                   Data="M 2 8 L 6 12 L 14 4"
                                   Stroke="{StaticResource AccentForeground}"
@@ -209,7 +209,7 @@
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
         <Setter Property="Foreground"  Value="{StaticResource PrimaryForeground}"/>
         <Setter Property="FontFamily"  Value="Segoe UI, sans-serif"/>
-        <Setter Property="FontSize"    Value="13"/>
+        <Setter Property="FontSize"    Value="12"/>
     </Style>
 
     <Style TargetType="ToggleButton">
@@ -256,7 +256,7 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding"         Value="6,4"/>
         <Setter Property="FontFamily"      Value="Segoe UI, sans-serif"/>
-        <Setter Property="FontSize"        Value="13"/>
+        <Setter Property="FontSize"        Value="12"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBox">
@@ -530,7 +530,7 @@
         <Setter Property="Foreground"  Value="{DynamicResource PrimaryForeground}"/>
         <Setter Property="Padding"     Value="12,6"/>
         <Setter Property="FontFamily"  Value="Segoe UI, sans-serif"/>
-        <Setter Property="FontSize"    Value="13"/>
+        <Setter Property="FontSize"    Value="12"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="MenuItem">
