@@ -42,10 +42,15 @@ public class BsaHandler : OptionalUIModule
 
     /// <summary>
     /// Hard-wipe: dispose every cached reader and clear the cache regardless of
-    /// outstanding refcounts. Intended for end-of-patcher / shutdown only —
-    /// callers that just want to release a single mod's readers should use
-    /// <see cref="UnloadReadersInFolders"/> so other concurrent users (e.g. an
-    /// in-flight preview render) keep their readers.
+    /// outstanding refcounts. Intended for app shutdown ONLY. Never call this
+    /// mid-session: the CharacterViewer BSA adapter opens its readers once at
+    /// startup and latches (<c>EnsureAllArchivesOpened</c> never re-runs), so a
+    /// mid-session wipe leaves every renderer BSA extraction failing with
+    /// BSA-CACHE-MISS — and the renderer's asset resolver caches those failures
+    /// as NotFound for the rest of the session (headless mugshots/previews).
+    /// Callers that opened readers themselves should release exactly what they
+    /// opened via <see cref="ReleaseReaders"/> (paths returned by
+    /// <see cref="OpenBsaReadersFor"/>) or <see cref="UnloadReadersInFolders"/>.
     /// </summary>
     public void UnloadAllBsaReaders()
     {
@@ -86,6 +91,25 @@ public class BsaHandler : OptionalUIModule
             }
 
             foreach (var bsaPath in toRelease)
+            {
+                ReleaseReader_NoLock(bsaPath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Refcount-aware release of specific BSA paths, one decrement per list
+    /// occurrence. Pair with the list returned by
+    /// <see cref="OpenBsaReadersFor"/> so a caller releases exactly the
+    /// refs it took — unlike <see cref="UnloadAllBsaReaders"/>, this can
+    /// never dispose a reader another consumer (e.g. the CharacterViewer
+    /// BSA adapter) still holds.
+    /// </summary>
+    public void ReleaseReaders(IEnumerable<string> bsaPaths)
+    {
+        lock (_readersLock)
+        {
+            foreach (var bsaPath in bsaPaths)
             {
                 ReleaseReader_NoLock(bsaPath);
             }
@@ -164,13 +188,62 @@ public class BsaHandler : OptionalUIModule
             IArchiveReader? bsaReader;
             lock (_readersLock)
             {
-                if (!_openBsaArchiveReaders.TryGetValue(bsaPath, out var entry))
+                _openBsaArchiveReaders.TryGetValue(bsaPath, out var entry);
+                bsaReader = entry?.Reader;
+            }
+
+            // Recovery path: the reader wasn't pre-cached (e.g. a hard unload
+            // dropped it mid-session while a longer-lived consumer — the
+            // CharacterViewer BSA adapter — still expected it). The path index
+            // that led the caller here already vouched for the file, so open a
+            // reader on demand rather than failing; a failure would be cached
+            // as NotFound by the renderer's asset resolver for the rest of the
+            // session (headless mugshots). Logged loudly because steady-state
+            // code should never hit this — it signals a refcount/lifetime bug.
+            if (bsaReader == null)
+            {
+                AppendLog($"BSA-CACHE-MISS: The reader for {bsaPath} was not pre-cached; opening on demand.", false, true);
+                if (!File.Exists(bsaPath))
                 {
-                    string msg = $"BSA-CACHE-MISS: The reader for {bsaPath} was not pre-cached. This indicates a logic error.";
+                    string msg = $"BSA-CACHE-MISS: {bsaPath} does not exist on disk; cannot extract {relativePath}.";
                     AppendLog(msg, true, true);
                     return (false, msg);
                 }
-                bsaReader = entry.Reader;
+                IArchiveReader? fresh = null;
+                try
+                {
+                    fresh = Archive.CreateReader(_environmentStateProvider.SkyrimVersion.ToGameRelease(), bsaPath);
+                }
+                catch (Exception ex)
+                {
+                    string msg = $"BSA-CACHE-MISS: failed to open {bsaPath} on demand: {ex.Message}";
+                    AppendLog(msg, true, true);
+                    return (false, msg);
+                }
+                if (fresh == null)
+                {
+                    string msg = $"BSA-CACHE-MISS: on-demand reader for {bsaPath} is null.";
+                    AppendLog(msg, true, true);
+                    return (false, msg);
+                }
+                lock (_readersLock)
+                {
+                    if (_openBsaArchiveReaders.TryGetValue(bsaPath, out var raced))
+                    {
+                        // Another thread re-cached it while we were opening ours.
+                        (fresh as IDisposable)?.Dispose();
+                        bsaReader = raced.Reader;
+                    }
+                    else
+                    {
+                        // Cache with refcount 1 so repeated extractions from the
+                        // same archive don't re-parse its file table. Nobody owns
+                        // this ref; it lives until the next full unload, same as
+                        // the CharacterViewer adapter's startup-opened readers.
+                        _openBsaArchiveReaders[bsaPath] = new ReaderEntry { Reader = fresh, RefCount = 1 };
+                        bsaReader = fresh;
+                    }
+                }
             }
 
             try
@@ -195,10 +268,16 @@ public class BsaHandler : OptionalUIModule
         });
     }
     
-    public void OpenBsaReadersFor(ModSetting modSetting, GameRelease gameRelease)
+    /// <summary>
+    /// Opens (or refcount-bumps) cached readers for every BSA owned by
+    /// <paramref name="modSetting"/>'s plugins at its folders. Returns the
+    /// BSA paths whose cached refcount this call incremented — pass that
+    /// list to <see cref="ReleaseReaders"/> for an exactly-balanced release.
+    /// </summary>
+    public List<string> OpenBsaReadersFor(ModSetting modSetting, GameRelease gameRelease)
     {
         var bsaDict = GetBsaPathsForPluginsInDirs(modSetting.CorrespondingModKeys, modSetting.CorrespondingFolderPaths, gameRelease);
-        
+
         if (modSetting.DisplayName == VM_Mods.BaseGameModSettingName ||
             modSetting.DisplayName == VM_Mods.CreationClubModsettingName)
         {
@@ -212,11 +291,16 @@ public class BsaHandler : OptionalUIModule
                }
             }
         }
-        
+
+        var opened = new List<string>();
         foreach (var bsaPaths in bsaDict.Values)
         {
-            OpenBsaArchiveReaders(bsaPaths, gameRelease, true);
+            // OpenBsaArchiveReaders only returns paths it actually cached
+            // (+1 refcount each); open failures are excluded, so releasing
+            // exactly this list can never underflow another owner's count.
+            opened.AddRange(OpenBsaArchiveReaders(bsaPaths, gameRelease, true).Keys);
         }
+        return opened;
     }
     
     public bool FileExists(string path, ModKey modKey, string bsaPath, bool convertSlashes = true)

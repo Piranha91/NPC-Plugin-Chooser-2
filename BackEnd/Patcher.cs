@@ -602,7 +602,16 @@ public class Patcher : OptionalUIModule
         {
             BuildModSettingsMap();
         }
-        
+
+        // BSA readers this run opens (refcount +1 per entry, one list occurrence
+        // per bump). Released 1:1 in the finally below — NOT via
+        // UnloadAllBsaReaders, whose hard wipe also disposed the readers the
+        // CharacterViewer BSA adapter opened at startup; the adapter never
+        // re-opens (EnsureAllArchivesOpened latches), so post-run mugshot
+        // extractions failed BSA-CACHE-MISS and the renderer cached the misses
+        // as NotFound for the session (headless renders).
+        var openedBsaPaths = new List<string>();
+
         try
         {
             if (isFirstIteration)
@@ -776,7 +785,8 @@ public class Patcher : OptionalUIModule
                             _recordHandler.ResetMapping();
                             _wigForwarder.ResetCache();
                             _headPartWigConverter.ResetCache();
-                            _bsaHandler.OpenBsaReadersFor(currentModSetting, _settings.SkyrimRelease.ToGameRelease());
+                            openedBsaPaths.AddRange(
+                                _bsaHandler.OpenBsaReadersFor(currentModSetting, _settings.SkyrimRelease.ToGameRelease()));
                         }
                         else
                         {
@@ -1901,7 +1911,9 @@ public class Patcher : OptionalUIModule
         }
         finally
         {
-            _bsaHandler.UnloadAllBsaReaders();
+            // Release only the reader refs THIS run took (see openedBsaPaths
+            // declaration). Readers other consumers still hold stay alive.
+            _bsaHandler.ReleaseReaders(openedBsaPaths);
             _recordDeltaPatcher.FinalizeLog();
             UpdateProgress(selectionsToProcess.Count, selectionsToProcess.Count, "Finished.");
         }

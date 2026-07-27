@@ -18,6 +18,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Windows;
 using Microsoft.Win32;
+using CharacterViewer.Rendering.Offscreen;
 using Mutagen.Bethesda.Archives;
 using Mutagen.Bethesda.Plugins.Records;
 using Noggog;
@@ -42,6 +43,7 @@ public class VM_Run : ReactiveObject, IDisposable
     private readonly RecordHandler _recordHandler;
     private readonly Auxilliary _aux;
     private readonly MasterAnalyzer _masterAnalyzer;
+    private readonly Lazy<IOffscreenRenderer> _offscreenRenderer;
     private CancellationTokenSource? _patchingCts;
     private readonly CompositeDisposable _disposables = new();
     private readonly Subject<string> _logMessageSubject = new Subject<string>();
@@ -106,7 +108,8 @@ public class VM_Run : ReactiveObject, IDisposable
         PluginProvider pluginProvider,
         RecordHandler recordHandler,
         MasterAnalyzer masterAnalyzer,
-        NPC_Plugin_Chooser_2.BackEnd.OutfitDistribution.ForwardedOutfitDistributor forwardedOutfitDistributor)
+        NPC_Plugin_Chooser_2.BackEnd.OutfitDistribution.ForwardedOutfitDistributor forwardedOutfitDistributor,
+        Lazy<IOffscreenRenderer> offscreenRenderer)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
@@ -122,6 +125,7 @@ public class VM_Run : ReactiveObject, IDisposable
         _pluginProvider = pluginProvider;
         _recordHandler = recordHandler;
         _masterAnalyzer = masterAnalyzer;
+        _offscreenRenderer = offscreenRenderer;
 
         _patcher.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
         _validator.ConnectToUILogger(AppendLog, UpdateProgress, ResetProgress, ResetLog);
@@ -449,6 +453,23 @@ public class VM_Run : ReactiveObject, IDisposable
         {
             // Close per-NPC diagnostic files opened for this run.
             NpcDiagnosticLogger.Shutdown();
+
+            // Drop the offscreen renderer's caches after any run that reached
+            // patching (PatchingStartTime is set right before the first
+            // RunPatchingLogic call and stays null on the abort paths). The
+            // renderer's GameAssetResolver latches NotFound verdicts — a BSA
+            // extraction that failed while the run had the readers in flux
+            // would otherwise leave that asset "missing" for the rest of the
+            // session (headless mugshots/previews). Safe from any thread; the
+            // cost is one cache re-warm on the next render.
+            if (PatchingStartTime.HasValue)
+            {
+                try { _offscreenRenderer.Value.InvalidateCaches(); }
+                catch (Exception ex)
+                {
+                    AppendLog($"Note: could not invalidate renderer caches: {ex.Message}");
+                }
+            }
 
             // CRITICAL: Ensure IsRunning is always set back to false,
             // and the CancellationTokenSource is disposed.
