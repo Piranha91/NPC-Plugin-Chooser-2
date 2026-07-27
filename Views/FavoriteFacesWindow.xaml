@@ -23,15 +23,11 @@
         <local:WidthPercentageConverter x:Key="WidthPercentageConverter"/>
         <local:EnumDescriptionConverter x:Key="EnumDescConverter"/>
         <local:EnumMatchToBooleanConverter x:Key="EnumMatchToBooleanConverter"/>
+        <local:FilterInversionToBooleanConverter x:Key="FilterInversionConverter"/>
 
         <ObjectDataProvider x:Key="FavoriteFaceSearchTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="vm:FavoriteFaceSearchType"/>
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-        <ObjectDataProvider x:Key="FilterInversionTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="vm:FilterInversionType"/>
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
         <ObjectDataProvider x:Key="GenderFilterTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
@@ -97,10 +93,8 @@
                 <!-- Search Term 1 -->
                 <Grid Margin="0,0,0,5">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <ComboBox Grid.Column="0" MinWidth="90" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FavoriteFaceSearchTypeEnumValues}}" SelectedItem="{Binding SearchType1, Mode=TwoWay}" ToolTip="Select search field 1">
-                        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <ComboBox Grid.Column="1" MinWidth="55" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FilterInversionTypeEnumValues}}" SelectedItem="{Binding SearchInversion1, Mode=TwoWay}" ToolTip="Is: keep favorites matching this term.&#x0a;Is Not: keep favorites that do NOT match it.">
+                    <CheckBox Grid.Column="0" Content="Not" Margin="0,0,5,0" VerticalAlignment="Center" IsChecked="{Binding SearchInversion1, Mode=TwoWay, Converter={StaticResource FilterInversionConverter}}" ToolTip="Unchecked: keep favorites matching this filter.&#x0a;Checked: keep favorites that do NOT match it."/>
+                    <ComboBox Grid.Column="1" MinWidth="90" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FavoriteFaceSearchTypeEnumValues}}" SelectedItem="{Binding SearchType1, Mode=TwoWay}" ToolTip="Select search field 1">
                         <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                     </ComboBox>
                     <Grid Grid.Column="2">
@@ -131,10 +125,8 @@
                 <!-- Search Term 2 -->
                 <Grid Margin="0,0,0,5">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <ComboBox Grid.Column="0" MinWidth="90" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FavoriteFaceSearchTypeEnumValues}}" SelectedItem="{Binding SearchType2, Mode=TwoWay}" ToolTip="Select search field 2">
-                        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <ComboBox Grid.Column="1" MinWidth="55" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FilterInversionTypeEnumValues}}" SelectedItem="{Binding SearchInversion2, Mode=TwoWay}" ToolTip="Is: keep favorites matching this term.&#x0a;Is Not: keep favorites that do NOT match it.">
+                    <CheckBox Grid.Column="0" Content="Not" Margin="0,0,5,0" VerticalAlignment="Center" IsChecked="{Binding SearchInversion2, Mode=TwoWay, Converter={StaticResource FilterInversionConverter}}" ToolTip="Unchecked: keep favorites matching this filter.&#x0a;Checked: keep favorites that do NOT match it."/>
+                    <ComboBox Grid.Column="1" MinWidth="90" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FavoriteFaceSearchTypeEnumValues}}" SelectedItem="{Binding SearchType2, Mode=TwoWay}" ToolTip="Select search field 2">
                         <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                     </ComboBox>
                     <Grid Grid.Column="2">
@@ -165,10 +157,8 @@
                 <!-- Search Term 3 -->
                 <Grid Margin="0,0,0,5">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <ComboBox Grid.Column="0" MinWidth="90" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FavoriteFaceSearchTypeEnumValues}}" SelectedItem="{Binding SearchType3, Mode=TwoWay}" ToolTip="Select search field 3">
-                        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <ComboBox Grid.Column="1" MinWidth="55" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FilterInversionTypeEnumValues}}" SelectedItem="{Binding SearchInversion3, Mode=TwoWay}" ToolTip="Is: keep favorites matching this term.&#x0a;Is Not: keep favorites that do NOT match it.">
+                    <CheckBox Grid.Column="0" Content="Not" Margin="0,0,5,0" VerticalAlignment="Center" IsChecked="{Binding SearchInversion3, Mode=TwoWay, Converter={StaticResource FilterInversionConverter}}" ToolTip="Unchecked: keep favorites matching this filter.&#x0a;Checked: keep favorites that do NOT match it."/>
+                    <ComboBox Grid.Column="1" MinWidth="90" Margin="0,0,5,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FavoriteFaceSearchTypeEnumValues}}" SelectedItem="{Binding SearchType3, Mode=TwoWay}" ToolTip="Select search field 3">
                         <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                     </ComboBox>
                     <Grid Grid.Column="2">

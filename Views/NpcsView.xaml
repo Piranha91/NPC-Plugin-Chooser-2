@@ -31,6 +31,7 @@
         <local:OutfitOverrideStateConverter x:Key="OutfitOverrideStateConverter"/>
         <local:IsGreaterThanOneConverter x:Key="IsGreaterThanOneConverter"/>
         <local:PathToFolderNameConverter x:Key="PathToFolderNameConverter"/>
+        <local:FilterInversionToBooleanConverter x:Key="FilterInversionConverter"/>
         <ObjectDataProvider x:Key="OutfitOverrideEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="models:OutfitOverride"/>
@@ -39,9 +40,6 @@
 
         <ObjectDataProvider x:Key="NpcSearchTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters> <x:Type TypeName="vm:NpcSearchType"/> </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-        <ObjectDataProvider x:Key="FilterInversionTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
-            <ObjectDataProvider.MethodParameters> <x:Type TypeName="vm:FilterInversionType"/> </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
          <ObjectDataProvider x:Key="SelectionStateFilterTypeEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
              <ObjectDataProvider.MethodParameters> <x:Type TypeName="vm:SelectionStateFilterType"/> </ObjectDataProvider.MethodParameters>
@@ -203,10 +201,8 @@
                         <!-- Search Term 1 -->
                         <Grid Margin="0,0,0,5">
                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                           <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType1, Mode=TwoWay}" ToolTip="Select search field 1">
-                               <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
-                           </ComboBox>
-                           <ComboBox Grid.Column="1" MinWidth="50" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FilterInversionTypeEnumValues}}" SelectedItem="{Binding SearchInversion1, Mode=TwoWay}" ToolTip="Is: keep NPCs matching this term.&#x0a;Is Not: keep NPCs that do NOT match it.">
+                           <CheckBox Grid.Column="0" Content="Not" Margin="0,0,5,0" VerticalAlignment="Center" IsChecked="{Binding SearchInversion1, Mode=TwoWay, Converter={StaticResource FilterInversionConverter}}" ToolTip="Unchecked: keep NPCs matching this filter.&#x0a;Checked: keep NPCs that do NOT match it."/>
+                           <ComboBox Grid.Column="1" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType1, Mode=TwoWay}" ToolTip="Select search field 1">
                                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                            </ComboBox>
                            <Grid Grid.Column="2">
@@ -261,10 +257,8 @@
                         <!-- Search Term 2 -->
                         <Grid Margin="0,0,0,5">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType2, Mode=TwoWay}" ToolTip="Select search field 2">
-                                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <ComboBox Grid.Column="1" MinWidth="50" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FilterInversionTypeEnumValues}}" SelectedItem="{Binding SearchInversion2, Mode=TwoWay}" ToolTip="Is: keep NPCs matching this term.&#x0a;Is Not: keep NPCs that do NOT match it.">
+                            <CheckBox Grid.Column="0" Content="Not" Margin="0,0,5,0" VerticalAlignment="Center" IsChecked="{Binding SearchInversion2, Mode=TwoWay, Converter={StaticResource FilterInversionConverter}}" ToolTip="Unchecked: keep NPCs matching this filter.&#x0a;Checked: keep NPCs that do NOT match it."/>
+                            <ComboBox Grid.Column="1" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType2, Mode=TwoWay}" ToolTip="Select search field 2">
                                 <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                             </ComboBox>
                             <Grid Grid.Column="2">
@@ -320,10 +314,8 @@
                         <!-- Search Term 3 -->
                         <Grid Margin="0,0,0,5">
                              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                             <ComboBox Grid.Column="0" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType3, Mode=TwoWay}" ToolTip="Select search field 3">
-                                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
-                             </ComboBox>
-                             <ComboBox Grid.Column="1" MinWidth="50" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource FilterInversionTypeEnumValues}}" SelectedItem="{Binding SearchInversion3, Mode=TwoWay}" ToolTip="Is: keep NPCs matching this term.&#x0a;Is Not: keep NPCs that do NOT match it.">
+                             <CheckBox Grid.Column="0" Content="Not" Margin="0,0,5,0" VerticalAlignment="Center" IsChecked="{Binding SearchInversion3, Mode=TwoWay, Converter={StaticResource FilterInversionConverter}}" ToolTip="Unchecked: keep NPCs matching this filter.&#x0a;Checked: keep NPCs that do NOT match it."/>
+                             <ComboBox Grid.Column="1" MinWidth="80" Margin="0,0,3,0" VerticalAlignment="Center" ItemsSource="{Binding Source={StaticResource NpcSearchTypeEnumValues}}" SelectedItem="{Binding SearchType3, Mode=TwoWay}" ToolTip="Select search field 3">
                                 <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Converter={StaticResource EnumDescConverter}}"/></DataTemplate></ComboBox.ItemTemplate>
                              </ComboBox>
                               <Grid Grid.Column="2">

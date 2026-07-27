@@ -46,10 +46,17 @@ namespace NPC_Plugin_Chooser_2.View_Models
     }
     
     /// <summary>
-    /// Whether a filter row keeps the items its criterion matches ("Is") or keeps
-    /// everything the criterion does *not* match ("Is Not"). A row that contributes no
+    /// Whether a filter row keeps the items its criterion matches (<see cref="Is"/>) or keeps
+    /// everything the criterion does *not* match (<see cref="IsNot"/>). A row that contributes no
     /// criterion at all (e.g. an empty text box, or Group left on "All ...") stays
     /// inactive either way — inverting "no filter" is still "no filter".
+    /// <para>
+    /// The UI surfaces this as a "Not" checkbox in front of the field dropdown rather than an
+    /// Is/Is Not dropdown after it (see <c>FilterInversionToBooleanConverter</c>): a leading
+    /// "Not" negates any field label, whereas a copula only reads correctly for the fields
+    /// that name an attribute ("Name Is …") and not for those that name a relation
+    /// ("In Appearance Mod Is …").
+    /// </para>
     /// </summary>
     public enum FilterInversionType
     {
