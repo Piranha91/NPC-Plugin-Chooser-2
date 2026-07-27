@@ -1,5 +1,6 @@
 using System.Windows.Media;
 using FluentAssertions;
+using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Tests.TestSupport;
@@ -12,7 +13,8 @@ namespace NPC_Plugin_Chooser_2.Tests.Harness;
 /// mutate a <see cref="Settings"/> WITHOUT showing a dialog or needing DI services are
 /// exercised here: <c>UpdateTo2_1_7_Initial</c>, <c>UpdateTo2_2_1_Initial</c> (both
 /// SubsurfaceStrength tweaks), <c>UpdateTo2_0_7_Initial</c> (Portrait Creator defaults
-/// reset, reachable dialog-free while <c>UsePortraitCreatorFallback == false</c>), and the
+/// reset, reachable dialog-free while <c>UsePortraitCreatorFallback == false</c>),
+/// <c>RemoveSelfSharedAppearances_Initial</c> (the 2.2.3 self-share repair), and the
 /// new-user early return of <c>InitialCheckForUpdatesAndPatch</c> /
 /// <c>FinalCheckForUpdatesAndPatch</c>. The private steps are reached via
 /// <see cref="Reflect"/>. No live Skyrim install or clock is touched.
@@ -240,6 +242,150 @@ public class UpdateHandlerMigrationTests
         Reflect.InvokeVoid(Make(s), "UpdateTo2_0_7_Initial");
 
         s.InternalMugshot.SubsurfaceStrength.Should().Be(1.23f);
+    }
+
+    // ---- RemoveSelfSharedAppearances_Initial : 2.2.3 self-share repair ----------------
+    // Pre-2.2.3 the share picker allowed the appearance's own source NPC as the target,
+    // persisting a guest entry whose donor == target. Such a tile is not flagged
+    // IsGuestAppearance, so "Unshare from this NPC" never appears and the entry is permanent.
+
+    private static readonly FormKey NpcA = MutagenFixtures.Fk("000801:Skyrim.esm");
+    private static readonly FormKey NpcB = MutagenFixtures.Fk("000802:Skyrim.esm");
+    private const string ShareMod = "Chooey's Replacer";
+
+    private static void AddGuest(
+        Dictionary<FormKey, HashSet<(string ModName, FormKey NpcFormKey, string NpcDisplayName)>> map,
+        FormKey target, string modName, FormKey donor, string display)
+    {
+        if (!map.TryGetValue(target, out var set))
+        {
+            set = new HashSet<(string, FormKey, string)>();
+            map[target] = set;
+        }
+        set.Add((modName, donor, display));
+    }
+
+    private static void RemoveSelfShares(Settings s) =>
+        Reflect.InvokeVoid(Make(s), "RemoveSelfSharedAppearances_Initial");
+
+    [Fact]
+    public void SelfShareRepair_RemovesEntry_AndDropsEmptiedTarget()
+    {
+        var s = new Settings();
+        AddGuest(s.GuestAppearances, NpcA, ShareMod, NpcA, "Lydia");
+
+        RemoveSelfShares(s);
+
+        s.GuestAppearances.Should().NotContainKey(NpcA,
+            "the self-share was the target's only entry, so the whole key should go");
+    }
+
+    [Fact]
+    public void SelfShareRepair_KeepsRealSharesOnTheSameNpc()
+    {
+        var s = new Settings();
+        AddGuest(s.GuestAppearances, NpcA, ShareMod, NpcA, "Lydia");
+        AddGuest(s.GuestAppearances, NpcA, ShareMod, NpcB, "Amalee");
+
+        RemoveSelfShares(s);
+
+        s.GuestAppearances[NpcA].Should().ContainSingle()
+            .Which.Should().Be((ShareMod, NpcB, "Amalee"));
+    }
+
+    [Fact]
+    public void SelfShareRepair_SweepsRandomizedSubsetToo()
+    {
+        var s = new Settings();
+        AddGuest(s.GuestAppearances, NpcA, ShareMod, NpcA, "Lydia");
+        AddGuest(s.RandomizedGuestAppearances, NpcA, ShareMod, NpcA, "Lydia");
+
+        RemoveSelfShares(s);
+
+        s.GuestAppearances.Should().NotContainKey(NpcA);
+        s.RandomizedGuestAppearances.Should().NotContainKey(NpcA,
+            "a randomizer-created self-share must not survive as untracked state");
+    }
+
+    [Fact]
+    public void SelfShareRepair_DropsSkyPatcherTemplateFlag_WhenNpcNoLongerShared()
+    {
+        // The template flag hides a donor-only NPC from the NPC list while shares point at it.
+        // A self-share would keep a real NPC hidden forever, so the flag must go with the entry.
+        var s = new Settings();
+        AddGuest(s.GuestAppearances, NpcA, ShareMod, NpcA, "Lydia");
+        s.CachedSkyPatcherTemplates.Add(NpcA);
+
+        RemoveSelfShares(s);
+
+        s.CachedSkyPatcherTemplates.Should().NotContain(NpcA);
+    }
+
+    [Fact]
+    public void SelfShareRepair_KeepsSkyPatcherTemplateFlag_WhenNpcIsStillADonorElsewhere()
+    {
+        var s = new Settings();
+        AddGuest(s.GuestAppearances, NpcA, ShareMod, NpcA, "Lydia");
+        AddGuest(s.GuestAppearances, NpcB, ShareMod, NpcA, "Lydia");
+        s.CachedSkyPatcherTemplates.Add(NpcA);
+
+        RemoveSelfShares(s);
+
+        s.GuestAppearances.Should().NotContainKey(NpcA);
+        s.CachedSkyPatcherTemplates.Should().Contain(NpcA,
+            "NpcA is still the donor of a live share onto NpcB");
+    }
+
+    [Fact]
+    public void SelfShareRepair_NoSelfShares_LeavesEverythingAlone()
+    {
+        var s = new Settings();
+        AddGuest(s.GuestAppearances, NpcA, ShareMod, NpcB, "Amalee");
+        s.CachedSkyPatcherTemplates.Add(NpcB);
+
+        RemoveSelfShares(s);
+
+        s.GuestAppearances[NpcA].Should().ContainSingle()
+            .Which.Should().Be((ShareMod, NpcB, "Amalee"));
+        s.CachedSkyPatcherTemplates.Should().Contain(NpcB);
+    }
+
+    [Fact]
+    public void SelfShareRepair_IsIdempotent()
+    {
+        var s = new Settings();
+        AddGuest(s.GuestAppearances, NpcA, ShareMod, NpcA, "Lydia");
+        AddGuest(s.GuestAppearances, NpcA, ShareMod, NpcB, "Amalee");
+
+        RemoveSelfShares(s);
+        RemoveSelfShares(s);
+
+        s.GuestAppearances[NpcA].Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task InitialCheck_From2_2_2_RunsSelfShareRepair()
+    {
+        // Version gate probe: 2.2.2 < 2.2.3 opens the block; every earlier gate is closed at
+        // that version, so nothing else in the Initial pass runs (no dialogs, no DI).
+        var s = new Settings { ProgramVersion = "2.2.2" };
+        AddGuest(s.GuestAppearances, NpcA, ShareMod, NpcA, "Lydia");
+
+        await Make(s).InitialCheckForUpdatesAndPatch();
+
+        s.GuestAppearances.Should().NotContainKey(NpcA);
+    }
+
+    [Fact]
+    public async Task InitialCheck_From2_2_3_SkipsSelfShareRepair()
+    {
+        // A user already on 2.2.3+ can't have created a self-share, so the gate stays shut.
+        var s = new Settings { ProgramVersion = "2.2.3" };
+        AddGuest(s.GuestAppearances, NpcA, ShareMod, NpcA, "Lydia");
+
+        await Make(s).InitialCheckForUpdatesAndPatch();
+
+        s.GuestAppearances.Should().ContainKey(NpcA, "the 2.2.3 gate is closed at 2.2.3");
     }
 
     // ---- InitialCheckForUpdatesAndPatch : new-user early return ----------------------

@@ -3878,7 +3878,9 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
     private void HandleShareAppearanceRequest(VM_NpcsMenuMugshot mugshotToShare)
     {
-        var selectorVm = new VM_NpcShareTargetSelector(this.AllNpcs);
+        // The appearance's own source NPC is excluded from the picker: sharing an NPC with
+        // itself produces an entry that can never be unshared (see AddGuestAppearance).
+        var selectorVm = new VM_NpcShareTargetSelector(this.AllNpcs, mugshotToShare.SourceNpcFormKey);
         var owner = Application.Current.Windows.OfType<Window>().SingleOrDefault(x => x.IsActive);
         
         var selectorView = new NpcShareTargetSelectorView 
@@ -3903,8 +3905,24 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         }
     }
 
+    /// <summary>Registers <paramref name="guestModName"/>'s appearance for
+    /// <paramref name="guestNpcKey"/> as a shared ("guest") option on <paramref name="targetNpcKey"/>.
+    /// <para>An NPC can never be a guest of itself: such an entry duplicates the NPC's own native
+    /// appearance, so its tile is built with <c>IsGuestAppearance == false</c>
+    /// (<see cref="VM_NpcsMenuMugshot"/>), the "Unshare from this NPC" menu item never appears, and
+    /// the entry becomes permanent. Self-shares are therefore dropped here — this is the single
+    /// funnel for every share path (share dialog, favorites Apply/Make Available/Share, profile
+    /// import, randomizer), and the NPC's own tile is already shown by the normal appearance
+    /// sources, so nothing is lost by ignoring it.</para></summary>
     public void AddGuestAppearance(FormKey targetNpcKey, string guestModName, FormKey guestNpcKey, string guestDisplayStr)
     {
+        if (targetNpcKey.Equals(guestNpcKey))
+        {
+            Debug.WriteLine($"Ignoring self-share of {targetNpcKey} from mod '{guestModName}': " +
+                            "an NPC cannot be shared with itself.");
+            return;
+        }
+
         if (!_settings.GuestAppearances.TryGetValue(targetNpcKey, out var guestSet))
         {
             guestSet = new HashSet<(string, FormKey, string)>();

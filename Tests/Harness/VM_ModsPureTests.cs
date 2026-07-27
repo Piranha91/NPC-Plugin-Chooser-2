@@ -326,6 +326,37 @@ public class VM_ModsPureTests
         settings.GuestAppearances[target].Should().HaveCount(2);
     }
 
+    [Fact]
+    public void AddGuestAppearance_SelfShare_IsRejected()
+    {
+        // target == guest describes the NPC's own native appearance: the tile is not flagged
+        // IsGuestAppearance, so it never offers "Unshare from this NPC" and the entry would be
+        // permanent. The caller relies on the false return to skip the SkyPatcher-template flag.
+        var settings = new Settings();
+        var vm = MakeVm(settings);
+        var npc = MutagenFixtures.Fk("000801:Skyrim.esm");
+
+        var added = AddGuest(vm, npc, npc, "Cool Mod", "Lydia");
+
+        added.Should().BeFalse();
+        settings.GuestAppearances.Should().NotContainKey(npc);
+    }
+
+    [Fact]
+    public void AddGuestAppearance_SelfShare_LeavesRealSharesForSameTargetIntact()
+    {
+        var settings = new Settings();
+        var vm = MakeVm(settings);
+        var npc = MutagenFixtures.Fk("000801:Skyrim.esm");
+        var guest = MutagenFixtures.Fk("000ABC:Cool.esp");
+
+        AddGuest(vm, npc, guest, "Cool Mod", "Lydia").Should().BeTrue();
+        AddGuest(vm, npc, npc, "Cool Mod", "Lydia").Should().BeFalse();
+
+        settings.GuestAppearances[npc].Should().ContainSingle()
+            .Which.Should().Be(("Cool Mod", guest, "Lydia"));
+    }
+
     // ==================================================================
     // FinalizeModList (private; no instance fields read)
     // ==================================================================

@@ -85,6 +85,7 @@ public class UpdateHandler
         {
             InvalidateAnalysisCachesForRecordlessFaceGenNpcs_Initial();
             InvalidateAnalysisCachesForWigScan_Initial();
+            RemoveSelfSharedAppearances_Initial();
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -1055,6 +1056,65 @@ public class UpdateHandler
 
         Debug.WriteLine(
             "One-time analysis-cache invalidation applied so record-less FaceGen NPCs get discovered on this launch.");
+    }
+
+    /// <summary>
+    /// One-time (&lt; 2.2.3) repair of "shared with itself" appearances. Until 2.2.3 the share
+    /// dialog let the user pick the appearance's own source NPC as the share target, writing a
+    /// <see cref="Settings.GuestAppearances"/> entry whose donor equals its target. Such an entry
+    /// duplicates the NPC's own native appearance, so its tile is built with
+    /// <c>IsGuestAppearance == false</c> and the "Unshare from this NPC" menu item never appears —
+    /// leaving the user no way to remove it. Sharing is now blocked at every entry point
+    /// (<see cref="VM_NpcSelectionBar.AddGuestAppearance"/>,
+    /// <c>VM_Mods.AddGuestAppearanceToSettings</c>, and the picker itself), so this only has to
+    /// clean up what earlier versions persisted.
+    /// <para>Runs in the Initial pass, i.e. before the NPC/Mods VMs are built, so the bad entries
+    /// are gone before anything reads them. Selections are deliberately left alone: the removed
+    /// entry described the NPC's own appearance, which remains a valid selection on its own. The
+    /// <see cref="Settings.RandomizedGuestAppearances"/> subset is swept in step, and a donor key
+    /// no longer referenced by any share drops its
+    /// <see cref="Settings.CachedSkyPatcherTemplates"/> flag — the same bookkeeping
+    /// <see cref="VM_NpcSelectionBar.PruneStaleGuestAppearances"/> does — so a self-share written
+    /// by the SkyPatcher import can't keep a real NPC hidden from the NPC list.</para>
+    /// </summary>
+    private void RemoveSelfSharedAppearances_Initial()
+    {
+        int removed = 0;
+        var affectedNpcs = new HashSet<FormKey>();
+
+        foreach (var map in new[] { _settings.GuestAppearances, _settings.RandomizedGuestAppearances })
+        {
+            if (map == null) continue;
+
+            foreach (var targetKey in map.Keys.ToList())
+            {
+                var guestSet = map[targetKey];
+                int dropped = guestSet.RemoveWhere(guest => guest.NpcFormKey.Equals(targetKey));
+                if (dropped == 0) continue;
+
+                removed += dropped;
+                affectedNpcs.Add(targetKey);
+                if (guestSet.Count == 0)
+                {
+                    map.Remove(targetKey);
+                }
+            }
+        }
+
+        if (removed == 0) return;
+
+        foreach (var npcKey in affectedNpcs)
+        {
+            bool stillReferenced = _settings.GuestAppearances
+                .Any(kvp => kvp.Value.Any(guest => guest.NpcFormKey.Equals(npcKey)));
+            if (!stillReferenced)
+            {
+                _settings.CachedSkyPatcherTemplates.Remove(npcKey);
+            }
+        }
+
+        Debug.WriteLine($"2.2.3 Update: removed {removed} self-shared appearance(s) across " +
+                        $"{affectedNpcs.Count} NPC(s) that could not be unshared.");
     }
 
     private async Task UpdateTo2_0_4_Final(VM_Mods modsVm, VM_SplashScreen? splashReporter)

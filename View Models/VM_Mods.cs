@@ -1622,6 +1622,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             var guests = await vmToRefresh.GetSkyPatcherImportsAsync(environmentEditorIdMap, modEditorIdMap);
             foreach (var (target, source, modDisplayName, npcDisplayName) in guests)
             {
+                // An NPC pointed at itself is not a share (see AddGuestAppearanceToSettings);
+                // skip before the template flag, which would otherwise hide a real NPC from
+                // the NPC list on behalf of a share that doesn't exist.
+                if (target.Equals(source)) continue;
                 _settings.CachedSkyPatcherTemplates.Add(source);
                 AddGuestAppearanceToSettings(target, source, modDisplayName, npcDisplayName);
             }
@@ -3490,8 +3494,19 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     }
 
     // Add this helper to centralize the logic for adding a guest to settings.
+    // Rejects self-shares (target == guest): such an entry duplicates the NPC's own native
+    // appearance, so its tile is not flagged IsGuestAppearance and can never be unshared. It
+    // would also flag the NPC as a SkyPatcher template donor at the call sites, hiding a real
+    // NPC from the NPC list. Mirrors VM_NpcSelectionBar.AddGuestAppearance.
     private bool AddGuestAppearanceToSettings(FormKey targetNpcKey, FormKey guestNpcKey, string guestModName, string guestDisplayStr)
     {
+        if (targetNpcKey.Equals(guestNpcKey))
+        {
+            Debug.WriteLine($"Ignoring self-share of {targetNpcKey} from mod '{guestModName}': " +
+                            "an NPC cannot be shared with itself.");
+            return false;
+        }
+
         if (!_settings.GuestAppearances.TryGetValue(targetNpcKey, out var guestSet))
         {
             guestSet = new HashSet<(string, FormKey, string)>();

@@ -731,7 +731,18 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
             ScrollableMessageBox.ShowWarning("Please select an NPC in the main window to make this face available to.", "No NPC Selected");
             return;
         }
-    
+
+        // An NPC can't be shared with itself, and it doesn't need to be: this face is already
+        // one of its own appearance options. Say so rather than silently doing nothing (the
+        // guard in AddGuestAppearance would otherwise drop the request without feedback).
+        if (CurrentTargetNpc.NpcFormKey.Equals(SelectedMugshot.TargetNpcFormKey))
+        {
+            ScrollableMessageBox.ShowWarning(
+                $"This face already belongs to {CurrentTargetNpc.DisplayName}, so it is already available for that NPC.",
+                "Same NPC");
+            return;
+        }
+
         _npcsViewModel.AddGuestAppearance(CurrentTargetNpc.NpcFormKey, SelectedMugshot.ModDisplayName,
             SelectedMugshot.TargetNpcFormKey, SelectedMugshot.SourceNpcDisplayName);
     
@@ -745,7 +756,9 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
     {
         if (SelectedMugshot == null) return;
 
-        var selectorVm = new VM_NpcShareTargetSelector(_npcsViewModel.AllNpcs);
+        // The face's own source NPC is excluded from the picker: sharing an NPC with itself
+        // produces an entry that can never be unshared (see VM_NpcSelectionBar.AddGuestAppearance).
+        var selectorVm = new VM_NpcShareTargetSelector(_npcsViewModel.AllNpcs, SelectedMugshot.TargetNpcFormKey);
         var selectorView = new NpcShareTargetSelectorView
             { DataContext = selectorVm, Owner = Application.Current.MainWindow };
         selectorView.ShowDialog();
