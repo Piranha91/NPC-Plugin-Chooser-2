@@ -76,7 +76,8 @@ public class HeadPartWigConverterTests : IDisposable
         bool createFaceGen = true,
         float donorWeight = 100f,
         bool secondWigInOutfit = false,
-        WigHandlingMode? modWigMode = WigHandlingMode.ConvertToHeadParts)
+        WigHandlingMode? modWigMode = WigHandlingMode.ConvertToHeadParts,
+        bool femaleDonor = false)
     {
         var f = new Fixture
         {
@@ -123,7 +124,7 @@ public class HeadPartWigConverterTests : IDisposable
         f.EyesHeadPart.EditorID = "FoxGloveEyeMesh";
         f.EyesHeadPart.Type = HeadPart.TypeEnum.Eyes;
 
-        f.DonorNpc = MutagenFixtures.NewNpc(f.DonorMod, editorId: "Auri");
+        f.DonorNpc = MutagenFixtures.NewNpc(f.DonorMod, editorId: "Auri", female: femaleDonor);
         f.DonorNpc.Weight = donorWeight;
         f.DonorNpc.DefaultOutfit.SetTo(f.DonorOutfit);
         if (donorHasHair) f.DonorNpc.HeadParts.Add(f.HairHeadPart.ToLink());
@@ -237,10 +238,12 @@ public class HeadPartWigConverterTests : IDisposable
         f.OutputMod.HeadParts.Should().HaveCount(WigShapes.Length);
 
         var parent = f.OutputMod.HeadParts.Single(h => h.FormKey == result.ParentHeadPartKey);
-        parent.EditorID.Should().Be("NPC2Wig_FoxGlove_Wig_01b",
+        parent.EditorID.Should().Be("NPC2Wig_FoxGlove_Wig_M_01b",
             "shape 0 is the parent and EDID must equal the future baked shape name");
         parent.Type.Should().Be(HeadPart.TypeEnum.Hair);
-        parent.Flags.Should().Be(HeadPart.Flag.Male | HeadPart.Flag.Female);
+        parent.Flags.Should().Be(HeadPart.Flag.Male | HeadPart.Flag.UseSolidTint,
+            "hair parts must be single-gender — a Male|Female part is invisible to the " +
+            "engine's gender-filtered hair lookup, which disables headgear hair suppression");
         parent.Flags.Should().NotHaveFlag(HeadPart.Flag.Playable);
         parent.ValidRaces.FormKey.Should().Be(ValidRacesFlst);
         parent.Model.Should().NotBeNull();
@@ -252,6 +255,8 @@ public class HeadPartWigConverterTests : IDisposable
         {
             extra.Type.Should().Be(HeadPart.TypeEnum.Misc);
             extra.Flags.Should().HaveFlag(HeadPart.Flag.IsExtraPart);
+            extra.Flags.Should().HaveFlag(HeadPart.Flag.UseSolidTint);
+            extra.Flags.Should().NotHaveFlag(HeadPart.Flag.Female, "the donor is male");
             extra.Model.Should().NotBeNull(
                 "every part must be geometry-bearing or the engine orphans its baked shape (dark face)");
             extra.Model!.File.GivenPath.Should().Be(WigNifRecordPath);
@@ -268,9 +273,69 @@ public class HeadPartWigConverterTests : IDisposable
         result.FaceGenShapeNamesToStrip.Should().BeEquivalentTo(
             new[] { "FoxGloveHairMesh", "FoxGloveHairlineMesh" });
 
-        // Physics XML: rewritten copy goes to the NPC2-owned path.
+        // Physics XML: rewritten copy goes to the NPC2-owned path (per-sex,
+        // since the base name derives from the sex-tokenized wig id).
         result.PhysicsXmlSourcePath.Should().NotBeNull();
-        result.PhysicsXmlNewDataRelPath.Should().Be(@"meshes\NPC2\WigPhysics\FoxGlove_Wig.xml");
+        result.PhysicsXmlNewDataRelPath.Should().Be(@"meshes\NPC2\WigPhysics\FoxGlove_Wig_M.xml");
+    }
+
+    [Fact]
+    public void Apply_FemaleDonor_MintsFemaleSingleGenderSet()
+    {
+        var f = Make(femaleDonor: true);
+        var result = Apply(f, out bool fallback);
+
+        fallback.Should().BeFalse();
+        result.Should().NotBeNull();
+
+        var parent = f.OutputMod.HeadParts.Single(h => h.FormKey == result!.ParentHeadPartKey);
+        parent.EditorID.Should().Be("NPC2Wig_FoxGlove_Wig_F_01b");
+        parent.Flags.Should().Be(HeadPart.Flag.Female | HeadPart.Flag.UseSolidTint,
+            "the in-game-proven working configuration (2026-07-26 Wylandriah hood test)");
+        foreach (var extra in f.OutputMod.HeadParts.Where(h => h.FormKey != parent.FormKey))
+        {
+            extra.Flags.Should().Be(
+                HeadPart.Flag.Female | HeadPart.Flag.UseSolidTint | HeadPart.Flag.IsExtraPart);
+        }
+    }
+
+    [Fact]
+    public void Apply_SameWigBothSexes_MintsTwinSets()
+    {
+        // A unisex wig consumed by NPCs of both sexes must mint one HDPT set
+        // per sex — single-gender flags are load-bearing for hair suppression,
+        // and the twin sets' EDIDs (== baked shape names) may not collide.
+        var f = Make();
+        var male = Apply(f, out bool fallbackM);
+        fallbackM.Should().BeFalse();
+
+        var npc2 = MutagenFixtures.NewNpc(f.DonorMod, editorId: "Auri2", female: true);
+        npc2.Weight = 100f;
+        npc2.DefaultOutfit.SetTo(f.DonorOutfit);
+        npc2.HeadParts.Add(f.HairHeadPart.ToLink());
+        npc2.HeadParts.Add(f.EyesHeadPart.ToLink());
+        var (fgRel, _) = Auxilliary.GetFaceGenSubPathStrings(npc2.FormKey, regularized: true);
+        WriteDummy(Path.Combine(f.ModFolder, fgRel));
+
+        var female = f.Converter.Apply(npc2, f.ModSetting, new HashSet<string>(), "TestNpc2",
+            (_, _, _) => { }, out bool fallbackF);
+        fallbackF.Should().BeFalse();
+
+        female.Should().NotBeNull();
+        female!.ParentHeadPartKey.Should().NotBe(male!.ParentHeadPartKey);
+        f.OutputMod.HeadParts.Should().HaveCount(WigShapes.Length * 2);
+        f.OutputMod.HeadParts.Select(h => h.EditorID).Should().OnlyHaveUniqueItems();
+        f.OutputMod.HeadParts.Where(h => h.EditorID!.Contains("_M_"))
+            .Should().OnlyContain(h => h.Flags.HasFlag(HeadPart.Flag.Male) &&
+                                       !h.Flags.HasFlag(HeadPart.Flag.Female));
+        f.OutputMod.HeadParts.Where(h => h.EditorID!.Contains("_F_"))
+            .Should().OnlyContain(h => h.Flags.HasFlag(HeadPart.Flag.Female) &&
+                                       !h.Flags.HasFlag(HeadPart.Flag.Male));
+
+        // Re-application per sex reuses the cached sets — no further minting.
+        f.Converter.Apply(f.DonorNpc, f.ModSetting, new HashSet<string>(), "TestNpc",
+            (_, _, _) => { }, out _);
+        f.OutputMod.HeadParts.Should().HaveCount(WigShapes.Length * 2);
     }
 
     [Fact]
@@ -618,7 +683,7 @@ public class HeadPartWigConverterTests : IDisposable
         result.WnamArmatureKeysToStrip.Should().BeEquivalentTo(new[] { wigArma.FormKey });
 
         var parent = f.OutputMod.HeadParts.Single(h => h.FormKey == result.ParentHeadPartKey);
-        parent.EditorID.Should().Be("NPC2Wig_0SkinWigAddon_01b",
+        parent.EditorID.Should().Be("NPC2Wig_0SkinWigAddon_M_01b",
             "the WNAM source's minted EDIDs derive from the ARMA EditorID");
         parent.Type.Should().Be(HeadPart.TypeEnum.Hair);
 

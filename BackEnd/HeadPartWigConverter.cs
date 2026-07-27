@@ -63,8 +63,10 @@ public class HeadPartWigConverter
     private readonly Settings _settings;
 
     /// <summary>Prefix of every minted HeadPart EditorID (and therefore every
-    /// baked FaceGen shape name): NPC2Wig_&lt;sanitized wig EDID&gt;_&lt;sanitized
-    /// shape name&gt;. Matches the engine-proven spike package.</summary>
+    /// baked FaceGen shape name): NPC2Wig_&lt;sanitized wig EDID&gt;_&lt;F|M&gt;_&lt;sanitized
+    /// shape name&gt;. The F/M token exists because minted parts must be
+    /// single-gender (see <see cref="GetOrMintWigSet"/>) so a unisex wig mints
+    /// twin sets whose EDIDs may not collide.</summary>
     public const string MintedEditorIdPrefix = "NPC2Wig_";
 
     /// <summary>Output-owned folder the rewritten SMP physics XMLs are emitted
@@ -78,11 +80,13 @@ public class HeadPartWigConverter
     private static readonly FormKey HeadPartsAllRacesMinusBeastKey = FormKey.Factory("0A803F:Skyrim.esm");
 
     // Per appearance-mod-batch reuse cache (reset alongside WigForwarder.ResetCache):
-    // NPCs sharing the same wig ARMO + resolved NIF share one minted HDPT set and
-    // identical baked shape names. The NIF path is part of the key because the ARMA
-    // WorldModel is per-sex — a wig serving both sexes with distinct meshes mints
-    // one set per mesh (cache keys must include scope context).
-    private readonly Dictionary<(FormKey WigKey, string NifPath), MintedWigSet> _mintedSets = new();
+    // NPCs sharing the same wig ARMO + resolved NIF + sex share one minted HDPT set
+    // and identical baked shape names. The NIF path is part of the key because the
+    // ARMA WorldModel is per-sex — a wig serving both sexes with distinct meshes
+    // mints one set per mesh (cache keys must include scope context). Sex is part of
+    // the key because minted parts must be single-gender (see GetOrMintWigSet), so a
+    // same-mesh unisex wig mints twin sets.
+    private readonly Dictionary<(FormKey WigKey, string NifPath, bool Female), MintedWigSet> _mintedSets = new();
 
     // Session-scoped guards (reset on ResetSession, i.e. once per patch run):
     // rename-prefix → NIF path (two different wigs sharing an EditorID must not
@@ -404,9 +408,10 @@ public class HeadPartWigConverter
             return null;
         }
 
-        // 4. Mint (or reuse) the per-wig HDPT set.
+        // 4. Mint (or reuse) the per-(wig, sex) HDPT set.
         MintedWigSet? set = GetOrMintWigSet(wigArmor.EditorID, wigKey, wigNifSourcePath, wigNifDataRelPath,
-            wigNifRecordPath, appearanceModSetting, npcIdentifier, appendLog);
+            wigNifRecordPath, donorNpc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female),
+            appearanceModSetting, npcIdentifier, appendLog);
         if (set == null)
         {
             fallBackToForwardToSkin = true;
@@ -555,7 +560,8 @@ public class HeadPartWigConverter
         bool synthesize = stripNames.Count == 0 || !PartitionProbe(donorFaceGenPath, stripNames);
 
         MintedWigSet? set = GetOrMintWigSet(arma.EditorID, arma.FormKey, wigNifSourcePath, wigNifDataRelPath,
-            wigNifRecordPath, appearanceModSetting, npcIdentifier, appendLog);
+            wigNifRecordPath, donorNpc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female),
+            appearanceModSetting, npcIdentifier, appendLog);
         if (set == null) return null;
 
         var result = new Result
@@ -800,21 +806,30 @@ public class HeadPartWigConverter
     //  Record minting
     // ─────────────────────────────────────────────────────────────────────
 
-    /// <summary>Returns the cached minted set for (wig, NIF) or mints a fresh
-    /// one: parent HDPT (Type=Hair, Model, ExtraParts) + modeled IsExtraPart
-    /// extras, EDID == future baked shape name for every part. Null when the
-    /// wig NIF yields no usable render shapes (each caller decides its own
-    /// fallback). Source-agnostic: <paramref name="wigKey"/> is the outfit wig
-    /// ARMO's key or the skin-carried wig ARMA's key (FormKeys are globally
-    /// unique so both share <see cref="_mintedSets"/>), and
-    /// <paramref name="sourceEditorId"/> seeds the minted EDID prefix.</summary>
+    /// <summary>Returns the cached minted set for (wig, NIF, sex) or mints a
+    /// fresh one: parent HDPT (Type=Hair, Model, ExtraParts) + modeled
+    /// IsExtraPart extras, EDID == future baked shape name for every part.
+    /// Null when the wig NIF yields no usable render shapes (each caller
+    /// decides its own fallback). Source-agnostic: <paramref name="wigKey"/> is
+    /// the outfit wig ARMO's key or the skin-carried wig ARMA's key (FormKeys
+    /// are globally unique so both share <see cref="_mintedSets"/>), and
+    /// <paramref name="sourceEditorId"/> seeds the minted EDID prefix.
+    /// <para><b>Minted parts are single-gender</b> (<paramref name="female"/>):
+    /// the engine's headgear hair suppression looks the actor's Hair part up
+    /// with a gender filter, and a part flagged both Male and Female is
+    /// invisible to that lookup — the baked wig then renders through hoods and
+    /// helmets. In-game proven 2026-07-26 (Wylandriah): identical NIF, flags
+    /// Male|Female → hair pokes through; Female only → hair suppressed
+    /// correctly. Vanilla, Bijin-style replacers and ARMO_2_HDPT all ship
+    /// single-gender hair parts; UseSolidTint likewise mirrors the vanilla
+    /// hair-part convention.</para></summary>
     private MintedWigSet? GetOrMintWigSet(string? sourceEditorId, FormKey wigKey, string wigNifSourcePath,
-        string wigNifDataRelPath, string wigNifRecordPath, ModSetting appearanceModSetting,
+        string wigNifDataRelPath, string wigNifRecordPath, bool female, ModSetting appearanceModSetting,
         string npcIdentifier, Action<string, bool, bool> appendLog)
     {
         lock (_lock)
         {
-            if (_mintedSets.TryGetValue((wigKey, wigNifSourcePath), out var existing)) return existing;
+            if (_mintedSets.TryGetValue((wigKey, wigNifSourcePath, female), out var existing)) return existing;
         }
 
         var renderShapes = RenderShapeNamesProvider(wigNifSourcePath);
@@ -833,12 +848,14 @@ public class HeadPartWigConverter
             return null;
         }
 
-        // Rename map: source shape → NPC2Wig_<sanitized wig EDID>_<sanitized shape>.
-        // Per-WIG so all NPCs sharing the wig share one HDPT set and identical
-        // baked names. A prefix already claimed by a DIFFERENT wig mesh (same
-        // EditorID in another plugin, or a per-sex mesh pair) gets a short
-        // disambiguator so EDIDs stay unique per set.
+        // Rename map: source shape → NPC2Wig_<sanitized wig EDID>_<F|M>_<sanitized
+        // shape>. Per-(WIG, sex) so all same-sex NPCs sharing the wig share one
+        // HDPT set and identical baked names; the sex token keeps a unisex
+        // wig's twin sets from colliding. A prefix already claimed by a
+        // DIFFERENT wig mesh (same EditorID in another plugin, or a per-sex
+        // mesh pair) gets a short disambiguator so EDIDs stay unique per set.
         string wigId = SanitizeForEditorId(sourceEditorId) ?? SanitizeForEditorId(wigKey.ToString())!;
+        wigId += female ? "_F" : "_M";
         string prefix = MintedEditorIdPrefix + wigId + "_";
         lock (_lock)
         {
@@ -914,6 +931,11 @@ public class HeadPartWigConverter
         lock (_lock)
         {
             var outputMod = _environmentStateProvider.OutputMod;
+            // Single-gender + UseSolidTint — vanilla hair-part parity. Both
+            // gender bits set at once makes the part invisible to the engine's
+            // gender-filtered hair lookup, which silently disables headgear
+            // hair suppression (see the method doc).
+            var genderFlag = female ? HeadPart.Flag.Female : HeadPart.Flag.Male;
             HeadPart? parent = null;
             foreach (var srcName in renderShapes)
             {
@@ -924,13 +946,13 @@ public class HeadPartWigConverter
                 if (parent == null)
                 {
                     hp.Type = HeadPart.TypeEnum.Hair;
-                    hp.Flags = HeadPart.Flag.Male | HeadPart.Flag.Female;
+                    hp.Flags = genderFlag | HeadPart.Flag.UseSolidTint;
                     parent = hp;
                 }
                 else
                 {
                     hp.Type = HeadPart.TypeEnum.Misc;
-                    hp.Flags = HeadPart.Flag.Male | HeadPart.Flag.Female | HeadPart.Flag.IsExtraPart;
+                    hp.Flags = genderFlag | HeadPart.Flag.UseSolidTint | HeadPart.Flag.IsExtraPart;
                     parent.ExtraParts.Add(hp.FormKey.ToLink<IHeadPartGetter>());
                 }
                 RecordProvenanceDiag.RecordGenerated(hp.FormKey, hp.EditorID, "HeadPart");
@@ -941,7 +963,7 @@ public class HeadPartWigConverter
             set.ParentEditorId = parent.EditorID ?? string.Empty;
             foreach (var kvp in renames) set.ShapeRenames[kvp.Key] = kvp.Value;
 
-            _mintedSets[(wigKey, wigNifSourcePath)] = set;
+            _mintedSets[(wigKey, wigNifSourcePath, female)] = set;
         }
 
         appendLog($"      Wig conversion: minted {set.MintedRecords.Count} head part record(s) for wig " +
