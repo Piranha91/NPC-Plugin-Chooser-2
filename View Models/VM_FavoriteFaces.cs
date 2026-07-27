@@ -67,6 +67,11 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
     [Reactive] public string SearchText2 { get; set; } = string.Empty;
     [Reactive] public string SearchText3 { get; set; } = string.Empty;
 
+    // Per-row Is / Is Not — inverts that row's predicate before it joins the AND/OR set.
+    [Reactive] public FilterInversionType SearchInversion1 { get; set; } = FilterInversionType.Is;
+    [Reactive] public FilterInversionType SearchInversion2 { get; set; } = FilterInversionType.Is;
+    [Reactive] public FilterInversionType SearchInversion3 { get; set; } = FilterInversionType.Is;
+
     [Reactive] public GenderFilterType SelectedGenderFilter1 { get; set; } = GenderFilterType.Any;
     [Reactive] public GenderFilterType SelectedGenderFilter2 { get; set; } = GenderFilterType.Any;
     [Reactive] public GenderFilterType SelectedGenderFilter3 { get; set; } = GenderFilterType.Any;
@@ -233,6 +238,9 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
             SelectedUniquenessFilter1 = UniquenessFilterType.Any;
             SelectedUniquenessFilter2 = UniquenessFilterType.Any;
             SelectedUniquenessFilter3 = UniquenessFilterType.Any;
+            SearchInversion1 = FilterInversionType.Is;
+            SearchInversion2 = FilterInversionType.Is;
+            SearchInversion3 = FilterInversionType.Is;
         }).DisposeWith(_disposables);
 
         // Zoom setup
@@ -323,16 +331,16 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
         UpdateAvailableFavoriteGroups();
 
         // Filter subscription — recompute the filtered set when any row (or the
-        // AND/OR logic) changes. Each row bundles its 5 inputs into one Unit stream.
+        // AND/OR logic) changes. Each row bundles its 6 inputs into one Unit stream.
         var filter1Changes = this.WhenAnyValue(
-            x => x.SearchText1, x => x.SearchType1, x => x.SelectedGenderFilter1, x => x.SelectedUniquenessFilter1, x => x.SelectedGroupFilter1,
-            (_, _, _, _, _) => Unit.Default);
+            x => x.SearchText1, x => x.SearchType1, x => x.SearchInversion1, x => x.SelectedGenderFilter1, x => x.SelectedUniquenessFilter1, x => x.SelectedGroupFilter1,
+            (_, _, _, _, _, _) => Unit.Default);
         var filter2Changes = this.WhenAnyValue(
-            x => x.SearchText2, x => x.SearchType2, x => x.SelectedGenderFilter2, x => x.SelectedUniquenessFilter2, x => x.SelectedGroupFilter2,
-            (_, _, _, _, _) => Unit.Default);
+            x => x.SearchText2, x => x.SearchType2, x => x.SearchInversion2, x => x.SelectedGenderFilter2, x => x.SelectedUniquenessFilter2, x => x.SelectedGroupFilter2,
+            (_, _, _, _, _, _) => Unit.Default);
         var filter3Changes = this.WhenAnyValue(
-            x => x.SearchText3, x => x.SearchType3, x => x.SelectedGenderFilter3, x => x.SelectedUniquenessFilter3, x => x.SelectedGroupFilter3,
-            (_, _, _, _, _) => Unit.Default);
+            x => x.SearchText3, x => x.SearchType3, x => x.SearchInversion3, x => x.SelectedGenderFilter3, x => x.SelectedUniquenessFilter3, x => x.SelectedGroupFilter3,
+            (_, _, _, _, _, _) => Unit.Default);
         var logicChanges = this.WhenAnyValue(x => x.CurrentSearchLogic).Select(_ => Unit.Default);
 
         Observable.Merge(filter1Changes, filter2Changes, filter3Changes, logicChanges)
@@ -350,9 +358,9 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
     private void ApplyFilters()
     {
         var predicates = new List<Func<VM_SummaryMugshot, bool>>();
-        AddRowPredicate(SearchType1, SearchText1, SelectedGenderFilter1, SelectedUniquenessFilter1, SelectedGroupFilter1, predicates);
-        AddRowPredicate(SearchType2, SearchText2, SelectedGenderFilter2, SelectedUniquenessFilter2, SelectedGroupFilter2, predicates);
-        AddRowPredicate(SearchType3, SearchText3, SelectedGenderFilter3, SelectedUniquenessFilter3, SelectedGroupFilter3, predicates);
+        AddRowPredicate(SearchType1, SearchInversion1, SearchText1, SelectedGenderFilter1, SelectedUniquenessFilter1, SelectedGroupFilter1, predicates);
+        AddRowPredicate(SearchType2, SearchInversion2, SearchText2, SelectedGenderFilter2, SelectedUniquenessFilter2, SelectedGroupFilter2, predicates);
+        AddRowPredicate(SearchType3, SearchInversion3, SearchText3, SelectedGenderFilter3, SelectedUniquenessFilter3, SelectedGroupFilter3, predicates);
 
         IEnumerable<VM_SummaryMugshot> results = FavoriteMugshots;
         if (predicates.Count > 0)
@@ -377,32 +385,43 @@ public class VM_FavoriteFaces : ReactiveObject, IActivatableViewModel, IDisposab
         }
     }
 
+    /// <summary>
+    /// Builds one search row's criterion and adds it to <paramref name="predicates"/>,
+    /// flipped when the row is set to "Is Not". A row that yields no criterion (empty
+    /// text box, Group left on "All Favorites") stays inactive regardless of Is/Is Not —
+    /// inverting "no filter" is still "no filter", not "match nothing". The Gender and
+    /// Uniqueness "Any" options are real always-true criteria rather than absent ones,
+    /// so "Is Not / Any" correctly matches nothing.
+    /// </summary>
     private void AddRowPredicate(
-        FavoriteFaceSearchType type, string? searchText,
+        FavoriteFaceSearchType type, FilterInversionType inversion, string? searchText,
         GenderFilterType genderFilter, UniquenessFilterType uniquenessFilter, string? groupFilter,
         List<Func<VM_SummaryMugshot, bool>> predicates)
     {
+        Func<VM_SummaryMugshot, bool>? criterion;
         switch (type)
         {
             case FavoriteFaceSearchType.Gender:
-                predicates.Add(m => CheckGender(m, genderFilter));
+                criterion = m => CheckGender(m, genderFilter);
                 break;
             case FavoriteFaceSearchType.Uniqueness:
-                predicates.Add(m => CheckUniqueness(m, uniquenessFilter));
+                criterion = m => CheckUniqueness(m, uniquenessFilter);
                 break;
             case FavoriteFaceSearchType.Group:
-                var groupPredicate = BuildGroupPredicate(groupFilter);
-                if (groupPredicate != null) predicates.Add(groupPredicate);
+                criterion = BuildGroupPredicate(groupFilter);
                 break;
             case FavoriteFaceSearchType.Race:
-                var racePredicate = BuildRacePredicate(searchText);
-                if (racePredicate != null) predicates.Add(racePredicate);
+                criterion = BuildRacePredicate(searchText);
                 break;
             default:
-                var textPredicate = BuildTextPredicate(type, searchText);
-                if (textPredicate != null) predicates.Add(textPredicate);
+                criterion = BuildTextPredicate(type, searchText);
                 break;
         }
+
+        if (criterion == null) return;
+
+        var match = criterion;
+        predicates.Add(inversion == FilterInversionType.IsNot ? m => !match(m) : match);
     }
 
     private Func<VM_SummaryMugshot, bool>? BuildTextPredicate(FavoriteFaceSearchType type, string? searchText)

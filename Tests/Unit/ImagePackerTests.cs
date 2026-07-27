@@ -433,4 +433,84 @@ public class ImagePackerTests
         new PackingResult(12.5, 30.0).Should().Be(new PackingResult(12.5, 30.0));
         new PackingResult(12.5, 30.0).Should().NotBe(new PackingResult(12.5, 31.0));
     }
+
+    // ---- splitter-position sweep -------------------------------------------------------------
+    // The GridSplitter changes only the mugshot pane's available WIDTH, and that width reaches
+    // the packer solely as the availableWidth argument. These sweep the full travel range of the
+    // NPCs view's splitter (right pane MinWidth 250 up to grid 1600 - list MinWidth 200 - splitter 5)
+    // to pin the three properties the persisted-splitter feature depends on.
+
+    /// <summary>Right-pane widths spanning the NPCs view splitter's real travel range.</summary>
+    private static readonly double[] SplitterPaneWidths =
+        { 250, 300, 400, 550, 700, 850, 1000, 1200, 1395 };
+
+    [Fact]
+    public void SplitterSweep_PackedLayoutFitsContainer_AtEveryWidth()
+    {
+        var packer = new ImagePacker();
+        const double height = 800;
+        const int margin = 2;
+
+        foreach (var width in SplitterPaneWidths)
+        {
+            var images = Coll(Img(256, 384), Img(256, 384), Img(256, 384), Img(256, 384), Img(256, 384));
+            var (scale, _) = Pack(packer, images, height, width, margin);
+
+            // The chosen scale must genuinely fit — re-run the packer's own feasibility check.
+            var dims = images.Select(i => (i.OriginalDipWidth, i.OriginalDipHeight)).ToList();
+            var fits = Reflect.Invoke<bool>(packer, "CanPackAll",
+                dims, scale, width, height, margin, CancellationToken.None);
+
+            fits.Should().BeTrue($"the packed layout must fit a {width}px pane");
+
+            // And no single item may overflow the pane horizontally.
+            foreach (var img in images.Where(i => i.IsVisible))
+                (img.ImageWidth + 2 * margin).Should().BeLessThanOrEqualTo(width + 1e-6);
+        }
+    }
+
+    [Fact]
+    public void SplitterSweep_WiderPaneNeverShrinksImages()
+    {
+        var packer = new ImagePacker();
+        const double height = 800;
+        double previousScale = -1;
+
+        foreach (var width in SplitterPaneWidths)
+        {
+            var images = Coll(Img(256, 384), Img(256, 384), Img(256, 384), Img(256, 384), Img(256, 384));
+            var (scale, _) = Pack(packer, images, height, width, margin: 2);
+
+            // Widening the pane can only add room, so the achievable scale is monotonic.
+            // Tolerance covers the binary search's 0.001 convergence epsilon.
+            scale.Should().BeGreaterThanOrEqualTo(previousScale - 0.002,
+                $"dragging the splitter to give the pane {width}px must not shrink the mugshots");
+            previousScale = scale;
+        }
+    }
+
+    [Fact]
+    public void SplitterSweep_ReturningToAWidthReproducesTheSameLayout()
+    {
+        // The packer must be stateless across calls: dragging the splitter out and back
+        // (or restoring a saved position at startup) must land on the identical layout,
+        // never a hysteresis-drifted one.
+        var packer = new ImagePacker();
+        const double height = 800;
+        const double originalWidth = 550;
+
+        var images = Coll(Img(256, 384), Img(300, 300), Img(256, 384), Img(512, 512));
+        var (baseline, baselineResult) = Pack(packer, images, height, originalWidth, margin: 2);
+        var baselineSizes = images.Select(i => (i.ImageWidth, i.ImageHeight)).ToList();
+
+        // Drag all over the range, then come back.
+        foreach (var width in SplitterPaneWidths)
+            Pack(packer, images, height, width, margin: 2);
+
+        var (returned, returnedResult) = Pack(packer, images, height, originalWidth, margin: 2);
+
+        returned.Should().Be(baseline);
+        returnedResult.Should().Be(baselineResult);
+        images.Select(i => (i.ImageWidth, i.ImageHeight)).Should().Equal(baselineSizes);
+    }
 }

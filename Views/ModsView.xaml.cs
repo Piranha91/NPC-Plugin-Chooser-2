@@ -125,7 +125,12 @@ namespace NPC_Plugin_Chooser_2.Views
                     {
                         _userHasAdjustedSplitter = true;
                         Debug.WriteLine("ModsView: ColumnSplitter_DragCompleted. User has adjusted.");
-                        if (ViewModel != null) ViewModel.ModsViewHasUserManuallyZoomed = true; // Keep user's intent
+                        if (ViewModel != null)
+                        {
+                            ViewModel.ModsViewHasUserManuallyZoomed = true; // Keep user's intent
+                            // Remember the splitter position across sessions.
+                            ViewModel.LeftPanelWidth = LeftColumnForModList.ActualWidth;
+                        }
 
                         // Sequence: 1. Invalidate Grid, 2. Update Grid Layout, 3. Refresh Images
                         Dispatcher.BeginInvoke(new Action(() =>
@@ -251,27 +256,7 @@ namespace NPC_Plugin_Chooser_2.Views
             // to get a valid ActualWidth.
             if (MainContentGridForSplitter.ActualWidth > 0 && LeftColumnForModList != null)
             {
-                double availableWidth = MainContentGridForSplitter.ActualWidth;
-                double targetWidth = availableWidth * 0.25;
-
-                // Respect MinWidth if defined on the ColumnDefinition
-                if (targetWidth < LeftColumnForModList.MinWidth)
-                {
-                    targetWidth = LeftColumnForModList.MinWidth;
-                }
-                // Respect MaxWidth if defined (though you weren't using it for this column)
-                if (targetWidth > LeftColumnForModList.MaxWidth)
-                {
-                    targetWidth = LeftColumnForModList.MaxWidth;
-                }
-
-                // Set the Width. GridLength can take a double for pixel value.
-                // It's important to set it as a pixel value here, not a star,
-                // because we want a specific size based on the current parent width.
-                // The GridSplitter will then operate on this pixel-defined width.
-                LeftColumnForModList.Width = new GridLength(targetWidth, GridUnitType.Pixel);
-
-                Debug.WriteLine($"Initial AdjustLeftColumnWidth: Available={availableWidth:F2}, Target 25%={targetWidth:F2}. LeftColumn set to {LeftColumnForModList.Width}");
+                ApplyLeftColumnWidth();
             }
             else
             {
@@ -282,17 +267,54 @@ namespace NPC_Plugin_Chooser_2.Views
                 {
                     if (_isInitialLayout && !_userHasAdjustedSplitter && MainContentGridForSplitter.ActualWidth > 0 && LeftColumnForModList != null)
                     {
-                        // Re-attempt after dispatch
-                        double availableWidth = MainContentGridForSplitter.ActualWidth;
-                        double targetWidth = availableWidth * 0.25;
-                        if (targetWidth < LeftColumnForModList.MinWidth) targetWidth = LeftColumnForModList.MinWidth;
-                        if (targetWidth > LeftColumnForModList.MaxWidth) targetWidth = LeftColumnForModList.MaxWidth;
-                        LeftColumnForModList.Width = new GridLength(targetWidth, GridUnitType.Pixel);
-                        Debug.WriteLine($"Initial AdjustLeftColumnWidth (deferred): Available={availableWidth:F2}, Target 25%={targetWidth:F2}. LeftColumn set to {LeftColumnForModList.Width}");
+                        ApplyLeftColumnWidth(deferred: true);
                         _isInitialLayout = false; // Still mark as done
                     }
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
+        }
+
+        /// <summary>
+        /// Sizes the mod-list column to the splitter position remembered from the last
+        /// session, falling back to 25% of the available width the first time (or if the
+        /// user has never dragged the splitter). Assumes a valid MainContentGridForSplitter.ActualWidth.
+        /// </summary>
+        private void ApplyLeftColumnWidth(bool deferred = false)
+        {
+            double availableWidth = MainContentGridForSplitter.ActualWidth;
+
+            // A persisted splitter position wins over the 25% default.
+            double savedWidth = ViewModel?.LeftPanelWidth ?? 0;
+            bool restoring = savedWidth > 0;
+            double targetWidth = restoring ? savedWidth : availableWidth * 0.25;
+
+            // Never let the left column squeeze the mugshot panel below its MinWidth —
+            // matters most when restoring a width saved on a wider window.
+            double maxWidth = availableWidth - RightPanelColumn.MinWidth - ColumnSplitter.ActualWidth;
+            if (maxWidth > LeftColumnForModList.MinWidth && targetWidth > maxWidth)
+            {
+                targetWidth = maxWidth;
+            }
+
+            // Respect MinWidth if defined on the ColumnDefinition
+            if (targetWidth < LeftColumnForModList.MinWidth)
+            {
+                targetWidth = LeftColumnForModList.MinWidth;
+            }
+            // Respect MaxWidth if defined (though you weren't using it for this column)
+            if (targetWidth > LeftColumnForModList.MaxWidth)
+            {
+                targetWidth = LeftColumnForModList.MaxWidth;
+            }
+
+            // Set the Width. GridLength can take a double for pixel value.
+            // It's important to set it as a pixel value here, not a star,
+            // because we want a specific size based on the current parent width.
+            // The GridSplitter will then operate on this pixel-defined width.
+            LeftColumnForModList.Width = new GridLength(targetWidth, GridUnitType.Pixel);
+
+            Debug.WriteLine($"Initial AdjustLeftColumnWidth{(deferred ? " (deferred)" : string.Empty)}: Available={availableWidth:F2}, " +
+                            $"Source={(restoring ? "saved" : "25%")}, Target={targetWidth:F2}. LeftColumn set to {LeftColumnForModList.Width}");
         }
 
         private void MugshotScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)

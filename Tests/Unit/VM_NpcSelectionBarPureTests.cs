@@ -437,6 +437,25 @@ public class VM_NpcSelectionBarPureTests
         ((int)GenderFilterType.Female).Should().Be(2);
     }
 
+    [Fact]
+    public void FilterInversionType_Members()
+    {
+        Enum.GetValues<FilterInversionType>().Should().HaveCount(2);
+        // Default(FilterInversionType) must be Is: an unset/new filter row must not
+        // silently invert.
+        ((int)FilterInversionType.Is).Should().Be(0);
+        ((int)FilterInversionType.IsNot).Should().Be(1);
+        default(FilterInversionType).Should().Be(FilterInversionType.Is);
+    }
+
+    [Theory]
+    [InlineData(FilterInversionType.Is, "Is")]
+    [InlineData(FilterInversionType.IsNot, "Is Not")]
+    public void FilterInversionType_DescriptionLabels(FilterInversionType value, string label)
+    {
+        Description(value).Should().Be(label);
+    }
+
     // ------------------------------------------------------------------
     // ModNpcSearchType (ModNpcSearchType.cs)
     // ------------------------------------------------------------------

@@ -63,6 +63,7 @@ namespace NPC_Plugin_Chooser_2.Views
             // "did nothing". Attached on Loaded / detached on Unloaded to avoid dangling handlers.
             this.Loaded += AttachAutoAdvanceHotkey;
             this.Unloaded += DetachAutoAdvanceHotkey;
+            this.Loaded += NpcsView_Loaded;
 
             this.Loaded += (s, e) =>
             {
@@ -307,7 +308,46 @@ namespace NPC_Plugin_Chooser_2.Views
                     .ObserveOn(RxApp.MainThreadScheduler)
                     .Subscribe(_ => AnimateButtonConfirmation(RemoveVisibleNpcsButton, "Remove"))
                     .DisposeWith(d);
+
+                // Remember the splitter position across sessions. ActualWidth is the
+                // settled post-drag width; the ColumnDefinition is pixel-sized (the XAML
+                // starts it at 250), and GridSplitter preserves that unit type.
+                Observable.FromEventPattern<DragCompletedEventArgs>(ColumnSplitter, nameof(GridSplitter.DragCompleted))
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(_ =>
+                    {
+                        if (ViewModel != null) ViewModel.LeftPanelWidth = NpcListColumn.ActualWidth;
+                    })
+                    .DisposeWith(d);
             });
+        }
+
+        // Runs on every Loaded (the TabControl unloads/reloads this view on tab switch),
+        // which is harmless — restoring is idempotent, and re-running it re-clamps the
+        // saved width if the window has since been made narrower.
+        private void NpcsView_Loaded(object sender, RoutedEventArgs e)
+        {
+            // Deferred to Loaded priority so MainContentGridForSplitter.ActualWidth is
+            // settled — the clamp below needs a real available width to work with.
+            Dispatcher.BeginInvoke(new Action(RestoreSplitterPosition), DispatcherPriority.Loaded);
+        }
+
+        private void RestoreSplitterPosition()
+        {
+            double saved = ViewModel?.LeftPanelWidth ?? 0;
+            if (saved <= 0) return; // Never dragged — keep the XAML's 250px default.
+
+            // Re-clamp: a width saved on a wider window must not squeeze the mugshot
+            // panel below its MinWidth, and must still honour the list's own MinWidth.
+            double available = MainContentGridForSplitter.ActualWidth;
+            if (available > 0)
+            {
+                double max = available - NpcDisplayColumn.MinWidth - ColumnSplitter.ActualWidth;
+                if (max > NpcListColumn.MinWidth) saved = Math.Min(saved, max);
+            }
+
+            saved = Math.Max(saved, NpcListColumn.MinWidth);
+            NpcListColumn.Width = new GridLength(saved, GridUnitType.Pixel);
         }
         
         private async void AnimateButtonConfirmation(Button button, string originalContent)

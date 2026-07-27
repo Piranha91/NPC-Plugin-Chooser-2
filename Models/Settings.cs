@@ -592,6 +592,14 @@ public class Settings
     public double SummaryViewZoomLevel { get; set; } = 100.0;
     public bool SummaryViewIsZoomLocked { get; set; } = false;
 
+    // Splitter Positions — pixel width of each view's left panel, remembered across
+    // sessions. 0 means "the user has never dragged it", in which case the view keeps
+    // its own default (NPCs: the XAML's 250px; Mods: 25% of the available width).
+    // Restored positions are re-clamped on load, so a width saved on a wider monitor
+    // can't squeeze the right pane below its MinWidth.
+    public double NpcsViewLeftPanelWidth { get; set; } = 0;
+    public double ModsViewLeftPanelWidth { get; set; } = 0;
+
     // Last Selected NPC ***
     public FormKey LastSelectedNpcFormKey { get; set; } // Will be FormKey.Null if none or invalid
     

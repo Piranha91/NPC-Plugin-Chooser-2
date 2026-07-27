@@ -138,6 +138,18 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     [Reactive] public bool IsSortReversed { get; set; } = false;
     public Array AvailableSortProperties => Enum.GetValues(typeof(NpcSortProperty));
 
+    /// <summary>
+    /// Persisted pixel width of the left (search + NPC list) panel — i.e. the
+    /// GridSplitter position. Read once when the view loads and written back on drag;
+    /// 0 means the user has never dragged it, so the view keeps its XAML default.
+    /// Not [Reactive]: nothing binds to it, the view drives it directly.
+    /// </summary>
+    public double LeftPanelWidth
+    {
+        get => _settings.NpcsViewLeftPanelWidth;
+        set => _settings.NpcsViewLeftPanelWidth = value;
+    }
+
     // --- Search Properties ---
     [Reactive] public string SearchText1 { get; set; } = string.Empty;
     [Reactive] public NpcSearchType SearchType1 { get; set; } = NpcSearchType.Name;
@@ -145,7 +157,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     [Reactive] public NpcSearchType SearchType2 { get; set; } = NpcSearchType.InAppearanceMod;
     [Reactive] public string SearchText3 { get; set; } = string.Empty;
     [Reactive] public NpcSearchType SearchType3 { get; set; } = NpcSearchType.Group;
-    
+
+    // Per-row Is / Is Not — inverts that row's predicate before it joins the AND/OR set.
+    [Reactive] public FilterInversionType SearchInversion1 { get; set; } = FilterInversionType.Is;
+    [Reactive] public FilterInversionType SearchInversion2 { get; set; } = FilterInversionType.Is;
+    [Reactive] public FilterInversionType SearchInversion3 { get; set; } = FilterInversionType.Is;
+
     private const string AllNpcsGroup = "All NPCs";
 
     // Visibility & Selection State Filters
@@ -909,10 +926,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         var filter3Changes = this.WhenAnyValue(
             x => x.SearchText3, x => x.SearchType3, x => x.SelectedStateFilter3, x => x.SelectedGroupFilter3, x => x.SelectedShareStatusFilter3, x => x.SelectedUniquenessFilter3, x => x.SelectedTemplateFilter3, x => x.SelectedGenderFilter3,
             (_, _, _, _, _, _, _, _) => Unit.Default);
+        // Kept out of the per-row bundles above, which are already at the 8-property
+        // explicit-selector limit.
+        var inversionChanges = this.WhenAnyValue(
+            x => x.SearchInversion1, x => x.SearchInversion2, x => x.SearchInversion3
+        ).Select(_ => Unit.Default);
+
         var logicChanges = this.WhenAnyValue(
             x => x.CurrentSearchLogic
         ).Select(_ => Unit.Default);
-        
+
         var sortChanges = this.WhenAnyValue(
             x => x.SelectedSortProperty, x => x.IsSortReversed
         ).Select(_ => Unit.Default);
@@ -921,7 +944,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         // renderer is expensive, so intermediate keystrokes (e.g. "Kat" before
         // "Katherine") would otherwise queue heavy render work that has to
         // finish before the final filter result settles.
-        Observable.Merge(filter1Changes, filter2Changes, filter3Changes, logicChanges, sortChanges)
+        Observable.Merge(filter1Changes, filter2Changes, filter3Changes, inversionChanges, logicChanges, sortChanges)
             .Throttle(_ => Observable.Timer(
                 _settings.UsePortraitCreatorFallback
                     ? TimeSpan.FromMilliseconds(400)
@@ -2954,99 +2977,64 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             }
         }
 
-        // --- Your existing predicate building logic ---
-        if (SearchType1 == NpcSearchType.SelectionState)
+        // --- Predicate building (one call per search row) ---
+        // Builds the row's criterion, then flips it if the row is set to "Is Not".
+        //
+        // A row that yields no criterion at all (empty text box, Group left on
+        // "All NPCs") stays inactive regardless of Is/Is Not — inverting "no filter"
+        // is still "no filter", not "match nothing".
+        //
+        // Note the Gender/Uniqueness "Any" options are real always-true criteria, not
+        // absent ones, so "Is Not / Any" correctly matches nothing. ShareStatus's "Any"
+        // is not a wildcard — it means "involved in sharing at all" — so "Is Not / Any"
+        // there usefully selects the NPCs with no sharing relationship.
+        void AddRowPredicate(
+            NpcSearchType type, FilterInversionType inversion, string searchText,
+            SelectionStateFilterType stateFilter, ShareStatusFilterType shareStatusFilter,
+            UniquenessFilterType uniquenessFilter, GenderFilterType genderFilter,
+            TemplateFilterType templateFilter, string? groupFilter)
         {
-            predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter1));
-        }
-        else if (SearchType1 == NpcSearchType.ShareStatus) // NEW
-        {
-            predicates.Add(npc => CheckShareStatus(npc, SelectedShareStatusFilter1, allShareSources, allSelectedShareSources));
-        }
-        else if (SearchType1 == NpcSearchType.Uniqueness)
-        {
-            predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter1));
-        }
-        else if (SearchType1 == NpcSearchType.Gender)
-        {
-            predicates.Add(npc => CheckGender(npc, SelectedGenderFilter1));
-        }
-        else if (SearchType1 == NpcSearchType.Template)
-        {
-            predicates.Add(npc => CheckTemplate(npc, SelectedTemplateFilter1));
-        }
-        else if (SearchType1 == NpcSearchType.Group)
-        {
-            var p = BuildGroupPredicate(SelectedGroupFilter1);
-            if (p != null) predicates.Add(p);
-        }
-        else if (!string.IsNullOrWhiteSpace(SearchText1))
-        {
-            var p = BuildTextPredicate(SearchType1, SearchText1);
-            if (p != null) predicates.Add(p);
+            Func<VM_NpcsMenuSelection, bool>? p;
+            switch (type)
+            {
+                case NpcSearchType.SelectionState:
+                    p = npc => CheckSelectionState(npc, stateFilter);
+                    break;
+                case NpcSearchType.ShareStatus:
+                    p = npc => CheckShareStatus(npc, shareStatusFilter, allShareSources, allSelectedShareSources);
+                    break;
+                case NpcSearchType.Uniqueness:
+                    p = npc => CheckUniqueness(npc, uniquenessFilter);
+                    break;
+                case NpcSearchType.Gender:
+                    p = npc => CheckGender(npc, genderFilter);
+                    break;
+                case NpcSearchType.Template:
+                    p = npc => CheckTemplate(npc, templateFilter);
+                    break;
+                case NpcSearchType.Group:
+                    p = BuildGroupPredicate(groupFilter);
+                    break;
+                default:
+                    p = BuildTextPredicate(type, searchText);
+                    break;
+            }
+
+            if (p == null) return;
+
+            var criterion = p;
+            predicates.Add(inversion == FilterInversionType.IsNot ? npc => !criterion(npc) : criterion);
         }
 
-        if (SearchType2 == NpcSearchType.SelectionState)
-        {
-            predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter2));
-        }
-        else if (SearchType2 == NpcSearchType.ShareStatus) // NEW
-        {
-            predicates.Add(npc => CheckShareStatus(npc, SelectedShareStatusFilter2, allShareSources, allSelectedShareSources));
-        }
-        else if (SearchType2 == NpcSearchType.Uniqueness)
-        {
-            predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter2));
-        }
-        else if (SearchType2 == NpcSearchType.Gender)
-        {
-            predicates.Add(npc => CheckGender(npc, SelectedGenderFilter2));
-        }
-        else if (SearchType2 == NpcSearchType.Template)
-        {
-            predicates.Add(npc => CheckTemplate(npc, SelectedTemplateFilter2));
-        }
-        else if (SearchType2 == NpcSearchType.Group)
-        {
-            var p = BuildGroupPredicate(SelectedGroupFilter2);
-            if (p != null) predicates.Add(p);
-        }
-        else if (!string.IsNullOrWhiteSpace(SearchText2))
-        {
-            var p = BuildTextPredicate(SearchType2, SearchText2);
-            if (p != null) predicates.Add(p);
-        }
-
-        if (SearchType3 == NpcSearchType.SelectionState)
-        {
-            predicates.Add(npc => CheckSelectionState(npc, SelectedStateFilter3));
-        }
-        else if (SearchType3 == NpcSearchType.ShareStatus) // NEW
-        {
-            predicates.Add(npc => CheckShareStatus(npc, SelectedShareStatusFilter3, allShareSources, allSelectedShareSources));
-        }
-        else if (SearchType3 == NpcSearchType.Uniqueness)
-        {
-            predicates.Add(npc => CheckUniqueness(npc, SelectedUniquenessFilter3));
-        }
-        else if (SearchType3 == NpcSearchType.Gender)
-        {
-            predicates.Add(npc => CheckGender(npc, SelectedGenderFilter3));
-        }
-        else if (SearchType3 == NpcSearchType.Template)
-        {
-            predicates.Add(npc => CheckTemplate(npc, SelectedTemplateFilter3));
-        }
-        else if (SearchType3 == NpcSearchType.Group)
-        {
-            var p = BuildGroupPredicate(SelectedGroupFilter3);
-            if (p != null) predicates.Add(p);
-        }
-        else if (!string.IsNullOrWhiteSpace(SearchText3))
-        {
-            var p = BuildTextPredicate(SearchType3, SearchText3);
-            if (p != null) predicates.Add(p);
-        }
+        AddRowPredicate(SearchType1, SearchInversion1, SearchText1, SelectedStateFilter1,
+            SelectedShareStatusFilter1, SelectedUniquenessFilter1, SelectedGenderFilter1,
+            SelectedTemplateFilter1, SelectedGroupFilter1);
+        AddRowPredicate(SearchType2, SearchInversion2, SearchText2, SelectedStateFilter2,
+            SelectedShareStatusFilter2, SelectedUniquenessFilter2, SelectedGenderFilter2,
+            SelectedTemplateFilter2, SelectedGroupFilter2);
+        AddRowPredicate(SearchType3, SearchInversion3, SearchText3, SelectedStateFilter3,
+            SelectedShareStatusFilter3, SelectedUniquenessFilter3, SelectedGenderFilter3,
+            SelectedTemplateFilter3, SelectedGroupFilter3);
         // --- End predicate building ---
 
         if (predicates.Any())

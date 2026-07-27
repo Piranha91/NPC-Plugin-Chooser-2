@@ -45,6 +45,21 @@ namespace NPC_Plugin_Chooser_2.View_Models
         Template
     }
     
+    /// <summary>
+    /// Whether a filter row keeps the items its criterion matches ("Is") or keeps
+    /// everything the criterion does *not* match ("Is Not"). A row that contributes no
+    /// criterion at all (e.g. an empty text box, or Group left on "All ...") stays
+    /// inactive either way — inverting "no filter" is still "no filter".
+    /// </summary>
+    public enum FilterInversionType
+    {
+        [Description("Is")]
+        Is,
+
+        [Description("Is Not")]
+        IsNot
+    }
+
     public enum UniquenessFilterType
     {
         Any,

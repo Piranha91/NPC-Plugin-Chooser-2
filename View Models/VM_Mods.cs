@@ -143,6 +143,18 @@ public class VM_Mods : ReactiveObject
     private const double _maxZoomPercentage = 1000.0;
     private const double _zoomStepPercentage = 2.5; // For +/- buttons and scroll wheel
 
+    /// <summary>
+    /// Persisted pixel width of the left (mod list) panel — i.e. the GridSplitter
+    /// position. Read once when the view loads and written back on drag; 0 means the
+    /// user has never dragged it, so the view falls back to its 25%-of-width default.
+    /// Not [Reactive]: nothing binds to it, the view drives it directly.
+    /// </summary>
+    public double LeftPanelWidth
+    {
+        get => _settings.ModsViewLeftPanelWidth;
+        set => _settings.ModsViewLeftPanelWidth = value;
+    }
+
     // --- New: Other Display Controls
     public bool NormalizeImageDimensions => _settings.NormalizeImageDimensions;
     public int MaxMugshotsToFit => _settings.MaxMugshotsToFit;
