@@ -600,6 +600,11 @@ public class Settings
     public double NpcsViewLeftPanelWidth { get; set; } = 0;
     public double ModsViewLeftPanelWidth { get; set; } = 0;
 
+    // Collapsed header group boxes in the NPCs view's settings bar, keyed by the group's
+    // caption. Only collapsed groups are stored, so an absent key means expanded and any
+    // group added later defaults to open without a migration.
+    public HashSet<string> NpcsViewCollapsedGroups { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     // Last Selected NPC ***
     public FormKey LastSelectedNpcFormKey { get; set; } // Will be FormKey.Null if none or invalid
     

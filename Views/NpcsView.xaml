@@ -32,6 +32,52 @@
         <local:IsGreaterThanOneConverter x:Key="IsGreaterThanOneConverter"/>
         <local:PathToFolderNameConverter x:Key="PathToFolderNameConverter"/>
         <local:FilterInversionToBooleanConverter x:Key="FilterInversionConverter"/>
+
+        <!-- Collapsible settings-bar group boxes. The GroupBox chrome is left entirely to
+             the active theme; collapsing zeroes BorderThickness/Padding so only the
+             clickable caption remains. Bound per-GroupBox rather than via a Style with
+             BasedOn, because ThemeManager swaps the theme dictionary at runtime and a
+             StaticResource BasedOn would freeze the template to the startup theme. -->
+        <local:BooleanToThicknessConverter x:Key="GroupBorderThicknessConverter"
+                                           TrueThickness="1" FalseThickness="0"/>
+        <local:BooleanToThicknessConverter x:Key="GroupPaddingConverter"
+                                           TrueThickness="2" FalseThickness="0"/>
+
+        <!-- Rendered by the stock GroupBox template (Dark/Light) and the custom one
+             (GitHub Light / Tokyo Night) alike, since both present the header through a
+             ContentPresenter with ContentSource="Header". Deliberately sets no font
+             properties, so each theme's own caption styling still applies and the header
+             looks exactly as it did before it became clickable. -->
+        <DataTemplate x:Key="CollapsibleGroupHeader" DataType="{x:Type vm:VM_CollapsibleGroup}">
+            <StackPanel Orientation="Horizontal"
+                        Background="Transparent"
+                        Cursor="Hand"
+                        ToolTip="Click to show or hide this group. Collapsed groups stay collapsed next time you launch.">
+                <StackPanel.InputBindings>
+                    <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleCommand}"/>
+                </StackPanel.InputBindings>
+                <!-- A vector chevron rather than a glyph: Segoe UI has no matched pair of
+                     triangles (U+25BC exists, U+25B6 does not), so text would font-fall-back.
+                     Fill tracks the caption's Foreground, keeping it correct per theme and
+                     through runtime theme swaps. -->
+                <Path x:Name="Chevron"
+                      Data="F1 M 0,0 L 5,0 L 2.5,3 Z"
+                      Stretch="Uniform" Width="7" Height="7"
+                      Fill="{Binding Foreground, ElementName=GroupCaption}"
+                      VerticalAlignment="Center" Margin="0,0,5,0"
+                      RenderTransformOrigin="0.5,0.5"/>
+                <TextBlock x:Name="GroupCaption" Text="{Binding Title}" VerticalAlignment="Center"/>
+            </StackPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsExpanded}" Value="False">
+                    <Setter TargetName="Chevron" Property="RenderTransform">
+                        <Setter.Value>
+                            <RotateTransform Angle="-90"/>
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
         <ObjectDataProvider x:Key="OutfitOverrideEnumValues" MethodName="GetValues" ObjectType="{x:Type System:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="models:OutfitOverride"/>
@@ -117,8 +163,12 @@
         <!-- Settings Row (Grid.Row="0") -->
         <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="5">
             <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <GroupBox Header="NPC Groups" VerticalAlignment="Center" Margin="0,2,5,2" Padding="2">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
+                <GroupBox Header="{Binding GroupNpcGroups}" HeaderTemplate="{StaticResource CollapsibleGroupHeader}"
+                          VerticalAlignment="Center" Margin="0,2,5,2"
+                          BorderThickness="{Binding GroupNpcGroups.IsExpanded, Converter={StaticResource GroupBorderThicknessConverter}}"
+                          Padding="{Binding GroupNpcGroups.IsExpanded, Converter={StaticResource GroupPaddingConverter}}">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2"
+                                Visibility="{Binding GroupNpcGroups.IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <TextBlock Text="Group:" VerticalAlignment="Center" Margin="0,0,5,0"/>
                         <ComboBox MinWidth="120" MaxWidth="200" Margin="0,0,5,0" VerticalAlignment="Center"
                                   IsEditable="True"
@@ -138,8 +188,12 @@
                     </StackPanel>
                 </GroupBox>
                 
-                <GroupBox Header="Show" VerticalAlignment="Center" Margin="5,2,5,2" Padding="2">
-                    <StackPanel Orientation="Horizontal" MinHeight="26">
+                <GroupBox Header="{Binding GroupShow}" HeaderTemplate="{StaticResource CollapsibleGroupHeader}"
+                          VerticalAlignment="Center" Margin="5,2,5,2"
+                          BorderThickness="{Binding GroupShow.IsExpanded, Converter={StaticResource GroupBorderThicknessConverter}}"
+                          Padding="{Binding GroupShow.IsExpanded, Converter={StaticResource GroupPaddingConverter}}">
+                    <StackPanel Orientation="Horizontal" MinHeight="26"
+                                Visibility="{Binding GroupShow.IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <CheckBox Content="Single-Option NPCs" Margin="3,2,3,2" IsChecked="{Binding ShowSingleOptionNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that only have one available appearance."/>
                         <CheckBox Content="Unloaded NPCs" Margin="3,2,3,2" IsChecked="{Binding ShowUnloadedNpcs, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides NPCs that are not part of your current load order (e.g., from mugshots or inactive mods)."/>
                         <CheckBox Content="SkyPatcher Templates" Margin="3,2,3,2" IsChecked="{Binding ShowSkyPatcherTemplates, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="If unchecked, hides dummy NPCs used by SkyPatcher NPC Replacers. You should not select an appearance for these dummy NPCs."/>
@@ -149,8 +203,12 @@
                     </StackPanel>
                 </GroupBox>
                 
-                <GroupBox Header="NPC Appearance Selections" VerticalAlignment="Center" Margin="5,2,5,2" Padding="2">
-                    <StackPanel Orientation="Horizontal">
+                <GroupBox Header="{Binding GroupAppearanceSelections}" HeaderTemplate="{StaticResource CollapsibleGroupHeader}"
+                          VerticalAlignment="Center" Margin="5,2,5,2"
+                          BorderThickness="{Binding GroupAppearanceSelections.IsExpanded, Converter={StaticResource GroupBorderThicknessConverter}}"
+                          Padding="{Binding GroupAppearanceSelections.IsExpanded, Converter={StaticResource GroupPaddingConverter}}">
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding GroupAppearanceSelections.IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <Button Content="Get from Load Order" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
                                 Command="{Binding ImportChoicesFromLoadOrderCommand}" ToolTip="Automatically select appearance mods for NPCs based on your current load order and loose file overrides."/>
                         <Button Content="Randomize" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
@@ -164,8 +222,12 @@
                     </StackPanel>
                 </GroupBox>
                 
-                <GroupBox Header="Selected Mugshots" VerticalAlignment="Center" Margin="5,2,5,2" Padding="2">
-                    <StackPanel Orientation="Horizontal">
+                <GroupBox Header="{Binding GroupSelectedMugshots}" HeaderTemplate="{StaticResource CollapsibleGroupHeader}"
+                          VerticalAlignment="Center" Margin="5,2,5,2"
+                          BorderThickness="{Binding GroupSelectedMugshots.IsExpanded, Converter={StaticResource GroupBorderThicknessConverter}}"
+                          Padding="{Binding GroupSelectedMugshots.IsExpanded, Converter={StaticResource GroupPaddingConverter}}">
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding GroupSelectedMugshots.IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <Button Content="Compare" Margin="0,2,5,2" Padding="5,2" VerticalAlignment="Center"
                                 Command="{Binding CompareSelectedCommand}"
                                 ToolTip="Compare all checked mugshots in a full-screen view (Requires 2+ selected)."/>
@@ -180,8 +242,13 @@
                         </StackPanel>
                 </GroupBox>
                 
-                <GroupBox Header="Submenus" VerticalAlignment="Center" Margin="5,2,5,2" Padding="2">
-                    <Button Content="Favorites" Padding="5,2" VerticalAlignment="Center" Command="{Binding ShowFavoritesCommand}" ToolTip="Add an appearance from your list of favorite faces."/>
+                <GroupBox Header="{Binding GroupSubmenus}" HeaderTemplate="{StaticResource CollapsibleGroupHeader}"
+                          VerticalAlignment="Center" Margin="5,2,5,2"
+                          BorderThickness="{Binding GroupSubmenus.IsExpanded, Converter={StaticResource GroupBorderThicknessConverter}}"
+                          Padding="{Binding GroupSubmenus.IsExpanded, Converter={StaticResource GroupPaddingConverter}}">
+                    <Button Content="Favorites" Padding="5,2" VerticalAlignment="Center" Command="{Binding ShowFavoritesCommand}"
+                            Visibility="{Binding GroupSubmenus.IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}"
+                            ToolTip="Add an appearance from your list of favorite faces."/>
                 </GroupBox>
             </WrapPanel>
         </Border>

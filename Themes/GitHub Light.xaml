@@ -228,14 +228,22 @@
             <Setter.Value>
                 <ControlTemplate TargetType="GroupBox">
                     <StackPanel>
-                        <TextBlock FontSize="10" FontWeight="SemiBold"
-                                   Foreground="{StaticResource HintForeground}"
-                                   Margin="2,0,0,5"
-                                   TextOptions.TextFormattingMode="Display">
-                            <TextBlock.Text>
-                                <Binding RelativeSource="{RelativeSource TemplatedParent}" Path="Header"/>
-                            </TextBlock.Text>
-                        </TextBlock>
+                        <!-- ContentPresenter, not a TextBlock bound to Header: binding .Text
+                             stringifies a non-string header, so an element header or a
+                             HeaderTemplate rendered as "System.Windows.Controls.TextBlock".
+                             The scoped style below sits nearer than the window-level TextBlock
+                             style and therefore still wins, so string headers are unchanged. -->
+                        <ContentPresenter ContentSource="Header"
+                                          Margin="2,0,0,5"
+                                          TextOptions.TextFormattingMode="Display">
+                            <ContentPresenter.Resources>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="FontSize"   Value="10"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                    <Setter Property="Foreground" Value="{StaticResource HintForeground}"/>
+                                </Style>
+                            </ContentPresenter.Resources>
+                        </ContentPresenter>
                         <Border BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="4"

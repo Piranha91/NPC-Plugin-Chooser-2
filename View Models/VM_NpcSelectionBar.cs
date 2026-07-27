@@ -150,6 +150,24 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         set => _settings.NpcsViewLeftPanelWidth = value;
     }
 
+    // --- Collapsible settings-bar group boxes ---
+    // Bound to each GroupBox.Header in NpcsView; clicking a caption hides that group and
+    // reclaims its width. State persists via Settings.NpcsViewCollapsedGroups.
+    public VM_CollapsibleGroup GroupNpcGroups { get; }
+    public VM_CollapsibleGroup GroupShow { get; }
+    public VM_CollapsibleGroup GroupAppearanceSelections { get; }
+    public VM_CollapsibleGroup GroupSelectedMugshots { get; }
+    public VM_CollapsibleGroup GroupSubmenus { get; }
+
+    private VM_CollapsibleGroup MakeCollapsibleGroup(string title) =>
+        new(title,
+            isExpanded: !_settings.NpcsViewCollapsedGroups.Contains(title),
+            onChanged: (key, expanded) =>
+            {
+                if (expanded) _settings.NpcsViewCollapsedGroups.Remove(key);
+                else _settings.NpcsViewCollapsedGroups.Add(key);
+            });
+
     // --- Search Properties ---
     [Reactive] public string SearchText1 { get; set; } = string.Empty;
     [Reactive] public NpcSearchType SearchType1 { get; set; } = NpcSearchType.Name;
@@ -405,6 +423,15 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         _hiddenModNames = _settings.HiddenModNames ?? new(StringComparer.OrdinalIgnoreCase);
         _hiddenModsPerNpc = _settings.HiddenModsPerNpc ?? new();
         _settings.NpcGroupAssignments ??= new();
+
+        // Titles double as the persistence keys, so they must match the captions shown in
+        // NpcsView. Changing one resets that group to expanded on the next launch.
+        _settings.NpcsViewCollapsedGroups ??= new(StringComparer.OrdinalIgnoreCase);
+        GroupNpcGroups = MakeCollapsibleGroup("NPC Groups");
+        GroupShow = MakeCollapsibleGroup("Show");
+        GroupAppearanceSelections = MakeCollapsibleGroup("NPC Appearance Selections");
+        GroupSelectedMugshots = MakeCollapsibleGroup("Selected Mugshots");
+        GroupSubmenus = MakeCollapsibleGroup("Submenus");
 
         NpcsViewZoomLevel =
             Math.Max(_minZoomPercentage,
