@@ -1167,8 +1167,17 @@ public class Patcher : OptionalUIModule
                                             // Terminus supplied so an inherited appearance is flattened
                                             // into the surrogate — see CreateSkyPatcherNpc. CopyAppearanceData
                                             // below re-copies donor fields, so it re-applies the same overlay.
+                                            //
+                                            // appearanceOnly: the DeepCopyIn also hands the surrogate the
+                                            // donor's factions/packages/items/outfit, and the merge-in walker
+                                            // below follows every link on it — so without the strip, an
+                                            // appearance plugin's non-appearance records get duplicated into
+                                            // the output. Record mode merges none of them: its target is an
+                                            // override of the WINNING record, whose non-appearance links are
+                                            // the recipient's own.
                                             patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(npcFormKey,
-                                                appearanceNpcRecord, flattenTerminus);
+                                                appearanceNpcRecord, flattenTerminus,
+                                                appearanceOnly: true, includeOutfit: includeOutfit);
                                         }
                                         else
                                         {

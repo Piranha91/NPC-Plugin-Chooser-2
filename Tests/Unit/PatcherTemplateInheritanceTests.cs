@@ -146,8 +146,11 @@ public class PatcherTemplateInheritanceTests
         Reflect.SetField(skyPatcher, "_keySurrogateValOrriginal", new Dictionary<FormKey, FormKey>());
 
         var recipientFk = MutagenFixtures.Fk("0B85AB:Skyrim.esm");
+        // appearanceOnly:false — Reflect.Invoke matches on arg count, so the optional parameters
+        // must be passed explicitly. These tests are about the traits/flattening overlay, not the
+        // non-appearance strip (SurrogateAppearanceOnlyTests owns that), so keep it off.
         var surrogate = Reflect.Invoke<Npc>(skyPatcher, "CreateSkyPatcherNpc",
-            recipientFk, (INpcGetter)donor, (INpcGetter)template)!;
+            recipientFk, (INpcGetter)donor, (INpcGetter)template, false, false)!;
 
         HasTraits(surrogate).Should().BeFalse("the surrogate must own its face, not inherit it");
         surrogate.EditorID.Should().Be("RedguardWomanHighPoly_Template");
@@ -283,8 +286,10 @@ public class PatcherTemplateInheritanceTests
         Reflect.SetField(sky, "_keySurrogateValOrriginal", new Dictionary<FormKey, FormKey>());
 
         // Null terminus = "the donor does not inherit", which is what these traits-directive tests
-        // are about; the flattening path has its own tests below.
-        var surrogate = Reflect.Invoke<Npc>(sky, "CreateSkyPatcherNpc", recipientFk, donor, null)!;
+        // are about; the flattening path has its own tests below. appearanceOnly:false for the same
+        // reason as above — the strip is SurrogateAppearanceOnlyTests' subject, not this file's.
+        var surrogate = Reflect.Invoke<Npc>(sky, "CreateSkyPatcherNpc",
+            recipientFk, donor, null, false, false)!;
         return (sky, surrogate);
     }
 

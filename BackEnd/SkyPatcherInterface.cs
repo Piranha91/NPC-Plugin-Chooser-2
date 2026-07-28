@@ -4,6 +4,7 @@ using System.Text;
 using System.Windows.Forms;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
@@ -136,8 +137,17 @@ public class SkyPatcherInterface : OptionalUIModule
     /// user's Template Handling Mode says to keep inheriting. Supplying it is what enables the
     /// flattening described above.
     /// </param>
+    /// <param name="appearanceOnly">
+    /// Create-and-Patch only: strip the donor's non-appearance data from the surrogate — see
+    /// <see cref="StripNonAppearanceData"/>. Left false for plain Create, where forwarding the
+    /// donor's whole record IS the mode's contract and record mode does exactly the same.
+    /// </param>
+    /// <param name="includeOutfit">
+    /// Whether an outfit is actually being applied to this NPC. When false the surrogate is given no
+    /// outfit at all; only meaningful alongside <paramref name="appearanceOnly"/>.
+    /// </param>
     public Npc CreateSkyPatcherNpc(FormKey targetNpcFormKey, INpcGetter appearanceDonor,
-        INpcGetter? appearanceTerminus = null)
+        INpcGetter? appearanceTerminus = null, bool appearanceOnly = false, bool includeOutfit = false)
     {
         var npcCopy = _environmentStateProvider.OutputMod.Npcs.AddNew();
         npcCopy.DeepCopyIn(appearanceDonor, out _);
@@ -150,6 +160,11 @@ public class SkyPatcherInterface : OptionalUIModule
             npcCopy.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
         }
 
+        if (appearanceOnly)
+        {
+            StripNonAppearanceData(npcCopy, includeOutfit);
+        }
+
         var edid = appearanceDonor.EditorID ?? "NoEditorID";
         npcCopy.EditorID = edid + "_Template";
 
@@ -157,6 +172,82 @@ public class SkyPatcherInterface : OptionalUIModule
         _keySurrogateValOrriginal.Add(npcCopy.FormKey, targetNpcFormKey);
         _outputs.Add(targetNpcFormKey, new(targetNpcFormKey));
         return npcCopy;
+    }
+
+    /// <summary>
+    /// The appearance fields the surrogate exists to carry. Everything else on it is incidental
+    /// cargo from the <c>DeepCopyIn</c>. Mirrors <c>Patcher.GetAppearanceFormLinks</c> (and
+    /// <see cref="Auxilliary.CopyInheritedAppearance"/>), which already scope SkyPatcher override
+    /// discovery to "appearance records, not packages/factions/items/AI data".
+    ///
+    /// <para><c>Template</c> is kept: an inherited face resolves through it, and the flattening
+    /// above depends on it. <c>DefaultOutfit</c> is conditional and handled separately.</para>
+    /// </summary>
+    private static readonly string[] AppearanceFieldNames =
+        { "Race", "WornArmor", "HeadTexture", "HairColor", "HeadParts", "Template", "DefaultOutfit" };
+
+    /// <summary>
+    /// Drops the donor's non-appearance links from a Create-and-Patch surrogate.
+    ///
+    /// <para><b>Why this is needed.</b> The surrogate is a <c>DeepCopyIn</c> of the donor, so it
+    /// carries the donor's factions, packages, inventory, perks, spells, voice, class, combat style
+    /// and outfit as well as its face. The Patcher's final merge-in walker then follows EVERY link
+    /// on it, so any of those that live in the appearance plugin get duplicated into the output —
+    /// records the user never asked for, plus the assets the asset collector then copies for them.
+    /// Record mode merges none of it: there the patched record is an override of the WINNING record,
+    /// whose non-appearance links are the recipient's own and already in the load order.</para>
+    ///
+    /// <para><b>Why "outside the load order" and not "all of it".</b> A link the user's game can
+    /// already resolve costs nothing — it merges nothing and dangles nothing — so dropping it would
+    /// be churn, and would strip fields (Class, Voice) off a record for no gain. Only links that
+    /// would otherwise have to be MERGED to stay valid are removed, which is exactly the set that
+    /// bleeds. For the common case (an appearance replacer whose donor points at vanilla) this is a
+    /// no-op and the surrogate is unchanged.</para>
+    ///
+    /// <para>Outfits are the exception, and are cleared outright when no outfit is being applied:
+    /// "Include Outfit off" means the surrogate should have no outfit opinion at all, and it never
+    /// gets one — <c>ApplySkyPatcherDirectives</c> only emits <c>outfitDefault=</c> when an outfit
+    /// IS being applied. A wig-forwarded outfit is assigned later (<c>WigForwarder.ApplyLinksTo</c>,
+    /// after <c>CopyAppearanceData</c>), so clearing here cannot lose it.</para>
+    /// </summary>
+    private void StripNonAppearanceData(Npc npc, bool includeOutfit)
+    {
+        var loadOrder = _environmentStateProvider.LoadOrderModKeys.ToHashSet();
+        bool Foreign(FormKey key) => !key.IsNull && !loadOrder.Contains(key.ModKey);
+        bool AnyForeign(IFormLinkContainerGetter? container) =>
+            container != null && container.EnumerateFormLinks().Any(l => Foreign(l.FormKey));
+
+        // Outfits: an opinion the surrogate is only entitled to when one is actually applied.
+        if (!includeOutfit) npc.DefaultOutfit.SetToNull();
+        if (Foreign(npc.SleepingOutfit.FormKey)) npc.SleepingOutfit.SetToNull();
+
+        if (Foreign(npc.Class.FormKey)) npc.Class.SetToNull();
+        if (Foreign(npc.Voice.FormKey)) npc.Voice.SetToNull();
+        if (Foreign(npc.CombatStyle.FormKey)) npc.CombatStyle.SetToNull();
+        if (Foreign(npc.CrimeFaction.FormKey)) npc.CrimeFaction.SetToNull();
+        if (Foreign(npc.DeathItem.FormKey)) npc.DeathItem.SetToNull();
+        if (Foreign(npc.GiftFilter.FormKey)) npc.GiftFilter.SetToNull();
+        if (Foreign(npc.AttackRace.FormKey)) npc.AttackRace.SetToNull();
+        if (Foreign(npc.FarAwayModel.FormKey)) npc.FarAwayModel.SetToNull();
+        if (Foreign(npc.DefaultPackageList.FormKey)) npc.DefaultPackageList.SetToNull();
+        if (Foreign(npc.CombatOverridePackageList.FormKey)) npc.CombatOverridePackageList.SetToNull();
+        if (Foreign(npc.SpectatorOverridePackageList.FormKey)) npc.SpectatorOverridePackageList.SetToNull();
+        if (Foreign(npc.ObserveDeadBodyOverridePackageList.FormKey)) npc.ObserveDeadBodyOverridePackageList.SetToNull();
+        if (Foreign(npc.GuardWarnOverridePackageList.FormKey)) npc.GuardWarnOverridePackageList.SetToNull();
+
+        // Lists: drop only the offending entries, so a donor whose factions are half vanilla keeps
+        // the vanilla half.
+        npc.Factions?.RemoveAll(f => Foreign(f.Faction.FormKey));
+        npc.Packages?.RemoveAll(p => Foreign(p.FormKey));
+        npc.Keywords?.RemoveAll(k => Foreign(k.FormKey));
+        npc.ActorEffect?.RemoveAll(s => Foreign(s.FormKey));
+        npc.Perks?.RemoveAll(p => Foreign(p.Perk.FormKey));
+        npc.Items?.RemoveAll(i => AnyForeign(i));
+        npc.Attacks?.RemoveAll(a => AnyForeign(a));
+
+        // Nested structures: no partial edit makes sense, and neither is read from a face template.
+        if (AnyForeign(npc.VirtualMachineAdapter)) npc.VirtualMachineAdapter = null;
+        if (AnyForeign(npc.Destructible)) npc.Destructible = null;
     }
 
     public bool TryGetSurrogateFormKey(FormKey originalNpcFormKey, out FormKey surrogateNpcFormKey)

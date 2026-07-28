@@ -182,23 +182,21 @@ public class SurrogateUnderMergeTests
     }
 
     /// <summary>
-    /// CHARACTERIZATION, not endorsement. With Include Outfit OFF the two modes do NOT produce the
-    /// same output: the SkyPatcher surrogate is a <c>DeepCopyIn</c> of the donor, so it keeps the
+    /// With Include Outfit OFF the surrogate must carry no outfit at all.
+    ///
+    /// <para>It used not to. The surrogate is a <c>DeepCopyIn</c> of the donor, so it kept the
     /// donor's <c>DefaultOutfit</c>, and the Patcher's final <c>onlySubRecords</c> merge walker
-    /// follows it — dragging the donor's outfit and everything it contains into the output. In
-    /// record mode the target keeps the WINNING record's outfit, so none of that is merged.
+    /// followed it — dragging the donor's outfit AND its whole item chain into the output, along
+    /// with the assets the asset collector then copied for them. Record mode merged none of it.
+    /// Fixed by <c>SkyPatcherInterface.StripNonAppearanceData</c>; the broader version of the same
+    /// bleed is covered by <see cref="SurrogateAppearanceOnlyTests"/>.</para>
     ///
-    /// <para>It is runtime-inert: <c>ApplySkyPatcherDirectives</c> only emits <c>outfitDefault=</c>
-    /// when Include Outfit is on (or a wig outfit was forwarded), so nothing applies the surrogate's
-    /// outfit field in game. The cost is output bloat — the outfit's whole item chain, plus the
-    /// assets <c>CollectShallowAssetLinks</c> then copies for it.</para>
-    ///
-    /// <para>This test exists so the divergence is visible and measured rather than latent. If it is
-    /// ever fixed (e.g. by clearing the surrogate's DefaultOutfit when Include Outfit is off), this
-    /// test should fail and be rewritten to assert the new, matching behaviour.</para>
+    /// <para>Clearing it loses nothing: <c>ApplySkyPatcherDirectives</c> only emits
+    /// <c>outfitDefault=</c> when an outfit IS being applied, and a wig-forwarded outfit is assigned
+    /// later by <c>WigForwarder.ApplyLinksTo</c> — after the surrogate is built.</para>
     /// </summary>
     [Fact]
-    public async Task SkyPatcherSurrogate_MergesTheDonorOutfitEvenWithIncludeOutfitOff()
+    public async Task SkyPatcherSurrogate_CarriesNoOutfitWhenIncludeOutfitIsOff()
     {
         using var fx = new WigRouteFixture("surrogate-outfit");
         var npc = fx.AddBaseNpc("NPC2Route_OutfitBleed");
@@ -238,13 +236,13 @@ public class SurrogateUnderMergeTests
             merged[skyPatcherMode] = OutputLinkSweep.MergedRecordIdentities(run.Output);
         }
 
-        merged[false].Should().NotContain("Outfit 'NPC2Route_DonorOutfit'",
-            "record mode leaves the winning record's outfit alone when Include Outfit is off");
-
-        merged[true].Should().Contain("Outfit 'NPC2Route_DonorOutfit'",
-            "the surrogate keeps the donor's DefaultOutfit, and the final merge walker follows it — " +
-            "measured behaviour, and the reason SkyPatcher output is larger than record output here");
-        merged[true].Should().Contain("Armor 'NPC2Route_Dress'",
-            "the bleed is not just the outfit record: its whole item chain comes with it");
+        foreach (var mode in new[] { false, true })
+        {
+            var label = mode ? "skypatcher" : "record";
+            merged[mode].Should().NotContain("Outfit 'NPC2Route_DonorOutfit'",
+                $"[{label}] Include Outfit is off, so the donor's outfit must not reach the output");
+            merged[mode].Should().NotContain("Armor 'NPC2Route_Dress'",
+                $"[{label}] nor anything the outfit contains");
+        }
     }
 }
