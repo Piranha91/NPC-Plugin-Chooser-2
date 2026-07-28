@@ -45,6 +45,21 @@ public class ModSetting
     public List<ModKey> CorrespondingModKeys { get; set; } = new();
     public HashSet<ModKey> ResourceOnlyModKeys { get; set; } = new();
     public List<string> CorrespondingFolderPaths { get; set; } = new(); // first should be the base mod, and others are overrides where the program should find conflict winning data if it exists
+
+    /// <summary>
+    /// Subset of <see cref="CorrespondingFolderPaths"/> that a Refresh must never drop.
+    ///
+    /// <para>Some mods have "silent" dependencies — folders that supply meshes/textures but carry no
+    /// plugin, so nothing in the master chain that <c>VM_Mods.FindAndAddMissingMasters</c> walks points
+    /// at them. <c>VM_Mods.CleanupCorrespondingFolders</c> rebuilds the folder list from that chain and
+    /// would silently discard them. Locking pins a folder through the rebuild, at its original relative
+    /// position (see <c>LockedFolderOrdering</c>).</para>
+    ///
+    /// <para>Folders the user adds by hand are locked by default, since a manual add is by definition
+    /// something the detector did not find on its own.</para>
+    /// </summary>
+    public List<string> LockedFolderPaths { get; set; } = new();
+
     public List<string> MugShotFolderPaths { get; set; } = new();
     public bool IsFaceGenOnlyEntry { get; set; } = false;
     public HashSet<FormKey> FaceGenOnlyNpcFormKeys { get; set; } = new();

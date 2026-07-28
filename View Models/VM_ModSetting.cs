@@ -82,6 +82,21 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     [Reactive] public Dictionary<ModKey, bool> PluginMergeInOverrides { get; set; } = new();
 
     [Reactive] public ObservableCollection<string> CorrespondingFolderPaths { get; private set; } = new();
+
+    /// <summary>
+    /// Paths within <see cref="CorrespondingFolderPaths"/> that a Refresh must not drop. See
+    /// <see cref="Models.ModSetting.LockedFolderPaths"/> for the rationale and
+    /// <see cref="BackEnd.LockedFolderOrdering"/> for how position is preserved across a rebuild.
+    /// </summary>
+    [Reactive] public ObservableCollection<string> LockedFolderPaths { get; private set; } = new();
+
+    /// <summary>
+    /// Bumped on every lock change. The per-folder lock button in ModsView binds a string item to a
+    /// lock state held on this VM, which no per-item binding can observe on its own; including this
+    /// counter in that MultiBinding is what makes the icons re-evaluate when a lock is toggled.
+    /// </summary>
+    [Reactive] public int LockedFolderRevision { get; private set; }
+
     [Reactive] public bool MergeInDependencyRecords { get; set; } = true;
     [Reactive] public bool MergeInDependencyRecordsVisible { get; set; } = true;
     [Reactive] public bool IncludeOutfits { get; set; } = false;
@@ -327,6 +342,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     public ReactiveCommand<Unit, Unit> AddFolderPathCommand { get; }
     public ReactiveCommand<string, Unit> BrowseFolderPathCommand { get; }
     public ReactiveCommand<string, Unit> RemoveFolderPathCommand { get; }
+    public ReactiveCommand<string, Unit> ToggleFolderLockCommand { get; }
     public ReactiveCommand<Unit, Unit> AddMugshotFolderPathCommand { get; }
     public ReactiveCommand<string, Unit> BrowseMugshotFolderPathCommand { get; }
     public ReactiveCommand<string, Unit> RemoveMugshotFolderPathCommand { get; }
@@ -362,6 +378,8 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         PluginMergeInOverrides =
             new Dictionary<ModKey, bool>(model.PluginMergeInOverrides ?? new Dictionary<ModKey, bool>());
         MugShotFolderPaths = new ObservableCollection<string>(model.MugShotFolderPaths);
+        LockedFolderPaths = new ObservableCollection<string>(
+            (model.LockedFolderPaths ?? new List<string>()).Distinct(StringComparer.OrdinalIgnoreCase));
         NpcPluginDisambiguation =
             new Dictionary<FormKey, ModKey>(model.NpcPluginDisambiguation ?? new Dictionary<FormKey, ModKey>());
         MergeInDependencyRecords = model.MergeInDependencyRecords;
@@ -692,6 +710,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         AddFolderPathCommand = ReactiveCommand.CreateFromTask(AddFolderPathAsync).DisposeWith(_disposables);
         BrowseFolderPathCommand = ReactiveCommand.CreateFromTask<string>(BrowseFolderPathAsync).DisposeWith(_disposables);
         RemoveFolderPathCommand = ReactiveCommand.Create<string>(RemoveFolderPath).DisposeWith(_disposables);
+        ToggleFolderLockCommand = ReactiveCommand.Create<string>(ToggleFolderLock).DisposeWith(_disposables);
         AddMugshotFolderPathCommand = ReactiveCommand.CreateFromTask(AddMugshotFolderPathAsync).DisposeWith(_disposables);
         BrowseMugshotFolderPathCommand =
             ReactiveCommand.CreateFromTask<string>(BrowseMugshotFolderPathAsync).DisposeWith(_disposables);
@@ -1045,6 +1064,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             // Important: Create new lists/collections when saving to the model
             // to avoid potential issues with shared references if the VM is reused.
             CorrespondingFolderPaths = CorrespondingFolderPaths.ToList(),
+            LockedFolderPaths = LockedFolderPaths.ToList(),
             MugShotFolderPaths = MugShotFolderPaths.ToList(), // Save the mugshot folder path
             NpcPluginDisambiguation = new Dictionary<FormKey, ModKey>(NpcPluginDisambiguation),
             AvailablePluginsForNpcs = new Dictionary<FormKey, List<ModKey>>(AvailablePluginsForNpcs),
@@ -1113,6 +1133,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
                     CorrespondingFolderPaths.Add(addedPath); // Modify the collection
 
+                    // A hand-added folder is by definition one the master-chain detector did not find,
+                    // so lock it by default — otherwise the next Refresh would drop it again.
+                    SetFolderLocked(addedPath, true);
+
                     AutoSetResourcePlugins(addedPath);
 
                     // *** Notify parent VM AFTER path is added ***
@@ -1151,6 +1175,12 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
                     CorrespondingFolderPaths[index] = newPath; // Modify the collection
 
+                    // Move the lock onto the new path — a hand-picked folder gets the same default as
+                    // AddFolderPathAsync. SetFolderLocked drops the request if the new path turns out to
+                    // be this mod's primary folder, which is never at risk from a Refresh.
+                    SetFolderLocked(existingPath, false);
+                    SetFolderLocked(newPath, true);
+
                     AutoSetResourcePlugins(newPath);
 
                     // *** Notify parent VM AFTER path is changed ***
@@ -1182,8 +1212,94 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         {
             CorrespondingFolderPaths.Remove(pathToRemove);
         }
-        
+
+        // Drop the lock too, or the Refresh triggered below would immediately put the folder back.
+        SetFolderLocked(pathToRemove, false);
+
         RefreshCommand.Execute().Subscribe();
+    }
+
+    // --- Locked folder paths ---
+
+    /// <summary>True if <paramref name="path"/> is pinned against Refresh.</summary>
+    public bool IsFolderLocked(string? path) =>
+        !string.IsNullOrWhiteSpace(path) &&
+        LockedFolderPaths.Contains(path, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Adds or removes a lock, keeping <see cref="LockedFolderPaths"/> free of case-variant
+    /// duplicates (paths reach this VM from folder enumeration, dialogs and persisted settings,
+    /// which do not agree on casing) and bumping <see cref="LockedFolderRevision"/> so the UI
+    /// re-evaluates.
+    /// </summary>
+    public void SetFolderLocked(string? path, bool locked)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        // The primary folder is the anchor a Refresh rebuilds around, so it is never at risk and can
+        // never be locked. Requests to lock it are dropped rather than honoured; requests to unlock it
+        // still fall through, so a lock inherited from a rename or a merge gets cleaned up.
+        if (locked && IsPrimaryFolderPath(path)) return;
+
+        var existing = LockedFolderPaths
+            .Where(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (locked)
+        {
+            if (existing.Count == 1) return; // already locked, nothing to notify
+            foreach (var dupe in existing) LockedFolderPaths.Remove(dupe);
+            LockedFolderPaths.Add(path);
+        }
+        else
+        {
+            if (existing.Count == 0) return;
+            foreach (var match in existing) LockedFolderPaths.Remove(match);
+        }
+
+        LockedFolderRevision++;
+    }
+
+    private void ToggleFolderLock(string path)
+    {
+        SetFolderLocked(path, !IsFolderLocked(path));
+    }
+
+    /// <summary>
+    /// True when <paramref name="path"/> is this mod's own root folder — the one whose folder name
+    /// matches <see cref="DisplayName"/>. Mirrors the primary-folder test in
+    /// <c>VM_Mods.CleanupCorrespondingFolders</c>, which is the entry that always survives a Refresh.
+    /// </summary>
+    public bool IsPrimaryFolderPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        try
+        {
+            var name = Path.GetFileName(
+                path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            return string.Equals(name, DisplayName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Discards any lock that has come to sit on this mod's primary folder.
+    ///
+    /// <para><see cref="SetFolderLocked"/> refuses to create one, but a lock can drift onto the primary
+    /// after the fact — a rename changes <see cref="DisplayName"/>, so a folder that was an ordinary
+    /// dependency becomes the name-matching primary. Left in place it would have the reconciler
+    /// reposition the very folder the rebuild anchors on. Called before each Refresh reconciliation.</para>
+    /// </summary>
+    public void PrunePrimaryFolderLocks()
+    {
+        var stale = LockedFolderPaths.Where(IsPrimaryFolderPath).ToList();
+        if (stale.Count == 0) return;
+
+        foreach (var path in stale) LockedFolderPaths.Remove(path);
+        LockedFolderRevision++;
     }
 
     private static bool HasAnyAssignedPath(IReadOnlyCollection<string>? paths) =>

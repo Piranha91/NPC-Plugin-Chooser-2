@@ -29,6 +29,72 @@
         <local:ResourceModKeyTooltipConverter x:Key="ResourceModKeyTooltipConverter"/>
         <local:IsGreaterThanOneConverter x:Key="IsGreaterThanOneConverter"/>
         <local:PathToFolderNameConverter x:Key="PathToFolderNameConverter"/>
+        <local:FolderLockStateConverter x:Key="FolderLockStateConverter"/>
+        <local:FolderLockVisibilityConverter x:Key="FolderLockVisibilityConverter"/>
+
+        <!-- Padlock drawn as vector geometry rather than a bitmap so it stays crisp at the ~11px it is
+             rendered at, and so it can take its colour from the active theme. The body is shared; only
+             the shackle swaps between closed and open, which keeps the two states visually aligned.
+             Coordinates live in a fixed 14x20 canvas so the icon never resizes as the state changes. -->
+        <Geometry x:Key="LockBodyGeometry">M3,8.5 L11,8.5 A2,2 0 0 1 13,10.5 L13,16 A2,2 0 0 1 11,18 L3,18 A2,2 0 0 1 1,16 L1,10.5 A2,2 0 0 1 3,8.5 Z M5.6,13.2 A1.4,1.4 0 0 1 8.4,13.2 A1.4,1.4 0 0 1 5.6,13.2 Z</Geometry>
+        <Geometry x:Key="LockShackleClosedGeometry">M4,8.5 L4,5.5 A3,3 0 0 1 10,5.5 L10,8.5</Geometry>
+        <Geometry x:Key="LockShackleOpenGeometry">M4,8.5 L4,5.5 A3,3 0 0 1 10,5.5</Geometry>
+
+        <!-- Per-folder lock toggle shown inline between Browse and X in the Corresponding Mod Folder
+             Paths list. Unlocked reads as a dimmed open padlock; locked as a solid amber closed one. -->
+        <Style x:Key="FolderLockButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="3,0"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+            <Setter Property="Opacity" Value="0.35"/>
+            <Setter Property="Tag" Value="{StaticResource LockShackleOpenGeometry}"/>
+            <Setter Property="ToolTip" Value="Not locked. A Refresh rebuilds this list from the plugin master chain, so this folder is dropped unless something points at it. Click to lock it in place."/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <Viewbox Width="11" Height="15" Stretch="Uniform">
+                                <Canvas Width="14" Height="20">
+                                    <Path Data="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Stroke="{TemplateBinding Foreground}"
+                                          StrokeThickness="1.7"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"/>
+                                    <Path Data="{StaticResource LockBodyGeometry}"
+                                          Fill="{TemplateBinding Foreground}"/>
+                                </Canvas>
+                            </Viewbox>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Value="True">
+                    <DataTrigger.Binding>
+                        <!-- The item is a bare string, so the lock state has to be read off the owning
+                             VM_ModSetting. LockedFolderRevision is included solely so the binding
+                             re-evaluates when a lock is toggled. -->
+                        <MultiBinding Converter="{StaticResource FolderLockStateConverter}">
+                            <Binding Path="."/>
+                            <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType={x:Type ListBoxItem}}"/>
+                            <Binding Path="DataContext.LockedFolderRevision" RelativeSource="{RelativeSource AncestorType={x:Type ListBoxItem}}"/>
+                        </MultiBinding>
+                    </DataTrigger.Binding>
+                    <Setter Property="Tag" Value="{StaticResource LockShackleClosedGeometry}"/>
+                    <Setter Property="Foreground" Value="#C9A227"/>
+                    <Setter Property="Opacity" Value="1"/>
+                    <Setter Property="ToolTip" Value="Locked. This folder is kept, at this position, every time the mod is refreshed — use this for &quot;silent&quot; dependency mods that supply meshes or textures but no plugin. Click to unlock."/>
+                </DataTrigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Opacity" Value="1"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
 
         <Style x:Key="LinkButtonStyle" TargetType="Button">
              <Setter Property="Cursor" Value="Hand"/>
@@ -398,18 +464,33 @@
                                                          <ColumnDefinition Width="*"/>
                                                          <ColumnDefinition Width="Auto"/>
                                                          <ColumnDefinition Width="Auto"/>
+                                                         <ColumnDefinition Width="Auto"/>
                                                      </Grid.ColumnDefinitions>
                                                      <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" ToolTip="{Binding}" TextTrimming="CharacterEllipsis">
                                                          <TextBlock.Foreground>
                                                              <Binding Path="." Converter="{StaticResource PathExistenceToBrushConverter}"/>
                                                          </TextBlock.Foreground>
                                                      </TextBlock>
-                                                     <Button Grid.Column="1" Content="Browse..." 
-                                                             Command="{Binding DataContext.BrowseFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}" 
+                                                     <Button Grid.Column="1" Content="Browse..."
+                                                             Command="{Binding DataContext.BrowseFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}"
                                                              CommandParameter="{Binding}" Padding="5,1" Margin="5,0" VerticalAlignment="Center" ToolTip="Select a data folder for the contents of this mod"/>
 
-                                                     <Button Grid.Column="2" Content="X" Foreground="Red" FontWeight="Bold" 
-                                                             Command="{Binding DataContext.RemoveFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}" 
+                                                     <!-- Hidden for the mod's own primary folder: a Refresh rebuilds the list
+                                                          around it, so it is never at risk and there is nothing to lock. -->
+                                                     <Button Grid.Column="2" Style="{StaticResource FolderLockButtonStyle}"
+                                                             Command="{Binding DataContext.ToggleFolderLockCommand, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}"
+                                                             CommandParameter="{Binding}">
+                                                         <Button.Visibility>
+                                                             <MultiBinding Converter="{StaticResource FolderLockVisibilityConverter}">
+                                                                 <Binding Path="."/>
+                                                                 <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType={x:Type ListBoxItem}}"/>
+                                                                 <Binding Path="DataContext.DisplayName" RelativeSource="{RelativeSource AncestorType={x:Type ListBoxItem}}"/>
+                                                             </MultiBinding>
+                                                         </Button.Visibility>
+                                                     </Button>
+
+                                                     <Button Grid.Column="3" Content="X" Foreground="Red" FontWeight="Bold"
+                                                             Command="{Binding DataContext.RemoveFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}"
                                                              CommandParameter="{Binding}" Padding="5,1" Margin="0,0,5,0" VerticalAlignment="Center" ToolTip="Delete this data folder"/>
                                                  </Grid>
                                              </DataTemplate>

@@ -473,6 +473,55 @@ public class VM_ModSettingPureTests
         HasAnyAssignedPath(new[] { "", @"C:\Mods\Real" }).Should().BeTrue();
     }
 
+    // ------------------------------------------------------------------
+    // IsPrimaryFolderPath — decides which folder row hides its lock toggle
+    // ------------------------------------------------------------------
+
+    /// <summary>Builds a VM_ModSetting without its heavy ctor, seeding only DisplayName.</summary>
+    private static VM_ModSetting NamedVm(string displayName)
+    {
+        var vm = Reflect.Uninitialized<VM_ModSetting>();
+        Reflect.SetField(vm, "<DisplayName>k__BackingField", displayName);
+        return vm;
+    }
+
+    [Fact]
+    public void IsPrimaryFolderPath_FolderNameMatchesDisplayName_IsTrue()
+    {
+        NamedVm("Bijin AIO").IsPrimaryFolderPath(@"C:\Mods\Bijin AIO").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsPrimaryFolderPath_IgnoresCaseAndTrailingSeparator()
+    {
+        // Paths arrive from folder enumeration, dialogs and persisted settings, which agree on
+        // neither casing nor trailing separators.
+        var vm = NamedVm("Bijin AIO");
+        vm.IsPrimaryFolderPath(@"C:\Mods\BIJIN AIO\").Should().BeTrue();
+        vm.IsPrimaryFolderPath(@"C:\Mods\bijin aio/").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsPrimaryFolderPath_DifferentFolderName_IsFalse()
+    {
+        // The silent-dependency case locking exists for: same mod, different folder.
+        NamedVm("Bijin AIO").IsPrimaryFolderPath(@"C:\Mods\Bijin Textures").Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsPrimaryFolderPath_MatchIsOnTheLeafOnly_NotAnAncestor()
+    {
+        NamedVm("Bijin AIO").IsPrimaryFolderPath(@"C:\Mods\Bijin AIO\Textures").Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsPrimaryFolderPath_BlankPath_IsFalse()
+    {
+        var vm = NamedVm("Bijin AIO");
+        vm.IsPrimaryFolderPath(null).Should().BeFalse();
+        vm.IsPrimaryFolderPath("   ").Should().BeFalse();
+    }
+
     // NOTE: SKIPPED env/DI-bound members — RefreshNpcLists, GetSkyPatcherImportsAsync,
     // GetSkyPatcherTargetModKeysAsync, UpdateCorrespondingModKeys, RecomputeResourceOnlyPlugins,
     // AutoSetResourcePlugins, CheckMergeInSuitability, SaveToModel-roundtrip-against-parent, and

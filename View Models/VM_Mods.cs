@@ -108,6 +108,11 @@ public class VM_Mods : ReactiveObject
     // Record for Refresh All Mods
     private record ModSettingsBackup(
         List<string> MugShotFolderPaths,
+        // Refresh All discards every VM and re-derives the mod list from disk, so locked folders have
+        // to be carried across by hand. The ordered folder snapshot is the anchor list that
+        // LockedFolderOrdering needs to restore each locked folder's relative position.
+        List<string> CorrespondingFolderPaths,
+        List<string> LockedFolderPaths,
         bool MergeInDependencyRecords,
         bool HasAlteredMergeLogic,
         bool IncludeOutfits,
@@ -3320,6 +3325,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             var localWarnings = warnings ?? new ConcurrentBag<InitializationWarning>();
             FindAndAddMissingMasters(vm, allModDirectories, localWarnings, true);
 
+            // Pin the user's locked folders back into the rebuilt list. Must run before the final
+            // UpdateCorrespondingModKeys so any plugins a locked folder does carry are picked up.
+            ReapplyLockedFolders(vm, originalFolders);
+
             // UpdateCorrespondingModKeys (called inside FindAndAddMissingMasters' caller chain or
             // implicitly via the additions) already re-derives ResourceOnlyModKeys via the wiring
             // added in v2 — but call again to be safe in case the additions skipped that path.
@@ -3338,6 +3347,41 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                             string.Join(", ", removed.Select(Path.GetFileName)));
         }
         CleanupTrace(vm, $"exit; final folders=[{string.Join(", ", vm.CorrespondingFolderPaths.Select(Path.GetFileName))}]");
+    }
+
+    /// <summary>
+    /// Puts the mod's locked folders back into <see cref="VM_ModSetting.CorrespondingFolderPaths"/>
+    /// after a rebuild, at the position they held relative to their surviving neighbours.
+    ///
+    /// <para>Locking exists because <see cref="FindAndAddMissingMasters"/> can only find folders that
+    /// something in the master chain points at, so a "silent" dependency — a folder supplying meshes or
+    /// textures but no plugin — is invisible to it and gets dropped by the rebuild in
+    /// <see cref="CleanupCorrespondingFolders"/>. See <see cref="LockedFolderOrdering"/> for the
+    /// position-preservation rule.</para>
+    /// </summary>
+    /// <param name="originalOrder">The folder list as it stood immediately before the rebuild.</param>
+    private void ReapplyLockedFolders(VM_ModSetting vm, IReadOnlyList<string> originalOrder)
+    {
+        vm.PrunePrimaryFolderLocks();
+        if (vm.LockedFolderPaths.Count == 0) return;
+
+        var reconciled = LockedFolderOrdering.Reconcile(
+            vm.CorrespondingFolderPaths, originalOrder, vm.LockedFolderPaths);
+
+        if (reconciled.SequenceEqual(vm.CorrespondingFolderPaths, StringComparer.OrdinalIgnoreCase))
+        {
+            CleanupTrace(vm, "  locked folders already in place; no reordering needed");
+            return;
+        }
+
+        vm.CorrespondingFolderPaths.Clear();
+        foreach (var path in reconciled)
+        {
+            vm.CorrespondingFolderPaths.Add(path);
+        }
+
+        StartupLogger.Log($"[ReapplyLockedFolders] '{vm.DisplayName}' restored {vm.LockedFolderPaths.Count} locked folder(s); final order=[{string.Join(", ", reconciled.Select(Path.GetFileName))}]");
+        CleanupTrace(vm, $"  reapplied locked folders=[{string.Join(", ", vm.LockedFolderPaths.Select(Path.GetFileName))}]; final order=[{string.Join(", ", reconciled.Select(Path.GetFileName))}]");
     }
 
     /// <summary>
@@ -3835,6 +3879,13 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 }
             }
 
+            // Carry the loser's folder locks across with the folders themselves — the winner now owns
+            // those paths, and an unlocked copy would be dropped by its next Refresh.
+            foreach (var lockedPath in loser.LockedFolderPaths.ToList())
+            {
+                winner.SetFolderLocked(lockedPath, true);
+            }
+
             // Merge Corresponding Mod Keys (add keys from loser not already in winner)
             foreach (var key in loser.CorrespondingModKeys)
             {
@@ -3942,6 +3993,8 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 vm => vm.DisplayName,
                 vm => new ModSettingsBackup(
                     new List<string>(vm.MugShotFolderPaths),
+                    new List<string>(vm.CorrespondingFolderPaths),
+                    new List<string>(vm.LockedFolderPaths),
                     vm.MergeInDependencyRecords,
                     vm.HasAlteredMergeLogic,
                     vm.IncludeOutfits,
@@ -4031,6 +4084,12 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                             }
                         }
 
+                        // Restore locked folders. This rebuild re-derived CorrespondingFolderPaths from
+                        // disk, so any folder the master-chain detector can't see (the silent resource
+                        // dependencies locking exists for) is missing from the fresh VM; put them back
+                        // where they sat relative to their surviving neighbours.
+                        RestoreLockedFoldersAfterFullRebuild(vm, backup);
+
                         // Restore settings
                         vm.OverrideRecordOverrideHandlingMode = backup.OverrideRecordOverrideHandlingMode;
                         vm.IncludeOutfits = backup.IncludeOutfits;
@@ -4095,6 +4154,42 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 await splashReporter.CloseSplashScreenAsync();
             }
         }
+    }
+
+    /// <summary>
+    /// Re-applies a pre-Refresh-All lock set to a freshly rebuilt VM.
+    ///
+    /// <para>Unlike the single-mod path, there is no live "before" list to anchor against — the VM was
+    /// thrown away and rebuilt from disk — so the ordered folder snapshot taken in
+    /// <see cref="RefreshAllModSettingsAsync"/> serves as the anchor list instead. Auto-generated
+    /// entries are skipped: their folder lists are synthesised, not user-curated.</para>
+    /// </summary>
+    private void RestoreLockedFoldersAfterFullRebuild(VM_ModSetting vm, ModSettingsBackup backup)
+    {
+        if (vm.IsAutoGenerated || backup.LockedFolderPaths.Count == 0) return;
+
+        foreach (var lockedPath in backup.LockedFolderPaths)
+        {
+            vm.SetFolderLocked(lockedPath, true);
+        }
+
+        // Reconcile against the VM's own lock list, not the backup: SetFolderLocked drops locks that
+        // land on the rebuilt VM's primary folder, and that folder must not be repositioned.
+        if (vm.LockedFolderPaths.Count == 0) return;
+
+        var reconciled = LockedFolderOrdering.Reconcile(
+            vm.CorrespondingFolderPaths, backup.CorrespondingFolderPaths, vm.LockedFolderPaths);
+
+        if (reconciled.SequenceEqual(vm.CorrespondingFolderPaths, StringComparer.OrdinalIgnoreCase)) return;
+
+        vm.CorrespondingFolderPaths.Clear();
+        foreach (var path in reconciled)
+        {
+            vm.CorrespondingFolderPaths.Add(path);
+        }
+
+        vm.UpdateCorrespondingModKeys();
+        StartupLogger.Log($"[RefreshAll] '{vm.DisplayName}' restored {vm.LockedFolderPaths.Count} locked folder(s); final order=[{string.Join(", ", reconciled.Select(Path.GetFileName))}]");
     }
 
     /// <summary>
