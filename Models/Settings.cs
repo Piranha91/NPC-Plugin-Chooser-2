@@ -237,7 +237,16 @@ public class Settings
     /// NotTemplated and the mode is inert, so a stale override cannot mispatch anything.
     /// </summary>
     public TemplateHandlingMode GetEffectiveTemplateHandlingMode(ModSetting? modSetting) =>
-        modSetting?.ModTemplateHandlingMode ?? TemplateHandlingMode;
+        ResolveTemplateHandlingMode(modSetting?.ModTemplateHandlingMode);
+
+    /// <summary>
+    /// <see cref="GetEffectiveTemplateHandlingMode"/> for callers that hold the per-mod override
+    /// without the model — the view models keep it on <c>VM_ModSetting</c>. Separate name rather
+    /// than an overload: <c>GetEffectiveTemplateHandlingMode(null)</c> is an existing call and
+    /// would become ambiguous.
+    /// </summary>
+    public TemplateHandlingMode ResolveTemplateHandlingMode(TemplateHandlingMode? perModOverride) =>
+        perModOverride ?? TemplateHandlingMode;
 
     /// <summary>
     /// The antler handling mode that will actually apply to

@@ -102,6 +102,15 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     [Reactive] public bool HasIssueNotification { get; set; } = false;
     [Reactive] public NpcIssueType IssueType { get; set; } = NpcIssueType.Template;
     [Reactive] public string IssueNotificationText { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A Template issue that the current Template Handling Mode DEFUSES: the chain will be
+    /// flattened, so this mod's copy of the template's appearance lands on the NPC's own record
+    /// and the selection made here applies to it individually. Downgrades the issue "!" from red
+    /// to the theme's warning colour — still worth pointing at (the NPC has no face of its own),
+    /// but no longer the "your choice is ignored" red.
+    /// </summary>
+    [Reactive] public bool TemplateResolvesPerNpc { get; set; }
     /// <summary>True when the most recent in-process mugshot render
     /// reported any unresolved mesh OR texture paths. Drives a single
     /// "missing asset" overlay; the per-kind detail is in

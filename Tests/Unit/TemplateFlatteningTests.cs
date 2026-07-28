@@ -298,6 +298,73 @@ public class TemplateFlatteningTests
             .Should().BeFalse();
     }
 
+    // ---- Mugshot template badge (VM_NpcSelectionBar.ShouldTreatTemplateAsPerNpc) --------------
+    //
+    // Decides whether the issue "!" stays red ("whichever mod you pick, this NPC shows the
+    // template's face") or drops to the warning colour ("this mod's copy of that face lands on
+    // this NPC's own record"). Must agree with the patcher's own flatten gate — see
+    // Patcher.ResolveAppearanceTerminusRecord, which requires mode AND a resolved chain.
+
+    private static bool PerNpc(TemplateHandlingMode mode, bool hasTemplate = true, bool levelled = false) =>
+        VM_NpcSelectionBar.ShouldTreatTemplateAsPerNpc(mode, hasTemplate, levelled);
+
+    [Fact]
+    public void TemplateBadge_IsPerNpc_OnlyInOwnCopyMode()
+    {
+        PerNpc(TemplateHandlingMode.GiveEachNpcOwnCopy).Should().BeTrue();
+        PerNpc(TemplateHandlingMode.InheritFromTemplate).Should().BeFalse(
+            "the default mode really does ignore the mod picked here");
+    }
+
+    [Fact]
+    public void TemplateBadge_StaysInherited_ForALevelledChain_EvenInOwnCopyMode()
+    {
+        // The game picks the actor at runtime, so the chain is never flattened whatever the mode
+        // says. Whole classes of generic vanilla actors land here, so claiming per-NPC control
+        // for them would be wrong on a large population.
+        PerNpc(TemplateHandlingMode.GiveEachNpcOwnCopy, levelled: true).Should().BeFalse();
+    }
+
+    [Fact]
+    public void TemplateBadge_StaysInherited_WithNoTemplateToFollow()
+    {
+        PerNpc(TemplateHandlingMode.GiveEachNpcOwnCopy, hasTemplate: false).Should().BeFalse();
+    }
+
+    [Fact]
+    public void PerNpcTemplateTooltip_ReplacesTheInheritWording_AndStaysReadable()
+    {
+        // It REPLACES the scan-time message (which states the opposite rule) rather than being
+        // appended to it, so it has to stand alone: name the mod, name the setting that caused
+        // this, and carry none of the jargon or FormKeys the stored message uses.
+        var text = VM_NpcSelectionBar.BuildPerNpcTemplateTooltip("Some Appearance Mod");
+
+        text.Should().Contain("Some Appearance Mod", "the user needs to know whose face they get");
+        text.Should().Contain(HandlingModeDisplay.ToDisplayString(TemplateHandlingMode.GiveEachNpcOwnCopy),
+            "the setting has to be findable from the tooltip");
+        text.Should().NotContain("Traits", "'the Traits flag' means nothing to most users");
+        text.Should().NotContain(":", "a FormKey would leak in as 'xxxxxx:Plugin.esp'");
+    }
+
+    [Theory]
+    [InlineData(null, TemplateHandlingMode.GiveEachNpcOwnCopy, TemplateHandlingMode.GiveEachNpcOwnCopy)]
+    [InlineData(TemplateHandlingMode.InheritFromTemplate, TemplateHandlingMode.GiveEachNpcOwnCopy, TemplateHandlingMode.InheritFromTemplate)]
+    [InlineData(TemplateHandlingMode.GiveEachNpcOwnCopy, TemplateHandlingMode.InheritFromTemplate, TemplateHandlingMode.GiveEachNpcOwnCopy)]
+    public void ResolveTemplateHandlingMode_MatchesTheModelSideResolver(
+        TemplateHandlingMode? perMod, TemplateHandlingMode global, TemplateHandlingMode expected)
+    {
+        // The badge reads the override off the VM, the patcher reads it off the model; both must
+        // land on the same answer or the tooltip would promise something the run does not do.
+        var settings = new Settings { TemplateHandlingMode = global };
+
+        settings.ResolveTemplateHandlingMode(perMod).Should().Be(expected);
+        settings.GetEffectiveTemplateHandlingMode(new ModSetting
+        {
+            DisplayName = "Some Mod",
+            ModTemplateHandlingMode = perMod,
+        }).Should().Be(expected);
+    }
+
     // ---- Per-mod override resolution (Settings.GetEffectiveTemplateHandlingMode) -------------
     //
     // Mirrors the wig/antler per-mod pattern: null = fall back to the global setting. Unlike

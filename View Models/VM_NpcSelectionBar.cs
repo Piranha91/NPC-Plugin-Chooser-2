@@ -3417,11 +3417,32 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
                 if (notif.IssueType == NpcIssueType.Template)
                 {
+                    // The stored message is written at scan time and states the DEFAULT rule
+                    // (inherit). Template Handling Mode can change afterwards without a rescan, so
+                    // whether that rule still holds is decided here, at display time.
+                    bool flattens = TemplateChainWillBeFlattened(modSettingVM, notif.ReferencedFormKey);
+                    appearanceVM.TemplateResolvesPerNpc = flattens;
+
                     if (notif.ReferencedFormKey != null)
                     {
                         appearanceVM.TemplateNpcKey = notif.ReferencedFormKey.Value;
                         appearanceVM.CanJumpToTemplate = true;
-                        
+                    }
+
+                    if (flattens)
+                    {
+                        // REPLACES the stored message rather than adding to it: that message
+                        // states the inherit rule ("regardless of which mod you select here..."),
+                        // which is precisely what this mode undoes. Appending a correction to it
+                        // left the tooltip arguing with itself.
+                        //
+                        // The template NPC's own selection is likewise not reported here — in this
+                        // mode the appearance is read from the mod picked HERE, so naming the
+                        // template's assignment would point at something that has no effect.
+                        appearanceVM.IssueNotificationText = BuildPerNpcTemplateTooltip(modName);
+                    }
+                    else if (notif.ReferencedFormKey != null)
+                    {
                         var assignment = _consistencyProvider.GetSelectedMod(notif.ReferencedFormKey.Value);
                         if (assignment.ModName != null)
                         {
@@ -3612,6 +3633,62 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         return new ObservableCollection<VM_NpcsMenuMugshot>(sortedVMs);
     }
+
+    /// <summary>
+    /// Will this NPC's Traits chain actually be flattened on the next run — i.e. does the mod you
+    /// pick for it decide its face individually, rather than the template's own selection?
+    ///
+    /// <para>Mirrors the patcher's gate (<c>Patcher.ResolveAppearanceTerminusRecord</c>): the
+    /// effective mode must be <see cref="TemplateHandlingMode.GiveEachNpcOwnCopy"/> AND the chain
+    /// must resolve to a concrete NPC. A chain ending in a levelled list keeps inheriting whatever
+    /// the mode says — the game picks the actor at runtime — and that covers whole classes of
+    /// generic vanilla actors, so claiming per-NPC control for them would be wrong.</para>
+    ///
+    /// <para>Approximation, deliberately: the levelled check walks from the load order's record
+    /// rather than the mod's own, and an unfollowable chain (cycle / dangling template) is not
+    /// detected at all. Both are far rarer than the levelled case, both only ever produce a
+    /// too-optimistic tooltip on an NPC the patcher then leaves inheriting, and neither is worth a
+    /// mod-scoped plugin load per mugshot tile.</para>
+    /// </summary>
+    private bool TemplateChainWillBeFlattened(VM_ModSetting? modSettingVM, FormKey? templateFormKey)
+    {
+        var mode = _settings.ResolveTemplateHandlingMode(modSettingVM?.OverrideTemplateHandlingMode);
+
+        // Gathering the facts costs a link-cache resolve per tile, so the cheap gate goes first —
+        // in the default (inherit) mode nothing below is consulted at all.
+        if (mode != TemplateHandlingMode.GiveEachNpcOwnCopy) return false;
+        if (templateFormKey == null || templateFormKey.Value.IsNull) return false;
+
+        var linkCache = _environmentStateProvider.LinkCache;
+        if (linkCache == null) return false;
+
+        // A template link resolving to a Leveled NPC rather than an NPC IS the levelled terminus;
+        // otherwise walk on (Auxilliary caches the verdict per session).
+        bool levelled = linkCache.TryResolve<ILeveledNpcGetter>(templateFormKey.Value, out _)
+                        || !linkCache.TryResolve<INpcGetter>(templateFormKey.Value, out var templateNpc)
+                        || _auxilliary.TemplateChainTerminatesInLeveledNpc(templateNpc);
+
+        return ShouldTreatTemplateAsPerNpc(mode, hasTemplate: true, chainIsLevelled: levelled);
+    }
+
+    /// <summary>The policy half of <see cref="TemplateChainWillBeFlattened"/>, separated from the
+    /// record lookups so it can be exercised without a link cache.</summary>
+    internal static bool ShouldTreatTemplateAsPerNpc(TemplateHandlingMode effectiveMode,
+        bool hasTemplate, bool chainIsLevelled) =>
+        effectiveMode == TemplateHandlingMode.GiveEachNpcOwnCopy && hasTemplate && !chainIsLevelled;
+
+    /// <summary>
+    /// Tooltip for a templated NPC whose chain WILL be flattened. Written for someone who has
+    /// never heard of a template flag: it says what the icon is warning about and what actually
+    /// happens, and names the setting responsible so it can be found and changed. Deliberately
+    /// carries no FormKeys — the stored inherit-mode message quotes the template's FormKey, which
+    /// is meaningless to most users and worse than saying nothing here.
+    /// </summary>
+    internal static string BuildPerNpcTemplateTooltip(string modName) =>
+        "This NPC has no face of its own — it normally copies one from another NPC. " +
+        $"Because \"Templated NPCs\" is set to \"{HandlingModeDisplay.ToDisplayString(TemplateHandlingMode.GiveEachNpcOwnCopy)}\", " +
+        $"N.P.C.2 will give it a private copy of that face from '{modName}', so the mod you pick here " +
+        "applies to this NPC normally.";
 
     // You will also need this helper method if you don't have it already.
     private ModKey? GetPluginKeyForNpc(VM_ModSetting? modSetting, FormKey npcFormKey)

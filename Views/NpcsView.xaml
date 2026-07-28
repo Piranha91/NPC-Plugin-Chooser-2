@@ -855,9 +855,25 @@
                                                          </Style.Triggers>
                                                      </Style>
                                                  </Viewbox.Style>
+                                                 <!-- Red by default. A Template issue that the
+                                                      current Template Handling Mode defuses (the
+                                                      chain gets flattened, so this mod's choice
+                                                      does apply to this NPC) drops to the theme's
+                                                      warning colour instead. -->
                                                  <TextBlock Text="!"
-                                                            FontWeight="Bold"
-                                                            Foreground="Red"/>
+                                                            FontWeight="Bold">
+                                                     <TextBlock.Style>
+                                                         <Style TargetType="TextBlock">
+                                                             <Setter Property="Foreground" Value="Red"/>
+                                                             <Style.Triggers>
+                                                                 <DataTrigger Binding="{Binding TemplateResolvesPerNpc}" Value="True">
+                                                                     <Setter Property="Foreground"
+                                                                             Value="{DynamicResource StatusWarningForeground}"/>
+                                                                 </DataTrigger>
+                                                             </Style.Triggers>
+                                                         </Style>
+                                                     </TextBlock.Style>
+                                                 </TextBlock>
                                              </Viewbox>
 
                                              <!-- FaceGen-only issues (mod ships FaceGen but no
