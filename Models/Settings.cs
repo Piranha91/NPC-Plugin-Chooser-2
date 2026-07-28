@@ -621,6 +621,15 @@ public class Settings
     // group added later defaults to open without a migration.
     public HashSet<string> NpcsViewCollapsedGroups { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    // Expander state for the Settings view's sections, keyed by the section's caption.
+    // Unlike NpcsViewCollapsedGroups the sections don't share one default (most start
+    // closed, a few start open), so state is stored explicitly rather than as a
+    // collapsed-only set — but only for sections the user has actually toggled. An absent
+    // key therefore still means "use that section's built-in default" (VM_Settings), so a
+    // section added later needs no migration.
+    public Dictionary<string, bool> SettingsViewExpandedSections { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
     // Last Selected NPC ***
     public FormKey LastSelectedNpcFormKey { get; set; } // Will be FormKey.Null if none or invalid
     

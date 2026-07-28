@@ -29,13 +29,104 @@
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
         <!-- Optional: Converter for Enum descriptions if desired -->
+
+        <!-- Section frame for this page. Each section used to be a GroupBox; the Expander
+             keeps the same framed look but turns the caption into a click target, so the
+             page collapses down to its headers. IsExpanded is bound per-section to a
+             VM_SettingsSection, which persists the state to Settings.json.
+
+             Templated here rather than per theme: only two of the four themes retemplate
+             GroupBox, and every brush this needs exists in all four, so one DynamicResource
+             style follows runtime theme swaps without four near-identical copies. -->
+        <Style x:Key="SettingsSectionExpander" TargetType="Expander">
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="5"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <Border BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                SnapsToDevicePixels="True">
+                            <DockPanel>
+                                <ToggleButton x:Name="HeaderSite" DockPanel.Dock="Top"
+                                              Content="{TemplateBinding Header}"
+                                              ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding HeaderTemplateSelector}"
+                                              IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                              Foreground="{TemplateBinding Foreground}"
+                                              FontWeight="SemiBold"
+                                              Cursor="Hand"
+                                              HorizontalContentAlignment="Stretch"
+                                              ToolTip="Click to show or hide this section. Sections stay as you leave them next time you launch.">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <Border x:Name="HeaderBorder"
+                                                    Background="{DynamicResource TertiaryBackground}"
+                                                    CornerRadius="3,3,0,0"
+                                                    Padding="7,5">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <!-- A vector chevron rather than a glyph: Segoe UI has no
+                                                         matched pair of triangles (U+25BC exists, U+25B6 does
+                                                         not), so text would font-fall-back. Same shape the
+                                                         NPCs view's collapsible group headers use. -->
+                                                    <Path x:Name="Chevron"
+                                                          Data="F1 M 0,0 L 5,0 L 2.5,3 Z"
+                                                          Stretch="Uniform" Width="8" Height="8"
+                                                          Fill="{TemplateBinding Foreground}"
+                                                          VerticalAlignment="Center" Margin="0,0,6,0"
+                                                          RenderTransformOrigin="0.5,0.5"/>
+                                                    <ContentPresenter VerticalAlignment="Center"
+                                                                      RecognizesAccessKey="False"/>
+                                                </StackPanel>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsChecked" Value="False">
+                                                    <Setter TargetName="Chevron" Property="RenderTransform">
+                                                        <Setter.Value>
+                                                            <RotateTransform Angle="-90"/>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <!-- No content below it to meet, so the collapsed header
+                                                         rounds off on all four corners. -->
+                                                    <Setter TargetName="HeaderBorder" Property="CornerRadius" Value="3"/>
+                                                </Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="HeaderBorder" Property="Background"
+                                                            Value="{DynamicResource SelectedItemBackground}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                </ToggleButton>
+                                <Border x:Name="ContentSite"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="0,1,0,0"
+                                        Visibility="Collapsed">
+                                    <ContentPresenter Margin="{TemplateBinding Padding}" Focusable="False"/>
+                                </Border>
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="ContentSite" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
         <StackPanel>
 
             <!-- Section 1: Game Environment -->
-            <GroupBox Header="Game Environment" Margin="0,0,0,10" Padding="5">
+            <Expander Header="Game Environment" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionGameEnvironment.IsExpanded, Mode=TwoWay}">
                 <StackPanel>
                     <!-- Skyrim Game Path -->
                     <TextBlock Text="Skyrim Game Data Path (Optional - Auto-detects if blank):" Margin="0,0,0,2"/>
@@ -226,10 +317,11 @@
                         </TextBlock>
                     </StackPanel>
                 </StackPanel>
-            </GroupBox>
+            </Expander>
 
             <!-- Section 2: Mod Environment -->
-           <GroupBox Header="Mod Environment" Margin="0,0,0,10" Padding="5">
+            <Expander Header="Mod Environment" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionModEnvironment.IsExpanded, Mode=TwoWay}">
                 <StackPanel>
                     <TextBlock Text="Mods Folder (e.g., MO2 Mods Path):" Margin="0,0,0,2"/>
                     <Grid Margin="0,0,0,2">
@@ -263,10 +355,11 @@
                                FontSize="10" Foreground="{DynamicResource HintForeground}" Margin="15,0,0,5"
                                Visibility="{Binding FilterByActiveModsMO2, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 </StackPanel>
-            </GroupBox>
+            </Expander>
 
             <!-- Section 3: Output Settings -->
-            <GroupBox Header="Output Settings" Margin="0,0,0,10" Padding="5">
+            <Expander Header="Output Settings" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionOutputSettings.IsExpanded, Mode=TwoWay}">
                 <StackPanel>
                     <!-- Output Directory (New) -->
                     <TextBlock Text="Output Directory:" Margin="0,0,0,2"/>
@@ -399,7 +492,9 @@
                     <!-- Head Editing: wig/antler handling defaults + the manual antler
                          designation scope. Nested under Output Settings because these
                          only affect what the patcher writes. -->
-                    <GroupBox Header="Head Editing" Margin="0,10,0,0" Padding="5">
+                    <Expander Header="Head Editing" Style="{StaticResource SettingsSectionExpander}"
+                              Margin="0,10,0,0"
+                              IsExpanded="{Binding SectionHeadEditing.IsExpanded, Mode=TwoWay}">
                         <StackPanel>
                             <TextBlock Text="Default Wig Handling Mode:" Margin="0,0,0,2"/>
                             <ComboBox ItemsSource="{Binding WigHandlingModes}"
@@ -595,11 +690,12 @@
                                 </CheckBox.ToolTip>
                             </CheckBox>
                         </StackPanel>
-                    </GroupBox>
+                    </Expander>
                 </StackPanel>
-            </GroupBox>
+            </Expander>
 
-            <GroupBox Header="Mugshot Settings" Margin="0,0,0,10" Padding="5">
+            <Expander Header="Mugshot Settings" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionMugshotSettings.IsExpanded, Mode=TwoWay}">
                 <StackPanel>
                     <TextBlock Text="Mugshots Folder:" Margin="0,0,0,2"/>
                     <Grid Margin="0,0,0,2">
@@ -1324,14 +1420,15 @@
                                  ToolTip="The maximum number of mugshots to fit on-screen when auto-sizing. A lower number results in larger images."/>
                     </StackPanel>
                 </StackPanel>
-            </GroupBox>
+            </Expander>
 
             <!-- FaceGen Analysis: opt-in per-mugshot polycount / size overlay.
                  Off by default; turning it on triggers a NIF parse on every
                  visible tile that lacks cached stats — first view of each
                  mod's FaceGen costs ~10 ms. Subsequent views hit the
                  SHA-keyed cache in Settings.json. -->
-            <GroupBox Header="FaceGen Analysis" Margin="0,0,0,10" Padding="5">
+            <Expander Header="FaceGen Analysis" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionFaceGenAnalysis.IsExpanded, Mode=TwoWay}">
                 <StackPanel>
                     <CheckBox Content="Enable FaceGen Analysis"
                               IsChecked="{Binding EnableFaceGenAnalysis, Mode=TwoWay}"
@@ -1460,10 +1557,11 @@
                         </StackPanel>
                     </Border>
                 </StackPanel>
-            </GroupBox>
+            </Expander>
             
             <!-- Section: Display Settings -->
-            <GroupBox Header="Display Settings" Margin="0,0,0,10" Padding="5">
+            <Expander Header="Display Settings" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionDisplaySettings.IsExpanded, Mode=TwoWay}">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
                         <TextBlock Text="Theme:" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -1525,10 +1623,11 @@
                         <TextBox Text="{Binding NpcListSeparator, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="30" VerticalAlignment="Center"/>
                     </StackPanel>
                 </StackPanel>
-            </GroupBox>
+            </Expander>
 
             <!-- Section 4: EasyNPC Transfer -->
-            <GroupBox Header="EasyNPC Transfer" Margin="0,0,0,10" Padding="5">
+            <Expander Header="EasyNPC Transfer" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionEasyNpcTransfer.IsExpanded, Mode=TwoWay}">
                 <StackPanel>
                     <!-- Import Button -->
                     <Button Content="Import NPC Appearance Choices from EasyNPC Profile"
@@ -1566,8 +1665,9 @@
                                            ToolTip="Select plugins to exclude when determining the 'default' appearance plugin in EasyNPC-like mode."/>
                     <TextBlock Text="Plugins selected here will be ignored when assigning conflict-winning overrides to EasyNPC's Default Plugin selections" FontSize="10" Foreground="{DynamicResource HintForeground}" TextWrapping="Wrap"/>
                 </StackPanel>
-            </GroupBox>
-            <GroupBox Header="Load Order Import Settings" Margin="0,0,0,10" Padding="5">
+            </Expander>
+            <Expander Header="Load Order Import Settings" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionLoadOrderImport.IsExpanded, Mode=TwoWay}">
                 <StackPanel>
                     <TextBlock Text="Import Choices from Load Order Exclusions:" Margin="0,0,0,2"/>
                     <local:ModSelectorView DataContext="{Binding ImportFromLoadOrderExclusionSelectorViewModel}"
@@ -1576,8 +1676,10 @@
                                            ToolTip="Select plugins to exclude when using the 'Import Choices from Load Order' feature."/>
                     <TextBlock Text="When importing choices from your load order, winning override plugins selected here will be ignored, and the next available override will be chosen instead." FontSize="10" Foreground="{DynamicResource HintForeground}" TextWrapping="Wrap"/>
                 </StackPanel>
-            </GroupBox>
-           <GroupBox Header="Mod Import Settings" Margin="0,5,0,10" Padding="5">
+            </Expander>
+            <Expander Header="Mod Import Settings" Style="{StaticResource SettingsSectionExpander}"
+                      Margin="0,5,0,10"
+                      IsExpanded="{Binding SectionModImport.IsExpanded, Mode=TwoWay}">
                 <StackPanel>
                     <TextBlock Text="Non-Appearance Mods:" Margin="0,0,0,2"/>
 
@@ -1736,9 +1838,10 @@ Remove a mod from this list to allow it to be imported again."
                                TextWrapping="Wrap"
                                Margin="0,2,0,0" />
                 </StackPanel>
-            </GroupBox>
+            </Expander>
 
-            <GroupBox Header="Spawn Bat File Options" Margin="0,0,0,10" Padding="5">
+            <Expander Header="Spawn Bat File Options" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionSpawnBatFile.IsExpanded, Mode=TwoWay}">
                 <StackPanel>
                     <TextBlock Text="Console Commands Before Spawning:" Margin="0,0,0,2"/>
                     <TextBox 
@@ -1758,9 +1861,10 @@ Remove a mod from this list to allow it to be imported again."
                         VerticalScrollBarVisibility="Auto"
                         ToolTip="Enter any console commands you want to execute AFTER the player.placeatme commands."/>
                 </StackPanel>
-            </GroupBox>
+            </Expander>
             
-            <GroupBox Header="Logging" Margin="0,0,0,10" Padding="5">
+            <Expander Header="Logging" Style="{StaticResource SettingsSectionExpander}"
+                      IsExpanded="{Binding SectionLogging.IsExpanded, Mode=TwoWay}">
                 <StackPanel>
                     <CheckBox Content="Log Activity"
                               IsChecked="{Binding LogActivity, Mode=TwoWay}"
@@ -1870,7 +1974,7 @@ Remove a mod from this list to allow it to be imported again."
                         </ListBox.ItemTemplate>
                     </ListBox>
                 </StackPanel>
-            </GroupBox>
+            </Expander>
         </StackPanel>
     </ScrollViewer>
 </reactiveui:ReactiveUserControl>

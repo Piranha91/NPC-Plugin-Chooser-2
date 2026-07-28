@@ -498,6 +498,28 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public ObservableCollection<VM_LoggedNpc> LoggedNpcs { get; } = new();
     public ObservableCollection<VM_LoggedNpc> NpcLogSearchResults { get; } = new();
 
+    // --- Collapsible sections ---
+    // One per Expander in SettingsView. The caption passed to MakeSection doubles as the
+    // persistence key, so it must match the Expander's Header; changing one resets that
+    // section to the default below on the next launch. Only the three sections a user
+    // needs on a first run start open — the rest of the page is a wall of advanced
+    // options that is easier to navigate collapsed.
+    public VM_SettingsSection SectionGameEnvironment { get; }
+    public VM_SettingsSection SectionModEnvironment { get; }
+    public VM_SettingsSection SectionOutputSettings { get; }
+    public VM_SettingsSection SectionHeadEditing { get; }
+    public VM_SettingsSection SectionMugshotSettings { get; }
+    public VM_SettingsSection SectionFaceGenAnalysis { get; }
+    public VM_SettingsSection SectionDisplaySettings { get; }
+    public VM_SettingsSection SectionEasyNpcTransfer { get; }
+    public VM_SettingsSection SectionLoadOrderImport { get; }
+    public VM_SettingsSection SectionModImport { get; }
+    public VM_SettingsSection SectionSpawnBatFile { get; }
+    public VM_SettingsSection SectionLogging { get; }
+
+    private VM_SettingsSection MakeSection(string caption, bool defaultExpanded) =>
+        new(caption, defaultExpanded, _model.SettingsViewExpandedSections);
+
     // For throttled saving
     private readonly Subject<Unit> _saveRequestSubject = new Subject<Unit>();
     private readonly CompositeDisposable _disposables = new CompositeDisposable(); // To manage subscriptions
@@ -555,7 +577,29 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         _model = settingsModel;
         _faceGenAnalysisCache = faceGenAnalysisCache;
         _outputValidator = outputValidator;
-        
+
+        // Rebuilt rather than just null-coalesced: Newtonsoft deserializes the dictionary
+        // with the default (ordinal) comparer, dropping the case-insensitivity the model's
+        // initializer declares. The sections write straight into this instance, so it has
+        // to be the one SaveSettings serializes — assign it back to the model.
+        _model.SettingsViewExpandedSections = new Dictionary<string, bool>(
+            _model.SettingsViewExpandedSections ?? new Dictionary<string, bool>(),
+            StringComparer.OrdinalIgnoreCase);
+
+        SectionGameEnvironment = MakeSection("Game Environment", defaultExpanded: true);
+        SectionModEnvironment = MakeSection("Mod Environment", defaultExpanded: true);
+        SectionOutputSettings = MakeSection("Output Settings", defaultExpanded: true);
+        SectionHeadEditing = MakeSection("Head Editing", defaultExpanded: false);
+        SectionMugshotSettings = MakeSection("Mugshot Settings", defaultExpanded: false);
+        SectionFaceGenAnalysis = MakeSection("FaceGen Analysis", defaultExpanded: false);
+        SectionDisplaySettings = MakeSection("Display Settings", defaultExpanded: false);
+        SectionEasyNpcTransfer = MakeSection("EasyNPC Transfer", defaultExpanded: false);
+        SectionLoadOrderImport = MakeSection("Load Order Import Settings", defaultExpanded: false);
+        SectionModImport = MakeSection("Mod Import Settings", defaultExpanded: false);
+        SectionSpawnBatFile = MakeSection("Spawn Bat File Options", defaultExpanded: false);
+        SectionLogging = MakeSection("Logging", defaultExpanded: false);
+
+
         _environmentStateProvider = environmentStateProvider;
         _environmentStateProvider.OnEnvironmentUpdated
             .ObserveOn(RxApp.MainThreadScheduler) // Ensure UI updates happen on the UI thread
