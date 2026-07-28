@@ -73,6 +73,7 @@ namespace NPC_Plugin_Chooser_2
             // load. This file-trigger is a dev fallback that force-enables it without the UI.
             // Off means every call site is a cheap IsEnabled check.
             AssetProvenanceDiag.InitializeFromFileTrigger();
+            FaceGenLadderDiag.InitializeFromFileTrigger();
 
             // Opt-in record-provenance report (RecordProvenance.csv: every non-NPC record merged
             // into the output plugin + the reference chain that pulled it in). Primary control is
@@ -522,6 +523,20 @@ namespace NPC_Plugin_Chooser_2
                 bool auditExitRequested = await AuditScanRunner.RunAsync(container);
                 _renderHarnessExitRequested = _renderHarnessExitRequested || auditExitRequested;
                 StartupLogger.Log("Audit scan finished");
+            }
+
+            // Patch verification harness: PatchVerify.json next to the exe runs a full patch
+            // against the live settings into a throwaway output mod, then writes the FaceGen
+            // ladder CSV, console spawn bats, and an HTML manifest pairing each NPC with its
+            // reference mugshot. Run through MO2 so it sees the real modlist. See
+            // PatchVerifyRunner.
+            if (PatchVerifyRunner.ConfigExists)
+            {
+                StartupLogger.Log("PatchVerify.json detected — running patch verification harness");
+                splashVM.UpdateProgress(90, "Running patch verification...");
+                bool verifyExitRequested = await PatchVerifyRunner.RunAsync(container);
+                _renderHarnessExitRequested = _renderHarnessExitRequested || verifyExitRequested;
+                StartupLogger.Log("Patch verification finished");
             }
 
             splashVM.UpdateProgress(90, "Core initialization complete."); // After heavy lifting in InitializeAsync
