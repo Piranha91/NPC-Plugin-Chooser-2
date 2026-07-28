@@ -34,6 +34,21 @@ internal static class TemplateMatrixChecks
         return checks;
     }
 
+    /// <summary>
+    /// Whether this specimen is one the validator screens out per NPC: a Traits chain that resolves to
+    /// a concrete NPC, in SkyPatcher mode, while the mode says inherit. SkyPatcher cannot redirect an
+    /// inherited face — the game resolves the chain natively and draws the terminus's FaceGen — so the
+    /// selection would produce a dark face rather than the chosen appearance. See
+    /// <c>Validator.CanSkyPatcherApplyAppearance</c>.
+    ///
+    /// <para>The levelled and unfollowable specimens are NOT in this set: their chains do not resolve,
+    /// so they keep their own (already asserted) behaviour.</para>
+    /// </summary>
+    private static bool IsScreenedOutAsTemplated(TemplateMatrixCell cell, string role) =>
+        cell.UseSkyPatcher &&
+        cell.TemplateMode == TemplateHandlingMode.InheritFromTemplate &&
+        role is SpecimenRole.TemplatedA or SpecimenRole.TemplatedB or SpecimenRole.TemplatedShared;
+
     // ------------------------------------------------------------------ presence
 
     /// <summary>
@@ -69,6 +84,15 @@ internal static class TemplateMatrixChecks
                 Add(checks, Presence, cell, role,
                     !o.Processed && !o.RecordPresent && o.InvalidReason != null,
                     $"appearance swap rejected in {cell.Cell.PatchingMode} mode as expected " +
+                    $"(reason='{o.InvalidReason ?? "NONE — the validator accepted it"}').");
+                continue;
+            }
+
+            if (IsScreenedOutAsTemplated(cell.Cell, role))
+            {
+                Add(checks, Presence, cell, role,
+                    !o.Processed && !o.RecordPresent && o.InvalidReason != null,
+                    "templated NPC rejected in SkyPatcher + inherit as expected " +
                     $"(reason='{o.InvalidReason ?? "NONE — the validator accepted it"}').");
                 continue;
             }
@@ -143,10 +167,21 @@ internal static class TemplateMatrixChecks
 
         if (cell.Cell.UseSkyPatcher)
         {
-            // Every target gets its own surrogate FormKey, so each owns a distinct destination path in
-            // BOTH settings. What the setting changes here is the surrogate RECORD (see EvaluateRecords):
-            // under inherit the surrogate keeps its Traits flag, so the engine reads the terminus's path
-            // and the file written at the surrogate's own path is inert.
+            if (cell.Cell.TemplateMode == TemplateHandlingMode.InheritFromTemplate)
+            {
+                // These specimens no longer reach the patcher at all: SkyPatcher cannot deliver an
+                // appearance through a Traits chain, so the validator screens them out per NPC. This
+                // used to assert that each surrogate got its own FaceGen file — while noting in the
+                // same breath that the engine never opens it, because the surrogate keeps its Traits
+                // flag and resolves to the terminus's path. Writing an inert file (and copying its
+                // assets) for an NPC that then dark-faces is exactly what the screening prevents.
+                Add(checks, FaceGen, cell, "#3 and #4 are screened out (no inert file)",
+                    a.OwnFaceGenHash == null && b.OwnFaceGenHash == null,
+                    $"#3={Describe(a)}, #4={Describe(b)}.");
+                return;
+            }
+
+            // Own-copy: Traits is cleared, so each surrogate owns its face and its own destination path.
             Add(checks, FaceGen, cell, "#3 vs #4 (surrogate paths)",
                 a.OwnFaceGenHash != null && b.OwnFaceGenHash != null && a.OwnFaceGenHash != b.OwnFaceGenHash,
                 $"each surrogate owns a FaceGen file and the two differ: #3={Describe(a)}, #4={Describe(b)}.");

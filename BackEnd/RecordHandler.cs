@@ -175,6 +175,65 @@ public class RecordHandler
         return _currentDuplicateInMappings.TryGetValue(sourceFormKey, out outputFormKey);
     }
 
+    /// <summary>
+    /// Resolves an NPC record the way the appearance DONOR itself is resolved at the top of the
+    /// patch loop: from the selected mod's own plugins (honouring the per-NPC plugin
+    /// disambiguation and skipping resource-only plugins), falling back to the load order only
+    /// when that mod has no record for it.
+    ///
+    /// <para>Used for every record the appearance pipeline reads besides the donor — the Traits
+    /// chain hops and the flatten terminus. Those all feed decisions that are paired with assets
+    /// sourced from this same mod, so resolving them through the load order would let the record
+    /// side and the asset side come from different plugins.</para>
+    ///
+    /// <para><paramref name="isFaceGenOnly"/> mirrors the donor's own fallback: a mod that ships
+    /// FaceGen but no plugin record for this NPC has its donor resolved at
+    /// <see cref="ResolveTarget.Origin"/>, on the assumption its meshes were built against the
+    /// base record, so the rest of the chain has to be read the same way to stay consistent
+    /// with it.</para>
+    ///
+    /// <para>Lives here rather than on the Patcher because the Validator screens Traits chains with
+    /// it too — screening has to judge an NPC by the records the patcher will actually read.</para>
+    /// </summary>
+    public INpcGetter? ResolveNpcPreferringMod(FormKey npcFormKey, ModSetting? appearanceModSetting,
+        HashSet<string> currentModFolderPaths, bool isFaceGenOnly)
+    {
+        if (appearanceModSetting != null)
+        {
+            var link = npcFormKey.ToLink<INpcGetter>();
+
+            if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var disambiguationKey) &&
+                TryGetRecordGetterFromMod(link, disambiguationKey, currentModFolderPaths,
+                    RecordLookupFallBack.None, out var disambiguated) &&
+                disambiguated is INpcGetter disambiguatedNpc)
+            {
+                return disambiguatedNpc;
+            }
+
+            // Iterate backwards; lowest in the list is the winner within the mod (as for the donor).
+            for (int i = appearanceModSetting.CorrespondingModKeys.Count - 1; i >= 0; i--)
+            {
+                var candidateKey = appearanceModSetting.CorrespondingModKeys[i];
+                if (appearanceModSetting.ResourceOnlyModKeys.Contains(candidateKey)) continue;
+
+                if (TryGetRecordGetterFromMod(link, candidateKey, currentModFolderPaths,
+                        RecordLookupFallBack.None, out var record) &&
+                    record is INpcGetter modNpc)
+                {
+                    return modNpc;
+                }
+            }
+        }
+
+        var linkCache = _environmentStateProvider.LinkCache;
+        if (linkCache == null) return null;
+
+        return linkCache.TryResolve<INpcGetter>(npcFormKey, out var fallback,
+            isFaceGenOnly ? ResolveTarget.Origin : ResolveTarget.Winner)
+            ? fallback
+            : null;
+    }
+
     public void PrimeLinkCachesFor(IEnumerable<ModKey> modKeys, HashSet<string> fallBackModFolderNames)
     {
         foreach (var modKey in modKeys)

@@ -15,6 +15,7 @@ public class Validator : OptionalUIModule
     private readonly Settings _settings;
     private readonly AssetHandler _assetHandler;
     private readonly PluginProvider _pluginProvider;
+    private readonly RecordHandler _recordHandler;
 
     private Dictionary<FormKey, ScreeningResult> _screeningCache = new();
     private Dictionary<ModKey, HashSet<ModKey>> _masterPluginCache = new();
@@ -22,12 +23,14 @@ public class Validator : OptionalUIModule
     public record ValidationReport(List<string> InvalidSelections);
 
     // Constructor updated to include AssetHandler for optimized directory checks.
-    public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, AssetHandler assetHandler, PluginProvider pluginProvider)
+    public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, AssetHandler assetHandler,
+        PluginProvider pluginProvider, RecordHandler recordHandler)
     {
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _assetHandler = assetHandler;
         _pluginProvider = pluginProvider;
+        _recordHandler = recordHandler;
     }
 
     public Dictionary<FormKey, ScreeningResult> GetScreeningCache()
@@ -77,6 +80,9 @@ public class Validator : OptionalUIModule
 
         var selectionsList = selectionsToScreen.ToList();
         int totalToScreen = selectionsList.Count;
+        // The SkyPatcher/templated-NPC limitation is explained once, not once per NPC — a load order
+        // can have hundreds of templated selections and the reason is identical for all of them.
+        bool explainedSkyPatcherTemplateLimit = false;
         INpcGetter? winningNpcOverride = null;
         ModSetting? appearanceModSetting = null;
         
@@ -291,6 +297,34 @@ public class Validator : OptionalUIModule
                 }
             }
 
+            using (ContextualPerformanceTracer.Trace("Validator.CheckSkyPatcherTemplateChain"))
+            {
+                if (!CanSkyPatcherApplyAppearance(appearanceNpcFormKey, appearanceModSetting, out var terminusDetail))
+                {
+                    if (!explainedSkyPatcherTemplateLimit)
+                    {
+                        explainedSkyPatcherTemplateLimit = true;
+                        AppendLog(
+                            "  NOTE: SkyPatcher mode cannot apply a chosen appearance to a TEMPLATED NPC while " +
+                            "Templated NPCs is set to \"Use the template's appearance\". Such an NPC has no face of " +
+                            "its own — the game resolves it through the Traits chain and draws the FaceGen belonging " +
+                            "to the record at the end of that chain, so the appearance selected here never reaches " +
+                            "it and the NPC dark-faces. The affected selections are listed below; either skip them, " +
+                            "or set Templated NPCs to \"Give each NPC its own copy\" (globally in Settings, or per " +
+                            "mod in Mods) so each NPC owns its face.",
+                            false, true);
+                    }
+
+                    AppendLog(
+                        $"  SCREENING WARNING: {npcIdentifier} inherits its appearance ({terminusDetail}), and " +
+                        $"SkyPatcher mode cannot redirect an inherited face. This selection will be skipped.");
+                    invalidSelections.Add(
+                        $"{npcIdentifier} -> '{selectedModDisplayName}' (Templated NPC — SkyPatcher can't apply an " +
+                        "appearance through a template chain; set Templated NPCs to \"Give each NPC its own copy\")");
+                    continue;
+                }
+            }
+
             _screeningCache[npcFormKey] = new ScreeningResult(
                 true,
                 winningNpcOverride,
@@ -327,6 +361,70 @@ public class Validator : OptionalUIModule
         // The logic for showing the popup is removed from this class.
         // We now simply return the list of invalid selections.
         return new ValidationReport(invalidSelections);
+    }
+
+    /// <summary>
+    /// Whether SkyPatcher can actually deliver the chosen appearance to this NPC.
+    ///
+    /// <para>It cannot, for an NPC that inherits its appearance through a Traits template chain, while
+    /// Templated NPCs is set to <see cref="TemplateHandlingMode.InheritFromTemplate"/>. Such an NPC has
+    /// no face of its own: the game resolves the chain natively and draws the FaceGen belonging to the
+    /// record at the END of it. NPC2's surrogate keeps the Traits flag in this mode, so the FaceGen it
+    /// writes under the surrogate's own FormID is never opened, and the NPC renders the terminus's
+    /// face instead — which, once the appearance plugin has been merged away, is a mod's mesh judged
+    /// against a vanilla record. That mismatch is the dark-face bug.</para>
+    ///
+    /// <para>Selecting an appearance for the terminus as well does NOT rescue it: SkyPatcher patches
+    /// the terminus through its own surrogate and redirects only the terminus's own actor, while
+    /// inheritors read the terminus's FaceGen path. So this is a per-NPC hard no, and the remedy is
+    /// <see cref="TemplateHandlingMode.GiveEachNpcOwnCopy"/>, which clears the Traits flag and gives
+    /// the NPC its own face.</para>
+    ///
+    /// <para>Only a chain that resolves to a concrete NPC is rejected. A levelled terminus is normal —
+    /// the game picks an actor at runtime and there is no fixed face to redirect — and an unfollowable
+    /// chain is handled by the FaceGen ladder. Record mode is unaffected: there the patched record
+    /// keeps inheriting and the engine reads its head parts and its mesh from the same place.</para>
+    /// </summary>
+    /// <param name="terminusDetail">Human-readable chain outcome, for the per-NPC log.</param>
+    private bool CanSkyPatcherApplyAppearance(FormKey appearanceNpcFormKey, ModSetting appearanceModSetting,
+        out string terminusDetail)
+    {
+        terminusDetail = string.Empty;
+
+        if (!_settings.UseSkyPatcherMode) return true;
+        if (_settings.GetEffectiveTemplateHandlingMode(appearanceModSetting) !=
+            TemplateHandlingMode.InheritFromTemplate)
+        {
+            return true;
+        }
+
+        // Resolved through the selected mod's own plugins, exactly as the patcher resolves the donor
+        // and every chain hop — a mod may set or clear the Traits flag, and screening has to judge the
+        // record that will actually be patched. Reached only in SkyPatcher + Inherit, so record-mode
+        // runs never pay for the lookup.
+        bool isFaceGenOnly = appearanceModSetting.IsFaceGenOnlyEntry ||
+                             appearanceModSetting.FaceGenOnlyNpcFormKeys.Contains(appearanceNpcFormKey);
+        var folderPaths = appearanceModSetting.CorrespondingFolderPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var donor = _recordHandler.ResolveNpcPreferringMod(appearanceNpcFormKey, appearanceModSetting,
+            folderPaths, isFaceGenOnly);
+        if (donor == null) return true; // unresolvable donor is another check's business
+
+        var linkCache = _environmentStateProvider.LinkCache;
+        var hops = new List<string>();
+        var status = Auxilliary.TryResolveAppearanceTerminus(
+            donor,
+            fk => _recordHandler.ResolveNpcPreferringMod(fk, appearanceModSetting, folderPaths, isFaceGenOnly),
+            out var terminus,
+            fk => linkCache != null && linkCache.TryResolve<ILeveledNpcGetter>(fk, out _),
+            hops.Add);
+
+        if (status != FaceGenChainStatus.Resolved) return true;
+
+        // The hop strings already carry their own arrows, so they are joined with a space rather than
+        // an arrow — otherwise the trail reads "-> A -> -> B".
+        terminusDetail = $"chain {donor.FormKey} {string.Join(" ", hops)}".TrimEnd();
+        return false;
     }
 
     /// <summary>
