@@ -61,5 +61,9 @@ public sealed class NpcChooserHarness : IDisposable
     public Patcher Patcher => Container.Resolve<Patcher>();
     public Validator Validator => Container.Resolve<Validator>();
 
+    /// <summary>Exposed so an integration test can stub the converter's NIF-reading seams before a
+    /// run — a synthetic fixture cannot supply parseable meshes.</summary>
+    public HeadPartWigConverter HeadPartWigConverter => Container.Resolve<HeadPartWigConverter>();
+
     public void Dispose() => Container.Dispose();
 }

@@ -31,8 +31,15 @@ internal static class GoldenPatchRunner
     /// front. This reproduces the on-disk state a crash (or swallowed save failure) between the plugin
     /// write and the unified-token write would leave behind, so tests can assert the marker still exists.
     /// </param>
+    /// <param name="configure">
+    /// Optional hook run against the freshly-built container before patching, for tests that need to
+    /// stub a service's NIF-parsing seams (e.g. <c>HeadPartWigConverter</c>'s
+    /// <c>PartitionProbe</c>/<c>RenderShapeNamesProvider</c>) so a synthetic fixture with dummy mesh
+    /// files can still reach the record-minting path.
+    /// </param>
     public static async Task<GoldenPatchResult> RunAsync(
-        EnvironmentStateProvider provider, Settings settings, bool writeUnifiedToken = true)
+        EnvironmentStateProvider provider, Settings settings, bool writeUnifiedToken = true,
+        Action<NpcChooserHarness>? configure = null)
     {
         // The TextFileFormKeyAllocator persists EditorID->FormKey assignments to disk and is committed at
         // the end of a run; delete it so each combo allocates from a clean slate (deterministic per run).
@@ -44,6 +51,7 @@ internal static class GoldenPatchRunner
         catch { /* best effort */ }
 
         using var harness = new NpcChooserHarness(provider, settings);
+        configure?.Invoke(harness);
         var patcher = harness.Patcher;
         var validator = harness.Validator;
 
