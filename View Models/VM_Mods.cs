@@ -1467,6 +1467,13 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     {
         if (vmToRefresh == null) return (false, "VM is null");
 
+        // Clear this mod's analysis logs up front rather than after the analysis: both of the paths
+        // below that DROP the mod (own patch output, and nothing appearance-like left) return before
+        // RefreshNpcLists runs, so cleanup placed at the end would never fire for exactly the mods
+        // whose logs most need to go. LoadingErrors is covered too because its writers append —
+        // without this, a re-run stacks a fresh stack trace on top of the last one indefinitely.
+        AnalysisLogCleaner.ClearForMod(vmToRefresh.DisplayName);
+
         // If this entry's folder is this app's own patch output (identified by the NPC_Token.json marker),
         // it must not be treated as an appearance mod, even though the output plugin contains NPC + FaceGen
         // data by content. Evict it here so a Refresh drops an entry that was adopted before the marker
@@ -3949,11 +3956,28 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 splashReporter.UpdateStep("Clearing non-appearance mod cache...");
                 await Task.Delay(100);
                 _settings.CachedNonAppearanceMods.Clear();
+                _settings.CachedMissingMasterMods.Clear(); // Keyed on the above; orphans have nothing to describe.
                 ShouldRescanNonAppearanceMods = false; // Reset after use
+            }
+            else
+            {
+                PruneMissingNonAppearanceMods();
             }
 
             splashReporter.UpdateStep("Clearing existing mod data...");
             await Task.Delay(100);
+
+            // Wipe the analysis logs wholesale rather than per mod: this rebuild discards every VM
+            // and re-derives the list from disk, so a mod that was renamed or removed is never
+            // visited again and its per-mod files would survive as phantom entries in the
+            // Settings > Rejected NPCs tree. Runs before the repopulation below writes new ones.
+            //
+            // Safe only because every mod is re-analysed on the way back: LastKnownState is
+            // persisted on the model, and _settings.ModSettings.Clear() below drops it, so the
+            // rebuilt VMs all miss the AnalyzeModSettingsAsync cache and rewrite their logs. If
+            // this path ever starts preserving the snapshots, cache-hit mods would skip
+            // RefreshNpcLists and this wipe would silently delete logs nothing regenerates.
+            AnalysisLogCleaner.ClearAll();
 
             // c) Clear internal lists to generate a blank slate
             _consistencyProvider.ClearAllSelections();
@@ -4053,6 +4077,10 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             splashReporter.UpdateStep("Rebuilding NPC list...");
             await _npcSelectionBar.InitializeAsync(splashReporter);
 
+            // The logs were wiped and rewritten above, so anything the Settings panels already
+            // parsed is describing mods and folders from before this refresh.
+            NotifyAnalysisLogsRewritten();
+
             splashReporter.UpdateStep("Refresh complete.");
             await Task.Delay(500); // let user see the final message
         }
@@ -4066,6 +4094,66 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             {
                 await splashReporter.CloseSplashScreenAsync();
             }
+        }
+    }
+
+    /// <summary>
+    /// Drops cached non-appearance entries whose mod folder is gone from disk.
+    ///
+    /// <para>Deliberately narrower than clearing the whole cache: that dictionary is the skip list
+    /// in <see cref="ScanForModsInModFolderAsync"/>, so emptying it turns every Refresh All into a
+    /// full cold re-scan of every non-appearance folder — which is what the "rescan non-appearance
+    /// mods" checkbox exists to opt into. A path that no longer exists, though, can never be
+    /// re-derived by any future scan, so it is pure stale UI in Settings &gt; Mod Import Settings
+    /// and costs nothing to drop.</para>
+    /// </summary>
+    private void PruneMissingNonAppearanceMods()
+    {
+        // Directory.Exists is false for null/blank, so junk keys are pruned by the same test.
+        var missing = _settings.CachedNonAppearanceMods.Keys
+            .Where(path => !Directory.Exists(path))
+            .ToList();
+
+        foreach (var path in missing)
+        {
+            _settings.CachedNonAppearanceMods.Remove(path);
+            _settings.CachedMissingMasterMods.Remove(path); // Keyed on the above; keep the subset invariant.
+        }
+
+        if (missing.Any())
+        {
+            Debug.WriteLine($"[RefreshAll] Pruned {missing.Count} non-appearance cache entries whose folder no longer exists.");
+        }
+    }
+
+    /// <summary>
+    /// Re-syncs the Settings tab after the analysis logs and caches have been rebuilt. Both panels
+    /// snapshot their data (the Rejected NPCs tree parses the folder once; the non-appearance list
+    /// is a projection built at load), so without this a refresh leaves them showing the previous
+    /// scan's mods. Guarded on IsValueCreated so this never forces VM_Settings into existence.
+    ///
+    /// <para>Called from the two user-driven refreshes — Refresh All here, and a single mod's
+    /// Refresh in VM_ModSetting — but deliberately NOT from RefreshSingleModSettingAsync itself,
+    /// which also runs per-mod inside the UpdateHandler recovery loop and once per newly added
+    /// mod, where a reload per call would be pure churn.</para>
+    /// </summary>
+    public void NotifyAnalysisLogsRewritten()
+    {
+        if (!_lazySettingsVM.IsValueCreated)
+        {
+            return;
+        }
+
+        try
+        {
+            var settingsVm = _lazySettingsVM.Value;
+            settingsVm.RefreshNonAppearanceMods();
+            settingsVm.RejectedNpcs.Invalidate();
+        }
+        catch (Exception ex)
+        {
+            // Cosmetic resync — never let it fail the refresh the user actually asked for.
+            Debug.WriteLine($"Could not refresh Settings panels after mod analysis: {ExceptionLogger.GetExceptionStack(ex)}");
         }
     }
 

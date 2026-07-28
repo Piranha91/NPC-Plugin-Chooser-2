@@ -2082,6 +2082,13 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             // clear existing ModSettings to avoid cross-contamination
             _model.ModSettings.Clear();
             _model.CachedNonAppearanceMods.Clear();
+            _model.CachedMissingMasterMods.Clear(); // Keyed on the above; orphans have nothing left to describe.
+
+            // Same reason, for the on-disk half of the analysis output: the per-mod logs are named
+            // after mods from the OLD folder, and nothing in the repopulation below will revisit
+            // them to clean up. Left behind, they surface as mods the user does not have in the
+            // Settings > Rejected NPCs tree.
+            AnalysisLogCleaner.ClearAll();
             //
 
             _lazyMainWindowVm.Value.IsLoadingFolders = true;
@@ -2115,6 +2122,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             }
 
             RefreshNonAppearanceMods();
+            RejectedNpcs.Invalidate(); // Logs were wiped above and rewritten by the repopulation.
         }
         finally
         {
@@ -3986,7 +3994,12 @@ Options:
         }
     }
     
-    private void RefreshNonAppearanceMods()
+    /// <summary>
+    /// Rebuilds the Mod Import Settings list from the model. Public because VM_Mods calls it after
+    /// a Refresh All: that path mutates the cache without going through this VM, so the projection
+    /// built here would otherwise keep showing the pre-refresh entries.
+    /// </summary>
+    public void RefreshNonAppearanceMods()
     {
         CachedNonAppearanceMods = new ObservableCollection<CachedNonAppearanceModEntry>(
             _model.CachedNonAppearanceMods

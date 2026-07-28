@@ -226,6 +226,31 @@ public sealed class VM_RejectedNpcs : ReactiveObject
     /// <summary>Loads on first use; subsequent calls are no-ops until <see cref="RefreshCommand"/>.</summary>
     public Task EnsureLoadedAsync() => HasLoaded ? Task.CompletedTask : LoadAsync(force: false);
 
+    /// <summary>
+    /// Discards the parsed snapshot after the log folder has been rewritten by a re-scan.
+    ///
+    /// <para>A panel that has already been opened re-reads immediately, because its rows are on
+    /// screen and would otherwise keep naming mods that the re-scan just removed. One that has
+    /// never been opened is only marked stale, so a re-scan does not pay for a read nobody has
+    /// asked for — the same laziness <see cref="EnsureLoadedAsync"/> exists to preserve.</para>
+    ///
+    /// <para>Fire-and-forget by design: the caller is a refresh pipeline that should not block on
+    /// a cosmetic reload, and <see cref="LoadAsync"/> already routes its own failures to the
+    /// status line.</para>
+    /// </summary>
+    public void Invalidate()
+    {
+        if (!HasLoaded)
+        {
+            return;
+        }
+
+        HasLoaded = false;
+        LoadAsync(force: true).ContinueWith(
+            t => Debug.WriteLine($"Rejected NPCs invalidation reload failed: {ExceptionLogger.GetExceptionStack(t.Exception!)}"),
+            TaskContinuationOptions.OnlyOnFaulted);
+    }
+
     public async Task LoadAsync(bool force)
     {
         if (IsLoading || (HasLoaded && !force))

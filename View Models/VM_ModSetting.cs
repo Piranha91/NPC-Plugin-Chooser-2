@@ -1917,24 +1917,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
         Debug.WriteLine($"{dbgTag} Done. NpcFormKeys={NpcFormKeys.Count}, AvailablePluginsForNpcs={AvailablePluginsForNpcs.Count}, AmbiguousNpcFormKeys={AmbiguousNpcFormKeys.Count}, rejectionMessages={rejectionMessages.Count}");
 
-        if (rejectionMessages.Any())
-        {
-            try
-            {
-                string logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Rejected NPCs");
-                Auxilliary.CreateDirectoryIfNeeded(logDirectory, Auxilliary.PathType.Directory);
-                string safeDisplayName = Auxilliary.MakeStringPathSafe(this.DisplayName);
-                if (!string.IsNullOrWhiteSpace(safeDisplayName))
-                {
-                    string logFilePath = Path.Combine(logDirectory, $"{safeDisplayName}.txt");
-                    File.WriteAllLines(logFilePath, rejectionMessages);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Could not write rejection log file for {this.DisplayName}: {ExceptionLogger.GetExceptionStack(ex)}");
-            }
-        }
+        // Delete-then-write, not write-if-any: an empty list has to REMOVE this mod's log, or a mod
+        // that stopped rejecting anything keeps its stale file and the Settings > Rejected NPCs
+        // tree reports rejections that no longer happen. See WriteOrClearRejectionLog.
+        AnalysisLogCleaner.WriteOrClearRejectionLog(this.DisplayName, rejectionMessages);
 
         RecomputeHasTemplatedNpcs();
         RefreshNpcCount();
@@ -2032,7 +2018,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             catch (Exception e)
             {
                 // write error log file here
-                string logDirectory = Path.Combine(AppContext.BaseDirectory, "LoadingErrors");
+                string logDirectory = Path.Combine(AppContext.BaseDirectory, AnalysisLogCleaner.LoadingErrorsFolderName);
                 Directory.CreateDirectory(logDirectory);
                 string safeDisplayName = Auxilliary.MakeStringPathSafe(this.DisplayName);
                 string logFilePath = Path.Combine(logDirectory, $"{safeDisplayName}.txt");
@@ -2163,7 +2149,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             catch (Exception e)
             {
                 // write error log file here
-                string logDirectory = Path.Combine(AppContext.BaseDirectory, "LoadingErrors");
+                string logDirectory = Path.Combine(AppContext.BaseDirectory, AnalysisLogCleaner.LoadingErrorsFolderName);
                 Directory.CreateDirectory(logDirectory);
                 string safeDisplayName = Auxilliary.MakeStringPathSafe(this.DisplayName);
                 string logFilePath = Path.Combine(logDirectory, $"{safeDisplayName}_InjectionCheck.txt");
@@ -2617,7 +2603,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                             catch (Exception e)
                             {
                                 // write error log file here
-                                string logDirectory = Path.Combine(AppContext.BaseDirectory, "LoadingErrors");
+                                string logDirectory = Path.Combine(AppContext.BaseDirectory, AnalysisLogCleaner.LoadingErrorsFolderName);
                                 Directory.CreateDirectory(logDirectory);
                                 string safeDisplayName = Auxilliary.MakeStringPathSafe(DisplayName);
                                 string logFilePath = Path.Combine(logDirectory, $"{safeDisplayName}.txt");
@@ -2664,7 +2650,11 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
             // Ask the parent VM to perform the refresh and get result + reason
             var (isValid, failureReason) = await _parentVm.RefreshSingleModSettingAsync(this);
-            
+
+            // This mod's analysis logs were just cleared and rewritten, so anything the Settings
+            // tab already parsed still describes the previous run.
+            _parentVm.NotifyAnalysisLogsRewritten();
+
             if (!isValid)
             {
                 // If the refresh determined the mod is no longer valid, notify the user.
