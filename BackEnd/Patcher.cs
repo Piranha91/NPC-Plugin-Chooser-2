@@ -1862,7 +1862,7 @@ public class Patcher : OptionalUIModule
                     AppendLog("Waiting for all background asset copying and extraction to finish...", false, true);
 
                     await _assetHandler.MonitorAndWaitForAllTasks(logMessage =>
-                        AppendLog("  " + logMessage, false, true));
+                        AppendLog("  " + logMessage, false, false));
 
                     // Verify any cached file access errors to see if they were actual failures.
                     _assetHandler.LogTrueCopyFailures();
@@ -2205,7 +2205,7 @@ public class Patcher : OptionalUIModule
         if (_pendingWigNifEdits.IsEmpty) return;
 
         AppendLog($"Stripping baked hair/antler shapes from {_pendingWigNifEdits.Count} FaceGen NIF(s) (wig/antler forwarding)...",
-            false, true);
+            false, false);
         var pendingEdits = _pendingWigNifEdits.ToList();
         int stripTotal = pendingEdits.Count;
         int stripDone = 0;
@@ -2228,7 +2228,7 @@ public class Patcher : OptionalUIModule
                 if (removed > 0)
                 {
                     AppendLog($"  {npcIdentifier}: removed {removed} baked hair/antler shape(s) " +
-                              $"[{string.Join(", ", shapeNames)}] from {Path.GetFileName(nifPath)}.", false, true);
+                              $"[{string.Join(", ", shapeNames)}] from {Path.GetFileName(nifPath)}.", false, false);
                 }
                 else
                 {
@@ -2272,7 +2272,7 @@ public class Patcher : OptionalUIModule
         if (_pendingWigBakes.IsEmpty) return;
 
         AppendLog($"Baking wig scenes into {_pendingWigBakes.Count} FaceGen NIF(s) (wig ConvertToHeadParts)...",
-            false, true);
+            false, false);
 
         // Drain destructively up front (see doc comment), then fan out below.
         var pendingBakes = new List<(string NifPath, HeadPartWigConverter.Result Convert, string NpcIdentifier)>();
@@ -2314,7 +2314,7 @@ public class Patcher : OptionalUIModule
                               (convert.FaceGenShapeNamesToStrip.Count > 0
                                   ? $"(donor hair [{string.Join(", ", convert.FaceGenShapeNamesToStrip)}] stripped)."
                                   : "(bald donor — synthesized hair partition)."),
-                        false, true);
+                        false, false);
                 }
                 else
                 {
