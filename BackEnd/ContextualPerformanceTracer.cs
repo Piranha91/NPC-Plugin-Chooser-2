@@ -259,17 +259,29 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             public Tracer(Guid traceId)
             {
                 _traceId = traceId;
-                _parentIdOnExit = _stats[traceId].ParentId;
+                // Tolerant for the same reason as Dispose below: Reset() can clear the map
+                // between the entry being registered and this running.
+                _parentIdOnExit = _stats.TryGetValue(traceId, out var entry) ? entry.ParentId : null;
                 _stopwatch = Stopwatch.StartNew();
             }
 
             public void Dispose()
             {
                 _stopwatch.Stop();
-                var data = _stats[_traceId];
-                data.TotalMilliseconds = _stopwatch.Elapsed.TotalMilliseconds;
-                data.MaxMilliseconds = data.TotalMilliseconds;
-                data.CallCount = 1;
+
+                // Reset() clears _stats wholesale, and it can legitimately fire while an outer
+                // scope is still open — a patch run resets the tracer, so driving one from inside
+                // another traced operation (as the headless PatchVerify harness does from the
+                // startup pipeline) leaves this entry gone. Indexing threw KeyNotFoundException
+                // and took the whole app down from a finally block. A vanished entry just means
+                // the measurement was discarded; a diagnostic must never be able to crash the app.
+                if (_stats.TryGetValue(_traceId, out var data))
+                {
+                    data.TotalMilliseconds = _stopwatch.Elapsed.TotalMilliseconds;
+                    data.MaxMilliseconds = data.TotalMilliseconds;
+                    data.CallCount = 1;
+                }
+
                 _currentParentId.Value = _parentIdOnExit;
             }
         }
