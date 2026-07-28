@@ -44,6 +44,10 @@
 
     <!-- Selection -->
     <SolidColorBrush x:Key="SelectedItemBackground"  Color="#2D3554"/>
+    <!-- Selection for text-on-TextBoxBackground surfaces (the Run tab log). SelectedItemBackground
+         is tuned against SecondaryBackground and is nearly the same luminance as TextBoxBackground,
+         so it disappears there. Kept dark enough that the Status* severity colours stay legible. -->
+    <SolidColorBrush x:Key="LogSelectionBackground"  Color="#3B5387"/>
 
     <!-- Misc -->
     <SolidColorBrush x:Key="HighlightAlteredText"    Color="#BB9AF7"/>

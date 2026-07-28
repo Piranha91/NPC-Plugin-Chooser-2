@@ -59,13 +59,13 @@ public class VM_RunPureTests
         Settings settings,
         EnvironmentStateProvider? env = null,
         Auxilliary? aux = null,
-        Subject<string>? logSubject = null)
+        Subject<RunLogEntry>? logSubject = null)
     {
         var vm = Reflect.Uninitialized<VM_Run>();
         Reflect.SetField(vm, "_settings", settings);
         Reflect.SetField(vm, "_environmentStateProvider", env ?? NullEnvProvider());
         Reflect.SetField(vm, "_aux", aux!); // many helpers never touch _aux; null is fine for those
-        Reflect.SetField(vm, "_logMessageSubject", logSubject ?? new Subject<string>());
+        Reflect.SetField(vm, "_logMessageSubject", logSubject ?? new Subject<RunLogEntry>());
         return vm;
     }
 
@@ -350,9 +350,9 @@ public class VM_RunPureTests
     // AppendLog verbose gating
     // ==================================================================
 
-    private static List<string> CaptureAppendLog(VM_Run vm, Subject<string> subject, Action emit)
+    private static List<RunLogEntry> CaptureAppendLog(VM_Run vm, Subject<RunLogEntry> subject, Action emit)
     {
-        var captured = new List<string>();
+        var captured = new List<RunLogEntry>();
         using var sub = subject.Subscribe(captured.Add);
         emit();
         return captured;
@@ -364,7 +364,7 @@ public class VM_RunPureTests
         await _sta.RunOnStaAsync(() =>
         {
             using var _ = new StaticStateGuard();
-            var subject = new Subject<string>();
+            var subject = new Subject<RunLogEntry>();
             var vm = MakeVm(new Settings(), logSubject: subject);
             vm.IsVerboseModeEnabled = false;
 
@@ -380,13 +380,15 @@ public class VM_RunPureTests
         await _sta.RunOnStaAsync(() =>
         {
             using var _ = new StaticStateGuard();
-            var subject = new Subject<string>();
+            var subject = new Subject<RunLogEntry>();
             var vm = MakeVm(new Settings(), logSubject: subject);
             vm.IsVerboseModeEnabled = false;
 
             var captured = CaptureAppendLog(vm, subject, () => vm.AppendLog("boom", isError: true));
 
-            captured.Should().ContainSingle().Which.Should().Be("boom");
+            var entry = captured.Should().ContainSingle().Subject;
+            entry.Text.Should().Be("boom");
+            entry.Severity.Should().Be(RunLogSeverity.Error, "isError seeds the entry's severity");
         });
     }
 
@@ -396,13 +398,15 @@ public class VM_RunPureTests
         await _sta.RunOnStaAsync(() =>
         {
             using var _ = new StaticStateGuard();
-            var subject = new Subject<string>();
+            var subject = new Subject<RunLogEntry>();
             var vm = MakeVm(new Settings(), logSubject: subject);
             vm.IsVerboseModeEnabled = false;
 
             var captured = CaptureAppendLog(vm, subject, () => vm.AppendLog("important", forceLog: true));
 
-            captured.Should().ContainSingle().Which.Should().Be("important");
+            var entry = captured.Should().ContainSingle().Subject;
+            entry.Text.Should().Be("important");
+            entry.Severity.Should().Be(RunLogSeverity.Info, "forceLog is not a severity");
         });
     }
 
@@ -412,13 +416,13 @@ public class VM_RunPureTests
         await _sta.RunOnStaAsync(() =>
         {
             using var _ = new StaticStateGuard();
-            var subject = new Subject<string>();
+            var subject = new Subject<RunLogEntry>();
             var vm = MakeVm(new Settings(), logSubject: subject);
             vm.IsVerboseModeEnabled = true;
 
             var captured = CaptureAppendLog(vm, subject, () => vm.AppendLog("verbose routine"));
 
-            captured.Should().ContainSingle().Which.Should().Be("verbose routine");
+            captured.Should().ContainSingle().Which.Text.Should().Be("verbose routine");
         });
     }
 
@@ -428,7 +432,7 @@ public class VM_RunPureTests
         await _sta.RunOnStaAsync(() =>
         {
             using var _ = new StaticStateGuard();
-            var subject = new Subject<string>();
+            var subject = new Subject<RunLogEntry>();
             var vm = MakeVm(new Settings(), logSubject: subject);
             vm.IsVerboseModeEnabled = true;
 
@@ -440,7 +444,7 @@ public class VM_RunPureTests
                 vm.AppendLog("both", isError: true, forceLog: true);
             });
 
-            captured.Should().Equal("plain", "err", "forced", "both");
+            captured.Select(e => e.Text).Should().Equal("plain", "err", "forced", "both");
         });
     }
 

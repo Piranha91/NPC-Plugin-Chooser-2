@@ -44,6 +44,9 @@
 
     <!-- Selection -->
     <SolidColorBrush x:Key="SelectedItemBackground"  Color="#DDF4FF"/>
+    <!-- Selection for text-on-TextBoxBackground surfaces (the Run tab log). Already legible
+         against white here, so it simply matches SelectedItemBackground. -->
+    <SolidColorBrush x:Key="LogSelectionBackground"  Color="#DDF4FF"/>
 
     <!-- Misc -->
     <SolidColorBrush x:Key="HighlightAlteredText"    Color="#8250DF"/>

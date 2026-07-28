@@ -46,14 +46,19 @@ public class VM_Run : ReactiveObject, IDisposable
     private readonly Lazy<IOffscreenRenderer> _offscreenRenderer;
     private CancellationTokenSource? _patchingCts;
     private readonly CompositeDisposable _disposables = new();
-    private readonly Subject<string> _logMessageSubject = new Subject<string>();
+    private readonly Subject<RunLogEntry> _logMessageSubject = new Subject<RunLogEntry>();
 
     // --- Constants ---
     public const string ALL_NPCS_GROUP = "<All NPCs>";
 
 
     // --- Logging & State ---
-    [Reactive] public string LogOutput { get; private set; } = string.Empty;
+    /// <summary>
+    /// The log, one entry per rendered line, each carrying the severity the view colours it
+    /// with. This replaced a single flat string: besides making per-line colouring possible it
+    /// drops the O(n²) rebuild of the whole log on every 250 ms batch.
+    /// </summary>
+    public ObservableCollection<RunLogEntry> LogLines { get; } = new();
     [Reactive] public bool IsRunning { get; private set; }
     [Reactive] public string RunButtonText { get; private set; } = "Run Patch Generation";
     [Reactive] public double ProgressValue { get; private set; } = 0;
@@ -242,15 +247,14 @@ public class VM_Run : ReactiveObject, IDisposable
         _logMessageSubject
             .Buffer(TimeSpan.FromMilliseconds(250), RxApp.TaskpoolScheduler) // Collect messages for 250ms
             .Where(buffer => buffer.Any()) // Only continue if there are messages in the buffer
-            .ObserveOn(RxApp.MainThreadScheduler) // Switch to the UI thread to update the LogOutput property
+            .ObserveOn(RxApp.MainThreadScheduler) // Switch to the UI thread to touch LogLines
             .Subscribe(messages =>
             {
                 foreach (var msg in messages)
+                foreach (var line in RunLogClassifier.SplitIntoLines(msg))
                 {
-                    _logBuilder.AppendLine(msg);
+                    LogLines.Add(line);
                 }
-
-                LogOutput = _logBuilder.ToString(); // Update the UI property only ONCE per batch
             })
             .DisposeWith(_disposables);
 
@@ -891,56 +895,50 @@ public class VM_Run : ReactiveObject, IDisposable
         _disposables.Dispose();
     }
 
-    private readonly StringBuilder _logBuilder = new();
-
     /// <summary>
     /// Appends a log line in a way that keeps the UI thread responsive **and** scales well
     /// with large logs.
     ///
-    /// * **Thread-safety / UI affinity** – The work that mutates <see cref="LogOutput"/> must
-    ///   run on the UI thread, so the method posts a delegate to
-    ///   <see cref="RxApp.MainThreadScheduler"/> instead of touching the property directly.
-    ///   This lets callers invoke <c>AppendLog</c> freely from background threads without
-    ///   risking cross-thread-access exceptions.
+    /// * **Thread-safety / UI affinity** – <see cref="LogLines"/> is an
+    ///   <see cref="ObservableCollection{T}"/> and so may only be mutated on the UI thread.
+    ///   Rather than touch it here, the method pushes the message onto
+    ///   <c>_logMessageSubject</c>; the constructor's subscription batches 250 ms of messages,
+    ///   hops to <see cref="RxApp.MainThreadScheduler"/> and appends them there. Callers may
+    ///   therefore invoke <c>AppendLog</c> freely from background threads.
     ///
-    /// * **Low allocation pressure** – Rather than concatenating strings
-    ///   (<c>LogOutput += …</c>)—which reallocates the entire buffer each time—the method
-    ///   maintains a single <see cref="StringBuilder"/> (<c>_logBuilder</c>).  
-    ///   Each scheduled delegate appends the new line and then publishes the builder's
-    ///   current contents to the bound property, avoiding O(<i>n</i><sup>2</sup>) growth as
-    ///   the log gets longer.
-    ///
-    /// * **Minimal closure capture** – The overload of
-    ///   <see cref="IScheduler.Schedule{TState}(TState, Func{IScheduler,TState,IDisposable})"/>
-    ///   passes the <paramref name="message"/> as explicit <c>TState</c>.  
-    ///   This keeps the closure tiny (no hidden field for the outer scope) and eliminates an
-    ///   extra heap allocation per call.
-    ///
-    /// * **Return value** – The delegate must return an <see cref="IDisposable"/>; the method
-    ///   has no follow-up work to cancel, so it simply returns
-    ///   <see cref="Disposable.Empty"/>.
+    /// * **Low allocation pressure** – Each message becomes one entry per physical line and
+    ///   nothing else is rebuilt, so the log costs O(<i>n</i>) overall instead of the
+    ///   O(<i>n</i><sup>2</sup>) of republishing the entire log text on every batch.
     ///
     /// The optional flags allow you to suppress routine messages unless verbose mode is
     /// enabled, while still forcing important or error messages to appear.
     /// </summary>
     /// <param name="message">Text to write to the log.</param>
-    /// <param name="isError">Marks the entry as an error so it bypasses verbose filtering.</param>
+    /// <param name="isError">
+    /// Marks the entry as an error so it bypasses verbose filtering. It also seeds the entry's
+    /// severity, but only as a fallback: a line that carries its own marker (<c>"WARNING: "</c>,
+    /// <c>"ERROR: "</c>, …) is coloured by that marker instead, because many callers pass
+    /// warnings through this flag to get them past the verbose gate. See
+    /// <see cref="RunLogClassifier"/>.
+    /// </param>
     /// <param name="forceLog">
     /// When <c>true</c>, the entry is logged even if verbose mode is off and
     /// <paramref name="isError"/> is <c>false</c>.
     /// </param>
-
     public void AppendLog(string message, bool isError = false, bool forceLog = false)
     {
         if (!IsVerboseModeEnabled && !isError && !forceLog) return;
 
         // Instead of scheduling directly on the UI thread,
         // push the message to the subject, which will handle batching and updating.
-        _logMessageSubject.OnNext(message);
+        _logMessageSubject.OnNext(
+            new RunLogEntry(message, isError ? RunLogSeverity.Error : RunLogSeverity.Info));
     }
 
     public void ResetLog()
     {
-        LogOutput = string.Empty;
+        // Called from the patcher on a background thread; an ObservableCollection may only be
+        // mutated on the UI thread, so marshal rather than clearing in place.
+        RxApp.MainThreadScheduler.Schedule(() => LogLines.Clear());
     }
 }

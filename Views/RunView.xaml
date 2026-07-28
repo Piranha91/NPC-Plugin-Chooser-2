@@ -13,6 +13,11 @@
                                 VerticalAlignment="Stretch"
                                 d:DataContext="{d:DesignInstance Type=vm:VM_Run}"
                                 d:DesignHeight="550" d:DesignWidth="800">
+
+    <UserControl.Resources>
+        <local:BlankLineToSpaceConverter x:Key="BlankLineToSpaceConverter"/>
+    </UserControl.Resources>
+
     <Grid Margin="10"
           HorizontalAlignment="Stretch"
           VerticalAlignment="Stretch">
@@ -83,18 +88,98 @@
             <TextBlock /> <!-- Fills remaining space as LastChildFill is true by default -->
         </DockPanel>
 
-        <!-- Log Output -->
-        <TextBox x:Name="LogTextBox"
+        <!-- Log Output.
+             A virtualizing ListBox rather than a TextBox, so each line can carry its own
+             severity colour (see RunLogClassifier). Lines are selectable and copyable via
+             Ctrl+C / the context menu; the container style is declared in full here so the
+             per-theme implicit ListBoxItem styles (padding, proportional font, disabled
+             horizontal scrolling) cannot reshape the log. -->
+        <ListBox x:Name="LogListBox"
                  Grid.Row="1"
-                 Text="{Binding LogOutput, Mode=OneWay}"
-                 IsReadOnly="True"
-                 VerticalScrollBarVisibility="Auto"
-                 HorizontalScrollBarVisibility="Auto"
-                 AcceptsReturn="True"
-                 TextWrapping="NoWrap"
+                 ItemsSource="{Binding LogLines}"
+                 SelectionMode="Extended"
+                 Background="{DynamicResource TextBoxBackground}"
+                 BorderBrush="{DynamicResource BorderBrush}"
+                 BorderThickness="1"
+                 Padding="2"
                  FontFamily="Consolas"
-                 HorizontalAlignment="Stretch" 
-                 VerticalAlignment="Stretch"/>
+                 VirtualizingStackPanel.IsVirtualizing="True"
+                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 HorizontalContentAlignment="Left"
+                 HorizontalAlignment="Stretch"
+                 VerticalAlignment="Stretch"
+                 PreviewMouseLeftButtonDown="LogListBox_PreviewMouseLeftButtonDown"
+                 PreviewMouseMove="LogListBox_PreviewMouseMove"
+                 PreviewMouseLeftButtonUp="LogListBox_PreviewMouseLeftButtonUp"
+                 LostMouseCapture="LogListBox_LostMouseCapture">
+            <ListBox.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Copy Selected Lines"
+                              InputGestureText="Ctrl+C"
+                              Click="CopySelectedLogLines_Click"/>
+                    <MenuItem Header="Copy Entire Log"
+                              Click="CopyEntireLog_Click"/>
+                </ContextMenu>
+            </ListBox.ContextMenu>
+
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <Border x:Name="LineBorder"
+                                        Background="{TemplateBinding Background}"
+                                        Padding="{TemplateBinding Padding}"
+                                        SnapsToDevicePixels="True">
+                                    <ContentPresenter/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="LineBorder" Property="Background"
+                                                Value="{DynamicResource LogSelectionBackground}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListBox.ItemContainerStyle>
+
+            <ListBox.ItemTemplate>
+                <DataTemplate DataType="{x:Type vm:RunLogEntry}">
+                    <TextBlock Text="{Binding Text, Converter={StaticResource BlankLineToSpaceConverter}}"
+                               TextWrapping="NoWrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <!-- Info: the ordinary text colour (black in the light themes). -->
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryForeground}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Severity}" Value="Success">
+                                        <Setter Property="Foreground"
+                                                Value="{DynamicResource StatusValidForeground}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                                        <Setter Property="Foreground"
+                                                Value="{DynamicResource StatusWarningForeground}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Severity}" Value="Error">
+                                        <Setter Property="Foreground"
+                                                Value="{DynamicResource StatusErrorForeground}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
 
         <!-- Progress Bar -->
          <StatusBar Grid.Row="2" Margin="0,5,0,0">
