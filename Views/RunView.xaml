@@ -100,8 +100,9 @@
              A virtualizing ListBox rather than a TextBox, so each line can carry its own
              severity colour (see RunLogClassifier). Lines are selectable and copyable via
              Ctrl+C / the context menu; the container style is declared in full here so the
-             per-theme implicit ListBoxItem styles (padding, proportional font, disabled
-             horizontal scrolling) cannot reshape the log. -->
+             per-theme implicit ListBoxItem styles (padding, proportional font) cannot reshape
+             the log. Long lines wrap: horizontal scrolling is off so the ScrollViewer gives
+             each line a finite width to wrap within. -->
         <ListBox x:Name="LogListBox"
                  Grid.Row="1"
                  ItemsSource="{Binding LogLines}"
@@ -114,8 +115,8 @@
                  VirtualizingStackPanel.IsVirtualizing="True"
                  VirtualizingStackPanel.VirtualizationMode="Recycling"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
-                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                 HorizontalContentAlignment="Left"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 HorizontalContentAlignment="Stretch"
                  HorizontalAlignment="Stretch"
                  VerticalAlignment="Stretch"
                  PreviewMouseLeftButtonDown="LogListBox_PreviewMouseLeftButtonDown"
@@ -138,7 +139,8 @@
                     <Setter Property="Margin" Value="0"/>
                     <Setter Property="BorderThickness" Value="0"/>
                     <Setter Property="Background" Value="Transparent"/>
-                    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                    <!-- Stretch so a wrapping line gets the full viewport width to wrap within. -->
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="ListBoxItem">
@@ -162,8 +164,11 @@
 
             <ListBox.ItemTemplate>
                 <DataTemplate DataType="{x:Type vm:RunLogEntry}">
+                    <!-- Wrap rather than clip: horizontal scrolling is disabled on the ListBox
+                         above (a ScrollViewer that can scroll horizontally hands its content
+                         infinite width, which would stop any wrapping from happening). -->
                     <TextBlock Text="{Binding Text, Converter={StaticResource BlankLineToSpaceConverter}}"
-                               TextWrapping="NoWrap">
+                               TextWrapping="Wrap">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <!-- Info: the ordinary text colour (black in the light themes). -->
