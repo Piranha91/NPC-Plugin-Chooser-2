@@ -125,7 +125,9 @@ public class Validator : OptionalUIModule
                 {
                     var errorMsg =
                         $"Could not resolve winning NPC override for {npcFormKey}. The NPC may not exist in your current load order. This selection will be skipped.";
-                    AppendLog($"  SCREENING WARNING: {errorMsg}");
+                    // forceLog: a screening warning means the selection is being dropped, which
+                    // the user has to see whether or not verbose logging is on.
+                    AppendLog($"  SCREENING WARNING: {errorMsg}", forceLog: true);
                     invalidSelections.Add(
                         $"{npcFormKey} -> '{selectedModDisplayName}' (Base NPC not found in load order)");
                     if (shouldUpdateUI)
@@ -158,7 +160,9 @@ public class Validator : OptionalUIModule
                     
                     var errorMsg =
                         $"Can't swap {npcIdentifier} to use {appearanceNpcIdenentifier}'s appearance in {_settings.PatchingMode} mode. Skipping.";
-                    AppendLog($"  SCREENING WARNING: {errorMsg}");
+                    // forceLog: a screening warning means the selection is being dropped, which
+                    // the user has to see whether or not verbose logging is on.
+                    AppendLog($"  SCREENING WARNING: {errorMsg}", forceLog: true);
                     invalidSelections.Add(
                         $"{npcIdentifier} -> '{selectedModDisplayName}' ({appearanceNpcIdenentifier}) - (Can't appearance swap in {_settings.PatchingMode} mode)");
                     if (shouldUpdateUI)
@@ -315,9 +319,12 @@ public class Validator : OptionalUIModule
                             false, true);
                     }
 
+                    // forceLog: a screening warning means the selection is being dropped, which
+                    // the user has to see whether or not verbose logging is on.
                     AppendLog(
                         $"  SCREENING WARNING: {npcIdentifier} inherits its appearance ({terminusDetail}), and " +
-                        $"SkyPatcher mode cannot redirect an inherited face. This selection will be skipped.");
+                        $"SkyPatcher mode cannot redirect an inherited face. This selection will be skipped.",
+                        forceLog: true);
                     invalidSelections.Add(
                         $"{npcIdentifier} -> '{selectedModDisplayName}' (Templated NPC — SkyPatcher can't apply an " +
                         "appearance through a template chain; set Templated NPCs to \"Give each NPC its own copy\")");
