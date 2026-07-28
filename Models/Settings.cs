@@ -120,8 +120,13 @@ public class Settings
     public string OutputDirectory { get; set; } = "NPC Output"; 
     public bool AppendTimestampToOutputDirectory { get; set; } = false; 
     public string OutputPluginName { get; set; } = string.Empty;
-    public PatchingMode PatchingMode { get; set; } = PatchingMode.CreateAndPatch; 
+    public PatchingMode PatchingMode { get; set; } = PatchingMode.CreateAndPatch;
     public bool UseSkyPatcherMode { get; set; } = false;
+    // How Traits-templated NPCs are patched (see Models.TemplateHandlingMode). Applies to
+    // record and SkyPatcher output alike. Default keeps the inheritance, so selections on
+    // templated NPCs stay inert as they always have; an absent field in an old
+    // Settings.json deserializes to this default (no migration).
+    public TemplateHandlingMode TemplateHandlingMode { get; set; } = TemplateHandlingMode.InheritFromTemplate;
     public bool AutoEslIfy { get; set; } = true;
     // Automatically split the output plugin into multiple files (<name>.esp, <name>_2.esp, ...)
     // if it would otherwise exceed Skyrim's 255-master limit. Only triggers on overflow.
@@ -222,6 +227,17 @@ public class Settings
         if (modSetting == null || !ModHasWigs(modSetting)) return DefaultWigHairTintMode;
         return modSetting.ModWigHairTintMode ?? DefaultWigHairTintMode;
     }
+
+    /// <summary>
+    /// The template handling mode that will actually apply to
+    /// <paramref name="modSetting"/> on the next patch run: the per-mod override when set,
+    /// else the global <see cref="TemplateHandlingMode"/>. Unlike the wig/antler resolvers
+    /// there is no output-mode gate (the mode applies to record and SkyPatcher output alike)
+    /// and no detection gate — for a mod with no templated NPCs every chain classifies as
+    /// NotTemplated and the mode is inert, so a stale override cannot mispatch anything.
+    /// </summary>
+    public TemplateHandlingMode GetEffectiveTemplateHandlingMode(ModSetting? modSetting) =>
+        modSetting?.ModTemplateHandlingMode ?? TemplateHandlingMode;
 
     /// <summary>
     /// The antler handling mode that will actually apply to

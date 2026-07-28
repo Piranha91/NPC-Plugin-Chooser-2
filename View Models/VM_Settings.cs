@@ -342,6 +342,20 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public IEnumerable<RecordOverrideHandlingMode> RecordOverrideHandlingModes { get; } =
         Enum.GetValues(typeof(RecordOverrideHandlingMode)).Cast<RecordOverrideHandlingMode>();
 
+    // Global Templated-NPC handling (Settings.TemplateHandlingMode): whether a
+    // Traits-templated NPC keeps showing its template's face (selections on it
+    // stay inert — the historical behaviour) or gets the template's appearance
+    // copied onto its own record so its selection applies individually. Applies
+    // to record and SkyPatcher output alike. The dropdown binds SelectedValue/Key
+    // like the wig/antler mode dropdowns, so the persisted enum stays the source
+    // of truth while the UI shows friendly names.
+    [Reactive] public TemplateHandlingMode SelectedTemplateHandlingMode { get; set; }
+
+    public IEnumerable<KeyValuePair<TemplateHandlingMode, string>> TemplateHandlingModes { get; } =
+        HandlingModeDisplay.TemplateModesInDisplayOrder
+            .Select(m => new KeyValuePair<TemplateHandlingMode, string>(m, HandlingModeDisplay.ToDisplayString(m)))
+            .ToList();
+
     // Global default Wig / Antler Handling Modes (per-mod entries with "Default"
     // resolve to these; see Models.WigHandlingMode / Models.AntlerHandlingMode /
     // Settings.GetEffectiveWigMode / GetEffectiveAntlerMode). The dropdown lists
@@ -719,6 +733,7 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SplitOutputMaxNpcs = _model.SplitOutputMaxNpcs;
         AppendTimestampToOutputDirectory = _model.AppendTimestampToOutputDirectory;
         SelectedPatchingMode = _model.PatchingMode;
+        SelectedTemplateHandlingMode = _model.TemplateHandlingMode;
         SelectedRecordOverrideHandlingMode = _model.DefaultRecordOverrideHandlingMode;
         SelectedDefaultWigHandlingMode = _model.DefaultWigHandlingMode;
         SelectedDefaultAntlerHandlingMode = _model.DefaultAntlerHandlingMode;
@@ -1134,6 +1149,8 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(b => _model.AppendTimestampToOutputDirectory = b).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedPatchingMode).Skip(1).Subscribe(pm => _model.PatchingMode = pm)
             .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedTemplateHandlingMode).Skip(1)
+            .Subscribe(m => _model.TemplateHandlingMode = m).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedDefaultWigHandlingMode).Skip(1)
             .Subscribe(m => _model.DefaultWigHandlingMode = m).DisposeWith(_disposables);
         // Convert To Headparts is experimental — confirm before enabling it as the

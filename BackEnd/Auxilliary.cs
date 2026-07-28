@@ -717,6 +717,134 @@ public class Auxilliary : IDisposable
     }
 
     /// <summary>
+    /// <see cref="ResolveAppearanceTemplateTerminus"/> with the three outcomes kept apart.
+    ///
+    /// <para>That method deliberately returns its input unchanged both when an NPC is not
+    /// templated and when the chain cannot be followed, which is right for callers that just
+    /// want "whose face do I draw". Callers that must REFUSE to act on an unfollowable chain
+    /// need the distinction, and it is recoverable: a validly-templated NPC always advances at
+    /// least one hop on success, so an unchanged FormKey means the walk failed.</para>
+    /// </summary>
+    /// <param name="isLeveledNpc">
+    /// Recognises a Leveled NPC link. Without it, a levelled terminus is indistinguishable from a
+    /// broken chain — and it is by far the commoner of the two, so callers that act on the result
+    /// should always supply it.
+    /// </param>
+    /// <param name="trace">
+    /// Human-readable hop-by-hop record of the walk, for diagnostics. Chains fail for several
+    /// different reasons that all look identical from the outside, so the report needs to say which.
+    /// </param>
+    public static FaceGenChainStatus TryResolveAppearanceTerminus(
+        INpcGetter donor,
+        Func<FormKey, INpcGetter?> resolveNpc,
+        out FormKey terminus,
+        Func<FormKey, bool>? isLeveledNpc = null,
+        Action<string>? trace = null,
+        int maxDepth = 50)
+    {
+        terminus = donor.FormKey;
+        if (!IsValidTemplatedNpc(donor)) return FaceGenChainStatus.NotTemplated;
+
+        // Walk from the DONOR RECORD, not from its FormKey. Re-resolving the FormKey through the
+        // link cache would start the walk at the load order's WINNING override, which can disagree
+        // with the record the user actually selected about whether this NPC inherits at all — and
+        // the output carries the donor's inheritance, not the winner's. Starting from the winner
+        // made valid one-hop chains look unfollowable.
+        var current = donor;
+        var visited = new HashSet<FormKey> { donor.FormKey };
+
+        for (int depth = 0; depth < maxDepth; depth++)
+        {
+            if (!IsValidTemplatedNpc(current))
+            {
+                trace?.Invoke($"terminus {terminus}");
+                return FaceGenChainStatus.Resolved;
+            }
+
+            var next = current.Template.FormKey;
+
+            if (!visited.Add(next))
+            {
+                trace?.Invoke($"cycle at {next}");
+                terminus = donor.FormKey;
+                return FaceGenChainStatus.Unfollowable;
+            }
+
+            if (isLeveledNpc != null && isLeveledNpc(next))
+            {
+                trace?.Invoke($"levelled list {next}");
+                terminus = donor.FormKey;
+                return FaceGenChainStatus.LeveledTerminus;
+            }
+
+            var nextNpc = resolveNpc(next);
+            if (nextNpc == null)
+            {
+                trace?.Invoke($"unresolvable {next}");
+                terminus = donor.FormKey;
+                return FaceGenChainStatus.Unfollowable;
+            }
+
+            trace?.Invoke($"-> {next}");
+            terminus = next;
+            current = nextNpc;
+        }
+
+        trace?.Invoke($"exceeded {maxDepth} hops");
+        terminus = donor.FormKey;
+        return FaceGenChainStatus.Unfollowable;
+    }
+
+    /// <summary>
+    /// Copies the fields the Traits template flag governs from the chain terminus onto
+    /// <paramref name="target"/>: race, head texture, hair colour, worn armor, height, weight,
+    /// texture lighting, head parts, face morph, face parts, tint layers, and the Female flag
+    /// (sex drives which head parts and FaceGen the engine builds, so it must follow the face).
+    /// Mirrors what the engine would have resolved at load, so clearing the Traits flag
+    /// afterwards leaves the same visible result with none of the indirection.
+    ///
+    /// <para>Shared by both output modes (the SkyPatcher surrogate and the record-mode
+    /// override). Writes plain FormKey references; when dependency merge-in is active the
+    /// caller's merge walker runs afterwards and remaps any link it is responsible for. Does
+    /// NOT touch the Traits flag itself — the caller clears it as the second half of the
+    /// flatten, so the two halves stay visible at the decision site.</para>
+    /// </summary>
+    public static void CopyInheritedAppearance(Npc target, INpcGetter terminus)
+    {
+        target.Race.SetTo(terminus.Race.FormKey);
+        target.HeadTexture.SetTo(terminus.HeadTexture.FormKey);
+        target.HairColor.SetTo(terminus.HairColor.FormKey);
+        target.WornArmor.SetTo(terminus.WornArmor.FormKey);
+        target.Height = terminus.Height;
+        target.Weight = terminus.Weight;
+        target.TextureLighting = terminus.TextureLighting;
+
+        target.HeadParts.Clear();
+        foreach (var hp in terminus.HeadParts)
+        {
+            target.HeadParts.Add(hp.FormKey);
+        }
+
+        target.FaceMorph = terminus.FaceMorph?.DeepCopy();
+        target.FaceParts = terminus.FaceParts?.DeepCopy();
+
+        target.TintLayers.Clear();
+        foreach (var layer in terminus.TintLayers)
+        {
+            target.TintLayers.Add(layer.DeepCopy());
+        }
+
+        if (terminus.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female))
+        {
+            target.Configuration.Flags |= NpcConfiguration.Flag.Female;
+        }
+        else
+        {
+            target.Configuration.Flags &= ~NpcConfiguration.Flag.Female;
+        }
+    }
+
+    /// <summary>
     /// Walks the template chain starting from the given NPC and returns true if the chain
     /// terminates in a Leveled NPC (LVLN record). NPCs whose template chain ends in a
     /// Leveled NPC cannot have a unique appearance selected for them.

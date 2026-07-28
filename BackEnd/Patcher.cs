@@ -52,6 +52,15 @@ public class Patcher : OptionalUIModule
         _pendingWigBakes = new();
 
     private Dictionary<string, ModSetting> _modSettingsMap;
+    // Lazy: the analyzer hangs off CharacterPreviewCache and its asset-resolver chain, and is only
+    // needed on the rare ladder rows that borrow a mesh from outside the selected mod.
+    private readonly Lazy<FaceGenConsistencyAnalyzer> _faceGenConsistency;
+
+    /// <summary>NPCs the FaceGen ladder refused to patch this run. Collected so the end-of-run
+    /// summary names them: a skip that only exists as one line in a log of thousands reads as the
+    /// NPC having been patched, which is exactly the wrong impression.</summary>
+    private readonly List<(string Npc, string Mod, string Reason)> _faceGenSkippedNpcs = new();
+
     private string _currentRunOutputAssetPath = string.Empty;
 
     // Plugin -> the mod entry that provides NPCs from it. Lets a resource-only plugin bundled
@@ -98,8 +107,10 @@ public class Patcher : OptionalUIModule
         AssetHandler assetHandler, RecordHandler recordHandler, Auxilliary aux, RecordDeltaPatcher recordDeltaPatcher,
         PluginProvider pluginProvider, BsaHandler bsaHandler, SkyPatcherInterface skyPatcherInterface,
         WigForwarder wigForwarder, HeadPartWigConverter headPartWigConverter,
-        ForwardedOutfitDistributor forwardedOutfitDistributor)
+        ForwardedOutfitDistributor forwardedOutfitDistributor,
+        Lazy<FaceGenConsistencyAnalyzer> faceGenConsistency)
     {
+        _faceGenConsistency = faceGenConsistency;
         _environmentStateProvider = environmentStateProvider;
         _settings = settings;
         _validator = validator;
@@ -927,6 +938,9 @@ public class Patcher : OptionalUIModule
                             Npc? patchNpc = null;
                             WigForwarder.Result? wigForward = null;
                             HeadPartWigConverter.Result? wigConvert = null;
+                            // Assigned alongside patchNpc below; both are null only on the paths
+                            // that never reach the asset stage.
+                            FaceGenLadderDecision? faceGenDecision = null;
                             // Merge-in is decided per PLUGIN, not per mod: one mod entry can bundle
                             // plugins that stay in the load order (reference their records) with
                             // resource-only plugins that don't (copy their records, or the output
@@ -977,30 +991,22 @@ public class Patcher : OptionalUIModule
                             if (appearanceNpcRecord != null)
                             {
 
-                                var (faceMeshRelativePath, _) =
-                                    Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, regularized: true);
-                                if (!_assetHandler.AssetExists(faceMeshRelativePath, appearanceModSetting))
+                                // Decide where this NPC's face will come from BEFORE anything is
+                                // written. An unassemblable face aborts here, while the output mod
+                                // is still untouched for this NPC — no record to remove, no
+                                // dependency records to roll back. This supersedes the old
+                                // missing-mesh warnings: the ladder covers the same cases and says
+                                // what it did about them rather than only that they exist.
+                                faceGenDecision = await ComputeFaceGenDecisionAsync(
+                                    npcFormKey, appearanceNpcRecord, appearanceModSetting,
+                                    selectedModDisplayName, npcIdentifier, isFaceGenOnly);
+
+                                if (faceGenDecision.Abort)
                                 {
-                                    if (Auxilliary.IsValidTemplatedNpc(appearanceNpcRecord))
-                                    {
-                                        // Expected, not a risk: the game renders the TEMPLATE's face and never loads a
-                                        // FaceGen under this NPC's own FormID, so head-data edits here are inert.
-                                        AppendLog(
-                                            $"      Note: '{appearanceModSetting.DisplayName}' provides no FaceGen for {npcIdentifier}, which is expected — its appearance is inherited from template {appearanceNpcRecord.Template.FormKey} (Traits flag).");
-                                    }
-                                    // If the mesh is missing, perform the more expensive check to see if the plugin *actually* changed head data.
-                                    // Resolve the original base record for the appearance DONOR (e.g., from Skyrim.esm).
-                                    // The output carries the donor's head data, so the diff that signals a black-face
-                                    // risk must be measured against the donor's own base, not the target's.
-                                    else if (_environmentStateProvider.LinkCache.TryResolve<INpcGetter>(
-                                                 appearanceNpcFormKey,
-                                                 out var baseNpcGetter, ResolveTarget.Origin) &&
-                                             ChangesHeadDataThatNeedsFaceGen(appearanceNpcRecord, baseNpcGetter))
-                                    {
-                                        AppendLog(
-                                            $"      CRITICAL WARNING: Mod '{appearanceModSetting.DisplayName}' modifies head data for {npcIdentifier} but does not provide the corresponding FaceGen mesh ({faceMeshRelativePath}). THIS WILL LIKELY CAUSE THE 'BLACK FACE' BUG.",
-                                            true, true);
-                                    }
+                                    AppendLog($"      {faceGenDecision.LogLine}", false, true);
+                                    _faceGenSkippedNpcs.Add((npcIdentifier, selectedModDisplayName,
+                                        faceGenDecision.AbortReason ?? string.Empty));
+                                    return;
                                 }
 
                                 if (isFaceGenOnly)
@@ -1119,6 +1125,11 @@ public class Patcher : OptionalUIModule
                                         AppendLog(
                                             $"      Mode: Create and Patch. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {appearanceModKey?.FileName ?? "N/A"}.");
 
+                                        // Null unless the user opted into own-copy template
+                                        // handling AND the donor's chain resolved — see
+                                        // ResolveAppearanceTerminusRecord.
+                                        var flattenTerminus = ResolveAppearanceTerminusRecord(faceGenDecision);
+
                                         if (_settings.UseSkyPatcherMode)
                                         {
                                             // SkyPatcher applies the appearance at runtime; nothing overrides the
@@ -1126,7 +1137,11 @@ public class Patcher : OptionalUIModule
                                             // DONOR appearance record (not the recipient). Building it from
                                             // winningNpcOverride would drag the recipient's packages/items/factions
                                             // into the output and master it to every non-appearance data plugin.
-                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(npcFormKey, appearanceNpcRecord);
+                                            // Terminus supplied so an inherited appearance is flattened
+                                            // into the surrogate — see CreateSkyPatcherNpc. CopyAppearanceData
+                                            // below re-copies donor fields, so it re-applies the same overlay.
+                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(npcFormKey,
+                                                appearanceNpcRecord, flattenTerminus);
                                         }
                                         else
                                         {
@@ -1150,7 +1165,8 @@ public class Patcher : OptionalUIModule
                                             patchNpc,
                                             appearanceModSetting, appearanceModKey.Value,
                                             currentModFolderPaths, npcIdentifier,
-                                            mergeInDependencyRecords, includeOutfit, mergeEligiblePlugins);
+                                            mergeInDependencyRecords, includeOutfit, mergeEligiblePlugins,
+                                            flattenTerminus);
                                         RegisterRecordOwnerships(npcFormKey, mergedInAppearanceRecords, npcContributions);
                                         _aux.CollectShallowAssetLinks(mergedInAppearanceRecords, assetLinks);
 
@@ -1441,9 +1457,20 @@ public class Patcher : OptionalUIModule
                                     default:
                                         AppendLog(
                                             $"      Mode: Create. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"}).");
+
+                                        // Null unless the user opted into own-copy template
+                                        // handling AND the donor's chain resolved — see
+                                        // ResolveAppearanceTerminusRecord.
+                                        var createFlattenTerminus = ResolveAppearanceTerminusRecord(faceGenDecision);
+
                                         if (_settings.UseSkyPatcherMode)
                                         {
-                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(npcFormKey, appearanceNpcRecord);
+                                            // Terminus supplied so an inherited appearance is flattened
+                                            // into the surrogate — see CreateSkyPatcherNpc. No
+                                            // CopyAppearanceData runs in this branch, so the surrogate's
+                                            // overlay is not disturbed afterwards.
+                                            patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(npcFormKey,
+                                                appearanceNpcRecord, createFlattenTerminus);
                                         }
                                         else
                                         {
@@ -1460,6 +1487,22 @@ public class Patcher : OptionalUIModule
                                                     isError: true,
                                                     forceLog: true);
                                                 return;
+                                            }
+
+                                            // Same flatten as CopyAppearanceData performs in the
+                                            // Create-and-Patch branch (which never runs here): the
+                                            // forwarded record carries the donor's inheritance, so
+                                            // overlay the terminus's appearance and clear Traits.
+                                            // The TPLT link stays — it also drives non-appearance
+                                            // inheritance this app does not touch. Runs before the
+                                            // merge-in walker below, which remaps any overlaid link
+                                            // that points into a merge-eligible plugin.
+                                            if (createFlattenTerminus != null)
+                                            {
+                                                Auxilliary.CopyInheritedAppearance(patchNpc, createFlattenTerminus);
+                                                patchNpc.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
+                                                AppendLog($"      {npcIdentifier} inherits its appearance from {createFlattenTerminus.FormKey}; " +
+                                                          $"copied that appearance onto its own record so its selection applies to it individually.");
                                             }
                                         }
 
@@ -1683,11 +1726,11 @@ public class Patcher : OptionalUIModule
                                     true);
                             }
 
-                            if (patchNpc != null && appearanceModSetting != null)
+                            if (patchNpc != null && appearanceModSetting != null && faceGenDecision != null)
                             {
                                 await _assetHandler.ScheduleCopyNpcAssets(npcFormKey, appearanceNpcRecord,
                                     appearanceModSetting, // appearanceNpcRecord here rather than patchNpc is intentional
-                                    _currentRunOutputAssetPath, npcIdentifier);
+                                    _currentRunOutputAssetPath, npcIdentifier, faceGenDecision);
 
                                 // Queue the baked hair/antler shape strip for this NPC's copied
                                 // FaceGen NIF (wig ForwardToSkin removes hair; antler Remove removes
@@ -1800,6 +1843,8 @@ public class Patcher : OptionalUIModule
                     // in the output plugin with the reference chain that pulled it in. No-op unless
                     // enabled (Settings checkbox or the LogRecordProvenance.txt dev trigger).
                     RecordProvenanceDiag.Flush();
+
+                    ReportFaceGenSkippedNpcs();
 
                     AppendLog("All file operations finished.", false, true);
 
@@ -2251,9 +2296,20 @@ public class Patcher : OptionalUIModule
             new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, BakeOne);
     }
 
+    /// <param name="flattenTerminus">
+    /// Non-null when the donor's Traits chain is being flattened (Template Handling Mode =
+    /// give each NPC its own copy, chain resolved): the terminus's appearance is overlaid onto
+    /// the output at the end of this method and the Traits flag is cleared, instead of the
+    /// donor's inheritance being mirrored. In SkyPatcher mode the surrogate arrives here already
+    /// flattened by <see cref="SkyPatcherInterface.CreateSkyPatcherNpc"/>, and the overlay must
+    /// STILL run — the donor-field copying above it re-copies the donor's inert head data, and
+    /// without the re-overlay <see cref="SyncTemplateInheritance"/> would also re-mirror the
+    /// donor's Traits flag onto the surrogate, silently undoing the flatten.
+    /// </param>
     private List<MajorRecord> CopyAppearanceData(INpcGetter sourceNpc, Npc targetNpc, ModSetting appearanceModSetting,
         ModKey sourceNpcContextModKey, HashSet<string> currentModFolderPaths, string npcIdentifier,
-        bool mergeInDependencyRecords, bool includeOutfit, HashSet<ModKey> mergeEligiblePlugins)
+        bool mergeInDependencyRecords, bool includeOutfit, HashSet<ModKey> mergeEligiblePlugins,
+        INpcGetter? flattenTerminus)
     {
         using var _ = ContextualPerformanceTracer.Trace("Patcher.CopyAppearanceData");
 
@@ -2289,7 +2345,12 @@ public class Patcher : OptionalUIModule
             targetNpc.Race.SetTo(raceToSet);
         }
 
-        SyncTemplateInheritance(targetNpc, sourceNpc);
+        if (flattenTerminus == null)
+        {
+            SyncTemplateInheritance(targetNpc, sourceNpc);
+        }
+        // else: the terminus overlay at the end of this method replaces the donor's inheritance
+        // outright — mirroring the donor's Traits state here would only be overwritten there.
 
         List<MajorRecord> mergedInRecords = new();
 
@@ -2427,6 +2488,20 @@ public class Patcher : OptionalUIModule
         {
             AppendLog($"      Removing template flag from {targetNpc.FormKey} in patch.");
             targetNpc.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
+        }
+
+        // Flatten: the donor's Traits-governed fields copied above are inert (the engine would
+        // have rendered the terminus's face, not the donor's own head data), so overlay the
+        // terminus's appearance and clear the flag. The TPLT link is deliberately kept — it also
+        // drives non-appearance inheritance (inventory, AI packages, factions...) that this app
+        // does not touch. When dependency merge-in is on, the caller's merge walker runs after
+        // this method and remaps any overlaid link that points into a merge-eligible plugin.
+        if (flattenTerminus != null)
+        {
+            Auxilliary.CopyInheritedAppearance(targetNpc, flattenTerminus);
+            targetNpc.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
+            AppendLog($"      {npcIdentifier} inherits its appearance from {flattenTerminus.FormKey}; " +
+                      $"copied that appearance onto its own record so its selection applies to it individually.");
         }
 
         // An appearance link that points outside the load order is fatal: the run completes,
@@ -2622,6 +2697,234 @@ public class Patcher : OptionalUIModule
     /// <para>The diff is measured against the DONOR's own origin record, not the target's, because
     /// the output carries the donor's head data.</para>
     /// </summary>
+    /// <summary>
+    /// Gathers the ladder's inputs for one NPC, classifies, and records the verdict to
+    /// <see cref="FaceGenLadderDiag"/>. The result drives both the abort decision here and the
+    /// asset sourcing in <see cref="AssetHandler.ScheduleCopyNpcAssets"/>.
+    ///
+    /// <para>Everything is measured at the SUBJECT's FaceGen paths — the end of the donor's Traits
+    /// chain — because that is the record the engine builds a face from. The donor's own paths are
+    /// gathered too, but only to describe what the pre-ladder code did, which keyed off the donor
+    /// and therefore found nothing at all whenever the donor inherited.</para>
+    ///
+    /// <para>Two deliberate cost controls, because this runs for every NPC in a run of thousands:
+    /// the origin/winner probes touch the disk and are skipped entirely for the ~96% of NPCs whose
+    /// mod ships both halves, and head-part compatibility (which parses a NIF, often after a BSA
+    /// extraction) is evaluated only for the branches that actually gate on it.</para>
+    /// </summary>
+    private async Task<FaceGenLadderDecision> ComputeFaceGenDecisionAsync(
+        FormKey targetNpcFormKey, INpcGetter appearanceNpcRecord, ModSetting appearanceModSetting,
+        string modDisplayName, string npcIdentifier, bool isFaceGenOnly)
+    {
+        var linkCache = _environmentStateProvider.LinkCache;
+        var chainHops = new List<string>();
+        var chainStatus = Auxilliary.TryResolveAppearanceTerminus(
+            appearanceNpcRecord,
+            fk => linkCache != null && linkCache.TryResolve<INpcGetter>(fk, out var n) ? n : null,
+            out var subjectFormKey,
+            fk => linkCache != null && linkCache.TryResolve<ILeveledNpcGetter>(fk, out _),
+            chainHops.Add);
+
+        var (subjectNifRel, subjectDdsRel) =
+            Auxilliary.GetFaceGenSubPathStrings(subjectFormKey, regularized: true);
+        var (donorNifRel, donorDdsRel) =
+            Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, regularized: true);
+
+        var sourceNif = _assetHandler.GetAssetPresence(subjectNifRel, appearanceModSetting);
+        var sourceDds = _assetHandler.GetAssetPresence(subjectDdsRel, appearanceModSetting);
+
+        var mode = _settings.UseSkyPatcherMode
+            ? FaceGenDestinationMode.SkyPatcher
+            : targetNpcFormKey.Equals(appearanceNpcRecord.FormKey)
+                ? FaceGenDestinationMode.Record
+                : FaceGenDestinationMode.FaceSwap;
+
+        // Row 1 consults no fallback, and a short-circuiting chain status consults nothing at all,
+        // so neither pays for the origin lookup or the two Data-folder probes.
+        bool bothHalvesPresent = sourceNif != FaceGenAssetPresence.NotFound
+                                 && sourceDds != FaceGenAssetPresence.NotFound;
+        bool chainShortCircuits = chainStatus is FaceGenChainStatus.LeveledTerminus
+                                              or FaceGenChainStatus.Unfollowable;
+        bool needsFallbacks = !bothHalvesPresent && !chainShortCircuits;
+
+        ModSetting? originModSetting = null;
+        var originNif = FaceGenAssetPresence.NotFound;
+        var originDds = FaceGenAssetPresence.NotFound;
+        bool originRecordExists = false;
+        bool winnerNif = false, winnerDds = false;
+        string? winnerOwner = null;
+
+        if (needsFallbacks)
+        {
+            originModSetting = _assetHandler.FindOriginModSetting(subjectFormKey.ModKey, subjectNifRel);
+            if (originModSetting != null)
+            {
+                originNif = _assetHandler.GetAssetPresence(subjectNifRel, originModSetting);
+                originDds = _assetHandler.GetAssetPresence(subjectDdsRel, originModSetting);
+            }
+
+            originRecordExists = linkCache != null &&
+                                 linkCache.TryResolve<INpcGetter>(subjectFormKey, out _, ResolveTarget.Origin);
+            winnerNif = _assetHandler.WinningAssetExists(subjectNifRel, out winnerOwner);
+            winnerDds = _assetHandler.WinningAssetExists(subjectDdsRel, out _);
+        }
+
+        var inputs = new FaceGenLadderInputs(
+            NpcIdentifier: npcIdentifier,
+            TargetFormKey: targetNpcFormKey,
+            DonorFormKey: appearanceNpcRecord.FormKey,
+            SubjectFormKey: subjectFormKey,
+            ChainStatus: chainStatus,
+            ModName: modDisplayName,
+            Mode: mode,
+            SourceNif: sourceNif,
+            SourceDds: sourceDds,
+            SourceHasPluginRecord: !isFaceGenOnly,
+            OriginRecordExists: originRecordExists,
+            OriginNif: originNif,
+            OriginDds: originDds,
+            WinnerNifExists: winnerNif,
+            WinnerNifOwner: winnerOwner,
+            WinnerDdsExists: winnerDds,
+            OriginNifCompatible: null,
+            WinnerNifCompatible: null,
+            LegacyDonorNif: _assetHandler.GetAssetPresence(donorNifRel, appearanceModSetting),
+            LegacyDonorDds: _assetHandler.GetAssetPresence(donorDdsRel, appearanceModSetting),
+            ChainTrace: string.Join(" ", chainHops),
+            // Per-mod override when set, else the global setting. This is the single point
+            // where the mode enters the pipeline — the record flatten and the asset stage
+            // both read it back off the decision, so they cannot disagree per NPC.
+            FlattenTemplateChain: _settings.GetEffectiveTemplateHandlingMode(appearanceModSetting)
+                                  == TemplateHandlingMode.GiveEachNpcOwnCopy);
+
+        var decision = FaceGenLadder.Classify(inputs);
+
+        // Only row 3 gates a borrowed mesh on head-part compatibility, and rows 4/5 only when they
+        // fall through to the winner (the origin's own mesh matches the origin's own record by
+        // construction). Classifying first tells us whether the parse is worth doing at all.
+        if (NeedsCompatibilityCheck(decision))
+        {
+            var recordToMatch = decision.ForwardOriginRecord && linkCache != null &&
+                                linkCache.TryResolve<INpcGetter>(subjectFormKey, out var originRec, ResolveTarget.Origin)
+                ? originRec
+                : appearanceNpcRecord;
+
+            inputs = inputs with
+            {
+                OriginNifCompatible = originModSetting == null || originNif == FaceGenAssetPresence.NotFound
+                    ? null
+                    : await EvaluateNifCompatibilityAsync(recordToMatch, subjectNifRel, originModSetting),
+                WinnerNifCompatible = !winnerNif
+                    ? null
+                    : EvaluateNifCompatibility(recordToMatch, _assetHandler.GetWinningAssetPath(subjectNifRel)),
+            };
+
+            decision = FaceGenLadder.Classify(inputs);
+        }
+
+        FaceGenLadderDiag.Record(decision);
+        return decision;
+    }
+
+    /// <summary>
+    /// Names every NPC the ladder refused to patch, at the end of the run where it will actually be
+    /// read. These NPCs keep whatever appearance the load order already gave them, which is worth
+    /// saying plainly — the user picked a mod for them and did not get it.
+    /// </summary>
+    private void ReportFaceGenSkippedNpcs()
+    {
+        if (_faceGenSkippedNpcs.Count == 0) return;
+
+        AppendLog($"\n{_faceGenSkippedNpcs.Count} NPC(s) were left unpatched because their face could " +
+                  $"not be assembled safely. They will look the way they did before this run:", false, true);
+
+        foreach (var (npc, mod, reason) in _faceGenSkippedNpcs)
+        {
+            AppendLog($"  - {npc} (you picked '{mod}'): {reason}", false, true);
+        }
+
+        _faceGenSkippedNpcs.Clear();
+    }
+
+    /// <summary>The record whose appearance gets flattened onto the output, or null whenever no
+    /// flattening should happen: the user kept the default Template Handling Mode (inherit), the
+    /// donor does not inherit, or the chain did not resolve to a concrete NPC (a levelled terminus
+    /// or an unfollowable chain must keep inheriting regardless of the mode). Non-null answers are
+    /// the terminus record at the end of the donor's Traits chain, and both output modes flatten
+    /// from it: the SkyPatcher surrogate and the record-mode override alike.</summary>
+    private INpcGetter? ResolveAppearanceTerminusRecord(FaceGenLadderDecision? decision)
+    {
+        if (decision?.Inputs.ChainStatus != FaceGenChainStatus.Resolved) return null;
+        if (!decision.Inputs.FlattenTemplateChain) return null;
+
+        var linkCache = _environmentStateProvider.LinkCache;
+        return linkCache != null && linkCache.TryResolve<INpcGetter>(decision.Inputs.SubjectFormKey, out var rec)
+            ? rec
+            : null;
+    }
+
+    /// <summary>Whether this verdict rests on a mesh whose head-part compatibility has not been
+    /// established from its own source.</summary>
+    private static bool NeedsCompatibilityCheck(FaceGenLadderDecision d) =>
+        !d.Abort
+        && d.Row is FaceGenLadderRow.DdsOnlyWithRecord
+                 or FaceGenLadderRow.DdsOnlyNoRecord
+                 or FaceGenLadderRow.Neither
+        && d.NifChoice is FaceGenSourceChoice.Origin
+                       or FaceGenSourceChoice.Winner
+                       or FaceGenSourceChoice.WinnerInPlace;
+
+    private async Task<bool?> EvaluateNifCompatibilityAsync(
+        INpcGetter recordToMatch, string nifRelPath, ModSetting sourceMod)
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "NPC2_FaceGenCompat");
+        string? materialized = null;
+        try
+        {
+            materialized = await _assetHandler.MaterializeAssetAsync(nifRelPath, sourceMod, tempDir);
+            return EvaluateNifCompatibility(recordToMatch, materialized);
+        }
+        finally
+        {
+            // Only delete what we extracted; a loose source path is the mod's own file.
+            if (materialized != null && materialized.StartsWith(tempDir, StringComparison.OrdinalIgnoreCase))
+            {
+                try { File.Delete(materialized); } catch { /* temp cleanup is best-effort */ }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Does this mesh have a baked shape for every geometry-bearing head part the record resolves
+    /// to? That reconciliation is what the engine performs when it applies the face tint, and its
+    /// failure is the dark-face bug — so a borrowed mesh that fails it must not be used.
+    /// Null means "could not tell", which the ladder treats optimistically.
+    /// </summary>
+    private bool? EvaluateNifCompatibility(INpcGetter recordToMatch, string? nifPath)
+    {
+        if (string.IsNullOrEmpty(nifPath) || !File.Exists(nifPath)) return null;
+
+        var linkCache = _environmentStateProvider.LinkCache;
+        if (linkCache == null) return null;
+
+        try
+        {
+            var analyzer = _faceGenConsistency.Value;
+            if (analyzer == null) return null;
+
+            var analysis = analyzer.Analyze(
+                recordToMatch,
+                fk => linkCache.TryResolve<IHeadPartGetter>(fk, out var hp) ? hp : null,
+                fk => linkCache.TryResolve<IRaceGetter>(fk, out var r) ? r : null,
+                nifPath);
+            return !analysis.HasMismatch;
+        }
+        catch
+        {
+            return null; // a malformed NIF must not abort a patch run
+        }
+    }
+
     private static bool ChangesHeadDataThatNeedsFaceGen(INpcGetter appearanceNpcRecord, INpcGetter donorBaseRecord)
     {
         // Guard, not dead code: keeps the rule with the decision if another caller appears.

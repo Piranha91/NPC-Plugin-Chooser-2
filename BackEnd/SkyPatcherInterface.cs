@@ -113,11 +113,43 @@ public class SkyPatcherInterface : OptionalUIModule
     ///   - the .ini filters by the TARGET NPC (filterByNPCs=target) even when the donor is a DIFFERENT
     ///     NPC (a cross-NPC appearance swap) — something only SkyPatcher mode can do.
     /// AssetHandler likewise looks the surrogate up by the target FormKey via TryGetSurrogateFormKey.
+    ///
+    /// <para><b>Template chains can be flattened</b> (opt-in via
+    /// <see cref="Models.TemplateHandlingMode.GiveEachNpcOwnCopy"/>; the caller passes
+    /// <paramref name="appearanceTerminus"/> only when that mode is active). When the donor
+    /// inherits its appearance (Traits + TPLT), a plain DeepCopyIn hands the surrogate that
+    /// inheritance too — and the engine then
+    /// resolves the recipient's face to the chain TERMINUS and loads FaceGen from the terminus's own
+    /// path (proven in game). That has two consequences we do not want: FaceGen written under the
+    /// surrogate is inert, and the face the user actually gets is whichever mod wins the terminus's
+    /// path in their load order. Worse, it is not per-NPC — every NPC inheriting from that terminus
+    /// resolves to the one shared path, so two NPCs given different appearance mods would be forced
+    /// to look identical.</para>
+    ///
+    /// <para>Copying the terminus's appearance in and clearing the Traits bit makes the surrogate
+    /// own its face outright, so the destination is always its own path and each NPC's choice is
+    /// honoured independently. Costs one duplicated FaceGen per surrogate, which is the price of
+    /// that independence.</para>
     /// </summary>
-    public Npc CreateSkyPatcherNpc(FormKey targetNpcFormKey, INpcGetter appearanceDonor)
+    /// <param name="appearanceTerminus">
+    /// The end of the donor's Traits chain, or null when the donor does not inherit — or when the
+    /// user's Template Handling Mode says to keep inheriting. Supplying it is what enables the
+    /// flattening described above.
+    /// </param>
+    public Npc CreateSkyPatcherNpc(FormKey targetNpcFormKey, INpcGetter appearanceDonor,
+        INpcGetter? appearanceTerminus = null)
     {
         var npcCopy = _environmentStateProvider.OutputMod.Npcs.AddNew();
         npcCopy.DeepCopyIn(appearanceDonor, out _);
+
+        if (appearanceTerminus != null && !appearanceTerminus.FormKey.Equals(appearanceDonor.FormKey))
+        {
+            // Overlay only the appearance the engine would have inherited; everything else stays
+            // the donor's, since the surrogate exists to carry a visual style and nothing more.
+            Auxilliary.CopyInheritedAppearance(npcCopy, appearanceTerminus);
+            npcCopy.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
+        }
+
         var edid = appearanceDonor.EditorID ?? "NoEditorID";
         npcCopy.EditorID = edid + "_Template";
 

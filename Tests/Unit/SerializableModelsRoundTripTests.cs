@@ -97,6 +97,7 @@ public class SerializableModelsRoundTripTests
             },
             ModWigHandlingMode = WigHandlingMode.ForwardToOutfit,
             ModAntlerHandlingMode = AntlerHandlingMode.Remove,
+            ModTemplateHandlingMode = TemplateHandlingMode.GiveEachNpcOwnCopy,
             NpcFormKeysToNotifications = new Dictionary<FormKey,
                 (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)>
             {
@@ -135,6 +136,8 @@ public class SerializableModelsRoundTripTests
         clone.ModRecordOverrideHandlingMode.Should().Be(RecordOverrideHandlingMode.IncludeAsNew);
         clone.ModWigHandlingMode.Should().Be(WigHandlingMode.ForwardToOutfit);
         clone.ModAntlerHandlingMode.Should().Be(AntlerHandlingMode.Remove);
+        clone.ModTemplateHandlingMode.Should().Be(TemplateHandlingMode.GiveEachNpcOwnCopy);
+        clone.HasTemplatedNpcs.Should().BeTrue("the notification map carries Template entries");
         clone.DetectedWigArmors.Should().BeEquivalentTo(new[] { Npc1 });
         clone.DetectedWigArmatures.Should().BeEquivalentTo(new[] { Npc3 });
         clone.DetectedAntlerArmors.Should().BeEquivalentTo(new[] { Npc2 });

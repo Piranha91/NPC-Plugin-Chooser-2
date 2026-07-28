@@ -148,6 +148,12 @@ public class ModSetting
     /// effective wig mode is <see cref="WigHandlingMode.ConvertToHeadParts"/>.</summary>
     public WigHairTintMode? ModWigHairTintMode { get; set; } = null;
 
+    /// <summary>Per-mod override of the global <see cref="Settings.TemplateHandlingMode"/>
+    /// (null = use the global setting). Resolved by
+    /// <see cref="Settings.GetEffectiveTemplateHandlingMode"/>; only shown in the UI when
+    /// this mod provides Traits-templated NPCs (<see cref="HasTemplatedNpcs"/>).</summary>
+    public TemplateHandlingMode? ModTemplateHandlingMode { get; set; } = null;
+
     [JsonIgnore]
     public bool HasWigArmors => DetectedWigArmors.Count > 0;
 
@@ -169,6 +175,14 @@ public class ModSetting
 
     [JsonIgnore]
     public bool HasAntlers => HasDetectedAntlers;
+
+    /// <summary>Whether this mod provides any Traits-templated NPCs, per the analysis
+    /// scan's persisted per-NPC notifications (same lifecycle as the wig/antler detection
+    /// sets: computed on cache miss, persisted so cache hits keep it). Gates the per-mod
+    /// Templated NPCs dropdown.</summary>
+    [JsonIgnore]
+    public bool HasTemplatedNpcs =>
+        NpcFormKeysToNotifications.Values.Any(n => n.IssueType == NpcIssueType.Template);
 
     public Dictionary<FormKey, (NpcIssueType IssueType, string IssueMessage, FormKey? ReferencedFormKey)> 
         NpcFormKeysToNotifications

@@ -119,14 +119,18 @@ public class PatcherTemplateInheritanceTests
     }
 
     [Fact]
-    public void SkyPatcherSurrogate_InheritsTheDonorsTraitsFlagAndTemplateLink()
+    public void SkyPatcherSurrogate_FlattensAnInheritedAppearanceInsteadOfPassingTheChainOn()
     {
-        // SkyPatcher mode's equivalent of the fix above. Per SkyPatcher's source
-        // (github.com/Zzyxz/SkyPatcher npc_patcher.cpp @ main) copyVisualStyle sets the recipient's
-        // faceNPC to the surrogate and copies raw fields — it does NOT walk a template chain — so
-        // the inherited face can only come through the SURROGATE's own Traits flag + TPLT. Those
-        // arrive via DeepCopyIn today; a refactor to selective field copying would silently
-        // reintroduce the null-template bug here, hence this guard.
+        // Per SkyPatcher's source (github.com/Zzyxz/SkyPatcher npc_patcher.cpp @ main),
+        // copyVisualStyle sets the recipient's faceNPC to the surrogate and copies raw fields — it
+        // does not walk a template chain. Proven in game, the ENGINE then resolves the surrogate's
+        // own Traits chain and loads FaceGen from the TERMINUS's path.
+        //
+        // That was previously left in place (DeepCopyIn carried the donor's Traits flag + TPLT), but
+        // it makes the result load-order-dependent and, worse, not per-NPC: every NPC inheriting
+        // from one terminus resolves to that single shared path, so two NPCs given different
+        // appearance mods would be forced to look identical. Flattening gives the surrogate the
+        // terminus's appearance outright so its own path is authoritative.
         var mod = MutagenFixtures.NewMod("Donor.esp");
         var template = MutagenFixtures.NewNpc(mod, "TreasCorpseCommonerRedguardFemale");
         var donor = MutagenFixtures.NewNpc(mod, "RedguardWomanHighPoly", traitsTemplate: true, template: template);
@@ -142,11 +146,24 @@ public class PatcherTemplateInheritanceTests
         Reflect.SetField(skyPatcher, "_keySurrogateValOrriginal", new Dictionary<FormKey, FormKey>());
 
         var recipientFk = MutagenFixtures.Fk("0B85AB:Skyrim.esm");
-        var surrogate = Reflect.Invoke<Npc>(skyPatcher, "CreateSkyPatcherNpc", recipientFk, (INpcGetter)donor)!;
+        var surrogate = Reflect.Invoke<Npc>(skyPatcher, "CreateSkyPatcherNpc",
+            recipientFk, (INpcGetter)donor, (INpcGetter)template)!;
 
-        HasTraits(surrogate).Should().BeTrue();
-        surrogate.Template.FormKey.Should().Be(template.FormKey);
+        HasTraits(surrogate).Should().BeFalse("the surrogate must own its face, not inherit it");
         surrogate.EditorID.Should().Be("RedguardWomanHighPoly_Template");
+    }
+
+    [Fact]
+    public void SkyPatcherSurrogate_WithNoTerminus_LeavesTheDonorCopyAlone()
+    {
+        // An untemplated donor has nothing to flatten; the surrogate is a straight copy.
+        var mod = MutagenFixtures.NewMod("Donor.esp");
+        var donor = MutagenFixtures.NewNpc(mod, "PlainDonor");
+
+        var (_, surrogate) = NewSurrogate(MutagenFixtures.Fk("0B85AB:Skyrim.esm"), donor);
+
+        HasTraits(surrogate).Should().BeFalse();
+        surrogate.EditorID.Should().Be("PlainDonor_Template");
     }
 
     /// <summary>Builds the private NpcContainer dictionary the surrogate factory writes into,
@@ -265,7 +282,9 @@ public class PatcherTemplateInheritanceTests
         Reflect.SetField(sky, "_keyOriginalValSurrogate", new Dictionary<FormKey, FormKey>());
         Reflect.SetField(sky, "_keySurrogateValOrriginal", new Dictionary<FormKey, FormKey>());
 
-        var surrogate = Reflect.Invoke<Npc>(sky, "CreateSkyPatcherNpc", recipientFk, donor)!;
+        // Null terminus = "the donor does not inherit", which is what these traits-directive tests
+        // are about; the flattening path has its own tests below.
+        var surrogate = Reflect.Invoke<Npc>(sky, "CreateSkyPatcherNpc", recipientFk, donor, null)!;
         return (sky, surrogate);
     }
 

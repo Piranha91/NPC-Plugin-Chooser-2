@@ -45,6 +45,11 @@ public sealed class NpcChooserHarness : IDisposable
         // AssetHandler depends on Lazy<VM_Run>; VM_Run is a heavy UI VM not registered here.
         // The lazy is only realized on progress/feedback paths the headless patcher tests avoid.
         builder.Register(_ => new Lazy<VM_Run>(() => null!)).As<Lazy<VM_Run>>().SingleInstance();
+        // Same treatment for the FaceGen ladder's compatibility analyzer: it hangs off
+        // CharacterPreviewCache and its whole asset-resolver chain, and is only realized on the
+        // rare ladder rows that borrow a mesh from outside the selected mod.
+        builder.Register(_ => new Lazy<FaceGenConsistencyAnalyzer>(() => null!))
+            .As<Lazy<FaceGenConsistencyAnalyzer>>().SingleInstance();
 
         Container = builder.Build();
     }

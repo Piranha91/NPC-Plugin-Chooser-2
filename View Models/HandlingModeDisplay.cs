@@ -39,6 +39,19 @@ public static class HandlingModeDisplay
         _ => mode.ToString(),
     };
 
+    public static string ToDisplayString(TemplateHandlingMode mode) => mode switch
+    {
+        TemplateHandlingMode.InheritFromTemplate => "Use the template's appearance",
+        TemplateHandlingMode.GiveEachNpcOwnCopy => "Give each NPC its own copy",
+        _ => mode.ToString(),
+    };
+
+    public static readonly IReadOnlyList<TemplateHandlingMode> TemplateModesInDisplayOrder = new[]
+    {
+        TemplateHandlingMode.InheritFromTemplate,
+        TemplateHandlingMode.GiveEachNpcOwnCopy,
+    };
+
     public static readonly IReadOnlyList<WigHairTintMode> WigHairTintModesInDisplayOrder = new[]
     {
         WigHairTintMode.Auto,

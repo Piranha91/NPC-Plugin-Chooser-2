@@ -160,6 +160,18 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
     [Reactive] public bool IsWigHandlingVisible { get; set; }
     [Reactive] public bool IsAntlerHandlingVisible { get; set; }
 
+    /// <summary>Per-mod override of the global Templated NPCs setting
+    /// (Settings.TemplateHandlingMode; null = Default). Shown only when the
+    /// analysis scan found Traits-templated NPCs in this mod
+    /// (<see cref="HasTemplatedNpcs"/>). Unlike the wig/antler dropdowns there
+    /// is no output-mode gate — the mode applies to record and SkyPatcher
+    /// output alike, in either PatchingMode.</summary>
+    [Reactive] public TemplateHandlingMode? OverrideTemplateHandlingMode { get; set; }
+
+    /// <summary>Templated-NPC gate: any scan-recorded Template notification.
+    /// Recomputed by <see cref="RecomputeHasTemplatedNpcs"/>.</summary>
+    [Reactive] public bool HasTemplatedNpcs { get; set; }
+
     // Friendly names in display order (None last; see HandlingModeDisplay), with
     // the null-keyed "Default" entry first — matching the global Settings
     // dropdowns so both menus read identically.
@@ -193,12 +205,23 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                     new KeyValuePair<AntlerHandlingMode?, string>(e, HandlingModeDisplay.ToDisplayString(e))
                 ));
 
+    public IEnumerable<KeyValuePair<TemplateHandlingMode?, string>> TemplateHandlingModes { get; }
+        = new[]
+            {
+                new KeyValuePair<TemplateHandlingMode?, string>(null, "Default")
+            }
+            .Concat(HandlingModeDisplay.TemplateModesInDisplayOrder
+                .Select(e =>
+                    new KeyValuePair<TemplateHandlingMode?, string>(e, HandlingModeDisplay.ToDisplayString(e))
+                ));
+
     // SelectedItem bridges — same null-key display fix as
     // SelectedRecordOverrideHandlingItem (null = "Default" is these dropdowns'
     // normal state, so without the bridge they rendered blank for every mod).
     [Reactive] public KeyValuePair<WigHandlingMode?, string> SelectedWigHandlingItem { get; set; }
     [Reactive] public KeyValuePair<WigHairTintMode?, string> SelectedWigHairTintItem { get; set; }
     [Reactive] public KeyValuePair<AntlerHandlingMode?, string> SelectedAntlerHandlingItem { get; set; }
+    [Reactive] public KeyValuePair<TemplateHandlingMode?, string> SelectedTemplateHandlingItem { get; set; }
     
     public HashSet<string> NpcNames { get; set; } = new();
     public HashSet<string> NpcEditorIDs { get; set; } = new();
@@ -368,6 +391,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         OverrideWigHandlingMode = model.ModWigHandlingMode;
         OverrideAntlerHandlingMode = model.ModAntlerHandlingMode;
         OverrideWigHairTintMode = model.ModWigHairTintMode;
+        OverrideTemplateHandlingMode = model.ModTemplateHandlingMode;
         // AvailablePluginsForNpcs should be re-calculated on load.
         // IsMugshotOnlyEntry is set to false via chaining
         IsFaceGenOnlyEntry = model.IsFaceGenOnlyEntry;
@@ -382,6 +406,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         AvailablePluginsForNpcs = new Dictionary<FormKey, List<ModKey>>(model.AvailablePluginsForNpcs);
         AmbiguousNpcFormKeys = new HashSet<FormKey>(model.AmbiguousNpcFormKeys);
         NpcFormKeysToNotifications = new(model.NpcFormKeysToNotifications);
+        RecomputeHasTemplatedNpcs();
         Keywords = new ObservableCollection<string>(model.Keywords ?? new HashSet<string>());
         _isLoadingFromModel = false;
     }
@@ -863,6 +888,13 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         this.WhenAnyValue(x => x.SelectedWigHandlingItem)
             .Subscribe(item => OverrideWigHandlingMode = item.Key)
             .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.OverrideTemplateHandlingMode)
+            .Subscribe(mode => SelectedTemplateHandlingItem =
+                TemplateHandlingModes.First(kv => kv.Key == mode))
+            .DisposeWith(_disposables);
+        this.WhenAnyValue(x => x.SelectedTemplateHandlingItem)
+            .Subscribe(item => OverrideTemplateHandlingMode = item.Key)
+            .DisposeWith(_disposables);
         this.WhenAnyValue(x => x.OverrideWigHairTintMode)
             .Subscribe(mode => SelectedWigHairTintItem =
                 WigHairTintModes.First(kv => kv.Key == mode))
@@ -980,6 +1012,17 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                   _parentVm.HasManualWigDesignations(DisplayName);
     }
 
+    /// <summary>HasTemplatedNpcs = any scan-recorded Template notification
+    /// (<see cref="NpcIssueType.Template"/>). Recomputed after the model load
+    /// and after <c>RefreshNpcLists</c> repopulates the notification map, so
+    /// the Templated NPCs dropdown appears once analysis finds a
+    /// Traits-templated NPC in this mod.</summary>
+    public void RecomputeHasTemplatedNpcs()
+    {
+        HasTemplatedNpcs = NpcFormKeysToNotifications.Values.Any(
+            n => n.IssueType == NpcIssueType.Template);
+    }
+
     /// <summary>HasAntlers = scan-detected antlers (any source) OR user-designated
     /// manual antler head parts for this mod. Recomputed after detection changes
     /// and after a manual designation via the 3D preview selector (so the Antler
@@ -1032,6 +1075,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             ModWigHandlingMode = OverrideWigHandlingMode,
             ModWigHairTintMode = OverrideWigHairTintMode,
             ModAntlerHandlingMode = OverrideAntlerHandlingMode,
+            ModTemplateHandlingMode = OverrideTemplateHandlingMode,
             IsAutoGenerated = IsAutoGenerated,
             PluginsWithOverrideRecords = _pluginsWithOverrideRecords,
             IncludeAllOverrides = IncludeAllOverrides,
@@ -1892,6 +1936,7 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             }
         }
 
+        RecomputeHasTemplatedNpcs();
         RefreshNpcCount();
     }
 

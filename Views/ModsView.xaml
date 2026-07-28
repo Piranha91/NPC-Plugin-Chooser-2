@@ -685,6 +685,46 @@
                                                  </ComboBox.ItemTemplate>
                                              </ComboBox>
                                          </StackPanel>
+
+                                         <!-- Templated NPCs: only shown when the analysis scan found
+                                              Traits-templated NPCs in this mod. Unlike the wig/antler
+                                              dropdowns there is no output-mode gate — the mode applies
+                                              to record and SkyPatcher output alike. -->
+                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,3"
+                                                     Visibility="{Binding HasTemplatedNpcs, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                             <TextBlock Text="Templated NPCs" VerticalAlignment="Center">
+                                                 <TextBlock.ToolTip>
+                                                     <ToolTip>
+                                                         <TextBlock TextWrapping="Wrap" Width="340">
+                                                             Some of this mod's NPCs copy their face from another NPC instead of having
+                                                             one of their own (the NPCs tab marks them with a Template icon). Controls
+                                                             what a selection from this mod does for those NPCs.
+                                                             <LineBreak/><LineBreak/>
+                                                             Default: Use the default setting from the Settings tab.
+                                                             <LineBreak/>
+                                                             Use the template's appearance: they keep showing the other NPC's face, and
+                                                             any appearance you pick for them is ignored.
+                                                             <LineBreak/>
+                                                             Give each NPC its own copy: your choice is applied to each of them
+                                                             individually, so NPCs that share a template can look different. Adds one
+                                                             copy of the face files per NPC. NPCs whose face the game picks at random
+                                                             from a levelled list keep inheriting either way.
+                                                         </TextBlock>
+                                                     </ToolTip>
+                                                 </TextBlock.ToolTip>
+                                             </TextBlock>
+
+                                             <ComboBox
+                                                 ItemsSource="{Binding TemplateHandlingModes}"
+                                                 SelectedItem="{Binding SelectedTemplateHandlingItem, Mode=TwoWay}"
+                                                 Margin="5 0 0 0">
+                                                 <ComboBox.ItemTemplate>
+                                                     <DataTemplate>
+                                                         <TextBlock Text="{Binding Value}"/>
+                                                     </DataTemplate>
+                                                 </ComboBox.ItemTemplate>
+                                             </ComboBox>
+                                         </StackPanel>
                                      </WrapPanel>
 
                                      <StackPanel Grid.Row="8" Orientation="Horizontal"
