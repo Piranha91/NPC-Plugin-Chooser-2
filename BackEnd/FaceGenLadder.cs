@@ -163,7 +163,18 @@ public sealed record FaceGenLadderDecision(
     bool CompatibilityEvaluated,
     string PlannedAction,
     string LegacyAction,
-    string LogLine);
+    string LogLine,
+    /// <summary>
+    /// Set when a face mesh is being copied but no tint could be found for it anywhere — the
+    /// one outcome here the user has to act on, so it is reported separately from
+    /// <see cref="LogLine"/>: always shown (not verbose-gated) and coloured as a warning.
+    ///
+    /// <para>Derived in <c>Build</c> rather than written per branch so every route that lands
+    /// on a tintless mesh reports it, including the borrowed-winner mesh whose own sentence
+    /// says nothing about tint. Deliberately requires a mesh: an NPC taking its face from a
+    /// levelled list also has no tint, and there it is the correct, silent outcome.</para>
+    /// </summary>
+    string? TintWarning = null);
 
 /// <summary>
 /// Decides where each half of an NPC's FaceGen should come from, and whether the NPC can be
@@ -286,9 +297,11 @@ public static class FaceGenLadder
                 $"used. If the skin tone looks wrong, that is why.");
         }
 
+        // The discoloured-face consequence rides on TintWarning (always shown, warning-coloured)
+        // rather than being stated here, where it would be verbose-gated with the rest.
         return Build(i, row, legacy, FaceGenSourceChoice.AppearanceMod, FaceGenSourceChoice.None, false,
             $"'{i.ModName}' supplies the face mesh but no face tint, and no replacement tint could be " +
-            $"found. This NPC's face may look discoloured in game.");
+            $"found.");
     }
 
     // Row 3 — tint present, mesh missing, and the mod edits the record. The mesh has to match
@@ -369,16 +382,14 @@ public static class FaceGenLadder
 
         if (i.OriginNif != FaceGenAssetPresence.NotFound)
         {
-            string tail = ddsChoice == FaceGenSourceChoice.None
-                ? " No face tint could be found, so this NPC's face may look discoloured in game."
-                : string.Empty;
-
+            // A missing tint rides on TintWarning (always shown, warning-coloured) instead of
+            // being tacked onto this sentence, which is verbose-gated.
             return Build(i, row, legacy, FaceGenSourceChoice.Origin, ddsChoice, forwardOriginRecord,
                 forwardOriginRecord
                     ? $"'{i.ModName}' does not change this NPC's appearance record, so both the record and " +
-                      $"the face mesh are being taken from the mod that originally added the NPC." + tail
+                      $"the face mesh are being taken from the mod that originally added the NPC."
                     : $"'{i.ModName}' changes this NPC's appearance but ships no face files for it, so the " +
-                      $"face mesh is being taken from the mod that originally added the NPC." + tail);
+                      $"face mesh is being taken from the mod that originally added the NPC.");
         }
 
         if (i.WinnerNifExists && (i.WinnerNifCompatible ?? true))
@@ -424,7 +435,11 @@ public static class FaceGenLadder
             CompatibilityEvaluated: i.OriginNifCompatible.HasValue || i.WinnerNifCompatible.HasValue,
             PlannedAction: $"nif={nif}, dds={dds}" + (forwardOriginRecord ? ", record=Origin" : string.Empty),
             LegacyAction: legacy,
-            LogLine: logLine);
+            LogLine: logLine,
+            TintWarning: dds == FaceGenSourceChoice.None && nif != FaceGenSourceChoice.None
+                ? $"no face tint could be found for {i.NpcIdentifier}, so its face may look " +
+                  "discoloured in game."
+                : null);
 
     private static FaceGenLadderDecision Abort(
         FaceGenLadderInputs i, FaceGenLadderRow row, string legacy, string reason) =>

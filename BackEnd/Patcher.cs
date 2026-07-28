@@ -999,7 +999,8 @@ public class Patcher : OptionalUIModule
                                 // what it did about them rather than only that they exist.
                                 faceGenDecision = await ComputeFaceGenDecisionAsync(
                                     npcFormKey, appearanceNpcRecord, appearanceModSetting,
-                                    selectedModDisplayName, npcIdentifier, isFaceGenOnly);
+                                    currentModFolderPaths, selectedModDisplayName, npcIdentifier,
+                                    isFaceGenOnly);
 
                                 if (faceGenDecision.Abort)
                                 {
@@ -1076,18 +1077,43 @@ public class Patcher : OptionalUIModule
                                     _settings.WigOrAntlerHandlingActive(appearanceModSetting))
                                 {
                                     WigHandlingMode? wigModeOverride = null;
-                                    if (_settings.GetEffectiveWigMode(appearanceModSetting) ==
-                                        WigHandlingMode.ConvertToHeadParts)
+                                    var effectiveWigMode = _settings.GetEffectiveWigMode(appearanceModSetting);
+
+                                    // ForwardToOutfit writes the wig into the NPC's DefaultOutfit, which
+                                    // the engine ignores whenever the Inventory template flag is set —
+                                    // it takes the whole inventory, outfit included, from the template.
+                                    // Head parts have no such flag (they ride the Traits data this app
+                                    // already owns), so convert instead of forwarding into a dead field.
+                                    bool outfitFieldInert = effectiveWigMode == WigHandlingMode.ForwardToOutfit &&
+                                                            RecordOutfitIsInert(winningNpcOverride, appearanceNpcRecord);
+
+                                    if (effectiveWigMode == WigHandlingMode.ConvertToHeadParts || outfitFieldInert)
                                     {
+                                        if (outfitFieldInert)
+                                        {
+                                            AppendLog($"      Wig handling: {npcIdentifier} inherits its inventory from " +
+                                                      "a template, so a forwarded outfit could never reach it — " +
+                                                      "converting the wig to head parts instead.", false, false);
+                                        }
+
                                         wigConvert = _headPartWigConverter.Apply(appearanceNpcRecord,
                                             appearanceModSetting, currentModFolderPaths, npcIdentifier,
-                                            AppendLog, out bool fallBackToForwardToSkin);
+                                            AppendLog, out bool fallBackToForwardToSkin,
+                                            faceGenSubjectFormKey: FlattenedFaceGenSubject(faceGenDecision));
                                         if (wigConvert != null)
                                         {
                                             RegisterRecordOwnerships(npcFormKey, wigConvert.MintedRecords,
                                                 npcContributions);
+
+                                            // The forwarder must now STRIP the wig from any forwarded
+                                            // outfit rather than add it — the head parts carry it.
+                                            if (outfitFieldInert) wigModeOverride = WigHandlingMode.ConvertToHeadParts;
                                         }
-                                        else if (fallBackToForwardToSkin)
+                                        // Any decline on the inert-outfit path goes to the skin, which IS
+                                        // live: WornArmor is Traits data, not inventory. Declines on the
+                                        // ordinary path keep their own contract (only the risky ones
+                                        // downgrade; "nothing to convert" leaves the mode alone).
+                                        else if (fallBackToForwardToSkin || outfitFieldInert)
                                         {
                                             wigModeOverride = WigHandlingMode.ForwardToSkin;
                                         }
@@ -1128,7 +1154,8 @@ public class Patcher : OptionalUIModule
                                         // Null unless the user opted into own-copy template
                                         // handling AND the donor's chain resolved — see
                                         // ResolveAppearanceTerminusRecord.
-                                        var flattenTerminus = ResolveAppearanceTerminusRecord(faceGenDecision);
+                                        var flattenTerminus = ResolveAppearanceTerminusRecord(faceGenDecision,
+                                            appearanceModSetting, currentModFolderPaths, isFaceGenOnly);
 
                                         if (_settings.UseSkyPatcherMode)
                                         {
@@ -1209,6 +1236,12 @@ public class Patcher : OptionalUIModule
 
                                             _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                         }
+
+                                        // Links are final now: the appearance copy, the wig
+                                        // finalizers and the merge-in walker have all run.
+                                        WarnOnDanglingAppearanceLinks(patchNpc, appearanceNpcRecord,
+                                            appearanceModSetting, npcIdentifier, includeOutfit,
+                                            mergeInDependencyRecords);
 
                                         if (_settings.UseSkyPatcherMode)
                                         {
@@ -1461,7 +1494,8 @@ public class Patcher : OptionalUIModule
                                         // Null unless the user opted into own-copy template
                                         // handling AND the donor's chain resolved — see
                                         // ResolveAppearanceTerminusRecord.
-                                        var createFlattenTerminus = ResolveAppearanceTerminusRecord(faceGenDecision);
+                                        var createFlattenTerminus = ResolveAppearanceTerminusRecord(faceGenDecision,
+                                            appearanceModSetting, currentModFolderPaths, isFaceGenOnly);
 
                                         if (_settings.UseSkyPatcherMode)
                                         {
@@ -1546,6 +1580,12 @@ public class Patcher : OptionalUIModule
 
                                             _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                         }
+
+                                        // Links are final now: the appearance copy, the wig
+                                        // finalizers and the merge-in walker have all run.
+                                        WarnOnDanglingAppearanceLinks(patchNpc, appearanceNpcRecord,
+                                            appearanceModSetting, npcIdentifier, includeOutfit,
+                                            mergeInDependencyRecords);
 
                                         if (_settings.UseSkyPatcherMode)
                                         {
@@ -2507,37 +2547,11 @@ public class Patcher : OptionalUIModule
                       $"copied that appearance onto its own record so its selection applies to it individually.");
         }
 
-        // An appearance link that points outside the load order is fatal: the run completes,
-        // then Mutagen refuses to write the plugin with a bare "referenced mod was not present"
-        // naming only an output FormKey — thousands of NPCs after the one that caused it. Catch
-        // it here, where the NPC, the offending field, the source plugin and the mod are all
-        // still known, so the failure is attributable from the main log and the per-NPC log.
-        var danglingAppearanceLinks = EnumerateNamedAppearanceLinks(targetNpc, includeOutfit)
-            .Where(l => !_allowedMasterKeys.Contains(l.Key.ModKey))
-            .ToList();
-        if (danglingAppearanceLinks.Any())
-        {
-            var missingPlugins = danglingAppearanceLinks
-                .Select(l => l.Key.ModKey)
-                .Distinct()
-                .Select(m => m.FileName.ToString())
-                .ToList();
-
-            string remedy = mergeInDependencyRecords
-                ? "Dependency merge-in is ON for this mod, so the record could not be copied into the output " +
-                  "(it lives in a plugin this app cannot load) — see the merge-in trace above."
-                : "Dependency merge-in is OFF for this mod, so the link was copied verbatim. Enabling " +
-                  "'Merge In Dependency Records' for this mod, enabling the missing plugin, or choosing a " +
-                  "different appearance for this NPC all resolve it.";
-
-            AppendLog(
-                $"      CRITICAL WARNING: {npcIdentifier}'s appearance from '{appearanceModSetting?.DisplayName ?? "N/A"}' " +
-                $"(source record {sourceNpc.FormKey}) references plugin(s) that are NOT in your load order: " +
-                $"{string.Join(", ", missingPlugins)}. THE OUTPUT PLUGIN CANNOT BE SAVED while this reference exists. " +
-                $"Offending field(s): {string.Join("; ", danglingAppearanceLinks.Select(l => $"{l.Field}={l.Key}"))}. " +
-                remedy,
-                true, true);
-        }
+        // NOTE: the dangling-link check deliberately does NOT run here. The flatten overlay above
+        // writes the terminus's links verbatim, and the caller's merge-in walker — which runs after
+        // this method — is what remaps them into the output. Checking here saw that intermediate
+        // state and reported a fatal condition for links that were about to be fixed. See
+        // WarnOnDanglingAppearanceLinks, which the caller invokes once the links are final.
 
         // Concrete record of every appearance field applied to the NPC, for the
         // per-NPC diagnostic file (only built when this NPC is being logged).
@@ -2545,12 +2559,14 @@ public class Patcher : OptionalUIModule
         {
             // Flag every dumped FormKey whose plugin is absent from the load order. Without
             // this the dump reads as ordinary output even when it is the direct cause of the
-            // end-of-run save failure.
+            // end-of-run save failure. A flatten's overlaid links are still pre-merge at this
+            // point, so say so rather than letting the marks read as defects.
             string Mark(FormKey fk) => fk.IsNull || _allowedMasterKeys.Contains(fk.ModKey)
                 ? fk.ToString()
                 : $"{fk} **PLUGIN NOT IN LOAD ORDER**";
 
-            NpcDiagnosticLogger.Log($"  NPC record fields applied (source {sourceNpc.FormKey}, mergeInDependencies={mergeInDependencyRecords}):");
+            NpcDiagnosticLogger.Log($"  NPC record fields applied (source {sourceNpc.FormKey}, mergeInDependencies={mergeInDependencyRecords}" +
+                                    (flattenTerminus != null ? "; flattened links not yet merged" : "") + "):");
             NpcDiagnosticLogger.Log($"    FaceMorph={(sourceNpc.FaceMorph != null ? "copied" : "null")}, FaceParts={(sourceNpc.FaceParts != null ? "copied" : "null")}, Height={sourceNpc.Height}, Weight={sourceNpc.Weight}, TintLayers={targetNpc.TintLayers.Count}");
             NpcDiagnosticLogger.Log($"    Race={Mark(targetNpc.Race.FormKey)}, WornArmor(skin)={Mark(targetNpc.WornArmor.FormKey)}, HeadTexture={Mark(targetNpc.HeadTexture.FormKey)}, HairColor={Mark(targetNpc.HairColor.FormKey)}");
             NpcDiagnosticLogger.Log($"    HeadParts=[{string.Join(", ", targetNpc.HeadParts.Select(h => Mark(h.FormKey)))}]");
@@ -2558,6 +2574,50 @@ public class Patcher : OptionalUIModule
         }
 
         return mergedInRecords;
+    }
+
+    /// <summary>
+    /// An appearance link that points outside the load order is fatal: the run completes, then
+    /// Mutagen refuses to write the plugin with a bare "referenced mod was not present" naming only
+    /// an output FormKey — thousands of NPCs after the one that caused it. Reported here, where the
+    /// NPC, the offending field, the source plugin and the mod are all still known, so the failure
+    /// is attributable from the main log and the per-NPC log.
+    ///
+    /// <para>MUST be called only once every step that can rewrite this NPC's appearance links has
+    /// run — the appearance copy, the wig/antler finalizers, and above all the dependency merge-in
+    /// walker, which is what turns a link into a plugin outside the load order into a merged output
+    /// record. Called from inside the appearance copy it fired on links the walker was about to
+    /// fix, reporting an unsaveable plugin that in fact saved correctly.</para>
+    /// </summary>
+    private void WarnOnDanglingAppearanceLinks(Npc targetNpc, INpcGetter sourceNpc,
+        ModSetting? appearanceModSetting, string npcIdentifier, bool includeOutfit,
+        bool mergeInDependencyRecords)
+    {
+        var danglingAppearanceLinks = EnumerateNamedAppearanceLinks(targetNpc, includeOutfit)
+            .Where(l => !_allowedMasterKeys.Contains(l.Key.ModKey))
+            .ToList();
+        if (!danglingAppearanceLinks.Any()) return;
+
+        var missingPlugins = danglingAppearanceLinks
+            .Select(l => l.Key.ModKey)
+            .Distinct()
+            .Select(m => m.FileName.ToString())
+            .ToList();
+
+        string remedy = mergeInDependencyRecords
+            ? "Dependency merge-in is ON for this mod, so the record could not be copied into the output " +
+              "(it lives in a plugin this app cannot load) — see the merge-in trace above."
+            : "Dependency merge-in is OFF for this mod, so the link was copied verbatim. Enabling " +
+              "'Merge In Dependency Records' for this mod, enabling the missing plugin, or choosing a " +
+              "different appearance for this NPC all resolve it.";
+
+        AppendLog(
+            $"      CRITICAL WARNING: {npcIdentifier}'s appearance from '{appearanceModSetting?.DisplayName ?? "N/A"}' " +
+            $"(source record {sourceNpc.FormKey}) references plugin(s) that are NOT in your load order: " +
+            $"{string.Join(", ", missingPlugins)}. THE OUTPUT PLUGIN CANNOT BE SAVED while this reference exists. " +
+            $"Offending field(s): {string.Join("; ", danglingAppearanceLinks.Select(l => $"{l.Field}={l.Key}"))}. " +
+            remedy,
+            true, true);
     }
 
     // Same set as GetAppearanceFormLinks, but carrying the record field each link came from
@@ -2717,13 +2777,18 @@ public class Patcher : OptionalUIModule
     /// </summary>
     private async Task<FaceGenLadderDecision> ComputeFaceGenDecisionAsync(
         FormKey targetNpcFormKey, INpcGetter appearanceNpcRecord, ModSetting appearanceModSetting,
-        string modDisplayName, string npcIdentifier, bool isFaceGenOnly)
+        HashSet<string> currentModFolderPaths, string modDisplayName, string npcIdentifier,
+        bool isFaceGenOnly)
     {
         var linkCache = _environmentStateProvider.LinkCache;
         var chainHops = new List<string>();
+        // Each hop resolves from the SELECTED MOD's plugins first (see ResolveNpcPreferringMod),
+        // exactly as the donor record itself was resolved. The walk already starts from the donor
+        // record rather than its FormKey so it carries the donor's inheritance; resolving the hops
+        // through the load order instead would abandon that halfway and follow the winner's chain.
         var chainStatus = Auxilliary.TryResolveAppearanceTerminus(
             appearanceNpcRecord,
-            fk => linkCache != null && linkCache.TryResolve<INpcGetter>(fk, out var n) ? n : null,
+            fk => ResolveNpcPreferringMod(fk, appearanceModSetting, currentModFolderPaths, isFaceGenOnly),
             out var subjectFormKey,
             fk => linkCache != null && linkCache.TryResolve<ILeveledNpcGetter>(fk, out _),
             chainHops.Add);
@@ -2854,15 +2919,117 @@ public class Patcher : OptionalUIModule
     /// donor does not inherit, or the chain did not resolve to a concrete NPC (a levelled terminus
     /// or an unfollowable chain must keep inheriting regardless of the mode). Non-null answers are
     /// the terminus record at the end of the donor's Traits chain, and both output modes flatten
-    /// from it: the SkyPatcher surrogate and the record-mode override alike.</summary>
-    private INpcGetter? ResolveAppearanceTerminusRecord(FaceGenLadderDecision? decision)
+    /// from it: the SkyPatcher surrogate and the record-mode override alike.
+    ///
+    /// <para>The terminus is resolved from the SELECTED MOD's plugins (see
+    /// <see cref="ResolveNpcPreferringMod"/>), because the FaceGen this flatten forwards to the
+    /// NPC's own FormID is the mod's copy of the TERMINUS's mesh (measured at the subject's paths
+    /// in <see cref="ComputeFaceGenDecisionAsync"/>). Taking the record from the load order's
+    /// winning override instead paired that mesh with another plugin's head parts — the dark-face
+    /// bug, from the app's own <see cref="FaceGenConsistencyAnalyzer"/> rule.</para></summary>
+    private INpcGetter? ResolveAppearanceTerminusRecord(FaceGenLadderDecision? decision,
+        ModSetting? appearanceModSetting, HashSet<string> currentModFolderPaths, bool isFaceGenOnly)
     {
         if (decision?.Inputs.ChainStatus != FaceGenChainStatus.Resolved) return null;
         if (!decision.Inputs.FlattenTemplateChain) return null;
 
+        return ResolveNpcPreferringMod(decision.Inputs.SubjectFormKey, appearanceModSetting,
+            currentModFolderPaths, isFaceGenOnly);
+    }
+
+    /// <summary>
+    /// The FormKey whose FaceGen mesh will be copied to THIS NPC's own path, when a Traits chain is
+    /// being flattened — the chain terminus. Null otherwise, meaning "the donor's own", which covers
+    /// both the untemplated case (donor == subject) and the inheriting case (the NPC's own path
+    /// receives nothing, so there is no bake target and the wig converter must decline as before).
+    ///
+    /// <para>Same gate as <see cref="ResolveAppearanceTerminusRecord"/>, kept in step with it: the
+    /// mesh, the flattened record and the wig bake all have to agree on which record's face this
+    /// NPC ends up wearing.</para>
+    /// </summary>
+    private static FormKey? FlattenedFaceGenSubject(FaceGenLadderDecision? decision) =>
+        decision is { Inputs.ChainStatus: FaceGenChainStatus.Resolved, Inputs.FlattenTemplateChain: true }
+            ? decision.Inputs.SubjectFormKey
+            : null;
+
+    /// <summary>
+    /// Is this NPC's record-level <c>DefaultOutfit</c> a dead field? The Inventory template flag
+    /// makes the engine take the NPC's whole inventory — the default outfit with it — from its
+    /// template, so anything written to the record's own outfit is never worn.
+    ///
+    /// <para>SkyPatcher mode is exempt: there the outfit is applied at runtime by a
+    /// <c>SetOutfit</c> directive (see <see cref="ApplySkyPatcherDirectives"/>), which acts on the
+    /// actor and bypasses record-level template resolution entirely.</para>
+    ///
+    /// <para>The record examined is the one that will actually be written — the recipient's winning
+    /// override in Create-and-Patch, the donor in Create — because that is where the flag lands.
+    /// Flattening does not affect the answer: it clears Traits, never Inventory.</para>
+    /// </summary>
+    private bool RecordOutfitIsInert(INpcGetter winningNpcOverride, INpcGetter appearanceNpcRecord)
+    {
+        if (_settings.UseSkyPatcherMode) return false;
+
+        var written = _settings.PatchingMode == PatchingMode.CreateAndPatch
+            ? winningNpcOverride
+            : appearanceNpcRecord;
+
+        return written.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Inventory)
+               && written.Template is { IsNull: false };
+    }
+
+    /// <summary>
+    /// Resolves an NPC record the way the appearance DONOR itself is resolved at the top of the
+    /// patch loop: from the selected mod's own plugins (honouring the per-NPC plugin
+    /// disambiguation and skipping resource-only plugins), falling back to the load order only
+    /// when that mod has no record for it.
+    ///
+    /// <para>Used for every record the appearance pipeline reads besides the donor — the Traits
+    /// chain hops and the flatten terminus. Those all feed decisions that are paired with assets
+    /// sourced from this same mod, so resolving them through the load order would let the record
+    /// side and the asset side come from different plugins.</para>
+    ///
+    /// <para><paramref name="isFaceGenOnly"/> mirrors the donor's own fallback: a mod that ships
+    /// FaceGen but no plugin record for this NPC has its donor resolved at
+    /// <see cref="ResolveTarget.Origin"/>, on the assumption its meshes were built against the
+    /// base record, so the rest of the chain has to be read the same way to stay consistent
+    /// with it.</para>
+    /// </summary>
+    private INpcGetter? ResolveNpcPreferringMod(FormKey npcFormKey, ModSetting? appearanceModSetting,
+        HashSet<string> currentModFolderPaths, bool isFaceGenOnly)
+    {
+        if (appearanceModSetting != null)
+        {
+            var link = npcFormKey.ToLink<INpcGetter>();
+
+            if (appearanceModSetting.NpcPluginDisambiguation.TryGetValue(npcFormKey, out var disambiguationKey) &&
+                _recordHandler.TryGetRecordGetterFromMod(link, disambiguationKey, currentModFolderPaths,
+                    RecordHandler.RecordLookupFallBack.None, out var disambiguated) &&
+                disambiguated is INpcGetter disambiguatedNpc)
+            {
+                return disambiguatedNpc;
+            }
+
+            // Iterate backwards; lowest in the list is the winner within the mod (as for the donor).
+            for (int i = appearanceModSetting.CorrespondingModKeys.Count - 1; i >= 0; i--)
+            {
+                var candidateKey = appearanceModSetting.CorrespondingModKeys[i];
+                if (appearanceModSetting.ResourceOnlyModKeys.Contains(candidateKey)) continue;
+
+                if (_recordHandler.TryGetRecordGetterFromMod(link, candidateKey, currentModFolderPaths,
+                        RecordHandler.RecordLookupFallBack.None, out var record) &&
+                    record is INpcGetter modNpc)
+                {
+                    return modNpc;
+                }
+            }
+        }
+
         var linkCache = _environmentStateProvider.LinkCache;
-        return linkCache != null && linkCache.TryResolve<INpcGetter>(decision.Inputs.SubjectFormKey, out var rec)
-            ? rec
+        if (linkCache == null) return null;
+
+        return linkCache.TryResolve<INpcGetter>(npcFormKey, out var fallback,
+            isFaceGenOnly ? ResolveTarget.Origin : ResolveTarget.Winner)
+            ? fallback
             : null;
     }
 

@@ -127,7 +127,7 @@ public class TemplateFlatteningTests
 
     private static INpcGetter? Resolve(FaceGenLadderDecision? decision) =>
         Reflect.Invoke<INpcGetter>(Reflect.Uninitialized<Patcher>(),
-            "ResolveAppearanceTerminusRecord", decision);
+            "ResolveAppearanceTerminusRecord", decision, null, new HashSet<string>(), false);
 
     private static FaceGenLadderDecision Decision(FaceGenChainStatus chain, bool flatten) =>
         FaceGenLadder.Classify(new FaceGenLadderInputs(
@@ -176,6 +176,126 @@ public class TemplateFlatteningTests
         // A levelled terminus has no fixed face to copy (the game picks an actor at runtime) and
         // an unfollowable chain has no terminus at all — both keep inheriting with the toggle on.
         Resolve(Decision(chain, flatten: true)).Should().BeNull();
+    }
+
+    // ---- Patcher.FlattenedFaceGenSubject ------------------------------------------------------
+    //
+    // The wig→HeadPart converter bakes into the FaceGen this NPC ends up wearing. Under a flatten
+    // that mesh is the TERMINUS's, copied to the NPC's own path; otherwise it is the donor's own
+    // (null = "use the donor"). Same gate as ResolveAppearanceTerminusRecord, so mesh, record and
+    // bake cannot disagree about whose face this is.
+
+    private static FormKey? Subject(FaceGenLadderDecision? decision) =>
+        Reflect.InvokeStatic<Patcher, FormKey?>("FlattenedFaceGenSubject", decision);
+
+    [Fact]
+    public void FlattenedFaceGenSubject_IsTheTerminus_WhenFlattening()
+    {
+        Subject(Decision(FaceGenChainStatus.Resolved, flatten: true))
+            .Should().Be(MutagenFixtures.Fk("03DE70:Skyrim.esm"));
+    }
+
+    [Fact]
+    public void FlattenedFaceGenSubject_IsTheDonorsOwn_InInheritMode()
+    {
+        // An inheriting NPC receives no FaceGen at its own path, so there is no bake target and
+        // the converter must go on declining exactly as before.
+        Subject(Decision(FaceGenChainStatus.Resolved, flatten: false)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(FaceGenChainStatus.NotTemplated)]
+    [InlineData(FaceGenChainStatus.LeveledTerminus)]
+    [InlineData(FaceGenChainStatus.Unfollowable)]
+    public void FlattenedFaceGenSubject_IsTheDonorsOwn_WhenNoChainIsFlattened(FaceGenChainStatus chain)
+    {
+        Subject(Decision(chain, flatten: true)).Should().BeNull();
+    }
+
+    // ---- Patcher.RecordOutfitIsInert ----------------------------------------------------------
+    //
+    // The Inventory template flag makes the engine read the NPC's inventory — default outfit
+    // included — from its template, so a wig forwarded into DefaultOutfit is never worn. Measured
+    // 2026-07-28 on Captain Hargar: identical head parts, skin and DefaultOutfit link to his
+    // terminus, differing only in this flag, and only he came out bald.
+
+    private static bool OutfitInert(Settings settings, INpcGetter winner, INpcGetter donor)
+    {
+        var patcher = Reflect.Uninitialized<Patcher>();
+        Reflect.SetField(patcher, "_settings", settings);
+        return Reflect.Invoke<bool>(patcher, "RecordOutfitIsInert", winner, donor);
+    }
+
+    private static Npc InventoryTemplated(SkyrimMod mod, string editorId, INpcGetter template)
+    {
+        var npc = MutagenFixtures.NewNpc(mod, editorId);
+        npc.Configuration.TemplateFlags |= NpcConfiguration.TemplateFlag.Inventory;
+        npc.Template.SetTo(template);
+        return npc;
+    }
+
+    [Theory]
+    [InlineData(PatchingMode.CreateAndPatch)]
+    [InlineData(PatchingMode.Create)]
+    public void OutfitIsInert_WhenTheWrittenRecordInheritsItsInventory(PatchingMode mode)
+    {
+        // Each mode writes a different record, so each has to read the flag off its own.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var template = MutagenFixtures.NewNpc(mod, "Template");
+        var plain = MutagenFixtures.NewNpc(mod, "Plain");
+        var templated = InventoryTemplated(mod, "Templated", template);
+
+        var settings = new Settings { PatchingMode = mode, UseSkyPatcherMode = false };
+        var (winner, donor) = mode == PatchingMode.CreateAndPatch
+            ? ((INpcGetter)templated, (INpcGetter)plain)
+            : (plain, templated);
+
+        OutfitInert(settings, winner, donor).Should().BeTrue();
+        OutfitInert(settings, plain, plain).Should().BeFalse("neither record inherits its inventory");
+    }
+
+    [Fact]
+    public void OutfitIsNotInert_WithoutATemplateToInheritFrom()
+    {
+        // The flag alone decides nothing: with no template link there is nowhere for the engine
+        // to read an inventory from, so the record's own outfit stands.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = MutagenFixtures.NewNpc(mod, "Dangling");
+        npc.Configuration.TemplateFlags |= NpcConfiguration.TemplateFlag.Inventory;
+
+        OutfitInert(new Settings { PatchingMode = PatchingMode.CreateAndPatch }, npc, npc)
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public void OutfitIsNotInert_InSkyPatcherMode()
+    {
+        // SkyPatcher applies the outfit at runtime with SetOutfit, which acts on the actor and
+        // never consults the record's template flags — so nothing needs rerouting there.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var template = MutagenFixtures.NewNpc(mod, "Template");
+        var templated = InventoryTemplated(mod, "Templated", template);
+
+        var settings = new Settings
+        {
+            PatchingMode = PatchingMode.CreateAndPatch,
+            UseSkyPatcherMode = true,
+        };
+
+        OutfitInert(settings, templated, templated).Should().BeFalse();
+    }
+
+    [Fact]
+    public void OutfitIsNotInert_ForTraitsTemplatingAlone()
+    {
+        // Traits governs the face, not the inventory. A flatten clears Traits and never touches
+        // Inventory, so the two must not be conflated.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var template = MutagenFixtures.NewNpc(mod, "Template");
+        var traitsOnly = MutagenFixtures.NewNpc(mod, "TraitsOnly", traitsTemplate: true, template: template);
+
+        OutfitInert(new Settings { PatchingMode = PatchingMode.CreateAndPatch }, traitsOnly, traitsOnly)
+            .Should().BeFalse();
     }
 
     // ---- Per-mod override resolution (Settings.GetEffectiveTemplateHandlingMode) -------------

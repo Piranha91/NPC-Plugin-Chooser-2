@@ -277,15 +277,25 @@ public class HeadPartWigConverter
     /// CopyAppearanceData; the caller invokes <see cref="FinalizeNpcRecord"/> on
     /// the patched NPC afterwards and queues the bake after the FaceGen copy.
     /// </summary>
+    /// <param name="faceGenSubjectFormKey">
+    /// The FormKey whose FaceGen mesh will be copied onto this NPC — the bake base. Normally the
+    /// donor's own, but when a Traits chain is being FLATTENED the mesh comes from the chain
+    /// terminus (measured there by the FaceGen ladder) and lands at the NPC's own path, so the
+    /// probes below have to read the terminus's copy or they find nothing and decline. Null =
+    /// the donor's own FormKey, which is also the right answer whenever no flatten is happening:
+    /// a templated NPC that keeps inheriting genuinely has no FaceGen of its own to bake into.
+    /// </param>
     public Result? Apply(
         INpcGetter donorNpc,
         ModSetting appearanceModSetting,
         HashSet<string> modFolderPaths,
         string npcIdentifier,
         Action<string, bool, bool> appendLog,
-        out bool fallBackToForwardToSkin)
+        out bool fallBackToForwardToSkin,
+        FormKey? faceGenSubjectFormKey = null)
     {
         fallBackToForwardToSkin = false;
+        var faceGenKey = faceGenSubjectFormKey ?? donorNpc.FormKey;
 
         // Applicable wigs = the donor outfit's direct items the scan classified
         // as wigs (same detection basis as WigForwarder — outfit-item based).
@@ -319,7 +329,7 @@ public class HeadPartWigConverter
             // skin-carried wig is already in its ForwardToSkin end state, so a
             // declined conversion just leaves the donor's correct in-game state.
             return ApplyWnamConversion(donorNpc, appearanceModSetting, modFolderPaths, npcIdentifier,
-                appendLog, wnamWigArmas);
+                appendLog, wnamWigArmas, faceGenKey);
         }
 
         if (wigItemKeys.Count > 1)
@@ -390,7 +400,7 @@ public class HeadPartWigConverter
         //    is byte-identical). Without a strippable hair shape carrying
         //    dismember partitions the bake keeps source skin-instance types —
         //    dark-face risk — so fall back instead.
-        var (donorFaceGenRelPath, _) = Auxilliary.GetFaceGenSubPathStrings(donorNpc.FormKey, regularized: true);
+        var (donorFaceGenRelPath, _) = Auxilliary.GetFaceGenSubPathStrings(faceGenKey, regularized: true);
         string? donorFaceGenPath = MaterializeDataRelFile(donorFaceGenRelPath, appearanceModSetting);
         if (donorFaceGenPath == null)
         {
@@ -484,7 +494,7 @@ public class HeadPartWigConverter
     /// </summary>
     private Result? ApplyWnamConversion(INpcGetter donorNpc, ModSetting appearanceModSetting,
         HashSet<string> modFolderPaths, string npcIdentifier, Action<string, bool, bool> appendLog,
-        List<IArmorAddonGetter> wnamWigArmas)
+        List<IArmorAddonGetter> wnamWigArmas, FormKey faceGenKey)
     {
         var raceKey = donorNpc.Race.IsNull ? (FormKey?)null : donorNpc.Race.FormKey;
         var applicable = wnamWigArmas.Where(a => IsArmatureForRace(a, raceKey)).ToList();
@@ -546,7 +556,7 @@ public class HeadPartWigConverter
         }
 
         // The donor FaceGen must exist — it is the bake target.
-        var (donorFaceGenRelPath, _) = Auxilliary.GetFaceGenSubPathStrings(donorNpc.FormKey, regularized: true);
+        var (donorFaceGenRelPath, _) = Auxilliary.GetFaceGenSubPathStrings(faceGenKey, regularized: true);
         string? donorFaceGenPath = MaterializeDataRelFile(donorFaceGenRelPath, appearanceModSetting);
         if (donorFaceGenPath == null)
         {

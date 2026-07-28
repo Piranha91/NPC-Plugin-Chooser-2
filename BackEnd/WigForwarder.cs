@@ -248,8 +248,9 @@ public class WigForwarder
     /// (the engine only dresses slots the ARMO's own mask declares),
     /// non-playable clothing so it never shows in inventory UI. Cached per ARMA
     /// so all NPCs sharing the skin hair share one ARMO.</summary>
-    private FormKey GetOrMintWigArmorForArma(IArmorAddonGetter arma, Result result, string npcIdentifier,
-        Action<string, bool, bool> appendLog)
+    private FormKey GetOrMintWigArmorForArma(IArmorAddonGetter arma, ModSetting appearanceModSetting,
+        ModKey donorContextModKey, HashSet<string> modFolderPaths, bool mergeInDependencyRecords,
+        Result result, string npcIdentifier, Action<string, bool, bool> appendLog)
     {
         lock (_lock)
         {
@@ -259,7 +260,8 @@ public class WigForwarder
             armo.EditorID = "NPC2WigArmor_" +
                             (HeadPartWigConverter.SanitizeForEditorId(arma.EditorID) ??
                              arma.FormKey.ID.ToString("X8"));
-            armo.Armature.Add(arma.FormKey.ToLink<IArmorAddonGetter>());
+            armo.Armature.Add(MergedArmatureLink(arma, appearanceModSetting, donorContextModKey,
+                modFolderPaths, mergeInDependencyRecords, result, npcIdentifier, appendLog));
             armo.BodyTemplate = new BodyTemplate
             {
                 FirstPersonFlags = arma.BodyTemplate?.FirstPersonFlags ?? WigDetector.HairSlots,
@@ -276,6 +278,47 @@ public class WigForwarder
                 false, false);
             return armo.FormKey;
         }
+    }
+
+    /// <summary>
+    /// The Armature link for a minted wig ARMO, with the ArmorAddon merged into the output when it
+    /// lives in an appearance plugin that is not in the load order.
+    ///
+    /// <para>The minted ARMO is an output record, and the merge walker never recurses INTO output
+    /// records — it only follows links whose plugin is in the import set
+    /// (<c>PatcherExtensions.DuplicateFromOnlyReferencedGetters</c>). So nothing downstream can
+    /// reach this armature: it has to be merged here, at the point the link is created, or the
+    /// reference dangles and Mutagen refuses to write the plugin at the very end of the run.</para>
+    ///
+    /// <para>It USED to survive by accident, via the donor's WornArmor being traversed by
+    /// <c>CopyAppearanceData</c> — the same ArmorAddon reached through the skin. That traversal is
+    /// skipped whenever the target record already carries the donor's WornArmor, which is exactly
+    /// what a SkyPatcher surrogate does (it is a DeepCopyIn of the donor), so SkyPatcher mode got a
+    /// dangling reference while record mode did not.</para>
+    /// </summary>
+    private IFormLinkGetter<IArmorAddonGetter> MergedArmatureLink(IArmorAddonGetter arma,
+        ModSetting appearanceModSetting, ModKey donorContextModKey, HashSet<string> modFolderPaths,
+        bool mergeInDependencyRecords, Result result, string npcIdentifier,
+        Action<string, bool, bool> appendLog)
+    {
+        if (!mergeInDependencyRecords) return arma.FormKey.ToLink<IArmorAddonGetter>();
+
+        var link = new FormLink<IArmorAddonGetter>();
+        List<string> exceptions = new();
+        var merged = _recordHandler.DuplicateInOrAddFormLink(link, arma.ToLink(),
+            _environmentStateProvider.OutputMod, appearanceModSetting.CorrespondingModKeys,
+            donorContextModKey, appearanceModSetting.HandleInjectedRecords, modFolderPaths,
+            ref exceptions);
+        result.MergedRecords.AddRange(merged);
+
+        if (exceptions.Any())
+        {
+            appendLog($"      Wig handling ERROR for {npcIdentifier}: could not merge wig ArmorAddon " +
+                      $"{arma.FormKey}:" + Environment.NewLine + string.Join(Environment.NewLine, exceptions),
+                true, true);
+        }
+
+        return link.IsNull ? arma.FormKey.ToLink<IArmorAddonGetter>() : link;
     }
 
     /// <summary>DefaultRace [RACE:000019] — the RNAM vanilla clothing uses.</summary>
@@ -453,7 +496,9 @@ public class WigForwarder
                     continue;
                 }
 
-                FormKey mintedArmoKey = GetOrMintWigArmorForArma(arma, result, npcIdentifier, appendLog);
+                FormKey mintedArmoKey = GetOrMintWigArmorForArma(arma, appearanceModSetting,
+                    donorContextModKey, modFolderPaths, mergeInDependencyRecords, result,
+                    npcIdentifier, appendLog);
                 outfitAddPieces.Add((mintedArmoKey, false));
                 wnamRemovals.Add(arma.FormKey);
             }

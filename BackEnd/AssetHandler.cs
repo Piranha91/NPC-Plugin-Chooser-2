@@ -994,7 +994,22 @@ public class AssetHandler : OptionalUIModule
 
         if (!string.IsNullOrWhiteSpace(faceGenDecision.LogLine))
         {
-            RunLog("      " + faceGenDecision.LogLine, false, faceGenDecision.Row != FaceGenLadderRow.NifAndDds);
+            // Named, and verbose-only. The ladder's sentences say "this NPC", and the line that
+            // says WHICH one ("- Processing: ...") is itself verbose — so force-logging these left
+            // an unattributable sentence stranded between two batch headers with no NPC anywhere
+            // near it. Aborts are unaffected: they never reach here (the patcher returns before
+            // scheduling any assets) and stay forced, both individually and in the end-of-run
+            // skipped-NPC summary.
+            RunLog($"      {npcIdentifier}: {faceGenDecision.LogLine}");
+        }
+
+        // Always shown, and warning-coloured: the leading "WARNING:" is what RunLogClassifier
+        // reads to pick the colour (isError would mean "error"), and forceLog is what carries it
+        // past the verbose filter. This is the one FaceGen outcome short of an abort that the
+        // user has to do something about.
+        if (!string.IsNullOrWhiteSpace(faceGenDecision.TintWarning))
+        {
+            RunLog($"      WARNING: {faceGenDecision.TintWarning}", false, forceLog: true);
         }
 
         // When the chain stays inherited, a templated donor's face lands on the TERMINUS's path,

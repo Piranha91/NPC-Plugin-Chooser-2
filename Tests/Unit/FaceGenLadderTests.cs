@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.BackEnd;
+using NPC_Plugin_Chooser_2.View_Models;
 using Xunit;
 
 namespace NPC_Plugin_Chooser_2.Tests.Unit;
@@ -507,5 +508,80 @@ public class FaceGenLadderTests
 
         d.Row.Should().Be(FaceGenLadderRow.NifAndDds, "the terminus has both halves");
         d.LegacyAction.Should().Be("CopyNothing", "but the old code looked at the donor and found neither");
+    }
+
+    // ---- TintWarning -------------------------------------------------------------------------
+    //
+    // Carried apart from LogLine because it is the one non-abort outcome the user must act on:
+    // the run log force-logs it in the warning colour while LogLine stays verbose-only.
+
+    [Fact]
+    public void TintWarning_IsSet_WhenAMeshIsCopiedWithNoTintAnywhere()
+    {
+        // Mesh from the mod, and no tint from the mod, the origin, or the load order.
+        var d = FaceGenLadder.Classify(Inputs(
+            sourceDds: FaceGenAssetPresence.NotFound,
+            originDds: FaceGenAssetPresence.NotFound,
+            winnerDds: false));
+
+        d.Abort.Should().BeFalse();
+        d.NifChoice.Should().NotBe(FaceGenSourceChoice.None);
+        d.DdsChoice.Should().Be(FaceGenSourceChoice.None);
+        d.TintWarning.Should().NotBeNullOrWhiteSpace()
+            .And.Subject.Should().Contain("Test NPC (013BA5:Skyrim.esm)",
+                "the line is force-logged on its own, so it has to name the NPC itself");
+    }
+
+    [Fact]
+    public void TintWarning_IsSet_ForABorrowedWinnerMesh_WhoseOwnSentenceNeverMentionsTint()
+    {
+        // Row 5 falling through to another mod's mesh. Deriving the warning in Build (not per
+        // branch) is what covers this one — its LogLine says nothing about tint.
+        var d = FaceGenLadder.Classify(Inputs(
+            sourceNif: FaceGenAssetPresence.NotFound,
+            sourceDds: FaceGenAssetPresence.NotFound,
+            originNif: FaceGenAssetPresence.NotFound,
+            originDds: FaceGenAssetPresence.NotFound,
+            winnerNif: true,
+            winnerDds: false));
+
+        d.NifChoice.Should().BeOneOf(FaceGenSourceChoice.Winner, FaceGenSourceChoice.WinnerInPlace);
+        d.DdsChoice.Should().Be(FaceGenSourceChoice.None);
+        d.TintWarning.Should().NotBeNullOrWhiteSpace();
+        d.LogLine.Should().NotContain("discoloured",
+            "the consequence belongs to TintWarning; duplicating it would double-log it");
+    }
+
+    [Fact]
+    public void TintWarning_IsNotSet_ForALevelledTerminus()
+    {
+        // Also has no tint, but needs none: the game resolves the actor and draws its face at
+        // runtime. Warning here would fire on a large, perfectly healthy population.
+        var d = FaceGenLadder.Classify(Inputs(chain: FaceGenChainStatus.LeveledTerminus));
+
+        d.DdsChoice.Should().Be(FaceGenSourceChoice.None);
+        d.NifChoice.Should().Be(FaceGenSourceChoice.None, "nothing is copied at all");
+        d.TintWarning.Should().BeNull();
+    }
+
+    [Fact]
+    public void TintWarning_IsNotSet_WhenATintIsFound()
+    {
+        FaceGenLadder.Classify(Inputs()).TintWarning.Should().BeNull();
+    }
+
+    [Fact]
+    public void TintWarning_LeadsWithNothingThatWouldMisclassifyIt()
+    {
+        // The run log prefixes "WARNING: " and RunLogClassifier reads the first 64 chars for a
+        // marker; an "ERROR"/"FATAL" word in the text itself would outrank it and recolour the
+        // line red. Pinned because the wording is otherwise free to change.
+        var d = FaceGenLadder.Classify(Inputs(
+            sourceDds: FaceGenAssetPresence.NotFound,
+            originDds: FaceGenAssetPresence.NotFound,
+            winnerDds: false));
+
+        RunLogClassifier.Classify("      WARNING: " + d.TintWarning, RunLogSeverity.Info)
+            .Should().Be(RunLogSeverity.Warning);
     }
 }

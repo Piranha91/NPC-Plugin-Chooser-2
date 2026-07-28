@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using Autofac;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Binary.Parameters;
 using Mutagen.Bethesda.Skyrim;
 using Newtonsoft.Json;
 using NPC_Plugin_Chooser_2.Models;
@@ -73,6 +74,14 @@ public static class PatchVerifyRunner
         /// <summary>Ceiling on renders, since a large sample can mean hundreds. Anything beyond it
         /// is reported in the log rather than silently dropped.</summary>
         public int MaxMugshotRenders { get; set; } = 300;
+
+        /// <summary>
+        /// Rewrite the output plugin's Name on each <see cref="NpcFilter"/> NPC so a pile of
+        /// spawned specimens can be told apart on sight. Several specimens in a template group
+        /// legitimately share a display name ("Imperial Soldier"), which makes a screenshot
+        /// unattributable. Off unless a filter is set, since it only makes sense for a pinned set.
+        /// </summary>
+        public bool RenameSpecimensInOutput { get; set; } = true;
     }
 
     public static async Task<bool> RunAsync(IComponentContext container)
@@ -155,6 +164,11 @@ public static class PatchVerifyRunner
 
             var sample = Sample(decisions, config, log);
             log.AppendLine($"Sampled for in-game spawn: {sample.Count}");
+
+            if (config.RenameSpecimensInOutput && config.NpcFilter is { Count: > 0 })
+            {
+                RenameSpecimensInOutputPlugin(env, outDir, sample, log);
+            }
 
             if (config.GenerateMissingMugshots)
             {
@@ -266,6 +280,77 @@ public static class PatchVerifyRunner
         }
 
         return picked;
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Specimen labelling
+    // ----------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Renames the pinned specimens in the written output plugin so they are identifiable on sight
+    /// when spawned together. A template group routinely contains several NPCs sharing one display
+    /// name — "Imperial Soldier" three times over — and a screenshot of an unidentifiable face
+    /// proves nothing. The new name carries the spawn ordinal and the mod that was selected, which
+    /// is the fact the comparison is actually about.
+    ///
+    /// <para>Runs as a post-pass over the finished plugin rather than inside the patcher: this is a
+    /// verification affordance, not patch behaviour, and it must not alter what the patcher
+    /// produces for anyone else. Only the Name (FULL) field is touched.</para>
+    /// </summary>
+    private static void RenameSpecimensInOutputPlugin(
+        EnvironmentStateProvider env, string outDir, List<FaceGenLadderDecision> sample, StringBuilder log)
+    {
+        string pluginPath = Path.Combine(outDir, env.OutputPluginFileName);
+        if (!File.Exists(pluginPath))
+        {
+            log.AppendLine($"Rename: output plugin not found at {pluginPath}; skipped.");
+            return;
+        }
+
+        // Spawn order is the order the bats are written, so the ordinal here matches what the
+        // manifest and the console will show.
+        var labels = new Dictionary<FormKey, string>();
+        for (int i = 0; i < sample.Count; i++)
+        {
+            var inputs = sample[i].Inputs;
+            string mod = inputs.ModName.Length > 26 ? inputs.ModName[..26].TrimEnd() + "…" : inputs.ModName;
+            string role = inputs.ChainStatus == FaceGenChainStatus.Resolved ? "follows" : "own";
+            labels[inputs.TargetFormKey] = $"[{i + 1}] {role} «{mod}»";
+        }
+
+        try
+        {
+            var mod = SkyrimMod.CreateFromBinary(pluginPath, env.SkyrimVersion);
+            int renamed = 0;
+
+            foreach (var npc in mod.Npcs)
+            {
+                if (!labels.TryGetValue(npc.FormKey, out var label)) continue;
+                string original = npc.Name?.String ?? npc.EditorID ?? npc.FormKey.ToString();
+                npc.Name = $"{label} {original}";
+                log.AppendLine($"  renamed {npc.FormKey} -> \"{npc.Name}\"");
+                renamed++;
+            }
+
+            if (renamed == 0)
+            {
+                log.AppendLine("Rename: no specimen records present in the output plugin " +
+                               "(were they patched at all?); nothing written.");
+                return;
+            }
+
+            mod.WriteToBinary(pluginPath, new BinaryWriteParameters
+            {
+                MastersListContent = MastersListContentOption.Iterate,
+            });
+            log.AppendLine($"Rename: {renamed} specimen(s) relabelled in {env.OutputPluginFileName}.");
+        }
+        catch (Exception ex)
+        {
+            // Labelling is a convenience; a failure here must leave the patch output intact and
+            // usable rather than taking the run down.
+            log.AppendLine($"Rename: FAILED, output left as patched — {ex.Message}");
+        }
     }
 
     // ----------------------------------------------------------------------------------------
@@ -556,9 +641,16 @@ public static class PatchVerifyRunner
                     ? $"<img src=\"file:///{Esc(mug.Replace('\\', '/'))}\" alt=\"mugshot\">"
                     : "<i>none rendered</i>";
 
+                // TintWarning is carried separately from LogLine (it is force-logged and
+                // warning-coloured in the run log), so the report has to render it explicitly
+                // or a tintless mesh would read as an unqualified success here.
+                string tint = string.IsNullOrWhiteSpace(e.Decision.TintWarning)
+                    ? string.Empty
+                    : $"<br><span class=\"warn\">WARNING: {Esc(e.Decision.TintWarning)}</span>";
+
                 string verdict = e.Decision.Abort
                     ? $"<span class=\"abort\">SKIPPED</span><br>{Esc(e.Decision.AbortReason)}"
-                    : $"<span class=\"ok\">{Esc(e.Decision.PlannedAction)}</span><br>{Esc(e.Decision.LogLine)}";
+                    : $"<span class=\"ok\">{Esc(e.Decision.PlannedAction)}</span><br>{Esc(e.Decision.LogLine)}{tint}";
 
                 string idCell = e.RuntimeIdApproximate
                     ? $"<code>{e.RuntimeFormId}</code> <span class=\"warn\">(approx)</span>"
