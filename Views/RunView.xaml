@@ -55,6 +55,14 @@
                     VerticalAlignment="Center"
                     ToolTip="Generates a .txt batch file to spawn all NPCs from the selected group."/>
 
+            <CheckBox x:Name="PerformanceLoggingCheckBox"
+                      DockPanel.Dock="Left"
+                      Content="Performance Logging"
+                      IsChecked="{Binding IsPerformanceLoggingEnabled, Mode=TwoWay}"
+                      VerticalAlignment="Center"
+                      Margin="15,0,0,0"
+                      ToolTip="Log the per-batch performance report (total NPCs processed, total cycle time, average time per NPC) to the log below. Turn off to keep the log focused on what was patched."/>
+
             <CheckBox x:Name="VerboseModeCheckBox"
                       DockPanel.Dock="Left"
                       Content="Verbose Logging"

@@ -100,6 +100,23 @@ public class ModelsAndEnumsTests
     }
 
     [Fact]
+    public void Settings_LoggingDefaults()
+    {
+        var s = new Settings();
+
+        // Performance logging is the one logging channel that ships ON: the per-batch
+        // "PERFORMANCE REPORT for Group: [...]" block is ordinary run output that the Run tab's
+        // checkbox turns *off*, not opt-in diagnostics like the others.
+        s.LogPerformance.Should().BeTrue();
+
+        s.LogVerbose.Should().BeFalse();
+        s.LogActivity.Should().BeFalse();
+        s.LogStartup.Should().BeFalse();
+        s.LogRecordProvenance.Should().BeFalse();
+        s.LogAssetProvenance.Should().BeFalse();
+    }
+
+    [Fact]
     public void ModSetting_Defaults()
     {
         var m = new ModSetting();

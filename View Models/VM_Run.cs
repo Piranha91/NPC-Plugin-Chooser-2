@@ -63,7 +63,19 @@ public class VM_Run : ReactiveObject, IDisposable
     [Reactive] public string RunButtonText { get; private set; } = "Run Patch Generation";
     [Reactive] public double ProgressValue { get; private set; } = 0;
     [Reactive] public string ProgressText { get; private set; } = string.Empty;
-    [Reactive] public bool IsVerboseModeEnabled { get; set; } = false; // Default to non-verbose
+    /// <summary>
+    /// Whether routine narration reaches the log. Persisted as
+    /// <see cref="Settings.LogVerbose"/> (default off).
+    /// </summary>
+    [Reactive] public bool IsVerboseModeEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Gates the per-batch "PERFORMANCE REPORT for Group: [...]" blocks, and the phase timings +
+    /// detailed tracer report in the Validate Output log. Persisted as
+    /// <see cref="Settings.LogPerformance"/> (default on); the Patcher and OutputValidator read
+    /// the setting directly so they can skip generating those reports at all.
+    /// </summary>
+    [Reactive] public bool IsPerformanceLoggingEnabled { get; set; } = true;
 
     // --- New Properties for Timestamps ---
     [Reactive] private DateTime? ValidationStartTime { get; set; }
@@ -256,6 +268,20 @@ public class VM_Run : ReactiveObject, IDisposable
                     LogLines.Add(line);
                 }
             })
+            .DisposeWith(_disposables);
+
+        // Both log toggles mirror their persisted setting. Skip(1) so seeding the properties from
+        // the model does not immediately write them back.
+        IsPerformanceLoggingEnabled = _settings.LogPerformance;
+        this.WhenAnyValue(x => x.IsPerformanceLoggingEnabled)
+            .Skip(1)
+            .Subscribe(enabled => _settings.LogPerformance = enabled)
+            .DisposeWith(_disposables);
+
+        IsVerboseModeEnabled = _settings.LogVerbose;
+        this.WhenAnyValue(x => x.IsVerboseModeEnabled)
+            .Skip(1)
+            .Subscribe(enabled => _settings.LogVerbose = enabled)
             .DisposeWith(_disposables);
 
         // Update Available Groups when NpcGroupAssignments changes in settings

@@ -838,6 +838,16 @@ public class Settings
     // When on, a patch run writes AssetProvenance.log (why each output asset was copied + which
     // NPCs/mods pulled it in). Applied at runtime via AssetProvenanceDiag.SetEnabled.
     public bool LogAssetProvenance { get; set; } = false;
+    // When on, each patching batch emits its ContextualPerformanceTracer report ("PERFORMANCE
+    // REPORT for Group: [...]") to the Run tab log, and the Validate Output report includes its
+    // phase timings + detailed tracer report. Toggled by the Run tab's "Performance Logging"
+    // checkbox and read directly by the Patcher/OutputValidator, which skip generating the
+    // reports entirely when off.
+    public bool LogPerformance { get; set; } = true;
+    // When on, the Run tab logs routine per-NPC narration, not just errors and forced messages.
+    // Toggled by the Run tab's "Verbose Logging" checkbox; the gate itself lives in
+    // VM_Run.AppendLog, which reads the mirrored VM property rather than this field.
+    public bool LogVerbose { get; set; } = false;
     public bool FixGarbledText { get; set; } = true;
 
     // NPCs (by FormKey) for which the Validator and Patcher emit a full per-NPC

@@ -1799,8 +1799,11 @@ public class Patcher : OptionalUIModule
                         processedCount++;
                     }
 
-                    var perfReport = ContextualPerformanceTracer.GenerateReportForGroup(npcGroup.Key, false);
-                    AppendLog(perfReport, false, true);
+                    if (_settings.LogPerformance)
+                    {
+                        var perfReport = ContextualPerformanceTracer.GenerateReportForGroup(npcGroup.Key, false);
+                        AppendLog(perfReport, false, true);
+                    }
 
                     if (loadedPluginPaths.Any())
                     {

@@ -99,7 +99,7 @@ public class OutputValidator
         var linkCache = env.LinkCache;
         var listings = env.LoadOrder.ListedOrder.ToList();
         var dataFolder = env.DataFolderPath.Path;
-        log.AppendLine($"[perf] Untrimmed environment built in {swPhase.ElapsedMilliseconds} ms ({listings.Count} plugins).");
+        AppendPerfLine(log, $"[perf] Untrimmed environment built in {swPhase.ElapsedMilliseconds} ms ({listings.Count} plugins).");
         swPhase.Restart();
 
         // --- Deploy gate (user chose "require deploy first") ---
@@ -120,7 +120,7 @@ public class OutputValidator
         // --- SkyPatcher index (parse all npc configs once) ---
         progress?.Report((0, 0, "Scanning SkyPatcher configs..."));
         var skyIndex = BuildSkyPatcherIndex(skyPatcherNpcRoot, npc2IniPath, log);
-        log.AppendLine($"[perf] SkyPatcher index built in {swPhase.ElapsedMilliseconds} ms.");
+        AppendPerfLine(log, $"[perf] SkyPatcher index built in {swPhase.ElapsedMilliseconds} ms.");
         swPhase.Restart();
         if (skyIndex.UnevaluableBroadFilterLineCount > 0)
         {
@@ -188,8 +188,11 @@ public class OutputValidator
         result.NpcsChecked = total;
         progress?.Report((total, total, "Validation complete."));
         log.AppendLine($"Done. NPCs checked: {total}. Issues: {result.Issues.Count}.");
-        log.AppendLine($"[perf] Per-NPC validation phase: {swPhase.ElapsedMilliseconds} ms for {total} NPC(s).");
-        log.AppendLine(ContextualPerformanceTracer.GenerateDetailedReport("Validate Output"));
+        AppendPerfLine(log, $"[perf] Per-NPC validation phase: {swPhase.ElapsedMilliseconds} ms for {total} NPC(s).");
+        if (_settings.LogPerformance)
+        {
+            log.AppendLine(ContextualPerformanceTracer.GenerateDetailedReport("Validate Output"));
+        }
         WriteLog(log, result);
         return result;
     }
@@ -2469,6 +2472,17 @@ public class OutputValidator
     {
         try { return new FileInfo(path).Length; }
         catch { return -1; }
+    }
+
+    /// <summary>
+    /// Appends a phase-timing line to the validation log only when performance logging is on
+    /// (the Run tab's "Performance Logging" checkbox, <see cref="Settings.LogPerformance"/>).
+    /// The conditional "[perf] SLOW ..." lines are deliberately NOT routed through here — those
+    /// fire only on an anomaly and read as warnings rather than as routine perf reporting.
+    /// </summary>
+    private void AppendPerfLine(StringBuilder log, string message)
+    {
+        if (_settings.LogPerformance) log.AppendLine(message);
     }
 
     private static void WriteLog(StringBuilder log, ValidationRunResult result)
