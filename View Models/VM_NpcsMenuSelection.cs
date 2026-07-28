@@ -2,7 +2,9 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Reactive;
 using System.Reactive.Linq;
+using System.Windows;
 using System.Windows.Media;
 using DynamicData;
 using Microsoft.Build.Tasks.Deployment.ManifestUtilities;
@@ -197,6 +199,28 @@ public class VM_NpcsMenuSelection : ReactiveObject
         }
     }
 
+    // --- Context-menu "Copy" branch ---
+    // The FormID is only resolvable for NPCs whose plugin is in the load order
+    // (FormKeyToFormIDString returns "" otherwise), so that command's CanExecute
+    // tracks FormIdString and the menu item greys out when there's nothing to copy.
+    public ReactiveCommand<Unit, Unit> CopyFormIdCommand { get; }
+    public ReactiveCommand<Unit, Unit> CopyFormKeyCommand { get; }
+
+    private static void CopyToClipboard(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        try
+        {
+            Clipboard.SetText(text);
+        }
+        catch (Exception ex)
+        {
+            // The clipboard can be transiently locked by another process; a failed
+            // copy isn't worth interrupting the user over.
+            Debug.WriteLine($"Failed to copy \"{text}\" to the clipboard: {ex.Message}");
+        }
+    }
+
     // Alternative constructor for NPCs found *only* via mugshots
     public VM_NpcsMenuSelection(FormKey npcFormKey, EnvironmentStateProvider environmentStateProvider,
         VM_NpcSelectionBar parentMenu, Auxilliary aux, Settings settings)
@@ -227,6 +251,11 @@ public class VM_NpcsMenuSelection : ReactiveObject
         {
             FormIdString = _aux.FormKeyToFormIDString(NpcFormKey);
         }
+
+        CopyFormIdCommand = ReactiveCommand.Create(
+            () => CopyToClipboard(FormIdString),
+            this.WhenAnyValue(x => x.FormIdString).Select(s => !string.IsNullOrWhiteSpace(s)));
+        CopyFormKeyCommand = ReactiveCommand.Create(() => CopyToClipboard(NpcFormKeyString));
     }
 
     public void UpdateWithData(NpcDisplayData npcData)

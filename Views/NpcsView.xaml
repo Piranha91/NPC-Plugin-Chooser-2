@@ -597,6 +597,15 @@
                                                     </Style>
                                                 </MenuItem.ItemContainerStyle>
                                             </MenuItem>
+                                            <Separator/>
+                                            <MenuItem Header="Copy">
+                                                <MenuItem Header="FormID"
+                                                          Command="{Binding CopyFormIdCommand}"
+                                                          ToolTip="Copy this NPC's load-order FormID (e.g. 0501A67C) to the clipboard.&#10;Note: the leading digits are the plugin's load order index. For NPCs from any plugin other than Skyrim.esm, the FormID will change if you reorder, add, or remove plugins."/>
+                                                <MenuItem Header="FormKey"
+                                                          Command="{Binding CopyFormKeyCommand}"
+                                                          ToolTip="Copy this NPC's FormKey (e.g. 01A67C:Skyrim.esm) to the clipboard."/>
+                                            </MenuItem>
                                         </ContextMenu>
                                     </Border.ContextMenu>
                                      <Grid>
