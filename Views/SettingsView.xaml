@@ -429,32 +429,6 @@
                               Margin="0,5,0,0"
                               ToolTip="Generates a SkyPatcher .ini file for runtime patching instead of a traditional ESP. This is an advanced feature that may conflict with other runtime patchers."/>
 
-                    <!-- Templated NPCs: whether a Traits-templated NPC keeps showing its
-                         template's face or gets its own copy (Settings.TemplateHandlingMode).
-                         Applies to record and SkyPatcher output alike. -->
-                    <TextBlock Text="Templated NPCs:" Margin="0,10,0,2"/>
-                    <ComboBox ItemsSource="{Binding TemplateHandlingModes}"
-                              SelectedValuePath="Key" DisplayMemberPath="Value"
-                              SelectedValue="{Binding SelectedTemplateHandlingMode, Mode=TwoWay}"
-                              MinWidth="220" HorizontalAlignment="Left">
-                        <ComboBox.ToolTip>
-                            <ToolTip>
-                                <TextBlock TextWrapping="Wrap" Width="340">
-                                    Some NPCs copy their face from another NPC instead of having one of their own
-                                    (the NPC menu marks them with a Template icon).
-                                    <LineBreak/><LineBreak/>
-                                    Use the template's appearance (default): they keep showing the other NPC's face,
-                                    and any appearance you pick for them is ignored.
-                                    <LineBreak/><LineBreak/>
-                                    Give each NPC its own copy: your choice is applied to each of them individually,
-                                    so NPCs that share a template can look different. Adds one copy of the face files
-                                    per NPC. NPCs whose face the game picks at random from a levelled list keep
-                                    inheriting either way.
-                                </TextBlock>
-                            </ToolTip>
-                        </ComboBox.ToolTip>
-                    </ComboBox>
-
                     <CheckBox Content="Auto-ESLify If Possible"
                               IsChecked="{Binding AutoEslIfy, Mode=TwoWay}"
                               Margin="0,5,0,0"
@@ -487,6 +461,34 @@
                                      ToolTip="Maximum number of NPCs to place in a single split plugin."/>
                             <TextBlock Text="Max # NPCs" VerticalAlignment="Center" Margin="5,0,0,0"/>
                         </StackPanel>
+                    </StackPanel>
+
+                    <!-- Templated NPCs: whether a Traits-templated NPC keeps showing its
+                         template's face or gets its own copy (Settings.TemplateHandlingMode).
+                         Applies to record and SkyPatcher output alike. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="Templated NPCs:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox ItemsSource="{Binding TemplateHandlingModes}"
+                                  SelectedValuePath="Key" DisplayMemberPath="Value"
+                                  SelectedValue="{Binding SelectedTemplateHandlingMode, Mode=TwoWay}"
+                                  MinWidth="220" VerticalAlignment="Center">
+                            <ComboBox.ToolTip>
+                                <ToolTip>
+                                    <TextBlock TextWrapping="Wrap" Width="340">
+                                        Some NPCs copy their face from another NPC instead of having one of their own
+                                        (the NPC menu marks them with a Template icon).
+                                        <LineBreak/><LineBreak/>
+                                        Use the template's appearance (default): they keep showing the other NPC's face,
+                                        and any appearance you pick for them is ignored.
+                                        <LineBreak/><LineBreak/>
+                                        Give each NPC its own copy: your choice is applied to each of them individually,
+                                        so NPCs that share a template can look different. Adds one copy of the face files
+                                        per NPC. NPCs whose face the game picks at random from a levelled list keep
+                                        inheriting either way.
+                                    </TextBlock>
+                                </ToolTip>
+                            </ComboBox.ToolTip>
+                        </ComboBox>
                     </StackPanel>
 
                     <!-- Head Editing: wig/antler handling defaults + the manual antler
