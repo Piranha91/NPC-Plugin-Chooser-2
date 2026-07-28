@@ -236,7 +236,7 @@ public sealed class InternalMugshotGenerator
                 // in two phases (all loose, then all scoped BSA) per the
                 // 8-step contract. AdditionalScopes (1.2.0+) supersedes
                 // AdditionalDataFolders.
-                AdditionalScopes = _resolver.BuildResolutionScopes(modSetting),
+                AdditionalScopes = _resolver.BuildResolutionScopes(modSetting, npcFormKey),
                 Cancellation = token,
                 MissingMeshPathsOut = missingMeshPathsOut,
                 MissingTexturePathsOut = missingTexturePathsOut,

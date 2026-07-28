@@ -98,7 +98,12 @@ public class NpcMeshResolver
     /// vanilla scope so the chain still works for tiles that have no
     /// associated mod (renders behave like LinkCache-only resolution).
     /// </summary>
-    public IReadOnlyList<RenderScope> BuildResolutionScopes(ModSetting? modSetting)
+    /// <param name="npcFormKey">
+    /// Enables the origin scope below. Optional so existing callers keep the strict two-tier
+    /// chain; the mugshot path passes it because a mod may ship only part of an NPC's FaceGen and
+    /// leave the rest to the mod that originally added them.
+    /// </param>
+    public IReadOnlyList<RenderScope> BuildResolutionScopes(ModSetting? modSetting, FormKey? npcFormKey = null)
     {
         var scopes = new List<RenderScope>();
 
@@ -111,7 +116,29 @@ public class NpcMeshResolver
         foreach (var mk in _env.CreationClubPlugins) vanillaModKeyNames.Add(mk.FileName.String);
         scopes.Add(new RenderScope(_env.DataFolderPath.ToString(), vanillaModKeyNames));
 
-        // scopes[1..N] — active mod's folders, in CorrespondingFolderPaths
+        // scopes[1] — the mod that ORIGINALLY added this NPC, when it is not the selected one.
+        // Placed above vanilla but below the selection, so it fills gaps without ever outranking
+        // the user's choice. Without it the renderer draws a headless body for every NPC whose
+        // mod ships a face tint (or a record) but leaves the mesh to the original mod — the same
+        // class the FaceGen ladder sources from the origin. Note the archives may belong to a
+        // SIBLING plugin of the one the FaceGen path names, which is why this pairs the origin's
+        // whole CorrespondingModKeys list with its folders (Casival is filed under "3DNPC.esp"
+        // but stored in 3DNPC0.bsa, owned by 3DNPC0.esp).
+        if (npcFormKey.HasValue && modSetting != null)
+        {
+            var origin = FindOriginModSetting(npcFormKey.Value.ModKey, modSetting);
+            if (origin != null && origin.CorrespondingFolderPaths.Count > 0)
+            {
+                var originKeyNames = origin.CorrespondingModKeys.Select(mk => mk.FileName.String).ToList();
+                foreach (var folder in origin.CorrespondingFolderPaths)
+                {
+                    if (string.IsNullOrWhiteSpace(folder)) continue;
+                    scopes.Add(new RenderScope(folder, originKeyNames));
+                }
+            }
+        }
+
+        // scopes[2..N] — active mod's folders, in CorrespondingFolderPaths
         // order (so the last folder ends up as the LAST list entry, which
         // is the highest priority under last-to-first iteration). Each
         // folder pairs with the same CorrespondingModKeys list — the spec
@@ -290,13 +317,39 @@ public class NpcMeshResolver
             "' (" + modSetting.CorrespondingModKeys.Count + " plugin(s), " +
             modSetting.CorrespondingFolderPaths.Count + " folder(s)); target NPC=" + targetNpcFormKey);
 
+        var origin = FindOriginModSetting(targetNpcFormKey.ModKey, modSetting);
+
         return new NpcResolutionContext
         {
             PreferredModKeys = modSetting.CorrespondingModKeys,
             PreferredFolderPaths = modSetting.CorrespondingFolderPaths,
             FallBackFolderNames = modSetting.CorrespondingFolderPaths.ToHashSet(),
+            OriginModKeys = origin?.CorrespondingModKeys ?? (IReadOnlyList<ModKey>)Array.Empty<ModKey>(),
+            OriginFolderPaths = origin?.CorrespondingFolderPaths ?? (IReadOnlyList<string>)Array.Empty<string>(),
             DisambiguationModKey = disambiguation,
         };
+    }
+
+    /// <summary>
+    /// The mod entry owning the plugin an NPC is first defined in. Mirrors
+    /// <see cref="AssetHandler.FindOriginModSetting"/>; resolution is by
+    /// <see cref="ModSetting.CorrespondingModKeys"/> because a mod's assets routinely live in a
+    /// sibling plugin's archive (Interesting NPCs keeps Casival's FaceGen, filed under
+    /// "3DNPC.esp", inside 3DNPC0.bsa — owned by 3DNPC0.esp), and a ModSetting groups all of a
+    /// mod's plugins together. Returns null when the selected mod IS the origin, since it is
+    /// already the highest-priority scope.
+    /// </summary>
+    private ModSetting? FindOriginModSetting(ModKey originKey, ModSetting selected)
+    {
+        if (originKey.IsNull) return null;
+        if (selected.CorrespondingModKeys.Contains(originKey)) return null;
+
+        var candidates = _settings.ModSettings
+            .Where(ms => ms.CorrespondingModKeys.Contains(originKey))
+            .ToList();
+
+        if (candidates.Count == 0) return null;
+        return candidates.FirstOrDefault(ms => ms.CorrespondingFolderPaths.Count > 0) ?? candidates[0];
     }
 
     /// <summary>
@@ -352,6 +405,36 @@ public class NpcMeshResolver
                 }
             }
         }
+
+        // Phase 3: what the GAME itself would resolve.
+        //
+        // The scopes above only cover the selected mod and vanilla, but an appearance mod may
+        // legitimately ship a face tint without the mesh and let the mesh come from the mod that
+        // originally added the NPC — a whole class of mods works this way, and the FaceGen ladder
+        // now sources exactly that case. Answering "no" for those made this gate refuse to render
+        // precisely the NPCs the ladder exists to serve, even though the resolution AFTER the gate
+        // falls through to the game asset resolver and would have found the mesh.
+        //
+        // The question this gate actually means to ask (per its own remarks) is whether the NPC is
+        // genuinely FaceGen-less, so it ends by asking the engine's question: is there anything at
+        // this path in the live data folder, or in ANY indexed archive.
+        //
+        // Only the live data folder, deliberately. An earlier version also probed every indexed
+        // archive, on the theory that the loader would fall through to a broad lookup — it does
+        // not. FaceGen resolution uses TryLocateInScopedBsa exclusively, so a broad "yes" here
+        // promised something the loader could not deliver and the renderer drew a headless body
+        // instead of skipping cleanly. The gate must never answer more optimistically than the
+        // scopes above, which is why cross-mod reach was added to those scopes (see the origin
+        // entries in BuildDiagnosticScopes) rather than to this backstop.
+        try
+        {
+            if (File.Exists(Path.Combine(_env.DataFolderPath, facegenPath))) return true;
+        }
+        catch
+        {
+            // Malformed data-folder path — treat as absent.
+        }
+
         return false;
     }
 
@@ -1763,6 +1846,18 @@ public class NpcMeshResolver
         foreach (var mk in _env.BaseGamePlugins) vanillaModKeyNames.Add(mk.FileName.String);
         foreach (var mk in _env.CreationClubPlugins) vanillaModKeyNames.Add(mk.FileName.String);
         scopes.Add(new RenderScope(_env.DataFolderPath.ToString(), vanillaModKeyNames));
+
+        // Origin sits between vanilla and the selected mod: it must be reachable (a tint-only or
+        // record-only mod leaves the mesh here), but must never outrank the mod the user picked.
+        if (context != null && context.OriginFolderPaths.Count > 0)
+        {
+            var originKeyNames = context.OriginModKeys.Select(mk => mk.FileName.String).ToList();
+            foreach (var folder in context.OriginFolderPaths)
+            {
+                if (string.IsNullOrWhiteSpace(folder)) continue;
+                scopes.Add(new RenderScope(folder, originKeyNames));
+            }
+        }
 
         if (context != null && context.PreferredFolderPaths.Count > 0)
         {

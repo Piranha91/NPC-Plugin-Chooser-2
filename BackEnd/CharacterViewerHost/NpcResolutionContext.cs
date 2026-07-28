@@ -27,6 +27,20 @@ public sealed class NpcResolutionContext
     /// fall-back disk-discovery scope when the plugin isn't already cached.</summary>
     public HashSet<string> FallBackFolderNames { get; init; } = new();
 
+    /// <summary>
+    /// Plugins of the mod that ORIGINALLY added this NPC, consulted below the selected mod and
+    /// above vanilla. A mod may legitimately ship a face tint without the mesh (or a record
+    /// without either) and let the origin supply the rest — the FaceGen ladder sources exactly
+    /// that case — so without the origin in scope the renderer draws a headless body for a whole
+    /// class of otherwise healthy NPCs.
+    /// </summary>
+    public IReadOnlyList<ModKey> OriginModKeys { get; init; } = System.Array.Empty<ModKey>();
+
+    /// <summary>Data folders of the origin mod, paired with <see cref="OriginModKeys"/>. Kept
+    /// separate from <see cref="PreferredFolderPaths"/> so archive lookups stay folder-scoped to
+    /// the mod that actually owns them.</summary>
+    public IReadOnlyList<string> OriginFolderPaths { get; init; } = System.Array.Empty<string>();
+
     /// <summary>Set when <see cref="Models.ModSetting.NpcPluginDisambiguation"/>
     /// pins this NPC to a specific plugin within <see cref="PreferredModKeys"/>.
     /// Resolution tries this key first.</summary>
