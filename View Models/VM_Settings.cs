@@ -514,8 +514,12 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     public VM_SettingsSection SectionEasyNpcTransfer { get; }
     public VM_SettingsSection SectionLoadOrderImport { get; }
     public VM_SettingsSection SectionModImport { get; }
+    public VM_SettingsSection SectionRejectedNpcs { get; }
     public VM_SettingsSection SectionSpawnBatFile { get; }
     public VM_SettingsSection SectionLogging { get; }
+
+    // --- Rejected NPCs viewer (nested at the end of Mod Import Settings) ---
+    public VM_RejectedNpcs RejectedNpcs { get; } = new();
 
     private VM_SettingsSection MakeSection(string caption, bool defaultExpanded) =>
         new(caption, defaultExpanded, _model.SettingsViewExpandedSections);
@@ -596,8 +600,21 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         SectionEasyNpcTransfer = MakeSection("EasyNPC Transfer", defaultExpanded: false);
         SectionLoadOrderImport = MakeSection("Load Order Import Settings", defaultExpanded: false);
         SectionModImport = MakeSection("Mod Import Settings", defaultExpanded: false);
+        SectionRejectedNpcs = MakeSection("Rejected NPCs", defaultExpanded: false);
         SectionSpawnBatFile = MakeSection("Spawn Bat File Options", defaultExpanded: false);
         SectionLogging = MakeSection("Logging", defaultExpanded: false);
+
+        // The rejection logs are read only once the user opens the panel — the folder holds one
+        // file per mod and can run to tens of thousands of lines, which is not worth paying for
+        // at startup when nobody has asked to see it.
+        SectionRejectedNpcs.WhenAnyValue(x => x.IsExpanded)
+            .Where(isExpanded => isExpanded)
+            .Take(1)
+            .SelectMany(_ => Observable.FromAsync(() => RejectedNpcs.EnsureLoadedAsync()))
+            .Subscribe(
+                _ => { },
+                ex => Debug.WriteLine($"Rejected NPCs load failed: {ExceptionLogger.GetExceptionStack(ex)}"))
+            .DisposeWith(_disposables);
 
 
         _environmentStateProvider = environmentStateProvider;

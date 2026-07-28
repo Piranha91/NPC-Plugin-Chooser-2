@@ -57,6 +57,17 @@ namespace NPC_Plugin_Chooser_2.Views
             ViewModel?.RefreshMugshotGenerationModOptions();
         }
 
+        // TreeView.SelectedItem is read-only, so the Rejected NPCs detail pane is driven from
+        // the selection-changed event rather than a binding.
+        private void RejectedNpcsTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        {
+            var vm = ViewModel ?? DataContext as VM_Settings;
+            if (vm != null)
+            {
+                vm.RejectedNpcs.SelectedNode = e.NewValue as VM_RejectedNode;
+            }
+        }
+
         // Allows only integer values
         private void IntegerTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
         {
