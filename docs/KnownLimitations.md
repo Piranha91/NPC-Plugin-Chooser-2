@@ -11,55 +11,6 @@ Last verified: 2026-07-28.
 
 ---
 
-# Open defect — not deliberate, not yet fixed
-
-## Record mode + Inherit half-applies a Traits-templated NPC, and dark-faces its terminus
-
-**Measured in game 2026-07-28.** `PatchingMode = CreateAndPatch`, `UseSkyPatcherMode = false`,
-`TemplateHandlingMode = InheritFromTemplate`, specimen `006E5C:Dawnguard.esm`
-(DLC1VQ03VampireDriverDead), Traits-templated to `00887B:Dawnguard.esm` (Rogen), selected from High
-Poly NPC Overhaul.
-
-The FaceGen subject is always the Traits-chain terminus — `ComputeFaceGenDecisionAsync` derives
-`subjectFormKey` from `Auxilliary.TryResolveAppearanceTerminus` (`BackEnd/Patcher.cs:2825`) and both
-measures and copies at that record's paths. Under Inherit there is no flatten, so the patcher writes
-the *selected* NPC's record. The two halves land on different records:
-
-| | |
-|---|---|
-| selected NPC `006E5C`'s record patched | yes — but inert; the engine ignores a Traits-templated NPC's own appearance |
-| mod's FaceGen written to `dawnguard.esm\0000887b.nif` (the TERMINUS's path) | yes |
-| terminus `00887B`'s record patched | **no — absent from the output plugin** |
-
-So the terminus renders the mod's mesh over its own unpatched record:
-
-```
-mesh came from   000806 / 00092A / 000932 (High Poly Head), HighPoly_HairBald
-record resolves  HairMaleNord07, HumanBeard42, BrowsMaleHumanoid02, ...
-```
-
-Head parts and mesh disagree — dark face, on an NPC the user never selected.
-
-**SkyPatcher mode is already guarded**; record mode is not. The validator rejects this exact shape
-with *"SkyPatcher mode cannot redirect an inherited face. This selection will be skipped."*
-(`BackEnd/Validator.cs`), and that guard is mode-scoped.
-
-**Not reachable via Inventory-only templating.** The same run's two cultists (`034FC5`, `034FC3`)
-are Inventory-templated but not Traits-templated, so the engine renders their own faces, the FaceGen
-lands at their own paths, and they came out correct.
-
-**Workaround:** also select the terminus. Its record is then patched from the same mod and matches
-the mesh. (This differs from SkyPatcher mode, where selecting the terminus does *not* rescue an
-inheritor — see `reference_skypatcher_template_chain_resolution`.)
-
-*A fix has to decide:* whether Inherit mode should patch the **terminus** (record *and* FaceGen —
-the only record the engine reads, but it changes appearance for every NPC sharing that terminus,
-which is precisely what Inherit means), or should refuse to write the terminus's mesh unless the
-terminus's record is being patched too, or should simply extend the validator's existing rejection
-to record mode. The one thing it must not keep doing is writing half.
-
----
-
 # Deliberate limitations
 
 ## 1. Manual wig designations are scoped by a different NPC in the preview than in the patcher
@@ -123,7 +74,34 @@ expectation would most cheaply land — pure `Classify` inputs, no fixture I/O.
 
 ## Resolved
 
-The first four entries in this file were fixed on 2026-07-28. Kept here only as a pointer for
+**Record mode + Inherit half-applied a Traits-templated NPC and dark-faced its terminus** (measured
+in game 2026-07-28, fixed the same day). Specimen `006E5C:Dawnguard.esm`, Traits-templated to
+`00887B:Dawnguard.esm` (Rogen), selected from High Poly NPC Overhaul: the mod's FaceGen was written
+at the TERMINUS's path (where the engine reads it) while the record patched was the SELECTED NPC's,
+so a mod's mesh rendered against Rogen's unpatched vanilla head parts.
+
+The rule now enforced: **a FaceGen file may only be written to a FormKey's path by the pass that
+patches that FormKey's record.** `FaceGenLadder.KeepsInheritedFace` short-circuits an inheriting
+NPC to no source at all, and `AssetHandler`'s destination is always the record this pass writes
+(surrogate / face-swap target / the NPC's own — never the terminus's). Those NPCs are patched
+normally and keep showing their template's face, which is what `InheritFromTemplate` has always
+promised (the enum doc, the settings comment and the NPC menu's template tooltip all say so);
+`Patcher.ReportInheritedFaceNpcs` now names them at the end of the run and points at
+`GiveEachNpcOwnCopy`, distinguishing the case where the template has its own selection (the NPC does
+change, to the template's choice) from where it has none (it does not change at all). A screening
+rejection was considered and rejected: these selections are inert by design, not invalid, and the
+record-mode nuance that selecting the terminus DOES rescue an inheritor makes "cannot be applied"
+untrue here. The SkyPatcher rejection is unchanged.
+
+The `destinationOwnedByAnotherNpc` deferral went with it — nothing writes to another NPC's path any
+more, so there is no contention left to arbitrate. Covered by matrix specimen #9
+(`SpecimenRole.TemplatedOrphan`, a direct selection whose terminus has none) and #6's donor terminus
+(the same shape through an appearance swap); negative-controlled — reverting the fix fails that
+check in exactly the three inherit cells and nowhere else.
+
+---
+
+The first four entries below were fixed on 2026-07-28. Kept here only as a pointer for
 anyone who read the old version:
 
 1. **Include Outfit inert on Inventory-templated NPCs** — now reported. `Patcher` consults

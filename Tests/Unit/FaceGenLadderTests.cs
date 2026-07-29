@@ -361,15 +361,134 @@ public class FaceGenLadderTests
     [Fact]
     public void ResolvedChain_ClassifiesNormally_AtTheTerminus()
     {
+        // Flattened, because that is the only mode in which a resolved chain reaches the rows at
+        // all — see the inherited-face section below.
         var d = FaceGenLadder.Classify(Inputs(
             chain: FaceGenChainStatus.Resolved,
             subject: Terminus,
+            flatten: true,
             sourceNif: FaceGenAssetPresence.NotFound,
             originCompatible: true));
 
         d.Abort.Should().BeFalse();
         d.Row.Should().Be(FaceGenLadderRow.DdsOnlyWithRecord);
         d.Inputs.SubjectFormKey.Should().Be(Terminus);
+    }
+
+    // ---- Inherited faces (TemplateHandlingMode.InheritFromTemplate) ---------------------------
+    //
+    // The output record keeps inheriting, so the engine reads the TERMINUS's FaceGen path — a path
+    // whose record this pass does not patch. Writing there pairs the mod's mesh with the terminus's
+    // unpatched head parts, which is the dark-face bug, and lands it on an NPC the user never
+    // selected. So nothing is written and no source is chosen.
+    //
+    // This was the measured defect of 2026-07-28: record mode wrote the mesh at the terminus's path
+    // and the record at the selected NPC's, and the two halves never met.
+
+    [Fact]
+    public void Inherit_ResolvedChain_RecordMode_AsksForNoFaceGen()
+    {
+        // Row 1 inputs — the mod ships BOTH halves at the terminus's path, which is exactly the
+        // repro (High Poly NPC Overhaul ships the terminus's face). Availability is not the issue;
+        // there is nowhere this pass may put them.
+        var d = FaceGenLadder.Classify(Inputs(
+            chain: FaceGenChainStatus.Resolved,
+            subject: Terminus));
+
+        d.Abort.Should().BeFalse("the NPC is patched normally, it just keeps its template's face");
+        d.NifChoice.Should().Be(FaceGenSourceChoice.None);
+        d.DdsChoice.Should().Be(FaceGenSourceChoice.None);
+        d.InheritedFaceLeftToTemplate.Should().BeTrue();
+        d.LogLine.Should().Contain("template");
+    }
+
+    [Fact]
+    public void Inherit_ResolvedChain_FaceSwapMode_AlsoAsksForNoFaceGen()
+    {
+        // A shared/guest appearance whose DONOR inherits: the target's own record is written and
+        // then mirrors the donor's Traits state, so the engine reads the terminus's path there too.
+        var d = FaceGenLadder.Classify(Inputs(
+            mode: FaceGenDestinationMode.FaceSwap,
+            chain: FaceGenChainStatus.Resolved,
+            subject: Terminus));
+
+        d.NifChoice.Should().Be(FaceGenSourceChoice.None);
+        d.DdsChoice.Should().Be(FaceGenSourceChoice.None);
+    }
+
+    [Fact]
+    public void Inherit_ResolvedChain_DoesNotAbort_EvenWithNoMeshAnywhere()
+    {
+        // Row 3's abort exists to stop an incompatible mesh being written. Nothing is being
+        // written here, so aborting would refuse to patch an NPC over a file it was never going to
+        // produce — and the record half of the patch is still wanted.
+        var d = FaceGenLadder.Classify(Inputs(
+            chain: FaceGenChainStatus.Resolved,
+            subject: Terminus,
+            sourceNif: FaceGenAssetPresence.NotFound,
+            originNif: FaceGenAssetPresence.NotFound,
+            winnerNif: false,
+            originCompatible: false,
+            winnerCompatible: false));
+
+        d.Abort.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Inherit_ResolvedChain_RaisesNoTintWarning()
+    {
+        // TintWarning means "a mesh is being copied with no tint to go with it". No mesh is being
+        // copied, so warning about the tint would be noise on every templated NPC in the run.
+        FaceGenLadder.Classify(Inputs(
+                chain: FaceGenChainStatus.Resolved,
+                subject: Terminus,
+                sourceDds: FaceGenAssetPresence.NotFound,
+                originDds: FaceGenAssetPresence.NotFound,
+                winnerDds: false))
+            .TintWarning.Should().BeNull();
+    }
+
+    [Fact]
+    public void Inherit_SkyPatcherMode_ClassifiesNormally()
+    {
+        // SkyPatcher's destination is the surrogate's own path — a record this pass DOES write — so
+        // the rule does not apply. That combination is inert rather than wrong, and the validator
+        // rejects it per NPC upstream (Validator.CanSkyPatcherApplyAppearance).
+        var d = FaceGenLadder.Classify(Inputs(
+            mode: FaceGenDestinationMode.SkyPatcher,
+            chain: FaceGenChainStatus.Resolved,
+            subject: Terminus));
+
+        d.InheritedFaceLeftToTemplate.Should().BeFalse();
+        d.NifChoice.Should().Be(FaceGenSourceChoice.AppearanceMod);
+        d.DdsChoice.Should().Be(FaceGenSourceChoice.AppearanceMod);
+    }
+
+    [Theory]
+    // The predicate the ladder gates on and the end-of-run report reads, stated once. Only a chain
+    // that RESOLVES to a concrete NPC is affected: a levelled or unfollowable chain has no terminus
+    // record to collide with, and is handled by its own branch above.
+    [InlineData(FaceGenDestinationMode.Record, FaceGenChainStatus.Resolved, false, true)]
+    [InlineData(FaceGenDestinationMode.FaceSwap, FaceGenChainStatus.Resolved, false, true)]
+    [InlineData(FaceGenDestinationMode.Record, FaceGenChainStatus.Resolved, true, false)]
+    [InlineData(FaceGenDestinationMode.SkyPatcher, FaceGenChainStatus.Resolved, false, false)]
+    [InlineData(FaceGenDestinationMode.Record, FaceGenChainStatus.NotTemplated, false, false)]
+    [InlineData(FaceGenDestinationMode.Record, FaceGenChainStatus.LeveledTerminus, false, false)]
+    [InlineData(FaceGenDestinationMode.Record, FaceGenChainStatus.Unfollowable, false, false)]
+    public void KeepsInheritedFace_IsExactlyResolvedChainPlusNoFlattenPlusNotSkyPatcher(
+        FaceGenDestinationMode mode, FaceGenChainStatus chain, bool flatten, bool expected)
+    {
+        FaceGenLadder.KeepsInheritedFace(Inputs(mode: mode, chain: chain, flatten: flatten))
+            .Should().Be(expected);
+    }
+
+    [Fact]
+    public void Inherit_UntemplatedNpc_IsUnaffected()
+    {
+        var d = FaceGenLadder.Classify(Inputs());
+
+        d.InheritedFaceLeftToTemplate.Should().BeFalse();
+        d.NifChoice.Should().Be(FaceGenSourceChoice.AppearanceMod);
     }
 
     // ---- Template flattening (TemplateHandlingMode.GiveEachNpcOwnCopy) -----------------------
@@ -403,10 +522,11 @@ public class FaceGenLadderTests
     }
 
     [Fact]
-    public void Flatten_ResolvedChain_DoesNotChangeTheSourceOrTheRow()
+    public void Flatten_ResolvedChain_IsWhatMakesTheModsFaceReachTheNpc()
     {
-        // Same inputs with and without the flag: identical row and identical sources whenever the
-        // winner is not involved. Only the in-place shortcut may differ.
+        // The two template settings are NOT two spellings of the same classification. Inheriting,
+        // the destination belongs to another NPC's record and nothing may be written; flattening
+        // makes the destination this NPC's own path, and only then does the mod's face apply.
         var inherit = FaceGenLadder.Classify(Inputs(
             chain: FaceGenChainStatus.Resolved, subject: Terminus,
             sourceDds: FaceGenAssetPresence.NotFound));
@@ -414,9 +534,10 @@ public class FaceGenLadderTests
             chain: FaceGenChainStatus.Resolved, subject: Terminus,
             sourceDds: FaceGenAssetPresence.NotFound, flatten: true));
 
-        flattened.Row.Should().Be(inherit.Row);
-        flattened.NifChoice.Should().Be(inherit.NifChoice);
-        flattened.DdsChoice.Should().Be(inherit.DdsChoice, "the origin tint is a copy either way");
+        inherit.NifChoice.Should().Be(FaceGenSourceChoice.None);
+        flattened.Row.Should().Be(FaceGenLadderRow.NifOnly);
+        flattened.NifChoice.Should().Be(FaceGenSourceChoice.AppearanceMod);
+        flattened.DdsChoice.Should().Be(FaceGenSourceChoice.Origin, "the mod ships no tint of its own");
     }
 
     [Fact]
@@ -498,7 +619,10 @@ public class FaceGenLadderTests
         // The pre-ladder code derives its paths from the donor, so a templated donor resolves to
         // a path that by definition holds nothing — even when the terminus is fully supplied.
         // This divergence is the whole reason the report carries both columns.
-        var i = Inputs(chain: FaceGenChainStatus.Resolved, subject: Terminus) with
+        //
+        // Flattened so the row is reached at all: an inheriting NPC short-circuits before the rows
+        // (see the inherited-face section). LegacyAction is recorded on that branch too.
+        var i = Inputs(chain: FaceGenChainStatus.Resolved, subject: Terminus, flatten: true) with
         {
             LegacyDonorNif = FaceGenAssetPresence.NotFound,
             LegacyDonorDds = FaceGenAssetPresence.NotFound,

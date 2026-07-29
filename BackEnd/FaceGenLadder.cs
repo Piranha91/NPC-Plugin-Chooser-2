@@ -174,7 +174,14 @@ public sealed record FaceGenLadderDecision(
     /// says nothing about tint. Deliberately requires a mesh: an NPC taking its face from a
     /// levelled list also has no tint, and there it is the correct, silent outcome.</para>
     /// </summary>
-    string? TintWarning = null);
+    string? TintWarning = null)
+{
+    /// <summary>True when nothing was copied because the output record keeps inheriting — see
+    /// <see cref="FaceGenLadder.KeepsInheritedFace"/>. Named at the end of the run by
+    /// <c>Patcher.ReportInheritedFaceNpcs</c> rather than passing silently: the user picked a mod
+    /// for this NPC and it could not reach it.</summary>
+    public bool InheritedFaceLeftToTemplate => FaceGenLadder.KeepsInheritedFace(Inputs);
+}
 
 /// <summary>
 /// Decides where each half of an NPC's FaceGen should come from, and whether the NPC can be
@@ -206,6 +213,30 @@ public static class FaceGenLadder
         i.Mode == FaceGenDestinationMode.Record
         && !(i.FlattenTemplateChain && i.ChainStatus == FaceGenChainStatus.Resolved);
 
+    /// <summary>
+    /// Whether this NPC's face is left entirely to its template. The output record still inherits
+    /// (the Traits flag is kept), so the engine never opens this NPC's own FaceGen path — it opens
+    /// the TERMINUS's, which is another NPC's record that this pass does not patch.
+    ///
+    /// <para>The rule underneath: a FaceGen file may only be written to a FormKey's path by the
+    /// pass that patches that FormKey's record. The engine reconciles a mesh's baked shape names
+    /// against the head parts of the record sitting at that path, so writing a mod's mesh under a
+    /// record nobody patched pairs the two from different sources — the dark-face bug, landing on
+    /// an NPC the user never selected. An inheritor can satisfy that rule for no path at all, so it
+    /// writes nothing and keeps showing its template's face, which is what
+    /// <c>TemplateHandlingMode.InheritFromTemplate</c> promises. Where the terminus has an
+    /// appearance selection of its own, that NPC's own pass writes both halves and this one
+    /// inherits the result.</para>
+    ///
+    /// <para>SkyPatcher is excluded: its destination is the surrogate's own path, a record this
+    /// pass does write. That combination is inert rather than wrong, and
+    /// <c>Validator.CanSkyPatcherApplyAppearance</c> rejects it per NPC before it reaches here.</para>
+    /// </summary>
+    public static bool KeepsInheritedFace(FaceGenLadderInputs i) =>
+        i.Mode != FaceGenDestinationMode.SkyPatcher
+        && i.ChainStatus == FaceGenChainStatus.Resolved
+        && !i.FlattenTemplateChain;
+
     public static FaceGenLadderDecision Classify(FaceGenLadderInputs i)
     {
         string legacy = DescribeLegacy(i);
@@ -230,6 +261,21 @@ public static class FaceGenLadder
             return Abort(i, FaceGenLadderRow.Neither, legacy,
                 "this NPC inherits its appearance from another NPC, but that chain could not be " +
                 "followed (the template is missing, points at a levelled NPC, or loops)");
+        }
+
+        // The output record keeps inheriting, so there is no path this pass may write to — see
+        // KeepsInheritedFace. Sourcing is skipped entirely rather than resolved and then discarded:
+        // the rows below all answer "where does the mesh come from", and the answer cannot matter
+        // when there is nowhere to put it. Not an abort — the NPC is patched normally and simply
+        // keeps showing its template's face.
+        if (KeepsInheritedFace(i))
+        {
+            return Build(i, FaceGenLadderRow.Neither, legacy,
+                FaceGenSourceChoice.None, FaceGenSourceChoice.None, false,
+                $"{i.NpcIdentifier} takes its appearance from another NPC, and Templated NPCs is set to " +
+                $"use the template's appearance, so nothing from '{i.ModName}' can reach it. No face " +
+                $"files were copied: they would have to be written under the template's name, which " +
+                $"would break that NPC's face as well as leaving this one unchanged.");
         }
 
         bool hasNif = i.SourceNif != FaceGenAssetPresence.NotFound;

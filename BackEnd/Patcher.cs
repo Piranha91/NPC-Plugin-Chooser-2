@@ -67,6 +67,15 @@ public class Patcher : OptionalUIModule
     /// outfit does not, so this is reported rather than treated as a skip.</summary>
     private readonly List<(string Npc, string Mod, string Template)> _inertOutfitNpcs = new();
 
+    /// <summary>NPCs whose chosen appearance could not reach them this run because their output
+    /// record still inherits its face (see <see cref="FaceGenLadder.KeepsInheritedFace"/>). They are
+    /// patched normally and simply keep showing their template's face, so — like
+    /// <see cref="_inertOutfitNpcs"/> — this is a report and not a skip. <c>TemplateSelection</c> is
+    /// the mod chosen for the template itself, when it has one: those NPCs do change appearance, to
+    /// the template's choice, which is a materially different outcome worth saying.</summary>
+    private readonly List<(string Npc, string Mod, string Template, string? TemplateSelection)>
+        _inheritedFaceNpcs = new();
+
     private string _currentRunOutputAssetPath = string.Empty;
 
     // Plugin -> the mod entry that provides NPCs from it. Lets a resource-only plugin bundled
@@ -1016,6 +1025,16 @@ public class Patcher : OptionalUIModule
                                     return;
                                 }
 
+                                // Patched, but its face comes from its template and nothing this run
+                                // writes can change that. Collected here rather than in the asset
+                                // stage so it is recorded even for an NPC that never reaches it.
+                                if (faceGenDecision.InheritedFaceLeftToTemplate)
+                                {
+                                    _inheritedFaceNpcs.Add((npcIdentifier, selectedModDisplayName,
+                                        DescribeFormKey(faceGenDecision.Inputs.SubjectFormKey),
+                                        SelectionForNpc(faceGenDecision.Inputs.SubjectFormKey)));
+                                }
+
                                 if (isFaceGenOnly)
                                 {
                                     AppendLog("    Source: Original Plugin (FaceGen-only Mod)");
@@ -1926,6 +1945,7 @@ public class Patcher : OptionalUIModule
                     RecordProvenanceDiag.Flush();
 
                     ReportFaceGenSkippedNpcs();
+                    ReportInheritedFaceNpcs();
                     ReportInertOutfitNpcs();
 
                     AppendLog("All file operations finished.", false, true);
@@ -2974,6 +2994,63 @@ public class Patcher : OptionalUIModule
         }
 
         _inertOutfitNpcs.Clear();
+    }
+
+    /// <summary>
+    /// Names every NPC whose chosen appearance could not reach it because its face is inherited,
+    /// and says what to change. Like <see cref="ReportInertOutfitNpcs"/> these NPCs ARE patched —
+    /// this is the documented meaning of the inherit mode, not a failure — so it is a report rather
+    /// than a screening rejection; the pre-run dialog's "invalid selections that will be skipped"
+    /// would be wrong on both counts, and hundreds of entries there would train users past it.
+    ///
+    /// <para>The two outcomes are separated because they are not equally disappointing: an NPC
+    /// whose template was itself given a mod does change appearance — to the template's choice —
+    /// while one whose template was left alone does not change at all.</para>
+    /// </summary>
+    private void ReportInheritedFaceNpcs()
+    {
+        if (_inheritedFaceNpcs.Count == 0) return;
+
+        AppendLog($"\n{_inheritedFaceNpcs.Count} NPC(s) have no face of their own — they take it from " +
+                  "another NPC (the Traits template flag) — and 'Templated NPCs' is set to \"Use the " +
+                  "template's appearance\", so the mod picked for them could not be applied to them. Their " +
+                  "records were patched normally; only their faces still come from their templates. To give " +
+                  "them their own face instead, set 'Templated NPCs' to \"Give each NPC its own copy\" " +
+                  "(globally in Settings, or per mod in Mods):", false, true);
+
+        foreach (var (npc, mod, template, templateSelection) in _inheritedFaceNpcs)
+        {
+            AppendLog(
+                $"  - {npc} (you picked '{mod}'): takes its face from {template}" +
+                (templateSelection == null
+                    ? ", which has no appearance selected, so this NPC will look unchanged."
+                    : $", which is set to '{templateSelection}' — so that is the face this NPC will show."),
+                false, true);
+        }
+
+        _inheritedFaceNpcs.Clear();
+    }
+
+    /// <summary>The mod chosen for an NPC, or null when it has no selection. Read straight off the
+    /// user's selections rather than off the run's progress, because the terminus may be patched
+    /// after the NPC that inherits from it.</summary>
+    private string? SelectionForNpc(FormKey npcFormKey) =>
+        _settings.SelectedAppearanceMods != null
+        && _settings.SelectedAppearanceMods.TryGetValue(npcFormKey, out var selection)
+        && !string.IsNullOrEmpty(selection.ModName)
+            ? selection.ModName
+            : null;
+
+    /// <summary>A FormKey as something a user can find in xEdit: the record's own log string when it
+    /// resolves, the raw key when it does not. <see cref="Auxilliary.GetLogString"/> appends " | "
+    /// after the EditorID of a record with no Name, so it is trimmed — otherwise the line ends on a
+    /// dangling separator.</summary>
+    private string DescribeFormKey(FormKey formKey)
+    {
+        var linkCache = _environmentStateProvider.LinkCache;
+        return linkCache != null && linkCache.TryResolve<INpcGetter>(formKey, out var npc)
+            ? Auxilliary.GetLogString(npc, _settings.LocalizationLanguage).TrimEnd(' ', '|')
+            : formKey.ToString();
     }
 
     /// <summary>The record whose appearance gets flattened onto the output, or null whenever no

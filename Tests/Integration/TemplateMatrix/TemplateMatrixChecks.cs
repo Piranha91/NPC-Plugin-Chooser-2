@@ -26,6 +26,7 @@ internal static class TemplateMatrixChecks
             EvaluatePresence(fx, cell, checks);
             EvaluateLadder(fx, cell, checks);
             EvaluateFaceGen(cell, checks);
+            EvaluateOrphanTerminus(fx, cell, checks);
             EvaluateRecords(cell, checks);
             if (cell.Cell.UseSkyPatcher) EvaluateSkyPatcher(cell, checks);
         }
@@ -47,7 +48,8 @@ internal static class TemplateMatrixChecks
     private static bool IsScreenedOutAsTemplated(TemplateMatrixCell cell, string role) =>
         cell.UseSkyPatcher &&
         cell.TemplateMode == TemplateHandlingMode.InheritFromTemplate &&
-        role is SpecimenRole.TemplatedA or SpecimenRole.TemplatedB or SpecimenRole.TemplatedShared;
+        role is SpecimenRole.TemplatedA or SpecimenRole.TemplatedB or SpecimenRole.TemplatedShared
+             or SpecimenRole.TemplatedOrphan;
 
     // ------------------------------------------------------------------ presence
 
@@ -119,6 +121,7 @@ internal static class TemplateMatrixChecks
             // face to copy and nothing to abort over.
             (SpecimenRole.TemplatedLeveled, FaceGenChainStatus.LeveledTerminus, SpecimenRole.TemplatedLeveled, false),
             (SpecimenRole.TemplatedUnfollowable, FaceGenChainStatus.Unfollowable, SpecimenRole.TemplatedUnfollowable, true),
+            (SpecimenRole.TemplatedOrphan, FaceGenChainStatus.Resolved, SpecimenRole.OrphanTerminus, false),
         };
 
         bool flattenExpected = cell.Cell.TemplateMode == TemplateHandlingMode.GiveEachNpcOwnCopy;
@@ -222,6 +225,60 @@ internal static class TemplateMatrixChecks
             $"#5's path holds {terminus.OwnFaceGenSource ?? "nothing"}.");
     }
 
+    // ------------------------------------------------------------------ #9: the unpatched terminus
+
+    /// <summary>
+    /// The 2026-07-28 defect, pinned. #9 inherits from a terminus that has no selection of its own,
+    /// so nothing in the run patches that record — and a face written at its path would therefore be
+    /// judged against an unpatched record, dark-facing an NPC the user never selected. The two halves
+    /// are asserted together because either one alone is unremarkable: a record can legitimately be
+    /// absent, and a path can legitimately be empty. It is the PAIRING of a written mesh with an
+    /// absent record that is the bug, and it must be impossible in every cell.
+    ///
+    /// <para>Under own-copy the same face reaches #9 legitimately — at #9's OWN path, alongside #9's
+    /// own flattened record — which is the outcome the inherit mode's report points users at.</para>
+    /// </summary>
+    private static void EvaluateOrphanTerminus(TemplateFixture fx, CellResult cell, List<MatrixCheck> checks)
+    {
+        // #9's terminus (a direct selection, as in the in-game repro) and #6's donor terminus (the
+        // same shape reached through an appearance swap). Mod X ships a face for both and edits
+        // neither's record.
+        foreach (var role in new[] { SpecimenRole.OrphanTerminus, SpecimenRole.TemplatedSharedDonorTerminus })
+        {
+            var (meshRel, texRel) = Auxilliary.GetFaceGenSubPathStrings(fx.Npc(role), regularized: true);
+
+            var written = new[] { meshRel, texRel }
+                .Where(rel => cell.FaceGenFiles.ContainsKey(Normalize(rel)))
+                .ToList();
+            bool recordInOutput = cell.OutputNpcEditorIds.Contains(fx.EditorId(role));
+
+            Add(checks, FaceGen, cell, $"{role} (unselected terminus) keeps its own face",
+                written.Count == 0 && !recordInOutput,
+                written.Count == 0
+                    ? $"nothing was written at its FaceGen path (record in output: {recordInOutput})."
+                    : $"WROTE {string.Join(", ", written)} while its record is " +
+                      (recordInOutput ? "in the output" : "ABSENT from the output") +
+                      " — a mod's mesh judged against an unpatched record is the dark-face bug.");
+        }
+
+        var orphan = cell[SpecimenRole.TemplatedOrphan];
+        if (cell.Cell.TemplateMode == TemplateHandlingMode.GiveEachNpcOwnCopy)
+        {
+            Add(checks, FaceGen, cell, "#9 owns the terminus's face under own-copy",
+                orphan.OwnFaceGenSource?.StartsWith(TemplateFixtureBuilder.ModXName, StringComparison.Ordinal) == true,
+                $"#9's own path holds {orphan.OwnFaceGenSource ?? "nothing"} — flattening is what lets the " +
+                "selection reach it without touching the terminus.");
+        }
+        else
+        {
+            Add(checks, FaceGen, cell, "#9 gets no face of its own under inherit",
+                orphan.OwnFaceGenHash == null,
+                $"#9's own path holds {Describe(orphan)}. While it inherits, the engine never opens it.");
+        }
+    }
+
+    private static string Normalize(string relPath) => relPath.Replace('/', '\\').TrimStart('\\');
+
     // ------------------------------------------------------------------ output record (§3a)
 
     private static void EvaluateRecords(CellResult cell, List<MatrixCheck> checks)
@@ -256,6 +313,23 @@ internal static class TemplateMatrixChecks
                     o.TraitsFlag == true && o.TemplateTarget != null,
                     $"Traits kept and TPLT set (traits={o.TraitsFlag}, tplt={o.TemplateTarget ?? "CLEARED"}).");
             }
+        }
+
+        // #9 flattens from a terminus no appearance mod overrides, so the record it ends up with must
+        // carry the BASE game's head part — not Mod X's, which is what the mod put on #9's own
+        // (inert) record. That is the same "record and mesh must come from one place" property the
+        // FaceGen assertions make on disk, read off the plugin instead.
+        var orphan = cell[SpecimenRole.TemplatedOrphan];
+        if (orphan.RecordPresent)
+        {
+            Add(checks, Record, cell, SpecimenRole.TemplatedOrphan + (ownCopy ? " is flattened" : " still inherits"),
+                ownCopy
+                    ? orphan.TraitsFlag == false && orphan.TemplateTarget != null
+                      && orphan.HeadPartEditorIds.SequenceEqual(new[] { TemplateFixtureBuilder.HeadPartBase })
+                    : orphan.TraitsFlag == true && orphan.TemplateTarget != null,
+                $"traits={orphan.TraitsFlag}, tplt={orphan.TemplateTarget ?? "CLEARED"}, " +
+                $"headParts=[{string.Join(",", orphan.HeadPartEditorIds)}]" +
+                (ownCopy ? $" — must be the terminus's ({TemplateFixtureBuilder.HeadPartBase})." : "."));
         }
 
         // The carve-out records must not be flattened whatever the setting says.

@@ -17,6 +17,11 @@ internal static class TemplateMatrixSettingsBuilder
     /// <para>#3 and #4 share a terminus but are given DIFFERENT mods; that pairing is what makes the
     /// decisive per-NPC-independence assertion possible, and #5 (the terminus) gets a third mod so
     /// neither of them can be mistaken for it.</para>
+    ///
+    /// <para>#9's terminus is deliberately NOT here. Every other templated specimen inherits from a
+    /// terminus that has its own selection, so the terminus's own pass writes its record and its
+    /// mesh together; #9 is the case where nothing patches the terminus at all, and the run must
+    /// therefore write nothing at its path.</para>
     /// </summary>
     public static readonly (string TargetRole, string Mod, string DonorRole)[] Selections =
     {
@@ -28,6 +33,7 @@ internal static class TemplateMatrixSettingsBuilder
         (SpecimenRole.TemplatedShared,       TemplateFixtureBuilder.ModXName, SpecimenRole.TemplatedSharedDonor),
         (SpecimenRole.TemplatedLeveled,      TemplateFixtureBuilder.ModXName, SpecimenRole.TemplatedLeveled),
         (SpecimenRole.TemplatedUnfollowable, TemplateFixtureBuilder.ModXName, SpecimenRole.TemplatedUnfollowable),
+        (SpecimenRole.TemplatedOrphan,       TemplateFixtureBuilder.ModXName, SpecimenRole.TemplatedOrphan),
     };
 
     /// <summary>The eight specimen roles, in the order the report should present them.</summary>

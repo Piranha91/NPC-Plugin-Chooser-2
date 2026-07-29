@@ -958,26 +958,19 @@ public class AssetHandler : OptionalUIModule
             _skyPatcherInterface.TryGetSurrogateFormKey(targetNpcFormKey, out surrogateNpcFormKey);
         bool isFaceSwap = !targetNpcFormKey.Equals(appearanceNpcRecord.FormKey);
 
-        // Whether the template chain is being flattened for this NPC: the user opted into own-copy
-        // template handling and the chain resolved, so the output record owns the terminus's
-        // appearance (Traits cleared) and the engine reads THIS NPC's own FaceGen path. Captured on
-        // the decision at classification time so the record and asset stages cannot disagree.
-        bool flattenTemplateChain =
-            faceGenDecision.Inputs.FlattenTemplateChain
-            && faceGenDecision.Inputs.ChainStatus == FaceGenChainStatus.Resolved;
-
-        // Which FormKey's FaceGen paths the game will actually read for this NPC:
-        //  - SkyPatcher: the surrogate. Its record either owns its face (flattened) or inherits,
-        //    in which case the engine reads the terminus's path — but the surrogate's own path is
-        //    still the only destination this pass may write to.
-        //  - Otherwise, if the output record INHERITS (donor was templated, kept inherited, and
-        //    SyncTemplateInheritance mirrors that onto the output), the engine reads the terminus's
-        //    path and anything written under this NPC's own FormID is inert.
-        //  - Otherwise (untemplated, or flattened) the output record's own path.
+        // Which FormKey's FaceGen paths this pass may write to — always the record it is itself
+        // writing: the surrogate in SkyPatcher mode, the target on a face swap, otherwise the NPC's
+        // own. Never another NPC's, even when the engine would read that one instead. A mesh is
+        // reconciled against the head parts of whatever record sits at its path, so writing under a
+        // record this pass does not patch pairs a mod's mesh with someone else's unpatched record —
+        // the dark-face bug, on an NPC nobody selected.
+        //
+        // An output record that still inherits therefore has no destination at all. The ladder
+        // reaches the same conclusion from the same inputs and chooses no source
+        // (FaceGenLadder.KeepsInheritedFace), so both halves below are no-ops for those NPCs and
+        // the run reports them at the end.
         FormKey destinationFormKey =
             useSkyPatcher ? surrogateNpcFormKey
-            : faceGenDecision.Inputs.ChainStatus == FaceGenChainStatus.Resolved && !flattenTemplateChain
-                ? faceGenDecision.Inputs.SubjectFormKey
             : isFaceSwap ? targetNpcFormKey
             : appearanceNpcRecord.FormKey;
 
@@ -1012,30 +1005,14 @@ public class AssetHandler : OptionalUIModule
             RunLog($"      WARNING: {faceGenDecision.TintWarning}", false, forceLog: true);
         }
 
-        // When the chain stays inherited, a templated donor's face lands on the TERMINUS's path,
-        // which every NPC inheriting from that terminus shares. If the terminus has its own
-        // appearance selection, its own pass owns that path — writing here would race it and could
-        // stamp this NPC's choice onto the other. Flattening dissolves the contention (the
-        // destination above is this NPC's own path), so the deferral must not fire there — it
-        // would silently skip exactly the copy the own-copy mode exists to make.
-        bool destinationOwnedByAnotherNpc =
-            !useSkyPatcher
-            && !flattenTemplateChain
-            && faceGenDecision.Inputs.ChainStatus == FaceGenChainStatus.Resolved
-            && SubjectHasItsOwnSelection(faceGenDecision.Inputs.SubjectFormKey, appearanceModSetting.DisplayName);
-
-        if (destinationOwnedByAnotherNpc)
-        {
-            RunLog($"      Note: {npcIdentifier} inherits its face from another NPC that has its own " +
-                   $"appearance selection, so that NPC's choice is used and nothing was copied here.", false, true);
-        }
-        else
-        {
-            ScheduleFaceGenHalf(faceGenDecision.NifChoice, subjectMeshRelPath, destMeshRelPath,
-                appearanceModSetting, outputBasePath, faceTexRelativePath, faceGenCtx, npcIdentifier);
-            ScheduleFaceGenHalf(faceGenDecision.DdsChoice, subjectTexRelPath, destTexRelPath,
-                appearanceModSetting, outputBasePath, faceTexRelativePath, faceGenCtx, npcIdentifier);
-        }
+        // Both are no-ops when the ladder chose no source, which is how an inheriting NPC copies
+        // nothing. The deferral that used to sit here — "skip if the terminus has its own
+        // selection, because its pass owns that shared path" — is gone: nothing writes to another
+        // NPC's path any more, so there is no contention left to arbitrate.
+        ScheduleFaceGenHalf(faceGenDecision.NifChoice, subjectMeshRelPath, destMeshRelPath,
+            appearanceModSetting, outputBasePath, faceTexRelativePath, faceGenCtx, npcIdentifier);
+        ScheduleFaceGenHalf(faceGenDecision.DdsChoice, subjectTexRelPath, destTexRelPath,
+            appearanceModSetting, outputBasePath, faceTexRelativePath, faceGenCtx, npcIdentifier);
 
         // 2. Non-FaceGen Assets (Only if CopyExtraAssets is true)
         // When the AssetProvenance diag is on, assetProv accumulates path -> referencing-record so the
@@ -1132,20 +1109,6 @@ public class AssetHandler : OptionalUIModule
     {
         var segments = faceGenRelPath.Replace('/', '\\').Split('\\', StringSplitOptions.RemoveEmptyEntries);
         return segments.Length >= 2 ? ModKey.FromFileName(segments[^2]) : ModKey.Null;
-    }
-
-    /// <summary>
-    /// True when the NPC whose FaceGen path we are about to write has its own appearance selection
-    /// under a DIFFERENT mod. Its own pass owns that path; a template follower writing there would
-    /// race it, and the loser's choice would silently become the winner's face.
-    /// </summary>
-    private bool SubjectHasItsOwnSelection(FormKey subjectFormKey, string thisModDisplayName)
-    {
-        if (_settings.SelectedAppearanceMods == null) return false;
-        if (!_settings.SelectedAppearanceMods.TryGetValue(subjectFormKey, out var selection)) return false;
-        if (string.IsNullOrEmpty(selection.ModName)) return false;
-
-        return !string.Equals(selection.ModName, thisModDisplayName, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

@@ -7,7 +7,7 @@ using NPC_Plugin_Chooser_2.BackEnd;
 namespace NPC_Plugin_Chooser_2.Tests.Integration.TemplateMatrix;
 
 /// <summary>
-/// The eight specimen NPCs of the templated-NPC matrix (plus the supporting records they need),
+/// The nine specimen NPCs of the templated-NPC matrix (plus the supporting records they need),
 /// authored synthetically so the awkward shapes — two NPCs sharing one terminus, a levelled
 /// terminus, a template cycle — exist on demand instead of by luck of a real load order.
 /// Roles are referenced by these constants throughout the suite.
@@ -49,6 +49,17 @@ internal static class SpecimenRole
 
     /// <summary>#8's cycle partner (templates back to #8).</summary>
     public const string UnfollowableCyclePartner = "S8_CyclePartner";
+
+    /// <summary>#9 Templated-Orphan — Traits-templated, selected to Mod X directly (not a swap),
+    /// and its terminus has NO selection of its own. The in-game defect of 2026-07-28: every other
+    /// templated specimen here inherits from #5, which IS selected, so its own pass wrote the
+    /// terminus's record and mesh together and the half-write could not show.</summary>
+    public const string TemplatedOrphan = "S9_TemplatedOrphan";
+
+    /// <summary>#9's terminus. Deliberately absent from the selection list and from every appearance
+    /// mod's overrides: nothing in the run patches this record, so nothing may write to its
+    /// FaceGen path either.</summary>
+    public const string OrphanTerminus = "S9_OrphanTerminus";
 }
 
 /// <summary>One synthetic appearance mod: a plugin plus the mod folder holding its FaceGen.</summary>
@@ -134,11 +145,14 @@ internal static class TemplateFixtureBuilder
     public static readonly IReadOnlyDictionary<string, string[]> FaceGenSubjectsByMod =
         new Dictionary<string, string[]>
         {
-            // Mod X supplies: its own two plain specimens, the terminus (for #3), and #6's donor terminus.
+            // Mod X supplies: its own two plain specimens, the terminus (for #3), #6's donor terminus,
+            // and #9's terminus. The last two are the shape that matters — Mod X ships a face for a
+            // record nothing in the run patches, exactly as High Poly NPC Overhaul ships Rogen's.
             [ModXName] = new[]
             {
                 SpecimenRole.PlainSelf, SpecimenRole.PlainSharedDonor,
                 SpecimenRole.Terminus, SpecimenRole.TemplatedSharedDonorTerminus,
+                SpecimenRole.OrphanTerminus,
             },
             // Mod Y supplies the terminus only — #4 is its only specimen, and #4's subject IS the terminus.
             [ModYName] = new[] { SpecimenRole.Terminus },
@@ -188,6 +202,7 @@ internal static class TemplateFixtureBuilder
         Plain(SpecimenRole.PlainSharedDonor);
         var terminus = Plain(SpecimenRole.Terminus);
         var donorTerminus = Plain(SpecimenRole.TemplatedSharedDonorTerminus);
+        var orphanTerminus = Plain(SpecimenRole.OrphanTerminus);
 
         // Templated specimens. Traits + a template link is what makes a chain (Auxilliary.IsValidTemplatedNpc).
         void Templated(string role, FormKey templateTarget)
@@ -202,6 +217,7 @@ internal static class TemplateFixtureBuilder
         Templated(SpecimenRole.TemplatedSharedDonor, donorTerminus.FormKey);
         Templated(SpecimenRole.TemplatedShared, terminus.FormKey);
         Templated(SpecimenRole.TemplatedLeveled, leveled.FormKey);
+        Templated(SpecimenRole.TemplatedOrphan, orphanTerminus.FormKey);
 
         // #8: a real two-NPC cycle rather than a dangling link, so the Unfollowable verdict comes from
         // the cycle branch of TryResolveAppearanceTerminus and cannot be confused with a missing master.
@@ -223,6 +239,9 @@ internal static class TemplateFixtureBuilder
                 SpecimenRole.PlainSelf, SpecimenRole.PlainShared, SpecimenRole.PlainSharedDonor,
                 SpecimenRole.TemplatedA, SpecimenRole.TemplatedShared, SpecimenRole.TemplatedSharedDonor,
                 SpecimenRole.TemplatedLeveled, SpecimenRole.TemplatedUnfollowable,
+                // #9 but NOT its terminus: the mod edits the inheritor and ships the terminus's face
+                // without editing the terminus's record, which is what makes the pairing observable.
+                SpecimenRole.TemplatedOrphan,
             },
             height: ModXHeight, weight: ModXWeight, headPart: hpX.FormKey, female: false);
 

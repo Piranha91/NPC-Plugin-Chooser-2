@@ -92,6 +92,11 @@ internal sealed class CellResult
     /// show a file that landed somewhere unexpected instead of only reporting the ones asked about.</summary>
     public required IReadOnlyDictionary<string, string> FaceGenFiles { get; init; }
 
+    /// <summary>EditorIDs of every NPC record in the output plugin. Lets an assertion ask about a
+    /// record that is not a specimen — specifically #9's terminus, which must stay out of the output
+    /// while its FaceGen path stays empty. The two together are the defect; either alone is not.</summary>
+    public required IReadOnlySet<string> OutputNpcEditorIds { get; init; }
+
     public SpecimenObservation this[string role] => ByRole[role];
 }
 
@@ -140,6 +145,7 @@ internal static class TemplateMatrixRunner
         }
 
         var byRole = new Dictionary<string, SpecimenObservation>(StringComparer.Ordinal);
+        var outputNpcEditorIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // The overlay holds a memory map for the duration of this block only.
         using (var outHandle = File.Exists(outputPluginPath)
@@ -148,6 +154,11 @@ internal static class TemplateMatrixRunner
         {
             ISkyrimModGetter? outMod = outHandle;
             var npcsByFormKey = outMod?.Npcs.ToDictionary(n => n.FormKey) ?? new Dictionary<FormKey, INpcGetter>();
+
+            foreach (var npc in npcsByFormKey.Values)
+            {
+                if (!string.IsNullOrEmpty(npc.EditorID)) outputNpcEditorIds.Add(npc.EditorID!);
+            }
 
             foreach (var role in TemplateMatrixSettingsBuilder.SpecimenRoles)
             {
@@ -229,6 +240,7 @@ internal static class TemplateMatrixRunner
             InvalidSelections = run.InvalidSelections,
             ByRole = byRole,
             FaceGenFiles = faceGen,
+            OutputNpcEditorIds = outputNpcEditorIds,
         };
     }
 
