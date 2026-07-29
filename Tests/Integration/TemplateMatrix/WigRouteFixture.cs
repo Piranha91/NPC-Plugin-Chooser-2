@@ -101,6 +101,25 @@ internal sealed class WigRouteFixture : IDisposable
         return npc;
     }
 
+    /// <summary>
+    /// Adds an NPC to <see cref="BaseMod"/> that inherits <paramref name="flag"/> from
+    /// <paramref name="template"/>. Mirrors <c>TemplateFixtureBuilder</c>'s templated specimens.
+    /// The two flags behave completely differently and the wig tests need both:
+    /// <b>Traits</b> makes the appearance (head parts, WornArmor, race, sex, weight) come from the
+    /// template — which <c>GiveEachNpcOwnCopy</c> then flattens onto the NPC's own record — while
+    /// <b>Inventory</b> makes the worn outfit come from the template, which nothing flattens.
+    /// </summary>
+    public Npc AddTemplatedNpc(string editorId, INpcGetter template, NpcConfiguration.TemplateFlag flag)
+    {
+        var npc = BaseMod.Npcs.AddNew();
+        npc.EditorID = editorId;
+        npc.Name = editorId;
+        npc.Race.SetTo(NordRace);
+        npc.Configuration.TemplateFlags |= flag;
+        npc.Template.SetTo(template.FormKey);
+        return npc;
+    }
+
     /// <summary>An ArmorAddon in the resource plugin, on the hair slot by default.</summary>
     public ArmorAddon AddResArmorAddon(string editorId, BipedObjectFlag slots = BipedObjectFlag.Hair)
     {
@@ -177,8 +196,11 @@ internal sealed class WigRouteFixture : IDisposable
     };
 
     /// <summary>Baseline settings for a route run. Wig/antler modes default to off; each route test
-    /// sets the ones it exercises.</summary>
-    public Settings NewSettings(bool skyPatcherMode, string tag) => new()
+    /// sets the ones it exercises. <paramref name="templateMode"/> defaults to Inherit — the routes
+    /// that exercise the flatten seam (where the wig pass must read the TERMINUS, not the donor)
+    /// pass GiveEachNpcOwnCopy explicitly.</summary>
+    public Settings NewSettings(bool skyPatcherMode, string tag,
+        TemplateHandlingMode templateMode = TemplateHandlingMode.InheritFromTemplate) => new()
     {
         SkyrimRelease = SkyrimRelease.SkyrimSE,
         OutputPluginName = string.Empty,
@@ -192,7 +214,7 @@ internal sealed class WigRouteFixture : IDisposable
         UseSkyPatcherMode = skyPatcherMode,
         DefaultWigHandlingMode = WigHandlingMode.None,
         DefaultAntlerHandlingMode = AntlerHandlingMode.None,
-        TemplateHandlingMode = TemplateHandlingMode.InheritFromTemplate,
+        TemplateHandlingMode = templateMode,
         DefaultRecordOverrideHandlingMode = RecordOverrideHandlingMode.Ignore,
         DefaultMaxNestedIntervalDepth = 2,
         DefaultIncludeAllOverrides = false,
@@ -208,6 +230,25 @@ internal sealed class WigRouteFixture : IDisposable
     /// </summary>
     public async Task<RouteRun?> RunAsync(Settings settings, ITestOutputHelper output, string label,
         Action<NpcChooserHarness>? configure = null)
+    {
+        var provider = TryBuildProvider(output);
+        if (provider == null) return null;
+
+        Directory.CreateDirectory(settings.OutputDirectory);
+        var run = await GoldenPatchRunner.RunAsync(provider, settings, configure: configure);
+        output.WriteLine($"--- RUN LOG ({label}) ---{Environment.NewLine}{run.Log}{Environment.NewLine}--- END ---");
+
+        var outPluginPath = Path.Combine(settings.OutputDirectory, "NPC.esp");
+        return new RouteRun(run, outPluginPath, provider.LoadOrderModKeys.ToList(), label);
+    }
+
+    /// <summary>
+    /// Builds the load order (vanilla + the fixture's base plugin) and returns a valid provider, or
+    /// null with a note on <paramref name="output"/> when there is no resolvable Skyrim SE install.
+    /// Split out of <see cref="RunAsync"/> so tests that exercise a single service against the
+    /// fixture's link cache — rather than a whole patch run — can share the same environment.
+    /// </summary>
+    public EnvironmentStateProvider? TryBuildProvider(ITestOutputHelper output)
     {
         var envOutDir = Path.Combine(Root, "Env_" + (++_runIndex));
         Directory.CreateDirectory(envOutDir);
@@ -233,12 +274,7 @@ internal sealed class WigRouteFixture : IDisposable
             return null;
         }
 
-        Directory.CreateDirectory(settings.OutputDirectory);
-        var run = await GoldenPatchRunner.RunAsync(provider, settings, configure: configure);
-        output.WriteLine($"--- RUN LOG ({label}) ---{Environment.NewLine}{run.Log}{Environment.NewLine}--- END ---");
-
-        var outPluginPath = Path.Combine(settings.OutputDirectory, "NPC.esp");
-        return new RouteRun(run, outPluginPath, provider.LoadOrderModKeys.ToList(), label);
+        return provider;
     }
 
     private void WriteMod(SkyrimMod mod, string path)

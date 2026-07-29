@@ -61,6 +61,12 @@ public class Patcher : OptionalUIModule
     /// NPC having been patched, which is exactly the wrong impression.</summary>
     private readonly List<(string Npc, string Mod, string Reason)> _faceGenSkippedNpcs = new();
 
+    /// <summary>NPCs whose Include Outfit write landed in a dead record field this run — the
+    /// Inventory template flag makes the engine take the whole inventory, outfit included, from
+    /// the template (see <see cref="RecordOutfitIsInert"/>). The face still applies; only the
+    /// outfit does not, so this is reported rather than treated as a skip.</summary>
+    private readonly List<(string Npc, string Mod, string Template)> _inertOutfitNpcs = new();
+
     private string _currentRunOutputAssetPath = string.Empty;
 
     // Plugin -> the mod entry that provides NPCs from it. Lets a resource-only plugin bundled
@@ -1038,6 +1044,23 @@ public class Patcher : OptionalUIModule
                                     includeOutfit = appearanceModSetting.IncludeOutfits;
                                 }
 
+                                // Include Outfit writes DefaultOutfit, which the engine ignores whenever
+                                // the Inventory template flag is set — the NPC takes its whole inventory,
+                                // outfit included, from its template. Report it here, independent of the
+                                // wig branch below (whose own use of this predicate only fires when wig
+                                // handling is active). The write itself is left in place: it is harmless,
+                                // and correct again if the flag is cleared by other means.
+                                if (includeOutfit && RecordOutfitIsInert(winningNpcOverride, appearanceNpcRecord))
+                                {
+                                    var inertTemplate = (_settings.PatchingMode == PatchingMode.CreateAndPatch
+                                        ? winningNpcOverride
+                                        : appearanceNpcRecord).Template.FormKey.ToString();
+                                    _inertOutfitNpcs.Add((npcIdentifier, selectedModDisplayName, inertTemplate));
+                                    AppendLog($"      Include Outfit: {npcIdentifier} takes its inventory from " +
+                                              $"template {inertTemplate}, so the outfit written to its record is " +
+                                              "never worn in game.", false, true);
+                                }
+
                                 // In SkyPatcher mode the surrogate is the donor appearance NPC; restrict override
                                 // discovery to its appearance-descended links (computed from the original donor
                                 // record, before CopyAppearanceData redirects them to merged-in output records) so
@@ -1057,6 +1080,22 @@ public class Patcher : OptionalUIModule
                                 List<IFormLinkGetter>? skyPatcherAppearanceLinks = _settings.UseSkyPatcherMode
                                     ? GetAppearanceFormLinks(appearanceNpcRecord, includeOutfit: true).ToList()
                                     : null;
+
+                                // Null unless the user opted into own-copy template handling AND the
+                                // donor's chain resolved — see ResolveAppearanceTerminusRecord.
+                                //
+                                // Resolved HERE, before the wig pass, because the converter and the
+                                // forwarder both read Traits-governed appearance (race, sex, weight,
+                                // hair colour, WornArmor, head parts) and under a flatten every one of
+                                // those comes from the terminus — the same record CopyInheritedAppearance
+                                // overlays further down. Reading the donor instead left the converter's
+                                // hair removal pointed at head parts the flatten had already replaced
+                                // (it matched nothing, so the terminus's hair survived alongside the
+                                // minted wig) and pointed the forwarder's skin duplicate at the donor's
+                                // WornArmor instead of the terminus's. Both switch branches below reuse
+                                // this one local so the record flatten and the wig pass cannot disagree.
+                                var flattenTerminus = ResolveAppearanceTerminusRecord(faceGenDecision,
+                                    appearanceModSetting, currentModFolderPaths, isFaceGenOnly);
 
                                 // Wig/antler forwarding (see WigHandlingMode). Runs BEFORE the
                                 // appearance copy / dependency merge-in: ForwardToSkin seeds the
@@ -1099,7 +1138,8 @@ public class Patcher : OptionalUIModule
                                         wigConvert = _headPartWigConverter.Apply(appearanceNpcRecord,
                                             appearanceModSetting, currentModFolderPaths, npcIdentifier,
                                             AppendLog, out bool fallBackToForwardToSkin,
-                                            faceGenSubjectFormKey: FlattenedFaceGenSubject(faceGenDecision));
+                                            faceGenSubjectFormKey: FlattenedFaceGenSubject(faceGenDecision),
+                                            flattenTerminusNpc: flattenTerminus);
                                         if (wigConvert != null)
                                         {
                                             RegisterRecordOwnerships(npcFormKey, wigConvert.MintedRecords,
@@ -1127,7 +1167,8 @@ public class Patcher : OptionalUIModule
                                         appearanceModSetting, appearanceModKey.Value, currentModFolderPaths,
                                         mergeInDependencyRecords, includeOutfit, npcIdentifier, AppendLog,
                                         wigModeOverride,
-                                        wnamConvertedWigStrips: wigConvert?.WnamArmatureKeysToStrip);
+                                        wnamConvertedWigStrips: wigConvert?.WnamArmatureKeysToStrip,
+                                        flattenTerminusNpc: flattenTerminus);
                                     if (wigForward != null)
                                     {
                                         RegisterRecordOwnerships(npcFormKey, wigForward.MergedRecords,
@@ -1150,12 +1191,6 @@ public class Patcher : OptionalUIModule
                                     case PatchingMode.CreateAndPatch:
                                         AppendLog(
                                             $"      Mode: Create and Patch. Patching winning override ({winningNpcOverride.FormKey.ModKey.FileName}) with appearance from {appearanceModKey?.FileName ?? "N/A"}.");
-
-                                        // Null unless the user opted into own-copy template
-                                        // handling AND the donor's chain resolved — see
-                                        // ResolveAppearanceTerminusRecord.
-                                        var flattenTerminus = ResolveAppearanceTerminusRecord(faceGenDecision,
-                                            appearanceModSetting, currentModFolderPaths, isFaceGenOnly);
 
                                         if (_settings.UseSkyPatcherMode)
                                         {
@@ -1500,12 +1535,6 @@ public class Patcher : OptionalUIModule
                                         AppendLog(
                                             $"      Mode: Create. Forwarding record from source plugin ({appearanceModKey?.FileName ?? "N/A"}).");
 
-                                        // Null unless the user opted into own-copy template
-                                        // handling AND the donor's chain resolved — see
-                                        // ResolveAppearanceTerminusRecord.
-                                        var createFlattenTerminus = ResolveAppearanceTerminusRecord(faceGenDecision,
-                                            appearanceModSetting, currentModFolderPaths, isFaceGenOnly);
-
                                         if (_settings.UseSkyPatcherMode)
                                         {
                                             // Terminus supplied so an inherited appearance is flattened
@@ -1513,7 +1542,7 @@ public class Patcher : OptionalUIModule
                                             // CopyAppearanceData runs in this branch, so the surrogate's
                                             // overlay is not disturbed afterwards.
                                             patchNpc = _skyPatcherInterface.CreateSkyPatcherNpc(npcFormKey,
-                                                appearanceNpcRecord, createFlattenTerminus);
+                                                appearanceNpcRecord, flattenTerminus);
                                         }
                                         else
                                         {
@@ -1540,11 +1569,11 @@ public class Patcher : OptionalUIModule
                                             // inheritance this app does not touch. Runs before the
                                             // merge-in walker below, which remaps any overlaid link
                                             // that points into a merge-eligible plugin.
-                                            if (createFlattenTerminus != null)
+                                            if (flattenTerminus != null)
                                             {
-                                                Auxilliary.CopyInheritedAppearance(patchNpc, createFlattenTerminus);
+                                                Auxilliary.CopyInheritedAppearance(patchNpc, flattenTerminus);
                                                 patchNpc.Configuration.TemplateFlags &= ~NpcConfiguration.TemplateFlag.Traits;
-                                                AppendLog($"      {npcIdentifier} inherits its appearance from {createFlattenTerminus.FormKey}; " +
+                                                AppendLog($"      {npcIdentifier} inherits its appearance from {flattenTerminus.FormKey}; " +
                                                           $"copied that appearance onto its own record so its selection applies to it individually.");
                                             }
                                         }
@@ -1897,6 +1926,7 @@ public class Patcher : OptionalUIModule
                     RecordProvenanceDiag.Flush();
 
                     ReportFaceGenSkippedNpcs();
+                    ReportInertOutfitNpcs();
 
                     AppendLog("All file operations finished.", false, true);
 
@@ -2921,6 +2951,29 @@ public class Patcher : OptionalUIModule
         }
 
         _faceGenSkippedNpcs.Clear();
+    }
+
+    /// <summary>
+    /// Names every NPC whose Include Outfit write could not reach the game, at the end of the run.
+    /// Unlike <see cref="ReportFaceGenSkippedNpcs"/> these NPCs ARE patched — their face applies
+    /// normally — so this is deliberately a report and not a skip: promoting it to the blocking
+    /// pre-run dialog (whose wording is "invalid selections that will be skipped") would be wrong
+    /// on both counts and would train users to dismiss it.
+    /// </summary>
+    private void ReportInertOutfitNpcs()
+    {
+        if (_inertOutfitNpcs.Count == 0) return;
+
+        AppendLog($"\n{_inertOutfitNpcs.Count} NPC(s) had 'Include Outfit' enabled but take their whole " +
+                  "inventory — the default outfit with it — from a template, so the outfit written to their " +
+                  "record is never worn in game. Their appearance was patched normally:", false, true);
+
+        foreach (var (npc, mod, template) in _inertOutfitNpcs)
+        {
+            AppendLog($"  - {npc} (from '{mod}'): inventory template {template}", false, true);
+        }
+
+        _inertOutfitNpcs.Clear();
     }
 
     /// <summary>The record whose appearance gets flattened onto the output, or null whenever no

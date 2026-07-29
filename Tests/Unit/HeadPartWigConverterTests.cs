@@ -203,6 +203,38 @@ public class HeadPartWigConverterTests : IDisposable
         f.Converter.Apply(f.DonorNpc, f.ModSetting, new HashSet<string>(), "TestNpc",
             (m, isError, force) => log.Add((m, isError, force)), out fallback);
 
+    /// <summary>
+    /// The 7-arg overload: <paramref name="terminus"/> is the record whose Traits-governed
+    /// appearance the OUTPUT will carry (see Auxilliary.CopyInheritedAppearance), and
+    /// <c>faceGenSubjectFormKey</c> follows it because the bake target moves with the mesh.
+    /// </summary>
+    private static HeadPartWigConverter.Result? Apply(Fixture f, INpcGetter terminus, out bool fallback) =>
+        f.Converter.Apply(f.DonorNpc, f.ModSetting, new HashSet<string>(), "TestNpc",
+            (_, _, _) => { }, out fallback,
+            faceGenSubjectFormKey: terminus.FormKey, flattenTerminusNpc: terminus);
+
+    /// <summary>
+    /// Builds the chain terminus of a FLATTENED donor: a second NPC in the donor plugin that the
+    /// donor inherits Traits from, differing in whichever Traits-governed fields the test cares
+    /// about. Writes its FaceGen too, since a flatten copies the terminus's mesh to the NPC's own
+    /// path and the converter's probes read it there.
+    /// </summary>
+    private Npc MakeTerminus(Fixture f, bool female = false, float weight = 100f,
+        HeadPart? hair = null, ColorRecord? hairColor = null)
+    {
+        var terminus = MutagenFixtures.NewNpc(f.DonorMod, editorId: "AuriTerminus", female: female);
+        terminus.Weight = weight;
+        if (hair != null) terminus.HeadParts.Add(hair.ToLink());
+        if (hairColor != null) terminus.HairColor.SetTo(hairColor);
+
+        f.DonorNpc.Configuration.TemplateFlags |= NpcConfiguration.TemplateFlag.Traits;
+        f.DonorNpc.Template.SetTo(terminus.FormKey);
+
+        var (fgRel, _) = Auxilliary.GetFaceGenSubPathStrings(terminus.FormKey, regularized: true);
+        WriteDummy(Path.Combine(f.ModFolder, fgRel));
+        return terminus;
+    }
+
     /// <summary>Makes the donor inherit Traits from a template — such an NPC has no FaceGen of its own.</summary>
     private static void TemplateDonorTraits(Fixture f)
     {
@@ -222,6 +254,162 @@ public class HeadPartWigConverterTests : IDisposable
         ((int)WigHandlingMode.ForwardToOutfit).Should().Be(1);
         ((int)WigHandlingMode.None).Should().Be(2);
         ((int)WigHandlingMode.ConvertToHeadParts).Should().Be(3);
+    }
+
+    // ---- Flatten seam: every Traits-governed input comes from the TERMINUS ---------------------
+    //
+    // Under TemplateHandlingMode.GiveEachNpcOwnCopy the patcher overlays the terminus's
+    // Traits-governed appearance onto the NPC's own record (Auxilliary.CopyInheritedAppearance:
+    // Race, HeadTexture, HairColor, WornArmor, Height, Weight, TextureLighting, HeadParts,
+    // FaceMorph, FaceParts, TintLayers, Female). The converter runs BEFORE that overlay, so it has
+    // to read the same record or it mints for a body the output never has. DefaultOutfit is the one
+    // appearance-adjacent field that does NOT move: it is Inventory-governed, and the patcher
+    // copies the donor's.
+
+    [Fact]
+    public void Apply_Terminus_MintsForTheTerminusSex()
+    {
+        var f = Make(femaleDonor: false);
+        var terminus = MakeTerminus(f, female: true, hair: f.HairHeadPart);
+
+        var result = Apply(f, terminus, out bool fallback);
+
+        fallback.Should().BeFalse();
+        result.Should().NotBeNull();
+        var parent = f.OutputMod.HeadParts.Single(h => h.FormKey == result!.ParentHeadPartKey);
+        parent.EditorID.Should().Be("NPC2Wig_FoxGlove_Wig_F_01b",
+            "the flatten writes the TERMINUS's Female flag onto the record, so the female set is " +
+            "the one this NPC ends up wearing — minting for the donor's sex bakes a male wig onto " +
+            "a female face");
+        parent.Flags.Should().HaveFlag(HeadPart.Flag.Female);
+        parent.Flags.Should().NotHaveFlag(HeadPart.Flag.Male);
+    }
+
+    [Fact]
+    public void Apply_Terminus_UsesTheTerminusWeightVariant()
+    {
+        // Donor is heavy (_1), terminus is light (_0). Weight is Traits-governed.
+        var f = Make(donorWeight: 100f);
+        var terminus = MakeTerminus(f, weight: 0f, hair: f.HairHeadPart);
+
+        var result = Apply(f, terminus, out bool fallback);
+
+        fallback.Should().BeFalse();
+        result.Should().NotBeNull();
+        var parent = f.OutputMod.HeadParts.Single(h => h.FormKey == result!.ParentHeadPartKey);
+        parent.Model!.File.GivenPath.Should().Be(@"actors\TestWig\wig_0.nif",
+            "the weight variant follows the terminus's weight, which is what the output record carries");
+    }
+
+    [Fact]
+    public void Apply_Terminus_RemovesTheTerminusHairHeadParts()
+    {
+        // Donor hair and terminus hair are DIFFERENT records. The flatten replaces the NPC's head
+        // parts with the terminus's, so removing the donor's would match nothing in
+        // FinalizeNpcRecord and leave the terminus's hair rendering alongside the minted wig.
+        var f = Make(donorHasHair: true);
+        var terminusHair = f.DonorMod.HeadParts.AddNew();
+        terminusHair.EditorID = "TerminusHairMesh";
+        terminusHair.Type = HeadPart.TypeEnum.Hair;
+        var terminus = MakeTerminus(f, hair: terminusHair);
+
+        var result = Apply(f, terminus, out bool fallback);
+
+        fallback.Should().BeFalse();
+        result.Should().NotBeNull();
+        result!.DonorHairHeadPartKeys.Should().BeEquivalentTo(new[] { terminusHair.FormKey },
+            "the hair to remove is the one the flattened record carries");
+        result.DonorHairHeadPartKeys.Should().NotContain(f.HairHeadPart.FormKey);
+        result.FaceGenShapeNamesToStrip.Should().Contain("TerminusHairMesh");
+        result.FaceGenShapeNamesToStrip.Should().NotContain("FoxGloveHairMesh");
+    }
+
+    [Fact]
+    public void Apply_Terminus_UsesTheTerminusHairColor()
+    {
+        var f = Make();
+        var donorClfm = f.DonorMod.Colors.AddNew();
+        donorClfm.EditorID = "DonorHairColor";
+        donorClfm.Color = System.Drawing.Color.FromArgb(255, 10, 20, 30);
+        f.DonorNpc.HairColor.SetTo(donorClfm);
+
+        var terminusClfm = f.DonorMod.Colors.AddNew();
+        terminusClfm.EditorID = "TerminusHairColor";
+        terminusClfm.Color = System.Drawing.Color.FromArgb(255, 200, 100, 50);
+        var terminus = MakeTerminus(f, hair: f.HairHeadPart, hairColor: terminusClfm);
+
+        var result = Apply(f, terminus, out bool fallback);
+
+        fallback.Should().BeFalse();
+        result!.HairTintRgb.Should().NotBeNull();
+        result.HairTintRgb!.Value.R.Should().BeApproximately(200f / 255f, 1e-4f,
+            "HairColor is Traits-governed, so the tint baked into the wig is the terminus's");
+        result.HairTintRgb.Value.G.Should().BeApproximately(100f / 255f, 1e-4f);
+        result.HairTintRgb.Value.B.Should().BeApproximately(50f / 255f, 1e-4f);
+    }
+
+    [Fact]
+    public void ApplyWnam_Terminus_ReadsTheTerminusWornArmor()
+    {
+        // The skin-carried wig source. Only the TERMINUS's skin carries a wig ARMA; the donor's
+        // does not. WornArmor is Traits-governed, so the output wears the terminus's skin and the
+        // conversion must happen.
+        var f = Make();
+        f.DonorNpc.DefaultOutfit.SetTo(FormKey.Null); // no outfit wig — force the WNAM source
+        f.ModSetting.DetectedWigArmors.Clear();
+
+        var donorSkin = f.DonorMod.Armors.AddNew();
+        donorSkin.EditorID = "DonorSkin";
+        f.DonorNpc.WornArmor.SetTo(donorSkin);
+
+        var terminusSkin = f.DonorMod.Armors.AddNew();
+        terminusSkin.EditorID = "TerminusSkin";
+        terminusSkin.Armature.Add(f.WigArma.ToLink());
+
+        var terminus = MakeTerminus(f, hair: f.HairHeadPart);
+        terminus.WornArmor.SetTo(terminusSkin);
+        f.ModSetting.DetectedWigArmatures.Add(f.WigArma.FormKey);
+
+        var result = Apply(f, terminus, out bool fallback);
+
+        fallback.Should().BeFalse("a WNAM-source decline never sets the fallback");
+        result.Should().NotBeNull(
+            "the wig ARMA lives on the TERMINUS's skin, which is the skin the output record wears");
+        result!.WnamArmatureKeysToStrip.Should().Contain(f.WigArma.FormKey);
+    }
+
+    [Fact]
+    public void Apply_Terminus_KeepsReadingTheDonorOutfit()
+    {
+        // The one appearance-adjacent field that must NOT move: DefaultOutfit is Inventory-governed,
+        // the flatten never touches it, and CopyAppearanceData copies the DONOR's. The terminus here
+        // has no outfit at all, so reading it instead would find no wig and decline.
+        var f = Make();
+        var terminus = MakeTerminus(f, hair: f.HairHeadPart);
+        terminus.DefaultOutfit.SetTo(FormKey.Null);
+
+        var result = Apply(f, terminus, out bool fallback);
+
+        fallback.Should().BeFalse();
+        result.Should().NotBeNull("the wig comes from the DONOR's outfit even under a flatten");
+        result!.ParentEditorId.Should().StartWith("NPC2Wig_FoxGlove_Wig_");
+    }
+
+    [Fact]
+    public void Apply_NullTerminus_ReadsTheDonor()
+    {
+        // The no-flatten contract, stated explicitly rather than left implicit in the fact that the
+        // parameter is optional: with no terminus every input is the donor's own.
+        var f = Make(femaleDonor: true, donorWeight: 0f);
+
+        var result = f.Converter.Apply(f.DonorNpc, f.ModSetting, new HashSet<string>(), "TestNpc",
+            (_, _, _) => { }, out bool fallback);
+
+        fallback.Should().BeFalse();
+        var parent = f.OutputMod.HeadParts.Single(h => h.FormKey == result!.ParentHeadPartKey);
+        parent.EditorID.Should().Be("NPC2Wig_FoxGlove_Wig_F_01b");
+        parent.Model!.File.GivenPath.Should().Be(@"actors\TestWig\wig_0.nif");
+        result.DonorHairHeadPartKeys.Should().BeEquivalentTo(new[] { f.HairHeadPart.FormKey });
     }
 
     // ---- Record minting ----------------------------------------------------------------------

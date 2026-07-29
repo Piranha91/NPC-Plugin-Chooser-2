@@ -768,10 +768,12 @@ public class WigForwarderTests
     }
 
     [Fact]
-    public void ForwardToSkin_WnamWig_IsANoOp()
+    public void ForwardToSkin_WnamWig_StaysOnTheSkin()
     {
-        // A skin-carried wig is already in its ForwardToSkin end state: no
-        // strip, no mint, no extra work beyond the outfit wig's own forwarding.
+        // A skin-carried wig is already where ForwardToSkin wants it: no relocation, no minted
+        // wearable ARMO. (Hair removal DOES happen here, but via the outfit wig's own transfer —
+        // ForwardToSkin_SkinCarriedWigOnly_RemovesTheClashingHair covers the case where the skin
+        // wig is the only one.)
         var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.None);
         var wigArma = AddWnamWigArma(f);
 
@@ -782,5 +784,63 @@ public class WigForwarderTests
         dup.Armature.Select(a => a.FormKey).Should().Contain(wigArma.FormKey,
             "the skin-carried wig ARMA stays exactly where it is");
         f.OutputMod.Armors.Should().NotContain(a => a.EditorID!.StartsWith("NPC2WigArmor_"));
+    }
+
+    // ---- Already-skin-carried wigs still need the head-part hair removed ----------------------
+
+    [Fact]
+    public void ForwardToSkin_SkinCarriedWigOnly_RemovesTheClashingHair()
+    {
+        // No outfit wig, so nothing transfers, no skin duplicate is built, and BuildSkinDuplicate's
+        // transfersHairSlot never fires. The CLASH it guards against is still real: a skin-carried
+        // hair-slot wig does not suppress head-part hair the way an equipped one does, so both
+        // meshes render. The removal has to key off the wig set the skin ALREADY carries.
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.None);
+        f.ModSetting.DetectedWigArmors.Clear();
+        var wigArma = AddWnamWigArma(f);
+
+        var result = Apply(f, mergeIn: false);
+
+        result.Should().NotBeNull("hair removal alone is enough work to report");
+        result!.SkinDuplicateKey.Should().BeNull("nothing was transferred, so no duplicate is needed");
+        result.DonorHairHeadPartKeys.Should().BeEquivalentTo(new[] { f.HairHeadPart.FormKey });
+        result.FaceGenShapeNamesToStrip.Should().Contain("FoxGloveHairMesh");
+
+        // And the record edit lands: removal plus the modeless bald back-fill, without touching
+        // WornArmor (ApplyLinksTo leaves it alone when there is no duplicate).
+        var patchNpc = f.OutputMod.Npcs.GetOrAddAsOverride(f.DonorNpc);
+        f.Forwarder.FinalizeNpcRecord(result, patchNpc, "TestNpc", (_, _, _) => { });
+
+        var eids = patchNpc.HeadParts
+            .Select(l => f.OutputMod.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)?.EditorID
+                         ?? f.DonorMod.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)?.EditorID)
+            .ToList();
+        eids.Should().Contain(WigForwarder.BaldHairEditorId,
+            "an NPC with no Hair head part back-fills a random race hair and dark-faces");
+        eids.Should().NotContain("FoxGloveHairMesh");
+        patchNpc.WornArmor.FormKey.Should().Be(f.SkinArmor.FormKey,
+            "no duplicate was built, so the skin link is left exactly as it was");
+        wigArma.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ForwardToSkin_SkinCarriedNonHairSlotWig_KeepsTheHair()
+    {
+        // The slot gate. A skin-carried piece flagged as a wig but occupying a NON-hair slot does
+        // not replace the NPC's hair, so removing the head part would simply bald them. Mirrors
+        // BuildSkinDuplicate's transfersHairSlot test, which is why both use BipedObjectFlag.Hair.
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.None);
+        f.ModSetting.DetectedWigArmors.Clear();
+
+        var circletArma = f.DonorMod.ArmorAddons.AddNew();
+        circletArma.EditorID = "0SkinCircletAddon";
+        circletArma.BodyTemplate = new BodyTemplate { FirstPersonFlags = BipedObjectFlag.Circlet };
+        f.SkinArmor.Armature.Add(circletArma.ToLink());
+        f.ModSetting.DetectedWigArmatures.Add(circletArma.FormKey);
+
+        var result = Apply(f, mergeIn: false);
+
+        (result?.DonorHairHeadPartKeys ?? new HashSet<FormKey>()).Should().BeEmpty(
+            "a circlet-slot piece supplies no hair, so removing the NPC's would leave them bald");
     }
 }

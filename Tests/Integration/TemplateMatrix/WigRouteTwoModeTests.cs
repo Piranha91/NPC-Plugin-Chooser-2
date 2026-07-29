@@ -153,18 +153,28 @@ public class WigRouteTwoModeTests
     }
 
     // =============================================================================================
-    // Route 2 — ForwardToSkin, skin-carried wig (documented no-op).
+    // Route 2 — ForwardToSkin, skin-carried wig.
     // =============================================================================================
 
     /// <summary>
-    /// A skin-carried wig is already in its ForwardToSkin end state, so the forwarder does nothing.
-    /// Worth pinning in both modes anyway: "nothing happened" and "the appearance copy silently
-    /// dropped the wig" look identical from the outside, and only the second is a bug.
+    /// A skin-carried wig ARMA is already where ForwardToSkin wants it, so nothing is transferred
+    /// and no skin duplicate is built — but the CLASH that transfer path guards against is still
+    /// there. A skin-carried hair-slot wig does not suppress head-part hair the way an equipped one
+    /// does (Route 1's comment: "both meshes render and clash"), so the head-part hair still has to
+    /// come off, keyed on the wig set the skin already carries.
+    ///
+    /// <para>This route used to be pinned as a pure no-op. It was reachable in practice only
+    /// because mods that ship skin-carried wigs usually also ship a bald head part — where they
+    /// don't, both meshes rendered.</para>
+    ///
+    /// <para>Worth pinning in both modes anyway: "nothing happened" and "the appearance copy
+    /// silently dropped the wig" look identical from the outside, and only the second is a bug.</para>
     /// </summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Route2_ForwardToSkin_SkinCarriedWig_IsANoOpButKeepsTheWig(bool skyPatcherMode)
+    public async Task Route2_ForwardToSkin_SkinCarriedWig_KeepsTheWigAndRemovesTheClashingHair(
+        bool skyPatcherMode)
     {
         using var fx = new WigRouteFixture("r2");
         var npc = fx.AddBaseNpc("NPC2Route_R2");
@@ -203,13 +213,67 @@ public class WigRouteTwoModeTests
             new[] { "NPC2Route_BodyAA", "NPC2Route_WigAA" },
             "the skin-carried wig is already where ForwardToSkin wants it — it must survive untouched");
 
-        // No bald back-fill on this route: the forwarder never builds a skin duplicate here, so it
-        // never collects hair removal. The donor's own hair stays.
+        // The wig stays on the skin, but the head-part hair it would clash with comes off and is
+        // replaced by the modeless bald record — same end state as Route 1, reached without a
+        // transfer.
+        var hairEids = outNpc.HeadParts.Select(l =>
+            run.Output.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)?.EditorID
+            ?? $"(not in output: {l.FormKey})").ToList();
+        hairEids.Should().Contain(WigForwarder.BaldHairEditorId,
+            "removing the donor's hair without a modeless replacement back-fills a random race hair");
+        hairEids.Should().NotContain("NPC2Route_DonorHair",
+            "the skin-carried wig supplies the hair; leaving the head part on renders both");
+    }
+
+    /// <summary>
+    /// The slot gate on Route 2's new hair removal. A skin-carried piece the scan flagged as a wig
+    /// but which occupies a NON-hair slot (a circlet here) does not replace the NPC's hair, so
+    /// removing the head part would leave them bald. Mirrors <c>BuildSkinDuplicate</c>'s
+    /// <c>transfersHairSlot</c> test exactly, which is why both use <c>BipedObjectFlag.Hair</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Route2b_ForwardToSkin_SkinCarriedNonHairSlotWig_KeepsTheHair(bool skyPatcherMode)
+    {
+        using var fx = new WigRouteFixture("r2b");
+        var npc = fx.AddBaseNpc("NPC2Route_R2b");
+
+        var bodyArma = fx.AddResArmorAddon("NPC2Route_BodyAA", BipedObjectFlag.Body);
+        var circletArma = fx.AddResArmorAddon("NPC2Route_CircletAA", BipedObjectFlag.Circlet);
+        var skin = fx.AddResArmor("NPC2Route_Skin", bodyArma, circletArma);
+
+        var donorHair = fx.ResMod.HeadParts.AddNew();
+        donorHair.EditorID = "NPC2Route_DonorHair";
+        donorHair.Type = HeadPart.TypeEnum.Hair;
+
+        var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
+        modNpc.WornArmor.SetTo(skin);
+        modNpc.HeadParts.Clear();
+        modNpc.HeadParts.Add(donorHair.FormKey);
+
+        fx.WriteFaceGen(npc.FormKey);
+        fx.WritePlugins();
+
+        var settings = fx.NewSettings(skyPatcherMode, Label(skyPatcherMode));
+        settings.DefaultWigHandlingMode = WigHandlingMode.ForwardToSkin;
+        var modSetting = fx.NewModSetting();
+        modSetting.DetectedWigArmatures.Add(circletArma.FormKey);
+        Select(fx, settings, modSetting, npc.FormKey);
+
+        using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
+        if (run == null) return;
+
+        AssertCleanWrite(run);
+
+        var outNpc = PatchedNpc(run);
+        var hairEids = outNpc.HeadParts.Select(l =>
+            run.Output.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)?.EditorID
+            ?? $"(not in output: {l.FormKey})").ToList();
+        hairEids.Should().Contain("NPC2Route_DonorHair",
+            "a circlet-slot piece does not replace the NPC's hair, so removing it would bald them");
         run.Output.HeadParts.Select(h => h.EditorID).Should().NotContain(WigForwarder.BaldHairEditorId,
             "no hair was removed, so nothing needs the modeless replacement");
-        outNpc.HeadParts.Select(l =>
-                run.Output.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)?.EditorID)
-            .Should().Contain("NPC2Route_DonorHair", "the donor's hair head part is untouched");
     }
 
     // =============================================================================================
@@ -554,6 +618,185 @@ public class WigRouteTwoModeTests
         var outfit = AssignedOutfit(run, outNpc);
         OutfitItemEditorIds(run, outfit).Should().Contain("NPC2Route_Wig",
             "the fallback must still get the wig onto the NPC, via the outfit");
+    }
+
+    // =============================================================================================
+    // Routes 8/9 — the flatten seam: ConvertToHeadParts and ForwardToSkin under GiveEachNpcOwnCopy.
+    // =============================================================================================
+
+    /// <summary>
+    /// Under <c>GiveEachNpcOwnCopy</c> the flatten (<c>Auxilliary.CopyInheritedAppearance</c>) writes
+    /// the TERMINUS's Traits-governed appearance onto the NPC's own record — head parts, WornArmor,
+    /// race, sex, weight, hair colour. The wig pass runs BEFORE that copy, and it used to read all
+    /// of those off the DONOR, so:
+    /// <list type="bullet">
+    /// <item>the hair it collected for removal was the donor's, and <c>FinalizeNpcRecord</c>'s
+    /// <c>RemoveAll</c> then matched nothing — the terminus's hair survived alongside the minted
+    /// wig parent (two heads of hair);</item>
+    /// <item>the sex it minted for was the donor's, so a male donor with a female terminus baked the
+    /// male wig mesh onto a female face.</item>
+    /// </list>
+    /// This fixture makes donor and terminus differ in BOTH, so either regression fails it.
+    ///
+    /// <para>No test in the repo ran <c>ConvertToHeadParts</c> and <c>GiveEachNpcOwnCopy</c>
+    /// together before this one, which is how the defect survived.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Route8_ConvertToHeadParts_Flattened_ReadsTheTerminus(bool skyPatcherMode)
+    {
+        const string wigNifRecordPath = @"actors\NPC2Route\wig_1.nif";
+        using var fx = new WigRouteFixture("r8");
+
+        // Terminus: female, its own hair, and the wig-bearing outfit. Donor: male, different hair.
+        var terminus = fx.AddBaseNpc("NPC2Route_R8_Terminus");
+        var donor = fx.AddTemplatedNpc("NPC2Route_R8", terminus, NpcConfiguration.TemplateFlag.Traits);
+
+        var wigArma = fx.AddResArmorAddon("NPC2Route_WigAA");
+        wigArma.WorldModel = new GenderedItem<Model?>(
+            new Model { File = wigNifRecordPath }, new Model { File = wigNifRecordPath });
+        var wigArmo = fx.AddResArmor("NPC2Route_Wig", wigArma);
+        var wigOutfit = fx.AddResOutfit("NPC2Route_WigOutfit", wigArmo);
+
+        var terminusHair = fx.ResMod.HeadParts.AddNew();
+        terminusHair.EditorID = "NPC2Route_TerminusHair";
+        terminusHair.Type = HeadPart.TypeEnum.Hair;
+
+        var donorHair = fx.ResMod.HeadParts.AddNew();
+        donorHair.EditorID = "NPC2Route_DonorHair";
+        donorHair.Type = HeadPart.TypeEnum.Hair;
+
+        var modTerminus = fx.AppearanceMod.Npcs.GetOrAddAsOverride(terminus);
+        modTerminus.Configuration.Flags |= NpcConfiguration.Flag.Female;
+        modTerminus.HeadParts.Clear();
+        modTerminus.HeadParts.Add(terminusHair.FormKey);
+
+        var modDonor = fx.AppearanceMod.Npcs.GetOrAddAsOverride(donor);
+        modDonor.Configuration.Flags &= ~NpcConfiguration.Flag.Female;
+        modDonor.DefaultOutfit.SetTo(wigOutfit); // outfit is Inventory-governed — stays the donor's
+        modDonor.HeadParts.Clear();
+        modDonor.HeadParts.Add(donorHair.FormKey);
+
+        fx.WriteLooseFile(@"meshes\actors\NPC2Route\wig_1.nif", "dummy");
+        fx.WriteLooseFile(@"meshes\actors\NPC2Route\wig_0.nif", "dummy");
+        // The ladder measures FaceGen at the TERMINUS's path and copies it to the NPC's own.
+        fx.WriteFaceGen(terminus.FormKey);
+        fx.WriteFaceGen(donor.FormKey);
+        fx.WritePlugins();
+
+        var settings = fx.NewSettings(skyPatcherMode, Label(skyPatcherMode),
+            TemplateHandlingMode.GiveEachNpcOwnCopy);
+        settings.DefaultWigHandlingMode = WigHandlingMode.ConvertToHeadParts;
+        var modSetting = fx.NewModSetting();
+        modSetting.DetectedWigArmors.Add(wigArmo.FormKey);
+        Select(fx, settings, modSetting, donor.FormKey);
+
+        using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode), configure: h =>
+        {
+            var converter = h.HeadPartWigConverter;
+            converter.RenderShapeNamesProvider = _ => new[] { "wigMain", "wigExtra" };
+            converter.PartitionProbe = (_, _) => true;
+            converter.PhysicsXmlProvider = _ => Array.Empty<string>();
+        });
+        if (run == null) return;
+
+        AssertCleanWrite(run);
+
+        var outNpc = PatchedNpc(run);
+        var npcHeadPartEids = outNpc.HeadParts.Select(l =>
+            run.Output.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)?.EditorID
+            ?? $"(not in output: {l.FormKey})").ToList();
+
+        npcHeadPartEids.Should().Contain(e => e != null && e.StartsWith("NPC2Wig_", StringComparison.Ordinal),
+            "the minted wig parent must be on the flattened record");
+        npcHeadPartEids.Should().NotContain("NPC2Route_TerminusHair",
+            "the flatten put the TERMINUS's hair on the record, so that is the hair the converter " +
+            "has to remove — reading the donor's left it in place and rendered two heads of hair");
+
+        // The minted set must be the FEMALE one: sex is Traits-governed, so it comes from the
+        // terminus even though the donor record says male.
+        var mintedParents = run.Output.HeadParts
+            .Where(h => h.EditorID != null && h.EditorID.StartsWith("NPC2Wig_", StringComparison.Ordinal))
+            .Select(h => h.EditorID!)
+            .ToList();
+        mintedParents.Should().NotBeEmpty();
+        mintedParents.Should().Contain(e => e.Contains("_F_", StringComparison.Ordinal),
+            "sex follows the terminus under a flatten, so the female wig set is the one to mint");
+    }
+
+    /// <summary>
+    /// The forwarder half of the same seam. <c>ApplyLinksTo</c> points the patched NPC's WornArmor
+    /// at the skin duplicate — and that duplicate used to be built from the DONOR's WornArmor, which
+    /// silently overwrote the TERMINUS's skin that <c>CopyInheritedAppearance</c> had just written.
+    /// The NPC then wore the wrong body, not merely the wrong wig.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Route9_ForwardToSkin_Flattened_UsesTheTerminusSkin(bool skyPatcherMode)
+    {
+        using var fx = new WigRouteFixture("r9");
+
+        var terminus = fx.AddBaseNpc("NPC2Route_R9_Terminus");
+        var donor = fx.AddTemplatedNpc("NPC2Route_R9", terminus, NpcConfiguration.TemplateFlag.Traits);
+
+        // Two distinct skins, so which one the duplicate was built from is visible in the output.
+        var terminusBodyArma = fx.AddResArmorAddon("NPC2Route_TerminusBodyAA", BipedObjectFlag.Body);
+        var terminusSkin = fx.AddResArmor("NPC2Route_TerminusSkin", terminusBodyArma);
+        var donorBodyArma = fx.AddResArmorAddon("NPC2Route_DonorBodyAA", BipedObjectFlag.Body);
+        var donorSkin = fx.AddResArmor("NPC2Route_DonorSkin", donorBodyArma);
+
+        var wigArma = fx.AddResArmorAddon("NPC2Route_WigAA");
+        var wigArmo = fx.AddResArmor("NPC2Route_Wig", wigArma);
+        var wigOutfit = fx.AddResOutfit("NPC2Route_WigOutfit", wigArmo);
+
+        var terminusHair = fx.ResMod.HeadParts.AddNew();
+        terminusHair.EditorID = "NPC2Route_TerminusHair";
+        terminusHair.Type = HeadPart.TypeEnum.Hair;
+
+        var modTerminus = fx.AppearanceMod.Npcs.GetOrAddAsOverride(terminus);
+        modTerminus.WornArmor.SetTo(terminusSkin);
+        modTerminus.HeadParts.Clear();
+        modTerminus.HeadParts.Add(terminusHair.FormKey);
+
+        var modDonor = fx.AppearanceMod.Npcs.GetOrAddAsOverride(donor);
+        modDonor.WornArmor.SetTo(donorSkin);
+        modDonor.DefaultOutfit.SetTo(wigOutfit);
+
+        fx.WriteFaceGen(terminus.FormKey);
+        fx.WriteFaceGen(donor.FormKey);
+        fx.WritePlugins();
+
+        var settings = fx.NewSettings(skyPatcherMode, Label(skyPatcherMode),
+            TemplateHandlingMode.GiveEachNpcOwnCopy);
+        settings.DefaultWigHandlingMode = WigHandlingMode.ForwardToSkin;
+        var modSetting = fx.NewModSetting();
+        modSetting.DetectedWigArmors.Add(wigArmo.FormKey);
+        Select(fx, settings, modSetting, donor.FormKey);
+
+        using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
+        if (run == null) return;
+
+        AssertCleanWrite(run);
+
+        var outNpc = PatchedNpc(run);
+        outNpc.WornArmor.FormKey.ModKey.Should().Be(run.Output.ModKey,
+            "the NPC must wear the +Wig duplicate");
+        var outSkin = run.Output.Armors.Single(a => a.FormKey == outNpc.WornArmor.FormKey);
+        ArmatureEditorIds(run, outSkin).Should().BeEquivalentTo(
+            new[] { "NPC2Route_TerminusBodyAA", "NPC2Route_WigAA" },
+            "WornArmor is Traits-governed, so the duplicate must be built from the TERMINUS's skin — " +
+            "building it from the donor's overwrote the flatten and gave the NPC the wrong body");
+
+        // And the hair removal likewise targets the terminus's head parts.
+        var hairEids = outNpc.HeadParts.Select(l =>
+            run.Output.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)?.EditorID
+            ?? $"(not in output: {l.FormKey})").ToList();
+        hairEids.Should().Contain(WigForwarder.BaldHairEditorId);
+        hairEids.Should().NotContain("NPC2Route_TerminusHair",
+            "the flattened record carries the terminus's hair, so that is what the forwarded wig " +
+            "supersedes");
     }
 
     private static void Select(WigRouteFixture fx, Settings settings, ModSetting modSetting, FormKey npcKey)

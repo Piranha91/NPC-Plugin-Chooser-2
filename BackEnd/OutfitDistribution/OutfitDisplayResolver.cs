@@ -108,6 +108,18 @@ public sealed record OutfitDisplayResult
     /// not just the winner. Consumed by the wig/antler outfit republishing pass.</summary>
     public RuntimeOutfitContest Contest { get; init; } = RuntimeOutfitContest.None;
 
+    /// <summary>True when the NPC's record-level <c>DefaultOutfit</c> is a DEAD FIELD: the
+    /// Inventory template flag makes the engine take the whole inventory — outfit included —
+    /// from the template, so nothing written to the record's own outfit is ever worn. The
+    /// display side of <c>Patcher.RecordOutfitIsInert</c>, which stays the patch-side authority;
+    /// keep the two in step. False in SkyPatcher output mode, where the runtime
+    /// <c>outfitDefault=</c> directive acts on the actor and bypasses template resolution.</summary>
+    public bool RecordOutfitInert { get; init; }
+
+    /// <summary>The record the inventory — and so the worn outfit — is inherited from.
+    /// Null unless <see cref="RecordOutfitInert"/>.</summary>
+    public FormKey? InventoryTemplateSource { get; init; }
+
     /// <summary>Cache-identity stamp: the resolved outfit FormKey string, or
     /// "none". Deliberately excludes Source/mode so switching patching modes
     /// that land on the same outfit does not re-stale mugshots.</summary>
@@ -220,12 +232,29 @@ public class OutfitDisplayResolver
         if (linkCache == null) return OutfitDisplayResult.NoOutfit;
         EnsureCachesCurrent(linkCache);
 
-        // 1. Donor + winner plugin-level outfits.
+        // 1. Donor + winner plugin-level outfits — the RAW record fields, since those are the
+        // values the patcher moves around.
         FormKey? donorOutfit = ResolveDonorOutfit(sourceNpcFormKey, modSetting, linkCache);
         linkCache.TryResolve<INpcGetter>(targetNpcFormKey, out var winnerNpc);
         FormKey? winnerOutfit = (winnerNpc?.DefaultOutfit != null && !winnerNpc.DefaultOutfit.IsNull)
             ? winnerNpc.DefaultOutfit.FormKey
             : null;
+
+        // Can a record-level write reach the actor at all? The Inventory template flag makes the
+        // engine take the whole inventory — the default outfit with it — from the template, so the
+        // record's own DefaultOutfit is a dead field and the outfit actually worn is the
+        // template's. The record examined is the one NPC2 WRITES — the recipient's winning override
+        // in Create-and-Patch, the donor in Create — exactly as Patcher.RecordOutfitIsInert picks
+        // it. SkyPatcher mode is exempt: its outfitDefault= directive acts on the actor and
+        // bypasses record-level template resolution entirely.
+        var writtenNpc = _settings.PatchingMode == PatchingMode.CreateAndPatch
+            ? winnerNpc
+            : ResolveDonorNpc(sourceNpcFormKey, modSetting, linkCache);
+        FormKey? inventoryTemplateSource = null;
+        FormKey? inheritedWornOutfit = writtenNpc == null
+            ? null
+            : ResolveWornOutfit(writtenNpc, linkCache, modSetting, out inventoryTemplateSource);
+        bool recordOutfitInert = !_settings.UseSkyPatcherMode && inventoryTemplateSource != null;
 
         bool includeOutfit = ComputeIncludeOutfitIntent(targetNpcFormKey, modSetting);
 
@@ -241,6 +270,15 @@ public class OutfitDisplayResolver
         {
             // Recipient record is untouched at plugin level in SkyPatcher mode.
             (pluginLevel, pluginLevelSource, pluginLevelModScoped) = (winnerOutfit, OutfitDisplaySource.WinningOverride, false);
+        }
+        else if (recordOutfitInert)
+        {
+            // The record write cannot reach the actor at all — the engine resolves the outfit
+            // through the inventory template — so whatever NPC2 writes to DefaultOutfit is
+            // irrelevant and what gets worn is the template's outfit. This is exactly why
+            // Include Outfit is inert for these NPCs.
+            (pluginLevel, pluginLevelSource, pluginLevelModScoped) =
+                (inheritedWornOutfit, OutfitDisplaySource.WinningOverride, false);
         }
         else if (_settings.PatchingMode == PatchingMode.CreateAndPatch)
         {
@@ -388,7 +426,15 @@ public class OutfitDisplayResolver
         {
             string intended = DescribeOutfit(donorOutfit.Value, linkCache);
             string actual = DescribeOutfit(finalOutfit!.Value, linkCache);
-            if (_settings.UseSkyPatcherMode && skyOutfit != null && !skyIsNpc2)
+            if (recordOutfitInert)
+            {
+                // Ordered first: this is a RECORD-level defeat, not a runtime one. The outfit never
+                // reaches the actor at all, so naming a contesting distributor would misattribute it.
+                warning = $"'Include Outfit' is set, but this NPC takes its inventory from template " +
+                          $"{DescribeNpc(inventoryTemplateSource!.Value, linkCache)} — the outfit written to " +
+                          $"its own record is never worn in game. {actual} is worn instead of {intended}.";
+            }
+            else if (_settings.UseSkyPatcherMode && skyOutfit != null && !skyIsNpc2)
             {
                 warning = $"NPC2's SkyPatcher outfit entry is not conflict-winning: '{skySourceFile}' " +
                           $"(line {skySourceLine}) loads later and sets {actual} instead of {intended}.";
@@ -414,6 +460,8 @@ public class OutfitDisplayResolver
             SourceDetail = sourceDetail,
             WarningText = warning,
             Approximations = approximations.Count > 0 ? approximations.Distinct().ToList() : Array.Empty<string>(),
+            RecordOutfitInert = recordOutfitInert,
+            InventoryTemplateSource = recordOutfitInert ? inventoryTemplateSource : null,
             Contest = new RuntimeOutfitContest
             {
                 SkyPatcher = skyContests,
@@ -453,12 +501,63 @@ public class OutfitDisplayResolver
 
     /// <summary>Resolves the donor NPC's DefaultOutfit through the mod's
     /// plugins (disambiguation key first, then CorrespondingModKeys in reverse
-    /// with Winner fallback — the same scoping NpcMeshResolver uses).</summary>
+    /// with Winner fallback — the same scoping NpcMeshResolver uses). Deliberately the RAW
+    /// record field, not the inventory-template-resolved one: this is the value
+    /// <c>CopyAppearanceData</c> writes when Include Outfit is on, so it is what the intent is
+    /// measured against. Whether that write can actually reach the actor is a separate question,
+    /// answered by <see cref="ResolveInventoryOutfitSource"/>.</summary>
     private FormKey? ResolveDonorOutfit(FormKey sourceNpcFormKey, ModSetting? modSetting, ILinkCache linkCache)
     {
         var donor = ResolveDonorNpc(sourceNpcFormKey, modSetting, linkCache);
         if (donor?.DefaultOutfit == null || donor.DefaultOutfit.IsNull) return null;
         return donor.DefaultOutfit.FormKey;
+    }
+
+    /// <summary>The outfit an NPC actually wears once the INVENTORY template chain is followed —
+    /// the template's when the flag is set, the record's own otherwise. Null when neither names
+    /// one.</summary>
+    private FormKey? ResolveWornOutfit(INpcGetter npc, ILinkCache linkCache, ModSetting? modSetting,
+        out FormKey? inheritedFrom)
+    {
+        var source = ResolveInventoryOutfitSource(npc, linkCache, modSetting, out inheritedFrom);
+        if (source.DefaultOutfit == null || source.DefaultOutfit.IsNull) return null;
+        return source.DefaultOutfit.FormKey;
+    }
+
+    /// <summary>
+    /// Walks the INVENTORY template chain and returns the record whose <c>DefaultOutfit</c> the
+    /// engine actually resolves. The Inventory template flag makes an actor take its whole
+    /// inventory — default outfit included — from its template, so the NPC's own
+    /// <c>DefaultOutfit</c> is a dead field and displaying it shows an outfit the game will
+    /// never put on. Returns <paramref name="npc"/> unchanged when it does not inherit its
+    /// inventory, or when the chain is unfollowable (dangling, leveled, or cyclic) — the record's
+    /// own field is then the best available answer.
+    ///
+    /// <para>Deliberately distinct from the TRAITS chain the FaceGen ladder walks
+    /// (<c>Auxilliary.TryResolveAppearanceTerminus</c>): the two flags are independent, and an
+    /// NPC may inherit one without the other. Each hop resolves mod-scoped first so a mod that
+    /// re-points the template is honoured, matching <c>NpcMeshResolver.ResolveAppearanceNpcKey</c>.
+    /// </para>
+    /// </summary>
+    private INpcGetter ResolveInventoryOutfitSource(INpcGetter npc, ILinkCache linkCache,
+        ModSetting? modSetting, out FormKey? inheritedFrom)
+    {
+        inheritedFrom = null;
+        var current = npc;
+        var visited = new HashSet<FormKey> { npc.FormKey };
+        int guard = 0;
+        while (guard++ < 10)
+        {
+            if (!current.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Inventory)) break;
+            if (current.Template is not { IsNull: false } templateLink) break;
+            if (!visited.Add(templateLink.FormKey)) break; // cycle
+            var next = ResolveDonorNpc(templateLink.FormKey, modSetting, linkCache);
+            if (next == null) break; // dangling, or a leveled template — nothing to read an outfit off
+            inheritedFrom = next.FormKey;
+            current = next;
+        }
+
+        return current;
     }
 
     /// <summary>The donor NPC record resolved through the mod's plugins
@@ -535,23 +634,33 @@ public class OutfitDisplayResolver
         if (donor == null) return tintMarker;
         bool hasWnam = donor.WornArmor != null && !donor.WornArmor.IsNull;
 
+        // Same INVENTORY-template walk ResolveForDisplay does, so the wig stamp and the outfit
+        // stamp cannot disagree about which outfit is depicted — INCLUDING the SkyPatcher-mode
+        // exemption. There the outfitDefault= directive acts on the actor and reaches it whatever
+        // the record's template flag says, so the donor's own outfit IS what gets worn and the
+        // chain must not be followed. (The WNAM segment further down is Traits-governed, not
+        // Inventory-governed, and deliberately does not walk this chain at all.)
+        var outfitSource = _settings.UseSkyPatcherMode
+            ? donor
+            : ResolveInventoryOutfitSource(donor, linkCache, modSetting, out _);
+
         var folders = modSetting.CorrespondingFolderPaths.ToHashSet();
         var sb = new StringBuilder(tintMarker);
         bool outfitHasDetectedWig = false;
 
         // Outfit (source 1) segments — unchanged semantics; skipped (not bailed)
         // for an outfit-less donor so the WNAM segment below can still emit.
-        if (donor.DefaultOutfit != null && !donor.DefaultOutfit.IsNull)
+        if (outfitSource.DefaultOutfit != null && !outfitSource.DefaultOutfit.IsNull)
         {
             IOutfitGetter? donorOutfit = null;
-            if (_recordHandler.TryGetRecordFromMods(donor.DefaultOutfit, modSetting.CorrespondingModKeys, folders,
+            if (_recordHandler.TryGetRecordFromMods(outfitSource.DefaultOutfit, modSetting.CorrespondingModKeys, folders,
                     RecordHandler.RecordLookupFallBack.Winner, out var outfitRec) && outfitRec is IOutfitGetter scoped)
             {
                 donorOutfit = scoped;
             }
             else
             {
-                linkCache.TryResolve<IOutfitGetter>(donor.DefaultOutfit.FormKey, out donorOutfit);
+                linkCache.TryResolve<IOutfitGetter>(outfitSource.DefaultOutfit.FormKey, out donorOutfit);
             }
 
             if (donorOutfit?.Items != null)
@@ -720,6 +829,15 @@ public class OutfitDisplayResolver
             return $"'{rec.EditorID}'";
         }
         return $"'{outfit}'";
+    }
+
+    private static string DescribeNpc(FormKey npc, ILinkCache linkCache)
+    {
+        if (linkCache.TryResolve<INpcGetter>(npc, out var rec) && !string.IsNullOrEmpty(rec.EditorID))
+        {
+            return $"'{rec.EditorID}'";
+        }
+        return $"'{npc}'";
     }
 
     // ─────────────────────────────────────────────────────────────────────

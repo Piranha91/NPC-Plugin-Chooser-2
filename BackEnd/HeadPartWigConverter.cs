@@ -253,12 +253,14 @@ public class HeadPartWigConverter
     /// <summary>The NPC's hair color (HCLR → CLFM) as sRGB 0..1 — the same
     /// space <c>BSLightingShaderProperty.hairTintColor</c> is stored in, so the
     /// byte channels divide straight through with no gamma rebase (mirrors
-    /// <c>NpcMeshResolver</c>'s resolve for the renderer).</summary>
+    /// <c>NpcMeshResolver</c>'s resolve for the renderer). Read off the record whose
+    /// appearance the output carries (HairColor is Traits-governed, so under a flatten
+    /// that is the terminus).</summary>
     private (float R, float G, float B)? ResolveHairColorRgb(
-        INpcGetter donorNpc, ModSetting appearanceModSetting, HashSet<string> modFolderPaths)
+        INpcGetter appearanceNpc, ModSetting appearanceModSetting, HashSet<string> modFolderPaths)
     {
-        if (donorNpc.HairColor == null || donorNpc.HairColor.IsNull) return null;
-        var hclr = ResolveFromModsOrWinner<IColorRecordGetter>(donorNpc.HairColor,
+        if (appearanceNpc.HairColor == null || appearanceNpc.HairColor.IsNull) return null;
+        var hclr = ResolveFromModsOrWinner<IColorRecordGetter>(appearanceNpc.HairColor,
             appearanceModSetting.CorrespondingModKeys, modFolderPaths);
         if (hclr == null) return null;
         var c = hclr.Color;
@@ -285,6 +287,21 @@ public class HeadPartWigConverter
     /// the donor's own FormKey, which is also the right answer whenever no flatten is happening:
     /// a templated NPC that keeps inheriting genuinely has no FaceGen of its own to bake into.
     /// </param>
+    /// <param name="flattenTerminusNpc">
+    /// The chain terminus record when a Traits chain is being FLATTENED, else null. Every
+    /// Traits-governed input below (race, sex, weight, hair colour, WornArmor, head parts — the
+    /// set <see cref="Auxilliary.CopyInheritedAppearance"/> defines) must be read off THIS record,
+    /// because that is what the output NPC ends up carrying. Reading the donor instead picked the
+    /// wrong sex/weight wig variant and collected hair head parts the flatten had already replaced,
+    /// so the removal in <see cref="FinalizeNpcRecord"/> matched nothing and the terminus's hair
+    /// survived alongside the minted wig.
+    ///
+    /// <para>Deliberately separate from <paramref name="faceGenSubjectFormKey"/> even though they
+    /// share a gate: the ladder can resolve the chain (so the bake target IS the terminus's mesh)
+    /// while the terminus RECORD fails to resolve from the mod, in which case no flatten happens
+    /// and the donor's own fields are what the output carries. Two parameters keep this class
+    /// field-for-field consistent with <c>CopyAppearanceData</c>.</para>
+    /// </param>
     public Result? Apply(
         INpcGetter donorNpc,
         ModSetting appearanceModSetting,
@@ -292,10 +309,16 @@ public class HeadPartWigConverter
         string npcIdentifier,
         Action<string, bool, bool> appendLog,
         out bool fallBackToForwardToSkin,
-        FormKey? faceGenSubjectFormKey = null)
+        FormKey? faceGenSubjectFormKey = null,
+        INpcGetter? flattenTerminusNpc = null)
     {
         fallBackToForwardToSkin = false;
         var faceGenKey = faceGenSubjectFormKey ?? donorNpc.FormKey;
+
+        // The record whose Traits-governed appearance the OUTPUT will carry. Under a flatten that
+        // is the terminus; otherwise the donor is its own. DefaultOutfit is NOT in this set — it is
+        // Inventory-governed, and the patcher copies the donor's — so it keeps reading donorNpc.
+        var appearanceNpc = flattenTerminusNpc ?? donorNpc;
 
         // Applicable wigs = the donor outfit's direct items the scan classified
         // as wigs (same detection basis as WigForwarder — outfit-item based).
@@ -319,7 +342,7 @@ public class HeadPartWigConverter
         // (the High Poly NPC Overhaul pattern). Collected regardless of which
         // source converts: when an outfit wig converts, a skin-carried wig ARMA
         // must still be stripped from the WNAM duplicate or both would render.
-        var wnamWigArmas = CollectWnamWigArmas(donorNpc, appearanceModSetting, modFolderPaths);
+        var wnamWigArmas = CollectWnamWigArmas(appearanceNpc, donorNpc, appearanceModSetting, modFolderPaths);
 
         if (wigItemKeys.Count == 0)
         {
@@ -328,8 +351,8 @@ public class HeadPartWigConverter
             // Every WNAM-source decline keeps fallBackToForwardToSkin=false: a
             // skin-carried wig is already in its ForwardToSkin end state, so a
             // declined conversion just leaves the donor's correct in-game state.
-            return ApplyWnamConversion(donorNpc, appearanceModSetting, modFolderPaths, npcIdentifier,
-                appendLog, wnamWigArmas, faceGenKey);
+            return ApplyWnamConversion(appearanceNpc, donorNpc, appearanceModSetting, modFolderPaths,
+                npcIdentifier, appendLog, wnamWigArmas, faceGenKey);
         }
 
         if (wigItemKeys.Count > 1)
@@ -358,7 +381,7 @@ public class HeadPartWigConverter
         //    Hair-type head part has nothing to harvest → risky bake → fallback.
         var donorHairKeys = new HashSet<FormKey>();
         var stripNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        CollectHairRemoval(donorNpc, appearanceModSetting, modFolderPaths, donorHairKeys, stripNames);
+        CollectHairRemoval(appearanceNpc, appearanceModSetting, modFolderPaths, donorHairKeys, stripNames);
         if (donorHairKeys.Count == 0 || stripNames.Count == 0)
         {
             appendLog($"      Wig conversion: {npcIdentifier} has no donor Hair head part to harvest FaceGen " +
@@ -370,7 +393,7 @@ public class HeadPartWigConverter
 
         // 2. Resolve the worn wig NIF: hair-slot ARMA for the donor's race/sex,
         //    weight-matched _0/_1 variant (nearest, no interpolation).
-        string? wigNifRecordPath = ResolveWigNifRecordPath(wigArmor, donorNpc, appearanceModSetting,
+        string? wigNifRecordPath = ResolveWigNifRecordPath(wigArmor, appearanceNpc, appearanceModSetting,
             modFolderPaths, npcIdentifier, appendLog);
         if (wigNifRecordPath == null)
         {
@@ -404,7 +427,8 @@ public class HeadPartWigConverter
         string? donorFaceGenPath = MaterializeDataRelFile(donorFaceGenRelPath, appearanceModSetting);
         if (donorFaceGenPath == null)
         {
-            LogMissingDonorFaceGen(donorNpc, npcIdentifier, "Falling back to ForwardToSkin.", appendLog);
+            LogMissingDonorFaceGen(donorNpc, npcIdentifier, "Falling back to ForwardToSkin.", appendLog,
+                flattening: flattenTerminusNpc != null);
             fallBackToForwardToSkin = true;
             return null;
         }
@@ -420,7 +444,7 @@ public class HeadPartWigConverter
 
         // 4. Mint (or reuse) the per-(wig, sex) HDPT set.
         MintedWigSet? set = GetOrMintWigSet(wigArmor.EditorID, wigKey, wigNifSourcePath, wigNifDataRelPath,
-            wigNifRecordPath, donorNpc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female),
+            wigNifRecordPath, appearanceNpc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female),
             appearanceModSetting, npcIdentifier, appendLog);
         if (set == null)
         {
@@ -440,7 +464,7 @@ public class HeadPartWigConverter
             PhysicsXmlSourceDataRelPath = set.PhysicsXmlSourceDataRelPath,
             PhysicsXmlNewDataRelPath = set.PhysicsXmlNewDataRelPath,
             HairTintMode = _settings.GetEffectiveWigHairTintMode(appearanceModSetting),
-            HairTintRgb = ResolveHairColorRgb(donorNpc, appearanceModSetting, modFolderPaths),
+            HairTintRgb = ResolveHairColorRgb(appearanceNpc, appearanceModSetting, modFolderPaths),
         };
         result.DonorHairHeadPartKeys.UnionWith(donorHairKeys);
         result.FaceGenShapeNamesToStrip.UnionWith(stripNames);
@@ -458,13 +482,16 @@ public class HeadPartWigConverter
     }
 
     /// <summary>Effective wig ArmorAddons (<see cref="Settings.IsWigArmature"/>)
-    /// carried in the donor's WornArmor. Empty when the donor has no WNAM.</summary>
-    private List<IArmorAddonGetter> CollectWnamWigArmas(INpcGetter donorNpc,
+    /// carried in <paramref name="appearanceNpc"/>'s WornArmor — the terminus's under a flatten,
+    /// since that is the skin the output record ends up with. Empty when it has no WNAM.
+    /// <paramref name="donorNpc"/> supplies only the manual-designation scope key, which stays
+    /// keyed to the NPC the user picked in the UI.</summary>
+    private List<IArmorAddonGetter> CollectWnamWigArmas(INpcGetter appearanceNpc, INpcGetter donorNpc,
         ModSetting appearanceModSetting, HashSet<string> modFolderPaths)
     {
         var found = new List<IArmorAddonGetter>();
-        if (donorNpc.WornArmor.IsNull) return found;
-        var wnam = ResolveFromModsOrWinner<IArmorGetter>(donorNpc.WornArmor,
+        if (appearanceNpc.WornArmor.IsNull) return found;
+        var wnam = ResolveFromModsOrWinner<IArmorGetter>(appearanceNpc.WornArmor,
             appearanceModSetting.CorrespondingModKeys, modFolderPaths);
         if (wnam?.Armature == null) return found;
         foreach (var armaLink in wnam.Armature)
@@ -492,11 +519,12 @@ public class HeadPartWigConverter
     /// wig is already in its end state; declining preserves the donor's correct
     /// in-game appearance).
     /// </summary>
-    private Result? ApplyWnamConversion(INpcGetter donorNpc, ModSetting appearanceModSetting,
+    private Result? ApplyWnamConversion(INpcGetter appearanceNpc, INpcGetter donorNpc,
+        ModSetting appearanceModSetting,
         HashSet<string> modFolderPaths, string npcIdentifier, Action<string, bool, bool> appendLog,
         List<IArmorAddonGetter> wnamWigArmas, FormKey faceGenKey)
     {
-        var raceKey = donorNpc.Race.IsNull ? (FormKey?)null : donorNpc.Race.FormKey;
+        var raceKey = appearanceNpc.Race.IsNull ? (FormKey?)null : appearanceNpc.Race.FormKey;
         var applicable = wnamWigArmas.Where(a => IsArmatureForRace(a, raceKey)).ToList();
         if (applicable.Count == 0)
         {
@@ -532,10 +560,10 @@ public class HeadPartWigConverter
         // nothing to strip or remove.
         var donorHairKeys = new HashSet<FormKey>();
         var stripNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        CollectHairRemoval(donorNpc, appearanceModSetting, modFolderPaths, donorHairKeys, stripNames);
+        CollectHairRemoval(appearanceNpc, appearanceModSetting, modFolderPaths, donorHairKeys, stripNames);
 
         string armaLabel = $"skin-carried wig ArmorAddon '{arma.EditorID ?? arma.FormKey.ToString()}'";
-        string? wigNifRecordPath = ResolveArmaNifRecordPath(arma, donorNpc, appearanceModSetting,
+        string? wigNifRecordPath = ResolveArmaNifRecordPath(arma, appearanceNpc, appearanceModSetting,
             npcIdentifier, armaLabel, appendLog);
         if (wigNifRecordPath == null) return null;
 
@@ -560,7 +588,8 @@ public class HeadPartWigConverter
         string? donorFaceGenPath = MaterializeDataRelFile(donorFaceGenRelPath, appearanceModSetting);
         if (donorFaceGenPath == null)
         {
-            LogMissingDonorFaceGen(donorNpc, npcIdentifier, "Leaving the skin-carried hair as-is.", appendLog);
+            LogMissingDonorFaceGen(donorNpc, npcIdentifier, "Leaving the skin-carried hair as-is.", appendLog,
+                flattening: !ReferenceEquals(appearanceNpc, donorNpc));
             return null;
         }
 
@@ -570,7 +599,7 @@ public class HeadPartWigConverter
         bool synthesize = stripNames.Count == 0 || !PartitionProbe(donorFaceGenPath, stripNames);
 
         MintedWigSet? set = GetOrMintWigSet(arma.EditorID, arma.FormKey, wigNifSourcePath, wigNifDataRelPath,
-            wigNifRecordPath, donorNpc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female),
+            wigNifRecordPath, appearanceNpc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female),
             appearanceModSetting, npcIdentifier, appendLog);
         if (set == null) return null;
 
@@ -587,7 +616,7 @@ public class HeadPartWigConverter
             PhysicsXmlNewDataRelPath = set.PhysicsXmlNewDataRelPath,
             SynthesizeHairPartitionTemplate = synthesize,
             HairTintMode = _settings.GetEffectiveWigHairTintMode(appearanceModSetting),
-            HairTintRgb = ResolveHairColorRgb(donorNpc, appearanceModSetting, modFolderPaths),
+            HairTintRgb = ResolveHairColorRgb(appearanceNpc, appearanceModSetting, modFolderPaths),
         };
         result.DonorHairHeadPartKeys.UnionWith(donorHairKeys);
         result.FaceGenShapeNamesToStrip.UnionWith(stripNames);
@@ -612,11 +641,15 @@ public class HeadPartWigConverter
     /// Vigilants of Stendarr, Dremora, …), so forcing that line into the log
     /// buries the genuinely missing-FaceGen case it shares wording with — which
     /// stays a forced entry.
+    ///
+    /// <para>A FLATTENED chain is the exception to that exception: the donor still carries the
+    /// Traits flag, but the ladder measured the terminus's FaceGen in this mod and the bake target
+    /// is the NPC's own path, so a miss here IS a real problem and stays forced.</para>
     /// </summary>
     private static void LogMissingDonorFaceGen(INpcGetter donorNpc, string npcIdentifier, string outcome,
-        Action<string, bool, bool> appendLog)
+        Action<string, bool, bool> appendLog, bool flattening = false)
     {
-        if (Auxilliary.HasTraitsFlag(donorNpc))
+        if (!flattening && Auxilliary.HasTraitsFlag(donorNpc))
         {
             string template = donorNpc.Template is { IsNull: false }
                 ? donorNpc.Template.FormKey.ToString()
@@ -703,7 +736,7 @@ public class HeadPartWigConverter
     /// NIF this NPC actually wears: the single race-applicable hair-slot ARMA's
     /// per-sex WorldModel with the weight-matched _0/_1 variant. Null (with a
     /// log line) when ambiguous or unresolvable — the caller falls back.</summary>
-    private string? ResolveWigNifRecordPath(IArmorGetter wigArmor, INpcGetter donorNpc,
+    private string? ResolveWigNifRecordPath(IArmorGetter wigArmor, INpcGetter appearanceNpc,
         ModSetting appearanceModSetting, HashSet<string> modFolderPaths, string npcIdentifier,
         Action<string, bool, bool> appendLog)
     {
@@ -727,8 +760,8 @@ public class HeadPartWigConverter
         if (hairArmas.Count > 1)
         {
             // Multiple hair ARMAs are usually per-race variants; keep the ones
-            // applicable to the donor's race.
-            var raceKey = donorNpc.Race.IsNull ? (FormKey?)null : donorNpc.Race.FormKey;
+            // applicable to the race the output record will carry.
+            var raceKey = appearanceNpc.Race.IsNull ? (FormKey?)null : appearanceNpc.Race.FormKey;
             var raceMatched = hairArmas.Where(a => IsArmatureForRace(a, raceKey)).ToList();
             if (raceMatched.Count > 0) hairArmas = raceMatched;
         }
@@ -741,18 +774,20 @@ public class HeadPartWigConverter
             return null;
         }
 
-        return ResolveArmaNifRecordPath(hairArmas[0], donorNpc, appearanceModSetting, npcIdentifier,
+        return ResolveArmaNifRecordPath(hairArmas[0], appearanceNpc, appearanceModSetting, npcIdentifier,
             "wig ArmorAddon", appendLog);
     }
 
     /// <summary>Shared ARMA→NIF tail of both wig sources: the addon's per-sex
     /// WorldModel with the weight-matched _0/_1 variant. Null (with a log line)
-    /// when unresolvable — each caller decides its own fallback semantics.</summary>
-    private string? ResolveArmaNifRecordPath(IArmorAddonGetter arma, INpcGetter donorNpc,
+    /// when unresolvable — each caller decides its own fallback semantics. Sex and weight
+    /// are Traits-governed, so both come off the record whose appearance the output carries.
+    /// </summary>
+    private string? ResolveArmaNifRecordPath(IArmorAddonGetter arma, INpcGetter appearanceNpc,
         ModSetting appearanceModSetting, string npcIdentifier, string sourceLabel,
         Action<string, bool, bool> appendLog)
     {
-        bool isFemale = Auxilliary.IsFemale(donorNpc);
+        bool isFemale = Auxilliary.IsFemale(appearanceNpc);
         string? recordPath = GetWorldModelRecordPath(arma, female: isFemale)
                              ?? GetWorldModelRecordPath(arma, female: !isFemale); // shared/single-sex meshes
         if (recordPath == null)
@@ -765,8 +800,8 @@ public class HeadPartWigConverter
         // Weight-matched _0/_1 variant: >= 50 → _1, else _0 (nearest — no
         // interpolation, an accepted limitation). Fall back to whichever
         // variant actually exists; a suffix-less path is a single-weight mesh.
-        string preferred = SwapWeightSuffix(recordPath, donorNpc.Weight >= 50f);
-        foreach (var candidate in new[] { preferred, recordPath, SwapWeightSuffix(recordPath, donorNpc.Weight < 50f) })
+        string preferred = SwapWeightSuffix(recordPath, appearanceNpc.Weight >= 50f);
+        foreach (var candidate in new[] { preferred, recordPath, SwapWeightSuffix(recordPath, appearanceNpc.Weight < 50f) })
         {
             if (Auxilliary.TryRegularizePath(candidate, out var rel) && DataRelFileExists(rel, appearanceModSetting))
             {
@@ -993,10 +1028,14 @@ public class HeadPartWigConverter
     //  Donor hair collection (mirrors WigForwarder.CollectHairRemoval)
     // ─────────────────────────────────────────────────────────────────────
 
-    private void CollectHairRemoval(INpcGetter donorNpc, ModSetting appearanceModSetting,
+    /// <summary>Collects the Hair-type head parts of <paramref name="appearanceNpc"/> — the
+    /// record whose HeadParts the OUTPUT will carry, so the terminus's under a flatten. Reading
+    /// the donor here left <see cref="FinalizeNpcRecord"/> removing keys the flatten had already
+    /// replaced, so the terminus's hair rendered alongside the minted wig.</summary>
+    private void CollectHairRemoval(INpcGetter appearanceNpc, ModSetting appearanceModSetting,
         HashSet<string> modFolderPaths, HashSet<FormKey> donorHairKeys, HashSet<string> stripNames)
     {
-        foreach (var hpLink in donorNpc.HeadParts)
+        foreach (var hpLink in appearanceNpc.HeadParts)
         {
             if (hpLink == null || hpLink.IsNull) continue;
             var hpRec = ResolveFromModsOrWinner<IHeadPartGetter>(hpLink,

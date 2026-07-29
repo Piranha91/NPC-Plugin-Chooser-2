@@ -357,8 +357,22 @@ public class WigForwarder
     /// duplicate). Under ForwardToOutfit an effective skin wig ARMA
     /// (<see cref="Settings.IsWigArmature"/>) is relocated into the worn
     /// outfit via a minted wearable wig ARMO and likewise stripped from the
-    /// WNAM duplicate. Under ForwardToSkin a skin-carried wig is already in
-    /// its end state — a documented no-op.</para>
+    /// WNAM duplicate. Under ForwardToSkin a skin-carried wig keeps its ARMA
+    /// where it is, but its clashing head-part hair is still removed — see the
+    /// hair-removal block below.</para>
+    ///
+    /// <para><b>Which record each field is read from.</b> Two independent template axes meet in
+    /// this method and they resolve differently:
+    /// <list type="bullet">
+    /// <item>WornArmor, head parts, race and sex are <b>Traits</b>-governed — under a flatten the
+    /// output carries the TERMINUS's (see <see cref="Auxilliary.CopyInheritedAppearance"/>), so
+    /// they are read off <c>appearanceNpc</c>.</item>
+    /// <item>DefaultOutfit is <b>Inventory</b>-governed, which the flatten never touches, and the
+    /// patcher copies the donor's — so it is read off <paramref name="donorNpc"/>.</item>
+    /// </list>
+    /// Reading the donor's WornArmor pointed the skin duplicate at the wrong skin and then
+    /// overwrote the flattened WornArmor in <see cref="FinalizeNpcRecord"/>; reading the donor's
+    /// head parts left the hair removal matching nothing.</para>
     /// </summary>
     public Result? Apply(
         FormKey targetNpcFormKey,
@@ -371,13 +385,17 @@ public class WigForwarder
         string npcIdentifier,
         Action<string, bool, bool> appendLog,
         WigHandlingMode? wigModeOverride = null,
-        IReadOnlyCollection<FormKey>? wnamConvertedWigStrips = null)
+        IReadOnlyCollection<FormKey>? wnamConvertedWigStrips = null,
+        INpcGetter? flattenTerminusNpc = null)
     {
         var wigMode = wigModeOverride ?? _settings.GetEffectiveWigMode(appearanceModSetting);
         var antlerMode = _settings.GetEffectiveAntlerMode(appearanceModSetting);
         if (wigMode == WigHandlingMode.None && antlerMode == AntlerHandlingMode.None) return null;
 
         var modKeys = appearanceModSetting.CorrespondingModKeys;
+
+        // The record whose Traits-governed appearance the OUTPUT will carry (see the doc above).
+        var appearanceNpc = flattenTerminusNpc ?? donorNpc;
 
         // Applicable outfit pieces = the donor outfit's direct items the scan
         // classified, partitioned by class (wigs nested in leveled lists are not
@@ -397,13 +415,15 @@ public class WigForwarder
             }
         }
 
-        // Resolve the donor WNAM up front: ForwardToSkin needs a resolvable WNAM
+        // Resolve the WNAM up front: ForwardToSkin needs a resolvable WNAM
         // to transfer into. hasWnam = present AND resolvable so the no-WNAM
         // fallback (→ ForwardToOutfit) also covers an unresolvable link.
-        var wnamKey = donorNpc.WornArmor.IsNull ? FormKey.Null : donorNpc.WornArmor.FormKey;
-        var wnamGetter = donorNpc.WornArmor.IsNull
+        // Traits-governed, so this is the terminus's skin under a flatten — the same one
+        // CopyInheritedAppearance writes, which the duplicate then replaces.
+        var wnamKey = appearanceNpc.WornArmor.IsNull ? FormKey.Null : appearanceNpc.WornArmor.FormKey;
+        var wnamGetter = appearanceNpc.WornArmor.IsNull
             ? null
-            : ResolveFromModsOrWinner<IArmorGetter>(donorNpc.WornArmor, modKeys, modFolderPaths);
+            : ResolveFromModsOrWinner<IArmorGetter>(appearanceNpc.WornArmor, modKeys, modFolderPaths);
         bool hasWnam = wnamGetter != null;
 
         // Per-class effective routing (the no-WNAM fallback flips ForwardToSkin →
@@ -480,22 +500,12 @@ public class WigForwarder
         // Skin-carried (WNAM) wigs under ForwardToOutfit: relocate each effective
         // wig ARMA (IsWigArmature — scan minus vetoes plus manual designations)
         // into the worn outfit via a minted wearable wig ARMO, and strip it from
-        // the WNAM duplicate. ForwardToSkin needs no branch here: a skin-carried
-        // wig is already in its end state (documented no-op).
+        // the WNAM duplicate.
         if (wigMode == WigHandlingMode.ForwardToOutfit && wnamGetter?.Armature != null)
         {
-            foreach (var armaLink in wnamGetter.Armature)
+            foreach (var arma in CollectWnamWigArmas(wnamGetter, donorNpc, appearanceModSetting,
+                         modFolderPaths, hairSlotOnly: false))
             {
-                if (armaLink == null || armaLink.IsNull) continue;
-                var arma = ResolveFromModsOrWinner<IArmorAddonGetter>(
-                    armaLink.FormKey.ToLink<IArmorAddonGetter>(), modKeys, modFolderPaths);
-                if (arma == null) continue;
-                if (!_settings.IsWigArmature(appearanceModSetting, arma.FormKey, arma.EditorID,
-                        donorNpc.FormKey))
-                {
-                    continue;
-                }
-
                 FormKey mintedArmoKey = GetOrMintWigArmorForArma(arma, appearanceModSetting,
                     donorContextModKey, modFolderPaths, mergeInDependencyRecords, result,
                     npcIdentifier, appendLog);
@@ -504,12 +514,26 @@ public class WigForwarder
             }
         }
 
+        // Skin-carried (WNAM) wigs under ForwardToSkin: the ARMA is already in its end state, so
+        // nothing is transferred and BuildSkinDuplicate never runs — but the clash it guards
+        // against is still there. A skin-carried hair-slot wig does NOT suppress head-part hair
+        // the way an equipped one does (see the comment in BuildSkinDuplicate), so the hair has to
+        // come off here too, keyed on the wig set the skin ALREADY carries rather than on what
+        // this run transferred. Idempotent with BuildSkinDuplicate's own call — both union into
+        // the same sets.
+        if (wigMode == WigHandlingMode.ForwardToSkin && wnamGetter?.Armature != null &&
+            CollectWnamWigArmas(wnamGetter, donorNpc, appearanceModSetting, modFolderPaths,
+                hairSlotOnly: true).Count > 0)
+        {
+            CollectHairRemoval(appearanceNpc, appearanceModSetting, modFolderPaths, result);
+        }
+
         // 1) Skin duplicate — built when there are pieces to ADD (skinPieces) or
         //    ARMAs to REMOVE from the WornArmor (source 2: antler Remove and/or
         //    converted/relocated skin wigs).
         if (skinPieces.Count > 0 || wnamRemovals.Count > 0)
         {
-            BuildSkinDuplicate(donorNpc, wnamKey, wnamGetter!, appearanceModSetting, donorContextModKey,
+            BuildSkinDuplicate(appearanceNpc, wnamKey, wnamGetter!, appearanceModSetting, donorContextModKey,
                 modFolderPaths, mergeInDependencyRecords, wigMode, antlerMode, skinPieces,
                 wnamRemovals, result, npcIdentifier, appendLog);
         }
@@ -518,8 +542,8 @@ public class WigForwarder
         // them for record removal (no bald replacement) + FaceGen shape strip.
         if (antlerRemove)
         {
-            CollectAntlerHeadPartRemoval(donorNpc, appearanceModSetting, donorContextModKey, modFolderPaths,
-                mergeInDependencyRecords, result, appendLog);
+            CollectAntlerHeadPartRemoval(appearanceNpc, donorNpc, appearanceModSetting, donorContextModKey,
+                modFolderPaths, mergeInDependencyRecords, result, appendLog);
         }
 
         // 2) Outfit forward — add pieces routed to the worn outfit (and strip
@@ -570,10 +594,11 @@ public class WigForwarder
     /// skin-forwarded pieces of BOTH classes and, for antler Remove, has the
     /// baked-in antler ArmorAddons (source 2) stripped. Populates
     /// <paramref name="result"/> with the skin key, merged records, and hair
-    /// removal. The donor WNAM is already resolved (<paramref name="wnamGetter"/>).
+    /// removal. The WNAM is already resolved (<paramref name="wnamGetter"/>) off the same
+    /// <paramref name="appearanceNpc"/> whose head parts the hair removal reads.
     /// </summary>
     private void BuildSkinDuplicate(
-        INpcGetter donorNpc,
+        INpcGetter appearanceNpc,
         FormKey wnamKey,
         IArmorGetter wnamGetter,
         ModSetting appearanceModSetting,
@@ -618,7 +643,7 @@ public class WigForwarder
                 result.SkinDuplicateKey = existing;
                 if (transfersHairSlot)
                 {
-                    CollectHairRemoval(donorNpc, appearanceModSetting, modFolderPaths, result);
+                    CollectHairRemoval(appearanceNpc, appearanceModSetting, modFolderPaths, result);
                 }
                 return;
             }
@@ -664,13 +689,15 @@ public class WigForwarder
 
         // A skin-carried hair-slot wig does NOT suppress the NPC's head part hair
         // the way an equipped one does (user-verified in game: both meshes render
-        // and clash), so when a hair-slot piece is transferred, collect the donor's
+        // and clash), so when a hair-slot piece is transferred, collect the NPC's
         // Hair-type head parts for removal — from the record (FinalizeNpcRecord)
         // and from the baked FaceGen NIF (stripped post asset-copy). Antler-only
-        // forwarding transfers no hair slot and keeps the real hair.
+        // forwarding transfers no hair slot and keeps the real hair. The
+        // already-skin-carried case is handled by Apply's own call (nothing transfers
+        // there, so this branch never sees it).
         if (transfersHairSlot)
         {
-            CollectHairRemoval(donorNpc, appearanceModSetting, modFolderPaths, result);
+            CollectHairRemoval(appearanceNpc, appearanceModSetting, modFolderPaths, result);
         }
 
         _recordHandler.RecordMergedRecordOrigin(wnamKey, dup.FormKey, wnamGetter.EditorID);
@@ -928,15 +955,54 @@ public class WigForwarder
             false, false);
     }
 
-    /// <summary>Collects the donor NPC's Hair-type head parts into
+    /// <summary>The effective wig ArmorAddons (<see cref="Settings.IsWigArmature"/>) carried
+    /// directly in <paramref name="wnamGetter"/> — the skin the output record will wear.
+    /// <paramref name="hairSlotOnly"/> narrows to pieces that actually occupy the hair slot,
+    /// matching <see cref="BuildSkinDuplicate"/>'s <c>transfersHairSlot</c> test exactly, so the
+    /// transfer path and the already-carried path cannot answer differently for one NPC; without
+    /// it a circlet-slot piece would bald the NPC. <paramref name="donorNpc"/> supplies only the
+    /// manual-designation scope key.</summary>
+    private List<IArmorAddonGetter> CollectWnamWigArmas(IArmorGetter wnamGetter, INpcGetter donorNpc,
+        ModSetting appearanceModSetting, HashSet<string> modFolderPaths, bool hairSlotOnly)
+    {
+        var found = new List<IArmorAddonGetter>();
+        if (wnamGetter.Armature == null) return found;
+        foreach (var armaLink in wnamGetter.Armature)
+        {
+            if (armaLink == null || armaLink.IsNull) continue;
+            var arma = ResolveFromModsOrWinner<IArmorAddonGetter>(
+                armaLink.FormKey.ToLink<IArmorAddonGetter>(),
+                appearanceModSetting.CorrespondingModKeys, modFolderPaths);
+            if (arma == null) continue;
+            if (!_settings.IsWigArmature(appearanceModSetting, arma.FormKey, arma.EditorID,
+                    donorNpc.FormKey))
+            {
+                continue;
+            }
+
+            if (hairSlotOnly &&
+                (arma.BodyTemplate?.FirstPersonFlags is not { } flags ||
+                 (flags & BipedObjectFlag.Hair) == 0))
+            {
+                continue;
+            }
+
+            found.Add(arma);
+        }
+
+        return found;
+    }
+
+    /// <summary>Collects the Hair-type head parts of <paramref name="appearanceNpc"/> — the record
+    /// whose HeadParts the OUTPUT will carry, so the terminus's under a flatten — into
     /// <paramref name="result"/>: record keys for the NPC-record removal, and
     /// shape names (the head parts' EditorIDs plus their ExtraParts' EditorIDs,
     /// e.g. hairlines — baked FaceGen shapes are named after them) for the
     /// FaceGen NIF strip.</summary>
-    private void CollectHairRemoval(INpcGetter donorNpc, ModSetting appearanceModSetting,
+    private void CollectHairRemoval(INpcGetter appearanceNpc, ModSetting appearanceModSetting,
         HashSet<string> modFolderPaths, Result result)
     {
-        foreach (var hpLink in donorNpc.HeadParts)
+        foreach (var hpLink in appearanceNpc.HeadParts)
         {
             if (hpLink == null || hpLink.IsNull) continue;
             var hpRec = ResolveFromModsOrWinner<IHeadPartGetter>(hpLink,
@@ -960,12 +1026,18 @@ public class WigForwarder
     /// record edit is needed (the ExtraPart still hangs off the head part but its
     /// shape is gone from the shipped FaceGen NIF).</item>
     /// </list>
-    /// Called only when the effective antler mode is Remove.</summary>
-    private void CollectAntlerHeadPartRemoval(INpcGetter donorNpc, ModSetting appearanceModSetting,
+    /// Called only when the effective antler mode is Remove.
+    ///
+    /// <para>Head parts are Traits-governed, so the walk is over the record whose HeadParts the
+    /// output carries (<paramref name="appearanceNpc"/> — the terminus under a flatten). The
+    /// manual-designation scope key stays keyed to <paramref name="donorNpc"/>, the NPC the user
+    /// designated against in the UI.</para></summary>
+    private void CollectAntlerHeadPartRemoval(INpcGetter appearanceNpc, INpcGetter donorNpc,
+        ModSetting appearanceModSetting,
         ModKey donorContextModKey, HashSet<string> modFolderPaths, bool mergeInDependencyRecords,
         Result result, Action<string, bool, bool> appendLog)
     {
-        foreach (var hpLink in donorNpc.HeadParts)
+        foreach (var hpLink in appearanceNpc.HeadParts)
         {
             if (hpLink == null || hpLink.IsNull) continue;
             var hpRec = ResolveFromModsOrWinner<IHeadPartGetter>(hpLink,
