@@ -571,10 +571,11 @@ public partial class UC_InternalMugshotPreview : UserControl
 
     /// <summary>
     /// Tears down the bound preview VM's GL resources with <em>this</em>
-    /// control's GL context current. Call from the hosting popup when it is
-    /// closing for good (see <see cref="FullScreen3DPreviewView"/>); the
-    /// Settings-tab instance never calls it because its VM is cached on
-    /// VM_Settings and outlives the control.
+    /// control's GL context current, then releases the context itself. Call
+    /// from the hosting popup when it is closing for good (see
+    /// <see cref="FullScreen3DPreviewView"/>); the Settings-tab instance never
+    /// calls it because its VM is cached on VM_Settings and outlives the
+    /// control.
     ///
     /// Every GLWpfControl mints its OWN GL context — <see cref="TryStartGl"/>
     /// passes neither <c>ContextToUse</c> nor <c>SharedContext</c>, so each
@@ -629,6 +630,34 @@ public partial class UC_InternalMugshotPreview : UserControl
         {
             System.Diagnostics.Debug.WriteLine(
                 "UC_InternalMugshotPreview.ShutdownGl: viewer dispose failed: " + ex.Message);
+        }
+
+        // Finally hand the context itself back. Nothing else did: WPF never
+        // disposes a FrameworkElement, and GLWpfControl's Unloaded handler only
+        // releases the interop framebuffer, so every popup previously stranded a
+        // GL context + GLFW window + D3D9Ex device for the app's lifetime.
+        // Must come last — Dispose destroys the context, so the deletes above
+        // would have nowhere to land if this ran first.
+        //
+        // Safe even though Unloaded may already have released the framebuffer:
+        // GLWpfControl.Dispose -> GLWpfControlRenderer.Dispose re-enters
+        // ReleaseFramebufferResources, whose work is gated on a D3dImage field
+        // that the first pass unconditionally nulls, so the second pass is a
+        // no-op (verified against the 4.3.3 source). Dispose also clears the
+        // control's _isStarted, which makes a later Unloaded a no-op too.
+        try
+        {
+            GlControl.Dispose();
+            // Mirrors the control's own _isStarted reset: Start() is legal
+            // again after Dispose, so a re-Loaded control could restart GL.
+            // Doesn't happen on the popup path (the UC dies with its window),
+            // but leaving the flag set would silently block that restart.
+            _glStarted = false;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "UC_InternalMugshotPreview.ShutdownGl: GL context release failed: " + ex.Message);
         }
     }
 
