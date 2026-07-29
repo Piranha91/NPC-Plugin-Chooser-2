@@ -7,7 +7,7 @@ on it rather than rediscover it.
 Anything in here has been verified against the code, not inferred. Line references are a starting
 point, not a contract.
 
-Last verified: 2026-07-28.
+Last verified: 2026-07-29.
 
 ---
 
@@ -55,6 +55,54 @@ noticed.
 
 *A fix has to decide:* whether the strip belongs on the record NPC2 writes (raw donor) or on the
 outfit the actor wears (chain-resolved) — they are only the same NPC most of the time.
+
+## 4. Asset resolution never leaves the selected mod
+
+`AssetHandler.FindAssetSource` searches the selected `ModSetting`'s folders and the BSAs of its
+`CorrespondingModKeys`, and nothing else. An add-on mod that references assets owned by a *sibling*
+mod therefore loses them — the classic shape is a "De-Standalone" conversion whose plugin points at
+textures that ship in its parent mod. A miss returns `NotFound` and the copy task completes as a
+no-op.
+
+This is the root cause of the Adrianne Avenicci case (Bijin AIO De-Standalone; hair, brow and eye
+textures absent in game while the face itself was correct). Note what it is NOT: those head parts
+carry their own TextureSets and are not regions of the face tint, so no FaceGen-ladder choice could
+ever have affected them — a whole session was spent on that wrong theory.
+
+**Reported, not fixed, since 2026-07-29.** `AssetHandler.WarnOnFullyUnresolvedShapeTextures` emits a
+forced, warning-coloured run-log line when *every* texture slot of a NIF shape is unresolvable in
+the selected mod, in the game Data folder, and in the vanilla archives. Deliberately per SHAPE, at
+the user's direction: single missing textures are near-universal and harmless (an absent mouth
+subsurface map is the stock example), while a shape with no resolvable texture at all renders
+untextured and is worth acting on. Deduplicated by (mod, NIF, shape).
+
+*A fix has to decide:* whether cross-mod asset resolution is permitted at all, and if so in what
+order (the mod's own folders must keep winning) and how the borrowed file is attributed in
+`AssetProvenance.csv`. It also has to decide what happens when the sibling mod is not installed —
+the warning is the correct outcome there, so any fix has to keep it for that case.
+
+## 5. FaceGen ladder rows that no run has exercised
+
+The ladder (`BackEnd/FaceGenLadder.cs`) is fully unit-tested, but two of its paths have never run
+against real data. Recorded here so they are not mistaken for proven.
+
+**Row 3 — mod ships a face tint, no mesh, and edits the record.** Zero instances in the reference
+load order, so the compatibility gate and the winner fallback are unproven outside unit tests. They
+are, however, *reachable*: a filesystem census on 2026-07-29 over 20,707 mod folders in 12 modlists
+(`C:\Games\Skyrim AE`, `C:\Games\Skyrim VR`, `S:\Dev\MO2`, `X:\Games\Skyrim Wabbajacks`) found 3,754
+mod/plugin/FormID combinations with a loose facetint `.dds` and no matching facegeom `.nif`. Treat
+that number as an upper bound — 93% of the hits are in mod folders that also ship a `.bsa`, where the
+mesh is most likely packed rather than absent. The 276 hits in mods with **no BSA at all** are the
+real candidates; the largest, all in `Tempus Maledictum 1_11`, are Teldryn Serious
+(`TSR_TeldrynSerious.esp`, 68), Darkend (`Darkend.esp`, 39), Hearthfire Extended
+(`HearthFireExtended.esp`, 27) and Strongholds - Mor Khazgur (22). LoreRim has exactly one:
+`katana.esp` `001724E6`. To exercise the branch, select one of those mods for one of its NPCs and
+run a patch; note that a mod which is also the NPC's *origin* will exercise the abort leg rather than
+the origin-forward leg.
+
+**Face-swap destination mode** (`FaceGenDestinationMode.FaceSwap`, shared/guest appearances) has
+never been verified in game either. Unlike row 3 this needs no specimen hunt — it is selection-driven,
+so any install reproduces it by sharing one NPC's appearance with another.
 
 ---
 

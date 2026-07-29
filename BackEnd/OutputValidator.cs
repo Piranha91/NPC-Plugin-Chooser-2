@@ -301,6 +301,12 @@ public class OutputValidator
 
         log.AppendLine($"NPC {displayName} [{npcFk}] -> '{selectedModName}' (donor {donorFk}, winner {winningModKey.FileName})");
 
+        if (!modSettingsByName.TryGetValue(selectedModName, out var modSetting))
+        {
+            ReportUnconfiguredMod(npcFk, displayName, selectedModName, result);
+            return;
+        }
+
         // --- Traits template --------------------------------------------------------------
         // An NPC with the Traits flag renders the TEMPLATE's appearance: the game never loads
         // this record's head parts nor this FormID's FaceGen, and the user's selection here has
@@ -311,7 +317,21 @@ public class OutputValidator
         // that copies a surrogate's visual style onto it at runtime — so there is nothing of ours
         // to re-target on the recipient. Report the inheritance and let the .ini/surrogate checks
         // run; the surrogate gets the same treatment inside ValidateNpcSkyPatcher.
-        if (recipientRecord != null && Auxilliary.IsValidTemplatedNpc(recipientRecord))
+        //
+        // ALL of that is conditional on the mod's effective Template Handling Mode. Under
+        // TemplateHandlingMode.GiveEachNpcOwnCopy the patcher copies the terminus's appearance onto
+        // this NPC's own record, CLEARS the Traits flag and writes FaceGen under this NPC's own
+        // FormID — the selection is delivered here, so redirecting the checks at the terminus would
+        // grade the output against a shape it deliberately no longer has, and the "whatever you
+        // select has no effect" row would be false. In record mode a deployed, conflict-winning
+        // output already reads as untemplated so the branch self-disarms; in SkyPatcher mode the
+        // recipient's record is never patched, so it still looks templated and only this gate stops
+        // the wrong row. (SkyPatcher + Inherit does not reach the output at all — the pre-patch
+        // Validator.CanSkyPatcherApplyAppearance rejects those NPCs per NPC.)
+        bool inheritsFaceFromTemplate =
+            _settings.GetEffectiveTemplateHandlingMode(modSetting) == TemplateHandlingMode.InheritFromTemplate;
+
+        if (inheritsFaceFromTemplate && recipientRecord != null && Auxilliary.IsValidTemplatedNpc(recipientRecord))
         {
             if (_settings.UseSkyPatcherMode)
             {
@@ -324,20 +344,14 @@ public class OutputValidator
             {
                 return; // Deferred to the template's own rows, unresolvable, or consistency-only.
             }
-        }
 
-        if (!modSettingsByName.TryGetValue(selectedModName, out var modSetting))
-        {
-            result.Issues.Add(new ValidationIssue
+            // The redirect can retarget the checks at the TEMPLATE's own selection, which is often a
+            // different mod; everything below must then be graded against that mod's files.
+            if (!modSettingsByName.TryGetValue(selectedModName, out modSetting))
             {
-                Severity = ValidationSeverity.Error,
-                Check = ValidationCheckKind.Selection,
-                NpcDisplayName = displayName,
-                NpcFormKey = npcFk.ToString(),
-                SelectedMod = selectedModName,
-                Issue = $"The selected mod '{selectedModName}' is no longer among the configured mods.",
-            });
-            return;
+                ReportUnconfiguredMod(npcFk, displayName, selectedModName, result);
+                return;
+            }
         }
 
         if (_settings.UseSkyPatcherMode)
@@ -495,6 +509,21 @@ public class OutputValidator
         donorFk = templateSelection.NpcFormKey;
         return true;
     }
+
+    /// <summary>The selection names a mod this app no longer has configured. Emitted from two
+    /// places — the NPC's own selection, and the template's after a redirect — so it lives here
+    /// rather than being written twice.</summary>
+    private static void ReportUnconfiguredMod(
+        FormKey npcFk, string displayName, string selectedModName, ValidationRunResult result) =>
+        result.Issues.Add(new ValidationIssue
+        {
+            Severity = ValidationSeverity.Error,
+            Check = ValidationCheckKind.Selection,
+            NpcDisplayName = displayName,
+            NpcFormKey = npcFk.ToString(),
+            SelectedMod = selectedModName,
+            Issue = $"The selected mod '{selectedModName}' is no longer among the configured mods.",
+        });
 
     /// <summary><see cref="Auxilliary.GetLogString"/> appends " | " after the EditorID for a record
     /// with no Name; trim it so a row reads as a name rather than a fragment.</summary>
@@ -1349,21 +1378,37 @@ public class OutputValidator
         {
             if (!subjectExists && sourcePath == null)
             {
-                // No loose deployed FaceGen and the selected mod has none (loose or BSA): vanilla
-                // FaceGen-in-BSA, or an NPC with no custom FaceGen. Nothing to compare; stay quiet.
+                // No loose deployed FaceGen and the selected mod has none (loose or BSA). Often
+                // benign — vanilla FaceGen packed in a BSA, or an NPC the engine never builds a head
+                // for — but it is also exactly what a genuinely faceless NPC looks like, so decide
+                // which instead of returning silently as this branch used to.
+                ReportMissingFaceGen(npcFk, subjectFk, displayName, selectedModName, targetMeshRel,
+                    linkCache, dataFolder, run, result, log);
                 return;
             }
 
             if (subjectExists && sourcePath == null)
             {
+                // The selected mod ships no face MESH for this NPC. Since the FaceGen ladder that is
+                // not a fault, it is the definition of rows 3-5: the patcher deliberately forwards
+                // the mesh from the mod that originally added the NPC (or, failing that, from
+                // whatever already wins that path) so the mod's tint has geometry to sit on. Calling
+                // that a warning accused the patcher of its own designed behaviour on every
+                // tint-only and FaceGen-only selection. Whether the forwarded mesh actually FITS
+                // this NPC's head parts is the dark-face question, and it is answered independently
+                // by CheckFaceGenHeadPartConsistency above.
                 result.Issues.Add(new ValidationIssue
                 {
-                    Severity = ValidationSeverity.Warning,
+                    Severity = ValidationSeverity.Info,
                     Check = ValidationCheckKind.Asset,
                     NpcDisplayName = displayName,
                     NpcFormKey = npcFk.ToString(),
                     SelectedMod = selectedModName,
-                    Issue = "FaceGen .nif is deployed to Data, but the selected mod provides no FaceGen for this NPC (no loose file and none in its BSAs). Verify the correct mod/donor.",
+                    Issue = $"'{selectedModName}' ships no face mesh for this NPC, so the deployed mesh was " +
+                            "forwarded from elsewhere — normally the mod that originally added the NPC. " +
+                            "That is the expected result for a tint-only or FaceGen-only mod.",
+                    WinningSource = DescribeDeployedFaceGenProvider(
+                        subjectFk, targetMeshRel, subjectPath, linkCache, modSetting, dataFolder, run),
                     Details = targetMeshRel,
                 });
                 return;
@@ -1493,6 +1538,144 @@ public class OutputValidator
         finally
         {
             if (sourceTemp != null) TryDelete(sourceTemp);
+        }
+    }
+
+    /// <summary>
+    /// Names whatever is actually supplying the deployed FaceGen when it did not come from the
+    /// selected mod: a loose byte-identical copy in another mod folder first, then the BSAs of
+    /// plugins that provide this NPC. Same two-step search the mismatch path uses.
+    /// </summary>
+    private string DescribeDeployedFaceGenProvider(
+        FormKey subjectFk,
+        string targetMeshRel,
+        string subjectPath,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        ModSetting selectedMod,
+        string dataFolder,
+        RunContext run)
+    {
+        var loose = FindLooseFaceGenProviders(targetMeshRel, subjectPath, selectedMod);
+        if (loose.Count > 0) return string.Join("; ", loose);
+
+        return FindBsaFaceGenCulprit(subjectFk, targetMeshRel, subjectPath, linkCache, selectedMod, dataFolder, run)
+               ?? "source not identified (no byte-identical copy among your mod folders or the BSAs of plugins providing this NPC)";
+    }
+
+    /// <summary>
+    /// Nothing is deployed at the subject's FaceGen path and the selected mod has nothing to deploy.
+    /// Decides whether that is a defect and reports it, instead of the blanket silence this case used
+    /// to get — "no FaceGen anywhere" became a defined, nameable condition with the FaceGen ladder.
+    ///
+    /// <para>Template-aware in two directions, because most NPCs that legitimately have no FaceGen of
+    /// their own are exactly the templated ones. A subject that still carries the Traits flag is
+    /// mid-chain — its face lives further down and the Template rows already explain that — and a
+    /// subject whose RACE lacks <see cref="Race.Flag.FaceGenHead"/> has no built head at all (the
+    /// engine's own signal; see <c>Auxilliary.IsValidAppearanceRace</c>). Neither is a finding. An NPC
+    /// with no head parts is treated the same way: there is no face to be missing.</para>
+    ///
+    /// <para>Only when the subject genuinely should have a face does this report — and it distinguishes
+    /// "some archive supplies one, just not yours" (the selection is not being delivered) from "nothing
+    /// anywhere supplies one" (the head will not build). The latter is an Error in SkyPatcher mode
+    /// because the surrogate owns a brand-new FormKey and nothing in the load order can fall through
+    /// to its path, so there is no recovery; in record mode the NPC keeps whatever it had.</para>
+    /// </summary>
+    /// <summary>
+    /// Whether the engine builds a FaceGen head for this record at its OWN FormID — i.e. whether
+    /// "no FaceGen anywhere" is a defect for it or simply how it is built. Pure so the three
+    /// exclusions can be pinned without an environment; the I/O lives in
+    /// <see cref="ReportMissingFaceGen"/>.
+    ///
+    /// <para>Excluded: a record still carrying a usable Traits template (its face is another
+    /// record's, further down the chain); a record whose RACE lacks
+    /// <see cref="Race.Flag.FaceGenHead"/> (the engine's own "this actor gets a built head" signal —
+    /// automatons, creatures and helmeted monsters fail it, and shipped FaceGen files are no
+    /// counter-evidence because the Creation Kit auto-exports them regardless); and a record with
+    /// no head parts, which has no face to be missing.</para>
+    ///
+    /// <para>An unresolvable race is treated as "should have one": the flag cannot be read, and
+    /// staying silent on an unreadable race would hide exactly the broken-master cases this check
+    /// exists to surface.</para>
+    /// </summary>
+    internal static bool SubjectShouldHaveOwnFaceGen(INpcGetter subject, Func<FormKey, IRaceGetter?> resolveRace)
+    {
+        if (Auxilliary.IsValidTemplatedNpc(subject)) return false;
+
+        if (!subject.Race.IsNull)
+        {
+            var race = resolveRace(subject.Race.FormKey);
+            if (race != null && !race.Flags.HasFlag(Race.Flag.FaceGenHead)) return false;
+        }
+
+        return subject.HeadParts != null && subject.HeadParts.Count > 0;
+    }
+
+    private void ReportMissingFaceGen(
+        FormKey npcFk,
+        FormKey subjectFk,
+        string displayName,
+        string selectedModName,
+        string targetMeshRel,
+        ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        string dataFolder,
+        RunContext run,
+        ValidationRunResult result,
+        StringBuilder log)
+    {
+        if (!linkCache.TryResolve<INpcGetter>(subjectFk, out var subjectRecord) || subjectRecord == null)
+        {
+            return; // Unresolvable subject is CheckRecord's business, not this check's.
+        }
+
+        if (!SubjectShouldHaveOwnFaceGen(subjectRecord,
+                fk => linkCache.TryResolve<IRaceGetter>(fk, out var r) ? r : null))
+        {
+            return;
+        }
+
+        var candidates = ResolveBsaFaceGenCandidates(subjectFk, targetMeshRel, linkCache, dataFolder, run);
+        try
+        {
+            if (candidates.Count > 0)
+            {
+                result.Issues.Add(new ValidationIssue
+                {
+                    Severity = ValidationSeverity.Warning,
+                    Check = ValidationCheckKind.Asset,
+                    NpcDisplayName = displayName,
+                    NpcFormKey = npcFk.ToString(),
+                    SelectedMod = selectedModName,
+                    Issue = $"'{selectedModName}' provides no FaceGen for this NPC (no loose file and none in " +
+                            "its BSAs), and none is deployed loose either, so the game will build this face from " +
+                            "an archive instead of from your selection.",
+                    WinningSource = DescribeBsaCandidates(candidates),
+                    Details = targetMeshRel,
+                });
+                log.AppendLine($"  FACEGEN missing from selection; BSA fallback: {DescribeBsaCandidates(candidates)}");
+                return;
+            }
+
+            result.Issues.Add(new ValidationIssue
+            {
+                Severity = _settings.UseSkyPatcherMode ? ValidationSeverity.Error : ValidationSeverity.Warning,
+                Check = ValidationCheckKind.Asset,
+                NpcDisplayName = displayName,
+                NpcFormKey = npcFk.ToString(),
+                SelectedMod = selectedModName,
+                Issue = _settings.UseSkyPatcherMode
+                    ? "No FaceGen exists for this NPC anywhere: none loose in Data, none from the selected mod, " +
+                      "and no active BSA provides one. In SkyPatcher mode the appearance is carried by a new " +
+                      "record of this app's own, so nothing in your load order can supply the missing face — it " +
+                      "will not render correctly."
+                    : "No FaceGen exists for this NPC anywhere: none loose in Data, none from the selected mod, " +
+                      "and no active BSA provides one. The game has no face to build for it.",
+                Details = targetMeshRel,
+            });
+            log.AppendLine("  FACEGEN missing everywhere (no loose, no mod source, no BSA).");
+        }
+        finally
+        {
+            foreach (var c in candidates) TryDelete(c.TempPath);
         }
     }
 

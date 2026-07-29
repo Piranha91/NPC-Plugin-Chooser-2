@@ -313,8 +313,8 @@ public static class FaceGenLadder
     //
     // (This was briefly inverted to winner-first, on a mistaken reading of an in-game report of
     // missing hair/brow/eye textures. Those head parts carry their own TextureSets and are not
-    // regions of the face tint, so no choice made here could have affected them — see the
-    // Adrianne Avenicci entry in Docs/FaceGenLadder-Handoff-2026-07.md, still unresolved.)
+    // regions of the face tint, so no choice made here could have affected them. That case was
+    // ModSetting-scoped asset resolution instead — see docs/KnownLimitations.md #4.)
     //
     // Neither source being available is a warning rather than an abort: an untinted head still
     // renders, which beats refusing to patch.

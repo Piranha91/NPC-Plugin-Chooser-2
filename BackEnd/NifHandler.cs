@@ -43,6 +43,40 @@ public class NifHandler
     }
 
     /// <summary>
+    /// The texture paths each shape references, grouped by shape.
+    /// <see cref="GetExtraTexturesFromNif"/> flattens the whole file into one set, which cannot
+    /// answer "is this shape textureless?" — a mod routinely ships a NIF where one slot of one
+    /// shape is missing (an absent mouth subsurface map is near-universal) and that is harmless,
+    /// while a shape whose textures are ALL missing renders untextured and is worth reporting.
+    ///
+    /// <para>Slots are read through <c>GetTexturePathByIndex</c> (0-8, the BSShaderTextureSet
+    /// slot range) rather than by walking BSShaderTextureSet blocks directly, because one texture
+    /// set can be shared by several shapes and the block walk loses which shape used it. Empty
+    /// slots are omitted; shapes with no shader property (SMP collision/virtual meshes) yield an
+    /// empty list and are still returned, so callers can tell "no textures" from "not present".</para>
+    /// </summary>
+    public static IReadOnlyList<(string ShapeName, IReadOnlyList<string> TexturePaths)> GetTexturesByShape(string nifPath)
+    {
+        var results = new List<(string, IReadOnlyList<string>)>();
+        using NifFile nif = new NifFile();
+        if (nif.Load(nifPath) != 0) return results;
+
+        using var shapes = nif.GetShapes();
+        foreach (var shape in shapes)
+        {
+            string name = shape.name?.get() ?? string.Empty;
+            var paths = new List<string>();
+            for (uint slot = 0; slot < 9; slot++)
+            {
+                string tex = nif.GetTexturePathByIndex(shape, slot);
+                if (!string.IsNullOrWhiteSpace(tex)) paths.Add(tex);
+            }
+            results.Add((name, paths));
+        }
+        return results;
+    }
+
+    /// <summary>
     /// Deletes the named shapes from a NIF in place and saves it. Used by the
     /// wig-forwarding pipeline to strip the baked hair shape(s) from a copied
     /// FaceGen NIF after the hair head part is removed from the NPC record —

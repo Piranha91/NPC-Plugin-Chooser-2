@@ -65,6 +65,11 @@ public class AssetHandler : OptionalUIModule
 
     private readonly ConcurrentDictionary<string, DestinationClaim> _claimedDestinations = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>(mod|nif|shape) keys already reported by
+    /// <see cref="WarnOnFullyUnresolvedShapeTextures"/>. A body or hair mesh is shared by every
+    /// NPC using it, so without this one broken shape would emit a line per NPC.</summary>
+    private readonly ConcurrentDictionary<string, byte> _reportedTextureless = new(StringComparer.OrdinalIgnoreCase);
+
     // ADD THIS FIELD:
     // This semaphore limits how many NIFs we process at the same time.
     // Initializing with Environment.ProcessorCount is a safe default.
@@ -92,6 +97,7 @@ public class AssetHandler : OptionalUIModule
         _potentialCopyFailures.Clear();
         _processedAssetTasks.Clear();
         _claimedDestinations.Clear();
+        _reportedTextureless.Clear();
         AssetProvenanceDiag.Reset(); // opt-in per-run asset provenance report (no-op unless enabled)
         FaceGenLadderDiag.Reset();   // opt-in per-run FaceGen ladder report (no-op unless enabled)
         LoadAuxiliaryFiles();
@@ -711,10 +717,100 @@ public class AssetHandler : OptionalUIModule
                 textureTasks.Add(RequestAssetCopyAsync(texRelPath, modSetting, outputBasePath, faceTintSubPath, texCtx));
             }
             // await Task.WhenAll(textureTasks); DO not await here - causes deadlock due to upstream semaphore
+
+            await WarnOnFullyUnresolvedShapeTextures(nifPathToAnalyze, modSetting, faceTintSubPath, ctx);
         }
         catch (Exception ex)
         {
             AppendLog($"NIF TEXTURE ERROR: Failed to parse '{nifPathToAnalyze}' for additional textures: {ExceptionLogger.GetExceptionStack(ex)}", true, true);
+        }
+    }
+
+    /// <summary>
+    /// Reports a copied NIF's shapes whose textures are ALL unresolvable, as a forced,
+    /// warning-coloured run-log line.
+    ///
+    /// <para>Deliberately per SHAPE rather than per texture. Mods routinely ship a NIF with one
+    /// dead slot — an absent mouth subsurface map is near-universal — and warning on every one
+    /// buries the signal in noise the user cannot act on. A shape with no resolvable texture at
+    /// all is different in kind: it renders untextured in game, which is the visible symptom that
+    /// sent the Adrianne Avenicci investigation (Bijin AIO De-Standalone's hair/brow/eye shapes
+    /// reference textures owned by a sibling mod, and <see cref="FindAssetSource"/> never leaves
+    /// the selected ModSetting).</para>
+    ///
+    /// <para>"Unresolvable" is judged against everything the game can actually load, not just the
+    /// selected mod: the mod's own folders and BSAs (<see cref="FindAssetSource"/>), then a loose
+    /// file in the game Data folder, then the vanilla archives. Without those last two, every mod
+    /// NIF that legitimately reuses a vanilla texture would be reported.</para>
+    ///
+    /// <para>Deduplicated by (mod, NIF, shape) so a shared mesh used by hundreds of NPCs produces
+    /// one line naming the first NPC that hit it, not hundreds.</para>
+    /// </summary>
+    private async Task WarnOnFullyUnresolvedShapeTextures(
+        string nifPathToAnalyze, ModSetting modSetting, string faceTintSubPath, AssetRequestContext ctx)
+    {
+        IReadOnlyList<(string ShapeName, IReadOnlyList<string> TexturePaths)> byShape;
+        try
+        {
+            byShape = NifHandler.GetTexturesByShape(nifPathToAnalyze);
+        }
+        catch
+        {
+            return; // A diagnostic must never fail a patch run; the copy already succeeded.
+        }
+        if (byShape.Count == 0) return;
+
+        IReadOnlySet<string>? vanillaAssetPaths = null;
+        string dataFolder = _environmentStateProvider.DataFolderPath;
+
+        foreach (var (shapeName, texturePaths) in byShape)
+        {
+            var candidates = new List<string>();
+            foreach (var tex in texturePaths)
+            {
+                // The face tint is supplied by the FaceGen ladder, not by this scan; a head shape
+                // whose only texture is its tint is not textureless.
+                if (!string.IsNullOrEmpty(faceTintSubPath) &&
+                    (faceTintSubPath.Contains(tex, StringComparison.OrdinalIgnoreCase) ||
+                     tex.Contains(faceTintSubPath, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+                if (Auxilliary.TryRegularizePath(tex, out var rel) && !string.IsNullOrWhiteSpace(rel))
+                {
+                    candidates.Add(rel);
+                }
+            }
+
+            if (candidates.Count == 0) continue; // No textures to be missing.
+
+            vanillaAssetPaths ??= await _bsaHandler.GetVanillaAssetPathsAsync();
+
+            bool anyResolved = false;
+            foreach (var rel in candidates)
+            {
+                if (FindAssetSource(rel, modSetting).Item1 != AssetSourceType.NotFound ||
+                    vanillaAssetPaths.Contains(rel) ||
+                    (!string.IsNullOrWhiteSpace(dataFolder) && File.Exists(Path.Combine(dataFolder, rel))))
+                {
+                    anyResolved = true;
+                    break;
+                }
+            }
+            if (anyResolved) continue;
+
+            string dedupeKey = $"{modSetting.DisplayName}|{nifPathToAnalyze}|{shapeName}";
+            if (!_reportedTextureless.TryAdd(dedupeKey, 0)) continue;
+
+            string who = string.IsNullOrWhiteSpace(ctx.NpcIdentifier) ? "an NPC" : ctx.NpcIdentifier;
+            string shape = string.IsNullOrWhiteSpace(shapeName) ? "(unnamed shape)" : shapeName;
+            AppendLog(
+                $"      WARNING: {who}: none of the textures for '{shape}' in " +
+                $"{Path.GetFileName(nifPathToAnalyze)} could be found in '{modSetting.DisplayName}', " +
+                $"in your game folder, or in the base game archives, so it will render untextured. " +
+                $"'{modSetting.DisplayName}' may depend on another mod that is not installed or not " +
+                $"selected here. Missing: {string.Join(", ", candidates)}",
+                false, true);
         }
     }
 

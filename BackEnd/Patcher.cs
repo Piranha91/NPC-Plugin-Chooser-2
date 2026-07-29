@@ -3185,19 +3185,6 @@ public class Patcher : OptionalUIModule
         }
     }
 
-    private static bool ChangesHeadDataThatNeedsFaceGen(INpcGetter appearanceNpcRecord, INpcGetter donorBaseRecord)
-    {
-        // Guard, not dead code: keeps the rule with the decision if another caller appears.
-        if (Auxilliary.IsValidTemplatedNpc(appearanceNpcRecord)) return false;
-
-        // Static Equals() for the top-level records so nulls are handled safely.
-        if (!Equals(donorBaseRecord.FaceMorph, appearanceNpcRecord.FaceMorph)) return true;
-        if (!Equals(donorBaseRecord.FaceParts, appearanceNpcRecord.FaceParts)) return true;
-
-        var baseHeadParts = donorBaseRecord.HeadParts.Select(x => x.FormKey).ToHashSet();
-        return appearanceNpcRecord.HeadParts.Any(hp => !baseHeadParts.Contains(hp.FormKey));
-    }
-
     /// <summary>
     /// Mirrors the donor's appearance inheritance onto the patched record. The Traits flag and the
     /// TPLT link are ONE unit: an NPC with Traits set and a null Template has no face to inherit,

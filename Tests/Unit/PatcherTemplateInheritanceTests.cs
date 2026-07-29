@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Records;
@@ -177,94 +177,6 @@ public class PatcherTemplateInheritanceTests
             .GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
             .FieldType;
         return System.Activator.CreateInstance(fieldType)!;
-    }
-
-    // ---- Missing-FaceGen black-face warning --------------------------------------------------
-    //
-    // The pre-patch check warns when a mod edits head data but ships no FaceGen for that NPC. It
-    // used to ignore the Traits flag, so it fired on every generic template user whose face the
-    // game never builds from its own FormID — ~200 CRITICAL WARNINGs in one run, burying the real
-    // ones. It now measures only appearances the game will actually render from this record.
-
-    private static bool NeedsFaceGen(INpcGetter appearance, INpcGetter donorBase) =>
-        Reflect.InvokeStatic<Patcher, bool>("ChangesHeadDataThatNeedsFaceGen", appearance, donorBase);
-
-    [Fact]
-    public void MissingFaceGen_InheritedAppearance_IsNotAWarning()
-    {
-        // "Redguard Woman": the mod's record is templated and edits only WNAM, but its head parts
-        // still differ from the base record — the old check called that a black-face risk.
-        var mod = MutagenFixtures.NewMod("Test.esp");
-        var template = MutagenFixtures.NewNpc(mod, "Template");
-        var headPart = mod.HeadParts.AddNew();
-        var donorBase = MutagenFixtures.NewNpc(mod, "Base");
-        var appearance = MutagenFixtures.NewNpc(mod, "Appearance", traitsTemplate: true, template: template);
-        appearance.HeadParts.Add(headPart.FormKey.ToLink<IHeadPartGetter>());
-
-        NeedsFaceGen(appearance, donorBase).Should().BeFalse();
-    }
-
-    [Fact]
-    public void MissingFaceGen_ChangedHeadParts_StillWarns()
-    {
-        var mod = MutagenFixtures.NewMod("Test.esp");
-        var headPart = mod.HeadParts.AddNew();
-        var donorBase = MutagenFixtures.NewNpc(mod, "Base");
-        var appearance = MutagenFixtures.NewNpc(mod, "Appearance");
-        appearance.HeadParts.Add(headPart.FormKey.ToLink<IHeadPartGetter>());
-
-        NeedsFaceGen(appearance, donorBase).Should().BeTrue();
-    }
-
-    [Fact]
-    public void MissingFaceGen_TraitsFlagWithoutATemplate_StillWarns()
-    {
-        // The flag alone inherits nothing, so the record's own face IS what renders.
-        var mod = MutagenFixtures.NewMod("Test.esp");
-        var headPart = mod.HeadParts.AddNew();
-        var donorBase = MutagenFixtures.NewNpc(mod, "Base");
-        var appearance = MutagenFixtures.NewNpc(mod, "Appearance", traitsTemplate: true);
-        appearance.HeadParts.Add(headPart.FormKey.ToLink<IHeadPartGetter>());
-
-        NeedsFaceGen(appearance, donorBase).Should().BeTrue();
-    }
-
-    [Fact]
-    public void MissingFaceGen_TemplateLinkWithoutTheTraitsFlag_StillWarns()
-    {
-        // A template used for inventory/AI only does not redirect the face.
-        var mod = MutagenFixtures.NewMod("Test.esp");
-        var template = MutagenFixtures.NewNpc(mod, "Template");
-        var headPart = mod.HeadParts.AddNew();
-        var donorBase = MutagenFixtures.NewNpc(mod, "Base");
-        var appearance = MutagenFixtures.NewNpc(mod, "Appearance", template: template);
-        appearance.HeadParts.Add(headPart.FormKey.ToLink<IHeadPartGetter>());
-
-        NeedsFaceGen(appearance, donorBase).Should().BeTrue();
-    }
-
-    [Fact]
-    public void MissingFaceGen_IdenticalHeadData_IsNotAWarning()
-    {
-        var mod = MutagenFixtures.NewMod("Test.esp");
-        var headPart = mod.HeadParts.AddNew();
-        var donorBase = MutagenFixtures.NewNpc(mod, "Base");
-        donorBase.HeadParts.Add(headPart.FormKey.ToLink<IHeadPartGetter>());
-        var appearance = MutagenFixtures.NewNpc(mod, "Appearance");
-        appearance.HeadParts.Add(headPart.FormKey.ToLink<IHeadPartGetter>());
-
-        NeedsFaceGen(appearance, donorBase).Should().BeFalse();
-    }
-
-    [Fact]
-    public void MissingFaceGen_ChangedFaceMorph_Warns()
-    {
-        var mod = MutagenFixtures.NewMod("Test.esp");
-        var donorBase = MutagenFixtures.NewNpc(mod, "Base");
-        var appearance = MutagenFixtures.NewNpc(mod, "Appearance");
-        appearance.FaceMorph = new NpcFaceMorph { BrowsForwardVsBack = 0.5f };
-
-        NeedsFaceGen(appearance, donorBase).Should().BeTrue();
     }
 
     // ---- SkyPatcher-mode Traits directives ---------------------------------------------------

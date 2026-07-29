@@ -35,16 +35,20 @@ NifSkope/Bethesda spec (do not re-litigate without new evidence):
 
 ## Findings
 
+**Status re-verified against the code on 2026-07-29.** The table below is the current state; the
+per-issue sections that follow describe each defect as first written and are kept for the reasoning,
+not as a to-do list. Only AUD-7 is still open, and only latently.
+
 | ID | Severity | Summary | Status |
 |----|----------|---------|--------|
-| AUD-1 | **Medium-High** | Flat NAM0 skin TXST applied to every shape of an attire override | Open |
-| AUD-2 | Medium | TXST TX03 (Glow/Detail) routed only to slot 2; clobbers skin SSS | Open |
-| AUD-3 | Medium-Low | Specular enabled by slot-7 map presence even when SLSF1_Specular is clear | Open |
-| AUD-4 | Low (gap) | Glow maps unimplemented; External_Emittance ignored | Open |
-| AUD-5 | Low | Eye detection is case-sensitive name heuristic; eye cubemap scale misapplication | Open |
-| AUD-6 | Low (watch) | NiAlphaProperty with no bits set forces alpha-test on | Open |
-| AUD-7 | Low (edge) | Duplicate shape names: name match fans out; blocks index fallback | Open |
-| AUD-8 | Info | Trace-only missing-texture log lines; unverified folder-precedence convention | Open |
+| AUD-1 | **Medium-High** | Flat NAM0 skin TXST applied to every shape of an attire override | **Fixed** — skin-shape gate in `ApplyOneMeshOverride` (`b.ShaderType == 4 \|\| 5`) |
+| AUD-2 | Medium | TXST TX03 (Glow/Detail) routed only to slot 2; clobbers skin SSS | **Fixed** — `3113e19`, TX03 → slot 3 in `PopulateTxstSlots` |
+| AUD-3 | Medium-Low | Specular enabled by slot-7 map presence even when SLSF1_Specular is clear | **Fixed** in `ApplyTexturesToGlMesh` (both branches). One residual instance survives in CV.R's `ApplyTextureOverrides`, which NPC2 never calls — handed off in `CharacterViewer.Rendering/ApplyTextureOverrides-Specular-Handoff.md` |
+| AUD-4 | Low (gap) | Glow maps unimplemented; External_Emittance ignored | **Implemented** — CV.R `16f88131` (`texture_glow`, unit 12). External_Emittance still unread; no specimen |
+| AUD-5 | Low | Eye detection is case-sensitive name heuristic; eye cubemap scale misapplication | **Fixed** — `allowEyeNameMatching: false` for attire; head-part-driven classification (CV.R `71a82f93`) |
+| AUD-6 | Low (watch) | NiAlphaProperty with no bits set forces alpha-test on | **Closed, won't fix** — 0 hits across vanilla + full modlist (~3,400 NIFs). No real-world exposure |
+| AUD-7 | Low (edge) | Duplicate shape names: name match fans out; blocks index fallback | **Open (latent)** — 6 instances exist, none targeted by AlternateTextures in this loadout. Fix only if a specimen appears |
+| AUD-8 | Info | Trace-only missing-texture log lines; unverified folder-precedence convention | **Closed** — dispositions now go through `LogVerbose` so they reach RenderLogs; the folder-precedence question resolved clean (see below) |
 
 Each issue below carries: the defect, engine-correct behavior, **trigger conditions** (what
 record/NIF data makes it visible — this is what the affected-NPC scan searches for), the
@@ -159,10 +163,17 @@ proposed fix, and the verification plan.
 - `WIREFRAME-FALLBACK` / `CULLED` missing-texture dispositions go to `Trace.WriteLine` only
   (`VM_CharacterViewer.cs` ~4777) — they never reach the RenderLogs captures. Route through
   the logger when touching that code next.
+  **FIXED 2026-07-29:** now emitted via `LogVerbose` from `ApplyTexturesToGlMesh`, so the
+  disposition of an unresolvable diffuse appears in `_Preview.txt` / `_Mugshot.txt` alongside the
+  texture-resolution lines, which is where anyone diagnosing a missing texture is already looking.
 - `NpcMeshResolver.RebaseToAbsoluteIfPresent` (~1176) probes `PreferredFolderPaths` in
   **reverse** order. Confirm this matches the precedence used by `PluginProvider`/asset
   resolution elsewhere (last-folder-wins vs first-folder-wins). No observed misbehavior;
   consistency check only.
+  **RESOLVED 2026-07-29 — consistent, no change needed.** `AssetHandler.FindAssetSource` iterates
+  `CorrespondingFolderPaths` in reverse for both its loose-file and its folder-scoped BSA passes,
+  and `HeadPartWigConverter` documents the same "last mod folder wins" rule as parity with it. All
+  three agree; the renderer's convention is the app's convention.
 
 ---
 
@@ -408,6 +419,11 @@ baseline only deliberately, alongside the change that legitimately moved it.
 - 2026-07-17 — MO2 modlist pass complete (section above). Fix order set by specimen
   evidence: AUD-1, AUD-2, AUD-3, AUD-5 (shader-type gate; 26 live false-eyes), then AUD-4
   (glow feature); AUD-6 closed (no exposure); AUD-7 parked (latent only).
+- 2026-07-29 — Status re-verified against the code during a stale-doc audit. AUD-1/2/3/4/5 confirmed
+  present in source and committed (NPC2 + CV.R working trees clean); AUD-6 closed on zero exposure;
+  AUD-8 both bullets closed (see the section above). **AUD-7 is the only issue still open**, and
+  only latently. One residual AUD-3-class instance found in CV.R's `ApplyTextureOverrides` — a path
+  NPC2 never calls — and handed off separately rather than fixed blind.
 - 2026-07-17 — Scan made race-aware (example wearer must be served by the ARMA's
   Race/AdditionalRaces, mirroring the resolver) so beast-mesh findings get a beast-race
   specimen (Khayla, not the race-mismatched Inimoro). AUD-1/2/3/5 implemented and verified
