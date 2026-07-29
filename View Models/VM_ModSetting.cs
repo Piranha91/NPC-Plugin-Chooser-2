@@ -1520,6 +1520,57 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                         }
                     }
 
+                    // A Traits-templated NPC draws its race (and face) from its chain terminus, so
+                    // the race gate has to follow template links. Resolve through this mod's OWN
+                    // plugins first — a mod may re-point an NPC's template — and fall back to the
+                    // load order, so a chain is only reported unfollowable when its target genuinely
+                    // does not exist. Built lazily so mods with no templated NPCs never pay the
+                    // second enumeration.
+                    var templateNpcLookup = new Lazy<Dictionary<FormKey, INpcGetter>>(() =>
+                    {
+                        var lookup = new Dictionary<FormKey, INpcGetter>();
+                        foreach (var modKey in CorrespondingModKeys)
+                        {
+                            var sourcePlugin = plugins.FirstOrDefault(p => p.ModKey == modKey);
+                            if (sourcePlugin == null) continue;
+                            foreach (var npc in sourcePlugin.Npcs)
+                            {
+                                lookup[npc.FormKey] = npc; // last-wins: higher-priority ModKey overwrites
+                            }
+                        }
+
+                        return lookup;
+                    });
+
+                    // Flattened view of raceGetterCache. That cache is per-plugin and is only
+                    // consulted for the NPC's OWN race; once the gate follows a template chain it
+                    // needs the TERMINUS's race, which may equally come from a plugin outside the
+                    // load order.
+                    IRaceGetter? raceResolver(FormKey formKey)
+                    {
+                        foreach (var perPlugin in raceGetterCache.Values)
+                        {
+                            if (perPlugin.TryGetValue(formKey, out var race))
+                            {
+                                return race;
+                            }
+                        }
+
+                        return null;
+                    }
+
+                    INpcGetter? templateResolver(FormKey formKey)
+                    {
+                        if (templateNpcLookup.Value.TryGetValue(formKey, out var own))
+                        {
+                            return own;
+                        }
+
+                        return _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(formKey, out var getter)
+                            ? getter
+                            : null;
+                    }
+
                     foreach (var plugin in plugins)
                     {
                         // Skip plugins marked as resource-only
@@ -1571,7 +1622,11 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                                         out string rejectionMessage,
                                         out _,
                                         sourcePluginRace:
-                                        sourcePluginRace)) // if sourcePluginRace is null, falls back to searching the link cache
+                                        sourcePluginRace, // if sourcePluginRace is null, falls back to searching the link cache
+                                        resolveNpc:
+                                        templateResolver, // Traits-templated NPCs are judged on their chain terminus
+                                        resolveRace:
+                                        raceResolver)) // ...whose race may also live outside the load order
                                 {
                                     string message =
                                         $"Discarded {Auxilliary.GetLogString(npcGetter, language)} from {DisplayName} because {rejectionMessage}.";

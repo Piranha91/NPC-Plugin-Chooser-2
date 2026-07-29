@@ -87,6 +87,7 @@ public class UpdateHandler
             InvalidateAnalysisCachesForWigScan_Initial();
             RemoveSelfSharedAppearances_Initial();
             MaterializeResourcePluginMergeToggles_Initial();
+            InvalidateCachesForAppearanceRaceRule_Initial();
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -163,6 +164,11 @@ public class UpdateHandler
         if (settingsVersion < "2.2.2")
         {
             await UpdateTo2_2_2_Final(modsVm, splashReporter);
+        }
+
+        if (settingsVersion < "2.2.3")
+        {
+            await UpdateTo2_2_3_Final(modsVm, npcsVm, environmentStateProvider, splashReporter);
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -1038,6 +1044,35 @@ public class UpdateHandler
     }
 
     /// <summary>
+    /// One-time (&lt; 2.2.3) cache invalidation for the rewritten appearance-race rule. 2.2.3
+    /// replaced the <c>ActorTypeNPC</c> keyword test with the RACE record's <c>FaceGenHead</c>
+    /// flag and moved the test onto the template chain terminus (see
+    /// <see cref="Auxilliary.IsValidAppearanceRace"/>), which changes the verdict for a number of
+    /// NPCs in both directions. Three caches would otherwise hide that:
+    /// <list type="number">
+    /// <item>the persisted per-race verdicts in RaceEvalCache.json, computed under the old rule;</item>
+    /// <item>each mod's analysis snapshot (already nulled by the sibling 2.2.3 invalidations, so
+    ///       RefreshNpcLists re-runs and re-derives NpcFormKeys under the new rule);</item>
+    /// <item>the non-appearance mod cache, which skips whole folders at scan time — a mod parked
+    ///       there because every one of its NPCs was rejected (e.g. a Miraak or custom-race
+    ///       follower mod) would never get a second look.</item>
+    /// </list>
+    /// Clearing the last one is what lets previously-discarded NPCs come back silently.
+    /// </summary>
+    private void InvalidateCachesForAppearanceRaceRule_Initial()
+    {
+        Auxilliary.DeletePersistedRaceValidityCache();
+
+        int forgottenFolders = _settings.CachedNonAppearanceMods.Count;
+        _settings.CachedNonAppearanceMods.Clear();
+        _settings.CachedMissingMasterMods.Clear(); // keyed on the above; orphans have nothing to describe
+
+        Debug.WriteLine(
+            $"2.2.3: cleared the race verdict cache and {forgottenFolders} cached non-appearance mod folder(s) " +
+            "so the new FaceGenHead-based rule is applied from scratch.");
+    }
+
+    /// <summary>
     /// One-time (&lt; 2.2.3) invalidation of every mod's analysis cache (LastKnownState) so
     /// the next population pass re-runs RefreshNpcLists, which detects FaceGen files shipped
     /// without a plugin record inside plugin-backed mods and surfaces those NPCs as
@@ -1412,7 +1447,12 @@ public class UpdateHandler
                     }
 
                     if (!aux.IsValidAppearanceRace(npcGetter.Race.FormKey, npcGetter,
-                            _settings.LocalizationLanguage, out string rejectionMessage, out var resolvedRace))
+                            _settings.LocalizationLanguage, out string rejectionMessage, out var resolvedRace,
+                            resolveNpc: fk => npcLookup.TryGetValue(fk, out var own)
+                                ? own
+                                : environmentStateProvider.LinkCache.TryResolve<INpcGetter>(fk, out var g)
+                                    ? g
+                                    : null))
                     {
                         var raceLogStr = npcGetter.Race.FormKey.ToString();
                             if (resolvedRace != null)
@@ -1617,5 +1657,149 @@ public class UpdateHandler
         {
             pluginProvider.UnloadPlugins(kvp.Value);
         }
+    }
+
+    /// <summary>
+    /// 2.2.3 migration: reconciles the user's saved selections with the rewritten appearance-race
+    /// rule (<see cref="Auxilliary.IsValidAppearanceRace"/> — RACE <c>FaceGenHead</c> flag,
+    /// evaluated on the template chain terminus, instead of the <c>ActorTypeNPC</c> keyword on the
+    /// NPC's own record).
+    ///
+    /// <para>By the time this runs, mod population has already re-derived every mod's NpcFormKeys
+    /// under the new rule — <see cref="InvalidateCachesForAppearanceRaceRule_Initial"/> cleared the
+    /// three caches that could have short-circuited it, including the non-appearance mod cache, so
+    /// folders previously written off entirely get a second look. Newly-valid NPCs therefore need
+    /// no action here: they are simply present, silently, which is the intent.</para>
+    ///
+    /// <para>The one case that cannot be silent is an NPC the user has already chosen an appearance
+    /// for that the new rule no longer offers. Dropping it without asking would discard their work;
+    /// keeping it without saying so would let a selection the patcher can no longer honour sit
+    /// there invisibly. So those are listed by name and the choice is handed to the user.</para>
+    /// </summary>
+    private async Task UpdateTo2_2_3_Final(VM_Mods modsVm, VM_NpcSelectionBar npcsVm,
+        EnvironmentStateProvider environmentStateProvider, VM_SplashScreen? splashReporter)
+    {
+        if (_settings.SelectedAppearanceMods.Count == 0)
+        {
+            return;
+        }
+
+        splashReporter?.UpdateStep("Updating to 2.2.3: reconciling selections with the new NPC filter...");
+
+        // The post-population mod lists ARE the new verdict.
+        var offeredByAnyMod = new HashSet<FormKey>();
+        var installedModNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var vm in modsVm.AllModSettings)
+        {
+            offeredByAnyMod.UnionWith(vm.NpcFormKeys);
+            installedModNames.Add(vm.DisplayName);
+        }
+
+        // An NPC still shown in the menu (e.g. backed only by a downloaded mugshot) is not orphaned
+        // even if no mod entry lists its FormKey.
+        var stillInMenu = npcsVm.AllNpcs.Select(n => n.NpcFormKey).ToHashSet();
+
+        var orphaned = new List<(FormKey NpcFormKey, string ModName, string Label)>();
+        foreach (var (npcFormKey, selection) in _settings.SelectedAppearanceMods)
+        {
+            if (offeredByAnyMod.Contains(npcFormKey) || stillInMenu.Contains(npcFormKey))
+            {
+                continue;
+            }
+
+            // Only attribute the loss to the new rule when the selected mod is still installed and
+            // has merely stopped offering this NPC. If the mod itself is gone, the selection was
+            // already orphaned before this update and blaming 2.2.3 for it would mislead.
+            if (!installedModNames.Contains(selection.ModName))
+            {
+                continue;
+            }
+
+            orphaned.Add((npcFormKey, selection.ModName,
+                DescribeNpcForMigration(npcFormKey, environmentStateProvider)));
+        }
+
+        if (orphaned.Count == 0)
+        {
+            Debug.WriteLine("2.2.3 Update: every existing selection survived the new appearance-race rule.");
+            return;
+        }
+
+        orphaned.Sort((a, b) => string.Compare(a.Label, b.Label, StringComparison.OrdinalIgnoreCase));
+
+        var message = new StringBuilder();
+        message.AppendLine(
+            "2.2.3 changed how N.P.C.2 decides which NPCs have a customizable face. It now reads the " +
+            "Race record's \"FaceGen Head\" flag (the game's own signal for whether an actor gets a " +
+            "face) instead of the ActorTypeNPC keyword, and it reads it from the end of an NPC's " +
+            "template chain rather than from the NPC's own record.");
+        message.AppendLine();
+        message.AppendLine(
+            "This adds NPCs that were previously excluded by mistake (Miraak, for example). It also " +
+            "removes NPCs that turned out to have no face at all - typically automatons, skeletons " +
+            "and other monsters whose mod authors tagged them as people so they would behave " +
+            "correctly in combat and dialogue.");
+        message.AppendLine();
+        message.AppendLine(
+            $"You have already chosen an appearance for {orphaned.Count} NPC(s) that are no longer offered:");
+        message.AppendLine();
+
+        foreach (var (_, modName, label) in orphaned)
+        {
+            message.AppendLine($"  • {label}  →  [{modName}]");
+        }
+
+        message.AppendLine();
+        message.AppendLine("Would you like to KEEP these selections?");
+        message.AppendLine();
+        message.AppendLine(
+            "  Yes - keep them. They stay in your selection list and will still be patched. If these " +
+            "NPCs really have no face, that risks writing invalid appearance data.");
+        message.AppendLine(
+            "  No  - remove them. The selections are discarded; everything else is left untouched.");
+
+        bool keepSelections = ScrollableMessageBox.Confirm(message.ToString(),
+            "NPC Filter Updated in 2.2.3", MessageBoxImage.Warning);
+
+        if (keepSelections)
+        {
+            Debug.WriteLine($"2.2.3 Update: user kept {orphaned.Count} selection(s) for NPCs the new rule excludes.");
+            return;
+        }
+
+        var removedFormKeys = new HashSet<FormKey>();
+        await Task.Run(() =>
+        {
+            foreach (var (npcFormKey, _, _) in orphaned)
+            {
+                _settings.SelectedAppearanceMods.Remove(npcFormKey);
+                _settings.GuestAppearances.Remove(npcFormKey);
+                _settings.RandomizedGuestAppearances.Remove(npcFormKey);
+                _settings.RandomizedSelections.Remove(npcFormKey);
+                removedFormKeys.Add(npcFormKey);
+            }
+        });
+
+        // These NPCs are already absent from the menu (population dropped them), so this is
+        // normally a no-op; it is here so the VM stays consistent if any survived as a stub.
+        await Application.Current.Dispatcher.InvokeAsync(() => npcsVm.PruneRemovedNpcs(removedFormKeys));
+
+        Debug.WriteLine($"2.2.3 Update: removed {removedFormKeys.Count} selection(s) for NPCs the new rule excludes.");
+    }
+
+    /// <summary>
+    /// Best-effort human-readable label for an NPC that may no longer be in any of the app's
+    /// lists. Falls back through the load order to the raw FormKey so a migration message never
+    /// shows a bare blank entry.
+    /// </summary>
+    private string DescribeNpcForMigration(FormKey npcFormKey, EnvironmentStateProvider environmentStateProvider)
+    {
+        if (environmentStateProvider.LinkCache.TryResolve<INpcGetter>(npcFormKey, out var npcGetter) &&
+            npcGetter != null)
+        {
+            return Auxilliary.GetLogString(npcGetter, _settings.LocalizationLanguage, fullString: true);
+        }
+
+        return npcFormKey.ToString();
     }
 }

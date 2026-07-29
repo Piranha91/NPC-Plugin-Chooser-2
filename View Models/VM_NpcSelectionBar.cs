@@ -1501,6 +1501,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         _consistencyProvider.ClearAllSelections();
     }
 
+    /// <summary>
+    /// Follows a Traits template link through the load order. Used as the hop resolver for
+    /// <see cref="Auxilliary.IsValidAppearanceRace"/>, which judges a templated NPC on the race
+    /// of its chain terminus rather than the inert race field on its own record.
+    /// </summary>
+    private INpcGetter? ResolveNpcFromLoadOrder(FormKey formKey)
+    {
+        return _environmentStateProvider.LinkCache.TryResolve<INpcGetter>(formKey, out var getter) ? getter : null;
+    }
+
     private async Task ImportChoicesFromLoadOrderAsync()
     {
         if (!ScrollableMessageBox.Confirm(
@@ -1525,7 +1535,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                 }
                 
                 // NEW: Skip creatures (bears, spiders, etc.) by checking for a valid appearance race.
-                if (!_auxilliary.IsValidAppearanceRace(npcGetter.Race.FormKey, npcGetter, _settings.LocalizationLanguage, out _, out _))
+                // Templated NPCs are judged on their chain terminus, so hand it a resolver; the
+                // load order is the only scope available here.
+                if (!_auxilliary.IsValidAppearanceRace(npcGetter.Race.FormKey, npcGetter, _settings.LocalizationLanguage,
+                        out _, out _, resolveNpc: ResolveNpcFromLoadOrder))
                 {
                     continue;
                 }

@@ -36,7 +36,15 @@ public class Auxilliary : IDisposable
     // caches to speed up building
     public Dictionary<FormKey, string> FormIDCache = new();
     private ConcurrentDictionary<FormKey, RaceEvaluation> _raceValidityCache = new();
-    private string _raceValidityCacheFileName = "RaceEvalCache.json";
+
+    /// <summary>
+    /// On-disk cache of per-race appearance verdicts. Whenever the rule in
+    /// <see cref="IsValidAppearanceRace"/> changes, an existing file holds verdicts computed under
+    /// the OLD rule and must be deleted by a version-gated migration — see
+    /// <see cref="DeletePersistedRaceValidityCache"/>.
+    /// </summary>
+    public const string RaceValidityCacheFileName = "RaceEvalCache.json";
+    private string _raceValidityCacheFileName = RaceValidityCacheFileName;
     
     // Session-scoped cache: true = chain terminates in a Leveled NPC, false = chain is valid.
     // Keyed by the NPC FormKey whose template link was (or would be) followed.
@@ -49,13 +57,19 @@ public class Auxilliary : IDisposable
         ".esl"
     };
     
+    // Serialized to RaceEvalCache.json by ordinal — only ever APPEND members, never reorder or
+    // remove, or an existing cache file silently decodes to the wrong verdicts.
     private enum RaceEvaluation
     {
         Valid,
         InvalidNull,
         InvalidNotInLoadOrder,
-        InvalidNullKeywords,
-        InvalidNotNpc
+        InvalidNullKeywords, // no longer produced; see IsValidAppearanceRace
+        InvalidNotNpc,       // no longer produced; superseded by InvalidNoFaceGenHead
+        /// <summary>Race carries no FaceGen head, so its actors have no customizable face.</summary>
+        InvalidNoFaceGenHead,
+        /// <summary>Race is Bethesda's DefaultRace placeholder (an "unset" marker, not a real race).</summary>
+        InvalidPlaceholderRace
     }
     
     public Auxilliary(EnvironmentStateProvider environmentStateProvider)
@@ -274,13 +288,91 @@ public class Auxilliary : IDisposable
         return logBuilder.ToString();
     }
 
-    public bool IsValidAppearanceRace(FormKey raceFormKey, INpcGetter npcGetter, Language? language, out string rejectionMessage, out IRaceGetter? resolvedRace, IRaceGetter? sourcePluginRace = null)
+    /// <summary>
+    /// Bethesda's "unset" race placeholder. It carries the FaceGenHead flag (it is a copy of a
+    /// humanoid race), but its non-templated actors are engine plumbing — <c>AudioTemplate*</c>,
+    /// <c>VoiceType*</c>, <c>AADeleteWhenDoneTestJeremy*</c> — with no head parts and no real
+    /// face, all of which nonetheless ship FaceGen. Actors that merely CARRY it while inheriting
+    /// Traits (vanilla guards, and the overhauls that override them) are judged on their chain
+    /// terminus instead, so excluding it here drops only the plumbing.
+    /// </summary>
+    public static readonly FormKey PlaceholderRaceFormKey =
+        Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Race.DefaultRace.FormKey;
+
+    /// <summary>
+    /// Decides whether an NPC has a customizable face worth offering in the NPC list.
+    ///
+    /// <para>The gate is the RACE record's <see cref="Race.Flag.FaceGenHead"/> flag — the engine's
+    /// own signal for "this actor gets a built FaceGen head". It is deliberately NOT the
+    /// <c>ActorTypeNPC</c> keyword, which is a GAMEPLAY tag: mod authors correctly put it on
+    /// humanoid-shaped automatons, skeletons and monsters (Clockwork's Gilded, Vigilant's
+    /// Aurorans and Bone Humans, Unslaad's Manakins, Glenmoril's Brass Gear Knights) so they
+    /// behave as people for AI, combat and dialogue. Measured over a 183-plugin load order:
+    /// vanilla sets both signals together on every humanoid race and neither on every creature
+    /// race, and across 3,764 non-templated NPC records on FaceGenHead=false races, ZERO carry
+    /// head parts. The keyword also MISSES races that do have faces — DLC2MiraakRace being the
+    /// notable one, which is why Miraak was absent from the list.</para>
+    ///
+    /// <para>Shipped FaceGen files are NOT evidence of a face and must not be used as one: the
+    /// Creation Kit auto-exports facegeom/facetint (and writes default morph/tint records) for
+    /// any actor, headless or not. Loot the helmet off a Clockwork Gilded and there is no head
+    /// underneath, despite all 175 of them shipping FaceGen.</para>
+    ///
+    /// <para>The gate is applied to the record whose appearance actually RENDERS. A Traits-templated
+    /// NPC takes its race from its chain terminus, so the race field on its own record is inert —
+    /// which is exactly why Bethesda and mod authors leave junk there (FoxRace on templated
+    /// humans, DefaultRace on guards). Supply <paramref name="resolveNpc"/> so that walk can be
+    /// made; without it the NPC's own race is used, which is only correct for untemplated NPCs.</para>
+    /// </summary>
+    /// <param name="resolveNpc">
+    /// Resolver for each hop of the Traits chain. Should consult the mod's own plugins first and
+    /// fall back to the load order, so a chain is only reported unfollowable when its target
+    /// genuinely does not exist anywhere.
+    /// </param>
+    /// <param name="resolveRace">
+    /// Looks up a RACE record defined by a plugin that is NOT in the load order (an installed but
+    /// disabled mod), which the link cache cannot see. Required alongside
+    /// <paramref name="resolveNpc"/>: <paramref name="sourcePluginRace"/> only covers the race on
+    /// the NPC's own record, and once the walk lands on a terminus we need that terminus's race
+    /// instead — without this, a templated NPC using a custom race from a disabled plugin would be
+    /// rejected as "not in the load order".
+    /// </param>
+    public bool IsValidAppearanceRace(FormKey raceFormKey, INpcGetter npcGetter, Language? language,
+        out string rejectionMessage, out IRaceGetter? resolvedRace, IRaceGetter? sourcePluginRace = null,
+        Func<FormKey, INpcGetter?>? resolveNpc = null, Func<FormKey, IRaceGetter?>? resolveRace = null)
     {
         bool isCached = false;
-        bool isValid = true;
         rejectionMessage = "";
         resolvedRace = null;
         RaceEvaluation raceEvaluation;
+
+        // --- Judge the record the engine renders, not necessarily the one we were handed. ---
+        if (resolveNpc != null && IsValidTemplatedNpc(npcGetter))
+        {
+            using (ContextualPerformanceTracer.Trace("IVAR.TerminusWalk"))
+            {
+                var chainStatus = TryResolveAppearanceTerminus(npcGetter, resolveNpc, out var terminusKey);
+                if (chainStatus != FaceGenChainStatus.Resolved)
+                {
+                    // A dangling link, a cycle, or a levelled terminus. None of these can be judged
+                    // on a race: the NPC's own race field is inert and the terminus is unavailable.
+                    // Stay permissive — a levelled terminus has its own dedicated rejection
+                    // (TemplateChainTerminatesInLeveledNpc), and rejecting on a missing template
+                    // target would make the verdict depend on which plugins happen to be in scope
+                    // rather than on the NPC itself.
+                    return true;
+                }
+
+                var terminus = terminusKey == npcGetter.FormKey ? null : resolveNpc(terminusKey);
+                if (terminus != null)
+                {
+                    raceFormKey = terminus.Race.FormKey;
+                    // The caller's cached getter describes the DONOR's race, not the terminus's, so
+                    // re-look-up rather than carrying it over.
+                    sourcePluginRace = resolveRace?.Invoke(raceFormKey);
+                }
+            }
+        }
 
         using (ContextualPerformanceTracer.Trace("IVAR.CacheCheck1"))
         {
@@ -292,12 +384,6 @@ public class Auxilliary : IDisposable
             }
         }
 
-        bool isTemplate = false;
-        using (ContextualPerformanceTracer.Trace("IVAR.TemplateCheck"))
-        {
-            isTemplate = IsValidTemplatedNpc(npcGetter);
-        }
-        
         if (!isCached)
         {
             // new race, had not yet been cached
@@ -305,8 +391,6 @@ public class Auxilliary : IDisposable
             string identifier = raceFormKey.ToString();
             using (ContextualPerformanceTracer.Trace("IVAR.NewRace.Resolution"))
             {
-                bool raceResolved = false;
-
                 if (sourcePluginRace != null)
                 {
                     raceGetter = sourcePluginRace;
@@ -328,22 +412,19 @@ public class Auxilliary : IDisposable
             {
                 using (ContextualPerformanceTracer.Trace("IVAR.NewRace.Evaluation"))
                 {
-                    if (raceGetter.Keywords == null)
+                    identifier = GetLogString(raceGetter, language, true);
+
+                    if (raceFormKey.Equals(PlaceholderRaceFormKey))
                     {
-                        raceEvaluation = RaceEvaluation.InvalidNullKeywords;
-                        identifier = GetLogString(raceGetter, language, true);
+                        raceEvaluation = RaceEvaluation.InvalidPlaceholderRace;
                     }
-                    else if (!raceGetter.Keywords.Contains(Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim
-                                 .Keyword
-                                 .ActorTypeNPC))
+                    else if (!raceGetter.Flags.HasFlag(Race.Flag.FaceGenHead))
                     {
-                        raceEvaluation = RaceEvaluation.InvalidNotNpc;
-                        identifier = GetLogString(raceGetter, language, true);
+                        raceEvaluation = RaceEvaluation.InvalidNoFaceGenHead;
                     }
                     else
                     {
                         raceEvaluation = RaceEvaluation.Valid;
-                        identifier = GetLogString(raceGetter, language, true);
                     }
 
                     // now cache the newly evaluated race
@@ -359,34 +440,51 @@ public class Auxilliary : IDisposable
         
         using (ContextualPerformanceTracer.Trace("IVAR.Decision"))
         {
-            if (raceEvaluation == RaceEvaluation.InvalidNull)
+            if (raceEvaluation == RaceEvaluation.Valid)
             {
-                rejectionMessage = "its race is null.";
-                return false;
-            }
-            if (raceEvaluation == RaceEvaluation.InvalidNotInLoadOrder)
-            {
-                rejectionMessage = "its race is not in the current load order.";
-                return false;
-            }
-            if (raceEvaluation == RaceEvaluation.InvalidNullKeywords)
-            {
-                rejectionMessage = "its race is missing Keywords.";
-                return false;
+                return true;
             }
 
-            if (raceEvaluation == RaceEvaluation.InvalidNotNpc)
+            // Only resolved on the rejection path, so naming the race costs nothing in the common
+            // case. Rejection logs that omit it are near-useless for diagnosing a bad filter.
+            var raceForLabel = resolvedRace; // an out parameter cannot be captured by a local function
+
+            string RaceLabel()
             {
-                // Bethesda assigned FoxRace to some templated human NPCs; allow those through
-                if (isTemplate && raceFormKey == Mutagen.Bethesda.FormKeys.SkyrimSE.Skyrim.Race.FoxRace.FormKey)
+                if (raceForLabel != null)
                 {
-                    return true;
+                    return GetLogString(raceForLabel, language, true);
                 }
-                rejectionMessage = "its race is missing the ActorTypeNPC keyword.";
-                return false;
+                if (!raceFormKey.IsNull &&
+                    _environmentStateProvider.LinkCache.TryResolve<IRaceGetter>(raceFormKey, out var rg) && rg != null)
+                {
+                    return GetLogString(rg, language, true);
+                }
+                return raceFormKey.ToString();
+            }
+
+            switch (raceEvaluation)
+            {
+                case RaceEvaluation.InvalidNull:
+                    rejectionMessage = "its race is null.";
+                    return false;
+                case RaceEvaluation.InvalidNotInLoadOrder:
+                    rejectionMessage = $"its race ({raceFormKey}) is not in the current load order.";
+                    return false;
+                case RaceEvaluation.InvalidPlaceholderRace:
+                    rejectionMessage = "its race is the DefaultRace placeholder, which has no real face.";
+                    return false;
+                // InvalidNullKeywords / InvalidNotNpc are no longer produced, but a RaceEvalCache.json
+                // written by an older build can still decode to them; treat them as the same verdict.
+                case RaceEvaluation.InvalidNoFaceGenHead:
+                case RaceEvaluation.InvalidNullKeywords:
+                case RaceEvaluation.InvalidNotNpc:
+                    rejectionMessage = $"its race ({RaceLabel()}) has no FaceGen head " +
+                                       "(the Race record lacks the FaceGen Head flag).";
+                    return false;
             }
         }
-        
+
         return true;
     }
     
@@ -400,6 +498,27 @@ public class Auxilliary : IDisposable
         if (!success)
         {
             Debug.WriteLine("Exception while saving race cache." + Environment.NewLine + exceptionMessage);
+        }
+    }
+
+    /// <summary>
+    /// Drops the persisted race verdicts so they are recomputed under the current rule. Safe to
+    /// call when the file does not exist; the cache rebuilds lazily and cheaply on the next scan.
+    /// </summary>
+    public static void DeletePersistedRaceValidityCache()
+    {
+        string cachePath = Path.Combine(AppContext.BaseDirectory, RaceValidityCacheFileName);
+        try
+        {
+            if (File.Exists(cachePath))
+            {
+                File.Delete(cachePath);
+            }
+        }
+        catch (Exception e)
+        {
+            // A stale cache degrades the filter but must never block startup.
+            Debug.WriteLine($"Could not delete {RaceValidityCacheFileName}: {e.Message}");
         }
     }
 
