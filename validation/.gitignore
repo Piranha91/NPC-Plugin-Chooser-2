@@ -1,0 +1,3 @@
+# Generated settings + scan dumps: user paths + 13MB scan cache, never commit
+*.json
+specimens*.txt
