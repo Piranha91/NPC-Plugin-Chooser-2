@@ -567,7 +567,70 @@ public partial class UC_InternalMugshotPreview : UserControl
         e.Handled = true;
     }
 
-    // -------- GL init --------
+    // -------- GL init / teardown --------
+
+    /// <summary>
+    /// Tears down the bound preview VM's GL resources with <em>this</em>
+    /// control's GL context current. Call from the hosting popup when it is
+    /// closing for good (see <see cref="FullScreen3DPreviewView"/>); the
+    /// Settings-tab instance never calls it because its VM is cached on
+    /// VM_Settings and outlives the control.
+    ///
+    /// Every GLWpfControl mints its OWN GL context — <see cref="TryStartGl"/>
+    /// passes neither <c>ContextToUse</c> nor <c>SharedContext</c>, so each
+    /// 3D-preview popup gets a private one. GL object names are per-context,
+    /// and two freshly-created contexts hand out the SAME low integer IDs for
+    /// the same allocation sequence (shader programs, VAOs, textures). But
+    /// <c>VM_CharacterViewer.Dispose</c> issues raw <c>GL.Delete*</c> against
+    /// whatever context is current on the calling thread — it assumes "no
+    /// context current => silent no-op", which only holds while a single GL
+    /// context exists in the process. With two popups open, closing one while
+    /// the SIBLING's context happened to be current deleted the sibling's
+    /// shaders / VAOs / textures by ID collision, and that window's model
+    /// vanished. Making our own context current first pins the deletes to the
+    /// objects we actually own.
+    ///
+    /// Idempotent: both VM_InternalMugshotPreview.Dispose and
+    /// VM_CharacterViewer.Dispose self-guard, so the popup's <c>Closed</c>
+    /// handler can safely call Dispose again after this.
+    /// </summary>
+    public void ShutdownGl()
+    {
+        try
+        {
+            // Null when Start() never ran (window closed before the control
+            // was ever sized) — nothing was allocated in that case either.
+            GlControl.Context?.MakeCurrent();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "UC_InternalMugshotPreview.ShutdownGl: MakeCurrent failed: " + ex.Message);
+        }
+
+        // Our private MSAA FBO lives in the same context and is ours to free;
+        // deliberately NOT done from Unloaded, which runs without any
+        // guarantee about which context is current — the very hazard above.
+        try
+        {
+            DestroyLivePreviewMsaaFbo();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "UC_InternalMugshotPreview.ShutdownGl: MSAA FBO teardown failed: " + ex.Message);
+        }
+
+        try
+        {
+            _vm?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "UC_InternalMugshotPreview.ShutdownGl: viewer dispose failed: " + ex.Message);
+        }
+    }
 
     private void TryStartGl()
     {

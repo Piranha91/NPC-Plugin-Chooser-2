@@ -579,7 +579,11 @@ public class VM_ModsMenuMugshot : ReactiveObject, IHasMugshotImage, IDisposable
             // until the GC runs, which could collide with a subsequent
             // Show3DPreview from the same tile. Wired to Closed since
             // Show() returns immediately rather than blocking like
-            // ShowDialog did.
+            // ShowDialog did. FullScreen3DPreviewView.OnClosed normally gets
+            // there first, disposing with the popup's own GL context current
+            // (deleting GL objects under a sibling preview's context would
+            // destroy that window's identically-numbered ones); Dispose is
+            // idempotent, so this stays as the safety net.
             window.Closed += (_, _) => inner.Dispose();
             window.Show();
         }

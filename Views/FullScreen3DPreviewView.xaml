@@ -26,7 +26,8 @@
              only useful in the Settings panel. IsFullBodyOrbitMode=True swaps
              the camera into "show whole NPC + free orbit" mode and skips
              persistence to settings. -->
-        <local:UC_InternalMugshotPreview DataContext="{Binding Inner}"
+        <local:UC_InternalMugshotPreview x:Name="PreviewControl"
+                                          DataContext="{Binding Inner}"
                                           ShowSettingsControls="False"
                                           IsFullBodyOrbitMode="True"/>
     </Grid>

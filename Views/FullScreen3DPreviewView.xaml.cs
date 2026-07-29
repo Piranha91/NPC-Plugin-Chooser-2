@@ -34,6 +34,21 @@ public partial class FullScreen3DPreviewView : ReactiveWindow<VM_FullScreen3DPre
         }
     }
 
+    /// <summary>
+    /// Tears the preview's GL objects down while THIS window's GL context is
+    /// current, before the <c>Closed</c> event reaches the launching VM's own
+    /// <c>inner.Dispose()</c> handler (idempotent, so that later call is a
+    /// no-op). Each popup owns a private GL context whose object IDs collide
+    /// numerically with every other popup's, so an unscoped teardown deleted
+    /// a sibling preview's shaders / textures and blanked its model — see
+    /// <see cref="UC_InternalMugshotPreview.ShutdownGl"/>.
+    /// </summary>
+    protected override void OnClosed(System.EventArgs e)
+    {
+        PreviewControl.ShutdownGl();
+        base.OnClosed(e);
+    }
+
     private void OnClosing(object sender, System.ComponentModel.CancelEventArgs e)
     {
         var vm = DataContext as VM_FullScreen3DPreview;

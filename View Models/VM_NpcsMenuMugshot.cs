@@ -1144,6 +1144,11 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
             window.Owner = loadedOtherWindows?.FirstOrDefault(w => w.IsActive)
                            ?? loadedOtherWindows?.FirstOrDefault();
             // Dispose moves to Closed since Show() returns immediately.
+            // FullScreen3DPreviewView.OnClosed already disposed the inner VM
+            // with the popup's own GL context current (the GL objects must be
+            // deleted in the context that minted them, or a sibling preview
+            // loses its identically-numbered ones). This is the idempotent
+            // safety net for any host that doesn't do that.
             window.Closed += (_, _) => inner.Dispose();
             window.Show();
         }
