@@ -787,4 +787,87 @@ public class FaceGenLadderTests
         RunLogClassifier.Classify("      WARNING: " + d.TintWarning, RunLogSeverity.Info)
             .Should().Be(RunLogSeverity.Warning);
     }
+
+    // ---- OriginCompatWarning -------------------------------------------------------------------
+    //
+    // Rows 4/5 take the origin mesh UNGATED (decided 2026-07-30): a mod shipping no mesh is almost
+    // always authored against the origin's data, so a hard gate would refuse NPCs that render
+    // fine. When the probe POSITIVELY failed — another mod overrode the subject's origin data, RS
+    // Children being the measured wild case (Britte/Sissel, docs/KnownLimitations.md #5) — the NPC
+    // is named in a forced warning suggesting a spawn test, instead of silently shipping a face
+    // the app knows is suspect.
+
+    /// <summary>Row 4: FaceGen-only selection whose mesh must come from the origin.</summary>
+    private static FaceGenLadderInputs Row4OriginInputs(bool? originCompatible) => Inputs(
+        sourceNif: FaceGenAssetPresence.NotFound,
+        hasPluginRecord: false,
+        originCompatible: originCompatible);
+
+    [Fact]
+    public void OriginCompatWarning_IsSet_WhenTheProbeSaidTheOriginMeshDoesNotFit()
+    {
+        var d = FaceGenLadder.Classify(Row4OriginInputs(originCompatible: false));
+
+        d.Abort.Should().BeFalse("the assumption is deliberately kept — warn, don't gate");
+        d.NifChoice.Should().Be(FaceGenSourceChoice.Origin,
+            "the origin mesh is still taken; the warning rides along instead of vetoing it");
+        d.OriginCompatWarning.Should().NotBeNullOrWhiteSpace()
+            .And.Subject.Should().Contain("Test NPC (013BA5:Skyrim.esm)",
+                "the line is force-logged on its own, so it has to name the NPC itself");
+        d.OriginCompatWarning.Should().Contain("Spawn",
+            "the user's remedy is an in-game spawn test, and the line has to say so");
+    }
+
+    [Theory]
+    [InlineData(true)]  // probe ran and passed — the assumption held
+    [InlineData(null)]  // probe never ran — nothing is known, so nothing to warn about
+    public void OriginCompatWarning_IsNotSet_WhenTheProbePassedOrNeverRan(bool? originCompatible)
+    {
+        var d = FaceGenLadder.Classify(Row4OriginInputs(originCompatible));
+
+        d.NifChoice.Should().Be(FaceGenSourceChoice.Origin);
+        d.OriginCompatWarning.Should().BeNull();
+    }
+
+    [Fact]
+    public void OriginCompatWarning_IsNotSet_OnRowThree_WhichGatesInsteadOfWarning()
+    {
+        // Row 3 rejects an incompatible origin mesh outright (falls to winner/abort), so there is
+        // no suspect pairing left to warn about.
+        var d = FaceGenLadder.Classify(Inputs(
+            sourceNif: FaceGenAssetPresence.NotFound,
+            hasPluginRecord: true,
+            originCompatible: false,
+            winnerCompatible: true));
+
+        d.Row.Should().Be(FaceGenLadderRow.DdsOnlyWithRecord);
+        d.NifChoice.Should().NotBe(FaceGenSourceChoice.Origin);
+        d.OriginCompatWarning.Should().BeNull();
+    }
+
+    [Fact]
+    public void OriginCompatWarning_IsSet_OnRowFive_WithARecord()
+    {
+        // Row 5 with a record rides the same ungated origin branch as row 4.
+        var d = FaceGenLadder.Classify(Inputs(
+            sourceNif: FaceGenAssetPresence.NotFound,
+            sourceDds: FaceGenAssetPresence.NotFound,
+            hasPluginRecord: true,
+            originCompatible: false));
+
+        d.Row.Should().Be(FaceGenLadderRow.Neither);
+        d.NifChoice.Should().Be(FaceGenSourceChoice.Origin);
+        d.OriginCompatWarning.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void OriginCompatWarning_LeadsWithNothingThatWouldMisclassifyIt()
+    {
+        // Same contract as the TintWarning variant: the wording is free to change, but it must
+        // keep classifying as a warning once the run log prefixes "WARNING: ".
+        var d = FaceGenLadder.Classify(Row4OriginInputs(originCompatible: false));
+
+        RunLogClassifier.Classify("      WARNING: " + d.OriginCompatWarning, RunLogSeverity.Info)
+            .Should().Be(RunLogSeverity.Warning);
+    }
 }

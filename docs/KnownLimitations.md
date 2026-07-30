@@ -121,12 +121,18 @@ textures absent in game while the face itself was correct). Note what it is NOT:
 carry their own TextureSets and are not regions of the face tint, so no FaceGen-ladder choice could
 ever have affected them — a whole session was spent on that wrong theory.
 
-**Reported, not fixed, since 2026-07-29.** `AssetHandler.WarnOnFullyUnresolvedShapeTextures` emits a
-forced, warning-coloured run-log line when *every* texture slot of a NIF shape is unresolvable in
-the selected mod, in the game Data folder, and in the vanilla archives. Deliberately per SHAPE, at
-the user's direction: single missing textures are near-universal and harmless (an absent mouth
-subsurface map is the stock example), while a shape with no resolvable texture at all renders
-untextured and is worth acting on. Deduplicated by (mod, NIF, shape).
+**Reported, not fixed, since 2026-07-29.** `AssetHandler.WarnOnFullyUnresolvedShapeTextures` flags a
+NIF shape when *every* one of its texture slots is unresolvable in the selected mod, in the game
+Data folder, and in the vanilla archives. Detection is deliberately per SHAPE, at the user's
+direction: single missing textures are near-universal and harmless (an absent mouth subsurface map
+is the stock example), while a shape with no resolvable texture at all renders untextured and is
+worth acting on. Deduplicated by (mod, NIF, shape).
+
+Reporting was revised 2026-07-30, also at the user's direction: one forced, warning-coloured line
+per NPC at the end of the run (`ReportTexturelessShapes`, flushed after the copy tasks drain),
+listing that NPC's affected shapes and their missing textures — several broken shapes on one NPC
+used to produce a wall of near-identical per-shape lines. The dedup means a mesh shared by many
+NPCs still surfaces once, on the first NPC that hit it.
 
 **This is intended behaviour, not a pending fix** (user's decision, 2026-07-30). Linking a mod to the
 assets it depends on is the user's job. Automating it would mean guessing that whichever installed
@@ -161,13 +167,18 @@ shapes, fails, and renders the dark face. The ladder's own probe knew: both CSV 
 `OriginNifCompatible=False`. `Validate Output` catches the result (FaceGen warning naming `NPC.esp`),
 so the failure is at least visible after the fact.
 
-*A fix has to decide:* whether rows 4/5 gate the origin mesh on `OriginNifCompatible ?? true`
-exactly as row 3 does, falling through to the (also-gated) winner and then to abort. For the Britte
-specimen both origin and winner fail the gate, so the outcome would be an abort-with-report —
-strictly better than silently shipping a known dark face. The abort text also needs a
-compat-specific sentence; the existing row-4 abort wording only covers "origin could not be read".
-Until then: a FaceGen-only selection for any NPC whose race is overridden with different head data
-(RS Children is the mass case) ships a dark face, and the Validate Output warning is the detection.
+**Decided 2026-07-30: keep the assumption, warn per NPC.** Rows 4/5 still take the origin mesh
+ungated. The reasoning: a mod that ships no face mesh is almost always authored against its
+origin's data, and RS Children is the only mod known to break that premise in the wild — a hard
+gate mirroring row 3 would spend its time refusing healthy NPCs (and for the Britte specimen, where
+origin and winner both fail the probe, would turn a mostly-cosmetic risk into a hard abort). So
+when the probe *positively* fails, the pairing ships anyway and
+`FaceGenLadderDecision.OriginCompatWarning` carries a forced, warning-coloured line naming the NPC,
+explaining that another installed mod appears to have changed its original head data, and telling
+the user to spawn-test it in game (printed beside `TintWarning` in
+`AssetHandler.ScheduleCopyNpcAssets`; pinned by the `OriginCompatWarning_*` tests in
+`Tests/Unit/FaceGenLadderTests.cs`). `Validate Output` remains the after-the-fact detector, and its
+FaceGen warning is the confirmation that a flagged NPC really did pair mismatched halves.
 
 ---
 

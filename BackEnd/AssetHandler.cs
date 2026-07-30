@@ -65,10 +65,16 @@ public class AssetHandler : OptionalUIModule
 
     private readonly ConcurrentDictionary<string, DestinationClaim> _claimedDestinations = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>(mod|nif|shape) keys already reported by
+    /// <summary>(mod|nif|shape) keys already recorded by
     /// <see cref="WarnOnFullyUnresolvedShapeTextures"/>. A body or hair mesh is shared by every
-    /// NPC using it, so without this one broken shape would emit a line per NPC.</summary>
+    /// NPC using it, so without this one broken shape would be reported for every NPC.</summary>
     private readonly ConcurrentDictionary<string, byte> _reportedTextureless = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Textureless shapes found by <see cref="WarnOnFullyUnresolvedShapeTextures"/>,
+    /// keyed by the NPC they were first hit on and flushed as one line per NPC by
+    /// <see cref="ReportTexturelessShapes"/> at the end of the run.</summary>
+    private readonly ConcurrentDictionary<string, ConcurrentQueue<(string Nif, string Shape, string Missing, string Mod)>>
+        _texturelessByNpc = new(StringComparer.OrdinalIgnoreCase);
 
     // ADD THIS FIELD:
     // This semaphore limits how many NIFs we process at the same time.
@@ -98,6 +104,7 @@ public class AssetHandler : OptionalUIModule
         _processedAssetTasks.Clear();
         _claimedDestinations.Clear();
         _reportedTextureless.Clear();
+        _texturelessByNpc.Clear();
         AssetProvenanceDiag.Reset(); // opt-in per-run asset provenance report (no-op unless enabled)
         FaceGenLadderDiag.Reset();   // opt-in per-run FaceGen ladder report (no-op unless enabled)
         LoadAuxiliaryFiles();
@@ -727,8 +734,8 @@ public class AssetHandler : OptionalUIModule
     }
 
     /// <summary>
-    /// Reports a copied NIF's shapes whose textures are ALL unresolvable, as a forced,
-    /// warning-coloured run-log line.
+    /// Records a copied NIF's shapes whose textures are ALL unresolvable, for the end-of-run
+    /// per-NPC report (<see cref="ReportTexturelessShapes"/>).
     ///
     /// <para>Deliberately per SHAPE rather than per texture. Mods routinely ship a NIF with one
     /// dead slot — an absent mouth subsurface map is near-universal — and warning on every one
@@ -743,8 +750,8 @@ public class AssetHandler : OptionalUIModule
     /// file in the game Data folder, then the vanilla archives. Without those last two, every mod
     /// NIF that legitimately reuses a vanilla texture would be reported.</para>
     ///
-    /// <para>Deduplicated by (mod, NIF, shape) so a shared mesh used by hundreds of NPCs produces
-    /// one line naming the first NPC that hit it, not hundreds.</para>
+    /// <para>Deduplicated by (mod, NIF, shape) so a shared mesh used by hundreds of NPCs is
+    /// recorded once, against the first NPC that hit it, not hundreds of times.</para>
     /// </summary>
     private async Task WarnOnFullyUnresolvedShapeTextures(
         string nifPathToAnalyze, ModSetting modSetting, string faceTintSubPath, AssetRequestContext ctx)
@@ -804,14 +811,44 @@ public class AssetHandler : OptionalUIModule
 
             string who = string.IsNullOrWhiteSpace(ctx.NpcIdentifier) ? "an NPC" : ctx.NpcIdentifier;
             string shape = string.IsNullOrWhiteSpace(shapeName) ? "(unnamed shape)" : shapeName;
+            _texturelessByNpc.GetOrAdd(who, _ => new())
+                .Enqueue((Path.GetFileName(nifPathToAnalyze), shape,
+                    string.Join(", ", candidates), modSetting.DisplayName));
+        }
+    }
+
+    /// <summary>
+    /// One forced, warning-coloured line per NPC naming every textureless shape recorded against
+    /// it by <see cref="WarnOnFullyUnresolvedShapeTextures"/>. One line per NPC rather than per
+    /// shape at the user's direction (2026-07-30): a mod with several broken shapes on one NPC
+    /// produced a wall of near-identical lines saying less than one line listing the shapes. The
+    /// (mod, NIF, shape) dedup is unchanged, so a mesh shared by hundreds of NPCs still surfaces
+    /// once, on the first NPC that hit it. Called after all copy tasks have drained — the entries
+    /// accumulate from background NIF post-processing, so flushing any earlier would race them.
+    /// </summary>
+    public void ReportTexturelessShapes()
+    {
+        if (_texturelessByNpc.IsEmpty) return;
+
+        foreach (var (npc, entries) in _texturelessByNpc.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var shapes = entries.ToList();
+            if (shapes.Count == 0) continue;
+
+            // In practice one NPC's assets come from one selected mod; name them all if not.
+            string mods = string.Join("', '", shapes.Select(s => s.Mod).Distinct(StringComparer.OrdinalIgnoreCase));
+            string detail = string.Join("; ",
+                shapes.Select(s => $"{s.Nif} '{s.Shape}' (missing: {s.Missing})"));
+
             AppendLog(
-                $"      WARNING: {who}: none of the textures for '{shape}' in " +
-                $"{Path.GetFileName(nifPathToAnalyze)} could be found in '{modSetting.DisplayName}', " +
-                $"in your game folder, or in the base game archives, so it will render untextured. " +
-                $"'{modSetting.DisplayName}' may depend on another mod that is not installed or not " +
-                $"selected here. Missing: {string.Join(", ", candidates)}",
+                $"      WARNING: {npc}: {(shapes.Count == 1 ? "a mesh shape has" : $"{shapes.Count} mesh shapes have")} " +
+                $"no textures that could be found in '{mods}', in your game folder, or in the base " +
+                $"game archives, so they will render untextured. '{mods}' may depend on another mod " +
+                $"that is not installed or not selected here. Affected: {detail}",
                 false, true);
         }
+
+        _texturelessByNpc.Clear();
     }
 
     /// <summary>
@@ -1094,11 +1131,15 @@ public class AssetHandler : OptionalUIModule
 
         // Always shown, and warning-coloured: the leading "WARNING:" is what RunLogClassifier
         // reads to pick the colour (isError would mean "error"), and forceLog is what carries it
-        // past the verbose filter. This is the one FaceGen outcome short of an abort that the
+        // past the verbose filter. These are the FaceGen outcomes short of an abort that the
         // user has to do something about.
         if (!string.IsNullOrWhiteSpace(faceGenDecision.TintWarning))
         {
             RunLog($"      WARNING: {faceGenDecision.TintWarning}", false, forceLog: true);
+        }
+        if (!string.IsNullOrWhiteSpace(faceGenDecision.OriginCompatWarning))
+        {
+            RunLog($"      WARNING: {faceGenDecision.OriginCompatWarning}", false, forceLog: true);
         }
 
         // Both are no-ops when the ladder chose no source, which is how an inheriting NPC copies
