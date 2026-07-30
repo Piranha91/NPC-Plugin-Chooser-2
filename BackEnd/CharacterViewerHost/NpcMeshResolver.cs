@@ -99,9 +99,12 @@ public class NpcMeshResolver
     /// associated mod (renders behave like LinkCache-only resolution).
     /// </summary>
     /// <param name="npcFormKey">
-    /// Enables the origin scope below. Optional so existing callers keep the strict two-tier
-    /// chain; the mugshot path passes it because a mod may ship only part of an NPC's FaceGen and
-    /// leave the rest to the mod that originally added them.
+    /// Enables the origin scope below, because a mod may ship only part of an NPC's FaceGen and
+    /// leave the rest to the mod that originally added them. Every render path passes it — mugshot
+    /// tiles, both live-preview entry points, and the mesh survey — since a render that omits it
+    /// silently loses any asset owned by the originating mod. Still optional (and still keyed off
+    /// the appearance SOURCE NPC, not the patch target) only so a caller with no NPC in hand can
+    /// build the strict two-tier chain.
     /// </param>
     public IReadOnlyList<RenderScope> BuildResolutionScopes(ModSetting? modSetting, FormKey? npcFormKey = null)
     {
@@ -178,7 +181,15 @@ public class NpcMeshResolver
     /// tile's own mod instead.
     /// </summary>
     public IReadOnlyList<RenderScope> BuildResolutionScopesForActiveSelection(FormKey targetNpcFormKey)
-        => BuildResolutionScopes(LookupSelectedModSetting(targetNpcFormKey, out _));
+    {
+        // Pass the SOURCE key, not the target: the origin scope asks "which mod
+        // added the NPC whose face we are drawing", and for a guest appearance
+        // that is the donor. Dropping this key cost the preview the origin scope
+        // the mugshot gets, so assets living in the mod that originally added the
+        // NPC (face tints, outfit meshes) silently failed to resolve.
+        var modSetting = LookupSelectedModSetting(targetNpcFormKey, out var sourceFormKey);
+        return BuildResolutionScopes(modSetting, sourceFormKey);
+    }
 
 
     /// <summary>

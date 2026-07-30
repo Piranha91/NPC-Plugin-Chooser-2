@@ -160,7 +160,7 @@ public sealed class MeshSurveyRunner
         // Push the same scope chain the mugshot pipeline would use so disk
         // resolution honors the mod's CorrespondingFolderPaths. Cleared in
         // RunAsync's finally block.
-        var scopes = _resolver.BuildResolutionScopes(mod);
+        var scopes = _resolver.BuildResolutionScopes(mod, npcKey);
         _assetResolver.SetAdditionalScopes(scopes);
 
         await SurveyMeshPartAsync(writer, mod, npcKey, npcName, "Body", paths.BodyMeshPath, ct).ConfigureAwait(false);

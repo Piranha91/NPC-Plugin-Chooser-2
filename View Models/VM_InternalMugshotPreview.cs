@@ -611,7 +611,10 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         try
         {
             StatusText = $"Loading {formKey}…";
-            Viewer.AdditionalScopes = _resolver.BuildResolutionScopes(modSetting);
+            // formKey (the appearance source) is what the mugshot tile passes, so
+            // the popup gets the same origin scope its tile had. Without it this
+            // path resolved against vanilla + the tile's mod only.
+            Viewer.AdditionalScopes = _resolver.BuildResolutionScopes(modSetting, formKey);
             ApplyAdvancedResolutionToggles();
             var paths = _resolver.Resolve(formKey, modSetting);
             if (paths == null)
