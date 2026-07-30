@@ -213,7 +213,11 @@ public class NpcMeshResolver
         // render (record, FaceGen NIF, FaceTint, skin) against the record at the end
         // of its template chain, exactly as the game does.
         var appearanceKey = ResolveAppearanceNpcKey(npcFormKey, modSetting);
-        return Resolve(appearanceKey, linkCache, BuildContext(appearanceKey, modSetting), modSetting);
+        // npcFormKey, not appearanceKey, for the manual wig/antler designation scope: the user made
+        // those designations on the NPC they had open, and this is the only place that still knows
+        // which one that was. See ComputeWigHideHeadShapeNames.
+        return Resolve(appearanceKey, linkCache, BuildContext(appearanceKey, modSetting), modSetting,
+            designationScopeKey: npcFormKey);
     }
 
     /// <summary>
@@ -454,8 +458,15 @@ public class NpcMeshResolver
     /// itself can't be resolved either from the context's plugins or the
     /// link cache.
     /// </summary>
+    /// <param name="designationScopeKey">
+    /// The NPC the user actually has open, when that differs from <paramref name="npcFormKey"/> —
+    /// i.e. the donor, where <paramref name="npcFormKey"/> has already been advanced to a Traits
+    /// terminus. Used ONLY as the scope key for manual wig designations, which the UI stores against
+    /// the open NPC. Null means "they are the same NPC".
+    /// </param>
     public ResolvedNpcMeshPaths? Resolve(FormKey npcFormKey, ILinkCache linkCache,
-        NpcResolutionContext? context = null, ModSetting? modSetting = null)
+        NpcResolutionContext? context = null, ModSetting? modSetting = null,
+        FormKey? designationScopeKey = null)
     {
         var npcGetter = ResolveRecord<INpcGetter>(npcFormKey.ToLink<INpcGetter>(), linkCache, context);
         if (npcGetter == null)
@@ -612,7 +623,8 @@ public class NpcMeshResolver
         // already draws that wig through the Hair channel (WornArmor walk above),
         // so hiding the donor's baked hair shapes makes the preview depict the
         // output — and makes is/is-not-a-wig designations visibly change it.
-        var wigHideNames = ComputeWigHideHeadShapeNames(npcGetter, modSetting, linkCache, context, npcRaceKey);
+        var wigHideNames = ComputeWigHideHeadShapeNames(npcGetter, modSetting, linkCache, context, npcRaceKey,
+            designationScopeKey);
         if (wigHideNames.Count > 0)
         {
             var union = new HashSet<string>(hideHeadShapeNames, StringComparer.OrdinalIgnoreCase);
@@ -757,8 +769,18 @@ public class NpcMeshResolver
     /// race-applicable effective wig ARMA (<see cref="Settings.IsWigArmature"/>),
     /// and no detected outfit wig (the outfit-wig render plan owns that case).
     /// Empty when nothing applies.</summary>
+    /// <param name="designationScopeKey">
+    /// The NPC a manual wig designation would have been stored against — the one the user had open,
+    /// which for a templated NPC is NOT <paramref name="npcGetter"/> (that has already been advanced
+    /// to the Traits terminus). The UI stores designations against the open NPC
+    /// (<c>VM_InternalMugshotPreview.PopulateWigSelector</c>) and the patcher reads them back under
+    /// the donor's key, so this reader has to agree with both or a <c>SpecificNpc</c>-scoped
+    /// designation is written under one key and looked up under another. Null falls back to
+    /// <paramref name="npcGetter"/>'s own key, which is correct for an untemplated NPC.
+    /// </param>
     private IReadOnlySet<string> ComputeWigHideHeadShapeNames(INpcGetter npcGetter, ModSetting? modSetting,
-        ILinkCache linkCache, NpcResolutionContext? context, FormKey? npcRaceKey)
+        ILinkCache linkCache, NpcResolutionContext? context, FormKey? npcRaceKey,
+        FormKey? designationScopeKey = null)
     {
         if (modSetting == null) return EmptyShapeNameSet;
         if (_settings.GetEffectiveRenderWigMode(modSetting) != WigHandlingMode.ConvertToHeadParts)
@@ -778,10 +800,11 @@ public class NpcMeshResolver
         }
 
         var wnam = ResolveRecord<IArmorGetter>(npcGetter.WornArmor, linkCache, context);
+        var scopeKey = designationScopeKey ?? npcGetter.FormKey;
         int applicableWigArmas = WigDetector.EffectiveWnamWigArmatures(
             wnam,
             link => ResolveRecord<IArmorAddonGetter>(link, linkCache, context),
-            arma => _settings.IsWigArmature(modSetting, arma.FormKey, arma.EditorID, npcGetter.FormKey),
+            arma => _settings.IsWigArmature(modSetting, arma.FormKey, arma.EditorID, scopeKey),
             arma => IsArmatureForRace(arma, npcRaceKey))
             .Count();
 

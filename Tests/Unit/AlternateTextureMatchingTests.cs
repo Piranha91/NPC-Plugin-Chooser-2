@@ -159,4 +159,120 @@ public class AlternateTextureMatchingTests
         Match(specs, new[] { "A" }, "A", -1).Should().BeNull();
         Match(specs, new[] { "A" }, "A", 0).Should().BeNull();
     }
+
+    // ---- Duplicate shape names (AUD-7) ------------------------------------------------------
+    //
+    // A name match is one-to-many when a mesh has two shapes with the same name, and the engine
+    // gives the entry to exactly one of them — it keys on the 3D Index. (Evidence for "the engine
+    // keys on the index" is the BodySlide rename A/B in the class doc: a renamed shape still
+    // rendered its variant in game and the CK with the name matching nothing. That an entry
+    // therefore lands on ONE of several namesakes is an inference from it, not a separate
+    // measurement — no NIF with duplicate names plus AlternateTextures has been tested in game.)
+    //
+    // So the index only breaks the tie when it actually picks out one of the same-named shapes.
+    // When it matches none of them, every namesake keeps the entry: that is the block-re-sort
+    // desync, where the index is the unreliable field, and an entry bound to nothing would be a
+    // worse outcome than one bound twice.
+
+    private static Dictionary<int, string>? MatchWithDuplicates(
+        IReadOnlyList<AlternateTextureSpec> specs, IReadOnlyList<string> shapeNames,
+        string shapeName, int shapeOrdinal,
+        ICollection<AlternateTextureSpec>? skippedByAmbiguity = null)
+    {
+        var pool = AlternateTextureMatching.DanglingNameEntries(specs, shapeNames);
+        var byName = AlternateTextureMatching.BuildShapeOrdinalsByName(shapeNames);
+        return AlternateTextureMatching.MatchForShape(
+            specs, pool, shapeName, shapeOrdinal, null, null, byName, skippedByAmbiguity);
+    }
+
+    [Fact]
+    public void BuildShapeOrdinalsByName_IsNullWhenNothingIsDuplicated()
+    {
+        // Null is the "no ambiguity" signal, so a normal mesh provably cannot reach the
+        // disambiguation branch at all.
+        AlternateTextureMatching.BuildShapeOrdinalsByName(new[] { "A", "B", "C" }).Should().BeNull();
+        AlternateTextureMatching.BuildShapeOrdinalsByName(System.Array.Empty<string>()).Should().BeNull();
+    }
+
+    [Fact]
+    public void BuildShapeOrdinalsByName_KeepsOnlyTheDuplicatedNames()
+    {
+        var byName = AlternateTextureMatching.BuildShapeOrdinalsByName(new[] { "A", "B", "A", "C" });
+
+        byName.Should().NotBeNull();
+        byName!.Keys.Should().Equal("A");
+        byName["A"].Should().Equal(0, 2);
+    }
+
+    [Fact]
+    public void DuplicateNames_IndexPicksTheOneShape()
+    {
+        // Two shapes called "Skirt"; the entry's index names the second. Only that one changes —
+        // before this, both did, and one of them was wrong.
+        var specs = new[] { Spec("Skirt", 2, (0, "textures\\variant_d.dds")) };
+        var shapeNames = new[] { "Body", "Skirt", "Skirt" };
+
+        MatchWithDuplicates(specs, shapeNames, "Skirt", 1).Should().BeNull();
+        MatchWithDuplicates(specs, shapeNames, "Skirt", 2).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void DuplicateNames_ReportsTheShapeItStoodDownFor()
+    {
+        // A shape quietly losing a TXST it used to get is indistinguishable from a regression in a
+        // log, so the decline is recorded rather than silent.
+        var specs = new[] { Spec("Skirt", 2, (0, "textures\\variant_d.dds")) };
+        var shapeNames = new[] { "Body", "Skirt", "Skirt" };
+        var skipped = new List<AlternateTextureSpec>();
+
+        MatchWithDuplicates(specs, shapeNames, "Skirt", 1, skipped).Should().BeNull();
+        skipped.Should().ContainSingle().Which.ShapeIndex.Should().Be(2);
+    }
+
+    [Fact]
+    public void DuplicateNames_IndexMatchingNoNamesake_StillAppliesToAll()
+    {
+        // Block-re-sort desync: the entry names "Skirt" but its index points at the body. The index
+        // is the untrustworthy field here, so neither namesake stands down — matching the behaviour
+        // that shipped before this rule existed.
+        var specs = new[] { Spec("Skirt", 0, (0, "textures\\variant_d.dds")) };
+        var shapeNames = new[] { "Body", "Skirt", "Skirt" };
+
+        MatchWithDuplicates(specs, shapeNames, "Skirt", 1).Should().NotBeNull();
+        MatchWithDuplicates(specs, shapeNames, "Skirt", 2).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void DuplicateNames_EntryWithNoIndex_StillAppliesToAll()
+    {
+        // Nothing to disambiguate with. Dropping the entry would lose a texture the engine does
+        // apply to one of them.
+        var specs = new[] { Spec("Skirt", -1, (0, "textures\\variant_d.dds")) };
+        var shapeNames = new[] { "Body", "Skirt", "Skirt" };
+
+        MatchWithDuplicates(specs, shapeNames, "Skirt", 1).Should().NotBeNull();
+        MatchWithDuplicates(specs, shapeNames, "Skirt", 2).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void DuplicateNames_DoNotDisturbAnUnrelatedUniqueName()
+    {
+        // The map carries only the duplicated names, so a unique shape in the same mesh matches by
+        // name exactly as before even though its index disagrees.
+        var specs = new[] { Spec("Body", 99, (0, "textures\\body_d.dds")) };
+        var shapeNames = new[] { "Body", "Skirt", "Skirt" };
+
+        MatchWithDuplicates(specs, shapeNames, "Body", 0).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void DuplicateNames_DanglingEntryStillReachesTheIndexFallback()
+    {
+        // The two rules compose: this entry names nothing in the mesh, so it is still eligible for
+        // the plain index fallback, and duplicate names elsewhere must not block it.
+        var specs = new[] { Spec("OldName", 1, (0, "textures\\variant_d.dds")) };
+        var shapeNames = new[] { "Body", "Skirt", "Skirt" };
+
+        MatchWithDuplicates(specs, shapeNames, "Skirt", 1).Should().NotBeNull();
+    }
 }

@@ -47,7 +47,7 @@ not as a to-do list. Only AUD-7 is still open, and only latently.
 | AUD-4 | Low (gap) | Glow maps unimplemented; External_Emittance ignored | **Implemented** — CV.R `16f88131` (`texture_glow`, unit 12). External_Emittance still unread; no specimen |
 | AUD-5 | Low | Eye detection is case-sensitive name heuristic; eye cubemap scale misapplication | **Fixed** — `allowEyeNameMatching: false` for attire; head-part-driven classification (CV.R `71a82f93`) |
 | AUD-6 | Low (watch) | NiAlphaProperty with no bits set forces alpha-test on | **Closed, won't fix** — 0 hits across vanilla + full modlist (~3,400 NIFs). No real-world exposure |
-| AUD-7 | Low (edge) | Duplicate shape names: name match fans out; blocks index fallback | **Open (latent)** — 6 instances exist, none targeted by AlternateTextures in this loadout. Fix only if a specimen appears |
+| AUD-7 | Low (edge) | Duplicate shape names: name match fans out; blocks index fallback | **Fixed 2026-07-30** — among same-named shapes the entry's 3D Index breaks the tie (`BuildShapeOrdinalsByName`). Still latent in this loadout: 6 duplicate-name meshes, none targeted by AlternateTextures |
 | AUD-8 | Info | Trace-only missing-texture log lines; unverified folder-precedence convention | **Closed** — dispositions now go through `LogVerbose` so they reach RenderLogs; the folder-precedence question resolved clean (see below) |
 
 Each issue below carries: the defect, engine-correct behavior, **trigger conditions** (what
@@ -157,6 +157,20 @@ proposed fix, and the verification plan.
 - **Action:** edge case, now log-visible (the per-shape verdict lines in `_Preview.txt` /
   `_Mugshot.txt` show double application). Fix only if the scan finds a real specimen:
   prefer exact-ordinal match among same-named shapes when the entry's index also matches one.
+- **FIXED 2026-07-30**, exactly as proposed above and without waiting for a specimen — the rule is
+  cheap and provably inert on a mesh with no duplicate names (`BuildShapeOrdinalsByName` returns
+  null, so the branch is unreachable). Among same-named shapes the entry's 3D Index picks the one;
+  if the index matches NONE of them — the block-re-sort desync, where the index is the untrustworthy
+  field — every namesake still gets it, because an entry bound to nothing is worse than one bound
+  twice. Declines are logged, so a shape losing a TXST it used to get cannot be mistaken for a
+  regression. Pinned by 8 tests in `Tests/Unit/AlternateTextureMatchingTests.cs`.
+- **Evidence, graded honestly.** That the ENGINE keys on the 3D Index is direct: a BodySlide-rebuilt
+  NIF whose shape was renamed (order preserved) rendered its variant correctly in game and in the CK
+  but not in NPC2, which matched by name — with the name matching nothing, the index is the only
+  identity left. That an entry therefore lands on exactly ONE of several namesakes is an
+  **inference** from that, not a separate measurement: no NIF with duplicate names plus
+  AlternateTextures has been tested in game. The fix is written so that being wrong about the
+  inference costs nothing beyond today's behaviour.
 
 ### AUD-8 — Logging / consistency notes
 

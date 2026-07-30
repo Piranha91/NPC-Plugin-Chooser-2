@@ -23,7 +23,14 @@ stored against one key and read against another.
 
 Invisible under the default `ManualWigBlockScope = AllNpcs`, where the key is ignored entirely.
 
-**Which key is canonical is now settled — the DONOR's — and no migration is needed.** Traced
+**RESOLVED 2026-07-30 — the donor's key, fixed, no migration needed.** `NpcMeshResolver.Resolve` now
+threads a `designationScopeKey` (the NPC the user actually has open) down to
+`ComputeWigHideHeadShapeNames`, which passes it to `IsWigArmature` instead of the possibly-advanced
+`npcGetter.FormKey`. Semantics pinned by `Tests/Unit/ManualWigDesignationScopeTests.cs`. The trace
+that settled which key is canonical is kept below, because it is also the argument for why nothing
+needed migrating.
+
+Traced
 2026-07-30: the UI stores a designation under the key `VM_InternalMugshotPreview.PopulateWigSelector`
 was called with, which is the preview's loaded `formKey`, i.e. the appearance donor (the same call
 site notes that `targetNpcFormKey` "differs from formKey for guest appearances"), and
@@ -65,17 +72,41 @@ piece drive hair removal down one path and not the other.
 
 ## 3. `StripWigsFromForwardedOutfit` reads the raw donor outfit
 
-`WigForwarder.TryForwardToOutfit` picks the outfit to duplicate through `OutfitDisplayResolver`
-(which now follows the Inventory template chain), but `StripWigsFromForwardedOutfit` still works off
-`donorOutfitGetter` — the raw `donorNpc.DefaultOutfit` read at the top of `Apply`. For an
-Inventory-templated NPC the two now name different outfits.
+**Reviewed 2026-07-30 and deliberately left as-is.** Written out in full because the reasoning is
+what makes it a non-issue today, and that reasoning is exactly what a future change could invalidate.
 
-Arguably correct as-is: that strip runs on the Include-Outfit path, where `CopyAppearanceData` also
-copies the donor's raw field. But it is a divergence, and it was introduced deliberately rather than
-noticed.
+There are two separate outfit operations in `WigForwarder.Apply`, and only one of them was updated
+when Inventory-template handling landed:
 
-*A fix has to decide:* whether the strip belongs on the record NPC2 writes (raw donor) or on the
-outfit the actor wears (chain-resolved) — they are only the same NPC most of the time.
+- **Step 2, "add the wig to an outfit"** (`TryForwardToOutfit`, fires when there are pieces to add)
+  asks `OutfitDisplayResolver.ResolveForDisplay` which outfit the actor will *actually wear*:
+  plugin-level effective outfit, patch-mode aware, plus the SkyPatcher/SPID runtime layers — the same
+  simulation the 3D preview draws. For an Inventory-templated NPC that resolves to the **template's**
+  outfit, because the engine takes the whole inventory from the template.
+- **Step 3, "remove the wig from an outfit"** (`StripWigsFromForwardedOutfit`, fires only when step 2
+  produced nothing *and* Include Outfit is on) works off `donorOutfitGetter` — the **raw**
+  `donorNpc.DefaultOutfit` read at the top of `Apply`. No chain resolution.
+
+For a normal NPC those name the same outfit and there is no difference at all. For an
+Inventory-templated NPC they name different outfits: step 2 would target the template's, step 3
+targets the NPC's own.
+
+**Why it is arguably right as-is.** Step 3 only runs on the Include-Outfit path, and on that path
+`CopyAppearanceData` also writes the donor's *raw* `DefaultOutfit` onto the output record. So the
+outfit NPC2 is writing to the record is the raw one, and stripping the wig out of that is
+self-consistent. On top of that the record field is inert for Inventory-templated NPCs anyway — the
+engine ignores it — so in game the whole question currently has no visible consequence.
+
+**Why it is recorded anyway.** The two steps answer different questions — "what outfit does NPC2
+write?" (raw donor) versus "what outfit does the actor wear?" (chain-resolved) — and step 3 picked
+one without that being a decision anyone made. It fell out of step 2 being updated and step 3 not. A
+future change that makes Include Outfit actually reach Inventory-templated NPCs (via SkyPatcher/SPID
+distribution, which was considered and rejected once) would make the divergence live immediately, and
+at that point it becomes a real bug rather than a latent inconsistency.
+
+*A fix has to decide:* whether the strip follows the record NPC2 writes or the outfit the actor
+wears. They are only the same NPC most of the time, and the answer probably depends on whether
+Include Outfit stays record-only.
 
 ## 4. Asset resolution never leaves the selected mod
 
