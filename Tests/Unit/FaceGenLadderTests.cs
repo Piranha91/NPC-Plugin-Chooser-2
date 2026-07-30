@@ -34,6 +34,7 @@ public class FaceGenLadderTests
         bool winnerDds = true,
         bool? originCompatible = null,
         bool? winnerCompatible = null,
+        bool? sourceCompatible = null,
         FaceGenDestinationMode mode = FaceGenDestinationMode.Record,
         FaceGenChainStatus chain = FaceGenChainStatus.NotTemplated,
         FormKey? subject = null,
@@ -59,7 +60,8 @@ public class FaceGenLadderTests
             WinnerNifCompatible: winnerCompatible,
             LegacyDonorNif: sourceNif,
             LegacyDonorDds: sourceDds,
-            FlattenTemplateChain: flatten);
+            FlattenTemplateChain: flatten,
+            SourceNifCompatible: sourceCompatible);
 
     // ---- Row identification ------------------------------------------------------------------
 
@@ -838,5 +840,49 @@ public class FaceGenLadderTests
         d.Row.Should().Be(FaceGenLadderRow.Neither);
         d.NifChoice.Should().Be(FaceGenSourceChoice.Origin);
         d.OriginMeshFailedCompatCheck.Should().BeTrue();
+    }
+
+    // ---- ModMeshFailedCompatCheck ------------------------------------------------------------
+    //
+    // Row 2 with a FaceGen-only selection ships the MOD's mesh against the ORIGIN's record — the
+    // mirror image of the rows-4/5 pairing above, and the same stance: probe, warn, never gate.
+
+    [Fact]
+    public void ModMeshCompat_IsFlagged_WhenTheProbeSaidTheModMeshDoesNotFit()
+    {
+        var d = FaceGenLadder.Classify(Inputs(
+            sourceDds: FaceGenAssetPresence.NotFound, // row 2: mesh only
+            hasPluginRecord: false,                   // FaceGen-only: the origin's record ships
+            sourceCompatible: false));
+
+        d.Row.Should().Be(FaceGenLadderRow.NifOnly);
+        d.Abort.Should().BeFalse("warn, don't gate");
+        d.NifChoice.Should().Be(FaceGenSourceChoice.AppearanceMod,
+            "the mod's mesh is still used; the flag rides along instead of vetoing it");
+        d.ModMeshFailedCompatCheck.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(true)]  // probe ran and passed — the assumption held
+    [InlineData(null)]  // probe never ran — nothing is known, so nothing to warn about
+    public void ModMeshCompat_IsNotFlagged_WhenTheProbePassedOrNeverRan(bool? sourceCompatible)
+    {
+        var d = FaceGenLadder.Classify(Inputs(
+            sourceDds: FaceGenAssetPresence.NotFound,
+            hasPluginRecord: false,
+            sourceCompatible: sourceCompatible));
+
+        d.NifChoice.Should().Be(FaceGenSourceChoice.AppearanceMod);
+        d.ModMeshFailedCompatCheck.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ModMeshCompat_CountsAsCompatibilityEvaluated()
+    {
+        FaceGenLadder.Classify(Inputs(
+                sourceDds: FaceGenAssetPresence.NotFound,
+                hasPluginRecord: false,
+                sourceCompatible: false))
+            .CompatibilityEvaluated.Should().BeTrue();
     }
 }

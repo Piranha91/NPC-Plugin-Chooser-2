@@ -123,6 +123,13 @@ public enum FaceGenSourceChoice
 /// path is no longer "already at the destination" — it has to be copied. Does not change where
 /// FaceGen is SOURCED from (always the subject's paths), and is irrelevant to untemplated NPCs.
 /// </param>
+/// <param name="SourceNifCompatible">
+/// Whether the APPEARANCE MOD's own mesh fits the record that ships. Only evaluated for the one
+/// shape where the two have different authors — row 2 with a FaceGen-only selection, which pairs
+/// the mod's mesh with the origin's record — and null everywhere else. Never gates: it feeds
+/// <see cref="FaceGenLadderDecision.ModMeshFailedCompatCheck"/>, the same warn-don't-gate stance
+/// rows 4/5 take for the mirrored pairing.
+/// </param>
 public sealed record FaceGenLadderInputs(
     string NpcIdentifier,
     FormKey TargetFormKey,
@@ -145,7 +152,8 @@ public sealed record FaceGenLadderInputs(
     FaceGenAssetPresence LegacyDonorNif,
     FaceGenAssetPresence LegacyDonorDds,
     string ChainTrace = "",
-    bool FlattenTemplateChain = false);
+    bool FlattenTemplateChain = false,
+    bool? SourceNifCompatible = null);
 
 /// <summary>
 /// The ladder's verdict for one NPC. <see cref="LegacyAction"/> records what the pre-ladder
@@ -219,6 +227,18 @@ public sealed record FaceGenLadderDecision(
     /// </summary>
     public bool OriginMeshFailedCompatCheck =>
         NifChoice == FaceGenSourceChoice.Origin && Inputs.OriginNifCompatible == false;
+
+    /// <summary>
+    /// True when the APPEARANCE MOD's own mesh ships even though the compatibility probe
+    /// POSITIVELY said it does not fit the record that ships. The probe only runs for row 2 with
+    /// a FaceGen-only selection — the mod's mesh against the origin's record, the mirror image of
+    /// the rows-4/5 pairing <see cref="OriginMeshFailedCompatCheck"/> covers — and takes the same
+    /// warn-don't-gate stance: the mesh is used, and the NPC is named in the end-of-run warning
+    /// report (<see cref="NpcWarningKind.ModMeshCompatibility"/>). A mod that ships its mesh AND
+    /// its own record is self-consistent by authorship and is never probed, like row 1.
+    /// </summary>
+    public bool ModMeshFailedCompatCheck =>
+        NifChoice == FaceGenSourceChoice.AppearanceMod && Inputs.SourceNifCompatible == false;
 }
 
 /// <summary>
@@ -522,7 +542,8 @@ public static class FaceGenLadder
         FaceGenLadderInputs i, FaceGenLadderRow row, string legacy,
         FaceGenSourceChoice nif, FaceGenSourceChoice dds, bool forwardOriginRecord, string logLine) =>
         new(i, row, nif, dds, forwardOriginRecord, false, null,
-            CompatibilityEvaluated: i.OriginNifCompatible.HasValue || i.WinnerNifCompatible.HasValue,
+            CompatibilityEvaluated: i.OriginNifCompatible.HasValue || i.WinnerNifCompatible.HasValue
+                                    || i.SourceNifCompatible.HasValue,
             PlannedAction: $"nif={nif}, dds={dds}" + (forwardOriginRecord ? ", record=Origin" : string.Empty),
             LegacyAction: legacy,
             LogLine: logLine);
@@ -530,7 +551,8 @@ public static class FaceGenLadder
     private static FaceGenLadderDecision Abort(
         FaceGenLadderInputs i, FaceGenLadderRow row, string legacy, string reason) =>
         new(i, row, FaceGenSourceChoice.None, FaceGenSourceChoice.None, false, true, reason,
-            CompatibilityEvaluated: i.OriginNifCompatible.HasValue || i.WinnerNifCompatible.HasValue,
+            CompatibilityEvaluated: i.OriginNifCompatible.HasValue || i.WinnerNifCompatible.HasValue
+                                    || i.SourceNifCompatible.HasValue,
             PlannedAction: "Abort",
             LegacyAction: legacy,
             LogLine: $"Skipping {i.NpcIdentifier}: {reason}");

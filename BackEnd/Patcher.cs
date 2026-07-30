@@ -2959,24 +2959,46 @@ public class Patcher : OptionalUIModule
 
         var decision = FaceGenLadder.Classify(inputs);
 
-        // Only row 3 gates a borrowed mesh on head-part compatibility, and rows 4/5 only when they
-        // fall through to the winner (the origin's own mesh matches the origin's own record by
-        // construction). Classifying first tells us whether the parse is worth doing at all.
-        if (NeedsCompatibilityCheck(decision))
+        // Row 3 gates a borrowed mesh on head-part compatibility; rows 4/5 probe (without gating)
+        // both the origin mesh and the winner fallback; row 2 with a FaceGen-only selection probes
+        // the MOD's mesh against the origin's record (same cross-author pairing, roles reversed).
+        // Classifying first tells us whether any parse is worth doing at all.
+        if (NeedsCompatibilityCheck(decision) || ProbesModMesh(decision))
         {
-            var recordToMatch = decision.ForwardOriginRecord && linkCache != null &&
-                                linkCache.TryResolve<INpcGetter>(subjectFormKey, out var originRec, ResolveTarget.Origin)
-                ? originRec
-                : appearanceNpcRecord;
+            // Match against the record the ENGINE will reconcile the mesh with. For a flattened
+            // Traits chain that is the TERMINUS record — CopyInheritedAppearance overlays its head
+            // parts onto whatever ships — resolved here exactly the way the flatten itself
+            // resolves it. Matching the donor there graded the mesh against head parts the
+            // overlay was about to replace (seam fixed 2026-07-30). Otherwise: the origin record
+            // when row 4 forwards it, else the donor's own.
+            INpcGetter? originRecordForMatch = null;
+            if (decision.ForwardOriginRecord && linkCache != null &&
+                linkCache.TryResolve<INpcGetter>(subjectFormKey, out var originRec, ResolveTarget.Origin))
+            {
+                originRecordForMatch = originRec;
+            }
 
+            var recordToMatch = ChooseCompatibilityRecord(
+                ResolveAppearanceTerminusRecord(decision, appearanceModSetting, currentModFolderPaths, isFaceGenOnly),
+                originRecordForMatch,
+                appearanceNpcRecord);
+
+            // Each side is parsed only where its answer can matter: the mod's own mesh only on
+            // the row-2 FaceGen-only shape, the origin/winner fallbacks only on the rows that
+            // consult them — a row-2 NPC never pays for fallback parses it will not use.
+            bool probeFallbacks = NeedsCompatibilityCheck(decision);
             inputs = inputs with
             {
-                OriginNifCompatible = originModSetting == null || originNif == FaceGenAssetPresence.NotFound
+                SourceNifCompatible = !ProbesModMesh(decision) || appearanceModSetting == null
+                    ? null
+                    : await EvaluateNifCompatibilityAsync(recordToMatch, subjectNifRel, appearanceModSetting),
+                OriginNifCompatible = !probeFallbacks || originModSetting == null ||
+                                      originNif == FaceGenAssetPresence.NotFound
                     ? null
                     : await EvaluateNifCompatibilityAsync(recordToMatch, subjectNifRel, originModSetting),
-                WinnerNifCompatible = !winnerNif
+                WinnerNifCompatible = !probeFallbacks || !winnerNif
                     ? null
-                    : EvaluateNifCompatibility(recordToMatch, _assetHandler.GetWinningAssetPath(subjectNifRel)),
+                    : await EvaluateWinningNifCompatibilityAsync(recordToMatch, subjectNifRel),
             };
 
             decision = FaceGenLadder.Classify(inputs);
@@ -3185,8 +3207,8 @@ public class Patcher : OptionalUIModule
         _recordHandler.ResolveNpcPreferringMod(npcFormKey, appearanceModSetting, currentModFolderPaths,
             isFaceGenOnly);
 
-    /// <summary>Whether this verdict rests on a mesh whose head-part compatibility has not been
-    /// established from its own source.</summary>
+    /// <summary>Whether this verdict rests on a BORROWED mesh (origin or winner) whose head-part
+    /// compatibility has not been established from its own source.</summary>
     private static bool NeedsCompatibilityCheck(FaceGenLadderDecision d) =>
         !d.Abort
         && d.Row is FaceGenLadderRow.DdsOnlyWithRecord
@@ -3195,6 +3217,49 @@ public class Patcher : OptionalUIModule
         && d.NifChoice is FaceGenSourceChoice.Origin
                        or FaceGenSourceChoice.Winner
                        or FaceGenSourceChoice.WinnerInPlace;
+
+    /// <summary>Whether the MOD's own mesh should be probed: row 2 with a FaceGen-only selection
+    /// ships the mod's mesh against the ORIGIN's record — the same cross-author pairing rows 4/5
+    /// probe, with the roles reversed. Probed and warned (ModMeshFailedCompatCheck), never gated,
+    /// matching the rows-4/5 stance. A row-2 mod that ships its own record authored the mesh and
+    /// the record together, so it is self-consistent and never probed — the same reason row 1 is
+    /// not probed at all.</summary>
+    private static bool ProbesModMesh(FaceGenLadderDecision d) =>
+        !d.Abort
+        && d.Row == FaceGenLadderRow.NifOnly
+        && !d.Inputs.SourceHasPluginRecord
+        && d.NifChoice == FaceGenSourceChoice.AppearanceMod;
+
+    /// <summary>The record the engine will reconcile a candidate mesh against, which is what
+    /// compatibility must be graded on: the flatten TERMINUS when a Traits chain is being
+    /// flattened (CopyInheritedAppearance overlays its head parts onto whatever ships), else the
+    /// origin record when row 4 forwards it, else the donor's own record.</summary>
+    private static INpcGetter ChooseCompatibilityRecord(
+        INpcGetter? flattenTerminus, INpcGetter? forwardedOrigin, INpcGetter donorRecord) =>
+        flattenTerminus ?? forwardedOrigin ?? donorRecord;
+
+    /// <summary>Winner-side twin of <see cref="EvaluateNifCompatibilityAsync"/>: materializes the
+    /// load-order-winning copy of the mesh — extracting when the winner is BSA-resident — and
+    /// grades it against the record. The loose-only path it replaces returned NotEvaluated for
+    /// BSA-packed winners, which <c>?? true</c> then accepted unprobed (seam fixed 2026-07-30).</summary>
+    private async Task<bool?> EvaluateWinningNifCompatibilityAsync(INpcGetter recordToMatch, string nifRelPath)
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "NPC2_FaceGenCompat");
+        string? materialized = null;
+        try
+        {
+            materialized = await _assetHandler.MaterializeWinningAssetAsync(nifRelPath, tempDir);
+            return EvaluateNifCompatibility(recordToMatch, materialized);
+        }
+        finally
+        {
+            // Only delete what we extracted; a loose winner path is the deployed file itself.
+            if (materialized != null && materialized.StartsWith(tempDir, StringComparison.OrdinalIgnoreCase))
+            {
+                try { File.Delete(materialized); } catch { /* temp cleanup is best-effort */ }
+            }
+        }
+    }
 
     private async Task<bool?> EvaluateNifCompatibilityAsync(
         INpcGetter recordToMatch, string nifRelPath, ModSetting sourceMod)

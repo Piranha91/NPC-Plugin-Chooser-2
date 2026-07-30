@@ -653,10 +653,15 @@ public static class PatchVerifyRunner
                     : "<br><span class=\"warn\">WARNING: the forwarded origin mesh failed the " +
                       "head-part compatibility check — another mod appears to have changed the " +
                       "NPC's original head data. Spawn to verify.</span>";
+                string modMeshCompat = !e.Decision.ModMeshFailedCompatCheck
+                    ? string.Empty
+                    : "<br><span class=\"warn\">WARNING: the mod's own face mesh failed the " +
+                      "head-part compatibility check against the record that ships. Spawn to " +
+                      "verify.</span>";
 
                 string verdict = e.Decision.Abort
                     ? $"<span class=\"abort\">SKIPPED</span><br>{Esc(e.Decision.AbortReason)}"
-                    : $"<span class=\"ok\">{Esc(e.Decision.PlannedAction)}</span><br>{Esc(e.Decision.LogLine)}{tint}{originCompat}";
+                    : $"<span class=\"ok\">{Esc(e.Decision.PlannedAction)}</span><br>{Esc(e.Decision.LogLine)}{tint}{originCompat}{modMeshCompat}";
 
                 string idCell = e.RuntimeIdApproximate
                     ? $"<code>{e.RuntimeFormId}</code> <span class=\"warn\">(approx)</span>"

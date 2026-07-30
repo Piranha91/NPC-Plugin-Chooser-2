@@ -107,6 +107,7 @@ public class NpcWarningReporterTests
 
     [Theory]
     [InlineData(NpcWarningKind.OriginMeshCompatibility)]
+    [InlineData(NpcWarningKind.ModMeshCompatibility)]
     [InlineData(NpcWarningKind.MissingFaceTint)]
     [InlineData(NpcWarningKind.TexturelessShapes)]
     public void Headers_AreSpecific_AndClassifyAsWarnings(NpcWarningKind kind)

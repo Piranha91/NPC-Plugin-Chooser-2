@@ -365,6 +365,59 @@ public class AssetHandler : OptionalUIModule
         }
     }
 
+    /// <summary>
+    /// Winner-side twin of <see cref="MaterializeAssetAsync"/>: produces a real file path for the
+    /// LOAD-ORDER-WINNING copy of an asset so a parser can open it, extracting to
+    /// <paramref name="tempDir"/> when the winner is BSA-resident. Same search and exclusions as
+    /// <see cref="WinningAssetExists"/>, so the two always agree on what "the winner" is: a loose
+    /// Data-folder file first (a loose file that is this app's own prior output means no
+    /// third-party winner — null, no archive fallback), then the load order's archives. Null when
+    /// nothing wins. The caller owns cleanup of anything under tempDir.
+    ///
+    /// <para>Exists because the ladder's winner-side compatibility probe used the loose-only
+    /// <see cref="GetWinningAssetPath"/> and silently returned NotEvaluated for BSA-packed
+    /// winners — accepted unprobed via <c>?? true</c> — while the origin side always extracted
+    /// (seam fixed 2026-07-30).</para>
+    /// </summary>
+    public async Task<string?> MaterializeWinningAssetAsync(string relativePath, string tempDir)
+    {
+        string rel = relativePath.Replace('/', '\\').TrimStart('\\');
+
+        try
+        {
+            string dataPath = Path.Combine(_environmentStateProvider.DataFolderPath, rel);
+            if (File.Exists(dataPath))
+            {
+                return IsOurOwnPriorOutput(rel, dataPath) ? null : dataPath;
+            }
+        }
+        catch
+        {
+            // An unreadable Data path just falls through to the archive check.
+        }
+
+        foreach (var modKey in _environmentStateProvider.LoadOrderModKeys)
+        {
+            if (_bsaHandler.FileExists(rel, modKey, out var bsaPath) && bsaPath != null)
+            {
+                try
+                {
+                    Directory.CreateDirectory(tempDir);
+                    string dest = Path.Combine(tempDir,
+                        Guid.NewGuid().ToString("N") + Path.GetExtension(rel));
+                    var (ok, _) = await _bsaHandler.ExtractFileAsync(bsaPath, rel, dest);
+                    return ok ? dest : null;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>The live Data-folder path for an asset, or null if nothing is deployed there.
     /// This is the "winner" the game itself would load.</summary>
     public string? GetWinningAssetPath(string relativePath)
@@ -1101,6 +1154,10 @@ public class AssetHandler : OptionalUIModule
         if (faceGenDecision.OriginMeshFailedCompatCheck)
         {
             NpcWarningReporter.Record(NpcWarningKind.OriginMeshCompatibility, npcIdentifier);
+        }
+        if (faceGenDecision.ModMeshFailedCompatCheck)
+        {
+            NpcWarningReporter.Record(NpcWarningKind.ModMeshCompatibility, npcIdentifier);
         }
 
         // Both are no-ops when the ladder chose no source, which is how an inheriting NPC copies

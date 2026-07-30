@@ -11,6 +11,11 @@ public enum NpcWarningKind
     /// <see cref="FaceGenLadderDecision.OriginMeshFailedCompatCheck"/>.</summary>
     OriginMeshCompatibility,
 
+    /// <summary>Row 2 with a FaceGen-only selection ships the MOD's mesh against the ORIGIN's
+    /// record, and the probe positively said the pairing does not fit — see
+    /// <see cref="FaceGenLadderDecision.ModMeshFailedCompatCheck"/>.</summary>
+    ModMeshCompatibility,
+
     /// <summary>A face mesh is being copied with no tint to pair with it anywhere — see
     /// <see cref="FaceGenLadderDecision.MissingTintEverywhere"/>.</summary>
     MissingFaceTint,
@@ -79,6 +84,13 @@ public static class NpcWarningReporter
             "selected for them, so NPC2 forwarded their original meshes. However, other mods in " +
             "your load order may make changes that are incompatible with the original meshes, " +
             "causing the dark face bug. Spawn these NPCs in game to check their faces before " +
+            "starting a playthrough:",
+
+        NpcWarningKind.ModMeshCompatibility =>
+            "The appearance mods you selected for the following NPCs provide face meshes but do " +
+            "not change the NPC records, so the meshes must match the records the NPCs already " +
+            "use — and a check found they do not. Other mods in your load order may have changed " +
+            "those records' head data. Spawn these NPCs in game to check their faces before " +
             "starting a playthrough:",
 
         NpcWarningKind.MissingFaceTint =>

@@ -183,6 +183,14 @@ playthrough), then the affected NPCs. Pinned by the `OriginCompat_*` tests in
 after-the-fact detector, and its FaceGen warning is the confirmation that a flagged NPC really did
 pair mismatched halves.
 
+Probe hardening, 2026-07-30, same stance extended: row 2 with a FaceGen-only selection — the MOD's
+mesh against the ORIGIN's record, the mirror image of the pairing above — is now probed too and
+warned via `ModMeshFailedCompatCheck` (row 2 with the mod's own record stays unprobed: mesh and
+record share an author, like row 1). The probe also now grades against the record the engine will
+actually reconcile — the flatten TERMINUS when a Traits chain is being flattened, not the donor —
+and can read a BSA-packed winner mesh (`MaterializeWinningAssetAsync`); the loose-only path
+silently accepted packed winners unprobed.
+
 ---
 
 ## Resolved

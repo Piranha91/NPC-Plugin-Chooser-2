@@ -85,7 +85,7 @@ public static class FaceGenLadderDiag
         var sb = new StringBuilder();
         sb.AppendLine("Npc,TargetFormKey,DonorFormKey,SubjectFormKey,ChainStatus,Mod,Mode,FlattenTemplateChain,Row," +
                       "SourceNif,SourceDds,HasPluginRecord,OriginRecord,OriginNif,OriginDds," +
-                      "WinnerNif,WinnerNifOwner,WinnerDds,OriginNifCompatible,WinnerNifCompatible," +
+                      "WinnerNif,WinnerNifOwner,WinnerDds,SourceNifCompatible,OriginNifCompatible,WinnerNifCompatible," +
                       "CompatibilityEvaluated,NifChoice,DdsChoice,ForwardOriginRecord," +
                       "PlannedAction,LegacyAction,Aborted,AbortReason,Explanation,ChainTrace");
 
@@ -98,7 +98,8 @@ public static class FaceGenLadderDiag
                 i.FlattenTemplateChain, (int)d.Row,
                 i.SourceNif, i.SourceDds, i.SourceHasPluginRecord, i.OriginRecordExists,
                 i.OriginNif, i.OriginDds, i.WinnerNifExists, Csv(i.WinnerNifOwner), i.WinnerDdsExists,
-                Tri(i.OriginNifCompatible), Tri(i.WinnerNifCompatible), d.CompatibilityEvaluated,
+                Tri(i.SourceNifCompatible), Tri(i.OriginNifCompatible), Tri(i.WinnerNifCompatible),
+                d.CompatibilityEvaluated,
                 d.NifChoice, d.DdsChoice, d.ForwardOriginRecord,
                 Csv(d.PlannedAction), Csv(d.LegacyAction), d.Abort, Csv(d.AbortReason), Csv(d.LogLine),
                 Csv(i.ChainTrace)));
