@@ -1,15 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using NPC_Plugin_Chooser_2.BackEnd.Logging;
 using System.IO;
-using System.Threading;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
 /// <summary>
 /// Opt-in per-NPC memory sampler for diagnosing the RAM growth users report in long sessions evaluating
 /// many NPCs. Disabled unless a <c>LogMemory.txt</c> trigger file sits next to the exe (same convention as
-/// <see cref="StartupLogger"/> / <c>BsaContentsDiag</c>); when enabled it appends one row to
-/// <c>MemoryLog.txt</c> each time the NPC selection rebuilds its mugshot tiles.
+/// <see cref="StartupLogger"/> / <c>BsaContentsDiag</c>); when enabled it appends one table row to
+/// <c>MemoryLog.html</c> each time the NPC selection rebuilds its mugshot tiles.
 ///
 /// <para>Each row records the cheap managed-heap size (no forced collection), the process working set, and
 /// the GC generation counts. Every <see cref="ForcedGcEvery"/>th sample it additionally forces a full,
@@ -23,12 +24,12 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 public static class MemoryLogger
 {
     private const string TriggerFileName = "LogMemory.txt";
-    private const string LogFileName = "MemoryLog.txt";
+    private const string LogFileName = "MemoryLog.html";
 
     /// <summary>How often (in samples) to force a full GC and log the retained-after-GC managed bytes.</summary>
     private const int ForcedGcEvery = 20;
 
-    private static StreamWriter? _writer;
+    private static HtmlLogWriter? _writer;
     private static readonly object _lock = new();
     private static bool _isEnabled;
     private static int _sampleIndex;
@@ -57,18 +58,22 @@ public static class MemoryLogger
             try
             {
                 string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, LogFileName);
-                var stream = new FileStream(logPath, FileMode.Create, FileAccess.Write, FileShare.Read);
-                _writer = new StreamWriter(stream) { AutoFlush = true };
+                _writer = new HtmlLogWriter(logPath, "NPC Plugin Chooser 2 — Memory Log",
+                    meta: new[]
+                    {
+                        new KeyValuePair<string, string>("Started", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+                        new KeyValuePair<string, string>("Version", App.ProgramVersion.ToString()),
+                        new KeyValuePair<string, string>("How to read",
+                            "Watch the Retained MB column: steadily rising = managed leak; flat while the " +
+                            "other columns rise = reclaimable cache, not a leak. Retained is measured after " +
+                            $"a forced full GC every {ForcedGcEvery} samples."),
+                    },
+                    tableColumns: new[]
+                    {
+                        "Time", "#", "Managed MB (no GC)", "Retained MB (after full GC)",
+                        "Working set MB", "Gen0", "Gen1", "Gen2", "Tiles", "Context",
+                    });
                 _isEnabled = true;
-
-                _writer.WriteLine("=== NPC Plugin Chooser 2 - Memory Log ===");
-                _writer.WriteLine($"Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                _writer.WriteLine($"Version: {App.ProgramVersion}");
-                _writer.WriteLine("Columns: time | # | managedMB (no GC) | retainedMB (after full GC, every " +
-                                  $"{ForcedGcEvery}) | workingSetMB | gen0 gen1 gen2 | tiles | context");
-                _writer.WriteLine("Read the retainedMB column: steadily rising = managed leak; flat while the " +
-                                  "others rise = reclaimable cache, not a leak.");
-                _writer.WriteLine();
             }
             catch (Exception ex)
             {
@@ -102,10 +107,19 @@ public static class MemoryLogger
                 long workingSet;
                 using (var p = Process.GetCurrentProcess()) { p.Refresh(); workingSet = p.WorkingSet64; }
 
-                _writer?.WriteLine(
-                    $"[{DateTime.Now:HH:mm:ss}] {idx,4} | {Mb(managed),8} | {retained,8} | {Mb(workingSet),8} | " +
-                    $"{GC.CollectionCount(0),4} {GC.CollectionCount(1),4} {GC.CollectionCount(2),4} | " +
-                    $"{tileCount,3} | {context}");
+                _writer?.WriteTableRow(HtmlLogSeverity.Info, new[]
+                {
+                    DateTime.Now.ToString("HH:mm:ss"),
+                    idx.ToString(),
+                    Mb(managed),
+                    retained,
+                    Mb(workingSet),
+                    GC.CollectionCount(0).ToString(),
+                    GC.CollectionCount(1).ToString(),
+                    GC.CollectionCount(2).ToString(),
+                    tileCount.ToString(),
+                    context,
+                });
             }
             catch { /* never crash the app for logging */ }
         }

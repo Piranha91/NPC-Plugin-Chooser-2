@@ -20,17 +20,17 @@ namespace NPC_Plugin_Chooser_2.Tests.Harness;
 ///     production serializer (Newtonsoft), including the "Source" default of "FaceFinder"
 ///     and the missing-Source -> default behaviour.
 ///   • <c>WriteMetadataAsync</c> / <c>ReadMetadataAsync</c> — the sidecar round-trip. These
-///     are instance methods, so the client is constructed; the ctor only touches the local
-///     working directory (clears a log file, swallowing any error) and never hits the network,
-///     so it is safe offline. Construction happens with the process CWD redirected into a
-///     <see cref="TempDir"/> so neither <c>EventLog.txt</c> nor <c>FaceFinderLog.txt</c> leaks
-///     into the source tree.
+///     are instance methods, so the client is constructed; the ctor only clears a log file
+///     (swallowing any error) and never hits the network, so it is safe offline. Both
+///     <c>FaceFinderLog.html</c> and <c>EventLog.html</c> are anchored to the test AppDomain
+///     base dir, so nothing leaks into the source tree; the CWD redirect during construction
+///     is kept as belt-and-braces for any remaining relative-path writes.
 ///   • <c>IsCacheStaleAsync</c> — only its pre-network early-return branches (missing sidecar,
 ///     non-FaceFinder source, corrupt JSON). The "valid FaceFinder metadata" branch issues a
 ///     live API call and is covered by the integration wave (see NOTE below).
 ///
 /// Determinism: no clock dependence (only stored timestamps are compared), no network, no game
-/// install. The CWD redirect makes the client ctor / EventLogger ctor write only into a temp dir.
+/// install. The CWD redirect makes the client ctor write its log file only into a temp dir.
 ///
 /// CWD is process-global, so the constructing tests serialise via the integration collection and
 /// snapshot/restore the working directory themselves.
@@ -61,7 +61,7 @@ public class FaceFinderClientStaticTests
         Directory.SetCurrentDirectory(cwd);
         try
         {
-            var logger = new EventLogger(settings); // writes EventLog.txt into cwd; errors swallowed
+            var logger = new EventLogger(settings); // writes EventLog.html into the base dir; errors swallowed
             return new FaceFinderClient(settings, logger);
         }
         finally

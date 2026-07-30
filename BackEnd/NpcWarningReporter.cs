@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO;
-using System.Text;
+using NPC_Plugin_Chooser_2.BackEnd.Logging;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -39,7 +39,7 @@ public enum NpcWarningKind
 /// what it means. The four per-NPC summaries the Patcher already emits (skipped faces, inherited
 /// faces, flattened fallbacks, inert outfits) follow the same grouped end-of-run shape.</para>
 ///
-/// <para>The run log stays lay-readable; the TECHNICAL payload goes to a companion file
+/// <para>The run log stays lay-readable; the TECHNICAL payload goes to a companion HTML file
 /// (<see cref="DetailedLogPath"/>, written by <see cref="Flush"/> whenever any warning fired, and
 /// pointed at by the report's closing line) so a user with the wherewithal — or the maintainer
 /// they ask for help — can see per-NPC ladder context without re-running with diag triggers.</para>
@@ -47,7 +47,7 @@ public enum NpcWarningKind
 /// <para>Static with a per-run <see cref="Reset"/>, like <see cref="FaceGenLadderDiag"/>: callers
 /// (AssetHandler's copy pipeline) record from background tasks, and the Patcher flushes once the
 /// task drain guarantees nothing is still recording. The formatting itself is pure
-/// (<see cref="FormatReport"/> / <see cref="FormatDetailedLog"/>) so tests can pin grouping and
+/// (<see cref="FormatReport"/> / <see cref="BuildDetailedGroups"/>) so tests can pin grouping and
 /// wording without touching the shared state that live patch runs (including ones running
 /// concurrently in other test classes) mutate.</para>
 /// </summary>
@@ -60,7 +60,7 @@ public static class NpcWarningReporter
     /// Next to the exe, like every other NPC2 log; overwritten per run, deleted when a run
     /// produces no warnings so a stale file cannot describe a clean run.</summary>
     public static string DetailedLogPath =>
-        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PatchWarnings.log");
+        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PatchWarnings.html");
 
     /// <summary>Clears accumulated warnings. Called at the start of a patch run.</summary>
     public static void Reset()
@@ -192,44 +192,54 @@ public static class NpcWarningReporter
         return lines;
     }
 
+    /// <summary>One NPC in a detailed warning group: the heading (identifier plus the run-log
+    /// detail, when any) and the flattened technical lines shown beneath it.</summary>
+    public sealed record DetailedWarningNpc(string Heading, IReadOnlyList<string> TechnicalLines);
+
+    /// <summary>One warning kind's block in the detailed companion log.</summary>
+    public sealed record DetailedWarningGroup(
+        NpcWarningKind Kind, string Header, string TechnicalNote, IReadOnlyList<DetailedWarningNpc> Npcs);
+
     /// <summary>
-    /// Pure formatting of the detailed companion log: per warning kind, the lay header for
-    /// context, the <see cref="TechnicalNote"/>, then each NPC with its technical detail
-    /// indented beneath it.
+    /// Pure structure of the detailed companion log: per warning kind (enum order, kinds with no
+    /// entries skipped), the lay header for context, the <see cref="TechnicalNote"/>, then each
+    /// NPC (alphabetical) with its distinct technical details split into individual lines.
+    /// <see cref="WriteDetailedLog"/> renders this to HTML; tests pin the grouping and content
+    /// here without coupling to markup.
     /// </summary>
-    public static IReadOnlyList<string> FormatDetailedLog(
+    public static IReadOnlyList<DetailedWarningGroup> BuildDetailedGroups(
         IReadOnlyCollection<(NpcWarningKind Kind, string Npc, string? Detail, string? TechnicalDetail)> entries)
     {
-        var lines = new List<string>();
+        var groups = new List<DetailedWarningGroup>();
 
         foreach (var kind in Enum.GetValues<NpcWarningKind>())
         {
             var byNpc = GroupForKind(entries, kind);
             if (byNpc.Count == 0) continue;
 
-            if (lines.Count > 0) lines.Add(string.Empty);
-            lines.Add($"=== {kind} ===");
-            lines.Add(Header(kind));
-            lines.Add(TechnicalNote(kind));
-
+            var npcs = new List<DetailedWarningNpc>();
             foreach (var npc in byNpc)
             {
-                lines.Add(string.Empty);
                 var details = Distinct(npc.Select(e => e.Detail));
-                lines.Add("--- " + npc.Key +
-                          (details.Count > 0 ? ": " + string.Join("; ", details) : string.Empty));
+                string heading = npc.Key +
+                                 (details.Count > 0 ? ": " + string.Join("; ", details) : string.Empty);
 
+                var technicalLines = new List<string>();
                 foreach (var technical in Distinct(npc.Select(e => e.TechnicalDetail)))
                 {
                     foreach (var techLine in technical.Split('\n'))
                     {
-                        lines.Add("    " + techLine.TrimEnd('\r'));
+                        technicalLines.Add(techLine.TrimEnd('\r'));
                     }
                 }
+
+                npcs.Add(new DetailedWarningNpc(heading, technicalLines));
             }
+
+            groups.Add(new DetailedWarningGroup(kind, Header(kind), TechnicalNote(kind), npcs));
         }
 
-        return lines;
+        return groups;
     }
 
     private static List<IGrouping<string, (NpcWarningKind Kind, string Npc, string? Detail, string? TechnicalDetail)>>
@@ -249,24 +259,203 @@ public static class NpcWarningReporter
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-    /// <summary>Writes the detailed log beside the exe. Returns false on failure — a diagnostic
-    /// must never take a patch run down with it, and the caller then skips the pointer line.</summary>
+    /// <summary>
+    /// Pure classifier turning a technical detail's plain-text lines into the structured blocks
+    /// the HTML card renders (facts, field-chip rows, comparison tables, titled sub-groups), so
+    /// a reader follows a table instead of a text blob. The producers
+    /// (<see cref="FaceGenLadderDecision.TechnicalSummary"/>, the Patcher's probe context, the
+    /// AssetHandler's textureless report) commit to these line shapes:
+    /// <list type="bullet">
+    /// <item>"label: k=v, k=v, ..." — a labeled field row; consecutive rows sharing ≥2 keys merge
+    /// into one comparison table (how selected mod / origin / winner become a grid).</item>
+    /// <item>"k=v k=v ..." — an unlabeled field row (space-separated; a bare token continues the
+    /// previous value, so "chain=NotTemplated (flattened)" stays one field).</item>
+    /// <item>"key: value" — a single fact (override chains, graded record, chain trace).</item>
+    /// <item>a line ending in ":" followed by indented lines — a sub-group (probe evidence);
+    /// the indented lines classify recursively.</item>
+    /// <item>anything else — preformatted text, so unknown producers still render.</item>
+    /// </list>
+    /// </summary>
+    public static IReadOnlyList<HtmlDetailBlock> ClassifyTechnicalLines(IReadOnlyList<string> lines)
+    {
+        var blocks = new List<HtmlDetailBlock>();
+        int i = 0;
+        while (i < lines.Count)
+        {
+            string line = lines[i];
+
+            // Sub-group: "title:" with indented lines beneath it.
+            if (line.Length > 1 && line.TrimEnd().EndsWith(':') && !line.StartsWith(' ') &&
+                i + 1 < lines.Count && lines[i + 1].StartsWith(' '))
+            {
+                var children = new List<string>();
+                int j = i + 1;
+                while (j < lines.Count && lines[j].StartsWith(' '))
+                {
+                    children.Add(lines[j].TrimStart());
+                    j++;
+                }
+                blocks.Add(new HtmlDetailGroup(line.TrimEnd().TrimEnd(':'),
+                    ClassifyTechnicalLines(children)));
+                i = j;
+                continue;
+            }
+
+            blocks.Add(ClassifyLine(line));
+            i++;
+        }
+
+        return MergeTables(blocks);
+    }
+
+    private static HtmlDetailBlock ClassifyLine(string line)
+    {
+        // Labeled field row: try each ": " split point left to right; the first whose remainder
+        // fully parses as a comma-separated k=v list wins (so a label containing ": " still
+        // resolves — the earlier split fails to parse and the search moves on).
+        int search = 0;
+        while (true)
+        {
+            int idx = line.IndexOf(": ", search, StringComparison.Ordinal);
+            if (idx <= 0) break;
+            if (TryParseCommaFields(line[(idx + 2)..], out var labeled))
+            {
+                return new HtmlDetailFieldRow(line[..idx], labeled);
+            }
+            search = idx + 1;
+        }
+
+        if (TryParseCommaFields(line, out var commaFields))
+        {
+            return new HtmlDetailFieldRow(null, commaFields);
+        }
+
+        if (TryParseSpaceFields(line, out var spaceFields))
+        {
+            return new HtmlDetailFieldRow(null, spaceFields);
+        }
+
+        int factIdx = line.IndexOf(": ", StringComparison.Ordinal);
+        if (factIdx > 0)
+        {
+            return new HtmlDetailFact(line[..factIdx], line[(factIdx + 2)..]);
+        }
+
+        return new HtmlDetailText(line);
+    }
+
+    /// <summary>"k=v, k=v, ..." — delegates to the shared <see cref="HtmlLog.TryParseFieldList"/>
+    /// (conservative: every comma-separated segment must parse, so prose never misparses).</summary>
+    private static bool TryParseCommaFields(string text, out List<KeyValuePair<string, string>> fields) =>
+        HtmlLog.TryParseFieldList(text, out fields);
+
+    /// <summary>"k=v k=v ..." — space-separated; a token without '=' continues the previous
+    /// field's value ("chain=NotTemplated (flattened)").</summary>
+    private static bool TryParseSpaceFields(string text, out List<KeyValuePair<string, string>> fields)
+    {
+        fields = new List<KeyValuePair<string, string>>();
+        foreach (var token in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            int eq = token.IndexOf('=');
+            if (eq > 0 && !token[..eq].Contains(':'))
+            {
+                fields.Add(new KeyValuePair<string, string>(token[..eq], token[(eq + 1)..]));
+            }
+            else if (fields.Count > 0)
+            {
+                var last = fields[^1];
+                fields[^1] = new KeyValuePair<string, string>(last.Key, last.Value + " " + token);
+            }
+            else
+            {
+                return false;
+            }
+        }
+        return fields.Count >= 2;
+    }
+
+    /// <summary>Merges runs of consecutive LABELED field rows that share at least two keys into
+    /// one comparison table (columns = union of keys in first-seen order; a row missing a key
+    /// gets an empty cell).</summary>
+    private static IReadOnlyList<HtmlDetailBlock> MergeTables(List<HtmlDetailBlock> blocks)
+    {
+        var result = new List<HtmlDetailBlock>();
+        int i = 0;
+        while (i < blocks.Count)
+        {
+            if (blocks[i] is not HtmlDetailFieldRow { Label: not null } first)
+            {
+                result.Add(blocks[i]);
+                i++;
+                continue;
+            }
+
+            var run = new List<HtmlDetailFieldRow> { first };
+            int j = i + 1;
+            while (j < blocks.Count && blocks[j] is HtmlDetailFieldRow { Label: not null } next &&
+                   next.Fields.Select(f => f.Key)
+                       .Intersect(run[^1].Fields.Select(f => f.Key), StringComparer.Ordinal)
+                       .Count() >= 2)
+            {
+                run.Add(next);
+                j++;
+            }
+
+            if (run.Count >= 2)
+            {
+                var columns = new List<string>();
+                foreach (var row in run)
+                foreach (var f in row.Fields)
+                {
+                    if (!columns.Contains(f.Key)) columns.Add(f.Key);
+                }
+
+                result.Add(new HtmlDetailTable(
+                    columns,
+                    run.Select(r => (r.Label!, (IReadOnlyList<string?>)columns
+                            .Select(c => r.Fields.FirstOrDefault(f => f.Key == c) is { Key: not null } m
+                                ? m.Value : null)
+                            .ToList()))
+                        .ToList()));
+            }
+            else
+            {
+                result.Add(first);
+            }
+
+            i = j;
+        }
+        return result;
+    }
+
+    /// <summary>Writes the detailed HTML log beside the exe. Returns false on failure — a
+    /// diagnostic must never take a patch run down with it, and the caller then skips the
+    /// pointer line.</summary>
     private static bool WriteDetailedLog(
         IReadOnlyCollection<(NpcWarningKind Kind, string Npc, string? Detail, string? TechnicalDetail)> entries)
     {
         try
         {
-            var sb = new StringBuilder();
-            sb.AppendLine("NPC2 patch warnings — detailed breakdown");
-            sb.AppendLine($"Generated {DateTime.Now:yyyy-MM-dd HH:mm:ss}. The run log holds the plain-language summary; " +
-                          "this file adds the per-NPC technical context behind it.");
-            sb.AppendLine();
-            foreach (var line in FormatDetailedLog(entries))
+            var doc = new HtmlLogDocument("NPC2 Patch Warnings — Detailed Breakdown", new[]
             {
-                sb.AppendLine(line);
+                new KeyValuePair<string, string>("Generated", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+            });
+            doc.AddParagraph("The run log holds the plain-language summary; this file adds the " +
+                             "per-NPC technical context behind it.", muted: true);
+
+            foreach (var group in BuildDetailedGroups(entries))
+            {
+                doc.BeginSection(group.Kind.ToString(),
+                    badge: group.Npcs.Count.ToString(), badgeSeverity: HtmlLogSeverity.Warning);
+                doc.AddParagraph(group.Header);
+                doc.AddParagraph(group.TechnicalNote, muted: true);
+                foreach (var npc in group.Npcs)
+                {
+                    doc.AddCard(npc.Heading, ClassifyTechnicalLines(npc.TechnicalLines));
+                }
             }
 
-            File.WriteAllText(DetailedLogPath, sb.ToString(), new UTF8Encoding(false));
+            File.WriteAllText(DetailedLogPath, doc.Render());
             return true;
         }
         catch

@@ -1,12 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using NPC_Plugin_Chooser_2.BackEnd.Logging;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
 /// <summary>
-/// Opt-in append-mode diagnostic for tracing writes to / skips on
+/// Opt-in diagnostic for tracing writes to / skips on
 /// <c>BsaHandler._bsaContents</c>. Intended to identify which call path
 /// poisons the per-ModKey BSA index with an empty entry (which then
 /// blocks all later populates via the ContainsKey guard at the top of
@@ -20,17 +22,19 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 /// single early-return on a static bool — the stack walk and string
 /// formatting are skipped entirely.</para>
 ///
-/// <para>Writes to <c>&lt;exe-dir&gt;\BsaContentsDiag.log</c>. Append mode
-/// so a session that crashes or hangs still leaves a usable trail.
-/// Each line includes timestamp, thread ID, the most-immediate caller
-/// outside <c>BsaContentsDiag</c>/<c>BsaHandler</c>, and the event.</para>
+/// <para>Writes to <c>&lt;exe-dir&gt;\BsaContentsDiag.html</c>, recreated on the
+/// first logged event of each session and flushed per row, so a session that
+/// crashes or hangs still leaves a usable trail (browsers render the file
+/// without its closing tags). Each row includes timestamp, thread ID, the
+/// most-immediate caller outside <c>BsaContentsDiag</c>/<c>BsaHandler</c>,
+/// and the event.</para>
 /// </summary>
 public static class BsaContentsDiag
 {
-    private const string LogFileName = "BsaContentsDiag.log";
+    private const string LogFileName = "BsaContentsDiag.html";
     private const string TriggerFileName = "LogBsaDiag.txt";
     private static readonly object _lock = new();
-    private static StreamWriter? _writer;
+    private static HtmlLogWriter? _writer;
     private static bool _openAttempted;
 
     /// <summary>True when the file trigger was found at startup. Hot-path
@@ -57,7 +61,7 @@ public static class BsaContentsDiag
         }
     }
 
-    private static StreamWriter? GetWriter()
+    private static HtmlLogWriter? GetWriter()
     {
         if (_writer != null) return _writer;
         lock (_lock)
@@ -68,10 +72,11 @@ public static class BsaContentsDiag
             try
             {
                 string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, LogFileName);
-                var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read);
-                _writer = new StreamWriter(stream) { AutoFlush = true };
-                _writer.WriteLine();
-                _writer.WriteLine($"=== NPC2 BSA contents diagnostic — session start {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} ===");
+                _writer = new HtmlLogWriter(path, "NPC2 — BSA Contents Diagnostic", new[]
+                {
+                    new KeyValuePair<string, string>("Session start",
+                        DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")),
+                });
             }
             catch
             {
@@ -92,10 +97,16 @@ public static class BsaContentsDiag
         // pass it through every call site.
         string caller = ResolveCaller();
         int tid = Thread.CurrentThread.ManagedThreadId;
-        string line = $"[{DateTime.Now:HH:mm:ss.fff}] [T{tid,3}] [{caller}] {message}";
         lock (_lock)
         {
-            try { w.WriteLine(line); } catch { /* swallow */ }
+            try
+            {
+                w.WriteRow(HtmlLogSeverity.Info, message,
+                    time: DateTime.Now.ToString("HH:mm:ss.fff"),
+                    thread: $"T{tid}",
+                    chip: caller);
+            }
+            catch { /* swallow */ }
         }
     }
 

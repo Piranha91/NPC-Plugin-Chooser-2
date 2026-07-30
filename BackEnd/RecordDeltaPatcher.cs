@@ -78,10 +78,28 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             try
             {
                 // Place the log file in the same directory as the application executable.
-                string logPath = Path.Combine(AppContext.BaseDirectory, "DeltaPatchingLog.txt");
-        
+                string logPath = Path.Combine(AppContext.BaseDirectory, "DeltaPatchingLog.html");
+
                 // Write all captured warnings to the file.
-                File.WriteAllLines(logPath, _internalLog);
+                var doc = new Logging.HtmlLogDocument("NPC2 — Delta Patching Log", new[]
+                {
+                    new KeyValuePair<string, string>("Generated", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+                });
+                foreach (var warning in _internalLog)
+                {
+                    doc.AddRow(Logging.HtmlLogSeverity.Warning, warning);
+                }
+                if (_affectedNpcLogStrings.Any())
+                {
+                    doc.BeginSection("Affected NPCs",
+                        badge: _affectedNpcLogStrings.Count.ToString(),
+                        badgeSeverity: Logging.HtmlLogSeverity.Warning);
+                    foreach (var npcLogString in _affectedNpcLogStrings.OrderBy(s => s))
+                    {
+                        doc.AddRow(Logging.HtmlLogSeverity.Info, npcLogString);
+                    }
+                }
+                File.WriteAllText(logPath, doc.Render());
 
                 // Build the summary message with affected NPCs
                 var summaryBuilder = new System.Text.StringBuilder();
@@ -103,7 +121,7 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             catch (Exception ex)
             {
                 // If writing the log file fails, report a critical error to the main log.
-                AppendLog($"FATAL: Could not write the DeltaPatchingLog.txt file. Reason: {ex.Message}", true, true);
+                AppendLog($"FATAL: Could not write the DeltaPatchingLog.html file. Reason: {ex.Message}", true, true);
             }
         }
         #endregion

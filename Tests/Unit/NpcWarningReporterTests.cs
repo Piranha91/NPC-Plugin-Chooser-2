@@ -107,41 +107,115 @@ public class NpcWarningReporterTests
     }
 
     [Fact]
-    public void FormatDetailedLog_EmitsNothing_WhenThereAreNoEntries()
+    public void BuildDetailedGroups_EmitsNothing_WhenThereAreNoEntries()
     {
-        NpcWarningReporter.FormatDetailedLog([]).Should().BeEmpty();
+        NpcWarningReporter.BuildDetailedGroups([]).Should().BeEmpty();
     }
 
     [Fact]
-    public void FormatDetailedLog_GroupsByKind_WithHeaderNoteAndIndentedTechnicalDetail()
+    public void BuildDetailedGroups_GroupsByKind_WithHeaderNoteAndSplitTechnicalDetail()
     {
-        var lines = NpcWarningReporter.FormatDetailedLog(
+        var groups = NpcWarningReporter.BuildDetailedGroups(
         [
             Entry(NpcWarningKind.OriginMeshCompatibility, "Britte (0136B9:Skyrim.esm)",
                 technical: "row=4 (DdsOnlyNoRecord)\norigin: meshCompat=False"),
         ]).ToList();
 
-        lines.Should().Contain("=== OriginMeshCompatibility ===");
-        lines.Should().Contain(NpcWarningReporter.Header(NpcWarningKind.OriginMeshCompatibility),
+        var group = groups.Should().ContainSingle().Subject;
+        group.Kind.Should().Be(NpcWarningKind.OriginMeshCompatibility);
+        group.Header.Should().Be(NpcWarningReporter.Header(NpcWarningKind.OriginMeshCompatibility),
             "the lay paragraph gives the technical reader the same context the run log gave");
-        lines.Should().Contain(NpcWarningReporter.TechnicalNote(NpcWarningKind.OriginMeshCompatibility));
-        lines.Should().Contain("--- Britte (0136B9:Skyrim.esm)");
-        lines.Should().Contain("    row=4 (DdsOnlyNoRecord)",
-            "multi-line technical detail is split and indented under the NPC");
-        lines.Should().Contain("    origin: meshCompat=False");
+        group.TechnicalNote.Should().Be(
+            NpcWarningReporter.TechnicalNote(NpcWarningKind.OriginMeshCompatibility));
+
+        var npc = group.Npcs.Should().ContainSingle().Subject;
+        npc.Heading.Should().Be("Britte (0136B9:Skyrim.esm)");
+        npc.TechnicalLines.Should().Equal("row=4 (DdsOnlyNoRecord)", "origin: meshCompat=False");
     }
 
     [Fact]
-    public void FormatDetailedLog_KeepsTheUserFacingDetail_OnTheNpcHeading()
+    public void BuildDetailedGroups_KeepsTheUserFacingDetail_OnTheNpcHeading()
     {
-        var lines = NpcWarningReporter.FormatDetailedLog(
+        var groups = NpcWarningReporter.BuildDetailedGroups(
         [
             Entry(NpcWarningKind.TexturelessShapes, "Adrianne (013BA5:Skyrim.esm)",
                 detail: "hair.nif 'Hair' (missing: a.dds)",
                 technical: "mod='Some Mod' nif=C:/full/path/hair.nif"),
         ]);
 
-        lines.Should().Contain("--- Adrianne (013BA5:Skyrim.esm): hair.nif 'Hair' (missing: a.dds)");
+        groups.Should().ContainSingle().Which.Npcs.Should().ContainSingle().Which.Heading
+            .Should().Be("Adrianne (013BA5:Skyrim.esm): hair.nif 'Hair' (missing: a.dds)");
+    }
+
+    [Fact]
+    public void ClassifyTechnicalLines_MergesTheSourceLines_IntoOneComparisonTable()
+    {
+        // The ladder's three source lines share their keys, so the reader gets a grid instead of
+        // three prose lines. The winner row lacks 'record' — its cell must be null, not shifted.
+        var blocks = NpcWarningReporter.ClassifyTechnicalLines(new[]
+        {
+            "selected mod 'RedBag's Rorikstead FOMOD': record=no, nif=NotFound, dds=LooseFile, meshCompat=NotEvaluated",
+            "origin: record=yes, nif=BsaFile, dds=BsaFile, meshCompat=False",
+            "winner: nif=yes (Skyrim - Meshes0.bsa), dds=yes, meshCompat=False",
+        });
+
+        var table = blocks.Should().ContainSingle().Subject
+            .Should().BeOfType<NPC_Plugin_Chooser_2.BackEnd.Logging.HtmlDetailTable>().Subject;
+        table.Columns.Should().Equal("record", "nif", "dds", "meshCompat");
+        table.Rows.Should().HaveCount(3);
+        table.Rows[0].Label.Should().Be("selected mod 'RedBag's Rorikstead FOMOD'");
+        table.Rows[2].Label.Should().Be("winner");
+        table.Rows[2].Cells[0].Should().BeNull("the winner line has no record= field");
+        table.Rows[2].Cells[1].Should().Be("yes (Skyrim - Meshes0.bsa)");
+    }
+
+    [Fact]
+    public void ClassifyTechnicalLines_ShapesFactsFieldRowsAndProbeGroups()
+    {
+        var blocks = NpcWarningReporter.ClassifyTechnicalLines(new[]
+        {
+            "decision: row=4 (DdsOnlyNoRecord), mode=Record",
+            "target=0136B9:Skyrim.esm donor=0136B9:Skyrim.esm subject=0136B9:Skyrim.esm chain=NotTemplated (flattened)",
+            "graded record: 'Britte' (0136B9:Skyrim.esm)",
+            "origin mesh failed the probe:",
+            "  record needs (no baked shape in mesh): '0RCOChildHeadNord' (000011:RSkyrimChildren.esm)",
+            "  mesh bakes (no matching head part): ChildEyes, ChildMouth",
+        });
+
+        blocks.Should().HaveCount(4);
+
+        var decision = blocks[0].Should()
+            .BeOfType<NPC_Plugin_Chooser_2.BackEnd.Logging.HtmlDetailFieldRow>().Subject;
+        decision.Label.Should().Be("decision");
+        decision.Fields.Should().Contain(f => f.Key == "row" && f.Value == "4 (DdsOnlyNoRecord)");
+
+        var identifiers = blocks[1].Should()
+            .BeOfType<NPC_Plugin_Chooser_2.BackEnd.Logging.HtmlDetailFieldRow>().Subject;
+        identifiers.Label.Should().BeNull();
+        identifiers.Fields.Should().Contain(f => f.Key == "chain" && f.Value == "NotTemplated (flattened)",
+            "a bare token continues the previous field's value");
+
+        blocks[2].Should().BeOfType<NPC_Plugin_Chooser_2.BackEnd.Logging.HtmlDetailFact>()
+            .Which.Key.Should().Be("graded record");
+
+        var group = blocks[3].Should()
+            .BeOfType<NPC_Plugin_Chooser_2.BackEnd.Logging.HtmlDetailGroup>().Subject;
+        group.Title.Should().Be("origin mesh failed the probe");
+        group.Children.Should().HaveCount(2)
+            .And.AllBeOfType<NPC_Plugin_Chooser_2.BackEnd.Logging.HtmlDetailFact>();
+    }
+
+    [Fact]
+    public void ClassifyTechnicalLines_FallsBackToText_ForUnrecognizedProse()
+    {
+        var blocks = NpcWarningReporter.ClassifyTechnicalLines(new[]
+        {
+            "something a future producer wrote in plain prose",
+        });
+
+        blocks.Should().ContainSingle().Which
+            .Should().BeOfType<NPC_Plugin_Chooser_2.BackEnd.Logging.HtmlDetailText>()
+            .Which.Text.Should().Be("something a future producer wrote in plain prose");
     }
 
     [Theory]

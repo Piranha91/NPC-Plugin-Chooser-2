@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Net;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using NPC_Plugin_Chooser_2.BackEnd.Logging;
 using NPC_Plugin_Chooser_2.Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
@@ -52,8 +53,12 @@ public class FaceFinderClient
     private static readonly HttpClient _httpClient = new();
     private const string ApiBaseUrl = "https://npcfacefinder.com";
     public const string MetadataFileExtension = ".ffmeta.json";
-    private const string LogFileName = "FaceFinderLog.txt";
+    // Anchored to the exe dir — the txt-era logger used a bare relative path, which under a
+    // mod-manager launch could land in whatever the process working directory happened to be.
+    private static readonly string LogFilePath =
+        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FaceFinderLog.html");
     private static bool _isLogCleared = false;
+    private static bool _logPrologueWritten = false;
     private static readonly object _logLock = new();
 
     private const byte _xorKey = 0x55;
@@ -75,16 +80,17 @@ public class FaceFinderClient
         _settings = settings;
         _eventLogger = eventLogger;
         
-        // Clear log on startup (only once per session)
+        // Clear log on startup (only once per session); the document prologue is written lazily
+        // on the first logged transaction, so a session with logging off leaves no file.
         if (!_isLogCleared)
         {
-            try 
+            try
             {
-                if (File.Exists(LogFileName)) File.Delete(LogFileName);
+                if (File.Exists(LogFilePath)) File.Delete(LogFilePath);
             }
-            catch (Exception ex) 
-            { 
-                Debug.WriteLine($"Failed to clear log file: {ex.Message}"); 
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to clear log file: {ex.Message}");
             }
             finally
             {
@@ -93,6 +99,14 @@ public class FaceFinderClient
         }
     }
     
+    /// <summary>
+    /// Appends one HTTP transaction to FaceFinderLog.html as a collapsed section: the summary
+    /// line carries the time, method, path, and a status badge (green 2xx, red 4xx/5xx/failed);
+    /// inside are the full URI, the request headers (API key redacted) as field chips, and the
+    /// complete response body behind an expander — pretty-printed when it parses as JSON,
+    /// verbatim otherwise. Nothing is truncated. Each call appends a self-contained section, so
+    /// the file stays valid while the app runs and needs no open handle.
+    /// </summary>
     private async Task LogInteractionAsync(HttpRequestMessage request, HttpResponseMessage? response = null, string? responseContent = null)
     {
         if (!_settings.LogFaceFinderRequests) return;
@@ -101,41 +115,77 @@ public class FaceFinderClient
         {
             try
             {
-                var sb = new StringBuilder();
-                sb.AppendLine("========================================");
-                sb.AppendLine($"Timestamp: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                sb.AppendLine($"Request: {request.Method} {request.RequestUri}");
-                
-                // Log Headers (Redacting API Key)
-                foreach (var header in request.Headers)
-                {
-                    string value = header.Key == "X-API-Key" ? "{REDACTED_API}" : string.Join(", ", header.Value);
-                    sb.AppendLine($"Header: {header.Key} = {value}");
-                }
+                string uri = request.RequestUri?.ToString() ?? "(no URI)";
+                string path = request.RequestUri?.IsAbsoluteUri == true
+                    ? request.RequestUri.PathAndQuery
+                    : uri;
 
-                if (response != null)
+                string badge;
+                HtmlLogSeverity badgeSeverity;
+                if (response == null)
                 {
-                    sb.AppendLine("----------------------------------------");
-                    sb.AppendLine($"Response Status: {(int)response.StatusCode} {response.ReasonPhrase}");
-                    if (!string.IsNullOrWhiteSpace(responseContent))
-                    {
-                        // Truncate overly long responses if necessary, though full JSON is usually helpful for debugging
-                        sb.AppendLine("Response Body:");
-                        sb.AppendLine(responseContent);
-                    }
+                    badge = "FAILED";
+                    badgeSeverity = HtmlLogSeverity.Error;
                 }
                 else
                 {
-                    sb.AppendLine("----------------------------------------");
-                    sb.AppendLine("Response: [NULL/FAILED]");
+                    badge = $"{(int)response.StatusCode} {response.ReasonPhrase}";
+                    badgeSeverity = (int)response.StatusCode switch
+                    {
+                        >= 200 and < 300 => HtmlLogSeverity.Success,
+                        >= 400 => HtmlLogSeverity.Error,
+                        _ => HtmlLogSeverity.Warning,
+                    };
                 }
-                
-                sb.AppendLine("========================================");
-                sb.AppendLine();
+
+                var sb = new StringBuilder();
+                sb.Append(HtmlLog.SectionOpen(
+                    $"{DateTime.Now:HH:mm:ss} {request.Method} {path}",
+                    badge: badge, badgeSeverity: badgeSeverity, open: false));
+
+                sb.Append(HtmlLog.Row(HtmlLogSeverity.Info, uri,
+                    time: DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), chip: "request"));
+
+                // Request headers (redacting the API key) as one field-chip row.
+                var headerFields = request.Headers
+                    .Select(h => new KeyValuePair<string, string>(h.Key,
+                        h.Key == "X-API-Key" ? "{REDACTED_API}" : string.Join(", ", h.Value)))
+                    .ToList();
+                if (headerFields.Count > 0)
+                {
+                    sb.Append(HtmlLog.Row(HtmlLogSeverity.Info, string.Empty,
+                        chip: "headers", fields: headerFields));
+                }
+
+                if (response == null)
+                {
+                    sb.Append(HtmlLog.Row(HtmlLogSeverity.Error,
+                        "No response (request failed before a status was received).",
+                        chip: "response"));
+                }
+                else if (!string.IsNullOrWhiteSpace(responseContent))
+                {
+                    sb.Append(HtmlLog.Collapsible(
+                        $"Response body ({responseContent.Length:N0} chars)",
+                        PrettyPrintIfJson(responseContent)));
+                }
+
+                sb.Append(HtmlLog.SectionClose);
 
                 lock (_logLock)
                 {
-                    File.AppendAllText(LogFileName, sb.ToString());
+                    if (!_logPrologueWritten)
+                    {
+                        File.WriteAllText(LogFilePath, HtmlLog.Prologue(
+                            "NPC Plugin Chooser 2 — FaceFinder Request Log", new[]
+                            {
+                                new KeyValuePair<string, string>("Started",
+                                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+                                new KeyValuePair<string, string>("Server", ApiBaseUrl),
+                            }));
+                        _logPrologueWritten = true;
+                    }
+                    File.AppendAllText(LogFilePath, sb.ToString());
                 }
             }
             catch (Exception ex)
@@ -143,6 +193,20 @@ public class FaceFinderClient
                 Debug.WriteLine($"Logging failed: {ex.Message}");
             }
         });
+    }
+
+    /// <summary>Indents a JSON payload for reading; returns the text unchanged when it isn't
+    /// valid JSON (detail over prettiness — never drop or mangle the body).</summary>
+    private static string PrettyPrintIfJson(string content)
+    {
+        try
+        {
+            return JToken.Parse(content).ToString(Formatting.Indented);
+        }
+        catch
+        {
+            return content;
+        }
     }
 
     // Internal class for serializing metadata to a sidecar file

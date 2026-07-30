@@ -3417,7 +3417,7 @@ public class Patcher : OptionalUIModule
                 : "(unresolved)";
             sb.Append($"\nrace: '{raceName}' ({recordToMatch.Race.FormKey})");
             var raceChain = DescribeOverrideChain<IRace, IRaceGetter>(recordToMatch.Race.FormKey);
-            if (raceChain != null) sb.Append($"; supplied by: {raceChain}");
+            if (raceChain != null) sb.Append($"\nrace record supplied by: {raceChain}");
         }
 
         foreach (var (label, mismatch) in failedProbes)

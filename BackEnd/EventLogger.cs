@@ -1,19 +1,33 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Text;
+using NPC_Plugin_Chooser_2.BackEnd.Logging;
 using NPC_Plugin_Chooser_2.Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
+/// <summary>
+/// General activity trace (opt-in via Settings.LogActivity), written to EventLog.html next to
+/// the exe. The file is recreated on every launch so a stale log can't describe an old session.
+/// Appends per call without holding a file handle (matching the txt-era behavior), so the file
+/// is always openable while the app runs; the document renders without its closing tags.
+/// </summary>
 public class EventLogger
 {
-    private readonly Settings _settings;
-    private const string LogFileName = "EventLog.txt";
+    private const string LogFileName = "EventLog.html";
     private static readonly object _logLock = new();
+
+    private readonly Settings _settings;
+    private readonly string _logPath;
+    private bool _initialized;
+    private bool _sectionOpen;
 
     public EventLogger(Settings settings)
     {
         _settings = settings;
+        // Anchored to the exe dir — the txt-era logger used a bare relative path, which under a
+        // mod-manager launch could land in whatever the process working directory happened to be.
+        _logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, LogFileName);
         InitializeLog();
     }
 
@@ -24,7 +38,12 @@ public class EventLogger
         {
             try
             {
-                File.WriteAllText(LogFileName, $"--- NPC Plugin Chooser 2 Event Log ---\nInitialized: {DateTime.Now}\nVersion: {App.ProgramVersion}\n\n");
+                File.WriteAllText(_logPath, HtmlLog.Prologue("NPC Plugin Chooser 2 — Event Log", new[]
+                {
+                    new KeyValuePair<string, string>("Initialized", DateTime.Now.ToString()),
+                    new KeyValuePair<string, string>("Version", App.ProgramVersion.ToString()),
+                }));
+                _initialized = true;
             }
             catch (Exception ex)
             {
@@ -39,10 +58,14 @@ public class EventLogger
 
         lock (_logLock)
         {
+            if (!_initialized) return;
             try
             {
-                string logEntry = $"[{DateTime.Now:HH:mm:ss.fff}] [{category}] {message}{Environment.NewLine}";
-                File.AppendAllText(LogFileName, logEntry);
+                File.AppendAllText(_logPath, HtmlLog.Row(
+                    HtmlLog.SeverityFromCategory(category),
+                    message,
+                    time: DateTime.Now.ToString("HH:mm:ss.fff"),
+                    chip: category));
             }
             catch (Exception ex)
             {
@@ -57,14 +80,13 @@ public class EventLogger
 
         lock (_logLock)
         {
+            if (!_initialized) return;
             try
             {
-                var sb = new StringBuilder();
-                sb.AppendLine();
-                sb.AppendLine("================================================================================");
-                sb.AppendLine($"  {title.ToUpperInvariant()}");
-                sb.AppendLine("================================================================================");
-                File.AppendAllText(LogFileName, sb.ToString());
+                string markup = (_sectionOpen ? HtmlLog.SectionClose : string.Empty)
+                                + HtmlLog.SectionOpen(title.ToUpperInvariant());
+                File.AppendAllText(_logPath, markup);
+                _sectionOpen = true;
             }
             catch { /* Ignore logging errors */ }
         }

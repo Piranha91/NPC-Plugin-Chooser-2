@@ -3823,7 +3823,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     /// <summary>
     /// Walks forward through the NPC list on its own: waits for the current NPC's mugshot tiles to finish
     /// loading, dwells briefly, then advances — repeating until the end of the list or a stop. Each advance
-    /// trips the per-NPC MemoryLogger sample, so this fills MemoryLog.txt without manual clicking. Runs on
+    /// trips the per-NPC MemoryLogger sample, so this fills MemoryLog.html without manual clicking. Runs on
     /// the UI thread (invoked from the view's key handler); awaiting Task.Delay yields to the dispatcher.
     /// </summary>
     private async Task RunAutoAdvanceAsync()

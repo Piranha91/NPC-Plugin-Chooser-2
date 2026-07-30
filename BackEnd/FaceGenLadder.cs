@@ -250,13 +250,17 @@ public sealed record FaceGenLadderDecision(
         NifChoice == FaceGenSourceChoice.AppearanceMod && Inputs.SourceNifCompatible == false;
 
     /// <summary>
-    /// The decision's full context as indented plain text, for the detailed warning log
+    /// The decision's full context as plain text, for the detailed warning log
     /// (<see cref="NpcWarningReporter"/>): everything a maintainer would otherwise ask a user to
     /// produce by re-running with the FaceGenLadder.csv trigger — identifiers, row, mode, the
     /// planned action, each source's presence and compatibility verdict, and the chain trace.
+    /// Line shapes follow the contract of
+    /// <see cref="NpcWarningReporter.ClassifyTechnicalLines"/>, which renders them as field
+    /// rows and a source-comparison table in the HTML report.
     /// </summary>
     public string TechnicalSummary =>
-        $"row={(int)Row} ({Row}), mode={Inputs.Mode}, planned: {PlannedAction}\n" +
+        $"decision: row={(int)Row} ({Row}), mode={Inputs.Mode}\n" +
+        $"planned: {PlannedAction}\n" +
         $"target={Inputs.TargetFormKey} donor={Inputs.DonorFormKey} subject={Inputs.SubjectFormKey} " +
         $"chain={Inputs.ChainStatus}{(Inputs.FlattenTemplateChain ? " (flattened)" : string.Empty)}\n" +
         $"selected mod '{Inputs.ModName}': record={(Inputs.SourceHasPluginRecord ? "yes" : "no")}, " +

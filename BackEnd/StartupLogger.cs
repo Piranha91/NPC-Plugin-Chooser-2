@@ -1,21 +1,25 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using NPC_Plugin_Chooser_2.BackEnd.Logging;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
 /// <summary>
 /// A static logger that writes startup diagnostics with immediate flush to survive hangs.
-/// Initialized before DI so it can capture the entire startup sequence.
+/// Initialized before DI so it can capture the entire startup sequence. Output is a
+/// self-contained HTML file (StartupLog.html) whose rows stream out as they happen, so a
+/// hung or crashed startup still leaves a readable trace.
 /// </summary>
 public static class StartupLogger
 {
-    private static StreamWriter? _writer;
+    private static HtmlLogWriter? _writer;
     private static readonly object _lock = new();
     private static bool _isEnabled;
 
     private const string TriggerFileName = "LogStartup.txt";
-    private const string LogFileName = "StartupLog.txt";
+    private const string LogFileName = "StartupLog.html";
 
     /// <summary>
     /// Checks for the file-based trigger (LogStartup.txt adjacent to exe) and opens the log stream if found.
@@ -53,16 +57,14 @@ public static class StartupLogger
             try
             {
                 string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, LogFileName);
-                var stream = new FileStream(logPath, FileMode.Create, FileAccess.Write, FileShare.Read);
-                _writer = new StreamWriter(stream) { AutoFlush = true };
+                _writer = new HtmlLogWriter(logPath, "NPC Plugin Chooser 2 — Startup Log", new[]
+                {
+                    new KeyValuePair<string, string>("Started", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")),
+                    new KeyValuePair<string, string>("Version", App.ProgramVersion.ToString()),
+                    new KeyValuePair<string, string>("OS", Environment.OSVersion.ToString()),
+                    new KeyValuePair<string, string>("Processors", Environment.ProcessorCount.ToString()),
+                });
                 _isEnabled = true;
-
-                _writer.WriteLine($"=== NPC Plugin Chooser 2 - Startup Log ===");
-                _writer.WriteLine($"Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
-                _writer.WriteLine($"Version: {App.ProgramVersion}");
-                _writer.WriteLine($"OS: {Environment.OSVersion}");
-                _writer.WriteLine($"Processors: {Environment.ProcessorCount}");
-                _writer.WriteLine();
             }
             catch (Exception ex)
             {
@@ -85,7 +87,12 @@ public static class StartupLogger
         {
             try
             {
-                _writer?.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Thread {Thread.CurrentThread.ManagedThreadId,3}] [{category}] {message}");
+                _writer?.WriteRow(
+                    HtmlLog.SeverityFromCategory(category),
+                    message,
+                    time: DateTime.Now.ToString("HH:mm:ss.fff"),
+                    thread: $"T{Thread.CurrentThread.ManagedThreadId}",
+                    chip: category);
             }
             catch
             {
@@ -105,8 +112,7 @@ public static class StartupLogger
         {
             try
             {
-                _writer?.WriteLine();
-                _writer?.WriteLine($"──── {title.ToUpperInvariant()} ────");
+                _writer?.BeginSection(title.ToUpperInvariant());
             }
             catch { }
         }
@@ -124,8 +130,13 @@ public static class StartupLogger
         {
             try
             {
-                _writer?.WriteLine();
-                _writer?.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Thread {Thread.CurrentThread.ManagedThreadId,3}] [INFO] No mods folder configured — deferring log completion until folder is selected.");
+                _writer?.WriteSpacer();
+                _writer?.WriteRow(
+                    HtmlLogSeverity.Info,
+                    "No mods folder configured — deferring log completion until folder is selected.",
+                    time: DateTime.Now.ToString("HH:mm:ss.fff"),
+                    thread: $"T{Thread.CurrentThread.ManagedThreadId}",
+                    chip: "INFO");
             }
             catch { }
         }
@@ -142,8 +153,13 @@ public static class StartupLogger
         {
             try
             {
-                _writer?.WriteLine();
-                _writer?.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [Thread {Thread.CurrentThread.ManagedThreadId,3}] [DONE] Startup complete.");
+                _writer?.WriteSpacer();
+                _writer?.WriteRow(
+                    HtmlLogSeverity.Success,
+                    "Startup complete.",
+                    time: DateTime.Now.ToString("HH:mm:ss.fff"),
+                    thread: $"T{Thread.CurrentThread.ManagedThreadId}",
+                    chip: "DONE");
                 _writer?.Dispose();
                 _writer = null;
                 _isEnabled = false;

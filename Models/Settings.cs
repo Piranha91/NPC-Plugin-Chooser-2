@@ -869,7 +869,7 @@ public class Settings
     public bool FixGarbledText { get; set; } = true;
 
     // NPCs (by FormKey) for which the Validator and Patcher emit a full per-NPC
-    // activity trace to "{exe}\NPC Logs\{display}.txt". Membership in this list is
+    // activity trace to "{exe}\NPC Logs\{display}.html". Membership in this list is
     // the on/off switch; an empty list means no per-NPC logging. See NpcDiagnosticLogger.
     public List<FormKey> NpcsToLog { get; set; } = new();
 }

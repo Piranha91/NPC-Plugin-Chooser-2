@@ -9,6 +9,7 @@ using Mutagen.Bethesda.Plugins.Order;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using Noggog;
+using NPC_Plugin_Chooser_2.BackEnd.Logging;
 using NPC_Plugin_Chooser_2.Models;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
@@ -2674,13 +2675,226 @@ public class OutputValidator
         try
         {
             File.WriteAllText(
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ValidationLog.txt"),
-                log.ToString(),
-                new UTF8Encoding(false));
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ValidationLog.html"),
+                RenderValidationHtml(log));
         }
         catch
         {
             // Logging is best-effort.
         }
+    }
+
+    /// <summary>
+    /// Renders the run's accumulated log lines as a ValidationLog.html document. The line
+    /// conventions the validator has always used drive the structure: an unindented
+    /// "NPC ..." line opens a collapsible per-NPC section, the two-space-indented lines
+    /// beneath it are that NPC's findings (badged on the section header), "[perf]" lines are
+    /// muted, "[perf] SLOW" and per-NPC findings read as warnings, and "BLOCKED:"/"EXCEPTION"
+    /// lines as errors. Every line of the original text is preserved verbatim.
+    /// </summary>
+    private static string RenderValidationHtml(StringBuilder log)
+    {
+        var lines = log.ToString().Replace("\r\n", "\n").Split('\n').ToList();
+        // Drop the trailing empty entry the final AppendLine leaves behind.
+        if (lines.Count > 0 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+
+        // The banner and the two run parameters are the first lines Validate appends; lift
+        // them into the document metadata before the prologue is rendered.
+        var meta = new List<KeyValuePair<string, string>>
+        {
+            new("Generated", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+        };
+        while (lines.Count > 0)
+        {
+            string head = lines[0];
+            if (head == "=== Validate Output ===") { lines.RemoveAt(0); continue; }
+            if (head.StartsWith("Mode: ", StringComparison.Ordinal))
+            {
+                meta.Add(new("Mode", head["Mode: ".Length..]));
+                lines.RemoveAt(0);
+                continue;
+            }
+            if (head.StartsWith("NPCs requested: ", StringComparison.Ordinal))
+            {
+                meta.Add(new("NPCs requested", head["NPCs requested: ".Length..]));
+                lines.RemoveAt(0);
+                continue;
+            }
+            break;
+        }
+        var doc = new HtmlLogDocument("NPC2 — Validate Output", meta);
+
+        // Findings are buffered per NPC so the section header can carry a count badge.
+        string? npcHeading = null;
+        var npcRows = new List<(HtmlLogSeverity Severity, string Text)>();
+
+        void FlushNpc()
+        {
+            if (npcHeading == null) return;
+            int flagged = npcRows.Count(r =>
+                r.Severity is HtmlLogSeverity.Warning or HtmlLogSeverity.Error);
+            var badgeSeverity = npcRows.Any(r => r.Severity == HtmlLogSeverity.Error)
+                ? HtmlLogSeverity.Error
+                : HtmlLogSeverity.Warning;
+            var (title, headingFields) = DecomposeNpcHeading(npcHeading);
+            doc.BeginSection(title,
+                badge: flagged > 0 ? flagged.ToString() : null, badgeSeverity: badgeSeverity);
+            if (headingFields != null)
+            {
+                doc.AddRow(HtmlLogSeverity.Muted, string.Empty, fields: headingFields);
+            }
+            foreach (var (severity, text) in npcRows)
+            {
+                if (text.Length == 0)
+                {
+                    doc.AddSpacer();
+                    continue;
+                }
+                var (message, chip, fields) = DecomposeFinding(text);
+                doc.AddRow(severity, message, chip: chip, fields: fields);
+            }
+            doc.EndSection();
+            npcHeading = null;
+            npcRows.Clear();
+        }
+
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("NPC ", StringComparison.Ordinal))
+            {
+                FlushNpc();
+                npcHeading = line;
+                continue;
+            }
+
+            if (npcHeading != null && (line.Length == 0 || line.StartsWith("  ", StringComparison.Ordinal)))
+            {
+                string finding = line.TrimStart();
+                var severity =
+                    finding.StartsWith("EXCEPTION", StringComparison.Ordinal) ? HtmlLogSeverity.Error :
+                    finding.StartsWith("[perf] SLOW", StringComparison.Ordinal) ? HtmlLogSeverity.Warning :
+                    finding.StartsWith("[perf]", StringComparison.Ordinal) ? HtmlLogSeverity.Muted :
+                    finding.StartsWith("TEMPLATE", StringComparison.Ordinal) ? HtmlLogSeverity.Info :
+                    HtmlLogSeverity.Warning;
+                npcRows.Add((severity, finding));
+                continue;
+            }
+
+            FlushNpc();
+            if (line.Length == 0)
+            {
+                doc.AddSpacer();
+                continue;
+            }
+            var topSeverity =
+                line.StartsWith("BLOCKED:", StringComparison.Ordinal) ? HtmlLogSeverity.Error :
+                line.StartsWith("Done.", StringComparison.Ordinal) ? HtmlLogSeverity.Success :
+                line.StartsWith("[perf] SLOW", StringComparison.Ordinal) ? HtmlLogSeverity.Warning :
+                line.StartsWith("[perf]", StringComparison.Ordinal) ? HtmlLogSeverity.Muted :
+                HtmlLogSeverity.Info;
+            var (topMessage, topChip, topFields) = DecomposeFinding(line);
+            doc.AddRow(topSeverity, topMessage, chip: topChip, fields: topFields);
+        }
+
+        FlushNpc();
+        return doc.Render();
+    }
+
+    /// <summary>
+    /// Splits the per-NPC heading line
+    /// ("NPC {display} -> '{mod}' (donor {fk}, winner {file})") into a section title (the NPC's
+    /// identity) and a fact row naming the selection, donor, and winner. Falls back to the whole
+    /// line as the title when the shape doesn't match.
+    /// </summary>
+    private static (string Title, List<KeyValuePair<string, string>>? Fields) DecomposeNpcHeading(string heading)
+    {
+        int arrow = heading.LastIndexOf(" -> '", StringComparison.Ordinal);
+        if (arrow <= 0) return (heading, null);
+        string title = heading[..arrow];
+        string rest = heading[(arrow + " -> '".Length)..];
+
+        int donorSep = rest.LastIndexOf("' (donor ", StringComparison.Ordinal);
+        if (donorSep <= 0 || !rest.EndsWith(")", StringComparison.Ordinal)) return (heading, null);
+        string mod = rest[..donorSep];
+        string tail = rest[(donorSep + "' (donor ".Length)..^1];
+
+        int winnerSep = tail.LastIndexOf(", winner ", StringComparison.Ordinal);
+        if (winnerSep <= 0) return (heading, null);
+
+        return (title, new List<KeyValuePair<string, string>>
+        {
+            new("selected", mod),
+            new("donor", tail[..winnerSep]),
+            new("winner", tail[(winnerSep + ", winner ".Length)..]),
+        });
+    }
+
+    /// <summary>
+    /// Surfaces the latent structure of one finding line: a leading all-caps check name
+    /// (RECORD / FACEGEN / TEMPLATE / SKYPATCHER / EXCEPTION / BLOCKED) or "[perf]" becomes the
+    /// row's chip, trailing "; key=value" clauses and a trailing "(k=v, ...)" group become
+    /// labeled field chips, and a trailing "(a | b | c)" diff list becomes value-only chips.
+    /// Everything not recognized stays in the message verbatim.
+    /// </summary>
+    private static (string Message, string? Chip, List<KeyValuePair<string, string>>? Fields)
+        DecomposeFinding(string finding)
+    {
+        string? chip = null;
+        string msg = finding;
+
+        if (msg.StartsWith("[perf] ", StringComparison.Ordinal))
+        {
+            chip = "perf";
+            msg = msg["[perf] ".Length..];
+        }
+        else
+        {
+            int caps = 0;
+            while (caps < msg.Length && msg[caps] >= 'A' && msg[caps] <= 'Z') caps++;
+            if (caps >= 2 && (caps == msg.Length || msg[caps] == ' ' || msg[caps] == ':'))
+            {
+                chip = msg[..caps];
+                msg = msg[caps..].TrimStart(':').TrimStart();
+            }
+        }
+
+        var fields = new List<KeyValuePair<string, string>>();
+
+        // Trailing "; key=value" clauses, peeled right to left.
+        while (true)
+        {
+            int sep = msg.LastIndexOf("; ", StringComparison.Ordinal);
+            if (sep < 0) break;
+            string clause = msg[(sep + 2)..].TrimEnd('.');
+            int eq = clause.IndexOf('=');
+            if (eq <= 0) break;
+            string key = clause[..eq];
+            if (key.Contains(' ') || key.Contains(':')) break;
+            fields.Insert(0, new KeyValuePair<string, string>(key, clause[(eq + 1)..]));
+            msg = msg[..sep];
+        }
+
+        // Trailing parenthesized group: "(k=v, ...)" → labeled chips; "(a | b)" → a diff list.
+        if (msg.EndsWith(")", StringComparison.Ordinal))
+        {
+            int open = msg.LastIndexOf('(');
+            if (open > 0)
+            {
+                string content = msg[(open + 1)..^1];
+                if (HtmlLog.TryParseFieldList(content, out var parsed))
+                {
+                    fields.InsertRange(0, parsed);
+                    msg = msg[..open].TrimEnd();
+                }
+                else if (content.Contains(" | ", StringComparison.Ordinal))
+                {
+                    fields.InsertRange(0, content.Split(" | ")
+                        .Select(d => new KeyValuePair<string, string>(string.Empty, d.Trim())));
+                    msg = msg[..open].TrimEnd();
+                }
+            }
+        }
+
+        return (msg, chip, fields.Count > 0 ? fields : null);
     }
 }

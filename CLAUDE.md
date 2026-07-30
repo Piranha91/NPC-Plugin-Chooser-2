@@ -125,13 +125,17 @@ sees Mutagen or NPC2 types directly. The renderer is a singleton (its GLFW windo
 
 ## Diagnostics (use these first)
 The app emits several opt-in logs next to the exe — prefer reading them over
-speculating from code:
-- **`StartupLog.txt`** (`StartupLogger`) — phased startup trace incl. environment
+speculating from code. The human-readable diagnostics are **self-contained HTML
+files** (shared infrastructure in `BackEnd/Logging/`: `HtmlLog` markup/theme,
+streaming `HtmlLogWriter`, buffered `HtmlLogDocument`); rows stream out with
+immediate flush, so a crashed/hung session still leaves a renderable file:
+- **`StartupLog.html`** (`StartupLogger`) — phased startup trace incl. environment
   resolution and the full mod-population pipeline. Enable via the `LogStartup`
   setting or a file trigger.
-- **`BsaContentsDiag.log`** (`BsaContentsDiag`) — BSA registration + per-asset
+- **`BsaContentsDiag.html`** (`BsaContentsDiag`) — BSA registration + per-asset
   hit/miss for mugshot resolution. Opt-in: drop a `LogBsaDiag.txt` file next to
-  the exe.
+  the exe. Recreated per session on first logged event (the txt era appended
+  across sessions).
 - **`AssetProvenance.csv`** (`AssetProvenanceDiag`) — per patch run, why each asset
   file was copied into the output. One CSV row per atomic reference (columns: `DestFile,
   Reason, Referencer, NPC, TargetFormKey, Mod, DonorFormKey, DonorEditorID, SourceKind,

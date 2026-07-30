@@ -430,7 +430,7 @@ public class NpcDiagnosticLoggerTests
     {
         using var _ = new StaticStateGuard();
         var a = Fk("000302:Skyrim.esm");
-        var expectedFile = Path.Combine(LogDir, BuildFileName("Lydia", a) + ".txt");
+        var expectedFile = Path.Combine(LogDir, BuildFileName("Lydia", a) + ".html");
         TryDelete(expectedFile);
 
         NpcDiagnosticLogger.Configure(new[] { (a, "Lydia") });
@@ -450,7 +450,7 @@ public class NpcDiagnosticLoggerTests
     {
         using var _ = new StaticStateGuard();
         var a = Fk("000401:Skyrim.esm");
-        var fileName = BuildFileName("LydiaLog", a) + ".txt";
+        var fileName = BuildFileName("LydiaLog", a) + ".html";
         var path = Path.Combine(LogDir, fileName);
         TryDelete(path);
 
@@ -492,7 +492,7 @@ public class NpcDiagnosticLoggerTests
     {
         using var _ = new StaticStateGuard();
         var a = Fk("000402:Skyrim.esm");
-        var fileName = BuildFileName("DirectTarget", a) + ".txt";
+        var fileName = BuildFileName("DirectTarget", a) + ".html";
         var path = Path.Combine(LogDir, fileName);
         TryDelete(path);
 
@@ -520,7 +520,7 @@ public class NpcDiagnosticLoggerTests
         using var _ = new StaticStateGuard();
         var configured = Fk("000403:Skyrim.esm");
         var stranger = Fk("000404:Skyrim.esm");
-        var strangerPath = Path.Combine(LogDir, BuildFileName("Stranger", stranger) + ".txt");
+        var strangerPath = Path.Combine(LogDir, BuildFileName("Stranger", stranger) + ".html");
         TryDelete(strangerPath);
 
         try
@@ -545,7 +545,7 @@ public class NpcDiagnosticLoggerTests
     {
         using var _ = new StaticStateGuard();
         var a = Fk("000405:Skyrim.esm");
-        var fileName = BuildFileName("Reused", a) + ".txt";
+        var fileName = BuildFileName("Reused", a) + ".html";
         var path = Path.Combine(LogDir, fileName);
         TryDelete(path);
 
@@ -582,7 +582,7 @@ public class NpcDiagnosticLoggerTests
     {
         using var _ = new StaticStateGuard();
         var a = Fk("000406:Skyrim.esm");
-        var path = Path.Combine(LogDir, BuildFileName("Banners", a) + ".txt");
+        var path = Path.Combine(LogDir, BuildFileName("Banners", a) + ".html");
         TryDelete(path);
 
         try
@@ -595,7 +595,7 @@ public class NpcDiagnosticLoggerTests
 
             var text = File.ReadAllText(path);
             text.Should().Contain("VALIDATION");
-            text.Should().Contain("====================");
+            text.Should().Contain("<summary>", "sections render as collapsible details/summary blocks");
         }
         finally
         {
@@ -605,11 +605,11 @@ public class NpcDiagnosticLoggerTests
     }
 
     [Fact]
-    public void Log_EmptyMessage_WritesBlankLineNotTimestamped()
+    public void Log_EmptyMessage_WritesSpacerNotTimestampedRow()
     {
         using var _ = new StaticStateGuard();
         var a = Fk("000407:Skyrim.esm");
-        var path = Path.Combine(LogDir, BuildFileName("BlankLines", a) + ".txt");
+        var path = Path.Combine(LogDir, BuildFileName("BlankLines", a) + ".html");
         TryDelete(path);
 
         try
@@ -617,16 +617,19 @@ public class NpcDiagnosticLoggerTests
             NpcDiagnosticLogger.Configure(new[] { (a, "BlankLines") });
             NpcDiagnosticLogger.BeginNpc(a);
             NpcDiagnosticLogger.Log("BEFORE");
-            NpcDiagnosticLogger.Log(string.Empty); // blank line, no "[HH:mm:ss.fff]" prefix
+            NpcDiagnosticLogger.Log(string.Empty); // spacer, no timestamped row
             NpcDiagnosticLogger.Log("AFTER");
             NpcDiagnosticLogger.EndNpc();
             NpcDiagnosticLogger.Shutdown();
 
-            var lines = File.ReadAllLines(path);
-            lines.Should().Contain(l => l.Contains("BEFORE"));
-            lines.Should().Contain(l => l.Contains("AFTER"));
-            // At least one fully-empty line exists between the two messages.
-            lines.Should().Contain(string.Empty);
+            var text = File.ReadAllText(path);
+            text.Should().Contain("BEFORE");
+            text.Should().Contain("AFTER");
+            // The empty message renders as a spacer element between the two rows.
+            int before = text.IndexOf("BEFORE", StringComparison.Ordinal);
+            int after = text.IndexOf("AFTER", StringComparison.Ordinal);
+            int spacer = text.IndexOf("class=\"spacer\"", StringComparison.Ordinal);
+            spacer.Should().BeInRange(before, after, "the spacer sits between the two messages");
         }
         finally
         {

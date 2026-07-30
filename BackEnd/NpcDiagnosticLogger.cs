@@ -14,7 +14,9 @@ namespace NPC_Plugin_Chooser_2.BackEnd;
 /// each of those NPCs the <see cref="Validator"/> and <see cref="Patcher"/>
 /// emit a full activity trace — every modification to the NPC record plus the
 /// dependency merge-in logic (discovered records, remaps, abort conditions) —
-/// to <c>{exe}\NPC Logs\{display}.txt</c>.
+/// to <c>{exe}\NPC Logs\{display}.html</c> (a self-contained, filterable HTML
+/// log; rows flush as they are written so a crashed run still leaves a
+/// readable file).
 ///
 /// <para>Lifecycle: <see cref="Configure"/> is called once at the start of a
 /// Validate/Patch run with the NPCs to log; it discards any previously open
@@ -81,10 +83,10 @@ public static class NpcDiagnosticLogger
                 foreach (var (formKey, displayString) in npcsToLog)
                 {
                     if (formKey.IsNull || newTargets.ContainsKey(formKey)) continue;
-                    // ".txt" must be appended explicitly: the filename ends in the
+                    // ".html" must be appended explicitly: the filename ends in the
                     // FormKey (e.g. "..._00442D_3DNPC.esp"), so without this the file
                     // would be saved with a ".esp" extension.
-                    string fileName = BuildFileName(displayString, formKey) + ".txt";
+                    string fileName = BuildFileName(displayString, formKey) + ".html";
                     newTargets[formKey] = new NpcLogTarget(Path.Combine(dir, fileName), displayString, formKey);
                 }
             }
@@ -115,13 +117,16 @@ public static class NpcDiagnosticLogger
         _currentNpc.Value = null;
     }
 
-    /// <summary>Writes a blank line and a banner (e.g. "VALIDATION" / "PATCHING")
-    /// to the active NPC's file.</summary>
+    /// <summary>Starts a collapsible section (e.g. "VALIDATION" / "PATCHING")
+    /// in the active NPC's file; subsequent rows land inside it.</summary>
     public static void LogSection(string section)
     {
         if (!IsActive) return;
-        Log(string.Empty);
-        Log("==================== " + section + " ====================");
+        var fk = _currentNpc.Value;
+        if (fk == null) return;
+        var targets = _targets;
+        if (!targets.TryGetValue(fk.Value, out var target)) return;
+        target.WriteSection(section);
     }
 
     /// <summary>Logs to the currently-active NPC (set via <see cref="BeginNpc"/>).
@@ -205,7 +210,7 @@ public static class NpcDiagnosticLogger
         private readonly string _displayString;
         private readonly FormKey _formKey;
         private readonly object _wlock = new();
-        private StreamWriter? _writer;
+        private Logging.HtmlLogWriter? _writer;
         private bool _openFailed;
 
         public NpcLogTarget(string path, string displayString, FormKey formKey)
@@ -215,39 +220,105 @@ public static class NpcDiagnosticLogger
             _formKey = formKey;
         }
 
+        /// <summary>Opens the file (truncating — each run starts fresh) on the first write of a
+        /// run. Returns null when the open failed; the failure is remembered so a bad path
+        /// doesn't retry per line.</summary>
+        private Logging.HtmlLogWriter? GetWriter()
+        {
+            if (_writer != null) return _writer;
+            if (_openFailed) return null;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+                _writer = new Logging.HtmlLogWriter(_path,
+                    $"NPC2 per-NPC diagnostic — {_displayString}",
+                    new[]
+                    {
+                        new KeyValuePair<string, string>("NPC", _displayString),
+                        new KeyValuePair<string, string>("FormKey", _formKey.ToString()),
+                        new KeyValuePair<string, string>("Run started",
+                            DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+                    });
+            }
+            catch
+            {
+                _openFailed = true;
+                _writer = null;
+            }
+            return _writer;
+        }
+
         public void Write(string message)
         {
             lock (_wlock)
             {
-                if (_writer == null)
-                {
-                    if (_openFailed) return;
-                    try
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-                        // FileMode.Create truncates: each run starts fresh on first write.
-                        var stream = new FileStream(_path, FileMode.Create, FileAccess.Write, FileShare.Read);
-                        _writer = new StreamWriter(stream) { AutoFlush = true };
-                        _writer.WriteLine($"=== NPC2 per-NPC diagnostic — {_displayString} ({_formKey}) ===");
-                        _writer.WriteLine($"=== Run started {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
-                    }
-                    catch
-                    {
-                        _openFailed = true;
-                        _writer = null;
-                        return;
-                    }
-                }
-
+                var w = GetWriter();
+                if (w == null) return;
                 try
                 {
-                    if (string.IsNullOrEmpty(message)) _writer.WriteLine();
-                    else _writer.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] {message}");
+                    if (string.IsNullOrEmpty(message))
+                    {
+                        w.WriteSpacer();
+                        return;
+                    }
+
+                    // Surface the trace lines' latent structure without changing any emitter:
+                    // leading spaces become real indentation, a short leading "Keyword: " becomes
+                    // the row's chip, and a line that is entirely "k=v, k=v, ..." (the Patcher's
+                    // record-fields dump) renders as labeled field chips instead of prose.
+                    int depth = 0;
+                    while (depth < message.Length && message[depth] == ' ') depth++;
+                    string content = message[depth..];
+
+                    var severity = Logging.HtmlLogSeverity.Info;
+                    if (content.StartsWith("! ", StringComparison.Ordinal))
+                    {
+                        severity = Logging.HtmlLogSeverity.Warning;
+                    }
+
+                    string? chip = null;
+                    int sep = content.IndexOf(": ", StringComparison.Ordinal);
+                    if (sep >= 3 && sep <= 24 && char.IsLetter(content[0]) &&
+                        content[..sep].All(c => char.IsLetterOrDigit(c) || c == ' ' || c == '-'))
+                    {
+                        chip = content[..sep];
+                        content = content[(sep + 2)..];
+                        if (chip.Contains("abort", StringComparison.OrdinalIgnoreCase) ||
+                            chip.Contains("fail", StringComparison.OrdinalIgnoreCase) ||
+                            chip.Contains("error", StringComparison.OrdinalIgnoreCase))
+                        {
+                            severity = Logging.HtmlLogSeverity.Warning;
+                        }
+                    }
+
+                    if (Logging.HtmlLog.TryParseFieldList(content, out var fields))
+                    {
+                        w.WriteRow(severity, string.Empty,
+                            time: DateTime.Now.ToString("HH:mm:ss.fff"),
+                            chip: chip, fields: fields, indent: depth);
+                    }
+                    else
+                    {
+                        w.WriteRow(severity, content,
+                            time: DateTime.Now.ToString("HH:mm:ss.fff"),
+                            chip: chip, indent: depth);
+                    }
                 }
                 catch
                 {
                     // Swallow — diagnostics must never break a patch run.
                 }
+            }
+        }
+
+        public void WriteSection(string section)
+        {
+            lock (_wlock)
+            {
+                var w = GetWriter();
+                if (w == null) return;
+                try { w.BeginSection(section); }
+                catch { /* Swallow — diagnostics must never break a patch run. */ }
             }
         }
 
@@ -257,7 +328,6 @@ public static class NpcDiagnosticLogger
             {
                 try
                 {
-                    _writer?.Flush();
                     _writer?.Dispose();
                 }
                 catch
