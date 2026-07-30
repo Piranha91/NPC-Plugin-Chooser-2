@@ -1944,10 +1944,6 @@ public class Patcher : OptionalUIModule
                     // Verify any cached file access errors to see if they were actual failures.
                     _assetHandler.LogTrueCopyFailures();
 
-                    // One warning line per NPC with untextured shapes. Accumulated during NIF
-                    // post-processing, so it must flush only after the task drain above.
-                    _assetHandler.ReportTexturelessShapes();
-
                     // CPU-bound NIF edits over potentially thousands of files (one per
                     // wig-wearing NPC); without Task.Run they resume on the UI thread's
                     // sync context after the await above and freeze the window.
@@ -1978,6 +1974,12 @@ public class Patcher : OptionalUIModule
                     ReportInheritedFaceNpcs();
                     ReportFlattenedFallbackNpcs();
                     ReportInertOutfitNpcs();
+
+                    // Per-NPC warnings (suspect origin meshes, missing tints, textureless
+                    // shapes), grouped by type with one explanation per group — see
+                    // NpcWarningReporter. Textureless entries accumulate from background NIF
+                    // post-processing, so the flush must stay after the task drain above.
+                    NpcWarningReporter.Flush((msg, isError, force) => AppendLog(msg, isError, force));
 
                     AppendLog("All file operations finished.", false, true);
 

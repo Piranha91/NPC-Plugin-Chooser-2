@@ -437,15 +437,15 @@ public class FaceGenLadderTests
     [Fact]
     public void Inherit_ResolvedChain_RaisesNoTintWarning()
     {
-        // TintWarning means "a mesh is being copied with no tint to go with it". No mesh is being
-        // copied, so warning about the tint would be noise on every templated NPC in the run.
+        // MissingTintEverywhere means "a mesh is being copied with no tint to go with it". No mesh
+        // is being copied, so flagging the tint would be noise on every templated NPC in the run.
         FaceGenLadder.Classify(Inputs(
                 chain: FaceGenChainStatus.Resolved,
                 subject: Terminus,
                 sourceDds: FaceGenAssetPresence.NotFound,
                 originDds: FaceGenAssetPresence.NotFound,
                 winnerDds: false))
-            .TintWarning.Should().BeNull();
+            .MissingTintEverywhere.Should().BeFalse();
     }
 
     [Fact]
@@ -713,13 +713,14 @@ public class FaceGenLadderTests
         d.LegacyAction.Should().Be("CopyNothing", "but the old code looked at the donor and found neither");
     }
 
-    // ---- TintWarning -------------------------------------------------------------------------
+    // ---- MissingTintEverywhere ---------------------------------------------------------------
     //
-    // Carried apart from LogLine because it is the one non-abort outcome the user must act on:
-    // the run log force-logs it in the warning colour while LogLine stays verbose-only.
+    // Carried apart from LogLine because it is a non-abort outcome the user must act on: the
+    // NPCs it flags are reported after the run by NpcWarningReporter (kind MissingFaceTint),
+    // where LogLine stays verbose-only.
 
     [Fact]
-    public void TintWarning_IsSet_WhenAMeshIsCopiedWithNoTintAnywhere()
+    public void MissingTint_IsFlagged_WhenAMeshIsCopiedWithNoTintAnywhere()
     {
         // Mesh from the mod, and no tint from the mod, the origin, or the load order.
         var d = FaceGenLadder.Classify(Inputs(
@@ -730,16 +731,14 @@ public class FaceGenLadderTests
         d.Abort.Should().BeFalse();
         d.NifChoice.Should().NotBe(FaceGenSourceChoice.None);
         d.DdsChoice.Should().Be(FaceGenSourceChoice.None);
-        d.TintWarning.Should().NotBeNullOrWhiteSpace()
-            .And.Subject.Should().Contain("Test NPC (013BA5:Skyrim.esm)",
-                "the line is force-logged on its own, so it has to name the NPC itself");
+        d.MissingTintEverywhere.Should().BeTrue();
     }
 
     [Fact]
-    public void TintWarning_IsSet_ForABorrowedWinnerMesh_WhoseOwnSentenceNeverMentionsTint()
+    public void MissingTint_IsFlagged_ForABorrowedWinnerMesh_WhoseOwnSentenceNeverMentionsTint()
     {
-        // Row 5 falling through to another mod's mesh. Deriving the warning in Build (not per
-        // branch) is what covers this one — its LogLine says nothing about tint.
+        // Row 5 falling through to another mod's mesh. Deriving the flag from the choices (not
+        // per branch) is what covers this one — its LogLine says nothing about tint.
         var d = FaceGenLadder.Classify(Inputs(
             sourceNif: FaceGenAssetPresence.NotFound,
             sourceDds: FaceGenAssetPresence.NotFound,
@@ -750,52 +749,37 @@ public class FaceGenLadderTests
 
         d.NifChoice.Should().BeOneOf(FaceGenSourceChoice.Winner, FaceGenSourceChoice.WinnerInPlace);
         d.DdsChoice.Should().Be(FaceGenSourceChoice.None);
-        d.TintWarning.Should().NotBeNullOrWhiteSpace();
+        d.MissingTintEverywhere.Should().BeTrue();
         d.LogLine.Should().NotContain("discoloured",
-            "the consequence belongs to TintWarning; duplicating it would double-log it");
+            "the consequence belongs to the end-of-run warning report; duplicating it would double-log it");
     }
 
     [Fact]
-    public void TintWarning_IsNotSet_ForALevelledTerminus()
+    public void MissingTint_IsNotFlagged_ForALevelledTerminus()
     {
         // Also has no tint, but needs none: the game resolves the actor and draws its face at
-        // runtime. Warning here would fire on a large, perfectly healthy population.
+        // runtime. Flagging here would fire on a large, perfectly healthy population.
         var d = FaceGenLadder.Classify(Inputs(chain: FaceGenChainStatus.LeveledTerminus));
 
         d.DdsChoice.Should().Be(FaceGenSourceChoice.None);
         d.NifChoice.Should().Be(FaceGenSourceChoice.None, "nothing is copied at all");
-        d.TintWarning.Should().BeNull();
+        d.MissingTintEverywhere.Should().BeFalse();
     }
 
     [Fact]
-    public void TintWarning_IsNotSet_WhenATintIsFound()
+    public void MissingTint_IsNotFlagged_WhenATintIsFound()
     {
-        FaceGenLadder.Classify(Inputs()).TintWarning.Should().BeNull();
+        FaceGenLadder.Classify(Inputs()).MissingTintEverywhere.Should().BeFalse();
     }
 
-    [Fact]
-    public void TintWarning_LeadsWithNothingThatWouldMisclassifyIt()
-    {
-        // The run log prefixes "WARNING: " and RunLogClassifier reads the first 64 chars for a
-        // marker; an "ERROR"/"FATAL" word in the text itself would outrank it and recolour the
-        // line red. Pinned because the wording is otherwise free to change.
-        var d = FaceGenLadder.Classify(Inputs(
-            sourceDds: FaceGenAssetPresence.NotFound,
-            originDds: FaceGenAssetPresence.NotFound,
-            winnerDds: false));
-
-        RunLogClassifier.Classify("      WARNING: " + d.TintWarning, RunLogSeverity.Info)
-            .Should().Be(RunLogSeverity.Warning);
-    }
-
-    // ---- OriginCompatWarning -------------------------------------------------------------------
+    // ---- OriginMeshFailedCompatCheck ---------------------------------------------------------
     //
     // Rows 4/5 take the origin mesh UNGATED (decided 2026-07-30): a mod shipping no mesh is almost
     // always authored against the origin's data, so a hard gate would refuse NPCs that render
     // fine. When the probe POSITIVELY failed — another mod overrode the subject's origin data, RS
     // Children being the measured wild case (Britte/Sissel, docs/KnownLimitations.md #5) — the NPC
-    // is named in a forced warning suggesting a spawn test, instead of silently shipping a face
-    // the app knows is suspect.
+    // is flagged for the end-of-run warning report (NpcWarningReporter, kind
+    // OriginMeshCompatibility) instead of silently shipping a face the app knows is suspect.
 
     /// <summary>Row 4: FaceGen-only selection whose mesh must come from the origin.</summary>
     private static FaceGenLadderInputs Row4OriginInputs(bool? originCompatible) => Inputs(
@@ -804,33 +788,29 @@ public class FaceGenLadderTests
         originCompatible: originCompatible);
 
     [Fact]
-    public void OriginCompatWarning_IsSet_WhenTheProbeSaidTheOriginMeshDoesNotFit()
+    public void OriginCompat_IsFlagged_WhenTheProbeSaidTheOriginMeshDoesNotFit()
     {
         var d = FaceGenLadder.Classify(Row4OriginInputs(originCompatible: false));
 
         d.Abort.Should().BeFalse("the assumption is deliberately kept — warn, don't gate");
         d.NifChoice.Should().Be(FaceGenSourceChoice.Origin,
-            "the origin mesh is still taken; the warning rides along instead of vetoing it");
-        d.OriginCompatWarning.Should().NotBeNullOrWhiteSpace()
-            .And.Subject.Should().Contain("Test NPC (013BA5:Skyrim.esm)",
-                "the line is force-logged on its own, so it has to name the NPC itself");
-        d.OriginCompatWarning.Should().Contain("Spawn",
-            "the user's remedy is an in-game spawn test, and the line has to say so");
+            "the origin mesh is still taken; the flag rides along instead of vetoing it");
+        d.OriginMeshFailedCompatCheck.Should().BeTrue();
     }
 
     [Theory]
     [InlineData(true)]  // probe ran and passed — the assumption held
     [InlineData(null)]  // probe never ran — nothing is known, so nothing to warn about
-    public void OriginCompatWarning_IsNotSet_WhenTheProbePassedOrNeverRan(bool? originCompatible)
+    public void OriginCompat_IsNotFlagged_WhenTheProbePassedOrNeverRan(bool? originCompatible)
     {
         var d = FaceGenLadder.Classify(Row4OriginInputs(originCompatible));
 
         d.NifChoice.Should().Be(FaceGenSourceChoice.Origin);
-        d.OriginCompatWarning.Should().BeNull();
+        d.OriginMeshFailedCompatCheck.Should().BeFalse();
     }
 
     [Fact]
-    public void OriginCompatWarning_IsNotSet_OnRowThree_WhichGatesInsteadOfWarning()
+    public void OriginCompat_IsNotFlagged_OnRowThree_WhichGatesInsteadOfWarning()
     {
         // Row 3 rejects an incompatible origin mesh outright (falls to winner/abort), so there is
         // no suspect pairing left to warn about.
@@ -842,11 +822,11 @@ public class FaceGenLadderTests
 
         d.Row.Should().Be(FaceGenLadderRow.DdsOnlyWithRecord);
         d.NifChoice.Should().NotBe(FaceGenSourceChoice.Origin);
-        d.OriginCompatWarning.Should().BeNull();
+        d.OriginMeshFailedCompatCheck.Should().BeFalse();
     }
 
     [Fact]
-    public void OriginCompatWarning_IsSet_OnRowFive_WithARecord()
+    public void OriginCompat_IsFlagged_OnRowFive_WithARecord()
     {
         // Row 5 with a record rides the same ungated origin branch as row 4.
         var d = FaceGenLadder.Classify(Inputs(
@@ -857,17 +837,6 @@ public class FaceGenLadderTests
 
         d.Row.Should().Be(FaceGenLadderRow.Neither);
         d.NifChoice.Should().Be(FaceGenSourceChoice.Origin);
-        d.OriginCompatWarning.Should().NotBeNullOrWhiteSpace();
-    }
-
-    [Fact]
-    public void OriginCompatWarning_LeadsWithNothingThatWouldMisclassifyIt()
-    {
-        // Same contract as the TintWarning variant: the wording is free to change, but it must
-        // keep classifying as a warning once the run log prefixes "WARNING: ".
-        var d = FaceGenLadder.Classify(Row4OriginInputs(originCompatible: false));
-
-        RunLogClassifier.Classify("      WARNING: " + d.OriginCompatWarning, RunLogSeverity.Info)
-            .Should().Be(RunLogSeverity.Warning);
+        d.OriginMeshFailedCompatCheck.Should().BeTrue();
     }
 }

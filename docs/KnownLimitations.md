@@ -128,11 +128,12 @@ direction: single missing textures are near-universal and harmless (an absent mo
 is the stock example), while a shape with no resolvable texture at all renders untextured and is
 worth acting on. Deduplicated by (mod, NIF, shape).
 
-Reporting was revised 2026-07-30, also at the user's direction: one forced, warning-coloured line
-per NPC at the end of the run (`ReportTexturelessShapes`, flushed after the copy tasks drain),
-listing that NPC's affected shapes and their missing textures — several broken shapes on one NPC
-used to produce a wall of near-identical per-shape lines. The dedup means a mesh shared by many
-NPCs still surfaces once, on the first NPC that hit it.
+Reporting was revised 2026-07-30, also at the user's direction: per-NPC warnings are no longer
+logged as they happen but collected and emitted AFTER patching by `NpcWarningReporter`, grouped by
+warning type — one explanatory paragraph, then one `  - NPC: shapes (missing textures)` line per
+affected NPC. Several broken shapes on one NPC used to produce a wall of near-identical per-shape
+lines. The dedup means a mesh shared by many NPCs still surfaces once, on the first NPC that hit
+it.
 
 **This is intended behaviour, not a pending fix** (user's decision, 2026-07-30). Linking a mod to the
 assets it depends on is the user's job. Automating it would mean guessing that whichever installed
@@ -173,12 +174,14 @@ origin's data, and RS Children is the only mod known to break that premise in th
 gate mirroring row 3 would spend its time refusing healthy NPCs (and for the Britte specimen, where
 origin and winner both fail the probe, would turn a mostly-cosmetic risk into a hard abort). So
 when the probe *positively* fails, the pairing ships anyway and
-`FaceGenLadderDecision.OriginCompatWarning` carries a forced, warning-coloured line naming the NPC,
-explaining that another installed mod appears to have changed its original head data, and telling
-the user to spawn-test it in game (printed beside `TintWarning` in
-`AssetHandler.ScheduleCopyNpcAssets`; pinned by the `OriginCompatWarning_*` tests in
-`Tests/Unit/FaceGenLadderTests.cs`). `Validate Output` remains the after-the-fact detector, and its
-FaceGen warning is the confirmation that a flagged NPC really did pair mismatched halves.
+`FaceGenLadderDecision.OriginMeshFailedCompatCheck` flags the NPC for the end-of-run warning
+report: `NpcWarningReporter` emits one block per warning type after patching — an explanatory
+paragraph (wording authored by the user, 2026-07-30: forwarded original meshes may be incompatible
+with changes from other mods, causing the dark face bug; spawn the listed NPCs to check before a
+playthrough), then the affected NPCs. Pinned by the `OriginCompat_*` tests in
+`Tests/Unit/FaceGenLadderTests.cs` and by `NpcWarningReporterTests`. `Validate Output` remains the
+after-the-fact detector, and its FaceGen warning is the confirmation that a flagged NPC really did
+pair mismatched halves.
 
 ---
 

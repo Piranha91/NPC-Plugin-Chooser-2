@@ -163,30 +163,7 @@ public sealed record FaceGenLadderDecision(
     bool CompatibilityEvaluated,
     string PlannedAction,
     string LegacyAction,
-    string LogLine,
-    /// <summary>
-    /// Set when a face mesh is being copied but no tint could be found for it anywhere — the
-    /// one outcome here the user has to act on, so it is reported separately from
-    /// <see cref="LogLine"/>: always shown (not verbose-gated) and coloured as a warning.
-    ///
-    /// <para>Derived in <c>Build</c> rather than written per branch so every route that lands
-    /// on a tintless mesh reports it, including the borrowed-winner mesh whose own sentence
-    /// says nothing about tint. Deliberately requires a mesh: an NPC taking its face from a
-    /// levelled list also has no tint, and there it is the correct, silent outcome.</para>
-    /// </summary>
-    string? TintWarning = null,
-    /// <summary>
-    /// Set when rows 4/5 borrow the origin's mesh even though the compatibility probe positively
-    /// said it does not fit the record that will ship. Those rows deliberately do not GATE on the
-    /// probe (decided 2026-07-30): a mod that ships no face mesh is almost always authored against
-    /// the origin's data, so refusing the pairing would abort NPCs that render fine. The one known
-    /// way the assumption breaks in the wild is another mod overriding the subject's ORIGIN data —
-    /// RS Children rewriting a child race's head parts is the measured case (see
-    /// docs/KnownLimitations.md #5) — so instead of gating, the known-bad pairing is named to the
-    /// user, once per NPC, with the suggestion to spawn-test it. Null when the probe passed or
-    /// never ran; like <see cref="TintWarning"/> it is printed forced and warning-coloured.
-    /// </summary>
-    string? OriginCompatWarning = null)
+    string LogLine)
 {
     /// <summary>True when nothing was copied because the output record keeps inheriting — see
     /// <see cref="FaceGenLadder.KeepsInheritedFace"/>. Named at the end of the run by
@@ -215,6 +192,33 @@ public sealed record FaceGenLadderDecision(
         && !Abort
         && NifChoice != FaceGenSourceChoice.AppearanceMod
         && DdsChoice != FaceGenSourceChoice.AppearanceMod;
+
+    /// <summary>
+    /// True when a face mesh is being copied but no tint could be found for it anywhere — the one
+    /// outcome here the user has to act on, so it is reported after the run by
+    /// <see cref="NpcWarningReporter"/> (<see cref="NpcWarningKind.MissingFaceTint"/>) instead of
+    /// riding the verbose-gated <see cref="LogLine"/>. Derived rather than set per branch so every
+    /// route that lands on a tintless mesh reports it, including the borrowed-winner mesh whose
+    /// own sentence says nothing about tint. Deliberately requires a mesh: an NPC taking its face
+    /// from a levelled list also has no tint, and there it is the correct, silent outcome.
+    /// </summary>
+    public bool MissingTintEverywhere =>
+        DdsChoice == FaceGenSourceChoice.None && NifChoice != FaceGenSourceChoice.None;
+
+    /// <summary>
+    /// True when the origin's mesh was taken even though the compatibility probe POSITIVELY said
+    /// it does not fit the record that ships. Rows 4/5 deliberately do not GATE on the probe
+    /// (decided 2026-07-30): a mod that ships no face mesh is almost always authored against the
+    /// origin's data, so refusing the pairing would abort NPCs that render fine. The one known way
+    /// the assumption breaks in the wild is another mod overriding the subject's ORIGIN data — RS
+    /// Children rewriting a child race's head parts is the measured case (docs/KnownLimitations.md
+    /// #5) — so the NPC is named in the end-of-run warning report
+    /// (<see cref="NpcWarningKind.OriginMeshCompatibility"/>) with the suggestion to spawn-test
+    /// it. Row 3 gates the identical pairing instead of warning, so it never sets this; false too
+    /// when the probe passed or never ran.
+    /// </summary>
+    public bool OriginMeshFailedCompatCheck =>
+        NifChoice == FaceGenSourceChoice.Origin && Inputs.OriginNifCompatible == false;
 }
 
 /// <summary>
@@ -377,8 +381,8 @@ public static class FaceGenLadder
                 $"used. If the skin tone looks wrong, that is why.");
         }
 
-        // The discoloured-face consequence rides on TintWarning (always shown, warning-coloured)
-        // rather than being stated here, where it would be verbose-gated with the rest.
+        // The discoloured-face consequence rides on MissingTintEverywhere (reported after the run
+        // by NpcWarningReporter) rather than being stated here, where it would be verbose-gated.
         return Build(i, row, legacy, FaceGenSourceChoice.AppearanceMod, FaceGenSourceChoice.None, false,
             $"'{i.ModName}' supplies the face mesh but no face tint, and no replacement tint could be " +
             $"found.");
@@ -464,27 +468,18 @@ public static class FaceGenLadder
         {
             // Deliberately UNGATED, unlike row 3 (decided 2026-07-30): a mod that ships no mesh is
             // almost always authored against the origin's data, and gating here would refuse NPCs
-            // that render fine. But when the probe has POSITIVELY said the pairing does not fit —
-            // in practice another mod overriding the subject's origin data out from under it, RS
-            // Children being the one known wild case — staying silent ships a face the app knows
-            // is suspect. So the assumption is kept and the NPC is named instead.
-            string? originCompatWarning = i.OriginNifCompatible == false
-                ? $"the face mesh for {i.NpcIdentifier} was borrowed from the mod that originally " +
-                  $"added it, on the assumption that '{i.ModName}' was built against that mod's " +
-                  $"data — but another installed mod appears to have changed this NPC's original " +
-                  $"head data, so the borrowed mesh may not match it. Spawn this NPC in game to " +
-                  $"check its face before trusting it."
-                : null;
-
-            // A missing tint rides on TintWarning (always shown, warning-coloured) instead of
-            // being tacked onto this sentence, which is verbose-gated.
+            // that render fine. When the probe has POSITIVELY said the pairing does not fit — in
+            // practice another mod overriding the subject's origin data out from under it, RS
+            // Children being the one known wild case — OriginMeshFailedCompatCheck carries the
+            // fact to the end-of-run warning report instead of vetoing the copy. A missing tint
+            // rides on MissingTintEverywhere the same way; neither consequence is stated in this
+            // verbose-gated sentence.
             return Build(i, row, legacy, FaceGenSourceChoice.Origin, ddsChoice, forwardOriginRecord,
                 forwardOriginRecord
                     ? $"'{i.ModName}' does not change this NPC's appearance record, so both the record and " +
                       $"the face mesh are being taken from the mod that originally added the NPC."
                     : $"'{i.ModName}' changes this NPC's appearance but ships no face files for it, so the " +
-                      $"face mesh is being taken from the mod that originally added the NPC.",
-                originCompatWarning);
+                      $"face mesh is being taken from the mod that originally added the NPC.");
         }
 
         if (i.WinnerNifExists && (i.WinnerNifCompatible ?? true))
@@ -525,18 +520,12 @@ public static class FaceGenLadder
 
     private static FaceGenLadderDecision Build(
         FaceGenLadderInputs i, FaceGenLadderRow row, string legacy,
-        FaceGenSourceChoice nif, FaceGenSourceChoice dds, bool forwardOriginRecord, string logLine,
-        string? originCompatWarning = null) =>
+        FaceGenSourceChoice nif, FaceGenSourceChoice dds, bool forwardOriginRecord, string logLine) =>
         new(i, row, nif, dds, forwardOriginRecord, false, null,
             CompatibilityEvaluated: i.OriginNifCompatible.HasValue || i.WinnerNifCompatible.HasValue,
             PlannedAction: $"nif={nif}, dds={dds}" + (forwardOriginRecord ? ", record=Origin" : string.Empty),
             LegacyAction: legacy,
-            LogLine: logLine,
-            TintWarning: dds == FaceGenSourceChoice.None && nif != FaceGenSourceChoice.None
-                ? $"no face tint could be found for {i.NpcIdentifier}, so its face may look " +
-                  "discoloured in game."
-                : null,
-            OriginCompatWarning: originCompatWarning);
+            LogLine: logLine);
 
     private static FaceGenLadderDecision Abort(
         FaceGenLadderInputs i, FaceGenLadderRow row, string legacy, string reason) =>

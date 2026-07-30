@@ -641,16 +641,22 @@ public static class PatchVerifyRunner
                     ? $"<img src=\"file:///{Esc(mug.Replace('\\', '/'))}\" alt=\"mugshot\">"
                     : "<i>none rendered</i>";
 
-                // TintWarning is carried separately from LogLine (it is force-logged and
-                // warning-coloured in the run log), so the report has to render it explicitly
-                // or a tintless mesh would read as an unqualified success here.
-                string tint = string.IsNullOrWhiteSpace(e.Decision.TintWarning)
+                // The warning flags are carried separately from LogLine (the run log reports
+                // them per NPC after patching, via NpcWarningReporter), so the manifest has to
+                // render them explicitly or a flagged NPC would read as an unqualified success.
+                string tint = !e.Decision.MissingTintEverywhere
                     ? string.Empty
-                    : $"<br><span class=\"warn\">WARNING: {Esc(e.Decision.TintWarning)}</span>";
+                    : "<br><span class=\"warn\">WARNING: no face tint could be found anywhere " +
+                      "for this NPC, so its face may look discoloured in game.</span>";
+                string originCompat = !e.Decision.OriginMeshFailedCompatCheck
+                    ? string.Empty
+                    : "<br><span class=\"warn\">WARNING: the forwarded origin mesh failed the " +
+                      "head-part compatibility check — another mod appears to have changed the " +
+                      "NPC's original head data. Spawn to verify.</span>";
 
                 string verdict = e.Decision.Abort
                     ? $"<span class=\"abort\">SKIPPED</span><br>{Esc(e.Decision.AbortReason)}"
-                    : $"<span class=\"ok\">{Esc(e.Decision.PlannedAction)}</span><br>{Esc(e.Decision.LogLine)}{tint}";
+                    : $"<span class=\"ok\">{Esc(e.Decision.PlannedAction)}</span><br>{Esc(e.Decision.LogLine)}{tint}{originCompat}";
 
                 string idCell = e.RuntimeIdApproximate
                     ? $"<code>{e.RuntimeFormId}</code> <span class=\"warn\">(approx)</span>"
