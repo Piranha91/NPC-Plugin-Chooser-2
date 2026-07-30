@@ -4620,7 +4620,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     /// e.g. a head part or template defined in a bundled master that isn't actually loadable —
     /// would survive patching as a dangling FormKey and make the output plugin unsaveable
     /// (missing-master error at write time), so the candidate is rejected up front.
-    /// Uses the same RecordHandler lookup the merge-in itself uses.
+    /// Uses the same RecordHandler lookup the merge-in itself uses, and honours the same
+    /// engine-hardcoded-record exemption (<c>Implicits.RecordFormKeys</c>) those walkers do.
     /// </summary>
     private bool CandidateAppearanceDependenciesAreResolvable(
         FormKey donorNpcFormKey,
@@ -4670,6 +4671,15 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         var queue = new Queue<IMajorRecordGetter>();
         queue.Enqueue(donorRecord);
 
+        // Engine-hardcoded records (PlayerRef 000014, the implicit globals/actor values, ...) live in
+        // the game executable, not in Skyrim.esm, so the link cache can never resolve them — but their
+        // ModKey is a base master that the output plugin gets anyway, so they cannot dangle. Mutagen's
+        // own merge walkers skip this same set (PatcherExtensions.AddAllLinks), so screening must too;
+        // otherwise a scripted NPC whose VMAD points at PlayerRef (Miraak, DLC2MiraakSoulSteal) is
+        // rejected for a missing master that would never have happened.
+        var implicitRecords = Implicits.Get(_environmentStateProvider.SkyrimVersion.ToGameRelease())
+            .RecordFormKeys;
+
         while (queue.Count > 0)
         {
             var rec = queue.Dequeue();
@@ -4677,6 +4687,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             {
                 if (link.FormKey.IsNull || !visited.Add(link.FormKey)) continue;
                 if (visited.Count > MaxScreenedDependencyRecords) return true;
+                if (implicitRecords.Contains(link.FormKey)) continue;
 
                 // Resolvable in the load order: patching leaves the reference as-is.
                 if (linkCache.TryResolve(link, out _)) continue;
