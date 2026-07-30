@@ -117,6 +117,36 @@ public class PatcherFaceGenProbeTests
     }
 
     [Fact]
+    public void DescribeMismatch_NamesRecordSideParts_MeshSideShapes_AndTheWinningOverride()
+    {
+        // The probe's evidence for the detailed warning log: which head parts the record
+        // resolves (tagging the plugin whose override currently WINS the part when that is not
+        // the definer — the "which plugin is overwriting" answer), and which shapes the mesh
+        // bakes that match nothing.
+        var analysis = new FaceGenConsistencyAnalyzer.Result
+        {
+            NifParsed = true,
+            MissingBakedShapes =
+            [
+                new FaceGenConsistencyAnalyzer.HeadPartRef(
+                    FormKey.Factory("000011:RSkyrimChildren.esm"), "0RCOChildHeadNord"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(
+                    FormKey.Factory("017508:Skyrim.esm"), "HumanBeard06"),
+            ],
+            OrphanBakedShapes = ["ChildEyes", "ChildMouth"],
+        };
+
+        string text = Reflect.InvokeStatic<Patcher, string>("DescribeMismatch", analysis,
+            (Func<FormKey, string?>)(fk => fk.ModKey.FileName == "Skyrim.esm" ? "KLHairdos.esp" : null))!;
+
+        text.Should().Contain("'0RCOChildHeadNord' (000011:RSkyrimChildren.esm)")
+            .And.NotContain("000011:RSkyrimChildren.esm, winning override",
+                "a part supplied by its own definer needs no override tag")
+            .And.Contain("'HumanBeard06' (017508:Skyrim.esm, winning override: KLHairdos.esp)")
+            .And.Contain("mesh bakes (no matching head part): ChildEyes, ChildMouth");
+    }
+
+    [Fact]
     public void ChooseCompatibilityRecord_PrefersTerminus_ThenOrigin_ThenDonor()
     {
         // The precedence IS the seam-3 fix: a flattened chain overlays the terminus's head parts

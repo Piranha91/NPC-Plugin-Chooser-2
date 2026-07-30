@@ -861,7 +861,9 @@ public class AssetHandler : OptionalUIModule
             string who = string.IsNullOrWhiteSpace(ctx.NpcIdentifier) ? "an NPC" : ctx.NpcIdentifier;
             string shape = string.IsNullOrWhiteSpace(shapeName) ? "(unnamed shape)" : shapeName;
             NpcWarningReporter.Record(NpcWarningKind.TexturelessShapes, who,
-                $"{Path.GetFileName(nifPathToAnalyze)} '{shape}' (missing: {string.Join(", ", candidates)})");
+                $"{Path.GetFileName(nifPathToAnalyze)} '{shape}' (missing: {string.Join(", ", candidates)})",
+                technicalDetail: $"mod='{modSetting.DisplayName}' nif={nifPathToAnalyze}\n" +
+                                 $"shape '{shape}' unresolved slots: {string.Join(", ", candidates)}");
         }
     }
 
@@ -1149,15 +1151,18 @@ public class AssetHandler : OptionalUIModule
         // were scattered through the run log and easy to miss (user direction, 2026-07-30).
         if (faceGenDecision.MissingTintEverywhere)
         {
-            NpcWarningReporter.Record(NpcWarningKind.MissingFaceTint, npcIdentifier);
+            NpcWarningReporter.Record(NpcWarningKind.MissingFaceTint, npcIdentifier,
+                technicalDetail: faceGenDecision.TechnicalSummary);
         }
         if (faceGenDecision.OriginMeshFailedCompatCheck)
         {
-            NpcWarningReporter.Record(NpcWarningKind.OriginMeshCompatibility, npcIdentifier);
+            NpcWarningReporter.Record(NpcWarningKind.OriginMeshCompatibility, npcIdentifier,
+                technicalDetail: faceGenDecision.TechnicalSummary);
         }
         if (faceGenDecision.ModMeshFailedCompatCheck)
         {
-            NpcWarningReporter.Record(NpcWarningKind.ModMeshCompatibility, npcIdentifier);
+            NpcWarningReporter.Record(NpcWarningKind.ModMeshCompatibility, npcIdentifier,
+                technicalDetail: faceGenDecision.TechnicalSummary);
         }
 
         // Both are no-ops when the ladder chose no source, which is how an inheriting NPC copies

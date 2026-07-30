@@ -885,4 +885,44 @@ public class FaceGenLadderTests
                 sourceCompatible: false))
             .CompatibilityEvaluated.Should().BeTrue();
     }
+
+    // ---- TechnicalSummary --------------------------------------------------------------------
+
+    [Fact]
+    public void TechnicalSummary_CarriesTheContextAMaintainerWouldOtherwiseAskFor()
+    {
+        // The detailed warning log prints one of these per flagged NPC — it stands in for the
+        // FaceGenLadder.csv row without asking the user to re-run with the diag trigger.
+        var d = FaceGenLadder.Classify(Inputs(
+            sourceNif: FaceGenAssetPresence.NotFound,
+            hasPluginRecord: false,
+            originCompatible: false));
+
+        d.TechnicalSummary.Should().Contain("row=4")
+            .And.Contain("mode=Record")
+            .And.Contain("nif=Origin")
+            .And.Contain("Some Mod")
+            .And.Contain("013BA5:Skyrim.esm")
+            .And.Contain("meshCompat=False", "the failed verdict is the point of the dump")
+            .And.Contain("meshCompat=NotEvaluated", "unprobed sides must read as unprobed, not as passes");
+    }
+
+    [Fact]
+    public void TechnicalSummary_AppendsTheProbeEvidence_WhenTheCallerSuppliedIt()
+    {
+        var inputs = Inputs(
+            sourceNif: FaceGenAssetPresence.NotFound,
+            hasPluginRecord: false,
+            originCompatible: false) with
+        {
+            CompatProbeNotes = "graded record: 'Sissel' (0136BA:Skyrim.esm)\n" +
+                               "race: 'NordRaceChild' (02C65B:Skyrim.esm); supplied by: RSkyrimChildren.esm (winner), Skyrim.esm (origin)",
+        };
+
+        var summary = FaceGenLadder.Classify(inputs).TechnicalSummary;
+
+        summary.Should().Contain("graded record: 'Sissel'")
+            .And.Contain("RSkyrimChildren.esm (winner)",
+                "the override chain is the 'which plugin is overwriting' answer the log exists for");
+    }
 }

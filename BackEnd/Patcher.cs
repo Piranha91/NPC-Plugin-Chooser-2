@@ -2985,20 +2985,43 @@ public class Patcher : OptionalUIModule
 
             // Each side is parsed only where its answer can matter: the mod's own mesh only on
             // the row-2 FaceGen-only shape, the origin/winner fallbacks only on the rows that
-            // consult them — a row-2 NPC never pays for fallback parses it will not use.
+            // consult them — a row-2 NPC never pays for fallback parses it will not use. Failed
+            // probes keep their evidence, composed into CompatProbeNotes for the detailed
+            // warning log (which record was graded, which plugins rewrite its head data, and
+            // each probe's record-needs vs mesh-bakes lists).
             bool probeFallbacks = NeedsCompatibilityCheck(decision);
+            var failedProbes = new List<(string Label, string? Mismatch)>();
+
+            bool? sourceCompat = null, originCompat = null, winnerCompat = null;
+            if (ProbesModMesh(decision) && appearanceModSetting != null)
+            {
+                (sourceCompat, var mm) =
+                    await EvaluateNifCompatibilityAsync(recordToMatch, subjectNifRel, appearanceModSetting);
+                if (sourceCompat == false) failedProbes.Add(("selected mod's mesh failed the probe", mm));
+            }
+
+            if (probeFallbacks && originModSetting != null && originNif != FaceGenAssetPresence.NotFound)
+            {
+                (originCompat, var mm) =
+                    await EvaluateNifCompatibilityAsync(recordToMatch, subjectNifRel, originModSetting);
+                if (originCompat == false) failedProbes.Add(("origin mesh failed the probe", mm));
+            }
+
+            if (probeFallbacks && winnerNif)
+            {
+                (winnerCompat, var mm) =
+                    await EvaluateWinningNifCompatibilityAsync(recordToMatch, subjectNifRel);
+                if (winnerCompat == false) failedProbes.Add(("winner mesh failed the probe", mm));
+            }
+
             inputs = inputs with
             {
-                SourceNifCompatible = !ProbesModMesh(decision) || appearanceModSetting == null
-                    ? null
-                    : await EvaluateNifCompatibilityAsync(recordToMatch, subjectNifRel, appearanceModSetting),
-                OriginNifCompatible = !probeFallbacks || originModSetting == null ||
-                                      originNif == FaceGenAssetPresence.NotFound
-                    ? null
-                    : await EvaluateNifCompatibilityAsync(recordToMatch, subjectNifRel, originModSetting),
-                WinnerNifCompatible = !probeFallbacks || !winnerNif
-                    ? null
-                    : await EvaluateWinningNifCompatibilityAsync(recordToMatch, subjectNifRel),
+                SourceNifCompatible = sourceCompat,
+                OriginNifCompatible = originCompat,
+                WinnerNifCompatible = winnerCompat,
+                CompatProbeNotes = failedProbes.Count > 0
+                    ? ComposeCompatProbeContext(recordToMatch, subjectFormKey, failedProbes)
+                    : null,
             };
 
             decision = FaceGenLadder.Classify(inputs);
@@ -3242,7 +3265,8 @@ public class Patcher : OptionalUIModule
     /// load-order-winning copy of the mesh — extracting when the winner is BSA-resident — and
     /// grades it against the record. The loose-only path it replaces returned NotEvaluated for
     /// BSA-packed winners, which <c>?? true</c> then accepted unprobed (seam fixed 2026-07-30).</summary>
-    private async Task<bool?> EvaluateWinningNifCompatibilityAsync(INpcGetter recordToMatch, string nifRelPath)
+    private async Task<(bool? Compatible, string? Mismatch)> EvaluateWinningNifCompatibilityAsync(
+        INpcGetter recordToMatch, string nifRelPath)
     {
         string tempDir = Path.Combine(Path.GetTempPath(), "NPC2_FaceGenCompat");
         string? materialized = null;
@@ -3261,7 +3285,7 @@ public class Patcher : OptionalUIModule
         }
     }
 
-    private async Task<bool?> EvaluateNifCompatibilityAsync(
+    private async Task<(bool? Compatible, string? Mismatch)> EvaluateNifCompatibilityAsync(
         INpcGetter recordToMatch, string nifRelPath, ModSetting sourceMod)
     {
         string tempDir = Path.Combine(Path.GetTempPath(), "NPC2_FaceGenCompat");
@@ -3285,30 +3309,153 @@ public class Patcher : OptionalUIModule
     /// Does this mesh have a baked shape for every geometry-bearing head part the record resolves
     /// to? That reconciliation is what the engine performs when it applies the face tint, and its
     /// failure is the dark-face bug — so a borrowed mesh that fails it must not be used.
-    /// Null means "could not tell", which the ladder treats optimistically.
+    /// Null means "could not tell", which the ladder treats optimistically. On a mismatch,
+    /// <c>Mismatch</c> carries the evidence (record-needs vs mesh-bakes) for the detailed warning
+    /// log; null otherwise.
     /// </summary>
-    private bool? EvaluateNifCompatibility(INpcGetter recordToMatch, string? nifPath)
+    private (bool? Compatible, string? Mismatch) EvaluateNifCompatibility(INpcGetter recordToMatch, string? nifPath)
     {
-        if (string.IsNullOrEmpty(nifPath) || !File.Exists(nifPath)) return null;
+        if (string.IsNullOrEmpty(nifPath) || !File.Exists(nifPath)) return (null, null);
 
         var linkCache = _environmentStateProvider.LinkCache;
-        if (linkCache == null) return null;
+        if (linkCache == null) return (null, null);
 
         try
         {
             var analyzer = _faceGenConsistency.Value;
-            if (analyzer == null) return null;
+            if (analyzer == null) return (null, null);
 
             var analysis = analyzer.Analyze(
                 recordToMatch,
                 fk => linkCache.TryResolve<IHeadPartGetter>(fk, out var hp) ? hp : null,
                 fk => linkCache.TryResolve<IRaceGetter>(fk, out var r) ? r : null,
                 nifPath);
-            return !analysis.HasMismatch;
+            return analysis.HasMismatch
+                ? (false, DescribeMismatch(analysis, WinningPluginTag))
+                : (true, null);
         }
         catch
         {
-            return null; // a malformed NIF must not abort a patch run
+            return (null, null); // a malformed NIF must not abort a patch run
+        }
+
+        // Names the plugin whose override currently WINS a head part, when that is not the
+        // plugin that defined it — the "which plugin is overwriting" half of the evidence.
+        string? WinningPluginTag(FormKey fk)
+        {
+            try
+            {
+                var winner = linkCache.ResolveAllContexts<IHeadPart, IHeadPartGetter>(fk)
+                    .FirstOrDefault()?.ModKey;
+                return winner != null && winner.Value != fk.ModKey
+                    ? winner.Value.FileName.ToString()
+                    : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
+    /// <summary>The evidence half of a failed probe, for the detailed warning log: which head
+    /// parts the record resolves that the mesh has no baked shape for (with the winning plugin
+    /// named when an override, not the defining plugin, currently supplies the part), which baked
+    /// shapes the mesh carries that match no resolved part, and any record links that resolve
+    /// nowhere. Pure over the analysis; <paramref name="winningPluginName"/> supplies the
+    /// override-aware tag (null tags nothing).</summary>
+    private static string DescribeMismatch(
+        FaceGenConsistencyAnalyzer.Result analysis, Func<FormKey, string?> winningPluginName)
+    {
+        var parts = new List<string>();
+
+        if (analysis.MissingBakedShapes.Count > 0)
+        {
+            parts.Add("record needs (no baked shape in mesh): " + string.Join(", ",
+                analysis.MissingBakedShapes.Select(m =>
+                {
+                    string? winner = winningPluginName(m.FormKey);
+                    return $"'{m.EditorId}' ({m.FormKey}{(winner != null ? $", winning override: {winner}" : string.Empty)})";
+                })));
+        }
+
+        if (analysis.OrphanBakedShapes.Count > 0)
+        {
+            parts.Add("mesh bakes (no matching head part): " + string.Join(", ", analysis.OrphanBakedShapes));
+        }
+
+        if (analysis.UnresolvedHeadParts.Count > 0)
+        {
+            parts.Add("record links that resolve nowhere: " + string.Join(", ", analysis.UnresolvedHeadParts));
+        }
+
+        return string.Join("\n", parts);
+    }
+
+    /// <summary>
+    /// The shared context block above the per-probe evidence in the detailed warning log: which
+    /// record was graded, and the load-order override chains of the NPC record and its race —
+    /// naming exactly which plugins rewrite the head data out from under an origin-authored
+    /// pairing (RS Children overriding a child race is the measured case). Winner first.
+    /// </summary>
+    private string ComposeCompatProbeContext(
+        INpcGetter recordToMatch, FormKey subjectFormKey,
+        IReadOnlyList<(string Label, string? Mismatch)> failedProbes)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"graded record: '{recordToMatch.EditorID}' ({recordToMatch.FormKey})");
+
+        var npcChain = DescribeOverrideChain<INpc, INpcGetter>(subjectFormKey);
+        if (npcChain != null) sb.Append($"\nNPC record supplied by: {npcChain}");
+
+        if (!recordToMatch.Race.IsNull)
+        {
+            var linkCache = _environmentStateProvider.LinkCache;
+            string raceName = linkCache != null &&
+                              linkCache.TryResolve<IRaceGetter>(recordToMatch.Race.FormKey, out var race)
+                ? race.EditorID ?? "(no EditorID)"
+                : "(unresolved)";
+            sb.Append($"\nrace: '{raceName}' ({recordToMatch.Race.FormKey})");
+            var raceChain = DescribeOverrideChain<IRace, IRaceGetter>(recordToMatch.Race.FormKey);
+            if (raceChain != null) sb.Append($"; supplied by: {raceChain}");
+        }
+
+        foreach (var (label, mismatch) in failedProbes)
+        {
+            if (string.IsNullOrWhiteSpace(mismatch)) continue;
+            sb.Append($"\n{label}:");
+            foreach (var line in mismatch.Split('\n'))
+            {
+                sb.Append($"\n  {line.TrimEnd('\r')}");
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>Every plugin carrying a version of the record, winner first — "who is overwriting
+    /// whom" in one line. Null when the record resolves nowhere or the cache is unavailable.</summary>
+    private string? DescribeOverrideChain<TMajor, TMajorGetter>(FormKey fk)
+        where TMajor : class, IMajorRecordQueryable, TMajorGetter
+        where TMajorGetter : class, IMajorRecordQueryableGetter
+    {
+        try
+        {
+            var linkCache = _environmentStateProvider.LinkCache;
+            if (linkCache == null) return null;
+
+            var keys = linkCache.ResolveAllContexts<TMajor, TMajorGetter>(fk)
+                .Select(c => c.ModKey.FileName.ToString())
+                .ToList();
+            if (keys.Count == 0) return null;
+
+            if (keys.Count > 1) keys[0] += " (winner)";
+            keys[^1] += " (origin)";
+            return string.Join(", ", keys);
+        }
+        catch
+        {
+            return null;
         }
     }
 

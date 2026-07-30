@@ -130,6 +130,14 @@ public enum FaceGenSourceChoice
 /// <see cref="FaceGenLadderDecision.ModMeshFailedCompatCheck"/>, the same warn-don't-gate stance
 /// rows 4/5 take for the mirrored pairing.
 /// </param>
+/// <param name="CompatProbeNotes">
+/// The evidence behind any failed compatibility probe, composed by the Patcher for the detailed
+/// warning log: the graded record's identity, the override chains of the NPC record and its race
+/// (naming which plugins rewrite the head data), and each failed probe's record-needs versus
+/// mesh-bakes lists. Null when every probe passed or none ran. Rides
+/// <see cref="FaceGenLadderDecision.TechnicalSummary"/>; deliberately NOT written to the diag
+/// CSV, where multi-line evidence would bloat every row.
+/// </param>
 public sealed record FaceGenLadderInputs(
     string NpcIdentifier,
     FormKey TargetFormKey,
@@ -153,7 +161,8 @@ public sealed record FaceGenLadderInputs(
     FaceGenAssetPresence LegacyDonorDds,
     string ChainTrace = "",
     bool FlattenTemplateChain = false,
-    bool? SourceNifCompatible = null);
+    bool? SourceNifCompatible = null,
+    string? CompatProbeNotes = null);
 
 /// <summary>
 /// The ladder's verdict for one NPC. <see cref="LegacyAction"/> records what the pre-ladder
@@ -239,6 +248,27 @@ public sealed record FaceGenLadderDecision(
     /// </summary>
     public bool ModMeshFailedCompatCheck =>
         NifChoice == FaceGenSourceChoice.AppearanceMod && Inputs.SourceNifCompatible == false;
+
+    /// <summary>
+    /// The decision's full context as indented plain text, for the detailed warning log
+    /// (<see cref="NpcWarningReporter"/>): everything a maintainer would otherwise ask a user to
+    /// produce by re-running with the FaceGenLadder.csv trigger — identifiers, row, mode, the
+    /// planned action, each source's presence and compatibility verdict, and the chain trace.
+    /// </summary>
+    public string TechnicalSummary =>
+        $"row={(int)Row} ({Row}), mode={Inputs.Mode}, planned: {PlannedAction}\n" +
+        $"target={Inputs.TargetFormKey} donor={Inputs.DonorFormKey} subject={Inputs.SubjectFormKey} " +
+        $"chain={Inputs.ChainStatus}{(Inputs.FlattenTemplateChain ? " (flattened)" : string.Empty)}\n" +
+        $"selected mod '{Inputs.ModName}': record={(Inputs.SourceHasPluginRecord ? "yes" : "no")}, " +
+        $"nif={Inputs.SourceNif}, dds={Inputs.SourceDds}, meshCompat={Tri(Inputs.SourceNifCompatible)}\n" +
+        $"origin: record={(Inputs.OriginRecordExists ? "yes" : "no")}, nif={Inputs.OriginNif}, " +
+        $"dds={Inputs.OriginDds}, meshCompat={Tri(Inputs.OriginNifCompatible)}\n" +
+        $"winner: nif={(Inputs.WinnerNifExists ? $"yes ({Inputs.WinnerNifOwner})" : "no")}, " +
+        $"dds={(Inputs.WinnerDdsExists ? "yes" : "no")}, meshCompat={Tri(Inputs.WinnerNifCompatible)}" +
+        (string.IsNullOrWhiteSpace(Inputs.ChainTrace) ? string.Empty : $"\nchain trace: {Inputs.ChainTrace}") +
+        (string.IsNullOrWhiteSpace(Inputs.CompatProbeNotes) ? string.Empty : $"\n{Inputs.CompatProbeNotes}");
+
+    private static string Tri(bool? v) => v is null ? "NotEvaluated" : v.Value.ToString();
 }
 
 /// <summary>

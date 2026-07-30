@@ -18,8 +18,9 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 /// </summary>
 public class NpcWarningReporterTests
 {
-    private static (NpcWarningKind, string, string?) Entry(
-        NpcWarningKind kind, string npc, string? detail = null) => (kind, npc, detail);
+    private static (NpcWarningKind, string, string?, string?) Entry(
+        NpcWarningKind kind, string npc, string? detail = null, string? technical = null) =>
+        (kind, npc, detail, technical);
 
     private static string HeaderLine(NpcWarningKind kind) =>
         "WARNING: " + NpcWarningReporter.Header(kind);
@@ -103,6 +104,54 @@ public class NpcWarningReporterTests
 
         lines.Should().HaveCount(3); // spacer + header + one NPC
         lines[0].Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FormatDetailedLog_EmitsNothing_WhenThereAreNoEntries()
+    {
+        NpcWarningReporter.FormatDetailedLog([]).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FormatDetailedLog_GroupsByKind_WithHeaderNoteAndIndentedTechnicalDetail()
+    {
+        var lines = NpcWarningReporter.FormatDetailedLog(
+        [
+            Entry(NpcWarningKind.OriginMeshCompatibility, "Britte (0136B9:Skyrim.esm)",
+                technical: "row=4 (DdsOnlyNoRecord)\norigin: meshCompat=False"),
+        ]).ToList();
+
+        lines.Should().Contain("=== OriginMeshCompatibility ===");
+        lines.Should().Contain(NpcWarningReporter.Header(NpcWarningKind.OriginMeshCompatibility),
+            "the lay paragraph gives the technical reader the same context the run log gave");
+        lines.Should().Contain(NpcWarningReporter.TechnicalNote(NpcWarningKind.OriginMeshCompatibility));
+        lines.Should().Contain("--- Britte (0136B9:Skyrim.esm)");
+        lines.Should().Contain("    row=4 (DdsOnlyNoRecord)",
+            "multi-line technical detail is split and indented under the NPC");
+        lines.Should().Contain("    origin: meshCompat=False");
+    }
+
+    [Fact]
+    public void FormatDetailedLog_KeepsTheUserFacingDetail_OnTheNpcHeading()
+    {
+        var lines = NpcWarningReporter.FormatDetailedLog(
+        [
+            Entry(NpcWarningKind.TexturelessShapes, "Adrianne (013BA5:Skyrim.esm)",
+                detail: "hair.nif 'Hair' (missing: a.dds)",
+                technical: "mod='Some Mod' nif=C:/full/path/hair.nif"),
+        ]);
+
+        lines.Should().Contain("--- Adrianne (013BA5:Skyrim.esm): hair.nif 'Hair' (missing: a.dds)");
+    }
+
+    [Theory]
+    [InlineData(NpcWarningKind.OriginMeshCompatibility)]
+    [InlineData(NpcWarningKind.ModMeshCompatibility)]
+    [InlineData(NpcWarningKind.MissingFaceTint)]
+    [InlineData(NpcWarningKind.TexturelessShapes)]
+    public void TechnicalNotes_ExistForEveryKind(NpcWarningKind kind)
+    {
+        NpcWarningReporter.TechnicalNote(kind).Should().NotBeNullOrWhiteSpace();
     }
 
     [Theory]

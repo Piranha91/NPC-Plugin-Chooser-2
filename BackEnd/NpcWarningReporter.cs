@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.IO;
+using System.Text;
 
 namespace NPC_Plugin_Chooser_2.BackEnd;
 
@@ -37,15 +39,28 @@ public enum NpcWarningKind
 /// what it means. The four per-NPC summaries the Patcher already emits (skipped faces, inherited
 /// faces, flattened fallbacks, inert outfits) follow the same grouped end-of-run shape.</para>
 ///
+/// <para>The run log stays lay-readable; the TECHNICAL payload goes to a companion file
+/// (<see cref="DetailedLogPath"/>, written by <see cref="Flush"/> whenever any warning fired, and
+/// pointed at by the report's closing line) so a user with the wherewithal — or the maintainer
+/// they ask for help — can see per-NPC ladder context without re-running with diag triggers.</para>
+///
 /// <para>Static with a per-run <see cref="Reset"/>, like <see cref="FaceGenLadderDiag"/>: callers
 /// (AssetHandler's copy pipeline) record from background tasks, and the Patcher flushes once the
-/// task drain guarantees nothing is still recording. The formatting itself is a pure function
-/// (<see cref="FormatReport"/>) so tests can pin grouping and wording without touching the shared
-/// state that live patch runs (including ones running concurrently in other test classes) mutate.</para>
+/// task drain guarantees nothing is still recording. The formatting itself is pure
+/// (<see cref="FormatReport"/> / <see cref="FormatDetailedLog"/>) so tests can pin grouping and
+/// wording without touching the shared state that live patch runs (including ones running
+/// concurrently in other test classes) mutate.</para>
 /// </summary>
 public static class NpcWarningReporter
 {
-    private static readonly ConcurrentQueue<(NpcWarningKind Kind, string Npc, string? Detail)> _entries = new();
+    private static readonly ConcurrentQueue<(NpcWarningKind Kind, string Npc, string? Detail, string? TechnicalDetail)>
+        _entries = new();
+
+    /// <summary>The companion file holding the technical breakdown of the last run's warnings.
+    /// Next to the exe, like every other NPC2 log; overwritten per run, deleted when a run
+    /// produces no warnings so a stale file cannot describe a clean run.</summary>
+    public static string DetailedLogPath =>
+        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PatchWarnings.log");
 
     /// <summary>Clears accumulated warnings. Called at the start of a patch run.</summary>
     public static void Reset()
@@ -54,16 +69,20 @@ public static class NpcWarningReporter
     }
 
     /// <summary>Records one warning against one NPC. <paramref name="detail"/> is appended to the
-    /// NPC's line in the report; several details for the same NPC and kind are joined with "; "
-    /// (how the textureless report lists each affected shape once per NPC).</summary>
-    public static void Record(NpcWarningKind kind, string npcIdentifier, string? detail = null)
+    /// NPC's line in the run-log report; several details for the same NPC and kind are joined
+    /// with "; " (how the textureless report lists each affected shape once per NPC).
+    /// <paramref name="technicalDetail"/> goes only to the detailed log file — multi-line is
+    /// fine; it is indented under the NPC's heading there.</summary>
+    public static void Record(NpcWarningKind kind, string npcIdentifier, string? detail = null,
+        string? technicalDetail = null)
     {
-        _entries.Enqueue((kind, npcIdentifier, detail));
+        _entries.Enqueue((kind, npcIdentifier, detail, technicalDetail));
     }
 
-    /// <summary>Emits the grouped report and clears the collected warnings. Every line is forced
-    /// (survives the verbose filter) and non-error; the "WARNING: " lead on each group header is
-    /// what RunLogClassifier colours on.</summary>
+    /// <summary>Emits the grouped report, writes the detailed companion log when any warning
+    /// fired (deletes a stale one when none did), and clears the collected warnings. Every
+    /// run-log line is forced (survives the verbose filter) and non-error; the "WARNING: " lead
+    /// on each group header is what RunLogClassifier colours on.</summary>
     public static void Flush(Action<string, bool, bool> log)
     {
         var entries = _entries.ToList();
@@ -72,6 +91,21 @@ public static class NpcWarningReporter
         foreach (var line in FormatReport(entries))
         {
             log(line, false, true);
+        }
+
+        if (entries.Count == 0)
+        {
+            try { File.Delete(DetailedLogPath); } catch { /* best-effort; a stale file is cosmetic */ }
+            return;
+        }
+
+        // The pointer line only prints when the file really exists — a failed write must not
+        // send a user hunting for a log that is not there.
+        if (WriteDetailedLog(entries))
+        {
+            log(string.Empty, false, true);
+            log($"See the log at {DetailedLogPath} for a detailed breakdown of the above warnings.",
+                false, true);
         }
     }
 
@@ -108,39 +142,136 @@ public static class NpcWarningReporter
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 
+    /// <summary>The technical framing printed under each group heading in the detailed log:
+    /// what the check actually measured, and where to go for more.</summary>
+    public static string TechnicalNote(NpcWarningKind kind) => kind switch
+    {
+        NpcWarningKind.OriginMeshCompatibility or NpcWarningKind.ModMeshCompatibility =>
+            "The probe parses the candidate FaceGen NIF and compares its baked shape names " +
+            "against the head parts the shipping record resolves to (race chargen defaults " +
+            "included) — the reconciliation the engine performs when applying the face tint. " +
+            "Run Validate Output for the exact per-NPC head-part difference.",
+
+        NpcWarningKind.MissingFaceTint =>
+            "No facetint .dds was found at the subject's FaceGen path in the selected mod's " +
+            "folders or archives, the origin mod's, or the deployed load order.",
+
+        NpcWarningKind.TexturelessShapes =>
+            "Every texture slot of each listed shape failed to resolve in the selected mod's " +
+            "folders and archives, the game Data folder, and the vanilla archives. Paths are " +
+            "Data-relative.",
+
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+    };
+
     /// <summary>
-    /// Pure formatting: one block per <see cref="NpcWarningKind"/> that has entries, in enum
-    /// order — a blank spacer line, the "WARNING: "-prefixed <see cref="Header"/>, then one
-    /// "  - " line per NPC (alphabetical), with that NPC's details joined by "; ".
+    /// Pure formatting of the run-log report: one block per <see cref="NpcWarningKind"/> that has
+    /// entries, in enum order — a blank spacer line, the "WARNING: "-prefixed <see cref="Header"/>,
+    /// then one "  - " line per NPC (alphabetical), with that NPC's details joined by "; ".
     /// </summary>
     public static IReadOnlyList<string> FormatReport(
-        IReadOnlyCollection<(NpcWarningKind Kind, string Npc, string? Detail)> entries)
+        IReadOnlyCollection<(NpcWarningKind Kind, string Npc, string? Detail, string? TechnicalDetail)> entries)
     {
         var lines = new List<string>();
 
         foreach (var kind in Enum.GetValues<NpcWarningKind>())
         {
-            var byNpc = entries
-                .Where(e => e.Kind == kind)
-                .GroupBy(e => e.Npc, StringComparer.OrdinalIgnoreCase)
-                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var byNpc = GroupForKind(entries, kind);
             if (byNpc.Count == 0) continue;
 
             lines.Add(string.Empty);
             lines.Add("WARNING: " + Header(kind));
             foreach (var npc in byNpc)
             {
-                var details = npc
-                    .Select(e => e.Detail)
-                    .Where(d => !string.IsNullOrWhiteSpace(d))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                var details = Distinct(npc.Select(e => e.Detail));
                 lines.Add("  - " + npc.Key +
                           (details.Count > 0 ? ": " + string.Join("; ", details) : string.Empty));
             }
         }
 
         return lines;
+    }
+
+    /// <summary>
+    /// Pure formatting of the detailed companion log: per warning kind, the lay header for
+    /// context, the <see cref="TechnicalNote"/>, then each NPC with its technical detail
+    /// indented beneath it.
+    /// </summary>
+    public static IReadOnlyList<string> FormatDetailedLog(
+        IReadOnlyCollection<(NpcWarningKind Kind, string Npc, string? Detail, string? TechnicalDetail)> entries)
+    {
+        var lines = new List<string>();
+
+        foreach (var kind in Enum.GetValues<NpcWarningKind>())
+        {
+            var byNpc = GroupForKind(entries, kind);
+            if (byNpc.Count == 0) continue;
+
+            if (lines.Count > 0) lines.Add(string.Empty);
+            lines.Add($"=== {kind} ===");
+            lines.Add(Header(kind));
+            lines.Add(TechnicalNote(kind));
+
+            foreach (var npc in byNpc)
+            {
+                lines.Add(string.Empty);
+                var details = Distinct(npc.Select(e => e.Detail));
+                lines.Add("--- " + npc.Key +
+                          (details.Count > 0 ? ": " + string.Join("; ", details) : string.Empty));
+
+                foreach (var technical in Distinct(npc.Select(e => e.TechnicalDetail)))
+                {
+                    foreach (var techLine in technical.Split('\n'))
+                    {
+                        lines.Add("    " + techLine.TrimEnd('\r'));
+                    }
+                }
+            }
+        }
+
+        return lines;
+    }
+
+    private static List<IGrouping<string, (NpcWarningKind Kind, string Npc, string? Detail, string? TechnicalDetail)>>
+        GroupForKind(
+            IReadOnlyCollection<(NpcWarningKind Kind, string Npc, string? Detail, string? TechnicalDetail)> entries,
+            NpcWarningKind kind) =>
+        entries
+            .Where(e => e.Kind == kind)
+            .GroupBy(e => e.Npc, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static List<string> Distinct(IEnumerable<string?> values) =>
+        values
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    /// <summary>Writes the detailed log beside the exe. Returns false on failure — a diagnostic
+    /// must never take a patch run down with it, and the caller then skips the pointer line.</summary>
+    private static bool WriteDetailedLog(
+        IReadOnlyCollection<(NpcWarningKind Kind, string Npc, string? Detail, string? TechnicalDetail)> entries)
+    {
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("NPC2 patch warnings — detailed breakdown");
+            sb.AppendLine($"Generated {DateTime.Now:yyyy-MM-dd HH:mm:ss}. The run log holds the plain-language summary; " +
+                          "this file adds the per-NPC technical context behind it.");
+            sb.AppendLine();
+            foreach (var line in FormatDetailedLog(entries))
+            {
+                sb.AppendLine(line);
+            }
+
+            File.WriteAllText(DetailedLogPath, sb.ToString(), new UTF8Encoding(false));
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }
