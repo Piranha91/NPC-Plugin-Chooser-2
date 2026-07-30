@@ -7,7 +7,7 @@ on it rather than rediscover it.
 Anything in here has been verified against the code, not inferred. Line references are a starting
 point, not a contract.
 
-Last verified: 2026-07-29.
+Last verified: 2026-07-30.
 
 ---
 
@@ -138,35 +138,79 @@ Practical consequence to keep in mind when reading a bug report: an NPC with unt
 under an add-on mod is usually this, and the remedy is for the user to add the parent mod's folder to
 the same `ModSetting`.
 
-## 5. FaceGen ladder rows that no run has exercised
+## 5. Rows 4/5 take the origin mesh ungated; a race override defeats "compatible by construction"
 
-The ladder (`BackEnd/FaceGenLadder.cs`) is fully unit-tested, but two of its paths have never run
-against real data. Recorded here so they are not mistaken for proven.
+Found 2026-07-30 by the ladder-verification campaign (see the Resolved entry below), on real data.
 
-**Row 3 — mod ships a face tint, no mesh, and edits the record.** Zero instances in the reference
-load order, so the compatibility gate and the winner fallback are unproven outside unit tests. They
-are, however, *reachable*: a filesystem census on 2026-07-29 over 20,707 mod folders in 12 modlists
-(`C:\Games\Skyrim AE`, `C:\Games\Skyrim VR`, `S:\Dev\MO2`, `X:\Games\Skyrim Wabbajacks`) found 3,754
-mod/plugin/FormID combinations with a loose facetint `.dds` and no matching facegeom `.nif`. Treat
-that number as an upper bound — 93% of the hits are in mod folders that also ship a `.bsa`, where the
-mesh is most likely packed rather than absent. The 276 hits in mods with **no BSA at all** are the
-real candidates; the largest, all in `Tempus Maledictum 1_11`, are Teldryn Serious
-(`TSR_TeldrynSerious.esp`, 68), Darkend (`Darkend.esp`, 39), Hearthfire Extended
-(`HearthFireExtended.esp`, 27) and Strongholds - Mor Khazgur (22). LoreRim has exactly one:
-`katana.esp` `001724E6`. To exercise the branch, select one of those mods for one of its NPCs and
-run a patch; note that a mod which is also the NPC's *origin* will exercise the abort leg rather than
-the origin-forward leg.
+`FaceGenLadder.ResolveOriginFallback` (rows 4 and 5) takes the mod-of-origin's face mesh
+unconditionally whenever it exists, on the premise that the origin record — which the same branch
+forwards — and the origin mesh are compatible *by construction*. Row 3 gates the same mesh on
+`OriginNifCompatible`; rows 4/5 deliberately do not consult it, even though
+`Patcher.ComputeFaceGenDecisionAsync` computes it for them (the CSV shows it evaluated).
 
-**Face-swap destination mode** (`FaceGenDestinationMode.FaceSwap`, shared/guest appearances) has
-never been verified in game either. Unlike row 3 this needs no specimen hunt — it is selection-driven,
-so any install reproduces it by sharing one NPC's appearance with another.
+**The premise fails when a third mod overrides the subject's RACE.** The engine builds a face from
+the NPC's own head parts *plus the race's default head parts for unoccupied slots*
+(`FaceGenConsistencyAnalyzer` models exactly this), and the race link on a faithfully-forwarded
+vanilla record still resolves through the load order. Measured specimen (Tempus Maledictum 1_11,
+2026-07-30): FaceGen-only selection of RedBag's Rorikstead's tints for **Britte
+(`0136B9:Skyrim.esm`) and Sissel (`0136BA`)** with RS Children installed. The output record is a
+verified-faithful vanilla copy (esp dump: vanilla child race `02C65B`, vanilla head parts), but
+`02C65B` resolves to RS Children's override whose chargen head parts are the `0RCOChild*` set — so
+the engine reconciles RCO EditorIDs against the forwarded vanilla mesh's baked `ChildEyes`/`ChildMouth`
+shapes, fails, and renders the dark face. The ladder's own probe knew: both CSV rows carry
+`OriginNifCompatible=False`. `Validate Output` catches the result (FaceGen warning naming `NPC.esp`),
+so the failure is at least visible after the fact.
 
-**Step-by-step procedure for both, with the candidate mods and their FormIDs:**
-`docs/LadderVerification-Handoff-2026-07.md`. Delete that file once this entry can be deleted.
+*A fix has to decide:* whether rows 4/5 gate the origin mesh on `OriginNifCompatible ?? true`
+exactly as row 3 does, falling through to the (also-gated) winner and then to abort. For the Britte
+specimen both origin and winner fail the gate, so the outcome would be an abort-with-report —
+strictly better than silently shipping a known dark face. The abort text also needs a
+compat-specific sentence; the existing row-4 abort wording only covers "origin could not be read".
+Until then: a FaceGen-only selection for any NPC whose race is overridden with different head data
+(RS Children is the mass case) ships a dark face, and the Validate Output warning is the detection.
 
 ---
 
 ## Resolved
+
+**The FaceGen ladder's unexercised paths (old entry #5) — verified against real data 2026-07-30.**
+The face-swap destination and row 3's three legs were "proven only by unit tests"; a two-part
+campaign (procedure lived in `docs/LadderVerification-Handoff-2026-07.md`, now deleted) closed it:
+
+- **Face swap** (`FaceGenDestinationMode.FaceSwap`): Lydia (`0A2C8E:Skyrim.esm`) ← Mulush
+  (`0133A9`) from Ordinary People, record mode. CSV row `Mode=FaceSwap, Row=1`; both halves landed
+  at the *target's* path and nothing at the donor's; Validate Output clean; **in-game pass** (full
+  donor appearance, correct tint, no seam). Note for future docs: Lydia's base record is `0A2C8E` —
+  the `000A2C94` the old handoff quoted is her ref.
+- **Row 3, winner leg**, both flavors, in Tempus Maledictum 1_11 (a Skyrim VR list): 87 NPCs across
+  Teldryn Serious / Darkend / Skyrim on Skooma whose missing meshes are supplied by
+  `PGPatcher_Output`. Record mode → `WinnerInPlace` (tint copied, mesh left in place); SkyPatcher
+  mode → `Winner` (mesh copied to the surrogate's path — all 87 verified byte-identical to their
+  PGPatcher sources). The compatibility gate evaluated `True` on every one, and Validate Output's
+  independent mismatch detector raised zero findings on them. No VR spawn was performed: for
+  `WinnerInPlace` the shipped trio (TSR record + PGPatcher mesh + TSR loose tint) is byte-for-byte
+  what stock Tempus already renders in play, so the modlist itself is the in-game evidence.
+- **Row 3, abort leg**, both modes, same trio each time: Dead Dunmer (`067775`), Zedras (`067777`),
+  Little Ghost (`2466EC`) of `tsr_teldrynserious.esp`. The strongest form: a winner mesh *exists*
+  but its baked shapes are `00KLH_`-renamed, the gate rejected it (`WinnerNifCompatible=False`),
+  the forced end-of-run summary named all three, and the output contains no FaceGen, no token entry
+  and no record for them (the abort precedes any write). Validate Output independently derived the
+  same mismatch on the untouched load-order state — gate and validator agree.
+- **Row 3, origin leg (the affirmative case): no real-world specimen exists.** Measured 2026-07-30
+  across 9 modlists / ~25k mod folders (all four installs plus the live profile): every
+  tint-without-mesh candidate fails one requirement — quest mods' own NPCs have no external origin;
+  the vanilla-keyed strays (RedBag's Rorikstead, Men of Skyrim / True Sons / Women of Skyrim
+  Refined) ship no plugin record for those NPCs (→ row 4); Skyrim on Skooma has records but changed
+  head parts, so the gate correctly *rejected* the origin mesh (Jeremy `10D13E/3F/40` — the negative
+  half of the leg, proven live). Every ingredient of the affirmative branch is separately proven on
+  real data (origin BSA probe, compat evaluation, origin-copy execution via row 4); the conjunction
+  — a mod that edits the record, keeps geometry head parts effectively vanilla, and ships the tint
+  without the mesh — appears not to occur in the wild. It stays pinned by
+  `Tests/Unit/FaceGenLadderTests.cs`; do not re-run the specimen hunt without new data.
+- Two side-findings: `FaceGenLadderDiag` recorded but **never flushed** on a normal run (only the
+  PatchVerify harness called Flush) — fixed 2026-07-30, `Patcher` now flushes it beside the two
+  provenance diags; and the campaign surfaced the rows-4/5 origin-gate defect recorded as entry #5
+  above (Britte/Sissel).
 
 **What `GiveEachNpcOwnCopy` produces when the selected mod ships no FaceGen at the terminus's path**
 (was the standing open question here). **Decided 2026-07-30:** it should read exactly like inheriting
