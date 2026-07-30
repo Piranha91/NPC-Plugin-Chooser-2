@@ -489,23 +489,19 @@ public class HeadPartWigConverter
     private List<IArmorAddonGetter> CollectWnamWigArmas(INpcGetter appearanceNpc, INpcGetter donorNpc,
         ModSetting appearanceModSetting, HashSet<string> modFolderPaths)
     {
-        var found = new List<IArmorAddonGetter>();
-        if (appearanceNpc.WornArmor.IsNull) return found;
+        if (appearanceNpc.WornArmor.IsNull) return new List<IArmorAddonGetter>();
         var wnam = ResolveFromModsOrWinner<IArmorGetter>(appearanceNpc.WornArmor,
             appearanceModSetting.CorrespondingModKeys, modFolderPaths);
-        if (wnam?.Armature == null) return found;
-        foreach (var armaLink in wnam.Armature)
-        {
-            if (armaLink == null || armaLink.IsNull) continue;
-            var arma = ResolveFromModsOrWinner<IArmorAddonGetter>(armaLink.FormKey.ToLink<IArmorAddonGetter>(),
-                appearanceModSetting.CorrespondingModKeys, modFolderPaths);
-            if (arma == null) continue;
-            if (_settings.IsWigArmature(appearanceModSetting, arma.FormKey, arma.EditorID, donorNpc.FormKey))
-            {
-                found.Add(arma);
-            }
-        }
-        return found;
+
+        // No race filter here on purpose — ApplyWnamConversion applies it afterwards, and it needs
+        // the unfiltered count to tell "this NPC's race isn't served" apart from "there is no wig".
+        return WigDetector.EffectiveWnamWigArmatures(
+            wnam,
+            link => ResolveFromModsOrWinner<IArmorAddonGetter>(link.FormKey.ToLink<IArmorAddonGetter>(),
+                appearanceModSetting.CorrespondingModKeys, modFolderPaths),
+            arma => _settings.IsWigArmature(appearanceModSetting, arma.FormKey, arma.EditorID,
+                donorNpc.FormKey))
+            .ToList();
     }
 
     /// <summary>

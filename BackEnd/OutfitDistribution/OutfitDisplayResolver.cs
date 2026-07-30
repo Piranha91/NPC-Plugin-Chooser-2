@@ -734,35 +734,24 @@ public class OutfitDisplayResolver
                 linkCache.TryResolve<IArmorGetter>(donor.WornArmor!.FormKey, out wnamGetter);
             }
 
-            if (wnamGetter?.Armature != null)
-            {
-                FormKey? raceKey = donor.Race.IsNull ? null : donor.Race.FormKey;
-                var effectiveArmaKeys = new List<string>();
-                foreach (var armaLink in wnamGetter.Armature)
-                {
-                    if (armaLink == null || armaLink.IsNull) continue;
-                    IArmorAddonGetter? arma = null;
-                    if (_recordHandler.TryGetRecordFromMods(armaLink, modSetting.CorrespondingModKeys, folders,
+            FormKey? raceKey = donor.Race.IsNull ? null : donor.Race.FormKey;
+            var effectiveArmaKeys = WigDetector.EffectiveWnamWigArmatures(
+                wnamGetter,
+                link => _recordHandler.TryGetRecordFromMods(link, modSetting.CorrespondingModKeys, folders,
                             RecordHandler.RecordLookupFallBack.Winner, out var armaRec) &&
-                        armaRec is IArmorAddonGetter scopedArma)
-                    {
-                        arma = scopedArma;
-                    }
-                    else
-                    {
-                        linkCache.TryResolve<IArmorAddonGetter>(armaLink.FormKey, out arma);
-                    }
-                    if (arma == null || !ArmaAppliesToRace(arma, raceKey)) continue;
-                    if (_settings.IsWigArmature(modSetting, armaLink.FormKey, arma.EditorID, donor.FormKey))
-                    {
-                        effectiveArmaKeys.Add(armaLink.FormKey.ToString());
-                    }
-                }
+                        armaRec is IArmorAddonGetter scopedArma
+                    ? scopedArma
+                    : linkCache.TryResolve<IArmorAddonGetter>(link.FormKey, out var armaWinner)
+                        ? armaWinner
+                        : null,
+                arma => _settings.IsWigArmature(modSetting, arma.FormKey, arma.EditorID, donor.FormKey),
+                arma => ArmaAppliesToRace(arma, raceKey))
+                .Select(arma => arma.FormKey.ToString())
+                .ToList();
 
-                if (effectiveArmaKeys.Count == 1 && DonorHasHairHeadPart(donor, modSetting, folders, linkCache))
-                {
-                    sb.Append("+wnamwig[" + WigHandlingMode.ConvertToHeadParts + ":" + effectiveArmaKeys[0] + "]");
-                }
+            if (effectiveArmaKeys.Count == 1 && DonorHasHairHeadPart(donor, modSetting, folders, linkCache))
+            {
+                sb.Append("+wnamwig[" + WigHandlingMode.ConvertToHeadParts + ":" + effectiveArmaKeys[0] + "]");
             }
         }
 

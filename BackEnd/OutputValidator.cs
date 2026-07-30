@@ -1232,24 +1232,24 @@ public class OutputValidator
                     : linkCache.TryResolve<IArmorGetter>(donor.WornArmor.FormKey, out var wnamWinner)
                         ? wnamWinner
                         : null;
-            if (wnam?.Armature != null)
+            // Shared walk. One deliberate alignment comes with it: this site used to test an
+            // armature link even when the record resolved NOWHERE, matching a FormKey against
+            // DetectedWigArmatures with a null EditorID. The converter this method exists to mirror
+            // skips unresolvable armatures and therefore removes no hair, so claiming otherwise made
+            // the validator disagree with the patcher on exactly the broken mods where it matters.
+            if (WigDetector.EffectiveWnamWigArmatures(
+                    wnam,
+                    link => _recordHandler.TryGetRecordFromMods(link, src.ModKeys, src.Folders,
+                                RecordHandler.RecordLookupFallBack.Origin, out var armaRec) &&
+                            armaRec is IArmorAddonGetter scopedArma
+                        ? scopedArma
+                        : linkCache.TryResolve<IArmorAddonGetter>(link.FormKey, out var armaWinner)
+                            ? armaWinner
+                            : null,
+                    arma => _settings.IsWigArmature(sourceMod, arma.FormKey, arma.EditorID, donor.FormKey))
+                .Any())
             {
-                foreach (var armaLink in wnam.Armature)
-                {
-                    if (armaLink == null || armaLink.IsNull) continue;
-                    string? armaEditorId =
-                        _recordHandler.TryGetRecordFromMods(armaLink, src.ModKeys, src.Folders,
-                            RecordHandler.RecordLookupFallBack.Origin, out var armaRec) &&
-                        armaRec is IArmorAddonGetter scopedArma
-                            ? scopedArma.EditorID
-                            : linkCache.TryResolve<IArmorAddonGetter>(armaLink.FormKey, out var armaWinner)
-                                ? armaWinner.EditorID
-                                : null;
-                    if (_settings.IsWigArmature(sourceMod, armaLink.FormKey, armaEditorId, donor.FormKey))
-                    {
-                        return true;
-                    }
-                }
+                return true;
             }
         }
 

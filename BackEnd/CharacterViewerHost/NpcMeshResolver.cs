@@ -778,16 +778,12 @@ public class NpcMeshResolver
         }
 
         var wnam = ResolveRecord<IArmorGetter>(npcGetter.WornArmor, linkCache, context);
-        if (wnam?.Armature == null) return EmptyShapeNameSet;
-        int applicableWigArmas = 0;
-        foreach (var armaLink in wnam.Armature)
-        {
-            if (armaLink == null || armaLink.IsNull) continue;
-            var arma = ResolveRecord<IArmorAddonGetter>(armaLink, linkCache, context);
-            if (arma == null || !IsArmatureForRace(arma, npcRaceKey)) continue;
-            if (_settings.IsWigArmature(modSetting, armaLink.FormKey, arma.EditorID, npcGetter.FormKey))
-                applicableWigArmas++;
-        }
+        int applicableWigArmas = WigDetector.EffectiveWnamWigArmatures(
+            wnam,
+            link => ResolveRecord<IArmorAddonGetter>(link, linkCache, context),
+            arma => _settings.IsWigArmature(modSetting, arma.FormKey, arma.EditorID, npcGetter.FormKey),
+            arma => IsArmatureForRace(arma, npcRaceKey))
+            .Count();
 
         // The converter declines zero or multiple applicable wig ARMAs — the
         // donor state is then preserved, so the preview must not hide anything.

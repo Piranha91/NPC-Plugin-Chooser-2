@@ -965,32 +965,22 @@ public class WigForwarder
     private List<IArmorAddonGetter> CollectWnamWigArmas(IArmorGetter wnamGetter, INpcGetter donorNpc,
         ModSetting appearanceModSetting, HashSet<string> modFolderPaths, bool hairSlotOnly)
     {
-        var found = new List<IArmorAddonGetter>();
-        if (wnamGetter.Armature == null) return found;
-        foreach (var armaLink in wnamGetter.Armature)
-        {
-            if (armaLink == null || armaLink.IsNull) continue;
-            var arma = ResolveFromModsOrWinner<IArmorAddonGetter>(
-                armaLink.FormKey.ToLink<IArmorAddonGetter>(),
-                appearanceModSetting.CorrespondingModKeys, modFolderPaths);
-            if (arma == null) continue;
-            if (!_settings.IsWigArmature(appearanceModSetting, arma.FormKey, arma.EditorID,
-                    donorNpc.FormKey))
-            {
-                continue;
-            }
-
-            if (hairSlotOnly &&
-                (arma.BodyTemplate?.FirstPersonFlags is not { } flags ||
-                 (flags & BipedObjectFlag.Hair) == 0))
-            {
-                continue;
-            }
-
-            found.Add(arma);
-        }
-
-        return found;
+        // The hair-slot narrowing tests BipedObjectFlag.Hair (31) alone, NOT WigDetector.HairSlots
+        // (31|41). That is deliberate and load-bearing: it has to give the same answer as
+        // BuildSkinDuplicate's transfersHairSlot, which is also Hair-only. Widening it here would
+        // let a LongHair-only piece drive hair removal down one path and not the other.
+        return WigDetector.EffectiveWnamWigArmatures(
+            wnamGetter,
+            link => ResolveFromModsOrWinner<IArmorAddonGetter>(
+                link.FormKey.ToLink<IArmorAddonGetter>(),
+                appearanceModSetting.CorrespondingModKeys, modFolderPaths),
+            arma => _settings.IsWigArmature(appearanceModSetting, arma.FormKey, arma.EditorID,
+                donorNpc.FormKey),
+            !hairSlotOnly
+                ? null
+                : arma => arma.BodyTemplate?.FirstPersonFlags is { } flags &&
+                          (flags & BipedObjectFlag.Hair) != 0)
+            .ToList();
     }
 
     /// <summary>Collects the Hair-type head parts of <paramref name="appearanceNpc"/> — the record

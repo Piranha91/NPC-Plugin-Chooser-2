@@ -28,6 +28,55 @@ public static class WigDetector
 {
     public const BipedObjectFlag HairSlots = BipedObjectFlag.Hair | BipedObjectFlag.LongHair;
 
+    /// <summary>
+    /// The ArmorAddons in <paramref name="wnam"/> that count as skin-carried wigs right now — the
+    /// persisted scan set as refined by the user's manual designations
+    /// (<see cref="Models.Settings.IsWigArmature"/>), which is why this cannot be answered from
+    /// <see cref="WigScanResult.WigArmatures"/> alone.
+    ///
+    /// <para>This walk had five near-identical copies (the patcher's forwarder and head-part
+    /// converter, the output validator, the 3D preview's hair-hiding, and the mugshot staleness
+    /// stamp). They resolved records three different ways and three of the five applied a race
+    /// filter the other two did not — no defect yet, but five places for the next change to miss
+    /// one. The differences that are real stay as parameters; the walk itself lives here.</para>
+    ///
+    /// <para>Deliberately NOT deduplicated: two callers gate on there being exactly ONE effective
+    /// wig ARMA, and collapsing a doubled armature entry would silently turn a declined conversion
+    /// into an applied one. A caller that wants distinct keys should say so itself.</para>
+    /// </summary>
+    /// <param name="resolveArma">
+    /// How to turn an armature link into a record. Callers differ on purpose: the patcher resolves
+    /// through the appearance mod's own plugins first, the preview through its render scopes, the
+    /// validator through the deployed load order. Return null to skip the entry.
+    /// </param>
+    /// <param name="isEffectiveWig">
+    /// Usually <c>arma =&gt; settings.IsWigArmature(modSetting, arma.FormKey, arma.EditorID, scopeKey)</c>.
+    /// Passed in rather than taken as (Settings, ModSetting, FormKey) because the scope key differs
+    /// between callers — see docs/KnownLimitations.md #1.
+    /// </param>
+    /// <param name="extraFilter">
+    /// Applied BEFORE the wig test, so a caller's race or biped-slot narrowing behaves exactly as it
+    /// did when it was written inline.
+    /// </param>
+    public static IEnumerable<IArmorAddonGetter> EffectiveWnamWigArmatures(
+        IArmorGetter? wnam,
+        Func<IFormLinkGetter<IArmorAddonGetter>, IArmorAddonGetter?> resolveArma,
+        Func<IArmorAddonGetter, bool> isEffectiveWig,
+        Func<IArmorAddonGetter, bool>? extraFilter = null)
+    {
+        if (wnam?.Armature == null) yield break;
+
+        foreach (var armaLink in wnam.Armature)
+        {
+            if (armaLink == null || armaLink.IsNull) continue;
+            var arma = resolveArma(armaLink);
+            if (arma == null) continue;
+            if (extraFilter != null && !extraFilter(arma)) continue;
+            if (!isEffectiveWig(arma)) continue;
+            yield return arma;
+        }
+    }
+
     /// <summary>Detection result. Wigs and antlers are classified independently
     /// (see <see cref="Models.WigHandlingMode"/> / <see cref="Models.AntlerHandlingMode"/>).
     /// Wigs come from two sources: a wig ARMO in an outfit (<see cref="Wigs"/>)
