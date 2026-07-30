@@ -23,24 +23,45 @@ stored against one key and read against another.
 
 Invisible under the default `ManualWigBlockScope = AllNpcs`, where the key is ignored entirely.
 
-*A fix has to decide:* which key is canonical — and then migrate existing `SpecificNpc`
-designations, because changing the key silently invalidates the ones users already made.
+**Which key is canonical is now settled — the DONOR's — and no migration is needed.** Traced
+2026-07-30: the UI stores a designation under the key `VM_InternalMugshotPreview.PopulateWigSelector`
+was called with, which is the preview's loaded `formKey`, i.e. the appearance donor (the same call
+site notes that `targetNpcFormKey` "differs from formKey for guest appearances"), and
+`GetWigArmatureCandidates` enumerates the offered rows from that same key. The patcher then reads
+back under `donorNpc.FormKey`. So the write side and the patcher already agree; the ONLY divergent
+reader is `NpcMeshResolver.ComputeWigHideHeadShapeNames`, whose `npcGetter` arrives via
+`ResolveAppearanceNpcKey` and is therefore the terminus for a templated NPC.
 
-## 2. The effective-WNAM-wig walk is duplicated in five places
+*The fix* is therefore one-sided and cheap: thread the original donor key into
+`ComputeWigHideHeadShapeNames` and pass it to `IsWigArmature` instead of `npcGetter.FormKey`. Nothing
+stored changes, so the migration the previous version of this entry warned about does not apply — it
+assumed the write side might be the terminus, and it is not.
 
-The same shape — walk a WornArmor's `Armature`, resolve each ARMA, keep the ones
-`Settings.IsWigArmature` accepts — appears in `WigForwarder.CollectWnamWigArmas`,
-`HeadPartWigConverter.CollectWnamWigArmas`, `OutputValidator` (~`:1197`), `NpcMeshResolver` (~`:777`)
-and `OutfitDisplayResolver` (~`:647`). They use three different record-resolution mechanisms
-(`ResolveFromModsOrWinner`, `ResolveRecord`, `TryGetRecordFromMods`) and three of the five add a
-race filter the forwarder does not.
+## 2. RESOLVED — the effective-WNAM-wig walk is now one function
 
-Not currently causing a defect — but five copies of a predicate is five places for the next change
-to miss one.
+Was: the same walk (iterate a WornArmor's `Armature`, resolve each ARMA, keep the ones
+`Settings.IsWigArmature` accepts) written out five times, across three different record-resolution
+mechanisms, with three of the five applying a race filter the other two did not.
 
-*A fix has to decide:* the extractable core is an iteration helper with the resolver and the
-predicate injected, e.g. `WigDetector.EffectiveWnamWigArmatures(wnam, resolveArma, isEffectiveWig,
-extraFilter)`. Worth doing on its own, not folded into a behavioural change.
+Consolidated 2026-07-30 into `WigDetector.EffectiveWnamWigArmatures(wnam, resolveArma,
+isEffectiveWig, extraFilter)`. The differences that were real stay as parameters: each caller injects
+its own resolver (mod plugins first / render scopes / deployed load order), its own scope key, and its
+own optional narrowing. Two properties are load-bearing and pinned by
+`Tests/Unit/WigDetectorWnamWalkTests.cs`: the walk does **not** deduplicate (two callers act only when
+there is exactly ONE effective wig ARMA, so collapsing a doubled armature entry would turn a declined
+conversion into an applied one), and `extraFilter` runs **before** the wig test (so a manual
+designation cannot resurrect an armature the NPC's race is not served by).
+
+One deliberate behaviour change came with it: `OutputValidator.WigForwardingRemovesHair` used to test
+an armature link whose record resolved NOWHERE, matching a FormKey against `DetectedWigArmatures` with
+a null EditorID. The converter it exists to mirror skips unresolvable armatures and so removes no
+hair, meaning the validator disagreed with the patcher on exactly the broken mods where it matters.
+It now skips them too.
+
+`WigForwarder`'s hair-slot narrowing still tests `BipedObjectFlag.Hair` (31) alone rather than
+`WigDetector.HairSlots` (31|41), and must keep doing so: it has to agree with `BuildSkinDuplicate`'s
+`transfersHairSlot`, which is also Hair-only. Widening one without the other lets a LongHair-only
+piece drive hair removal down one path and not the other.
 
 ## 3. `StripWigsFromForwardedOutfit` reads the raw donor outfit
 
@@ -76,10 +97,15 @@ the user's direction: single missing textures are near-universal and harmless (a
 subsurface map is the stock example), while a shape with no resolvable texture at all renders
 untextured and is worth acting on. Deduplicated by (mod, NIF, shape).
 
-*A fix has to decide:* whether cross-mod asset resolution is permitted at all, and if so in what
-order (the mod's own folders must keep winning) and how the borrowed file is attributed in
-`AssetProvenance.csv`. It also has to decide what happens when the sibling mod is not installed —
-the warning is the correct outcome there, so any fix has to keep it for that case.
+**This is intended behaviour, not a pending fix** (user's decision, 2026-07-30). Linking a mod to the
+assets it depends on is the user's job. Automating it would mean guessing that whichever installed
+mod happens to supply a file at that path is the one the appearance mod meant — and a wrong guess
+silently paints an NPC with another mod's textures, which is worse than the honest gap. So the
+warning IS the feature here; do not "fix" this by broadening resolution.
+
+Practical consequence to keep in mind when reading a bug report: an NPC with untextured hair or eyes
+under an add-on mod is usually this, and the remedy is for the user to add the parent mod's folder to
+the same `ModSetting`.
 
 ## 5. FaceGen ladder rows that no run has exercised
 
@@ -104,23 +130,30 @@ the origin-forward leg.
 never been verified in game either. Unlike row 3 this needs no specimen hunt — it is selection-driven,
 so any install reproduces it by sharing one NPC's appearance with another.
 
----
-
-## Open question, not a limitation
-
-**What should `GiveEachNpcOwnCopy` produce when the selected mod ships no FaceGen at the terminus's
-path?** The record and mesh then come from the pre-patch load-order winner of the terminus rather
-than from the chosen mod. The template matrix sidesteps this by giving every fixture both FaceGen
-halves (`TemplateFixtureBuilder.WriteFaceGen`), so no test encodes an expectation — deliberately, so
-that whatever the code currently emits does not silently become the spec. Decide the correct
-behaviour before writing an assertion for it.
-
-`Tests/Unit/FaceGenLadderTests.cs` (the "Template flattening" section) is where a decided
-expectation would most cheaply land — pure `Classify` inputs, no fixture I/O.
+**Step-by-step procedure for both, with the candidate mods and their FormIDs:**
+`docs/LadderVerification-Handoff-2026-07.md`. Delete that file once this entry can be deleted.
 
 ---
 
 ## Resolved
+
+**What `GiveEachNpcOwnCopy` produces when the selected mod ships no FaceGen at the terminus's path**
+(was the standing open question here). **Decided 2026-07-30:** it should read exactly like inheriting
+from a template that has no selection of its own — the NPC keeps the face it would have had, and the
+user is TOLD their choice could not be delivered.
+
+The classification already produced the right face: with nothing from the mod and nothing from the
+origin, the ladder copies the terminus's load-order-winning FaceGen onto the NPC's own path, which in
+game is the face it already had. What was missing was saying so. Under `InheritFromTemplate` the
+equivalent case gets a forced end-of-run report naming every NPC
+(`Patcher.ReportInheritedFaceNpcs`); under `GiveEachNpcOwnCopy` it was a verbose-only line, a
+difference the user had no way to predict. `FaceGenLadderDecision.FlattenedFaceCameFromElsewhere` now
+drives a matching `Patcher.ReportFlattenedFallbackNpcs`.
+
+It requires the mod to have supplied **neither** half. A tint-only mod (row 3/4) really is applying
+the user's choice to the face — only the geometry is borrowed — so reporting that as undeliverable
+would be false and would bury the real cases. Pinned by the four `Flatten_*` / `*FlattenedFallback*`
+tests in `Tests/Unit/FaceGenLadderTests.cs`.
 
 **Record mode + Inherit half-applied a Traits-templated NPC and dark-faced its terminus** (measured
 in game 2026-07-28, fixed the same day). Specimen `006E5C:Dawnguard.esm`, Traits-templated to

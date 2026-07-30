@@ -540,6 +540,85 @@ public class FaceGenLadderTests
         flattened.DdsChoice.Should().Be(FaceGenSourceChoice.Origin, "the mod ships no tint of its own");
     }
 
+    // The open question this section used to leave deliberately unasserted — "what should own-copy
+    // produce when the selected mod ships no FaceGen at the terminus's path?" — was DECIDED
+    // 2026-07-30: it should read exactly like inheriting from a template that has no selection of
+    // its own, i.e. the NPC keeps the face it would have had and the user is TOLD the choice could
+    // not be delivered. The classification already produced the right face; what was missing was
+    // saying so outside verbose mode, which is what FlattenedFaceCameFromElsewhere drives.
+
+    [Fact]
+    public void Flatten_ModSuppliesNeitherHalf_IsReportedAsUndeliverable()
+    {
+        // Row 5 under a flatten: nothing from the mod, nothing from the origin, so the terminus's
+        // winning face is copied onto the NPC's own path. In game that is the face it already had.
+        var d = FaceGenLadder.Classify(Inputs(
+            chain: FaceGenChainStatus.Resolved,
+            subject: Terminus,
+            flatten: true,
+            sourceNif: FaceGenAssetPresence.NotFound,
+            sourceDds: FaceGenAssetPresence.NotFound,
+            hasPluginRecord: false,
+            originNif: FaceGenAssetPresence.NotFound,
+            originDds: FaceGenAssetPresence.NotFound,
+            originRecordExists: true));
+
+        d.FlattenedFaceCameFromElsewhere.Should().BeTrue(
+            "the user's selection reached neither half of the face, which is the same disappointment " +
+            "as inheriting from a template with no selection — and earns the same forced report");
+    }
+
+    [Fact]
+    public void Flatten_ModSuppliesTheTint_IsNotReportedAsUndeliverable()
+    {
+        // Row 3/4: the mod's tint IS on the face and only the geometry is borrowed. Calling that
+        // "could not be applied" would be false, and would bury the real cases in noise.
+        var d = FaceGenLadder.Classify(Inputs(
+            chain: FaceGenChainStatus.Resolved,
+            subject: Terminus,
+            flatten: true,
+            sourceNif: FaceGenAssetPresence.NotFound,
+            sourceDds: FaceGenAssetPresence.LooseFile,
+            hasPluginRecord: false,
+            originNif: FaceGenAssetPresence.LooseFile,
+            originRecordExists: true));
+
+        d.DdsChoice.Should().Be(FaceGenSourceChoice.AppearanceMod);
+        d.FlattenedFaceCameFromElsewhere.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Inherit_IsNotAlsoReportedAsAFlattenedFallback()
+    {
+        // The two reports must not both fire for one NPC: inheriting is its own outcome, and
+        // FlattenedFaceCameFromElsewhere is specifically about a flatten that had nothing to carry.
+        var d = FaceGenLadder.Classify(Inputs(
+            chain: FaceGenChainStatus.Resolved,
+            subject: Terminus,
+            sourceNif: FaceGenAssetPresence.NotFound,
+            sourceDds: FaceGenAssetPresence.NotFound));
+
+        d.InheritedFaceLeftToTemplate.Should().BeTrue();
+        d.FlattenedFaceCameFromElsewhere.Should().BeFalse();
+    }
+
+    [Fact]
+    public void UntemplatedNpc_IsNeverAFlattenedFallback()
+    {
+        // The mode is global. An NPC with no chain to flatten must not be swept into the report just
+        // because the setting is on and its mesh came from the winner.
+        var d = FaceGenLadder.Classify(Inputs(
+            flatten: true,
+            sourceNif: FaceGenAssetPresence.NotFound,
+            sourceDds: FaceGenAssetPresence.NotFound,
+            hasPluginRecord: false,
+            originNif: FaceGenAssetPresence.NotFound,
+            originDds: FaceGenAssetPresence.NotFound,
+            originRecordExists: true));
+
+        d.FlattenedFaceCameFromElsewhere.Should().BeFalse();
+    }
+
     [Fact]
     public void Flatten_UntemplatedNpc_KeepsTheInPlaceShortcut()
     {

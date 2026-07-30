@@ -181,6 +181,28 @@ public sealed record FaceGenLadderDecision(
     /// <c>Patcher.ReportInheritedFaceNpcs</c> rather than passing silently: the user picked a mod
     /// for this NPC and it could not reach it.</summary>
     public bool InheritedFaceLeftToTemplate => FaceGenLadder.KeepsInheritedFace(Inputs);
+
+    /// <summary>
+    /// True when this NPC's Traits chain WAS flattened but the selected mod supplied neither half
+    /// of the face, so what lands on its own record came from the mod of origin or from the
+    /// load-order winner instead.
+    ///
+    /// <para>The user's selection is as undeliverable here as it is under
+    /// <see cref="InheritedFaceLeftToTemplate"/> — the NPC ends up wearing the face it would have
+    /// worn anyway — so it earns the same forced end-of-run naming rather than a verbose-only line
+    /// (<c>Patcher.ReportFlattenedFallbackNpcs</c>). Settled 2026-07-30: own-copy with nothing to
+    /// copy should read exactly like inheriting from a template that has no selection of its own.</para>
+    ///
+    /// <para>Requires BOTH halves to come from elsewhere. A tint-only mod (row 3/4) really is
+    /// applying the user's choice to the face — only the geometry is borrowed — and reporting that
+    /// as undeliverable would be wrong.</para>
+    /// </summary>
+    public bool FlattenedFaceCameFromElsewhere =>
+        Inputs.FlattenTemplateChain
+        && Inputs.ChainStatus == FaceGenChainStatus.Resolved
+        && !Abort
+        && NifChoice != FaceGenSourceChoice.AppearanceMod
+        && DdsChoice != FaceGenSourceChoice.AppearanceMod;
 }
 
 /// <summary>

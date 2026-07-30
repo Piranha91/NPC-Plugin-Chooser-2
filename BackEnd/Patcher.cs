@@ -76,6 +76,15 @@ public class Patcher : OptionalUIModule
     private readonly List<(string Npc, string Mod, string Template, string? TemplateSelection)>
         _inheritedFaceNpcs = new();
 
+    /// <summary>NPCs whose Traits chain WAS flattened this run, but for whom the chosen mod supplied
+    /// neither half of the face, so the flattened record carries the origin's or the load-order
+    /// winner's face instead (see <see cref="FaceGenLadderDecision.FlattenedFaceCameFromElsewhere"/>).
+    /// The selection is as undeliverable as in <see cref="_inheritedFaceNpcs"/> and gets the same
+    /// forced naming — the two cases used to be reported very differently for no reason the user
+    /// could see.</summary>
+    private readonly List<(string Npc, string Mod, string Template, string Source)>
+        _flattenedFallbackNpcs = new();
+
     private string _currentRunOutputAssetPath = string.Empty;
 
     // Plugin -> the mod entry that provides NPCs from it. Lets a resource-only plugin bundled
@@ -1035,6 +1044,17 @@ public class Patcher : OptionalUIModule
                                         SelectionForNpc(faceGenDecision.Inputs.SubjectFormKey)));
                                 }
 
+                                // Flattened, but with nothing of the mod's to flatten: same
+                                // undeliverable selection, so the same forced report.
+                                if (faceGenDecision.FlattenedFaceCameFromElsewhere)
+                                {
+                                    _flattenedFallbackNpcs.Add((npcIdentifier, selectedModDisplayName,
+                                        DescribeFormKey(faceGenDecision.Inputs.SubjectFormKey),
+                                        faceGenDecision.NifChoice == FaceGenSourceChoice.Origin
+                                            ? "the mod that originally added it"
+                                            : "another mod already installed"));
+                                }
+
                                 if (isFaceGenOnly)
                                 {
                                     AppendLog("    Source: Original Plugin (FaceGen-only Mod)");
@@ -1946,6 +1966,7 @@ public class Patcher : OptionalUIModule
 
                     ReportFaceGenSkippedNpcs();
                     ReportInheritedFaceNpcs();
+                    ReportFlattenedFallbackNpcs();
                     ReportInertOutfitNpcs();
 
                     AppendLog("All file operations finished.", false, true);
@@ -3029,6 +3050,35 @@ public class Patcher : OptionalUIModule
         }
 
         _inheritedFaceNpcs.Clear();
+    }
+
+    /// <summary>
+    /// Names the NPCs whose template chain was flattened but whose chosen mod had no face to put on
+    /// the flattened record, so it carries the origin's or the winner's instead.
+    ///
+    /// <para>Deliberately worded as "could not be applied" rather than as a failure: the patch is
+    /// correct and the NPC renders, it simply renders a face the user did not choose. That is the
+    /// same disappointment <see cref="ReportInheritedFaceNpcs"/> reports, and it used to be
+    /// verbose-only here while being forced there — a difference the user had no way to predict.</para>
+    /// </summary>
+    private void ReportFlattenedFallbackNpcs()
+    {
+        if (_flattenedFallbackNpcs.Count == 0) return;
+
+        AppendLog($"\n{_flattenedFallbackNpcs.Count} NPC(s) have no face of their own — they take it " +
+                  "from another NPC (the Traits template flag) — and although 'Templated NPCs' is set to " +
+                  "\"Give each NPC its own copy\", the mod picked for them supplies no face files for the " +
+                  "NPC they copy from, so there was nothing of that mod's to give them. They were patched " +
+                  "and will render, but with the face they would have had anyway. To change that, pick a " +
+                  "mod that covers the NPC named below, or select that NPC directly:", false, true);
+
+        foreach (var (npc, mod, template, source) in _flattenedFallbackNpcs)
+        {
+            AppendLog($"  - {npc} (you picked '{mod}'): copies its face from {template}, which " +
+                      $"'{mod}' does not cover, so the face came from {source}.", false, true);
+        }
+
+        _flattenedFallbackNpcs.Clear();
     }
 
     /// <summary>The mod chosen for an NPC, or null when it has no selection. Read straight off the
