@@ -1964,6 +1964,12 @@ public class Patcher : OptionalUIModule
                     // enabled (Settings checkbox or the LogRecordProvenance.txt dev trigger).
                     RecordProvenanceDiag.Flush();
 
+                    // Opt-in FaceGen-ladder report (FaceGenLadder.csv): which ladder row each NPC
+                    // hit and where each half of its face came from. No-op unless enabled (the
+                    // LogFaceGenLadder.txt dev trigger; PatchVerify harness runs flush a second
+                    // copy into their own report folder).
+                    FaceGenLadderDiag.Flush();
+
                     ReportFaceGenSkippedNpcs();
                     ReportInheritedFaceNpcs();
                     ReportFlattenedFallbackNpcs();
