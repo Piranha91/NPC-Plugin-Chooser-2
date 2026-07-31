@@ -143,7 +143,9 @@ public class Settings
     public RecordOverrideHandlingMode DefaultRecordOverrideHandlingMode { get; set; } = RecordOverrideHandlingMode.Ignore;
     public int DefaultMaxNestedIntervalDepth { get; set; } = 2;
     public bool DefaultIncludeAllOverrides { get; set; } = false;
-    public WigHandlingMode DefaultWigHandlingMode { get; set; } = WigHandlingMode.ForwardToSkin;
+    // Default None ("Leave As Is") — wig handling is opt-in per mod; the patcher
+    // does not restructure outfits/skins unless the user asks it to.
+    public WigHandlingMode DefaultWigHandlingMode { get; set; } = WigHandlingMode.None;
 
     // Whether ConvertToHeadParts re-tints a converted wig with the NPC's hair
     // color (see WigHairTintMode). Auto fixes the placeholder-tint mods without
@@ -153,10 +155,10 @@ public class Settings
 
 
     // Antlers are handled independently of hair-slot wigs (see AntlerHandlingMode).
-    // Default ForwardToSkin preserves the pre-split behavior (the old unified mode
-    // forwarded antlers to the skin), so existing installs are unchanged; an absent
-    // field in an old Settings.json deserializes to this default (no migration).
-    public AntlerHandlingMode DefaultAntlerHandlingMode { get; set; } = AntlerHandlingMode.ForwardToSkin;
+    // Default None ("Leave As Is") — like wigs, antler handling is opt-in per mod;
+    // an absent field in an old Settings.json deserializes to this default (no
+    // migration).
+    public AntlerHandlingMode DefaultAntlerHandlingMode { get; set; } = AntlerHandlingMode.None;
 
     // User-designated antler head parts from the 3D preview's "Set Antler Head
     // Parts" selector — for antler head parts whose names lack the "antler"
