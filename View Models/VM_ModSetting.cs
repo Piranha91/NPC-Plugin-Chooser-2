@@ -1526,11 +1526,18 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                     // load order, so a chain is only reported unfollowable when its target genuinely
                     // does not exist. Built lazily so mods with no templated NPCs never pay the
                     // second enumeration.
+                    //
+                    // Resource-only plugins are excluded, matching RecordHandler.ResolveNpcPreferringMod
+                    // (which the patcher and the validator both hop chains with). They are not
+                    // record-free — the main loop below counts their NPCs as record-backed — so
+                    // without this the menu could judge a chain by a record the patcher will never
+                    // read, and admit or reject an NPC the patcher then treats the other way.
                     var templateNpcLookup = new Lazy<Dictionary<FormKey, INpcGetter>>(() =>
                     {
                         var lookup = new Dictionary<FormKey, INpcGetter>();
                         foreach (var modKey in CorrespondingModKeys)
                         {
+                            if (ResourceOnlyModKeys.Contains(modKey)) continue;
                             var sourcePlugin = plugins.FirstOrDefault(p => p.ModKey == modKey);
                             if (sourcePlugin == null) continue;
                             foreach (var npc in sourcePlugin.Npcs)
