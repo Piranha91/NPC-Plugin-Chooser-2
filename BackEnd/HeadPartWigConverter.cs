@@ -521,7 +521,9 @@ public class HeadPartWigConverter
         List<IArmorAddonGetter> wnamWigArmas, FormKey faceGenKey)
     {
         var raceKey = appearanceNpc.Race.IsNull ? (FormKey?)null : appearanceNpc.Race.FormKey;
-        var applicable = wnamWigArmas.Where(a => IsArmatureForRace(a, raceKey)).ToList();
+        var armorRaceKey = ResolveArmorRaceKey(appearanceNpc,
+            appearanceModSetting.CorrespondingModKeys, modFolderPaths);
+        var applicable = wnamWigArmas.Where(a => IsArmatureForRace(a, raceKey, armorRaceKey)).ToList();
         if (applicable.Count == 0)
         {
             appendLog($"      Wig conversion: {npcIdentifier}'s skin-carried wig ArmorAddon(s) are not " +
@@ -758,7 +760,9 @@ public class HeadPartWigConverter
             // Multiple hair ARMAs are usually per-race variants; keep the ones
             // applicable to the race the output record will carry.
             var raceKey = appearanceNpc.Race.IsNull ? (FormKey?)null : appearanceNpc.Race.FormKey;
-            var raceMatched = hairArmas.Where(a => IsArmatureForRace(a, raceKey)).ToList();
+            var armorRaceKey = ResolveArmorRaceKey(appearanceNpc,
+                appearanceModSetting.CorrespondingModKeys, modFolderPaths);
+            var raceMatched = hairArmas.Where(a => IsArmatureForRace(a, raceKey, armorRaceKey)).ToList();
             if (raceMatched.Count > 0) hairArmas = raceMatched;
         }
 
@@ -834,13 +838,23 @@ public class HeadPartWigConverter
     /// <summary>Race applicability mirror of the renderer's ARMA filter: the
     /// addon's Race or AdditionalRaces contains the NPC's race; a null/empty
     /// Race is treated as universal.</summary>
-    private static bool IsArmatureForRace(IArmorAddonGetter arma, FormKey? npcRaceKey)
+    private static bool IsArmatureForRace(IArmorAddonGetter arma, FormKey? npcRaceKey, FormKey? armorRaceKey)
     {
         if (npcRaceKey == null) return true;
         if (arma.Race.IsNull && (arma.AdditionalRaces == null || arma.AdditionalRaces.Count == 0)) return true;
-        if (!arma.Race.IsNull && arma.Race.FormKey == npcRaceKey.Value) return true;
-        return arma.AdditionalRaces != null &&
-               arma.AdditionalRaces.Any(r => r != null && !r.IsNull && r.FormKey == npcRaceKey.Value);
+        return Auxilliary.ArmaNamesRace(arma, npcRaceKey, armorRaceKey);
+    }
+
+    /// <summary>The NPC race's ArmorRace (RNAM) — the key the engine matches
+    /// armatures against — resolved mod-scoped-then-winner like every other
+    /// record here. Null when absent or unresolvable; callers then compare the
+    /// raw race key only, i.e. the pre-fix behavior.</summary>
+    private FormKey? ResolveArmorRaceKey(INpcGetter npc, IEnumerable<ModKey> modKeys,
+        HashSet<string> modFolderPaths)
+    {
+        if (npc.Race.IsNull) return null;
+        return Auxilliary.GetArmorRaceKey(
+            ResolveFromModsOrWinner<IRaceGetter>(npc.Race, modKeys, modFolderPaths));
     }
 
     // ─────────────────────────────────────────────────────────────────────

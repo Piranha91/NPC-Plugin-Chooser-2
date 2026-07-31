@@ -735,6 +735,24 @@ public class OutfitDisplayResolver
             }
 
             FormKey? raceKey = donor.Race.IsNull ? null : donor.Race.FormKey;
+
+            // ArmorRace (RNAM) is what the engine matches armatures against —
+            // mod-scoped first, then the winner, mirroring the WNAM lookup above.
+            FormKey? armorRaceKey = null;
+            if (!donor.Race.IsNull)
+            {
+                IRaceGetter? raceGetter = null;
+                if (_recordHandler.TryGetRecordFromMods(donor.Race, modSetting.CorrespondingModKeys, folders,
+                        RecordHandler.RecordLookupFallBack.Winner, out var raceRec) && raceRec is IRaceGetter scopedRace)
+                {
+                    raceGetter = scopedRace;
+                }
+                else
+                {
+                    linkCache.TryResolve<IRaceGetter>(donor.Race.FormKey, out raceGetter);
+                }
+                armorRaceKey = Auxilliary.GetArmorRaceKey(raceGetter);
+            }
             var effectiveArmaKeys = WigDetector.EffectiveWnamWigArmatures(
                 wnamGetter,
                 link => _recordHandler.TryGetRecordFromMods(link, modSetting.CorrespondingModKeys, folders,
@@ -745,7 +763,7 @@ public class OutfitDisplayResolver
                         ? armaWinner
                         : null,
                 arma => _settings.IsWigArmature(modSetting, arma.FormKey, arma.EditorID, donor.FormKey),
-                arma => ArmaAppliesToRace(arma, raceKey))
+                arma => ArmaAppliesToRace(arma, raceKey, armorRaceKey))
                 .Select(arma => arma.FormKey.ToString())
                 .ToList();
 
@@ -778,13 +796,11 @@ public class OutfitDisplayResolver
 
     /// <summary>Race applicability mirror of the converter's ARMA filter (null
     /// race / no restrictions = universal).</summary>
-    private static bool ArmaAppliesToRace(IArmorAddonGetter arma, FormKey? npcRaceKey)
+    private static bool ArmaAppliesToRace(IArmorAddonGetter arma, FormKey? npcRaceKey, FormKey? armorRaceKey)
     {
         if (npcRaceKey == null) return true;
         if (arma.Race.IsNull && (arma.AdditionalRaces == null || arma.AdditionalRaces.Count == 0)) return true;
-        if (!arma.Race.IsNull && arma.Race.FormKey == npcRaceKey.Value) return true;
-        return arma.AdditionalRaces != null &&
-               arma.AdditionalRaces.Any(r => r != null && !r.IsNull && r.FormKey == npcRaceKey.Value);
+        return Auxilliary.ArmaNamesRace(arma, npcRaceKey, armorRaceKey);
     }
 
     /// <summary>Whether the donor has any Hair-type head part (mod-scoped

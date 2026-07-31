@@ -320,6 +320,12 @@ public static class WigDetector
                 var entries = new List<NpcWigSource>();
                 FormKey? npcRaceKey = npc.Race.IsNull ? null : npc.Race.FormKey;
 
+                // The engine matches armatures against the race's ArmorRace (RNAM),
+                // not the race itself — hoisted out of the race-skin check below so
+                // the ARMA filter can see it (custom-race followers point ArmorRace
+                // at a vanilla race and ship armatures naming only that race).
+                FormKey? armorRaceKey = null;
+
                 if (!npc.WornArmor.IsNull)
                 {
                     bool wnamIsRaceSkin = false;
@@ -328,6 +334,7 @@ public static class WigDetector
                         var race = localRaces.TryGetValue(npcRaceKey.Value, out var localRace)
                             ? localRace
                             : fallbackRaceResolver?.Invoke(npcRaceKey.Value);
+                        armorRaceKey = Auxilliary.GetArmorRaceKey(race);
                         wnamIsRaceSkin = race != null && !race.Skin.IsNull &&
                                          race.Skin.FormKey == npc.WornArmor.FormKey;
                     }
@@ -349,7 +356,7 @@ public static class WigDetector
                                     : fallbackArmaResolver?.Invoke(armaLink.FormKey);
                                 if (arma?.BodyTemplate == null) continue;
                                 if ((arma.BodyTemplate.FirstPersonFlags & HairSlots) == 0) continue;
-                                if (!IsArmatureForRace(arma, npcRaceKey)) continue;
+                                if (!IsArmatureForRace(arma, npcRaceKey, armorRaceKey)) continue;
                                 if (IsRaceDefaultSkinArma(arma, localArmors, localRaces,
                                         fallbackArmorResolver, fallbackRaceResolver))
                                 {
@@ -411,19 +418,10 @@ public static class WigDetector
     /// NPC's race is unknown (template-inherited) — an unfiltered candidate
     /// beats a wrongly-dropped one. Mirrors the renderer-side race filter the
     /// wig selector uses (NpcMeshResolver.IsArmatureForRace).</summary>
-    private static bool IsArmatureForRace(IArmorAddonGetter arma, FormKey? npcRaceKey)
+    private static bool IsArmatureForRace(IArmorAddonGetter arma, FormKey? npcRaceKey, FormKey? armorRaceKey)
     {
         if (npcRaceKey == null) return true;
-        if (arma.Race != null && !arma.Race.IsNull &&
-            arma.Race.FormKey.Equals(npcRaceKey.Value)) return true;
-        if (arma.AdditionalRaces != null)
-        {
-            foreach (var addRace in arma.AdditionalRaces)
-            {
-                if (!addRace.IsNull && addRace.FormKey.Equals(npcRaceKey.Value)) return true;
-            }
-        }
-        return false;
+        return Auxilliary.ArmaNamesRace(arma, npcRaceKey, armorRaceKey);
     }
 
     private static bool ContainsWigKeyword(string? s) =>

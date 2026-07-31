@@ -172,6 +172,9 @@ public static class AuditScanRunner
         // comparison runs per wearer. The NIF PARSE (phase 2) stays deduped.
         var jobsByPath = new Dictionary<string, NifJob>(StringComparer.OrdinalIgnoreCase);
         var raceNames = new Dictionary<FormKey, string>();
+        // ArmorRace (RNAM) per race — the key the engine matches armatures against.
+        // Cached alongside the names since both come off the same RACE resolve.
+        var armorRaces = new Dictionary<FormKey, FormKey?>();
         int npcCount = 0, outfitNpcCount = 0, armoVisits = 0;
 
         foreach (var npc in env.LoadOrder.PriorityOrder.Npc().WinningOverrides())
@@ -187,10 +190,12 @@ public static class AuditScanRunner
             FormKey raceKey = npc.Race.FormKey;
             if (!raceNames.TryGetValue(raceKey, out var raceName))
             {
-                raceName = linkCache.TryResolve<IRaceGetter>(raceKey, out var race)
-                    ? (race.EditorID ?? raceKey.ToString()) : raceKey.ToString();
+                bool resolved = linkCache.TryResolve<IRaceGetter>(raceKey, out var race);
+                raceName = resolved ? (race!.EditorID ?? raceKey.ToString()) : raceKey.ToString();
                 raceNames[raceKey] = raceName;
+                armorRaces[raceKey] = resolved ? Auxilliary.GetArmorRaceKey(race) : null;
             }
+            var armorRaceKey = armorRaces.TryGetValue(raceKey, out var ar) ? ar : null;
 
             var armorKeys = new HashSet<FormKey>();
             foreach (var item in outfit.Items)
@@ -205,7 +210,7 @@ public static class AuditScanRunner
                 {
                     if (!linkCache.TryResolve<IArmorAddonGetter>(armaLink.FormKey, out var arma)) continue;
                     armoVisits++;
-                    InspectArma(arma, armo, female, raceKey, raceName, linkCache,
+                    InspectArma(arma, armo, female, raceKey, armorRaceKey, raceName, linkCache,
                         jobsByPath, npc.FormKey, npcName, log);
                 }
             }
@@ -296,7 +301,7 @@ public static class AuditScanRunner
     /// one, so beast-mesh jobs get a beast-race specimen. The heavier TXST work
     /// runs once per NIF (job.Inspected).</summary>
     private static void InspectArma(IArmorAddonGetter arma, IArmorGetter armo, bool female,
-        FormKey npcRaceKey, string npcRaceName, ILinkCache linkCache,
+        FormKey npcRaceKey, FormKey? armorRaceKey, string npcRaceName, ILinkCache linkCache,
         Dictionary<string, NifJob> jobsByPath,
         FormKey exampleNpc, string exampleNpcName, StringBuilder log)
     {
@@ -314,7 +319,7 @@ public static class AuditScanRunner
 
         // Example selection (runs for every wearer, cheap). Prefer a wearer the
         // ARMA's race actually serves, then a named one.
-        bool servesRace = ArmaServesRace(arma, npcRaceKey);
+        bool servesRace = ArmaServesRace(arma, npcRaceKey, armorRaceKey);
         bool better =
             job.ExampleNpc.Length == 0
             || (!job.ExampleServesRace && servesRace)
@@ -489,16 +494,11 @@ public static class AuditScanRunner
     }
 
     /// <summary>Mirror of the resolver's IsArmatureForRace: does this ARMA's
-    /// Race / AdditionalRaces serve <paramref name="npcRaceKey"/>? Determines
-    /// whether an NPC of that race actually renders the ARMA's world model.</summary>
-    private static bool ArmaServesRace(IArmorAddonGetter arma, FormKey npcRaceKey)
-    {
-        if (!arma.Race.IsNull && arma.Race.FormKey.Equals(npcRaceKey)) return true;
-        if (arma.AdditionalRaces != null)
-            foreach (var r in arma.AdditionalRaces)
-                if (!r.IsNull && r.FormKey.Equals(npcRaceKey)) return true;
-        return false;
-    }
+    /// Race / AdditionalRaces serve <paramref name="npcRaceKey"/> (or the race's
+    /// ArmorRace, which is what the engine really matches)? Determines whether an
+    /// NPC of that race actually renders the ARMA's world model.</summary>
+    private static bool ArmaServesRace(IArmorAddonGetter arma, FormKey npcRaceKey, FormKey? armorRaceKey)
+        => Auxilliary.ArmaNamesRace(arma, npcRaceKey, armorRaceKey);
 
     private static string PrefixMeshes(string path)
         => path.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)

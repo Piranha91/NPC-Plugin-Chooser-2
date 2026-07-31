@@ -638,6 +638,61 @@ public class Auxilliary : IDisposable
         return npc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female);
     }
 
+    /// <summary>
+    /// The race key an ArmorAddon must name to be worn by an actor of
+    /// <paramref name="raceGetter"/> — RACE's ArmorRace (RNAM), or null when it
+    /// is unset or points back at the race itself.
+    /// <para>The engine matches ArmorAddons against the actor race's ArmorRace,
+    /// not against the actor's own race. Custom-race followers depend on this:
+    /// they set ArmorRace to a vanilla race so vanilla-targeted armatures apply.
+    /// Comparing the NPC's raw race key alone drops every armature such a mod
+    /// ships — body, hands and feet — leaving a disembodied FaceGen head (the
+    /// head comes from the FaceGeom NIF path and never goes through armature
+    /// resolution). Specimen: Chaconne Vilja SSE, whose AAEMNordViljaRace has
+    /// ArmorRace=NordRace and whose three armatures all name NordRace.</para>
+    /// </summary>
+    public static FormKey? GetArmorRaceKey(IRaceGetter? raceGetter)
+    {
+        if (raceGetter == null || raceGetter.ArmorRace.IsNull) return null;
+        var armorRace = raceGetter.ArmorRace.FormKey;
+        return armorRace.Equals(raceGetter.FormKey) ? null : armorRace;
+    }
+
+    /// <summary>
+    /// Does <paramref name="arma"/> name either race key in Race/AdditionalRaces?
+    /// <paramref name="armorRaceKey"/> is the ArmorRace indirection from
+    /// <see cref="GetArmorRaceKey"/> and may be null (no indirection, or the
+    /// race record couldn't be resolved — in which case this degrades to the
+    /// old raw-key comparison rather than guessing).
+    /// <para>Shared by every ARMA race filter in the app so they can't drift
+    /// apart: they feed rendering, wig detection and wig conversion, and a
+    /// disagreement there means one subsystem converts a wig another can't see.
+    /// Callers keep their own null-race / universal-ARMA guards — those differ
+    /// deliberately between the render path and the converter path.</para>
+    /// </summary>
+    public static bool ArmaNamesRace(IArmorAddonGetter arma, FormKey? npcRaceKey, FormKey? armorRaceKey)
+    {
+        if (arma.Race != null && !arma.Race.IsNull)
+        {
+            var armaRace = arma.Race.FormKey;
+            if (npcRaceKey.HasValue && armaRace.Equals(npcRaceKey.Value)) return true;
+            if (armorRaceKey.HasValue && armaRace.Equals(armorRaceKey.Value)) return true;
+        }
+
+        if (arma.AdditionalRaces != null)
+        {
+            foreach (var addRace in arma.AdditionalRaces)
+            {
+                if (addRace == null || addRace.IsNull) continue;
+                var addKey = addRace.FormKey;
+                if (npcRaceKey.HasValue && addKey.Equals(npcRaceKey.Value)) return true;
+                if (armorRaceKey.HasValue && addKey.Equals(armorRaceKey.Value)) return true;
+            }
+        }
+
+        return false;
+    }
+
     public static Gender GetGender(INpcGetter npc)
     {
         if (IsFemale(npc))

@@ -480,6 +480,7 @@ public class NpcMeshResolver
         LogVerbose("CharacterViewer: Resolving NPC " + npcName + " (" + npcFormKey + ")");
 
         FormKey? npcRaceKey = (npcGetter.Race != null && !npcGetter.Race.IsNull) ? npcGetter.Race.FormKey : null;
+        FormKey? armorRaceKey = ResolveArmorRaceKey(npcGetter, linkCache, context);
 
         var (armorGetter, armorSource) = ResolveWornArmor(npcGetter, linkCache, context, npcName);
 
@@ -499,10 +500,12 @@ public class NpcMeshResolver
                 var armaGetter = ResolveRecord<IArmorAddonGetter>(armaLink, linkCache, context);
                 if (armaGetter == null) continue;
                 if (armaGetter.BodyTemplate == null) continue;
-                if (!IsArmatureForRace(armaGetter, npcRaceKey))
+                if (!IsArmatureForRace(armaGetter, npcRaceKey, armorRaceKey))
                 {
                     LogVerbose("CharacterViewer: Skipping Armature " + armaLink.FormKey +
-                        " — race " + (npcRaceKey?.ToString() ?? "(none)") + " not in ARMA.Race/AdditionalRaces");
+                        " — race " + (npcRaceKey?.ToString() ?? "(none)") +
+                        " (ArmorRace " + (armorRaceKey?.ToString() ?? "(none)") + ")" +
+                        " not in ARMA.Race/AdditionalRaces");
                     continue;
                 }
 
@@ -624,7 +627,7 @@ public class NpcMeshResolver
         // so hiding the donor's baked hair shapes makes the preview depict the
         // output — and makes is/is-not-a-wig designations visibly change it.
         var wigHideNames = ComputeWigHideHeadShapeNames(npcGetter, modSetting, linkCache, context, npcRaceKey,
-            designationScopeKey);
+            armorRaceKey, designationScopeKey);
         if (wigHideNames.Count > 0)
         {
             var union = new HashSet<string>(hideHeadShapeNames, StringComparer.OrdinalIgnoreCase);
@@ -779,7 +782,7 @@ public class NpcMeshResolver
     /// <paramref name="npcGetter"/>'s own key, which is correct for an untemplated NPC.
     /// </param>
     private IReadOnlySet<string> ComputeWigHideHeadShapeNames(INpcGetter npcGetter, ModSetting? modSetting,
-        ILinkCache linkCache, NpcResolutionContext? context, FormKey? npcRaceKey,
+        ILinkCache linkCache, NpcResolutionContext? context, FormKey? npcRaceKey, FormKey? armorRaceKey,
         FormKey? designationScopeKey = null)
     {
         if (modSetting == null) return EmptyShapeNameSet;
@@ -805,7 +808,7 @@ public class NpcMeshResolver
             wnam,
             link => ResolveRecord<IArmorAddonGetter>(link, linkCache, context),
             arma => _settings.IsWigArmature(modSetting, arma.FormKey, arma.EditorID, scopeKey),
-            arma => IsArmatureForRace(arma, npcRaceKey))
+            arma => IsArmatureForRace(arma, npcRaceKey, armorRaceKey))
             .Count();
 
         // The converter declines zero or multiple applicable wig ARMAs — the
@@ -1078,6 +1081,7 @@ public class NpcMeshResolver
         if (wnam?.Armature == null) return result;
 
         FormKey? npcRaceKey = npc.Race.IsNull ? null : npc.Race.FormKey;
+        FormKey? armorRaceKey = ResolveArmorRaceKey(npc, linkCache, context);
         var sex = Auxilliary.IsFemale(npc) ? Sex.Female : Sex.Male;
         var seen = new HashSet<FormKey>();
         foreach (var armaLink in wnam.Armature)
@@ -1087,7 +1091,7 @@ public class NpcMeshResolver
             var arma = ResolveRecord<IArmorAddonGetter>(armaLink, linkCache, context);
             if (arma?.BodyTemplate == null || string.IsNullOrEmpty(arma.EditorID)) continue;
             if ((arma.BodyTemplate.FirstPersonFlags & WigDetector.HairSlots) == 0) continue;
-            if (!IsArmatureForRace(arma, npcRaceKey)) continue;
+            if (!IsArmatureForRace(arma, npcRaceKey, armorRaceKey)) continue;
 
             bool isAuto = modSetting.DetectedWigArmatures.Contains(armaLink.FormKey);
             bool isEffective = _settings.IsWigArmature(modSetting, armaLink.FormKey, arma.EditorID, npcFormKey);
@@ -1215,6 +1219,7 @@ public class NpcMeshResolver
 
         var sex = Auxilliary.IsFemale(npcGetter) ? Sex.Female : Sex.Male;
         FormKey? npcRaceKey = (npcGetter.Race != null && !npcGetter.Race.IsNull) ? npcGetter.Race.FormKey : null;
+        FormKey? armorRaceKey = ResolveArmorRaceKey(npcGetter, linkCache, context);
         string npcName = npcGetter.Name?.String ?? npcGetter.EditorID ?? npcFormKey.ToString();
 
         // Dedup by override Key (slot(s) + ARMA FormKey) so a piece reachable via
@@ -1240,7 +1245,7 @@ public class NpcMeshResolver
                               (forward == PieceForward.Outfit && includeDefaultOutfit);
                 if (!render) continue;
                 AppendArmorMeshOverrides(wigArmor, "WigForward(" + forward + "):" + wigArmor.FormKey,
-                    sex, npcRaceKey, linkCache, context,
+                    sex, npcRaceKey, armorRaceKey, linkCache, context,
                     includeBody: false, includeHeadgear: false,
                     hairCountsAsHeadgear: true, result, seenOverrideKeys,
                     isAntler ? WigPieceClass.Antler : WigPieceClass.Wig);
@@ -1300,7 +1305,7 @@ public class NpcMeshResolver
                 }
                 foreach (var (armor, source) in outfitArmors)
                 {
-                    AppendArmorMeshOverrides(armor, source, sex, npcRaceKey, linkCache, outfitContext,
+                    AppendArmorMeshOverrides(armor, source, sex, npcRaceKey, armorRaceKey, linkCache, outfitContext,
                         includeBody: includeDefaultOutfit, includeHeadgear: includeHeadgear,
                         hairCountsAsHeadgear: true, result, seenOverrideKeys);
                 }
@@ -1329,7 +1334,7 @@ public class NpcMeshResolver
                 var suppressAntlerArmas = (antlerMode == AntlerHandlingMode.Remove && modSetting != null)
                     ? modSetting.DetectedAntlerArmatures
                     : null;
-                AppendArmorMeshOverrides(wornArmor, wornSource, sex, npcRaceKey, linkCache, context,
+                AppendArmorMeshOverrides(wornArmor, wornSource, sex, npcRaceKey, armorRaceKey, linkCache, context,
                     includeBody: false, includeHeadgear: true,
                     hairCountsAsHeadgear: false, result, seenOverrideKeys,
                     suppressArmaKeys: suppressAntlerArmas);
@@ -1571,6 +1576,7 @@ public class NpcMeshResolver
     /// <paramref name="includeHeadgear"/> gate which classes are emitted. The Key
     /// combines slot(s) + ARMA FormKey so it's stable and unique per piece.</summary>
     private void AppendArmorMeshOverrides(IArmorGetter armor, string source, Sex sex, FormKey? npcRaceKey,
+        FormKey? armorRaceKey,
         ILinkCache linkCache, NpcResolutionContext? context, bool includeBody, bool includeHeadgear,
         bool hairCountsAsHeadgear, List<MeshOverride> result, HashSet<string> seenKeys,
         WigPieceClass wigPiece = WigPieceClass.None, IReadOnlySet<FormKey>? suppressArmaKeys = null)
@@ -1583,7 +1589,7 @@ public class NpcMeshResolver
             if (suppressArmaKeys != null && suppressArmaKeys.Contains(armaLink.FormKey)) continue;
             var arma = ResolveRecord<IArmorAddonGetter>(armaLink, linkCache, context);
             if (arma?.BodyTemplate == null) continue;
-            if (!IsArmatureForRace(arma, npcRaceKey)) continue;
+            if (!IsArmatureForRace(arma, npcRaceKey, armorRaceKey)) continue;
 
             int slots = (int)arma.BodyTemplate.FirstPersonFlags;
             if (slots == 0) continue;
@@ -2026,19 +2032,21 @@ public class NpcMeshResolver
         return (null, "(none)");
     }
 
-    private static bool IsArmatureForRace(IArmorAddonGetter armaGetter, FormKey? npcRaceKey)
+    private static bool IsArmatureForRace(IArmorAddonGetter armaGetter, FormKey? npcRaceKey, FormKey? armorRaceKey)
     {
         if (npcRaceKey == null) return true;
-        if (armaGetter.Race != null && !armaGetter.Race.IsNull &&
-            armaGetter.Race.FormKey.Equals(npcRaceKey.Value)) return true;
-        if (armaGetter.AdditionalRaces != null)
-        {
-            foreach (var addRace in armaGetter.AdditionalRaces)
-            {
-                if (!addRace.IsNull && addRace.FormKey.Equals(npcRaceKey.Value)) return true;
-            }
-        }
-        return false;
+        return Auxilliary.ArmaNamesRace(armaGetter, npcRaceKey, armorRaceKey);
+    }
+
+    /// <summary>The NPC race's ArmorRace (RNAM) — the key the engine actually
+    /// matches armatures against — resolved through the same mod-scoped chain as
+    /// the rest of this class so a mod overriding the race record wins here too.
+    /// Null when the NPC has no race, the race won't resolve, or ArmorRace adds
+    /// nothing; every caller then falls back to the raw race comparison.</summary>
+    private FormKey? ResolveArmorRaceKey(INpcGetter npcGetter, ILinkCache linkCache, NpcResolutionContext? context)
+    {
+        if (npcGetter.Race == null || npcGetter.Race.IsNull) return null;
+        return Auxilliary.GetArmorRaceKey(ResolveRecord<IRaceGetter>(npcGetter.Race, linkCache, context));
     }
 
     private static string? GetWorldModelPath(IArmorAddonGetter armaGetter, Sex sex)
