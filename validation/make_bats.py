@@ -24,11 +24,58 @@ MODS = r"S:\Skyrim NPC Selection\mods"
 
 
 # ---------------------------------------------------------------- load order indices
+UNRESOLVED = []
+_MOD_PLUGINS = None
+
+
+def mod_plugins():
+    """
+    Every plugin file sitting in a mod folder, by lower-cased file name. Built once by walking the
+    mods directory; os.scandir rather than glob because mod plugins have names like
+    "[Caenarvon] Cosplay Pack Gala.esp" and glob would read those brackets as a character class and
+    never find the file. First copy wins - only the ESL flag is read from it, which is a property of
+    the file itself.
+    """
+    global _MOD_PLUGINS
+    if _MOD_PLUGINS is None:
+        _MOD_PLUGINS = {}
+        for mod in os.scandir(MODS):
+            if not mod.is_dir():
+                continue
+            try:
+                for f in os.scandir(mod.path):
+                    if f.is_file() and f.name.lower().endswith((".esp", ".esm", ".esl")):
+                        _MOD_PLUGINS.setdefault(f.name.lower(), f.path)
+            except OSError:
+                pass
+    return _MOD_PLUGINS
+
+
+def plugin_path(name):
+    """
+    Where a plugin's file actually is. Only the base masters live in Data; MO2 keeps every managed
+    plugin in its own mod folder and merges them into Data through the VFS at launch. Looking in
+    Data alone would therefore read the header of the five masters and nothing else - and would then
+    treat an ESL-FLAGGED .esp in a mod folder as a normal plugin, giving it a slot it does not take
+    and shifting the computed prefix of every full plugin after it by one. (This profile has 27 such
+    plugins; the base masters sort above all of them, which is the only reason the specimens here
+    were unaffected.)
+    """
+    direct = os.path.join(DATA, name)
+    if os.path.exists(direct):
+        return direct
+    found = mod_plugins().get(name.lower())
+    if found:
+        return found
+    UNRESOLVED.append(name)
+    return None
+
+
 def is_esl(name):
     if name.lower().endswith(".esl"):
         return True
-    path = os.path.join(DATA, name)
-    if not os.path.exists(path):
+    path = plugin_path(name)
+    if path is None:
         return False
     try:
         with open(path, "rb") as f:
@@ -146,3 +193,8 @@ for folder, (name, title, entries) in RUNS.items():
 print(f"\n{written} spawn script(s) written. In console: bat a   /   bat b   /   bat c")
 print("load-order indices: " + ", ".join(
     f"{p}={INDEX.get(p.lower()):02X}" for p in ("Skyrim.esm", "Dawnguard.esm", "Dragonborn.esm")))
+if UNRESOLVED:
+    # Each of these was assumed non-ESL. If any of them IS ESL-flagged, every full plugin after it
+    # got a prefix one too high - sanity-check the indices above against the in-game load order.
+    print("\nWARNING: could not find these active plugins in Data or in a mod folder, so their ESL")
+    print("flag could not be read: " + ", ".join(sorted(set(UNRESOLVED))))

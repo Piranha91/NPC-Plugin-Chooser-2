@@ -4,9 +4,10 @@ Specimens were found by scanning the actual `NPC Test` profile (vanilla + DLC + 
 mods in `ModSettings`), not chosen by guesswork. What the scan found is as important as what it
 didn't — see **Coverage reality** at the bottom before planning screenshots.
 
-Each test is a drop-in `Settings.json`. All three inherit your live settings verbatim (mods folder,
-scan caches, mugshot config) and change only the NPC selection, the handling modes under test, and
-the output folder — so runs cannot overwrite each other or your normal output.
+Each test is one staged `Settings.json`, written by `run.py` over the live file (your own is
+snapshotted first — see below). All three inherit your live settings verbatim (mods folder, scan
+caches, mugshot config) and change only the NPC selection, the handling modes under test, and the
+output folder — so runs cannot overwrite each other or your normal output.
 
 ## How to run one
 
@@ -44,8 +45,13 @@ Valid combinations — each writes to its own output folder, so nothing is overw
 ```powershell
 dotnet test "Tests\NPC Plugin Chooser 2.Tests.csproj" --filter "FullyQualifiedName~ValidationChecker"
 ```
-It sweeps every run folder you produced and prints PASS/FAIL per specimen, per mode. Tests for runs
-you haven't done skip themselves with a note telling you which `run.py` line to use.
+It sweeps every run folder you produced and prints PASS/FAIL per specimen, per mode, reading the
+output plugin and (in SkyPatcher mode) the .ini. Tests for runs you haven't done skip themselves
+with a note telling you which `run.py` line to use.
+
+> A/B are self-contained: they check the specimen's own wig and hair in the output. C is not —
+> it checks that the *condition* it reports on is present, but not that NPC2 said anything. A green
+> C plus the log lines under Check 1 is the full pass.
 
 ## Spawn scripts
 
@@ -92,7 +98,7 @@ purely for your screenshots.)
 
 ---
 
-# Test A — §3, the flatten seam  (`SettingsA_flatten.json`)
+# Test A — §3, the flatten seam  (`run.py A skypatcher` / `A record`)
 
 **Modes:** `TemplateHandlingMode = GiveEachNpcOwnCopy`, `DefaultWigHandlingMode = ForwardToOutfit`,
 SkyPatcher mode (unchanged from live).
@@ -169,7 +175,7 @@ so a correct `NPC2Wig_..._HairMaleElder3_...` proves the converter read the term
 
 ---
 
-# Test B — §4, skin-carried wig vs. head-part hair  (`SettingsB_skinwig.json`)
+# Test B — §4, skin-carried wig vs. head-part hair  (`run.py B skypatcher` / `B record`)
 
 **Modes:** `DefaultWigHandlingMode = ForwardToSkin`. None of these NPCs are Traits-templated, so
 this isolates §4 from §3 completely.
@@ -199,7 +205,7 @@ too, the slot gate or the bald back-fill is wrong. The checker asserts both halv
 
 ---
 
-# Test C — §1/§2, inert Include Outfit  (`SettingsC_inertoutfit.json`)
+# Test C — §1/§2, inert Include Outfit  (`run.py C record`, control `C skypatcher`)
 
 **Modes:** `UseSkyPatcherMode = false` (**required** — SkyPatcher mode is exempt by design, its
 `outfitDefault=` directive reaches the actor whatever the record says), `PatchingMode =
@@ -223,6 +229,11 @@ C-skypatcher\SKSE\Plugins\SkyPatcher\npc\NPC Plugin Chooser\NPC.ini
   filterByNPCs=Dragonborn.esm|34FC5:...,outfitDefault=Skyrim.esm|44CD5,...
 C-record  ->  no ini at all
 ```
+
+The checker reads both halves of that automatically now — record mode: the outfit was written AND
+the recipient is Inventory-templated (so the write cannot reach the actor); SkyPatcher mode: the
+`outfitDefault=` directive is present (so nothing is inert). What it still cannot see is whether
+NPC2 *reported* it, which is Check 1 below and stays a human read.
 
 Same NPC, same Include Outfit setting, different clothes:
 

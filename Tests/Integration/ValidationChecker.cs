@@ -1,20 +1,29 @@
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Skyrim;
+using NPC_Plugin_Chooser_2.Tests.Integration.GoldenOutput;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace NPC_Plugin_Chooser_2.Tests.Integration;
 
 /// <summary>
-/// Reads an NPC2 output plugin produced by one of the validation runs and states PASS/FAIL per
-/// specimen, so the fix can be judged without needing a before-run to diff against.
+/// Reads the artifacts one of the validation runs produced — the output plugin, and in SkyPatcher
+/// mode the .ini beside it — and states PASS/FAIL per specimen, so the fix can be judged without
+/// needing a before-run to diff against.
 ///
-/// <para>Set <see cref="OutputRoot"/> to the run's output folder, then run one of the three facts.
-/// Each is skipped (with a note) if that run's plugin is not present.</para>
+/// <para>Run folders are found by name under <see cref="Mods"/> (see <see cref="Runs"/>), so there
+/// is nothing to configure: do a run with <c>validation\run.py</c>, then run these facts. Each
+/// prints a note and returns green if that run's plugin is not present — as does the whole file if
+/// the paths at the top do not exist on this machine.</para>
+///
+/// <para>A and B check the specimen's own appearance and are self-contained. C is narrower: it
+/// checks that the condition being reported on is present, not that NPC2 reported it — that part is
+/// only visible in the run log, and is called out in the fact itself.</para>
 /// </summary>
 public class ValidationChecker
 {
@@ -40,6 +49,10 @@ public class ValidationChecker
     {
         public ILinkCache Cache = null!;
         public ISkyrimModGetter Output = null!;
+        /// <summary>Directives the run's SkyPatcher ini delivers, per target NPC — empty in record
+        /// mode, which writes no ini at all.</summary>
+        public IReadOnlyDictionary<FormKey, IReadOnlyDictionary<string, string>> Directives =
+            new Dictionary<FormKey, IReadOnlyDictionary<string, string>>();
         public StringBuilder Log = new();
         public int Pass, Fail;
     }
@@ -61,7 +74,14 @@ public class ValidationChecker
         loaded.Add(output);
 
         _o.WriteLine($"output plugin: {esp}");
-        return new Ctx { Cache = loaded.ToImmutableLinkCache<ISkyrimMod, ISkyrimModGetter>(), Output = output };
+        var ini = Path.Combine(pluginDir, SkyPatcherIniComparer.DefaultIniRelativePath);
+        if (File.Exists(ini)) _o.WriteLine($"skypatcher ini: {ini}");
+        return new Ctx
+        {
+            Cache = loaded.ToImmutableLinkCache<ISkyrimMod, ISkyrimModGetter>(),
+            Output = output,
+            Directives = SkyPatcherIniComparer.DirectivesByTarget(ini),
+        };
     }
 
     private static void Check(Ctx c, string label, bool ok, string expected, string actual)
@@ -93,11 +113,38 @@ public class ValidationChecker
         .Select(h => c.Cache.TryResolve<IHeadPartGetter>(h.FormKey, out var hp) ? hp.EditorID ?? "?" : h.FormKey.ToString())
         .ToList();
 
+    /// <summary>
+    /// Does any of <paramref name="names"/> mention <paramref name="wig"/>? Substring, because a
+    /// minted head part decorates the wig's name — but boundary-aware, because HPNO's wig names end
+    /// in a digit and a plain Contains() would let <c>...Elder1</c> match <c>...Elder12</c>, i.e. let
+    /// the WRONG wig satisfy a want (or a right one satisfy a don't-want).
+    /// </summary>
+    private static bool MentionsWig(IEnumerable<string> names, string wig) =>
+        names.Any(n => Regex.IsMatch(n, Regex.Escape(wig) + "(?![0-9])", RegexOptions.IgnoreCase));
+
     private static List<string> HairParts(Ctx c, INpcGetter npc) => npc.HeadParts
         .Select(h => c.Cache.TryResolve<IHeadPartGetter>(h.FormKey, out var hp) ? hp : null)
         .Where(hp => hp is { Type: HeadPart.TypeEnum.Hair })
         .Select(hp => $"{hp!.EditorID}{(string.IsNullOrEmpty(hp.Model?.File.GivenPath) ? "(modeless)" : "")}")
         .ToList();
+
+    private static string OutfitName(Ctx c, FormKey outfit) =>
+        c.Cache.TryResolve<IOutfitGetter>(outfit, out var o) ? $"{o.EditorID} [{outfit}]" : outfit.ToString();
+
+    /// <summary>
+    /// The template an NPC takes its whole inventory from — the default outfit with it — or null when
+    /// it does not. This is the engine rule that makes an Include Outfit record write inert, so it is
+    /// the precondition every Test C specimen has to still satisfy for the test to mean anything.
+    /// </summary>
+    private static string? InventoryTemplate(Ctx c, FormKey npcKey)
+    {
+        if (!c.Cache.TryResolve<INpcGetter>(npcKey, out var npc)) return null;
+        if (!npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Inventory)) return null;
+        if (npc.Template.IsNull) return null;
+        return c.Cache.TryResolve<INpcGetter>(npc.Template.FormKey, out var t)
+            ? $"{t.EditorID} [{npc.Template.FormKey}]"
+            : npc.Template.FormKey.ToString();
+    }
 
     private INpcGetter? Patched(Ctx c, string fk)
     {
@@ -145,13 +192,12 @@ public class ValidationChecker
                 //   armature      ForwardToSkin left it on the WornArmor where it already was
                 //
                 // So search all three, and assert only that the name is the TERMINUS's wig.
-                var all = string.Join(", ",
-                    Armature(c, npc).Concat(OutfitItems(c, npc)).Concat(AllHeadParts(c, npc)));
-                bool ok = all.Contains(wantWig, StringComparison.OrdinalIgnoreCase)
-                          && !all.Contains(dontWantWig, StringComparison.OrdinalIgnoreCase);
+                var candidates = Armature(c, npc).Concat(OutfitItems(c, npc)).Concat(AllHeadParts(c, npc))
+                    .ToList();
+                bool ok = MentionsWig(candidates, wantWig) && !MentionsWig(candidates, dontWantWig);
                 Check(c, $"{name} wears the TERMINUS's wig", ok,
                     $"contains {wantWig} and NOT {dontWantWig}, in the armature, the outfit, or the head parts",
-                    all);
+                    string.Join(", ", candidates));
             }
 
             _o.WriteLine($"\n=== A / {mode} (flatten seam) ===\n{c.Log}PASS={c.Pass} FAIL={c.Fail}");
@@ -214,8 +260,18 @@ public class ValidationChecker
             var c = Open(dir); if (c == null) continue;
             runs++;
 
-            // The write itself is deliberately LEFT IN PLACE (it is harmless), so the plugin-side
-            // check is just that the NPC was patched at all. The real evidence is the run log.
+            // The write itself is deliberately LEFT IN PLACE (it is harmless), so there is no
+            // "outfit disappeared" to look for. What IS checkable from the artifacts is the premise
+            // the report rests on, per mode:
+            //
+            //   record      the outfit write is present AND the recipient takes its inventory from a
+            //               template -> by the engine's rule the write cannot reach the actor, which
+            //               is exactly the condition NPC2 is supposed to report
+            //   skypatcher  an outfitDefault= directive exists in the ini -> delivery does NOT go
+            //               through the record, which is why this mode is exempt
+            //
+            // That leaves only "did NPC2 actually SAY so" to the human EXPECT below; a regression in
+            // the reporting itself still yields a green C, so read the log lines too.
             // 006E5C is Traits-templated as well as Inventory-templated, so SkyPatcher mode screens
             // it out for the unrelated inherited-face reason. run.py drops it from that variant;
             // expect it only in record mode.
@@ -231,14 +287,47 @@ public class ValidationChecker
                 var npc = Patched(c, fk);
                 Check(c, $"{name} was patched (face still applies)", npc != null, "an output record",
                     npc == null ? "not found" : $"outfit={(npc.DefaultOutfit.IsNull ? "(none)" : npc.DefaultOutfit.FormKey.ToString())}");
+                if (npc == null) continue;
+
+                var key = FormKey.Factory(fk);
+                if (mode == "record")
+                {
+                    // Half one: Include Outfit really did write an outfit onto the record.
+                    Check(c, $"{name}: Include Outfit wrote an outfit to the record",
+                        !npc.DefaultOutfit.IsNull, "a DefaultOutfit on the output record",
+                        npc.DefaultOutfit.IsNull ? "(none)" : OutfitName(c, npc.DefaultOutfit.FormKey));
+
+                    // Half two: that record's inventory — the default outfit with it — comes from a
+                    // template, so the field above is dead. If a specimen ever stops being
+                    // Inventory-templated, this test is measuring nothing and says so.
+                    var inv = InventoryTemplate(c, key);
+                    Check(c, $"{name}: takes its inventory from a template (so the write is inert)",
+                        inv != null, "TemplateFlags carrying Inventory, plus a TPLT",
+                        inv == null ? "not Inventory-templated" : $"inventory template {inv}");
+                }
+                else
+                {
+                    // The negative control's premise, from the artifact rather than from prose: the
+                    // outfit arrives as a runtime directive, which no record flag can make inert.
+                    var hasDirective = c.Directives.TryGetValue(key, out var dirs)
+                                       && dirs.TryGetValue("outfitDefault", out _);
+                    Check(c, $"{name}: outfitDefault= reaches the actor (nothing to report as inert)",
+                        hasDirective, "an outfitDefault= directive in the run's SkyPatcher ini",
+                        c.Directives.TryGetValue(key, out var d)
+                            ? string.Join(", ", d.Select(kv => $"{kv.Key}={kv.Value}"))
+                            : "no ini line for this NPC");
+                }
             }
 
             _o.WriteLine($"\n=== C / {mode} (inert Include Outfit) ===\n{c.Log}PASS={c.Pass} FAIL={c.Fail}");
             _o.WriteLine(mode == "record"
-                ? "  EXPECT in the run log: \"takes its inventory from template\" x3, plus the summary\n" +
+                ? "  The checks above prove the CONDITION is present (outfit written + inventory\n" +
+                  "  templated). Whether NPC2 REPORTED it is only visible in the run log — EXPECT:\n" +
+                  "  \"takes its inventory from template\" x3, plus the summary\n" +
                   "  \"3 NPC(s) had 'Include Outfit' enabled but take their whole inventory\"."
-                : "  NEGATIVE CONTROL: the run log must contain NEITHER of those lines — SkyPatcher's\n" +
-                  "  outfitDefault= directive reaches the actor, so nothing here is inert.\n" +
+                : "  NEGATIVE CONTROL: the outfitDefault= checks above prove the premise (delivery is\n" +
+                  "  by directive, not by record), so nothing here is inert. The run log must contain\n" +
+                  "  NEITHER of the record-mode lines.\n" +
                   "  (2 specimens here, not 3: 006E5C is screened out for an unrelated reason.)");
             fails += c.Fail;
         }

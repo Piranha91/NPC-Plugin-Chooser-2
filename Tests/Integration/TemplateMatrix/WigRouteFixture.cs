@@ -198,9 +198,12 @@ internal sealed class WigRouteFixture : IDisposable
     /// <summary>Baseline settings for a route run. Wig/antler modes default to off; each route test
     /// sets the ones it exercises. <paramref name="templateMode"/> defaults to Inherit — the routes
     /// that exercise the flatten seam (where the wig pass must read the TERMINUS, not the donor)
-    /// pass GiveEachNpcOwnCopy explicitly.</summary>
+    /// pass GiveEachNpcOwnCopy explicitly. <paramref name="patchingMode"/> defaults to
+    /// Create-and-Patch, the mode in which wig handling is active in BOTH output modes; the one
+    /// route that covers the third active combination (SkyPatcher + plain Create) passes Create.</summary>
     public Settings NewSettings(bool skyPatcherMode, string tag,
-        TemplateHandlingMode templateMode = TemplateHandlingMode.InheritFromTemplate) => new()
+        TemplateHandlingMode templateMode = TemplateHandlingMode.InheritFromTemplate,
+        PatchingMode patchingMode = PatchingMode.CreateAndPatch) => new()
     {
         SkyrimRelease = SkyrimRelease.SkyrimSE,
         OutputPluginName = string.Empty,
@@ -210,7 +213,7 @@ internal sealed class WigRouteFixture : IDisposable
         SplitOutput = false,
         AutoEslIfy = false,
         AutoSplitOutput = false,
-        PatchingMode = PatchingMode.CreateAndPatch,
+        PatchingMode = patchingMode,
         UseSkyPatcherMode = skyPatcherMode,
         DefaultWigHandlingMode = WigHandlingMode.None,
         DefaultAntlerHandlingMode = AntlerHandlingMode.None,
@@ -239,7 +242,8 @@ internal sealed class WigRouteFixture : IDisposable
         output.WriteLine($"--- RUN LOG ({label}) ---{Environment.NewLine}{run.Log}{Environment.NewLine}--- END ---");
 
         var outPluginPath = Path.Combine(settings.OutputDirectory, "NPC.esp");
-        return new RouteRun(run, outPluginPath, provider.LoadOrderModKeys.ToList(), label);
+        return new RouteRun(run, outPluginPath, provider.LoadOrderModKeys.ToList(), label,
+            settings.UseSkyPatcherMode);
     }
 
     /// <summary>
@@ -296,30 +300,46 @@ internal sealed class WigRouteFixture : IDisposable
     }
 }
 
-/// <summary>One patcher run: the log, the written plugin (opened lazily), and the load order it was
-/// written against.</summary>
+/// <summary>One patcher run: the log, the written plugin (opened lazily), the SkyPatcher .ini it
+/// emitted, and the load order it was written against.</summary>
 internal sealed class RouteRun : IDisposable
 {
     private ISkyrimModDisposableGetter? _handle;
+    private Dictionary<FormKey, IReadOnlyDictionary<string, string>>? _directives;
 
     public RouteRun(GoldenPatchResult run, string outputPluginPath, IReadOnlyList<ModKey> loadOrderKeys,
-        string label)
+        string label, bool skyPatcherMode)
     {
         Result = run;
         OutputPluginPath = outputPluginPath;
         LoadOrderKeys = loadOrderKeys;
         Label = label;
+        SkyPatcherMode = skyPatcherMode;
     }
 
     public GoldenPatchResult Result { get; }
     public string OutputPluginPath { get; }
     public IReadOnlyList<ModKey> LoadOrderKeys { get; }
     public string Label { get; }
+    public bool SkyPatcherMode { get; }
     public string Log => Result.Log;
     public bool PluginExists => File.Exists(OutputPluginPath);
 
     public ISkyrimModGetter Output => _handle ??=
         SkyrimMod.CreateFromBinaryOverlay(OutputPluginPath, SkyrimRelease.SkyrimSE);
+
+    /// <summary>The .ini NPC2 wrote for this run — in SkyPatcher mode this, not the surrogate
+    /// record, is what actually reaches the actor, so route assertions have to open it.</summary>
+    public string IniPath =>
+        Path.Combine(Path.GetDirectoryName(OutputPluginPath)!, SkyPatcherIniComparer.DefaultIniRelativePath);
+
+    /// <summary>Directives the run emitted for <paramref name="target"/> (the NPC in the user's load
+    /// order, which is what the ini filters by), or null when the ini names no such NPC.</summary>
+    public IReadOnlyDictionary<string, string>? DirectivesFor(FormKey target)
+    {
+        _directives ??= SkyPatcherIniComparer.DirectivesByTarget(IniPath);
+        return _directives.TryGetValue(target, out var d) ? d : null;
+    }
 
     public void Dispose() => _handle?.Dispose();
 }

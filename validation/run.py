@@ -76,6 +76,10 @@ def stage(test, mode):
     d["UseSkyPatcherMode"] = sky
     d["PatchingMode"] = "CreateAndPatch"
     d["OutputDirectory"] = f"NPC Output - {test}-{mode}"
+    # Everything downstream addresses the run by this exact folder name: make_bats.py drops the
+    # spawn script into it and ValidationChecker reads the plugin out of it. A timestamp suffix
+    # inherited from the live snapshot would make both report "no run yet" forever.
+    d["AppendTimestampToOutputDirectory"] = False
 
     h = hpno(d)
     h["ModWigHandlingMode"] = None        # follow the global below
@@ -110,7 +114,7 @@ def stage(test, mode):
     print(f"  TemplateHandlingMode= {d['TemplateHandlingMode']}")
     print(f"  WigHandlingMode     = {d['DefaultWigHandlingMode']}")
     print(f"  IncludeOutfits(HPNO)= {h['IncludeOutfits']}")
-    print(f"  OutputDirectory     = {d['OutputDirectory']}")
+    print(f"  OutputDirectory     = {d['OutputDirectory']}  (timestamp suffix forced off)")
     print(f"  NPCs selected       = {len(picked)}")
     dropped = [k for k in SPECIMENS[test] if k not in picked]
     if dropped:

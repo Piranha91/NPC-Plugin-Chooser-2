@@ -1,3 +1,4 @@
+using System.IO;
 using FluentAssertions;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
@@ -5,6 +6,7 @@ using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
+using NPC_Plugin_Chooser_2.Tests.Integration.GoldenOutput;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -26,9 +28,20 @@ namespace NPC_Plugin_Chooser_2.Tests.Integration.TemplateMatrix;
 /// defect class at once, across every record the run produced), AND the route's intended visible
 /// effect — otherwise a run that quietly produced nothing would pass as clean.</para>
 ///
-/// <para>The axis is two modes, not three: <c>Settings.WigHandlingActiveForOutputMode</c> is
-/// <c>UseSkyPatcherMode || PatchingMode == CreateAndPatch</c>, so wig handling is inert in plain
-/// Create record mode.</para>
+/// <para><b>In SkyPatcher mode the output plugin is only half the artifact.</b> The NPC in the
+/// user's load order is never overridden; everything asserted about the surrogate record below
+/// reaches the actor only through the <c>.ini</c> NPC2 emits alongside it. So the SkyPatcher leg of
+/// every route also opens the ini (<see cref="AssertCleanWrite"/> pins <c>copyVisualStyle</c> at the
+/// very surrogate being inspected, and <see cref="AssignedOutfit"/> pins <c>outfitDefault=</c>),
+/// or a break in that wiring would leave these tests green while nothing reached the game.</para>
+///
+/// <para><b>The mode axis.</b> <c>Settings.WigHandlingActiveForOutputMode</c> is
+/// <c>UseSkyPatcherMode || PatchingMode == CreateAndPatch</c>, so wig handling is active in three
+/// combinations, not two — plain Create record mode is the only inert one. Each route's
+/// <c>[Theory]</c> covers the two Create-and-Patch ones; the third (SkyPatcher + plain Create) takes
+/// a different Patcher branch — <c>CreateSkyPatcherNpc</c> with no <c>CopyAppearanceData</c> after
+/// it — and is covered once, by <see cref="Route1c_ForwardToSkin_SkyPatcherCreateMode"/>, rather
+/// than by doubling every theory.</para>
 ///
 /// <para>All of these skip gracefully without a Skyrim SE install.</para>
 /// </summary>
@@ -41,9 +54,10 @@ public class WigRouteTwoModeTests
 
     private static string Label(bool skyPatcherMode) => skyPatcherMode ? "skypatcher" : "record";
 
-    /// <summary>The checks every route shares: the plugin was written, and nothing in it references a
-    /// plugin outside the load order.</summary>
-    private void AssertCleanWrite(RouteRun run)
+    /// <summary>The checks every route shares: the plugin was written, nothing in it references a
+    /// plugin outside the load order, and — in SkyPatcher mode — the ini really does point the
+    /// patched NPC at the surrogate the rest of the route then inspects.</summary>
+    private void AssertCleanWrite(RouteRun run, FormKey target)
     {
         run.Log.Should().NotContain("FATAL SAVE ERROR",
             $"[{run.Label}] a dangling reference into an unloaded plugin makes the output unwritable");
@@ -52,6 +66,24 @@ public class WigRouteTwoModeTests
         OutputLinkSweep.AssertNoLinksOutsideLoadOrder(run.Output, run.LoadOrderKeys, _output,
             $"[{run.Label}] the donor's records all live outside the load order, so every one the " +
             "patcher references must have been merged in");
+
+        if (!run.SkyPatcherMode) return;
+
+        // Nothing in SkyPatcher mode overrides the NPC the user actually has, so a surrogate that
+        // no directive names is a record the game never reads. Tying copyVisualStyle to the very
+        // record PatchedNpc returns is what makes the rest of this file's SkyPatcher assertions
+        // statements about the actor rather than about an orphan.
+        File.Exists(run.IniPath).Should().BeTrue(
+            $"[{run.Label}] SkyPatcher mode delivers through the ini — expected one at {run.IniPath}");
+        var directives = run.DirectivesFor(target);
+        directives.Should().NotBeNull(
+            $"[{run.Label}] the ini must carry a filterByNPCs line for the patched NPC ({target})");
+        directives!.Should().ContainKey("copyVisualStyle",
+            $"[{run.Label}] without it the surrogate's appearance never transfers to the NPC");
+        SkyPatcherIniComparer.TryDirectiveFormKey(directives["copyVisualStyle"], out var surrogate)
+            .Should().BeTrue($"[{run.Label}] copyVisualStyle must name a FormKey");
+        surrogate.Should().Be(PatchedNpc(run).FormKey,
+            $"[{run.Label}] the directive must point at the surrogate this route asserts against");
     }
 
     /// <summary>The single patched NPC — the winning-record override in record mode, the
@@ -77,10 +109,33 @@ public class WigRouteTwoModeTests
             run.Output.EnumerateMajorRecords().FirstOrDefault(r => r.FormKey == l.FormKey)?.EditorID
             ?? $"(load order: {l.FormKey})");
 
-    private static IOutfitGetter AssignedOutfit(RouteRun run, INpcGetter npc)
+    /// <summary>
+    /// The outfit the NPC will actually be wearing, and the assertion that it reaches them. Record
+    /// mode assigns it by overriding the NPC, so the record IS the delivery. SkyPatcher mode does
+    /// not: the surrogate's DefaultOutfit is inert cargo, and the outfit only arrives via the ini's
+    /// <c>outfitDefault=</c>. Routes 3 and 7 reach here with Include Outfit OFF, so for them that
+    /// directive exists solely because the wig forwarder asked for it (<c>Patcher</c>:
+    /// <c>includeOutfit || wigForward.OutfitForwarded</c>) — the wiring that carries a forwarded wig
+    /// to the actor, and which a surrogate-only assertion cannot see break.
+    /// </summary>
+    private static IOutfitGetter AssignedOutfit(RouteRun run, INpcGetter npc, FormKey target)
     {
         npc.DefaultOutfit.FormKey.ModKey.Should().Be(run.Output.ModKey,
             $"[{run.Label}] the NPC must wear an outfit the patcher owns");
+
+        if (run.SkyPatcherMode)
+        {
+            var directives = run.DirectivesFor(target);
+            directives.Should().NotBeNull($"[{run.Label}] the ini must carry a line for {target}");
+            directives!.Should().ContainKey("outfitDefault",
+                $"[{run.Label}] in SkyPatcher mode the outfit reaches the actor only through this " +
+                "directive — the surrogate's own DefaultOutfit field is never read");
+            SkyPatcherIniComparer.TryDirectiveFormKey(directives["outfitDefault"], out var delivered)
+                .Should().BeTrue($"[{run.Label}] outfitDefault must name a FormKey");
+            delivered.Should().Be(npc.DefaultOutfit.FormKey,
+                $"[{run.Label}] the delivered outfit must be the one the run built for this NPC");
+        }
+
         return run.Output.Outfits.Single(o => o.FormKey == npc.DefaultOutfit.FormKey);
     }
 
@@ -130,7 +185,7 @@ public class WigRouteTwoModeTests
         using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
         if (run == null) return;
 
-        AssertCleanWrite(run);
+        AssertCleanWrite(run, npc.FormKey);
 
         // Visible effect: the wig's ArmorAddon really did move onto the skin duplicate, and it points
         // at the MERGED copy rather than at the resource plugin.
@@ -149,6 +204,71 @@ public class WigRouteTwoModeTests
             ?? $"(not in output: {l.FormKey})").ToList();
         hairEids.Should().Contain(WigForwarder.BaldHairEditorId,
             "removing the donor's hair without a modeless replacement back-fills a random race hair");
+        hairEids.Should().NotContain("NPC2Route_DonorHair", "the forwarded wig supplies the hair now");
+    }
+
+    /// <summary>
+    /// Route 1's shape in the third combination wig handling is active in: SkyPatcher output with
+    /// <c>PatchingMode.Create</c>. That is a genuinely different Patcher branch — the surrogate comes
+    /// from <c>CreateSkyPatcherNpc</c> and <c>CopyAppearanceData</c> never runs afterwards — which
+    /// makes it the WORST case for this file's defect class, since the traversal that incidentally
+    /// merged the wig's armature in the fixed bug does not happen here at all. If the walker on the
+    /// skin duplicate is the only thing merging that armature, this is where it shows.
+    ///
+    /// <para>Covered once rather than as a third <c>[InlineData]</c> on every route: the branch
+    /// difference is in how the patched record is produced, which is upstream of everything the
+    /// individual routes vary.</para>
+    /// </summary>
+    [Fact]
+    public async Task Route1c_ForwardToSkin_SkyPatcherCreateMode()
+    {
+        using var fx = new WigRouteFixture("r1c");
+        var npc = fx.AddBaseNpc("NPC2Route_R1c");
+
+        var bodyArma = fx.AddResArmorAddon("NPC2Route_BodyAA", BipedObjectFlag.Body);
+        var skin = fx.AddResArmor("NPC2Route_Skin", bodyArma);
+        var wigArma = fx.AddResArmorAddon("NPC2Route_WigAA");
+        var wigArmo = fx.AddResArmor("NPC2Route_Wig", wigArma);
+        var donorOutfit = fx.AddResOutfit("NPC2Route_DonorOutfit", wigArmo);
+
+        var donorHair = fx.ResMod.HeadParts.AddNew();
+        donorHair.EditorID = "NPC2Route_DonorHair";
+        donorHair.Type = HeadPart.TypeEnum.Hair;
+
+        var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
+        modNpc.WornArmor.SetTo(skin);
+        modNpc.DefaultOutfit.SetTo(donorOutfit);
+        modNpc.HeadParts.Clear();
+        modNpc.HeadParts.Add(donorHair.FormKey);
+
+        fx.WriteFaceGen(npc.FormKey);
+        fx.WritePlugins();
+
+        var settings = fx.NewSettings(skyPatcherMode: true, "skypatcher-create",
+            patchingMode: PatchingMode.Create);
+        settings.DefaultWigHandlingMode = WigHandlingMode.ForwardToSkin;
+        var modSetting = fx.NewModSetting();
+        modSetting.DetectedWigArmors.Add(wigArmo.FormKey);
+        Select(fx, settings, modSetting, npc.FormKey);
+
+        using var run = await fx.RunAsync(settings, _output, "skypatcher-create");
+        if (run == null) return;
+
+        AssertCleanWrite(run, npc.FormKey);
+
+        var outNpc = PatchedNpc(run);
+        outNpc.WornArmor.FormKey.ModKey.Should().Be(run.Output.ModKey,
+            "the surrogate must wear the +Wig duplicate, not the donor's original skin");
+        var outSkin = run.Output.Armors.Single(a => a.FormKey == outNpc.WornArmor.FormKey);
+        ArmatureEditorIds(run, outSkin).Should().BeEquivalentTo(
+            new[] { "NPC2Route_BodyAA", "NPC2Route_WigAA" },
+            "with no CopyAppearanceData in this branch, the walker on the duplicate is the only " +
+            "thing that can merge the wig's armature");
+
+        var hairEids = outNpc.HeadParts.Select(l =>
+            run.Output.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)?.EditorID
+            ?? $"(not in output: {l.FormKey})").ToList();
+        hairEids.Should().Contain(WigForwarder.BaldHairEditorId);
         hairEids.Should().NotContain("NPC2Route_DonorHair", "the forwarded wig supplies the hair now");
     }
 
@@ -204,7 +324,7 @@ public class WigRouteTwoModeTests
         using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
         if (run == null) return;
 
-        AssertCleanWrite(run);
+        AssertCleanWrite(run, npc.FormKey);
 
         var outNpc = PatchedNpc(run);
         outNpc.WornArmor.FormKey.ModKey.Should().Be(run.Output.ModKey, "the donor skin is merged in");
@@ -264,7 +384,7 @@ public class WigRouteTwoModeTests
         using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
         if (run == null) return;
 
-        AssertCleanWrite(run);
+        AssertCleanWrite(run, npc.FormKey);
 
         var outNpc = PatchedNpc(run);
         var hairEids = outNpc.HeadParts.Select(l =>
@@ -319,10 +439,10 @@ public class WigRouteTwoModeTests
         using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
         if (run == null) return;
 
-        AssertCleanWrite(run);
+        AssertCleanWrite(run, npc.FormKey);
 
         var outNpc = PatchedNpc(run);
-        var outfit = AssignedOutfit(run, outNpc);
+        var outfit = AssignedOutfit(run, outNpc, npc.FormKey);
         OutfitItemEditorIds(run, outfit).Should().Contain("NPC2Route_Wig",
             "the forwarded wig must be an item of the outfit the NPC wears, merged into the output");
 
@@ -395,7 +515,7 @@ public class WigRouteTwoModeTests
         });
         if (run == null) return;
 
-        AssertCleanWrite(run);
+        AssertCleanWrite(run, npc.FormKey);
 
         var outNpc = PatchedNpc(run);
         var mintedParts = run.Output.HeadParts
@@ -474,7 +594,7 @@ public class WigRouteTwoModeTests
         using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
         if (run == null) return;
 
-        AssertCleanWrite(run);
+        AssertCleanWrite(run, npc.FormKey);
 
         var outNpc = PatchedNpc(run);
 
@@ -485,7 +605,7 @@ public class WigRouteTwoModeTests
             "the baked-in antler armature is removed from the skin");
 
         // Source 1 — stripped from the forwarded outfit, without losing the rest of it.
-        var outfit = AssignedOutfit(run, outNpc);
+        var outfit = AssignedOutfit(run, outNpc, npc.FormKey);
         var itemEids = OutfitItemEditorIds(run, outfit).ToList();
         itemEids.Should().NotContain("NPC2Route_AntlerArmor", "the outfit antler is removed");
         itemEids.Should().Contain("NPC2Route_Dress", "the rest of the outfit is preserved");
@@ -553,7 +673,7 @@ public class WigRouteTwoModeTests
         using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
         if (run == null) return;
 
-        AssertCleanWrite(run);
+        AssertCleanWrite(run, npc.FormKey);
 
         var outNpc = PatchedNpc(run);
 
@@ -562,7 +682,7 @@ public class WigRouteTwoModeTests
         ArmatureEditorIds(run, outSkin).Should().Contain("NPC2Route_WigAA");
 
         // ...and came out of the forwarded outfit, which is otherwise intact.
-        var outfit = AssignedOutfit(run, outNpc);
+        var outfit = AssignedOutfit(run, outNpc, npc.FormKey);
         var itemEids = OutfitItemEditorIds(run, outfit).ToList();
         itemEids.Should().NotContain("NPC2Route_Wig",
             "the wig moved to the skin, so wearing it as well would double-render it");
@@ -607,7 +727,7 @@ public class WigRouteTwoModeTests
         using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
         if (run == null) return;
 
-        AssertCleanWrite(run);
+        AssertCleanWrite(run, npc.FormKey);
 
         run.Log.Should().Contain("falls back to ForwardToOutfit",
             "the fixture must actually take the no-WNAM fallback, not some other branch");
@@ -615,7 +735,7 @@ public class WigRouteTwoModeTests
         var outNpc = PatchedNpc(run);
         outNpc.WornArmor.IsNull.Should().BeTrue("there was no skin to forward into");
 
-        var outfit = AssignedOutfit(run, outNpc);
+        var outfit = AssignedOutfit(run, outNpc, npc.FormKey);
         OutfitItemEditorIds(run, outfit).Should().Contain("NPC2Route_Wig",
             "the fallback must still get the wig onto the NPC, via the outfit");
     }
@@ -701,7 +821,7 @@ public class WigRouteTwoModeTests
         });
         if (run == null) return;
 
-        AssertCleanWrite(run);
+        AssertCleanWrite(run, donor.FormKey);
 
         var outNpc = PatchedNpc(run);
         var npcHeadPartEids = outNpc.HeadParts.Select(l =>
@@ -723,6 +843,10 @@ public class WigRouteTwoModeTests
         mintedParents.Should().NotBeEmpty();
         mintedParents.Should().Contain(e => e.Contains("_F_", StringComparison.Ordinal),
             "sex follows the terminus under a flatten, so the female wig set is the one to mint");
+        mintedParents.Should().NotContain(e => e.Contains("_M_", StringComparison.Ordinal),
+            "minting BOTH sexes would satisfy the check above while still proving the converter read " +
+            "the donor's sex — the male set must not exist at all (EditorIDs are " +
+            "NPC2Wig_<wig>_<F|M>_<shape>)");
     }
 
     /// <summary>
@@ -778,7 +902,7 @@ public class WigRouteTwoModeTests
         using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
         if (run == null) return;
 
-        AssertCleanWrite(run);
+        AssertCleanWrite(run, donor.FormKey);
 
         var outNpc = PatchedNpc(run);
         outNpc.WornArmor.FormKey.ModKey.Should().Be(run.Output.ModKey,

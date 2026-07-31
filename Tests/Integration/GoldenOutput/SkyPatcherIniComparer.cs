@@ -43,6 +43,28 @@ internal static class SkyPatcherIniComparer
         return map;
     }
 
+    /// <summary>
+    /// Every directive the ini actually delivers, keyed by target NPC: target -&gt; (directive name -&gt;
+    /// raw value). For tests that need to assert what reaches the ACTOR rather than what the
+    /// surrogate record happens to contain — in SkyPatcher mode the .ini is the delivery mechanism,
+    /// so a surrogate-only assertion still passes if the directive wiring breaks.
+    /// </summary>
+    public static Dictionary<Mutagen.Bethesda.Plugins.FormKey, IReadOnlyDictionary<string, string>>
+        DirectivesByTarget(string iniPath)
+    {
+        var map = new Dictionary<Mutagen.Bethesda.Plugins.FormKey, IReadOnlyDictionary<string, string>>();
+        foreach (var (target, dirs) in Parse(iniPath))
+        {
+            if (TryFormKey(target, out var targetFk)) map[targetFk] = dirs;
+        }
+        return map;
+    }
+
+    /// <summary>Parses a directive VALUE ("Plugin.esp|1A2B3C") to a FormKey; false when it is not a
+    /// FormKey-valued directive (height=, removeFlags=, ...).</summary>
+    public static bool TryDirectiveFormKey(string value, out Mutagen.Bethesda.Plugins.FormKey formKey) =>
+        TryFormKey(value, out formKey);
+
     private static bool TryFormKey(string pluginBarHex, out Mutagen.Bethesda.Plugins.FormKey formKey)
     {
         formKey = default;

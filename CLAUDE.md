@@ -13,17 +13,22 @@ the full end-user feature walkthrough and UI semantics.
 
 ## Build & run
 
-- **IDE/SDK:** .NET 8 WPF app (`net8.0-windows`, `WinExe`). Solution:
-  `NPC Plugin Chooser 2.sln`; single project `NPC Plugin Chooser 2.csproj`.
+- **IDE/SDK:** .NET 10 WPF app (`net10.0-windows10.0.19041.0`, `WinExe`). Solution:
+  `NPC Plugin Chooser 2.sln`; app project `NPC Plugin Chooser 2.csproj` plus the
+  test project `Tests/NPC Plugin Chooser 2.Tests.csproj`.
 - **Build:** `dotnet build "NPC Plugin Chooser 2.csproj" -c Debug`
-- **Run:** launch the built exe in `bin/Debug/net8.0-windows/`, or `dotnet run`.
-  In production it is meant to be launched *through a mod manager* (MO2/Vortex).
+- **Run:** launch the built exe in `bin/Debug/net10.0-windows10.0.19041.0/`, or
+  `dotnet run`. In production it is meant to be launched *through a mod manager*
+  (MO2/Vortex).
 - **Close the app before rebuilding.** A running instance locks output DLLs
   (notably `CharacterViewer.Rendering.dll`); MSB3027/MSB3021 copy-lock errors
   mean the app is still open, not a compile failure.
-- **No automated tests exist.** There is no test project; verification is
-  manual — launch the app against a real Skyrim install and exercise the
-  affected flow. Logs (below) are the primary diagnostic tool.
+- **Tests:** `dotnet test "Tests/NPC Plugin Chooser 2.Tests.csproj"` (xUnit; see
+  `Tests/README.md`). Many integration tests need a resolvable Skyrim SE install
+  and, by repo convention, **print a SKIPPED note and return green without one**
+  rather than failing — so a clean run on a machine without the game proves less
+  than it looks. End-to-end behaviour against real mods is still verified
+  manually; the logs below are the primary diagnostic tool for that.
 
 ### External/sibling dependencies
 - **`CharacterViewer.Rendering`** — the offscreen OpenGL 3D renderer used for
