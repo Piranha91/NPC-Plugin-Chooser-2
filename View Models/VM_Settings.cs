@@ -1214,26 +1214,46 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             .Subscribe(m => _model.TemplateHandlingMode = m).DisposeWith(_disposables);
         this.WhenAnyValue(x => x.SelectedDefaultWigHandlingMode).Skip(1)
             .Subscribe(m => _model.DefaultWigHandlingMode = m).DisposeWith(_disposables);
-        // Convert To Headparts is experimental — confirm before enabling it as the
-        // GLOBAL default (mirrors the override-handling-mode confirmation). Buffer(2,1)
-        // yields (previous, current) pairs starting with the first user change (the
-        // model-loaded value is the first buffered emission, never a trigger), and a
-        // decline reverts to the previous selection rather than a hardcoded default.
+        // Two GLOBAL-default wig-mode selections need confirming, and they share one
+        // Buffer(2,1) + revert path so landing on a warned mode can never stack two
+        // dialogs (declining Convert To Headparts can revert straight into Forward To
+        // Outfit). Buffer(2,1) yields (previous, current) pairs starting with the first
+        // user change (the model-loaded value is the first buffered emission, never a
+        // trigger), and a decline reverts to the previous selection rather than a
+        // hardcoded default.
+        //   - Convert To Headparts is experimental (mirrors the override-handling-mode
+        //     confirmation).
+        //   - Forward To Outfit under SkyPatcher mode is the naked-NPC combination; see
+        //     HandlingModeDisplay.SkyPatcherForwardToOutfitWarning. Checked against the
+        //     global default only — per-mod overrides are caught at patch time by the
+        //     pre-run check in VM_Run.
         this.WhenAnyValue(x => x.SelectedDefaultWigHandlingMode)
             .Buffer(2, 1)
             .Subscribe(pair =>
             {
                 var previous = pair[0];
                 var current = pair[1];
-                if (current != WigHandlingMode.ConvertToHeadParts ||
-                    previous == WigHandlingMode.ConvertToHeadParts ||
-                    SuppressPopupWarnings)
+                if (current == previous || SuppressPopupWarnings) return;
+
+                string warning;
+                string title;
+                if (current == WigHandlingMode.ConvertToHeadParts)
+                {
+                    warning = HandlingModeDisplay.ConvertToHeadPartsWarning;
+                    title = HandlingModeDisplay.ConvertToHeadPartsWarningTitle;
+                }
+                else if (current == WigHandlingMode.ForwardToOutfit && UseSkyPatcherMode)
+                {
+                    warning = HandlingModeDisplay.SkyPatcherForwardToOutfitWarning +
+                              "\n\nUse Forward To Outfit anyway?";
+                    title = HandlingModeDisplay.SkyPatcherForwardToOutfitWarningTitle;
+                }
+                else
                 {
                     return;
                 }
 
-                if (!ScrollableMessageBox.Confirm(HandlingModeDisplay.ConvertToHeadPartsWarning,
-                        HandlingModeDisplay.ConvertToHeadPartsWarningTitle, MessageBoxImage.Warning))
+                if (!ScrollableMessageBox.Confirm(warning, title, MessageBoxImage.Warning))
                 {
                     // Revert on the UI thread after a short delay so the ComboBox
                     // finishes processing the selection first (same pattern as the
@@ -1496,9 +1516,21 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
             {
                 if (useSkyPatcher) // If the checkbox was just checked
                 {
-                    const string message =
-                        "SkyPatcher is a powerful tool for overwriting conflicts. Be aware that it might conflict with other runtime editing tools such as RSV and SynthEBD. Are you sure you want to use SkyPatcher Mode?";
-                    if (!SuppressPopupWarnings && !ScrollableMessageBox.Confirm(message, "Confirm SkyPatcher Mode"))
+                    var message = new StringBuilder(
+                        "SkyPatcher is a powerful tool for overwriting conflicts. Be aware that it might conflict with other runtime editing tools such as RSV and SynthEBD.");
+
+                    // Turning SkyPatcher ON while wigs already forward to outfits lands on
+                    // the naked-NPC combination from the other direction, so fold the same
+                    // warning into this one dialog rather than firing a second.
+                    if (SelectedDefaultWigHandlingMode == WigHandlingMode.ForwardToOutfit)
+                    {
+                        message.Append("\n\n").Append(HandlingModeDisplay.SkyPatcherForwardToOutfitWarning);
+                    }
+
+                    message.Append("\n\nAre you sure you want to use SkyPatcher Mode?");
+
+                    if (!SuppressPopupWarnings &&
+                        !ScrollableMessageBox.Confirm(message.ToString(), "Confirm SkyPatcher Mode"))
                     {
                         // If user clicks "No", revert the checkbox state
                         UseSkyPatcherMode = false;

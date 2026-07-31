@@ -370,6 +370,50 @@ public class VM_Run : ReactiveObject, IDisposable
             }
 
             var modSettingsMap = _patcher.BuildModSettingsMap();
+
+            // Last gate on the SkyPatcher + Forward To Outfit naked-NPC combination (see
+            // HandlingModeDisplay.SkyPatcherForwardToOutfitWarning). The Settings dropdowns
+            // only see the GLOBAL default, so this is the check that catches a per-mod
+            // override — and the one that catches ForwardToSkin's silent per-NPC fallback to
+            // ForwardToOutfit for appearance plugins that assign no WNAM. Raised before any
+            // real work so declining costs nothing.
+            if (_settings.UseSkyPatcherMode && !_settings.SuppressPopupWarnings)
+            {
+                var outfitForwardingMods = modSettingsMap.Values
+                    .Where(ms => _settings.GetEffectiveWigMode(ms) == WigHandlingMode.ForwardToOutfit)
+                    .Select(ms => ms.DisplayName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (outfitForwardingMods.Any())
+                {
+                    CurrentProgressMessage = "Waiting for user input...";
+
+                    var warning = new StringBuilder(HandlingModeDisplay.SkyPatcherForwardToOutfitWarning);
+                    warning.AppendLine().AppendLine();
+                    warning.AppendLine($"Wigs forward to outfits for {outfitForwardingMods.Count} mod(s):");
+                    foreach (var modName in outfitForwardingMods)
+                    {
+                        warning.AppendLine("    " + modName);
+                    }
+                    warning.Append("\nContinue patching anyway?");
+
+                    bool proceed = true;
+                    Application.Current?.Dispatcher.Invoke(() =>
+                    {
+                        proceed = ScrollableMessageBox.Confirm(warning.ToString(),
+                            HandlingModeDisplay.SkyPatcherForwardToOutfitWarningTitle, MessageBoxImage.Warning);
+                    });
+
+                    if (!proceed)
+                    {
+                        AppendLog("Patching aborted: SkyPatcher mode with wigs forwarded to outfits.", true);
+                        return; // Abort
+                    }
+                }
+            }
+
             await _patcher.PreInitializationLogicAsync();
 
             // Arm per-NPC diagnostic logging for the user-selected NPCs. This

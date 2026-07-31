@@ -90,4 +90,32 @@ public static class HandlingModeDisplay
         "Are you sure you want to enable Convert To Headparts?";
 
     public const string ConvertToHeadPartsWarningTitle = "Confirm Wig Conversion";
+
+    /// <summary>
+    /// Warning shown wherever Forward To Outfit and SkyPatcher mode are both in
+    /// play: either dropdown/checkbox in Settings, and again before patching.
+    ///
+    /// SkyPatcher's outfitDefault directive is a bare pointer assignment on the
+    /// base TESNPC record — it never drives the engine's equip pass. Diagnosed
+    /// 2026-07-30 against a real load order: SkyPatcher applied every directive
+    /// (2931/2931 outfits, 3025/3025 visuals) and then touched nothing at
+    /// runtime, yet a shifting subset of NPCs spawned naked with the forwarded
+    /// outfit sitting in their inventory tagged "(Outfit)". Console
+    /// <c>resetinventory</c> dresses the affected NPC, confirming an init-time
+    /// equip failure. The minted records are item-for-item identical to the ones
+    /// record mode writes successfully, so nothing in the output distinguishes a
+    /// working NPC from a broken one and there is nothing here to fix or detect.
+    /// Skin- and HeadPart-carried wigs ride on record fields instead and were
+    /// verified unaffected in the same session.
+    /// </summary>
+    public const string SkyPatcherForwardToOutfitWarning =
+        "SkyPatcher applies outfits unreliably.\n\n" +
+        "It repoints an NPC's default outfit but never equips it. The game intermittently " +
+        "leaves the forwarded outfit in the NPC's inventory unworn, so the NPC spawns naked. " +
+        "Which NPCs are affected shifts between playthroughs, and nothing in the output tells " +
+        "them apart — N.P.C.2 can neither detect nor correct this.\n\n" +
+        "In SkyPatcher mode, forward wigs as Skin or Headparts instead. Both are written into " +
+        "records and are unaffected.";
+
+    public const string SkyPatcherForwardToOutfitWarningTitle = "SkyPatcher + Forward To Outfit";
 }
