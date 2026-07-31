@@ -1149,6 +1149,10 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
     private async Task BrowseFolderPathAsync(string existingPath)
     {
+        // The primary folder is the one whose name matches DisplayName, and a great deal of the app keys
+        // a mod to that correspondence. The UI hides Browse... on that row; this is the backstop.
+        if (IsPrimaryFolderPath(existingPath)) return;
+
         using (var dialog = new FolderBrowserDialog())
         {
             dialog.Description = $"Change corresponding folder for {DisplayName}";

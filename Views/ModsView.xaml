@@ -30,7 +30,7 @@
         <local:IsGreaterThanOneConverter x:Key="IsGreaterThanOneConverter"/>
         <local:PathToFolderNameConverter x:Key="PathToFolderNameConverter"/>
         <local:FolderLockStateConverter x:Key="FolderLockStateConverter"/>
-        <local:FolderLockVisibilityConverter x:Key="FolderLockVisibilityConverter"/>
+        <local:NonPrimaryFolderVisibilityConverter x:Key="NonPrimaryFolderVisibilityConverter"/>
 
         <!-- Padlock drawn as vector geometry rather than a bitmap so it stays crisp at the ~11px it is
              rendered at, and so it can take its colour from the active theme. The body is shared; only
@@ -471,9 +471,20 @@
                                                              <Binding Path="." Converter="{StaticResource PathExistenceToBrushConverter}"/>
                                                          </TextBlock.Foreground>
                                                      </TextBlock>
+                                                     <!-- Hidden for the mod's own primary folder: too much of the app keys a mod
+                                                          to the folder that shares its name, so repointing it (deliberately or
+                                                          by a stray click) would quietly break that correspondence. -->
                                                      <Button Grid.Column="1" Content="Browse..."
                                                              Command="{Binding DataContext.BrowseFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}"
-                                                             CommandParameter="{Binding}" Padding="5,1" Margin="5,0" VerticalAlignment="Center" ToolTip="Select a data folder for the contents of this mod"/>
+                                                             CommandParameter="{Binding}" Padding="5,1" Margin="5,0" VerticalAlignment="Center" ToolTip="Select a data folder for the contents of this mod">
+                                                         <Button.Visibility>
+                                                             <MultiBinding Converter="{StaticResource NonPrimaryFolderVisibilityConverter}">
+                                                                 <Binding Path="."/>
+                                                                 <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType={x:Type ListBoxItem}}"/>
+                                                                 <Binding Path="DataContext.DisplayName" RelativeSource="{RelativeSource AncestorType={x:Type ListBoxItem}}"/>
+                                                             </MultiBinding>
+                                                         </Button.Visibility>
+                                                     </Button>
 
                                                      <!-- Hidden for the mod's own primary folder: a Refresh rebuilds the list
                                                           around it, so it is never at risk and there is nothing to lock. -->
@@ -481,7 +492,7 @@
                                                              Command="{Binding DataContext.ToggleFolderLockCommand, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}"
                                                              CommandParameter="{Binding}">
                                                          <Button.Visibility>
-                                                             <MultiBinding Converter="{StaticResource FolderLockVisibilityConverter}">
+                                                             <MultiBinding Converter="{StaticResource NonPrimaryFolderVisibilityConverter}">
                                                                  <Binding Path="."/>
                                                                  <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType={x:Type ListBoxItem}}"/>
                                                                  <Binding Path="DataContext.DisplayName" RelativeSource="{RelativeSource AncestorType={x:Type ListBoxItem}}"/>

@@ -474,7 +474,7 @@ public class VM_ModSettingPureTests
     }
 
     // ------------------------------------------------------------------
-    // IsPrimaryFolderPath — decides which folder row hides its lock toggle
+    // IsPrimaryFolderPath — decides which folder row hides its lock toggle and Browse... button
     // ------------------------------------------------------------------
 
     /// <summary>Builds a VM_ModSetting without its heavy ctor, seeding only DisplayName.</summary>
