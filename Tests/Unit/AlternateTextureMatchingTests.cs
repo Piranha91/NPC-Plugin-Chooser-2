@@ -174,13 +174,25 @@ public class AlternateTextureMatchingTests
     // desync, where the index is the unreliable field, and an entry bound to nothing would be a
     // worse outcome than one bound twice.
 
+    /// <summary>The mesh as the renderer sees it after building: name plus the shape's NIF-space
+    /// ordinal. Every shape survives here, so position == ordinal — see
+    /// <see cref="MatchWithBuiltShapes"/> for the case where they diverge.</summary>
     private static Dictionary<int, string>? MatchWithDuplicates(
         IReadOnlyList<AlternateTextureSpec> specs, IReadOnlyList<string> shapeNames,
         string shapeName, int shapeOrdinal,
         ICollection<AlternateTextureSpec>? skippedByAmbiguity = null)
+        => MatchWithBuiltShapes(specs, shapeNames.Select((n, i) => (n, i)).ToList(),
+            shapeName, shapeOrdinal, skippedByAmbiguity);
+
+    /// <summary>As above, but the caller states each built shape's ordinal explicitly — which is
+    /// what the renderer does, because the built list is not the NIF's shape list.</summary>
+    private static Dictionary<int, string>? MatchWithBuiltShapes(
+        IReadOnlyList<AlternateTextureSpec> specs, IReadOnlyList<(string Name, int Ordinal)> built,
+        string shapeName, int shapeOrdinal,
+        ICollection<AlternateTextureSpec>? skippedByAmbiguity = null)
     {
-        var pool = AlternateTextureMatching.DanglingNameEntries(specs, shapeNames);
-        var byName = AlternateTextureMatching.BuildShapeOrdinalsByName(shapeNames);
+        var pool = AlternateTextureMatching.DanglingNameEntries(specs, built.Select(b => b.Name));
+        var byName = AlternateTextureMatching.BuildShapeOrdinalsByName(built);
         return AlternateTextureMatching.MatchForShape(
             specs, pool, shapeName, shapeOrdinal, null, null, byName, skippedByAmbiguity);
     }
@@ -190,18 +202,34 @@ public class AlternateTextureMatchingTests
     {
         // Null is the "no ambiguity" signal, so a normal mesh provably cannot reach the
         // disambiguation branch at all.
-        AlternateTextureMatching.BuildShapeOrdinalsByName(new[] { "A", "B", "C" }).Should().BeNull();
-        AlternateTextureMatching.BuildShapeOrdinalsByName(System.Array.Empty<string>()).Should().BeNull();
+        AlternateTextureMatching.BuildShapeOrdinalsByName(
+            new[] { ("A", 0), ("B", 1), ("C", 2) }).Should().BeNull();
+        AlternateTextureMatching.BuildShapeOrdinalsByName(
+            System.Array.Empty<(string, int)>()).Should().BeNull();
     }
 
     [Fact]
     public void BuildShapeOrdinalsByName_KeepsOnlyTheDuplicatedNames()
     {
-        var byName = AlternateTextureMatching.BuildShapeOrdinalsByName(new[] { "A", "B", "A", "C" });
+        var byName = AlternateTextureMatching.BuildShapeOrdinalsByName(
+            new[] { ("A", 0), ("B", 1), ("A", 2), ("C", 3) });
 
         byName.Should().NotBeNull();
         byName!.Keys.Should().Equal("A");
         byName["A"].Should().Equal(0, 2);
+    }
+
+    [Fact]
+    public void BuildShapeOrdinalsByName_RecordsTheGivenOrdinals_NotListPositions()
+    {
+        // The built list is not the NIF's shape list: the biped-slot filter drops shapes and a
+        // shape can fail to build, so position 0 here is NIF ordinal 1. The map has to carry the
+        // NIF ordinals, because that is the space the record's 3D Index lives in.
+        var byName = AlternateTextureMatching.BuildShapeOrdinalsByName(
+            new[] { ("Skirt", 1), ("Skirt", 2) });
+
+        byName!["Skirt"].Should().Equal(new[] { 1, 2 },
+            "shape 0 was skipped before the build, which does not renumber the shapes after it");
     }
 
     [Fact]
@@ -274,5 +302,43 @@ public class AlternateTextureMatchingTests
         var shapeNames = new[] { "Body", "Skirt", "Skirt" };
 
         MatchWithDuplicates(specs, shapeNames, "Skirt", 1).Should().NotBeNull();
+    }
+
+    // ---- Skipped shapes: built-list position is NOT the NIF ordinal --------------------------
+    //
+    // The biped-slot filter skips shapes and BuildShape can return null, so the list the renderer
+    // hands to the matcher has holes in it while each entry keeps its NIF ordinal. A record's 3D
+    // Index is NIF-space too. Inferring ordinals by counting positions therefore compared two
+    // different numbering spaces, and both directions of that mismatch are wrong — the first
+    // fatally so, because it defeats the fail-open rule. BodySlide outfits under biped filtering
+    // are exactly where duplicate names and skipped shapes co-occur.
+
+    [Fact]
+    public void SkippedShape_DesyncedIndex_DoesNotStandEveryNamesakeDown()
+    {
+        // NIF: [0]=Body (skipped by the biped filter), [1]=Skirt, [2]=Skirt. The entry's index (0)
+        // is a block-re-sort desync — it names no surviving namesake, so by the fail-open rule
+        // BOTH namesakes keep it. Counting positions made the map {0,1}, the desynced index 0
+        // aliased a namesake that is not there, and the entry bound to NOTHING.
+        var specs = new[] { Spec("Skirt", 0, (0, "textures\\variant_d.dds")) };
+        var built = new[] { ("Skirt", 1), ("Skirt", 2) };
+
+        MatchWithBuiltShapes(specs, built, "Skirt", 1).Should().NotBeNull();
+        MatchWithBuiltShapes(specs, built, "Skirt", 2).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void SkippedShape_RealIndex_StillPicksTheOneShape()
+    {
+        // Same mesh, and now the index really does name the second namesake (NIF ordinal 2). The
+        // tie-break must still fire: counting positions made the map {0,1}, which contains no 2,
+        // so neither shape stood down and the entry over-applied to both.
+        var specs = new[] { Spec("Skirt", 2, (0, "textures\\variant_d.dds")) };
+        var built = new[] { ("Skirt", 1), ("Skirt", 2) };
+        var skipped = new List<AlternateTextureSpec>();
+
+        MatchWithBuiltShapes(specs, built, "Skirt", 1, skipped).Should().BeNull();
+        MatchWithBuiltShapes(specs, built, "Skirt", 2).Should().NotBeNull();
+        skipped.Should().ContainSingle().Which.ShapeIndex.Should().Be(2);
     }
 }
