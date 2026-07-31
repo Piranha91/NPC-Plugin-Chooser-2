@@ -404,7 +404,7 @@ body{margin:0;background:var(--bg);color:var(--fg);
  padding:10px 16px 6px;font-family:"Segoe UI",system-ui,sans-serif;font-size:12.5px}
 .meta .k{color:var(--muted);margin-right:8px}
 .log{padding:6px 0 48px}
-.row{display:flex;gap:10px;padding:1px 14px;border-left:3px solid transparent;align-items:baseline}
+div.row{display:flex;gap:10px;padding:1px 14px;border-left:3px solid transparent;align-items:baseline}
 .row:hover{background:var(--hover)}
 .row .t,.row .th{color:var(--muted);flex:0 0 auto;font-size:11.5px}
 .row .th{min-width:3em;text-align:right}
@@ -473,7 +473,12 @@ thead th{background:var(--card);border-bottom:1px solid var(--border);padding:4p
 thead th:last-child{text-align:left}
 td{padding:1px 10px;text-align:right;white-space:nowrap}
 td:last-child{text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;width:100%}
+thead th:first-child,td:first-child{padding-left:14px}
 tbody tr:hover{background:var(--hover)}
+tr.row.warn td{color:var(--warn)}
+tr.row.err td{color:var(--err)}
+tr.row.ok td{color:var(--ok)}
+tr.row.muted td{color:var(--muted)}
 """;
 
     // Filtering + section collapse. Runs after parse (DOMContentLoaded), so it also works on a
