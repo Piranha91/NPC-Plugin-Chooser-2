@@ -696,7 +696,16 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
                 if (source == MugshotSourceType.AutoGeneration)
                 {
-                    if (_batchGenerator.TryGetExistingFreshAutoGenPath(
+                    // A pending forced regeneration (the user just clicked AG)
+                    // must not be short-circuited by a "fresh" cached PNG:
+                    // freshness is judged from stamped render settings, which
+                    // say nothing about the mod's asset scope — the input the
+                    // user just changed. Skipping the probe drops us into the
+                    // stale-display branch below, which shows the existing PNG
+                    // immediately but leaves HasMugshot false, so the tile is
+                    // still kicked and still reaches the AutoGeneration source.
+                    bool forcePending = _vmNpcSelectionBar.IsForcedAutoGenRegenerationPending(this);
+                    if (!forcePending && _batchGenerator.TryGetExistingFreshAutoGenPath(
                             SourceNpcFormKey, AssociatedModSetting, out var freshAutoGen, _targetNpcFormKey))
                     {
                         // Fresh cached render — display it and let the tile skip
@@ -1736,8 +1745,23 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
         _eventLogger.Log($"Falling back to {_settings.SelectedRenderer} renderer for {SourceNpcFormKey}", "PORTRAIT_GEN");
 
+        // Consume-on-success, not on entry: a render cancelled by the trigger
+        // churn documented in GenerateMugshotAsync's finally would otherwise burn
+        // the tile's one forced attempt and let the re-kick reuse the stale PNG.
+        bool force = _vmNpcSelectionBar.IsForcedAutoGenRegenerationPending(this);
+        if (force)
+        {
+            _eventLogger.Log($"Forcing re-render for {SourceNpcFormKey} from {ModName} (AG override)", "PORTRAIT_GEN");
+        }
+
         var rendererResult = await _batchGenerator.RunSelectedRendererAsync(
-            SourceNpcFormKey, AssociatedModSetting, token, targetNpcFormKey: _targetNpcFormKey);
+            SourceNpcFormKey, AssociatedModSetting, token, targetNpcFormKey: _targetNpcFormKey,
+            forceRegenerate: force);
+
+        if (force && rendererResult.Generated)
+        {
+            _vmNpcSelectionBar.MarkForcedAutoGenRegenerationServed(this);
+        }
 
         // The Internal renderer reports per-render missing-asset paths whether
         // it just rendered or reused a fresh PNG: in the Generated branch the

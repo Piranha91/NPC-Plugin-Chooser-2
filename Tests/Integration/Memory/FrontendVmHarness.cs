@@ -78,7 +78,10 @@ public sealed class FrontendVmHarness : IDisposable
         builder.RegisterType<NpcChooserViewerLoggerAdapter>().As<ICharacterViewerLogger>().SingleInstance();
         builder.RegisterType<NpcChooserSettingsAdapter>().As<ICharacterViewerSettings>().SingleInstance();
         builder.RegisterType<NpcChooserDataFolderAdapter>().As<IDataFolderProvider>().SingleInstance();
-        builder.RegisterType<NpcChooserBsaProviderAdapter>().As<IBsaArchiveProvider>().SingleInstance();
+        // AsSelf mirrors App.xaml.cs: BatchMugshotGenerator takes the concrete
+        // adapter for RefreshArchivesForMod (forced-re-render BSA re-index).
+        builder.RegisterType<NpcChooserBsaProviderAdapter>()
+            .AsSelf().As<IBsaArchiveProvider>().SingleInstance();
         builder.RegisterType<NpcChooserNpcMeshDataSourceAdapter>().As<INpcMeshDataSource>().SingleInstance();
         builder.RegisterType<WpfDispatcherMarshaller>().As<IRenderThreadMarshaller>().SingleInstance();
 

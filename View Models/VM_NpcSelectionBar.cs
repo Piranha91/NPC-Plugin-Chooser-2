@@ -268,6 +268,22 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     // settings entries falling through in their original order. Clears
     // automatically whenever SelectedNpc changes — see constructor wiring.
     [Reactive] public MugshotSourceType MugshotSourceOverride { get; set; } = MugshotSourceType.None;
+
+    // Forced-regeneration latch, armed when the user ACTIVATES the AG override.
+    // Clicking AG is the app's only "render this NPC now" gesture, and users
+    // reach for it exactly after fixing a mod (adding the folder that holds the
+    // missing assets). Priority promotion alone can't serve that: the staleness
+    // checker compares stamped render SETTINGS, so a changed asset scope is
+    // invisible to it and the click reuses the same asset-less PNG.
+    // Per-tile serve tracking (reference identity — VM_NpcsMenuMugshot doesn't
+    // override Equals) keeps it one-shot: the rebuild the override triggers
+    // hands every tile a fresh object that gets its one forced render, while the
+    // re-kicks TriggerAsyncMugshotGeneration fires at the SAME objects don't
+    // re-render. Tiles are marked served only once a render actually completed,
+    // so a render cancelled by startup/layout churn is retried by the re-kick.
+    private readonly object _forcedAutoGenLock = new();
+    private bool _forcedAutoGenPending;
+    private readonly HashSet<VM_NpcsMenuMugshot> _forcedAutoGenTilesServed = new();
     // Mirrors Settings.MugshotsFolder (existence) /
     // Settings.UseFaceFinderFallback / Settings.UsePortraitCreatorFallback so
     // the MD/FF/AG override radio buttons disable live when the corresponding
@@ -593,9 +609,22 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         // fires first when the user picks a different NPC.
         ToggleMugshotSourceOverrideCommand = ReactiveCommand.Create<MugshotSourceType>(src =>
         {
-            MugshotSourceOverride = (MugshotSourceOverride == src)
-                ? MugshotSourceType.None
-                : src;
+            bool activating = MugshotSourceOverride != src;
+
+            // Arm BEFORE the property set: setting it synchronously raises the
+            // PropertyChanged that drives the tile rebuild, and the rebuilt tiles
+            // must see the latch already up (they consult it in
+            // LoadInitialImageAsync to suppress the fresh-cache short-circuit).
+            if (activating && src == MugshotSourceType.AutoGeneration)
+            {
+                ArmForcedAutoGenRegeneration();
+            }
+            else
+            {
+                ClearForcedAutoGenRegeneration();
+            }
+
+            MugshotSourceOverride = activating ? src : MugshotSourceType.None;
         }).DisposeWith(_disposables);
         ToggleMugshotSourceOverrideCommand.ThrownExceptions
             .Subscribe(ex => Debug.WriteLine(
@@ -621,7 +650,11 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         // fires first; DistinctUntilChanged on the rebuild chain dedupes the
         // back-to-back tuple emissions.
         this.WhenAnyValue(x => x.SelectedNpc)
-            .Subscribe(_ => MugshotSourceOverride = MugshotSourceType.None)
+            .Subscribe(_ =>
+            {
+                ClearForcedAutoGenRegeneration();
+                MugshotSourceOverride = MugshotSourceType.None;
+            })
             .DisposeWith(_disposables);
 
         this.WhenAnyValue(x => x.SelectedNpc)
@@ -3839,6 +3872,66 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             if (src != MugshotSourceOverride) result.Add(src);
         }
         return result;
+    }
+
+    /// <summary>Arms the one-shot forced re-render for the AG override click.
+    /// <para>Syncs VM_Mods → Settings.ModSettings first, and that ordering is the
+    /// whole point: the renderer builds its per-mod asset-resolution scope from
+    /// the PERSISTED model (BatchMugshotGenerator → NpcMeshResolver.BuildResolutionScopes),
+    /// while a folder the user just added in the Mods tab lives only on the
+    /// VM_ModSetting until something calls SaveModSettingsToModel — previously
+    /// nothing did before app exit. That gap is why a fixed mod only rendered
+    /// correctly after a restart; forcing the render without the sync would just
+    /// reproduce the same missing assets more expensively.</para></summary>
+    private void ArmForcedAutoGenRegeneration()
+    {
+        try
+        {
+            _lazyModsVm.Value.SaveModSettingsToModel();
+        }
+        catch (Exception ex)
+        {
+            // Sync failure shouldn't block the render — it just means the render
+            // sees the previously-persisted scope, i.e. the old behavior.
+            Debug.WriteLine($"ArmForcedAutoGenRegeneration: model sync failed: {ExceptionLogger.GetExceptionStack(ex)}");
+        }
+
+        lock (_forcedAutoGenLock)
+        {
+            _forcedAutoGenTilesServed.Clear();
+            _forcedAutoGenPending = true;
+        }
+    }
+
+    private void ClearForcedAutoGenRegeneration()
+    {
+        lock (_forcedAutoGenLock)
+        {
+            _forcedAutoGenPending = false;
+            _forcedAutoGenTilesServed.Clear();
+        }
+    }
+
+    /// <summary>True while <paramref name="tile"/> still owes a forced render.
+    /// Read-only probe — the tile calls this before its cached-PNG fast path so
+    /// a "fresh" verdict can't short-circuit the render the user asked for.</summary>
+    public bool IsForcedAutoGenRegenerationPending(VM_NpcsMenuMugshot tile)
+    {
+        lock (_forcedAutoGenLock)
+        {
+            return _forcedAutoGenPending && !_forcedAutoGenTilesServed.Contains(tile);
+        }
+    }
+
+    /// <summary>Records that <paramref name="tile"/> completed its forced render,
+    /// so re-kicks against the same tile object fall back to normal staleness
+    /// rules. Called only on a render that actually produced a file.</summary>
+    public void MarkForcedAutoGenRegenerationServed(VM_NpcsMenuMugshot tile)
+    {
+        lock (_forcedAutoGenLock)
+        {
+            _forcedAutoGenTilesServed.Add(tile);
+        }
     }
 
     // --- TEMP: auto-advance for memory profiling (paired with the fields above; remove when done) ---

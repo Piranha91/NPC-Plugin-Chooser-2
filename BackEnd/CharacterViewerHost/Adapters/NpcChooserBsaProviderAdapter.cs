@@ -116,6 +116,45 @@ public sealed class NpcChooserBsaProviderAdapter : IBsaArchiveProvider
         }
     }
 
+    /// <summary>
+    /// Re-scans ONE mod's folders and indexes any BSA that wasn't indexed yet.
+    /// <para><see cref="EnsureAllArchivesOpened"/> latches for the whole session
+    /// and its comment calls the indexed set invariant — true for the startup
+    /// walk, but a mod folder the user ADDS mid-session (Mods tab → Add folder)
+    /// brings archives that walk never saw, so a forced re-render would keep
+    /// missing their assets until the next launch. This is the targeted escape
+    /// hatch: <see cref="BsaHandler.AddMissingModToCache"/> merges per archive
+    /// path and filters out already-indexed archives, so a mod with nothing new
+    /// costs one directory scan and no archive I/O. Deliberately does NOT clear
+    /// <c>_allOpened</c> — a full re-walk is far more expensive and the startup
+    /// walk's results stay valid.</para>
+    /// <para>The reader open re-bumps refcounts for archives already cached. The
+    /// adapter holds its readers for the session and never releases, so the
+    /// inflated count changes nothing; it only makes premature disposal even
+    /// less possible.</para>
+    /// </summary>
+    public void RefreshArchivesForMod(ModSetting? modSetting)
+    {
+        if (modSetting == null) return;
+        lock (_ensureLock)
+        {
+            try
+            {
+                var release = _env.SkyrimVersion.ToGameRelease();
+                var sw = Stopwatch.StartNew();
+                _bsa.AddMissingModToCache(modSetting, release).GetAwaiter().GetResult();
+                _bsa.OpenBsaReadersFor(modSetting, release);
+                Trace($"RefreshArchivesForMod '{modSetting.DisplayName}' folders=[{string.Join("|", modSetting.CorrespondingFolderPaths)}] elapsed={sw.ElapsedMilliseconds}ms");
+            }
+            catch (Exception ex)
+            {
+                // Never let an index refresh take down the render that asked for
+                // it — worst case the render resolves what was already indexed.
+                Trace($"RefreshArchivesForMod '{modSetting.DisplayName}' FAILED: {ex.Message}");
+            }
+        }
+    }
+
     public bool TryLocateInBsa(string subpath, out string? containingBsaPath)
     {
         containingBsaPath = null;

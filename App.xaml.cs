@@ -258,7 +258,13 @@ namespace NPC_Plugin_Chooser_2
             builder.RegisterType<NpcChooserViewerLoggerAdapter>().As<ICharacterViewerLogger>().SingleInstance();
             builder.RegisterType<NpcChooserSettingsAdapter>().As<ICharacterViewerSettings>().SingleInstance();
             builder.RegisterType<NpcChooserDataFolderAdapter>().As<IDataFolderProvider>().SingleInstance();
-            builder.RegisterType<NpcChooserBsaProviderAdapter>().As<IBsaArchiveProvider>().SingleInstance();
+            // AsSelf too: BatchMugshotGenerator needs the concrete adapter for
+            // RefreshArchivesForMod (mid-session BSA re-index on a forced
+            // re-render), which is NPC2-side and deliberately not on the
+            // renderer's IBsaArchiveProvider interface. Same SingleInstance,
+            // so both resolutions hand back the one latched adapter.
+            builder.RegisterType<NpcChooserBsaProviderAdapter>()
+                .AsSelf().As<IBsaArchiveProvider>().SingleInstance();
             builder.RegisterType<NpcChooserNpcMeshDataSourceAdapter>().As<INpcMeshDataSource>().SingleInstance();
             builder.RegisterType<WpfDispatcherMarshaller>().As<IRenderThreadMarshaller>().SingleInstance();
 

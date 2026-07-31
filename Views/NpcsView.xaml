@@ -1467,7 +1467,7 @@
                                      ConverterParameter=AutoGeneration}">
                         <RadioButton.Style>
                             <Style TargetType="RadioButton">
-                                <Setter Property="ToolTip" Value="Show Auto-Generated mugshots first for this NPC. Click again to clear."/>
+                                <Setter Property="ToolTip" Value="Show Auto-Generated mugshots first for this NPC, and re-render them now using the mod's current folders and assets. Click again to clear."/>
                                 <Style.Triggers>
                                     <Trigger Property="IsEnabled" Value="False">
                                         <Setter Property="ToolTip" Value="Enable 'Auto-Generate missing mugshots' in Settings to use this option."/>
