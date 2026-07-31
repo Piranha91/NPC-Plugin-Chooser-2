@@ -321,7 +321,8 @@ public class AuxilliaryRecordTests
         var mod = MutagenFixtures.NewMod("Log.esp");
         var npc = MutagenFixtures.NewNpc(mod, editorId: "MyEditorId");
 
-        Auxilliary.GetLogString(npc, language: null).Should().Be("MyEditorId | ");
+        // No trailing separator: in the short form nothing follows the EditorID.
+        Auxilliary.GetLogString(npc, language: null).Should().Be("MyEditorId");
     }
 
     [Fact]
@@ -362,7 +363,7 @@ public class AuxilliaryRecordTests
         var mod = MutagenFixtures.NewMod("Log.esp");
         var race = MutagenFixtures.NewRace(mod, "TestRace");
 
-        Auxilliary.GetLogString(race, language: null).Should().Be("TestRace | ");
+        Auxilliary.GetLogString(race, language: null).Should().Be("TestRace");
     }
 
     [Fact]

@@ -276,7 +276,10 @@ public class Auxilliary : IDisposable
         {
             if (majorRecordGetter.EditorID != null)
             {
-                logBuilder.Append(majorRecordGetter.EditorID + " | ");
+                // The separator belongs to the full form only. In the short form nothing follows
+                // the EditorID (the FormKey below is appended only when nothing was written at
+                // all), so appending it there left a Name-less record labelled "EditorID | ".
+                logBuilder.Append(fullString ? majorRecordGetter.EditorID + " | " : majorRecordGetter.EditorID);
             }
 
             if (logBuilder.Length == 0 || fullString)

@@ -29,6 +29,53 @@ public class ValidatorModelsTests
     // ----------------------------------------------------------------------
 
     [Fact]
+    public void InvalidSelection_ToLine_IsTheFlatLogForm()
+    {
+        new Validator.InvalidSelection("Lydia", "High Poly NPC Overhaul", "Mod folder not found")
+            .ToLine().Should().Be("Lydia -> 'High Poly NPC Overhaul' (Mod folder not found)");
+    }
+
+    [Fact]
+    public void FormatInvalidSelectionsReport_GroupsByReasonThenMod()
+    {
+        var entries = new List<Validator.InvalidSelection>
+        {
+            new("NpcA", "Mod One", "Templated NPC"),
+            new("NpcB", "Mod One", "Templated NPC"),
+            new("NpcC", "Mod Two", "Templated NPC"),
+            new("NpcD", "Mod One", "Mod folder not found"),
+        };
+
+        var report = Validator.FormatInvalidSelectionsReport(entries).Replace("\r\n", "\n");
+
+        report.Should().Be(
+            "Templated NPC (3 selections):\n" +
+            "- Mod One\n" +
+            "-- NpcA\n" +
+            "-- NpcB\n" +
+            "- Mod Two\n" +
+            "-- NpcC\n" +
+            "\n" +
+            "Mod folder not found (1 selection):\n" +
+            "- Mod One\n" +
+            "-- NpcD");
+    }
+
+    [Fact]
+    public void FormatInvalidSelectionsReport_NoEntries_IsEmpty()
+    {
+        Validator.FormatInvalidSelectionsReport(new List<Validator.InvalidSelection>())
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ValidationReport_DetailedSelections_DefaultsToEmpty()
+    {
+        new Validator.ValidationReport(new List<string> { "a" })
+            .DetailedSelections.Should().BeEmpty("callers that pass only flat lines still get a usable list");
+    }
+
+    [Fact]
     public void ValidationReport_StoresList()
     {
         var list = new List<string> { "a", "b" };
@@ -50,8 +97,9 @@ public class ValidatorModelsTests
     {
         var list = new List<string> { "x" };
         var report = new Validator.ValidationReport(list);
-        report.Deconstruct(out var invalid);
+        report.Deconstruct(out var invalid, out var entries);
         invalid.Should().BeSameAs(list);
+        entries.Should().BeNull("no structured entries were supplied");
     }
 
     [Fact]

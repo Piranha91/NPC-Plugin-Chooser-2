@@ -20,7 +20,55 @@ public class Validator : OptionalUIModule
     private Dictionary<FormKey, ScreeningResult> _screeningCache = new();
     private Dictionary<ModKey, HashSet<ModKey>> _masterPluginCache = new();
 
-    public record ValidationReport(List<string> InvalidSelections);
+    /// <summary>
+    /// One rejected selection, kept in parts (who / from which mod / why) so the confirmation
+    /// dialog can group hundreds of rejections by reason and by mod instead of repeating an
+    /// identical explanation on every line. <see cref="ToLine"/> is the flat form used by the run
+    /// log and by callers that only want a human-readable string.
+    /// </summary>
+    public record InvalidSelection(string NpcDescription, string ModName, string Reason)
+    {
+        public string ToLine() => $"{NpcDescription} -> '{ModName}' ({Reason})";
+    }
+
+    /// <param name="InvalidSelections">Flat one-line form of each rejection, in screening order.</param>
+    /// <param name="Entries">The same rejections in parts; null only for reports built by callers
+    /// that predate the structured form.</param>
+    public record ValidationReport(List<string> InvalidSelections, List<InvalidSelection>? Entries = null)
+    {
+        public IReadOnlyList<InvalidSelection> DetailedSelections => Entries ?? (IReadOnlyList<InvalidSelection>)Array.Empty<InvalidSelection>();
+    }
+
+    /// <summary>
+    /// Renders rejected selections grouped by reason, and within each reason by the mod the
+    /// appearance was chosen from. A load order can produce hundreds of rejections that share one
+    /// explanation, so the explanation is printed once per group rather than once per NPC.
+    /// Pure — no state, no logging — so it can be tested directly.
+    /// </summary>
+    public static string FormatInvalidSelectionsReport(IEnumerable<InvalidSelection> entries)
+    {
+        var sb = new StringBuilder();
+
+        // GroupBy preserves first-appearance order of keys and the original order within each
+        // group, so the report reads in the same order as the run log.
+        foreach (var reasonGroup in entries.GroupBy(e => e.Reason, StringComparer.Ordinal))
+        {
+            var count = reasonGroup.Count();
+            sb.AppendLine($"{reasonGroup.Key} ({count} selection{(count == 1 ? string.Empty : "s")}):");
+            foreach (var modGroup in reasonGroup.GroupBy(e => e.ModName, StringComparer.OrdinalIgnoreCase))
+            {
+                sb.AppendLine($"- {modGroup.Key}");
+                foreach (var entry in modGroup)
+                {
+                    sb.AppendLine($"-- {entry.NpcDescription}");
+                }
+            }
+
+            sb.AppendLine();
+        }
+
+        return sb.ToString().TrimEnd();
+    }
 
     // Constructor updated to include AssetHandler for optimized directory checks.
     public Validator(EnvironmentStateProvider environmentStateProvider, Settings settings, AssetHandler assetHandler,
@@ -45,13 +93,24 @@ public class Validator : OptionalUIModule
         AppendLog("\nStarting pre-run screening of NPC selections...", false, false);
         _screeningCache = new Dictionary<FormKey, ScreeningResult>();
         var invalidSelections = new List<string>();
+        var invalidEntries = new List<InvalidSelection>();
+
+        // Single place a rejection is recorded, so the flat log line and the grouped dialog form
+        // can never drift apart.
+        void Reject(string npcDescription, string modName, string reason)
+        {
+            var entry = new InvalidSelection(npcDescription, modName, reason);
+            invalidEntries.Add(entry);
+            invalidSelections.Add(entry.ToLine());
+        }
+
         var selections = _settings.SelectedAppearanceMods;
 
         if (selections == null || !selections.Any())
         {
             AppendLog("No selections to screen.");
             // Return an empty report if there's nothing to do.
-            return new ValidationReport(new List<string>());
+            return new ValidationReport(new List<string>(), new List<InvalidSelection>());
         }
 
         IReadOnlyDictionary<FormKey, (string ModName, FormKey AppearanceNpcFormKey)> selectionsToScreen;
@@ -70,7 +129,7 @@ public class Validator : OptionalUIModule
             if (!selectionsToScreen.Any())
             {
                 AppendLog($"No selections found for the group '{selectedNpcGroup}'.");
-                return new ValidationReport(new List<string>());
+                return new ValidationReport(new List<string>(), new List<InvalidSelection>());
             }
         }
         else
@@ -128,8 +187,7 @@ public class Validator : OptionalUIModule
                     // forceLog: a screening warning means the selection is being dropped, which
                     // the user has to see whether or not verbose logging is on.
                     AppendLog($"  SCREENING WARNING: {errorMsg}", forceLog: true);
-                    invalidSelections.Add(
-                        $"{npcFormKey} -> '{selectedModDisplayName}' (Base NPC not found in load order)");
+                    Reject(npcFormKey.ToString(), selectedModDisplayName, "Base NPC not found in load order");
                     if (shouldUpdateUI)
                     {
                         UpdateProgress(i + 1, totalToScreen, $"Screening: {npcIdentifier}");
@@ -163,8 +221,8 @@ public class Validator : OptionalUIModule
                     // forceLog: a screening warning means the selection is being dropped, which
                     // the user has to see whether or not verbose logging is on.
                     AppendLog($"  SCREENING WARNING: {errorMsg}", forceLog: true);
-                    invalidSelections.Add(
-                        $"{npcIdentifier} -> '{selectedModDisplayName}' ({appearanceNpcIdenentifier}) - (Can't appearance swap in {_settings.PatchingMode} mode)");
+                    Reject($"{npcIdentifier} (from {appearanceNpcIdenentifier})", selectedModDisplayName,
+                        $"Can't appearance swap in {_settings.PatchingMode} mode");
                     if (shouldUpdateUI)
                     {
                         UpdateProgress(i + 1, totalToScreen, $"Screening: {npcIdentifier}");
@@ -187,7 +245,7 @@ public class Validator : OptionalUIModule
                     AppendLog(
                         $"  SCREENING ERROR: Cannot find Mod '{selectedModDisplayName}' for NPC {npcIdentifier}. This selection is invalid or a placeholder.",
                         true);
-                    invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod not installed or doesn't contain this NPC)");
+                    Reject(npcIdentifier, selectedModDisplayName, "Mod not installed or doesn't contain this NPC");
                     await Task.Delay(1, ct);
                     continue;
                 }
@@ -203,7 +261,7 @@ public class Validator : OptionalUIModule
                     AppendLog(
                         $"  SCREENING ERROR: For NPC {npcIdentifier}, none of the specified folders for mod '{selectedModDisplayName}' exist on disk. This selection is invalid.",
                         true);
-                    invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Mod folder not found)");
+                    Reject(npcIdentifier, selectedModDisplayName, "Mod folder not found");
                     continue;
                 }
             }
@@ -228,8 +286,8 @@ public class Validator : OptionalUIModule
                         var errorMsg =
                             $"For NPC {npcIdentifier}, the selected mod '{selectedModDisplayName}' provides only FaceGen files for this NPC, and the record it would inherit ({appearanceNpcFormKey}) cannot be resolved from the load order (its defining plugin '{appearanceNpcFormKey.ModKey.FileName}' is missing). This selection is invalid.";
                         AppendLog($"  SCREENING ERROR: {errorMsg}", true);
-                        invalidSelections.Add(
-                            $"{npcIdentifier} -> '{selectedModDisplayName}' (FaceGen-only selection; NPC record unresolvable - missing '{appearanceNpcFormKey.ModKey.FileName}')");
+                        Reject(npcIdentifier, selectedModDisplayName,
+                            $"FaceGen-only selection; NPC record unresolvable - missing '{appearanceNpcFormKey.ModKey.FileName}'");
                         continue;
                     }
 
@@ -290,7 +348,7 @@ public class Validator : OptionalUIModule
 
                         var errorMsg = $"For NPC {npcIdentifier}, the selected plugin '{sourcePlugin.Value.FileName}' is missing a required master: '{master.FileName}'{rejectionDetail}. This selection is invalid.";
                         AppendLog($"  SCREENING ERROR: {errorMsg}", true);
-                        invalidSelections.Add($"{npcIdentifier} -> '{selectedModDisplayName}' (Missing required master: {master.FileName})");
+                        Reject(npcIdentifier, selectedModDisplayName, $"Missing required master: {master.FileName}");
                         mastersAreValid = false;
                         break; // A single missing master invalidates the selection.
                     }
@@ -325,9 +383,9 @@ public class Validator : OptionalUIModule
                         $"  SCREENING WARNING: {npcIdentifier} inherits its appearance ({terminusDetail}), and " +
                         $"SkyPatcher mode cannot redirect an inherited face. This selection will be skipped.",
                         forceLog: true);
-                    invalidSelections.Add(
-                        $"{npcIdentifier} -> '{selectedModDisplayName}' (Templated NPC — SkyPatcher can't apply an " +
-                        "appearance through a template chain; set Templated NPCs to \"Give each NPC its own copy\")");
+                    Reject(npcIdentifier, selectedModDisplayName,
+                        "Templated NPC — SkyPatcher can't apply an appearance through a template chain; " +
+                        "set Templated NPCs to \"Give each NPC its own copy\"");
                     continue;
                 }
             }
@@ -367,7 +425,7 @@ public class Validator : OptionalUIModule
 
         // The logic for showing the popup is removed from this class.
         // We now simply return the list of invalid selections.
-        return new ValidationReport(invalidSelections);
+        return new ValidationReport(invalidSelections, invalidEntries);
     }
 
     /// <summary>

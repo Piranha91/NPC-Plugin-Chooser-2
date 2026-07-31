@@ -387,12 +387,20 @@ public class VM_Run : ReactiveObject, IDisposable
             {
                 CurrentProgressMessage = "Waiting for user input...";
 
+                // Grouped by reason, then by the mod the appearance came from: a load order can
+                // reject hundreds of NPCs for one shared reason, and repeating that reason on
+                // every line makes the dialog unreadable.
+                var details = validationReport.DetailedSelections;
+                var body = details.Any()
+                    ? Validator.FormatInvalidSelectionsReport(details)
+                    : string.Join("\n", validationReport.InvalidSelections);
+
                 var message =
                     new StringBuilder(
-                        $"Found {validationReport.InvalidSelections.Count} invalid NPC selection(s) that will be skipped:\n\n");
-                message.AppendLine(string.Join("\n", validationReport.InvalidSelections));
+                        $"Found {validationReport.InvalidSelections.Count} invalid NPC selection(s) that will be skipped for the following reasons:\n\n");
+                message.AppendLine(body);
                 message.AppendLine(
-                    "\nThe reason for each skipped selection is shown above. Skip them and continue with only the valid selections?");
+                    "\nSkip them and continue with only the valid selections?");
 
                 Application.Current?.Dispatcher.Invoke(() =>
                 {
