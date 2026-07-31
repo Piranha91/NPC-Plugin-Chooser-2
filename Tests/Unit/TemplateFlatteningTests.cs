@@ -346,6 +346,33 @@ public class TemplateFlatteningTests
         text.Should().NotContain(":", "a FormKey would leak in as 'xxxxxx:Plugin.esp'");
     }
 
+    // ---- Randomize's inherited-template note (VM_NpcSelectionBar.BuildInheritedTemplateRandomizeNote)
+    //
+    // Randomize used to list every templated NPC it could not assign under "had no candidate that
+    // passed validation", which reads as breakage: those NPCs have no face of their own, so an
+    // unassigned one still shows its template's face in game exactly as intended. They are counted
+    // and summarised by this note instead. The same gate as the badge decides which side an NPC
+    // lands on, so under GiveEachNpcOwnCopy a real miss keeps its individual entry.
+
+    [Fact]
+    public void InheritedTemplateNote_ReadsAsAnOutcome_NotAFailure()
+    {
+        var text = VM_NpcSelectionBar.BuildInheritedTemplateRandomizeNote(570);
+
+        text.Should().Contain("570");
+        text.Should().NotContainAny("failed", "invalid", "could not", "error");
+        text.Should().NotContain("Traits", "'the Traits flag' means nothing to most users");
+    }
+
+    [Fact]
+    public void InheritedTemplateNote_DoesNotSendTheUserToTheTemplateSetting()
+    {
+        // Deliberate: the outcome is already correct, so naming a mode switch the user never asked
+        // about is noise on a message most of them will only skim.
+        VM_NpcSelectionBar.BuildInheritedTemplateRandomizeNote(5)
+            .Should().NotContain(HandlingModeDisplay.ToDisplayString(TemplateHandlingMode.GiveEachNpcOwnCopy));
+    }
+
     [Theory]
     [InlineData(null, TemplateHandlingMode.GiveEachNpcOwnCopy, TemplateHandlingMode.GiveEachNpcOwnCopy)]
     [InlineData(TemplateHandlingMode.InheritFromTemplate, TemplateHandlingMode.GiveEachNpcOwnCopy, TemplateHandlingMode.InheritFromTemplate)]

@@ -550,7 +550,7 @@ public static class FaceGenLadder
 
         return Abort(i, row, legacy,
             $"no face mesh could be found for this NPC in '{i.ModName}', in the mod that originally " +
-            $"added it, or anywhere else in your load order, so it is being left unchanged.");
+            $"added it, or anywhere else in your mod list, so it is being left unchanged.");
     }
 
     /// <summary>

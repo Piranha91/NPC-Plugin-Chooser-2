@@ -272,7 +272,23 @@ public readonly struct AssetRequestContext
     /// "HeadPart 'Hair01' [ID]"); for NifTexture/SmpXml, the source NIF/XML file name; else empty.</summary>
     public readonly string Referencer;
 
-    public AssetRequestContext(string? npcIdentifier, FormKey targetNpc, FormKey donorNpc, string? donorEditorId, string reason, string referencer = "")
+    /// <summary>
+    /// True when a HeadPart record is the ONLY thing that pulled this asset in. Unlike
+    /// <see cref="Referencer"/> — which is populated only while the provenance diag is on — this is
+    /// always accurate, because a diagnostic reads it: the textureless-shape warning
+    /// (<see cref="NpcWarningKind.TexturelessShapes"/>) suppresses head-part meshes.
+    ///
+    /// <para>Why: the engine renders an NPC's face from the shapes baked into the FaceGen NIF, not
+    /// from the head part's own mesh, and mod authors routinely edit the baked geometry (retargeting
+    /// its textures with it) without updating the HDPT record, which goes on naming the donor mesh.
+    /// The head part NIF then references textures nobody installed while the face renders perfectly
+    /// — a false positive that says "will render untextured" about geometry the game never draws.
+    /// Assets reached through an ArmorAddon are NOT suppressed: worn armour is drawn from its own
+    /// mesh, so a missing texture there is real.</para>
+    /// </summary>
+    public readonly bool HeadPartOnly;
+
+    public AssetRequestContext(string? npcIdentifier, FormKey targetNpc, FormKey donorNpc, string? donorEditorId, string reason, string referencer = "", bool headPartOnly = false)
     {
         NpcIdentifier = npcIdentifier;
         TargetNpc = targetNpc;
@@ -280,19 +296,24 @@ public readonly struct AssetRequestContext
         DonorEditorId = donorEditorId;
         Reason = reason;
         Referencer = referencer;
+        HeadPartOnly = headPartOnly;
     }
 
     /// <summary>Copy with a different <see cref="Reason"/> and no referencer (recursively-discovered assets).</summary>
     public AssetRequestContext WithReason(string reason)
-        => new(NpcIdentifier, TargetNpc, DonorNpc, DonorEditorId, reason, string.Empty);
+        => new(NpcIdentifier, TargetNpc, DonorNpc, DonorEditorId, reason, string.Empty, HeadPartOnly);
 
     /// <summary>Copy with a different <see cref="Reason"/> and <see cref="Referencer"/>.</summary>
     public AssetRequestContext WithReason(string reason, string referencer)
-        => new(NpcIdentifier, TargetNpc, DonorNpc, DonorEditorId, reason, referencer);
+        => new(NpcIdentifier, TargetNpc, DonorNpc, DonorEditorId, reason, referencer, HeadPartOnly);
 
     /// <summary>Copy with a different <see cref="Referencer"/>, keeping the reason.</summary>
     public AssetRequestContext WithReferencer(string referencer)
-        => new(NpcIdentifier, TargetNpc, DonorNpc, DonorEditorId, Reason, referencer);
+        => new(NpcIdentifier, TargetNpc, DonorNpc, DonorEditorId, Reason, referencer, HeadPartOnly);
+
+    /// <summary>Copy marked as reached only through a HeadPart record (see <see cref="HeadPartOnly"/>).</summary>
+    public AssetRequestContext AsHeadPartOnly()
+        => new(NpcIdentifier, TargetNpc, DonorNpc, DonorEditorId, Reason, Referencer, true);
 
     /// <summary>Display identity for the target NPC (identifier if present, else FormKey).</summary>
     public string NpcDisplay()

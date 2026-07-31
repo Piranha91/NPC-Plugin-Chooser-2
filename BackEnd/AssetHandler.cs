@@ -805,6 +805,14 @@ public class AssetHandler : OptionalUIModule
     private async Task WarnOnFullyUnresolvedShapeTextures(
         string nifPathToAnalyze, ModSetting modSetting, string faceTintSubPath, AssetRequestContext ctx)
     {
+        // A mesh only a HeadPart record named is not what the engine draws — the face comes from the
+        // shapes baked into the FaceGen NIF, which is scanned on its own and reports for real. Mod
+        // authors commonly retarget the baked geometry's textures without updating the HDPT record,
+        // leaving it pointing at a donor mesh whose textures were never installed; warning on that
+        // claims an NPC will render untextured while their face renders correctly. See
+        // AssetRequestContext.HeadPartOnly. ArmorAddon meshes ARE drawn, so they stay reportable.
+        if (ctx.HeadPartOnly) return;
+
         IReadOnlyList<(string ShapeName, IReadOnlyList<string> TexturePaths)> byShape;
         try
         {
@@ -1179,9 +1187,13 @@ public class AssetHandler : OptionalUIModule
         // report names exactly which record pulled each PluginRef asset in. Null (skipped) when off.
         Dictionary<string, HashSet<string>>? assetProv =
             AssetProvenanceDiag.IsEnabled ? new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase) : null;
+        // Meshes only a HeadPart record named. Tracked unconditionally (unlike assetProv): the
+        // textureless-shape warning skips them because the engine draws the face from the FaceGen
+        // NIF's baked shapes, not from these — see AssetRequestContext.HeadPartOnly.
+        var headPartOnlyMeshPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (appearanceModSetting.CopyAssets)
         {
-            GetAssetPathsReferencedByPlugin(appearanceNpcRecord, appearanceModSetting.CorrespondingModKeys, appearanceModSetting.CorrespondingFolderPaths.ToHashSet(), meshToCopyRelativePaths, textureToCopyRelativePaths, assetProv);
+            GetAssetPathsReferencedByPlugin(appearanceNpcRecord, appearanceModSetting.CorrespondingModKeys, appearanceModSetting.CorrespondingFolderPaths.ToHashSet(), meshToCopyRelativePaths, textureToCopyRelativePaths, assetProv, headPartOnlyMeshPaths);
             AddCorrespondingNumericalNifPaths(meshToCopyRelativePaths, new HashSet<string>());
         }
 
@@ -1194,10 +1206,12 @@ public class AssetHandler : OptionalUIModule
         {
             Auxilliary.TryRegularizePath(relPath, out string regularizedPath);
             // FaceGen assets have no referencing record; PluginRef assets carry the record(s) that
-            // referenced them (looked up by the raw path, which is what the prov map is keyed on).
+            // referenced them (looked up by the raw path, which is what the prov map is keyed on,
+            // and what headPartOnlyMeshPaths holds too).
             AssetRequestContext reqCtx = faceGenRelPaths.Contains(regularizedPath)
                 ? faceGenCtx
                 : pluginRefCtx.WithReferencer(LookupReferencer(assetProv, relPath));
+            if (headPartOnlyMeshPaths.Contains(relPath)) reqCtx = reqCtx.AsHeadPartOnly();
             // This method is fire-and-forget; the task is added to the concurrent dictionary
             // and runs in the background. It will not re-process assets it has already seen.
             RequestAssetCopyAsync(regularizedPath, appearanceModSetting, outputBasePath, faceTexRelativePath, reqCtx);
@@ -1429,28 +1443,41 @@ public class AssetHandler : OptionalUIModule
     // When the opt-in AssetProvenance diag is on, each helper is passed a path -> referencing-record
     // map (prov); every asset path it collects is tagged with the record that referenced it (head
     // part / armor addon / texture set) so the CSV report can name it. prov is null when the diag is off.
+    // headPartOnlyMeshPaths (optional) receives the mesh paths that ONLY a HeadPart record named, so
+    // the textureless-shape warning can skip them (see AssetRequestContext.HeadPartOnly). A path an
+    // ArmorAddon also names is removed again at the end: worn armour really is drawn from its own
+    // mesh, so it must stay reportable even when a head part happens to point at the same file.
     private void GetAssetPathsReferencedByPlugin(INpcGetter npc, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> meshPaths,
-        HashSet<string> texturePaths, Dictionary<string, HashSet<string>>? prov)
+        HashSet<string> texturePaths, Dictionary<string, HashSet<string>>? prov, HashSet<string>? headPartOnlyMeshPaths = null)
     {
         var visitedHeadParts = new HashSet<FormKey>();
 
         if (npc.HeadParts != null)
             foreach (var hpLink in npc.HeadParts)
-                GetHeadPartAssetPaths(hpLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, visitedHeadParts, prov);
+                GetHeadPartAssetPaths(hpLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, visitedHeadParts, prov, headPartOnlyMeshPaths);
         if (!npc.WornArmor.IsNull && _recordHandler.TryGetRecordFromMods(npc.WornArmor, correspondingModKeys, fallBackModFolderNames,
                 RecordLookupFallBack.Winner, out var wornArmorGetterGeneric) && wornArmorGetterGeneric != null)
         {
             var wornArmorGetter = wornArmorGetterGeneric as IArmorGetter;
             if (wornArmorGetter != null && wornArmorGetter.Armature != null)
             {
+                // Collected separately rather than diffed out of meshPaths: a path both records name
+                // is already in the set, so the ARMA walk's Add is a no-op and a before/after
+                // snapshot could not see it.
+                var armaMeshPaths = headPartOnlyMeshPaths != null
+                    ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    : null;
+
                 foreach (var aaLink in wornArmorGetter.Armature)
-                    GetARMAAssetPaths(aaLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, prov);
+                    GetARMAAssetPaths(aaLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, prov, armaMeshPaths);
+
+                if (armaMeshPaths != null) headPartOnlyMeshPaths!.ExceptWith(armaMeshPaths);
             }
         }
     }
 
     private void GetHeadPartAssetPaths(IFormLinkGetter<IHeadPartGetter> hpLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> texturePaths,
-        HashSet<string> meshPaths, HashSet<FormKey> visitedHeadParts, Dictionary<string, HashSet<string>>? prov)
+        HashSet<string> meshPaths, HashSet<FormKey> visitedHeadParts, Dictionary<string, HashSet<string>>? prov, HashSet<string>? headPartMeshPaths = null)
     {
         if (hpLink.IsNull || !_recordHandler.TryGetRecordFromMods(hpLink, correspondingModKeys, fallBackModFolderNames, RecordLookupFallBack.Winner, out var hpGetterGeneric)) return;
         var hpGetter = hpGetterGeneric as IHeadPartGetter;
@@ -1463,25 +1490,25 @@ public class AssetHandler : OptionalUIModule
             return; // Break the recursive loop
         }
 
-        AddPathWithProv(meshPaths, hpGetter.Model?.File, prov, hpGetter);
+        AddPathWithProv(meshPaths, hpGetter.Model?.File, prov, hpGetter, headPartMeshPaths);
         if (hpGetter.Parts != null)
             foreach (var part in hpGetter.Parts)
-                AddPathWithProv(meshPaths, part?.FileName, prov, hpGetter);
+                AddPathWithProv(meshPaths, part?.FileName, prov, hpGetter, headPartMeshPaths);
         if (!hpGetter.TextureSet.IsNull) GetTextureSetPaths(hpGetter.TextureSet, correspondingModKeys, fallBackModFolderNames, texturePaths, prov);
         if (hpGetter.ExtraParts != null)
             foreach (var extraPartLink in hpGetter.ExtraParts)
-                GetHeadPartAssetPaths(extraPartLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, visitedHeadParts, prov);
+                GetHeadPartAssetPaths(extraPartLink, correspondingModKeys, fallBackModFolderNames, texturePaths, meshPaths, visitedHeadParts, prov, headPartMeshPaths);
     }
 
     private void GetARMAAssetPaths(IFormLinkGetter<IArmorAddonGetter> aaLink, IEnumerable<ModKey> correspondingModKeys, HashSet<string> fallBackModFolderNames, HashSet<string> texturePaths,
-        HashSet<string> meshPaths, Dictionary<string, HashSet<string>>? prov)
+        HashSet<string> meshPaths, Dictionary<string, HashSet<string>>? prov, HashSet<string>? armaMeshPaths = null)
     {
         if (aaLink.IsNull || !_recordHandler.TryGetRecordFromMods(aaLink, correspondingModKeys, fallBackModFolderNames, RecordLookupFallBack.Winner, out var aaGetterGeneric)) return;
         var aaGetter = aaGetterGeneric as IArmorAddonGetter;
         if (aaGetter is null) return;
 
-        AddPathWithProv(meshPaths, aaGetter.WorldModel?.Male?.File, prov, aaGetter);
-        AddPathWithProv(meshPaths, aaGetter.WorldModel?.Female?.File, prov, aaGetter);
+        AddPathWithProv(meshPaths, aaGetter.WorldModel?.Male?.File, prov, aaGetter, armaMeshPaths);
+        AddPathWithProv(meshPaths, aaGetter.WorldModel?.Female?.File, prov, aaGetter, armaMeshPaths);
         if (!aaGetter.SkinTexture?.Male.IsNull ?? false)
             GetTextureSetPaths(aaGetter.SkinTexture.Male, correspondingModKeys, fallBackModFolderNames, texturePaths, prov);
         if (!aaGetter.SkinTexture?.Female.IsNull ?? false)
@@ -1507,11 +1534,15 @@ public class AssetHandler : OptionalUIModule
 
     // Adds relPath to the given set (if non-empty) and — when the AssetProvenance diag is on
     // (prov != null) — tags it with the record that referenced it, so the report can say exactly
-    // which head part / armor addon / texture set pulled the file in.
-    private static void AddPathWithProv(HashSet<string> pathSet, string? relPath, Dictionary<string, HashSet<string>>? prov, IMajorRecordGetter owner)
+    // which head part / armor addon / texture set pulled the file in. alsoAddTo is the caller's
+    // per-record-kind set (head part meshes / ARMA meshes), tracked independently of the diag
+    // because the textureless-shape warning reads it on every run.
+    private static void AddPathWithProv(HashSet<string> pathSet, string? relPath, Dictionary<string, HashSet<string>>? prov, IMajorRecordGetter owner,
+        HashSet<string>? alsoAddTo = null)
     {
         if (string.IsNullOrEmpty(relPath)) return;
         pathSet.Add(relPath);
+        alsoAddTo?.Add(relPath);
         if (prov == null) return;
         if (!prov.TryGetValue(relPath, out var owners))
         {

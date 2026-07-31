@@ -24,7 +24,9 @@ public enum NpcWarningKind
 
     /// <summary>A copied NIF shape has no resolvable texture in the selected mod, the game Data
     /// folder, or the vanilla archives, so it renders untextured (detail names the NIF, the shape
-    /// and the missing paths).</summary>
+    /// and the missing paths). Meshes reached only through a HeadPart record are exempt — the game
+    /// draws the face from the FaceGen NIF's baked shapes, so a stale HDPT mesh is not rendered
+    /// and warning on it is a false positive; see <see cref="AssetRequestContext.HeadPartOnly"/>.</summary>
     TexturelessShapes,
 }
 
@@ -115,22 +117,25 @@ public static class NpcWarningReporter
     {
         NpcWarningKind.OriginMeshCompatibility =>
             "The following NPCs did not have face meshes provided by the appearance mods you " +
-            "selected for them, so NPC2 forwarded their original meshes. However, other mods in " +
-            "your load order may make changes that are incompatible with the original meshes, " +
-            "causing the dark face bug. Spawn these NPCs in game to check their faces before " +
-            "starting a playthrough:",
+            "selected for them, so NPC2 forwarded the meshes from the mods that originally added " +
+            "them. A check found those meshes do not match the head parts of the records these " +
+            "NPCs will ship with — either the mod you picked edits the head parts but ships no " +
+            "matching mesh, or another mod has changed the record (or its race) that the original " +
+            "mesh was built for. Either way this can cause the dark face bug. Spawn these NPCs in " +
+            "game to check their faces before starting a playthrough:",
 
         NpcWarningKind.ModMeshCompatibility =>
-            "The appearance mods you selected for the following NPCs provide face meshes but do " +
-            "not change the NPC records, so the meshes must match the records the NPCs already " +
-            "use — and a check found they do not. Other mods in your load order may have changed " +
-            "those records' head data. Spawn these NPCs in game to check their faces before " +
-            "starting a playthrough:",
+            "The appearance mods you selected for the following NPCs supply face meshes but no " +
+            "plugin record, so NPC2 pairs each mesh with the record from the plugin that " +
+            "originally added the NPC — and a check found the mesh does not match that record's " +
+            "head parts. The mod was likely built against a different version of these NPCs (a " +
+            "high-poly head replacer, USSEP, or an overhaul it expects underneath it). Spawn " +
+            "these NPCs in game to check their faces before starting a playthrough:",
 
         NpcWarningKind.MissingFaceTint =>
             "No face tint textures could be found for the following NPCs — not in the appearance " +
             "mods you selected for them, not in the mods that originally added the NPCs, and not " +
-            "anywhere else in your load order. The faces of these NPCs may look discoloured in game:",
+            "anywhere else in your mod list. The faces of these NPCs may look discoloured in game:",
 
         NpcWarningKind.TexturelessShapes =>
             "The following NPCs use mesh shapes whose textures could not be found in the " +

@@ -247,6 +247,14 @@ equivalent case gets a forced end-of-run report naming every NPC
 difference the user had no way to predict. `FaceGenLadderDecision.FlattenedFaceCameFromElsewhere` now
 drives a matching `Patcher.ReportFlattenedFallbackNpcs`.
 
+**Superseded 2026-07-31, one half only:** `ReportInheritedFaceNpcs` is now verbose-only, headline
+included, while `ReportFlattenedFallbackNpcs` stays forced. The parity above was argued from
+severity; volume broke it. Inheriting under `InheritFromTemplate` is not an anomaly but the literal
+meaning of the setting, so every templated NPC in the load order lands in that list — 755 on the
+reporting run, all rendering correctly — and a forced report that size becomes the entire log while
+implying several hundred failures. The flattened-fallback case stays forced because it reports the
+opposite: a pick that genuinely could not be delivered, in actionable numbers.
+
 It requires the mod to have supplied **neither** half. A tint-only mod (row 3/4) really is applying
 the user's choice to the face — only the geometry is borrowed — so reporting that as undeliverable
 would be false and would bury the real cases. Pinned by the four `Flatten_*` / `*FlattenedFallback*`

@@ -1028,7 +1028,10 @@ public class Patcher : OptionalUIModule
 
                                 if (faceGenDecision.Abort)
                                 {
-                                    AppendLog($"      {faceGenDecision.LogLine}", false, true);
+                                    // Verbose-only on purpose: ReportFaceGenSkippedNpcs repeats this
+                                    // same sentence per NPC at the end of the run, where it is
+                                    // actually read. Forcing it here too printed every skip twice.
+                                    AppendLog($"      {faceGenDecision.LogLine}", false, false);
                                     _faceGenSkippedNpcs.Add((npcIdentifier, selectedModDisplayName,
                                         faceGenDecision.AbortReason ?? string.Empty));
                                     return;
@@ -3034,14 +3037,22 @@ public class Patcher : OptionalUIModule
     /// <summary>
     /// Names every NPC the ladder refused to patch, at the end of the run where it will actually be
     /// read. These NPCs keep whatever appearance the load order already gave them, which is worth
-    /// saying plainly — the user picked a mod for them and did not get it.
+    /// saying plainly — the user picked a mod for them and did not get it. This is the ONLY place
+    /// the skips are forced into a non-verbose log; the per-NPC line at the abort site is
+    /// verbose-only so the same sentence does not print twice.
+    ///
+    /// <para>The header carries the "WARNING: " marker <see cref="View_Models.RunLogClassifier"/>
+    /// colours on, matching the <see cref="NpcWarningReporter"/> groups it prints beside: unlike
+    /// the sibling reports below, whose NPCs ARE patched, these ones did not get the mod the user
+    /// chose. The per-NPC lines stay unmarked there and here — the heading is what signals the
+    /// group, and a wall of coloured entries would drown it.</para>
     /// </summary>
     private void ReportFaceGenSkippedNpcs()
     {
         if (_faceGenSkippedNpcs.Count == 0) return;
 
-        AppendLog($"\n{_faceGenSkippedNpcs.Count} NPC(s) were left unpatched because their face could " +
-                  $"not be assembled safely. They will look the way they did before this run:", false, true);
+        AppendLog($"\nWARNING: {_faceGenSkippedNpcs.Count} NPC(s) were left unpatched because their face " +
+                  $"could not be assembled safely. They will look the way they did before this run:", false, true);
 
         foreach (var (npc, mod, reason) in _faceGenSkippedNpcs)
         {
@@ -3084,6 +3095,14 @@ public class Patcher : OptionalUIModule
     /// <para>The two outcomes are separated because they are not equally disappointing: an NPC
     /// whose template was itself given a mod does change appearance — to the template's choice —
     /// while one whose template was left alone does not change at all.</para>
+    ///
+    /// <para>VERBOSE-ONLY, headline included (user direction, 2026-07-31), and the only one of these
+    /// four reports that is. Inheriting is not an anomaly here — it is precisely what "Use the
+    /// template's appearance" means, so EVERY templated NPC in the load order lands in this list
+    /// (755 on the reporting run) and every one of them renders correctly. A forced report of that
+    /// size is the whole log, and it reads as several hundred things having gone wrong when nothing
+    /// did. The siblings stay forced because they report the opposite: a pick that genuinely could
+    /// not be delivered, in numbers a user can act on.</para>
     /// </summary>
     private void ReportInheritedFaceNpcs()
     {
@@ -3094,7 +3113,7 @@ public class Patcher : OptionalUIModule
                   "template's appearance\", so the mod picked for them could not be applied to them. Their " +
                   "records were patched normally; only their faces still come from their templates. To give " +
                   "them their own face instead, set 'Templated NPCs' to \"Give each NPC its own copy\" " +
-                  "(globally in Settings, or per mod in Mods):", false, true);
+                  "(globally in Settings, or per mod in Mods):");
 
         foreach (var (npc, mod, template, templateSelection) in _inheritedFaceNpcs)
         {
@@ -3102,8 +3121,7 @@ public class Patcher : OptionalUIModule
                 $"  - {npc} (you picked '{mod}'): takes its face from {template}" +
                 (templateSelection == null
                     ? ", which has no appearance selected, so this NPC will look unchanged."
-                    : $", which is set to '{templateSelection}' — so that is the face this NPC will show."),
-                false, true);
+                    : $", which is set to '{templateSelection}' — so that is the face this NPC will show."));
         }
 
         _inheritedFaceNpcs.Clear();

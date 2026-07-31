@@ -1810,6 +1810,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         int successCount = 0;
         int totalAffectedCount = 0;
         var fullyExhausted = new List<string>();
+        int inheritedTemplateCount = 0;
         var processedNpcs = new HashSet<FormKey>();
 
         // Snapshot of the active load order, used by the master-availability check
@@ -1981,9 +1982,24 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
                     if (!succeeded)
                     {
-                        fullyExhausted.Add(string.IsNullOrWhiteSpace(lastFailure)
-                            ? $"{npcVM.DisplayName} ({npcVM.NpcFormKeyString})"
-                            : $"{npcVM.DisplayName} ({npcVM.NpcFormKeyString}) — last reason: {lastFailure}");
+                        // An NPC whose winning override inherits through a Traits chain has no face
+                        // of its own — the game draws the record at the end of the chain — so leaving
+                        // it unassigned still renders correctly, whatever the candidates failed on.
+                        // Listing it as a validation failure reads as breakage when the NPC is simply
+                        // meant to look like someone else, so it is counted and summarised instead.
+                        // GiveEachNpcOwnCopy is the exception: there the user asked for a private
+                        // face per NPC, so a miss is a real miss and keeps its entry.
+                        if (npcVM.WinningOverrideHasTemplate &&
+                            !TemplateChainWillBeFlattened(null, npcVM.NpcData?.TemplateFormKey))
+                        {
+                            inheritedTemplateCount++;
+                        }
+                        else
+                        {
+                            fullyExhausted.Add(string.IsNullOrWhiteSpace(lastFailure)
+                                ? $"{npcVM.DisplayName} ({npcVM.NpcFormKeyString})"
+                                : $"{npcVM.DisplayName} ({npcVM.NpcFormKeyString}) — last reason: {lastFailure}");
+                        }
                     }
                 }
 
@@ -2018,6 +2034,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         else
         {
             resultMessage.AppendLine($"Randomized appearances for {successCount} NPC(s).");
+        }
+
+        if (inheritedTemplateCount > 0)
+        {
+            resultMessage.AppendLine();
+            resultMessage.AppendLine(BuildInheritedTemplateRandomizeNote(inheritedTemplateCount));
         }
 
         if (fullyExhausted.Any())
@@ -3702,6 +3724,21 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         $"Because \"Templated NPCs\" is set to \"{HandlingModeDisplay.ToDisplayString(TemplateHandlingMode.GiveEachNpcOwnCopy)}\", " +
         $"N.P.C.2 will give it a private copy of that face from '{modName}', so the mod you pick here " +
         "applies to this NPC normally.";
+
+    /// <summary>
+    /// Randomize's note for NPCs it deliberately left alone because they inherit their face through
+    /// a Traits chain. Phrased as an outcome rather than a warning: nothing failed, these NPCs are
+    /// meant to look like someone else and will, whether or not they carry a selection.
+    /// <para>It deliberately stops there rather than pointing at the Templated NPCs setting. The
+    /// result is already correct, so sending the average user off to a mode switch they did not ask
+    /// about is noise — and for the levelled-terminus NPCs that reach this note under
+    /// <see cref="TemplateHandlingMode.GiveEachNpcOwnCopy"/> the switch would not change anything
+    /// anyway.</para>
+    /// </summary>
+    internal static string BuildInheritedTemplateRandomizeNote(int count) =>
+        $"{count} NPC(s) were left unchanged because they copy their appearance from another NPC. " +
+        "They have no face of their own to randomize, and will keep looking like whatever NPC they " +
+        "copy from.";
 
     // You will also need this helper method if you don't have it already.
     private ModKey? GetPluginKeyForNpc(VM_ModSetting? modSetting, FormKey npcFormKey)
