@@ -20,10 +20,10 @@ public class Validator : OptionalUIModule
     private Dictionary<FormKey, ScreeningResult> _screeningCache = new();
     private Dictionary<ModKey, HashSet<ModKey>> _masterPluginCache = new();
 
-    /// <summary>Per mod entry (by DisplayName), the plugins the output could not legally
-    /// reference — see <see cref="GetUnsatisfiablePlugins"/>. Same lifetime as
-    /// <see cref="_masterPluginCache"/>: valid for one screening pass, cleared after it.</summary>
-    private Dictionary<string, HashSet<ModKey>> _unsatisfiablePluginCache =
+    /// <summary>Per mod entry (by DisplayName), the plugins the user is not running — see
+    /// <see cref="GetAbsentPlugins"/>. Same lifetime as <see cref="_masterPluginCache"/>: valid for
+    /// one screening pass, cleared after it.</summary>
+    private Dictionary<string, HashSet<ModKey>> _absentPluginCache =
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -401,30 +401,29 @@ public class Validator : OptionalUIModule
 
             using (ContextualPerformanceTracer.Trace("Validator.CheckWrittenLinks"))
             {
-                if (!WrittenLinksAreSatisfiable(npcFormKey, appearanceNpcFormKey, appearanceModSetting,
-                        loadOrderList, implicitMasters, npcProvidingOwnersByPlugin,
-                        out var offendingField, out var offendingPlugin, out var linkRejectionDetail))
+                var linkFailure = FindUnwritableLink(npcFormKey, appearanceNpcFormKey, appearanceModSetting,
+                    loadOrderList, implicitMasters, npcProvidingOwnersByPlugin);
+                if (linkFailure != null)
                 {
                     if (!explainedUnreferenceablePluginLimit)
                     {
                         explainedUnreferenceablePluginLimit = true;
                         AppendLog(
-                            "  NOTE: the appearances listed below come from records that reference a plugin your " +
-                            "output cannot point at — it is neither enabled in your load order nor set to merge " +
-                            "in. Patching them anyway produces an output plugin that either refuses to save at " +
-                            "the end of the run or loads into the game with broken references, so they are " +
-                            "skipped. Enabling the missing plugin, turning on 'Merge In' for it under Set " +
-                            "Resource Plugins, or choosing a different appearance for these NPCs all resolve it.",
+                            "  NOTE: the appearances listed below come from records that reference something your " +
+                            "output cannot point at — either a plugin that is neither enabled nor set to merge in, " +
+                            "or a record that is missing from the version of a plugin you have installed (an " +
+                            "appearance mod built against a different version of the mod it patches). Patching them " +
+                            "anyway produces an output plugin that either refuses to save at the end of the run or " +
+                            "loads into the game with broken references, so they are skipped. Enabling or merging " +
+                            "the missing plugin, installing the version the appearance mod was built for, or " +
+                            "choosing a different appearance for these NPCs all resolve it.",
                             false, true);
                     }
 
-                    var errorMsg =
-                        $"For NPC {npcIdentifier}, the appearance chosen from '{selectedModDisplayName}' writes " +
-                        $"{offendingField} pointing at plugin '{offendingPlugin}'{linkRejectionDetail}. The output " +
-                        "plugin cannot reference it. This selection is invalid.";
-                    AppendLog($"  SCREENING ERROR: {errorMsg}", true);
-                    Reject(npcIdentifier, selectedModDisplayName,
-                        $"Appearance references missing plugin: {offendingPlugin}");
+                    AppendLog($"  SCREENING ERROR: For NPC {npcIdentifier}, the appearance chosen from " +
+                              $"'{selectedModDisplayName}' {linkFailure.Explanation} This selection is invalid.",
+                        true);
+                    Reject(npcIdentifier, selectedModDisplayName, linkFailure.RejectReason);
                     continue;
                 }
             }
@@ -452,7 +451,7 @@ public class Validator : OptionalUIModule
         NpcDiagnosticLogger.EndNpc();
 
         _masterPluginCache.Clear();
-        _unsatisfiablePluginCache.Clear();
+        _absentPluginCache.Clear();
 
         UpdateProgress(totalToScreen, totalToScreen, "Screening Complete.");
         AppendLog($"Screening finished. Found {invalidSelections.Count} invalid selections.");
@@ -532,47 +531,44 @@ public class Validator : OptionalUIModule
         return false;
     }
 
-    /// <summary>
-    /// Whether every link this selection will WRITE onto the output record can legally be
-    /// referenced from the output plugin.
-    ///
-    /// <para><b>Why the declared-master check is not enough.</b> <see cref="IsMasterSatisfied"/>
-    /// vets the masters the source plugin DECLARES. A plugin's references to its OWN records
-    /// declare no master at all — but once such a record is copied into the output, that
-    /// self-reference becomes a reference to the source plugin, which then has to be a master of
-    /// the output. If that plugin is neither in the load order nor merged in, Mutagen refuses to
-    /// write the plugin at the very end of the run ("A referenced mod was not present on the load
-    /// order being sorted against"), throwing away the whole run's work for a condition that was
-    /// knowable before it started.</para>
-    ///
-    /// <para><b>Scope differs by mode.</b> Record mode writes only the appearance fields onto an
-    /// override of the recipient's WINNING record, so only those are screened. SkyPatcher mode
-    /// copies the donor wholesale into a surrogate, so the whole record is screened — see the note
-    /// on the sweep below for why repairing individual fields is not viable there.</para>
-    ///
-    /// <para><b>Cost.</b> Gated on the mod having at least one plugin that is neither in the load
-    /// order nor merge-eligible — for an ordinary mod that set is empty and this returns
-    /// immediately, without resolving anything.</para>
-    /// </summary>
-    /// <param name="offendingField">Record field holding the first bad link, e.g. "Template" or
-    /// "HeadParts[2]", so the rejection names something the user can act on.</param>
-    private bool WrittenLinksAreSatisfiable(FormKey npcFormKey, FormKey appearanceNpcFormKey,
-        ModSetting appearanceModSetting, List<ModKey> loadOrderList, HashSet<ModKey> implicitMasters,
-        IReadOnlyDictionary<ModKey, ModSetting> npcProvidingOwnersByPlugin,
-        out string offendingField, out string offendingPlugin, out string rejectionDetail)
-    {
-        offendingField = string.Empty;
-        offendingPlugin = string.Empty;
-        rejectionDetail = string.Empty;
+    /// <summary>One link this selection would write that the output cannot honour.</summary>
+    /// <param name="Explanation">Sentence fragment for the run log, following "...chosen from 'X' ".</param>
+    /// <param name="RejectReason">Grouping key for the rejection dialog — identical across NPCs that
+    /// fail the same way, so hundreds of them collapse to one heading.</param>
+    private sealed record UnwritableLink(string Explanation, string RejectReason);
 
-        var unsatisfiable = GetUnsatisfiablePlugins(appearanceModSetting, loadOrderList, implicitMasters,
-            npcProvidingOwnersByPlugin);
-        if (unsatisfiable.Count == 0) return true;
+    /// <summary>
+    /// Finds the first link this selection would WRITE onto the output record that the output cannot
+    /// honour, or null when they all check out. Two distinct failures:
+    ///
+    /// <list type="number">
+    /// <item><b>The plugin is unreachable.</b> <see cref="IsMasterSatisfied"/> vets the masters a
+    /// plugin DECLARES, and a plugin's references to its OWN records declare no master at all — but
+    /// copying such a record into the output turns that self-reference into a reference to the
+    /// source plugin. If that plugin is neither in the load order nor merged in, Mutagen refuses to
+    /// write the output at the very end of the run.</item>
+    /// <item><b>The plugin is present but the record is not.</b> An appearance mod built against a
+    /// different version of the mod it patches references records that version had and this one does
+    /// not. Legacy of the Dragonborn's appearance mods are built against LOTD v5; on v6 seven of the
+    /// records they point at no longer exist. Nothing catches this at write time — the master IS
+    /// declared — so the output saves cleanly and the game stalls on launch.</item>
+    /// </list>
+    ///
+    /// <para><b>Cost.</b> Gated on the mod shipping at least one plugin the user is not running.
+    /// When every plugin of a mod is enabled its donor records are already live in the game, so
+    /// their links are exactly as valid as the game itself and the output adds no new breakage —
+    /// nothing is resolved for such a mod at all.</para>
+    /// </summary>
+    private UnwritableLink? FindUnwritableLink(FormKey npcFormKey, FormKey appearanceNpcFormKey,
+        ModSetting appearanceModSetting, List<ModKey> loadOrderList, HashSet<ModKey> implicitMasters,
+        IReadOnlyDictionary<ModKey, ModSetting> npcProvidingOwnersByPlugin)
+    {
+        if (GetAbsentPlugins(appearanceModSetting, loadOrderList, implicitMasters).Count == 0) return null;
 
         // The wig/antler pipeline re-points WornArmor, HeadParts and DefaultOutfit at records it
         // mints in the OUTPUT, so the donor's own links are not the ones that get written and
         // screening them would reject selections that patch cleanly.
-        if (_settings.WigOrAntlerHandlingActive(appearanceModSetting)) return true;
+        if (_settings.WigOrAntlerHandlingActive(appearanceModSetting)) return null;
 
         bool isFaceGenOnly = appearanceModSetting.IsFaceGenOnlyEntry ||
                              appearanceModSetting.FaceGenOnlyNpcFormKeys.Contains(appearanceNpcFormKey);
@@ -580,7 +576,7 @@ public class Validator : OptionalUIModule
 
         var donor = _recordHandler.ResolveNpcPreferringMod(appearanceNpcFormKey, appearanceModSetting,
             folderPaths, isFaceGenOnly);
-        if (donor == null) return true; // unresolvable donor is another check's business
+        if (donor == null) return null; // unresolvable donor is another check's business
 
         // Which record's appearance actually lands on the output: under "give each NPC its own
         // copy" the patcher overlays the TERMINUS's fields (Auxilliary.CopyInheritedAppearance),
@@ -598,50 +594,65 @@ public class Validator : OptionalUIModule
         }
 
         bool includeOutfit = ResolveIncludeOutfit(appearanceModSetting, npcFormKey, _settings.NpcOutfitOverrides);
-
-        // Named fields first, so the common failures are reported as "HeadParts[2]=..." rather than
-        // as a bare FormKey.
         var candidates = EnumerateWrittenLinks(appearanceRecord, donor, includeOutfit,
             _settings.UseSkyPatcherMode);
 
-        // SkyPatcher mode screens the WHOLE donor record, not just the appearance fields it copies.
-        // The surrogate is a DeepCopyIn of the donor, so every link on it lands in the output, and
-        // an unsatisfiable one breaks the run in one of two ways: kept, it dangles and Mutagen
-        // refuses the save; stripped (SkyPatcherInterface.StripNonAppearanceData), it can punch a
-        // hole in a REQUIRED subrecord and the game stalls on launch with a null reference. Repairing
-        // those field by field is whack-a-mole — one donor's Class, the next one's something else —
-        // so a donor that touches a plugin the output cannot reference is rejected outright.
-        //
-        // Deliberately conservative in one direction: under a flatten the donor's own appearance
-        // links are overwritten by the terminus's, so a foreign one is screened here even though it
-        // would never have been written. Rejecting a selection that might have worked beats shipping
-        // a record the engine chokes on.
-        if (_settings.UseSkyPatcherMode)
+        // Plain Create hands the surrogate the donor's WHOLE record (appearanceOnly is only passed
+        // in the Create-and-Patch branch), so everything on it lands in the output and everything is
+        // screened. Create-and-Patch strips the non-appearance data instead, so the named set above
+        // is already the complete list of what survives.
+        if (_settings.UseSkyPatcherMode && _settings.PatchingMode != PatchingMode.CreateAndPatch)
         {
             candidates = candidates.Concat(donor.EnumerateFormLinks()
                 .Where(l => !l.FormKey.IsNull)
-                .Select(l => ("record data", l.FormKey)));
+                .Select(l => ("record data", l.FormKey, l.Type)));
         }
 
-        foreach (var (field, key) in candidates)
+        foreach (var (field, key, type) in candidates)
         {
-            if (IsMasterSatisfied(key.ModKey, appearanceModSetting, loadOrderList, implicitMasters,
+            if (!IsMasterSatisfied(key.ModKey, appearanceModSetting, loadOrderList, implicitMasters,
                     npcProvidingOwnersByPlugin, out var detail))
             {
-                continue;
+                var plugin = key.ModKey.FileName.ToString();
+                NpcDiagnosticLogger.Log(
+                    $"  Written-link check: {field} points at {key}, whose plugin is neither in the load " +
+                    $"order nor merged in{detail}.");
+                return new UnwritableLink(
+                    $"writes {field}={key} pointing at plugin '{plugin}'{detail}. The output plugin " +
+                    "cannot reference it.",
+                    $"Appearance references missing plugin: {plugin}");
             }
 
-            offendingField = $"{field}={key}";
-            offendingPlugin = key.ModKey.FileName.ToString();
-            rejectionDetail = detail;
+            // Only meaningful for plugins the link cache actually holds. A link into a merge-eligible
+            // plugin outside the load order is resolved from the mod's own files at patch time, and
+            // the master check above has already vetted it.
+            if (!loadOrderList.Contains(key.ModKey) || LinkResolves(key, type)) continue;
 
+            var missingFrom = key.ModKey.FileName.ToString();
             NpcDiagnosticLogger.Log(
-                $"  Written-link check: {field} resolves to {key}, whose plugin is neither in the load " +
-                $"order nor merged in{detail}.");
-            return false;
+                $"  Written-link check: {field} points at {key}, but '{missingFrom}' is in the load " +
+                "order and does not contain that record — the appearance mod was built against a " +
+                "different version of it.");
+            return new UnwritableLink(
+                $"writes {field}={key}, but the '{missingFrom}' you have installed does not contain " +
+                "that record — the appearance mod was built against a different version of it.",
+                $"Appearance references a record missing from your '{missingFrom}'");
         }
 
-        return true;
+        return null;
+    }
+
+    /// <summary>
+    /// Whether a link resolves against the load order. Mirrors the patcher's own two-step lookup:
+    /// the typed resolve fails for some getter types (notably <c>IRaceGetter</c>), so an untyped
+    /// attempt follows before a link is judged missing.
+    /// </summary>
+    private bool LinkResolves(FormKey key, Type? type)
+    {
+        var linkCache = _environmentStateProvider.LinkCache;
+        if (linkCache == null) return true; // nothing to judge against; not this check's business
+        if (type != null && linkCache.TryResolve(key, type, out _)) return true;
+        return linkCache.TryResolve(key, out _);
     }
 
     /// <summary>
@@ -655,31 +666,44 @@ public class Validator : OptionalUIModule
     /// <c>Patcher.SyncTemplateInheritance</c> mirrors the TPLT only for a donor carrying the Traits
     /// flag — whereas the SkyPatcher surrogate is a <c>DeepCopyIn</c> and carries it either way.</para>
     ///
+    /// <para><c>Class</c> is screened in SkyPatcher mode only. It is the one non-appearance link the
+    /// surrogate keeps — CNAM is a required subrecord, so it cannot be nulled like the rest — which
+    /// makes screening the only way to catch one the output cannot honour.</para>
+    ///
     /// <para>Pure — no state, no logging — so it can be tested directly.</para>
     /// </summary>
-    private static IEnumerable<(string Field, FormKey Key)> EnumerateWrittenLinks(INpcGetter appearanceRecord,
-        INpcGetter donor, bool includeOutfit, bool useSkyPatcherMode)
+    private static IEnumerable<(string Field, FormKey Key, Type? Type)> EnumerateWrittenLinks(
+        INpcGetter appearanceRecord, INpcGetter donor, bool includeOutfit, bool useSkyPatcherMode)
     {
-        if (!appearanceRecord.Race.IsNull) yield return ("Race", appearanceRecord.Race.FormKey);
-        if (!appearanceRecord.WornArmor.IsNull) yield return ("WornArmor(skin)", appearanceRecord.WornArmor.FormKey);
-        if (!appearanceRecord.HeadTexture.IsNull) yield return ("HeadTexture", appearanceRecord.HeadTexture.FormKey);
-        if (!appearanceRecord.HairColor.IsNull) yield return ("HairColor", appearanceRecord.HairColor.FormKey);
+        if (!appearanceRecord.Race.IsNull)
+            yield return ("Race", appearanceRecord.Race.FormKey, typeof(IRaceGetter));
+        if (!appearanceRecord.WornArmor.IsNull)
+            yield return ("WornArmor(skin)", appearanceRecord.WornArmor.FormKey, typeof(IArmorGetter));
+        if (!appearanceRecord.HeadTexture.IsNull)
+            yield return ("HeadTexture", appearanceRecord.HeadTexture.FormKey, typeof(ITextureSetGetter));
+        if (!appearanceRecord.HairColor.IsNull)
+            yield return ("HairColor", appearanceRecord.HairColor.FormKey, typeof(IColorRecordGetter));
 
         int hpIndex = 0;
         foreach (var hp in appearanceRecord.HeadParts)
         {
-            if (!hp.IsNull) yield return ($"HeadParts[{hpIndex}]", hp.FormKey);
+            if (!hp.IsNull) yield return ($"HeadParts[{hpIndex}]", hp.FormKey, typeof(IHeadPartGetter));
             hpIndex++;
         }
 
         if (includeOutfit && !appearanceRecord.DefaultOutfit.IsNull)
         {
-            yield return ("DefaultOutfit", appearanceRecord.DefaultOutfit.FormKey);
+            yield return ("DefaultOutfit", appearanceRecord.DefaultOutfit.FormKey, typeof(IOutfitGetter));
         }
 
         if ((useSkyPatcherMode || Auxilliary.HasTraitsFlag(donor)) && donor.Template is { IsNull: false })
         {
-            yield return ("Template", donor.Template.FormKey);
+            yield return ("Template", donor.Template.FormKey, typeof(INpcSpawnGetter));
+        }
+
+        if (useSkyPatcherMode && !donor.Class.IsNull)
+        {
+            yield return ("Class", donor.Class.FormKey, typeof(IClassGetter));
         }
     }
 
@@ -702,45 +726,38 @@ public class Validator : OptionalUIModule
     }
 
     /// <summary>
-    /// The mod's plugins that the output could not legally reference: not in the load order, not
-    /// implicitly active, and not merged into the output. Empty for an ordinary mod, which is what
-    /// keeps <see cref="WrittenLinksAreSatisfiable"/> free for the overwhelming majority of
-    /// selections. Cached per mod entry for the duration of one screening pass.
+    /// The mod's plugins the user is not actually running. Non-empty means this mod's records are
+    /// being forwarded out of files the game never loads, which is the only way either failure in
+    /// <see cref="FindUnwritableLink"/> can arise — so it is that check's gate. Cached per mod entry
+    /// for the duration of one screening pass.
     /// </summary>
-    private HashSet<ModKey> GetUnsatisfiablePlugins(ModSetting appearanceModSetting, List<ModKey> loadOrderList,
-        HashSet<ModKey> implicitMasters, IReadOnlyDictionary<ModKey, ModSetting> npcProvidingOwnersByPlugin)
+    private HashSet<ModKey> GetAbsentPlugins(ModSetting appearanceModSetting, List<ModKey> loadOrderList,
+        HashSet<ModKey> implicitMasters)
     {
-        if (_unsatisfiablePluginCache.TryGetValue(appearanceModSetting.DisplayName, out var cached))
+        if (_absentPluginCache.TryGetValue(appearanceModSetting.DisplayName, out var cached))
         {
             return cached;
         }
 
-        var unsatisfiable = ComputeUnsatisfiablePlugins(appearanceModSetting, loadOrderList, implicitMasters,
-            npcProvidingOwnersByPlugin);
-        _unsatisfiablePluginCache[appearanceModSetting.DisplayName] = unsatisfiable;
-        return unsatisfiable;
+        var absent = ComputeAbsentPlugins(appearanceModSetting, loadOrderList, implicitMasters);
+        _absentPluginCache[appearanceModSetting.DisplayName] = absent;
+        return absent;
     }
 
-    /// <summary>The uncached decision behind <see cref="GetUnsatisfiablePlugins"/>. Pure — no
-    /// state, no logging — so it can be tested directly.</summary>
-    private static HashSet<ModKey> ComputeUnsatisfiablePlugins(ModSetting appearanceModSetting,
-        List<ModKey> loadOrderList, HashSet<ModKey> implicitMasters,
-        IReadOnlyDictionary<ModKey, ModSetting> npcProvidingOwnersByPlugin)
+    /// <summary>The uncached decision behind <see cref="GetAbsentPlugins"/>. Pure — no state, no
+    /// logging — so it can be tested directly.</summary>
+    private static HashSet<ModKey> ComputeAbsentPlugins(ModSetting appearanceModSetting,
+        List<ModKey> loadOrderList, HashSet<ModKey> implicitMasters)
     {
-        var unsatisfiable = new HashSet<ModKey>();
+        var absent = new HashSet<ModKey>();
         foreach (var plugin in appearanceModSetting.CorrespondingModKeys.Distinct())
         {
             if (loadOrderList.Contains(plugin)) continue;
             if (implicitMasters.Contains(plugin)) continue;
-            if (MergeEligibility.IsPluginMergeEligible(appearanceModSetting, plugin, npcProvidingOwnersByPlugin))
-            {
-                continue;
-            }
-
-            unsatisfiable.Add(plugin);
+            absent.Add(plugin);
         }
 
-        return unsatisfiable;
+        return absent;
     }
 
     /// <summary>

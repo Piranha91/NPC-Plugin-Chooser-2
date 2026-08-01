@@ -35,7 +35,13 @@ public class SurrogateAppearanceOnlyTests
     public SurrogateAppearanceOnlyTests(ITestOutputHelper output) => _output = output;
 
     /// <summary>Everything the donor supplies that is NOT appearance. None of it may reach the
-    /// output in either mode.</summary>
+    /// output in either mode.
+    ///
+    /// <para><c>BLEED_Class</c> is deliberately absent from this list: CNAM is a REQUIRED subrecord,
+    /// so the strip cannot null it the way it nulls the rest — a null one makes xEdit report "Found
+    /// a NULL reference, expected: CLAS" and stalls the game on launch. The surrogate therefore
+    /// keeps the donor's Class, and a Class in a merge-eligible plugin gets merged along with it.
+    /// See <see cref="TheOneMergedNonAppearanceRecord"/>.</para></summary>
     private static readonly string[] NonAppearanceIdentities =
     {
         "Outfit 'BLEED_Outfit'",
@@ -45,7 +51,6 @@ public class SurrogateAppearanceOnlyTests
         "Faction 'BLEED_CrimeFaction'",
         "Package 'BLEED_Package'",
         "VoiceType 'BLEED_Voice'",
-        "Class 'BLEED_Class'",
         "CombatStyle 'BLEED_CombatStyle'",
         "Spell 'BLEED_Spell'",
         "Perk 'BLEED_Perk'",
@@ -55,6 +60,10 @@ public class SurrogateAppearanceOnlyTests
         "LeveledItem 'BLEED_DeathItem'",
         "Armor 'BLEED_FarAwayModel'",
     };
+
+    /// <summary>The single exception to "the two modes merge the same records" — see the note on
+    /// <see cref="NonAppearanceIdentities"/>.</summary>
+    private const string TheOneMergedNonAppearanceRecord = "Class 'BLEED_Class'";
 
     [Fact]
     public async Task Surrogate_CarriesAppearanceOnly_AndMergesWhatRecordModeMerges()
@@ -172,7 +181,20 @@ public class SurrogateAppearanceOnlyTests
                     $"[{label}] the donor's non-appearance data must not be forwarded into the output");
             }
 
-            merged[skyPatcherMode] = identities.Where(i => !i.StartsWith("Npc ", StringComparison.Ordinal))
+            var outNpcClass = run.Output.Npcs.Single().Class;
+            if (skyPatcherMode)
+            {
+                outNpcClass.IsNull.Should().BeFalse(
+                    $"[{label}] CNAM is a required subrecord — a null one stalls the game on launch, " +
+                    "so the strip leaves the donor's Class alone");
+                identities.Should().Contain(TheOneMergedNonAppearanceRecord,
+                    $"[{label}] keeping that Class means merging it, since its plugin is not loaded");
+            }
+
+            merged[skyPatcherMode] = identities
+                .Where(i => !i.StartsWith("Npc ", StringComparison.Ordinal))
+                // Class is the documented exception; every other record must match across modes.
+                .Where(i => i != TheOneMergedNonAppearanceRecord)
                 .ToHashSet();
         }
 
@@ -184,12 +206,20 @@ public class SurrogateAppearanceOnlyTests
     }
 
     /// <summary>
-    /// The surrogate keeps non-appearance links the user's game can already resolve. Dropping those
-    /// too would be churn — they merge nothing and dangle nothing — and would strip Class/Voice off
-    /// the record for no gain. Only links that would otherwise have to be MERGED are removed.
+    /// The surrogate drops non-appearance links EVEN WHEN they resolve in the user's load order.
+    ///
+    /// <para>The rule used to be "keep anything the game can already resolve", on the grounds that
+    /// such a link merges nothing and dangles nothing. A donor shipped by a plugin the user is NOT
+    /// running breaks that: it can reference records from a different version of a master it does
+    /// not ship, which resolve for the mod's author and not for this user. Legacy of the Dragonborn's
+    /// appearance mods are built against LOTD v5, and on v6 their inventory and AI-package links
+    /// were the output's only null references. Nothing reads those fields off a face donor, so the
+    /// surrogate simply stops carrying them.</para>
+    ///
+    /// <para>Class is the exception and is asserted to survive: CNAM is required.</para>
     /// </summary>
     [Fact]
-    public async Task Surrogate_KeepsNonAppearanceLinksThatResolveInTheLoadOrder()
+    public async Task Surrogate_DropsNonAppearanceLinksEvenWhenTheyResolve()
     {
         using var fx = new WigRouteFixture("appearance-only-vanilla");
         var npc = fx.AddBaseNpc("NPC2Route_VanillaLinks");
@@ -225,10 +255,10 @@ public class SurrogateAppearanceOnlyTests
             "keeping load-order links must stay writable");
 
         var outNpc = run.Output.Npcs.Single();
-        outNpc.Voice.FormKey.Should().Be(vanillaVoice,
-            "a vanilla voice type costs nothing to keep — it merges nothing and dangles nothing — " +
-            "so the strip must leave it alone");
+        outNpc.Voice.IsNull.Should().BeTrue(
+            "nothing reads a face donor's voice type, and keeping non-appearance links is what let " +
+            "a donor built against another version of its master put null references in the output");
         outNpc.Class.FormKey.Should().Be(vanillaClass,
-            "same for a vanilla class, which also keeps the record structurally complete");
+            "Class is the exception — CNAM is required, and a null one stalls the game on launch");
     }
 }

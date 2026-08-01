@@ -210,52 +210,56 @@ public class SkyPatcherInterface : OptionalUIModule
     /// IS being applied. A wig-forwarded outfit is assigned later (<c>WigForwarder.ApplyLinksTo</c>,
     /// after <c>CopyAppearanceData</c>), so clearing here cannot lose it.</para>
     ///
-    /// <para><b>The donor must not point outside the load order to begin with.</b> Nulling a link
-    /// is only safe for OPTIONAL subrecords; CNAM in particular is required, and a null one makes
-    /// xEdit report "Found a NULL reference, expected: CLAS" and stalls the game on launch. Rather
-    /// than repair such links here — field by field, forever — the Validator refuses to patch an
-    /// NPC whose donor references a plugin the output cannot reference at all
-    /// (<c>Validator.WrittenLinksAreSatisfiable</c>), so what reaches this method is only ever the
-    /// merge-eligible case, where the link is copied into the output rather than stripped.</para>
+    /// <para><b>ALL of it goes, not just the part that would be merged.</b> The earlier rule kept
+    /// any link the user's game could already resolve, on the grounds that it merges nothing and
+    /// dangles nothing. That turned out to be false in one specific way: a donor shipped by a mod
+    /// whose plugin is NOT enabled can reference records from a DIFFERENT version of a master it
+    /// does not ship. Those links resolve for the mod's author and not for this user, and forwarding
+    /// them puts a broken reference into a plugin that IS loaded — the donor's own plugin never was.
+    /// Legacy of the Dragonborn's appearance mods are built against LOTD v5; run against v6 their
+    /// inventory and AI-package links point at records that no longer exist, and the surrogates
+    /// carrying them were the output's only null references.
+    ///
+    /// <para>Keeping them bought nothing to weigh against that. SkyPatcher reads visual style off
+    /// the surrogate and nothing else, and the surrogate is never instantiated as an actor, so its
+    /// inventory, packages, factions, perks and spells are inert cargo either way.</para>
+    ///
+    /// <para><c>Class</c> is the sole exception and is left EXACTLY as the donor had it: CNAM is a
+    /// required subrecord, and a null one makes xEdit report "Found a NULL reference, expected:
+    /// CLAS" and stalls the game on launch. A Class the output cannot reference is screened out per
+    /// NPC instead (<c>Validator.WrittenLinksAreSatisfiable</c>).</para>
     /// </summary>
     private void StripNonAppearanceData(Npc npc, bool includeOutfit)
     {
-        var loadOrder = _environmentStateProvider.LoadOrderModKeys.ToHashSet();
-        bool Foreign(FormKey key) => !key.IsNull && !loadOrder.Contains(key.ModKey);
-        bool AnyForeign(IFormLinkContainerGetter? container) =>
-            container != null && container.EnumerateFormLinks().Any(l => Foreign(l.FormKey));
-
         // Outfits: an opinion the surrogate is only entitled to when one is actually applied.
         if (!includeOutfit) npc.DefaultOutfit.SetToNull();
-        if (Foreign(npc.SleepingOutfit.FormKey)) npc.SleepingOutfit.SetToNull();
+        npc.SleepingOutfit.SetToNull();
 
-        if (Foreign(npc.Class.FormKey)) npc.Class.SetToNull();
-        if (Foreign(npc.Voice.FormKey)) npc.Voice.SetToNull();
-        if (Foreign(npc.CombatStyle.FormKey)) npc.CombatStyle.SetToNull();
-        if (Foreign(npc.CrimeFaction.FormKey)) npc.CrimeFaction.SetToNull();
-        if (Foreign(npc.DeathItem.FormKey)) npc.DeathItem.SetToNull();
-        if (Foreign(npc.GiftFilter.FormKey)) npc.GiftFilter.SetToNull();
-        if (Foreign(npc.AttackRace.FormKey)) npc.AttackRace.SetToNull();
-        if (Foreign(npc.FarAwayModel.FormKey)) npc.FarAwayModel.SetToNull();
-        if (Foreign(npc.DefaultPackageList.FormKey)) npc.DefaultPackageList.SetToNull();
-        if (Foreign(npc.CombatOverridePackageList.FormKey)) npc.CombatOverridePackageList.SetToNull();
-        if (Foreign(npc.SpectatorOverridePackageList.FormKey)) npc.SpectatorOverridePackageList.SetToNull();
-        if (Foreign(npc.ObserveDeadBodyOverridePackageList.FormKey)) npc.ObserveDeadBodyOverridePackageList.SetToNull();
-        if (Foreign(npc.GuardWarnOverridePackageList.FormKey)) npc.GuardWarnOverridePackageList.SetToNull();
+        // NOT npc.Class — see the CNAM note above.
+        npc.Voice.SetToNull();
+        npc.CombatStyle.SetToNull();
+        npc.CrimeFaction.SetToNull();
+        npc.DeathItem.SetToNull();
+        npc.GiftFilter.SetToNull();
+        npc.AttackRace.SetToNull();
+        npc.FarAwayModel.SetToNull();
+        npc.DefaultPackageList.SetToNull();
+        npc.CombatOverridePackageList.SetToNull();
+        npc.SpectatorOverridePackageList.SetToNull();
+        npc.ObserveDeadBodyOverridePackageList.SetToNull();
+        npc.GuardWarnOverridePackageList.SetToNull();
 
-        // Lists: drop only the offending entries, so a donor whose factions are half vanilla keeps
-        // the vanilla half.
-        npc.Factions?.RemoveAll(f => Foreign(f.Faction.FormKey));
-        npc.Packages?.RemoveAll(p => Foreign(p.FormKey));
-        npc.Keywords?.RemoveAll(k => Foreign(k.FormKey));
-        npc.ActorEffect?.RemoveAll(s => Foreign(s.FormKey));
-        npc.Perks?.RemoveAll(p => Foreign(p.Perk.FormKey));
-        npc.Items?.RemoveAll(i => AnyForeign(i));
-        npc.Attacks?.RemoveAll(a => AnyForeign(a));
+        npc.Factions?.Clear();
+        npc.Packages?.Clear();
+        npc.Keywords?.Clear();
+        npc.ActorEffect?.Clear();
+        npc.Perks?.Clear();
+        npc.Items?.Clear();
+        npc.Attacks?.Clear();
 
         // Nested structures: no partial edit makes sense, and neither is read from a face template.
-        if (AnyForeign(npc.VirtualMachineAdapter)) npc.VirtualMachineAdapter = null;
-        if (AnyForeign(npc.Destructible)) npc.Destructible = null;
+        npc.VirtualMachineAdapter = null;
+        npc.Destructible = null;
     }
 
     public bool TryGetSurrogateFormKey(FormKey originalNpcFormKey, out FormKey surrogateNpcFormKey)

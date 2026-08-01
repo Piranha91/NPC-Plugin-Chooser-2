@@ -34,7 +34,7 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 /// </summary>
 public class ValidatorWrittenLinkCheckTests
 {
-    private static readonly ModKey Absent = MutagenFixtures.Mk("Bandit War.esp");
+    private static readonly ModKey AbsentKey = MutagenFixtures.Mk("Bandit War.esp");
     private static readonly ModKey Resource = MutagenFixtures.Mk("ProjectJaKhaJay.esp");
     private static readonly ModKey Vanilla = MutagenFixtures.Mk("Skyrim.esm");
 
@@ -50,18 +50,24 @@ public class ValidatorWrittenLinkCheckTests
         IncludeOutfits = includeOutfits,
     };
 
-    private static HashSet<ModKey> Unsatisfiable(ModSetting mod, IEnumerable<ModKey>? loadOrder = null,
-        IEnumerable<ModKey>? implicits = null, IReadOnlyDictionary<ModKey, ModSetting>? index = null)
-        => Reflect.InvokeStatic<HashSet<ModKey>>(typeof(Validator), "ComputeUnsatisfiablePlugins",
+    private static HashSet<ModKey> Absent(ModSetting mod, IEnumerable<ModKey>? loadOrder = null,
+        IEnumerable<ModKey>? implicits = null)
+        => Reflect.InvokeStatic<HashSet<ModKey>>(typeof(Validator), "ComputeAbsentPlugins",
             mod,
             (loadOrder ?? Enumerable.Empty<ModKey>()).ToList(),
-            new HashSet<ModKey>(implicits ?? Enumerable.Empty<ModKey>()),
-            index ?? new Dictionary<ModKey, ModSetting>())!;
+            new HashSet<ModKey>(implicits ?? Enumerable.Empty<ModKey>()))!;
 
-    private static IReadOnlyList<(string Field, FormKey Key)> WrittenLinks(INpcGetter appearanceRecord,
-        INpcGetter donor, bool includeOutfit = false, bool useSkyPatcherMode = false)
-        => Reflect.InvokeStatic<IEnumerable<(string Field, FormKey Key)>>(typeof(Validator),
+    private static IReadOnlyList<(string Field, FormKey Key, Type? Type)> WrittenLinks(
+        INpcGetter appearanceRecord, INpcGetter donor, bool includeOutfit = false,
+        bool useSkyPatcherMode = false)
+        => Reflect.InvokeStatic<IEnumerable<(string Field, FormKey Key, Type? Type)>>(typeof(Validator),
             "EnumerateWrittenLinks", appearanceRecord, donor, includeOutfit, useSkyPatcherMode)!.ToList();
+
+    /// <summary>Field/key pairs only — the resolve-check's Type is asserted separately.</summary>
+    private static IReadOnlyList<(string Field, FormKey Key)> WrittenPairs(INpcGetter appearanceRecord,
+        INpcGetter donor, bool includeOutfit = false, bool useSkyPatcherMode = false)
+        => WrittenLinks(appearanceRecord, donor, includeOutfit, useSkyPatcherMode)
+            .Select(l => (l.Field, l.Key)).ToList();
 
     private static bool IncludeOutfit(ModSetting mod, FormKey npc,
         Dictionary<FormKey, OutfitOverride>? overrides = null)
@@ -79,44 +85,43 @@ public class ValidatorWrittenLinkCheckTests
         return donor;
     }
 
-    // ── ComputeUnsatisfiablePlugins (the gate that keeps this check free) ────────────────
+    // ── ComputeAbsentPlugins (the gate that keeps this check free) ──────────────────────
 
     [Fact]
-    public void Unsatisfiable_IsEmptyForAModWhosePluginsAreAllInTheLoadOrder()
+    public void AbsentPlugins_IsEmptyForAModWhosePluginsAreAllInTheLoadOrder()
     {
         // The overwhelmingly common case — the whole check short-circuits here, resolving nothing.
-        var mod = Mod(mergeIn: false, new[] { Absent, Resource });
+        // Such a mod's donors are already live in the user's game, so its links are exactly as
+        // valid as the game itself and the output cannot add breakage that was not there.
+        var mod = Mod(mergeIn: false, new[] { AbsentKey, Resource });
 
-        Unsatisfiable(mod, loadOrder: new[] { Vanilla, Absent, Resource }).Should().BeEmpty();
+        Absent(mod, loadOrder: new[] { Vanilla, AbsentKey, Resource }).Should().BeEmpty();
     }
 
     [Fact]
-    public void Unsatisfiable_IsEmptyWhenTheAbsentPluginsAreMergedIn()
+    public void AbsentPlugins_CountsMergedInPluginsToo()
     {
-        // Merging copies the records into the output, so nothing is left referencing the plugin.
-        var mod = Mod(mergeIn: true, new[] { Absent, Resource });
+        // Merging fixes the "output cannot reference it" half, but not the version-drift half: the
+        // donor still comes out of a file the user is not running. So the gate must still open.
+        var mod = Mod(mergeIn: true, new[] { AbsentKey, Resource });
 
-        Unsatisfiable(mod, loadOrder: new[] { Vanilla }).Should().BeEmpty();
+        Absent(mod, loadOrder: new[] { Vanilla }).Should().BeEquivalentTo(new[] { AbsentKey, Resource });
     }
 
     [Fact]
-    public void Unsatisfiable_NamesAPluginThatIsNeitherEnabledNorMerged()
+    public void AbsentPlugins_NamesEveryPluginTheUserIsNotRunning()
     {
-        // The reported configuration: mod disabled in the mod manager, merge-in off.
-        var mod = Mod(mergeIn: false, new[] { Absent, Resource }, resourceOnly: new[] { Resource });
+        var mod = Mod(mergeIn: false, new[] { AbsentKey, Resource }, resourceOnly: new[] { Resource });
 
-        var unsatisfiable = Unsatisfiable(mod, loadOrder: new[] { Vanilla });
-
-        unsatisfiable.Should().Contain(Absent);
-        unsatisfiable.Should().NotContain(Resource, "an unclaimed resource-only plugin merges by default");
+        Absent(mod, loadOrder: new[] { Vanilla }).Should().BeEquivalentTo(new[] { AbsentKey, Resource });
     }
 
     [Fact]
-    public void Unsatisfiable_TreatsImplicitVanillaMastersAsPresent()
+    public void AbsentPlugins_TreatsImplicitVanillaMastersAsPresent()
     {
         var mod = Mod(mergeIn: false, new[] { Vanilla });
 
-        Unsatisfiable(mod, implicits: new[] { Vanilla }).Should().BeEmpty();
+        Absent(mod, implicits: new[] { Vanilla }).Should().BeEmpty();
     }
 
     // ── EnumerateWrittenLinks ───────────────────────────────────────────────────────────
@@ -130,11 +135,11 @@ public class ValidatorWrittenLinkCheckTests
         // Traits OFF: record mode's SyncTemplateInheritance never mirrors this TPLT, so screening
         // it would reject a selection that patches cleanly.
         var statsOnly = NonTraitsTemplatedDonor(mod, template);
-        WrittenLinks(statsOnly, statsOnly).Select(l => l.Field).Should().NotContain("Template");
+        WrittenPairs(statsOnly, statsOnly).Select(l => l.Field).Should().NotContain("Template");
 
         // Traits ON: the TPLT IS written onto the recipient, and can dangle.
         var inheritor = MutagenFixtures.NewNpc(mod, "Inheritor", traitsTemplate: true, template: template);
-        WrittenLinks(inheritor, inheritor).Should().Contain(("Template", template.FormKey));
+        WrittenPairs(inheritor, inheritor).Should().Contain(("Template", template.FormKey));
     }
 
     [Fact]
@@ -147,7 +152,7 @@ public class ValidatorWrittenLinkCheckTests
         var template = MutagenFixtures.NewNpc(mod, "OREO_EncBandit01TemplateChampion");
         var statsOnly = NonTraitsTemplatedDonor(mod, template);
 
-        WrittenLinks(statsOnly, statsOnly, useSkyPatcherMode: true)
+        WrittenPairs(statsOnly, statsOnly, useSkyPatcherMode: true)
             .Should().Contain(("Template", template.FormKey));
     }
 
@@ -171,7 +176,7 @@ public class ValidatorWrittenLinkCheckTests
         donor.HeadTexture.SetTo(headTexture);
         donor.DefaultOutfit.SetTo(outfit);
 
-        var withOutfit = WrittenLinks(donor, donor, includeOutfit: true);
+        var withOutfit = WrittenPairs(donor, donor, includeOutfit: true);
 
         withOutfit.Should().Contain(("Race", race.FormKey));
         withOutfit.Should().Contain(("WornArmor(skin)", skin.FormKey));
@@ -182,7 +187,7 @@ public class ValidatorWrittenLinkCheckTests
         withOutfit.Should().Contain(("DefaultOutfit", outfit.FormKey));
 
         // An outfit that is not copied cannot dangle.
-        WrittenLinks(donor, donor, includeOutfit: false)
+        WrittenPairs(donor, donor, includeOutfit: false)
             .Select(l => l.Key).Should().NotContain(outfit.FormKey);
     }
 
@@ -193,7 +198,7 @@ public class ValidatorWrittenLinkCheckTests
         var race = MutagenFixtures.NewRace(mod, "TestRace");
         var donor = MutagenFixtures.NewNpc(mod, "Sparse", race: race);
 
-        var links = WrittenLinks(donor, donor, includeOutfit: true);
+        var links = WrittenPairs(donor, donor, includeOutfit: true);
 
         links.Should().ContainSingle().Which.Should().Be(("Race", race.FormKey));
         links.Select(l => l.Key).Should().NotContain(FormKey.Null);
@@ -215,7 +220,7 @@ public class ValidatorWrittenLinkCheckTests
         var donor = MutagenFixtures.NewNpc(mod, "Donor", traitsTemplate: true, template: terminus);
         donor.HeadParts.Add(donorHeadPart.ToLink());
 
-        var links = WrittenLinks(appearanceRecord: terminus, donor: donor);
+        var links = WrittenPairs(appearanceRecord: terminus, donor: donor);
 
         links.Select(l => l.Key).Should().Contain(terminusHeadPart.FormKey);
         links.Select(l => l.Key).Should().NotContain(donorHeadPart.FormKey);
@@ -229,16 +234,16 @@ public class ValidatorWrittenLinkCheckTests
     {
         var npc = FormKey.Factory("000801:Skyrim.esm");
 
-        IncludeOutfit(Mod(false, new[] { Absent }, includeOutfits: true), npc).Should().BeTrue();
-        IncludeOutfit(Mod(false, new[] { Absent }, includeOutfits: false), npc).Should().BeFalse();
+        IncludeOutfit(Mod(false, new[] { AbsentKey }, includeOutfits: true), npc).Should().BeTrue();
+        IncludeOutfit(Mod(false, new[] { AbsentKey }, includeOutfits: false), npc).Should().BeFalse();
     }
 
     [Fact]
     public void IncludeOutfit_HonoursThePerNpcOverride()
     {
         var npc = FormKey.Factory("000801:Skyrim.esm");
-        var modOn = Mod(false, new[] { Absent }, includeOutfits: true);
-        var modOff = Mod(false, new[] { Absent }, includeOutfits: false);
+        var modOn = Mod(false, new[] { AbsentKey }, includeOutfits: true);
+        var modOff = Mod(false, new[] { AbsentKey }, includeOutfits: false);
 
         IncludeOutfit(modOn, npc, new() { [npc] = OutfitOverride.No }).Should().BeFalse();
         IncludeOutfit(modOff, npc, new() { [npc] = OutfitOverride.Yes }).Should().BeTrue();
@@ -249,15 +254,10 @@ public class ValidatorWrittenLinkCheckTests
             .Should().BeTrue();
     }
 
-    // ── The SkyPatcher whole-record sweep ───────────────────────────────────────────────
+    // ── What the screen covers vs. what the strip removes ───────────────────────────────
 
-    /// <summary>
-    /// SkyPatcher mode screens every link on the donor, not just the appearance fields. The
-    /// surrogate is a DeepCopyIn, so an unsatisfiable link anywhere on the record breaks the run
-    /// one way or the other: kept it dangles and the save fails; stripped it can leave a REQUIRED
-    /// subrecord null and the game stalls on launch with a null reference. Repairing them field by
-    /// field is whack-a-mole, so the selection is rejected instead.
-    /// </summary>
+    /// <summary>The plain-Create sweep: that mode hands the surrogate the donor's whole record, so
+    /// every link on it lands in the output and every link is screened.</summary>
     private static IReadOnlyList<FormKey> UnsatisfiableRecordLinks(INpcGetter donor,
         params ModKey[] satisfiable)
         => donor.EnumerateFormLinks()
@@ -266,10 +266,11 @@ public class ValidatorWrittenLinkCheckTests
             .ToList();
 
     [Fact]
-    public void RecordSweep_SeesNonAppearanceLinksTheAppearanceCheckCannot()
+    public void CreateAndPatch_ScreensOnlyWhatSurvivesTheStrip()
     {
-        // Class is the one that stalled the game, but it is not special — Voice, CombatStyle, the
-        // death item and the rest are all reachable only by sweeping the record.
+        // The surrogate keeps appearance data plus Class and drops everything else
+        // (SkyPatcherInterface.StripNonAppearanceData), so Voice and CombatStyle cannot reach the
+        // output and screening them would reject selections that patch cleanly.
         var plugin = MutagenFixtures.NewMod("Bandit War.esp");
         var donor = MutagenFixtures.NewNpc(plugin, "OREO_EncBandit01ChampionNordF",
             race: MutagenFixtures.NewRace(plugin, "BanditRace"));
@@ -277,9 +278,21 @@ public class ValidatorWrittenLinkCheckTests
         donor.Voice.SetTo(plugin.VoiceTypes.AddNew());
         donor.CombatStyle.SetTo(plugin.CombatStyles.AddNew());
 
-        // The appearance pass sees only Race; the sweep sees all four.
-        WrittenLinks(donor, donor, useSkyPatcherMode: true).Select(l => l.Field)
-            .Should().BeEquivalentTo(new[] { "Race" });
+        WrittenPairs(donor, donor, useSkyPatcherMode: true).Select(l => l.Field)
+            .Should().BeEquivalentTo(new[] { "Race", "Class" });
+    }
+
+    [Fact]
+    public void PlainCreate_SweepSeesEveryLinkOnTheDonor()
+    {
+        // Plain Create forwards the donor's whole record by contract — appearanceOnly is passed
+        // only in the Create-and-Patch branch — so nothing is stripped and everything is screened.
+        var plugin = MutagenFixtures.NewMod("Bandit War.esp");
+        var donor = MutagenFixtures.NewNpc(plugin, "OREO_EncBandit01ChampionNordF",
+            race: MutagenFixtures.NewRace(plugin, "BanditRace"));
+        donor.Class.SetTo(plugin.Classes.AddNew());
+        donor.Voice.SetTo(plugin.VoiceTypes.AddNew());
+        donor.CombatStyle.SetTo(plugin.CombatStyles.AddNew());
 
         UnsatisfiableRecordLinks(donor, MutagenFixtures.Mk("Skyrim.esm"))
             .Should().HaveCount(4)
@@ -301,6 +314,53 @@ public class ValidatorWrittenLinkCheckTests
         UnsatisfiableRecordLinks(donor, vanilla.ModKey).Should().BeEmpty();
     }
 
+    // ── Types, which drive the resolve-check ────────────────────────────────────────────
+
+    [Fact]
+    public void WrittenLinks_CarryTheGetterTypeForEachField()
+    {
+        // The resolve-check asks the link cache "does this record exist", and a typed lookup is
+        // both cheaper and more accurate than an untyped one — so every field must name its type.
+        var mod = MutagenFixtures.NewMod("Typed.esp");
+        var race = MutagenFixtures.NewRace(mod, "R");
+        var template = MutagenFixtures.NewNpc(mod, "T");
+        var donor = MutagenFixtures.NewNpc(mod, "Donor", race: race, template: template);
+        donor.WornArmor.SetTo(mod.Armors.AddNew());
+        donor.HeadTexture.SetTo(mod.TextureSets.AddNew());
+        donor.HairColor.SetTo(mod.Colors.AddNew());
+        donor.HeadParts.Add(mod.HeadParts.AddNew().ToLink());
+        donor.DefaultOutfit.SetTo(mod.Outfits.AddNew());
+        donor.Class.SetTo(mod.Classes.AddNew());
+
+        var byField = WrittenLinks(donor, donor, includeOutfit: true, useSkyPatcherMode: true)
+            .ToDictionary(l => l.Field, l => l.Type);
+
+        byField["Race"].Should().Be(typeof(IRaceGetter));
+        byField["WornArmor(skin)"].Should().Be(typeof(IArmorGetter));
+        byField["HeadTexture"].Should().Be(typeof(ITextureSetGetter));
+        byField["HairColor"].Should().Be(typeof(IColorRecordGetter));
+        byField["HeadParts[0]"].Should().Be(typeof(IHeadPartGetter));
+        byField["DefaultOutfit"].Should().Be(typeof(IOutfitGetter));
+        byField["Template"].Should().Be(typeof(INpcSpawnGetter));
+        byField["Class"].Should().Be(typeof(IClassGetter));
+        byField.Values.Should().NotContainNulls();
+    }
+
+    [Fact]
+    public void WrittenLinks_ScreenClassInSkyPatcherModeOnly()
+    {
+        // Class is the one non-appearance link the surrogate keeps — CNAM is required, so it cannot
+        // be nulled like the rest, which makes screening the only way to catch a bad one. Record
+        // mode never copies it at all.
+        var mod = MutagenFixtures.NewMod("Bandit War.esp");
+        var donor = MutagenFixtures.NewNpc(mod, "Donor", race: MutagenFixtures.NewRace(mod, "R"));
+        var cls = mod.Classes.AddNew();
+        donor.Class.SetTo(cls);
+
+        WrittenPairs(donor, donor, useSkyPatcherMode: true).Should().Contain(("Class", cls.FormKey));
+        WrittenPairs(donor, donor).Select(l => l.Field).Should().NotContain("Class");
+    }
+
     // ── The reported configuration, end to end across the two seams ─────────────────────
 
     [Fact]
@@ -309,18 +369,18 @@ public class ValidatorWrittenLinkCheckTests
         // Bandit War.esp: disabled in the mod manager, merge-in off, and the donor's TPLT points
         // at one of its own records. Nothing about the plugin's DECLARED masters is wrong — every
         // one of them is vanilla — so only a content check can see this.
-        var mod = Mod(mergeIn: false, new[] { Absent, Resource }, resourceOnly: new[] { Resource });
+        var mod = Mod(mergeIn: false, new[] { AbsentKey, Resource }, resourceOnly: new[] { Resource });
         var loadOrder = new[] { Vanilla };
         var implicits = new[] { Vanilla };
 
-        Unsatisfiable(mod, loadOrder, implicits).Should().Contain(Absent);
+        Absent(mod, loadOrder, implicits).Should().Contain(AbsentKey);
 
         var plugin = MutagenFixtures.NewMod("Bandit War.esp");
         var template = MutagenFixtures.NewNpc(plugin, "OREO_EncBandit01TemplateChampion");
         var donor = NonTraitsTemplatedDonor(plugin, template);
         donor.Configuration.TemplateFlags |= NpcConfiguration.TemplateFlag.Traits;
 
-        var offending = WrittenLinks(donor, donor).Where(l =>
+        var offending = WrittenPairs(donor, donor).Where(l =>
             !Reflect.InvokeStatic<bool>(typeof(Validator), "IsMasterSatisfied",
                 l.Key.ModKey, mod, loadOrder.ToList(), new HashSet<ModKey>(implicits),
                 new Dictionary<ModKey, ModSetting>(), null)).ToList();
