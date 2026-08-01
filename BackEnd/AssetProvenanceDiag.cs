@@ -266,7 +266,9 @@ public readonly struct AssetRequestContext
     public readonly FormKey DonorNpc;
     /// <summary>Donor EditorID, if known.</summary>
     public readonly string? DonorEditorId;
-    /// <summary>Why this asset was requested (FaceGen, PluginRef, NifTexture, SmpXml, AssetLink).</summary>
+    /// <summary>Why this asset was requested (FaceGen, PluginRef, NifTexture, SmpXml, AssetLink;
+    /// IsolatedRef / IsolatedNifTexture for Include-As-New isolation copies, whose destination is
+    /// the private NPC2\&lt;mod&gt; folder rather than the source-relative path).</summary>
     public readonly string Reason;
     /// <summary>The specific thing that referenced this asset: for PluginRef, the record (e.g.
     /// "HeadPart 'Hair01' [ID]"); for NifTexture/SmpXml, the source NIF/XML file name; else empty.</summary>

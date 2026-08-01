@@ -39,4 +39,17 @@ internal static class GoldenCombos
     /// flag it here until the user regenerates that combo.
     /// </summary>
     public static bool IsStaleForChildClothesFix(GoldenCombo combo) => false;
+
+    /// <summary>
+    /// Whether a combo's reference set predates the 2026-08 Include-As-New root-delivery fix
+    /// (docs/SkyPatcher-IncludeAsNew-Outfit-Records.md). The fixed patcher writes two directive
+    /// classes the stale references lack: <c>race=</c> for the FIRST NPC of a batch (previously
+    /// dropped — directives were emitted before the override remap, the "Kayd bug", §4.5), and
+    /// <c>outfitDefault=</c>/<c>outfitSleep=</c> pointing Include-As-New NPCs at their private
+    /// outfit-chain copies (previously never emitted at all, §4.1-§4.3). Tolerate exactly those
+    /// deviations (while asserting the fresh output delivers them) until the user regenerates
+    /// these combos.
+    /// </summary>
+    public static bool IsStaleForRootDeliveryFix(GoldenCombo combo) =>
+        combo.UseSkyPatcher && combo.OverrideMode == RecordOverrideHandlingMode.IncludeAsNew;
 }

@@ -224,9 +224,42 @@ public class NpcWarningReporterTests
     [InlineData(NpcWarningKind.RaceDefaultsDrift)]
     [InlineData(NpcWarningKind.MissingFaceTint)]
     [InlineData(NpcWarningKind.TexturelessShapes)]
+    [InlineData(NpcWarningKind.OrphanedRecordDuplicate)]
     public void TechnicalNotes_ExistForEveryKind(NpcWarningKind kind)
     {
         NpcWarningReporter.TechnicalNote(kind).Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void EveryDeclaredKind_HasAHeaderAndTechnicalNote()
+    {
+        // Both switches throw on an unhandled member, so a kind added to the enum without its
+        // two arms would otherwise only surface at report time of the first run that records it.
+        foreach (var kind in System.Enum.GetValues<NpcWarningKind>())
+        {
+            NpcWarningReporter.Header(kind).Should().NotBeNullOrWhiteSpace(
+                $"kind {kind} must have a Header arm");
+            NpcWarningReporter.TechnicalNote(kind).Should().NotBeNullOrWhiteSpace(
+                $"kind {kind} must have a TechnicalNote arm");
+        }
+    }
+
+    [Fact]
+    public void OrphanedDuplicates_GroupUnderTheirOwnHeader_WithSourceDetail()
+    {
+        // The orphan check records the RECORD identity in the NPC slot (one line per orphaned
+        // chain head) and where it was copied from as the detail.
+        var lines = NpcWarningReporter.FormatReport(
+        [
+            Entry(NpcWarningKind.OrphanedRecordDuplicate,
+                "ChildOutfit01_Skyrim [Outfit] 0035F8:NPC.esp",
+                "copied from ChildOutfit01 (06D92E:Skyrim.esm); minted for 2 NPC selection(s) from RS Children Overhaul"),
+        ]).ToList();
+
+        lines.Should().ContainSingle(l => l == HeaderLine(NpcWarningKind.OrphanedRecordDuplicate));
+        lines.Should().Contain(l =>
+            l.StartsWith("  - ChildOutfit01_Skyrim [Outfit] 0035F8:NPC.esp") &&
+            l.Contains("copied from ChildOutfit01"));
     }
 
     [Theory]
@@ -235,6 +268,7 @@ public class NpcWarningReporterTests
     [InlineData(NpcWarningKind.RaceDefaultsDrift)]
     [InlineData(NpcWarningKind.MissingFaceTint)]
     [InlineData(NpcWarningKind.TexturelessShapes)]
+    [InlineData(NpcWarningKind.OrphanedRecordDuplicate)]
     public void Headers_AreSpecific_AndClassifyAsWarnings(NpcWarningKind kind)
     {
         string header = NpcWarningReporter.Header(kind);

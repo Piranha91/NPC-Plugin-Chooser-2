@@ -120,12 +120,48 @@ public class PatcherGoldenOutputTests : IClassFixture<GoldenEnvFixture>
             if (Directory.Exists(Path.Combine(assetRefDir, "meshes")) || Directory.Exists(Path.Combine(assetRefDir, "textures")))
             {
                 var assets = AssetComparer.Compare(outDir, assetRefDir, combo.UseSkyPatcher);
-                if (assets.MissingFromFresh.Count > 0 || assets.HashMismatches.Count > 0
-                    || (!stale && assets.ExtraInFresh.Count > 0))
+                var assetMissing = assets.MissingFromFresh.ToList();
+                var assetExtra = assets.ExtraInFresh.ToList();
+
+                if (combo.OverrideMode == Models.RecordOverrideHandlingMode.IncludeAsNew)
+                {
+                    // The Include-As-New asset isolation (2026-08) relocates every mod-shipped
+                    // asset a duplicated record references to <root>/NPC2/<mod>/<rest>; the
+                    // references predate it. Tolerate exactly that relocation — a missing file
+                    // whose isolated counterpart exists in fresh, and extras under the isolation
+                    // root — until the reference assets are regenerated.
+                    bool IsolatedCounterpartExists(string rel)
+                    {
+                        var slash = rel.IndexOf('/');
+                        if (slash <= 0) return false;
+                        var isoRoot = Path.Combine(outDir, rel.Substring(0, slash),
+                            AssetHandler.IsolationRootFolderName);
+                        if (!Directory.Exists(isoRoot)) return false;
+                        var rest = rel.Substring(slash + 1).Replace('/', Path.DirectorySeparatorChar);
+                        return Directory.EnumerateDirectories(isoRoot)
+                            .Any(tagDir => File.Exists(Path.Combine(tagDir, rest)));
+                    }
+
+                    int relocated = assetMissing.RemoveAll(IsolatedCounterpartExists);
+                    int isolatedExtra = assetExtra.RemoveAll(rel => rel.Contains(
+                        "/" + AssetHandler.IsolationRootFolderName + "/",
+                        StringComparison.OrdinalIgnoreCase));
+                    if (relocated > 0 || isolatedExtra > 0)
+                        _output.WriteLine($"NOTE: '{combo.FolderName}' reference predates asset isolation; " +
+                                          $"tolerated {relocated} relocated + {isolatedExtra} isolated-extra file(s).");
+                }
+
+                if (assetMissing.Count > 0 || assets.HashMismatches.Count > 0
+                    || (!stale && assetExtra.Count > 0))
                 {
                     // For the stale combos, the fix legitimately adds the ChildClothes01 override's assets, so
                     // EXTRA-in-fresh is tolerated there; missing/hash-mismatch is always a failure.
-                    failures.Add("ASSETS:\n" + assets.Describe());
+                    failures.Add("ASSETS:\n" +
+                        $"Missing={assetMissing.Count}, Extra={assetExtra.Count}, HashMismatch={assets.HashMismatches.Count}.\n  " +
+                        string.Join("\n  ",
+                            assetMissing.Take(20).Select(m => "MISSING from fresh: " + m)
+                                .Concat(assetExtra.Take(20).Select(e => "EXTRA in fresh:     " + e))
+                                .Concat(assets.HashMismatches.Take(20).Select(h => "HASH MISMATCH:      " + h))));
                 }
             }
             else
@@ -159,7 +195,48 @@ public class PatcherGoldenOutputTests : IClassFixture<GoldenEnvFixture>
                 File.Exists(freshIni).Should().BeTrue("SkyPatcher mode must emit the .ini");
 
                 var ini = SkyPatcherIniComparer.Compare(refIni, freshIni, "NPC.esp");
-                if (!ini.IsMatch) failures.Add("INI:\n" + ini.Describe());
+                var iniDiffs = ini.Diffs.ToList();
+
+                // References for the IncludeAsNew+SkyPatcher combos predate the root-delivery fix
+                // and are missing the race= directive the first NPC of the batch now correctly
+                // gets (the Kayd bug) plus the outfitDefault=/outfitSleep= directives that point
+                // Include-As-New NPCs at their private outfit-chain copies. Assert the fix instead
+                // of comparing, and tolerate exactly those deviations until the references are
+                // regenerated.
+                if (GoldenCombos.IsStaleForRootDeliveryFix(combo))
+                {
+                    var freshDirs = SkyPatcherIniComparer.DirectivesByTarget(freshIni);
+
+                    int toleratedRace = iniDiffs.RemoveAll(d =>
+                        d.Contains("directive 'race' present ref=False fresh=True"));
+                    if (toleratedRace > 0)
+                    {
+                        bool delivered = freshDirs.Values.Any(d => d.TryGetValue("race", out var v)
+                            && v.StartsWith("NPC.esp|", StringComparison.OrdinalIgnoreCase));
+                        if (!delivered)
+                            iniDiffs.Add("stale-delivery tolerance: no fresh race= directive points at the output plugin.");
+                    }
+
+                    int toleratedOutfit = iniDiffs.RemoveAll(d =>
+                        d.Contains("directive 'outfitDefault' present ref=False fresh=True") ||
+                        d.Contains("directive 'outfitSleep' present ref=False fresh=True"));
+                    if (toleratedOutfit > 0)
+                    {
+                        bool delivered = freshDirs.Values.Any(d => d.TryGetValue("outfitDefault", out var v)
+                            && v.StartsWith("NPC.esp|", StringComparison.OrdinalIgnoreCase));
+                        if (!delivered)
+                            iniDiffs.Add("stale-delivery tolerance: no fresh outfitDefault= directive points at the output plugin.");
+                    }
+
+                    if (toleratedRace > 0 || toleratedOutfit > 0)
+                        _output.WriteLine($"NOTE: '{combo.FolderName}' reference predates the root-delivery fix; " +
+                                          $"tolerated {toleratedRace} race + {toleratedOutfit} outfit directive-presence " +
+                                          "diff(s) after asserting the fresh ini delivers them into the output plugin.");
+                }
+
+                if (iniDiffs.Count > 0)
+                    failures.Add($"INI:\nSkyPatcher targets compared: {ini.TargetsCompared}. Diffs={iniDiffs.Count}.\n  " +
+                                 string.Join("\n  ", iniDiffs));
 
                 var refSurr = SkyPatcherIniComparer.SurrogateByTarget(refIni);
                 var freshSurr = SkyPatcherIniComparer.SurrogateByTarget(freshIni);

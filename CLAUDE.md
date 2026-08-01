@@ -145,7 +145,8 @@ immediate flush, so a crashed/hung session still leaves a renderable file:
   file was copied into the output. One CSV row per atomic reference (columns: `DestFile,
   Reason, Referencer, NPC, TargetFormKey, Mod, DonorFormKey, DonorEditorID, SourceKind,
   SourcePath`) — sort/pivot in a spreadsheet to view by-file or by-NPC. `Reason` is
-  FaceGen / PluginRef / NifTexture / SmpXml / AssetLink; `Referencer` names the specific
+  FaceGen / PluginRef / NifTexture / SmpXml / AssetLink (plus IsolatedRef / IsolatedNifTexture
+  for Include-As-New isolation copies, delivered under `meshes|textures\NPC2\<mod>\`); `Referencer` names the specific
   referencing record for PluginRef (e.g. `HeadPart 'Hair01' [ID]`) or the source NIF/XML
   for NifTexture/SmpXml. Unlike the other opt-in logs this is **user-facing**: the "Log
   Asset Provenance" checkbox in Settings > Logging (`Settings.LogAssetProvenance`),

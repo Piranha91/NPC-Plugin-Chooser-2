@@ -383,6 +383,29 @@ public class SkyPatcherInterface : OptionalUIModule
         npcContainer.Actions.Add(new SkyPatcherAction("outfitDefault", outfitFk));
     }
 
+    public void SetSleepOutfit(FormKey applyTo, FormKey outfitFk)
+    {
+        if (!_outputs.TryGetValue(applyTo, out var npcContainer) || npcContainer == null)
+        {
+            return;
+        }
+        npcContainer.Actions.Add(new SkyPatcherAction("outfitSleep", outfitFk));
+    }
+
+    /// <summary>
+    /// Every FormKey any queued directive points at (directive VALUES — race=, outfitDefault=,
+    /// copyVisualStyle= etc. — not the filterByNPCs targets). Records delivered only through a
+    /// directive have no inbound plugin link, so the post-run orphan check needs this to know
+    /// they are referenced.
+    /// </summary>
+    public IEnumerable<FormKey> EnumerateDirectiveFormKeys()
+    {
+        return _outputs.Values
+            .SelectMany(c => c.Actions)
+            .Where(a => a.FormKeyRef.HasValue)
+            .Select(a => a.FormKeyRef!.Value);
+    }
+
     /// <summary>
     /// Adds an <c>outfitDefault</c> directive for an NPC that has NO surrogate entry —
     /// i.e. a record-mode run, where nothing calls <see cref="CreateSkyPatcherNpc"/>.

@@ -401,4 +401,44 @@ public class AssetHandlerStaticTests
                 overwriteBaseGameAssets: false, VanillaSet)
             .Should().BeTrue();
     }
+
+    // ----------------------------------------------------------------------
+    // Include-As-New asset isolation: InsertIsolationPrefix / IsolationTagFor
+    // ----------------------------------------------------------------------
+
+    [Fact]
+    public void InsertIsolationPrefix_GoesUnderTheAssetTypeRoot()
+    {
+        AssetHandler.InsertIsolationPrefix(@"meshes\clothes\childrenclothes\f\torso01_1.nif", "RS Children Overhaul")
+            .Should().Be(@"meshes\NPC2\RS Children Overhaul\clothes\childrenclothes\f\torso01_1.nif",
+                "record model paths are relative to meshes\\, so the prefix must sit BELOW it " +
+                "for the same insertion to stay valid on the record side");
+
+        AssetHandler.InsertIsolationPrefix(@"textures\clothes\childrenclothes\outfit.dds", "Mod")
+            .Should().Be(@"textures\NPC2\Mod\clothes\childrenclothes\outfit.dds");
+    }
+
+    [Fact]
+    public void InsertIsolationPrefix_RootlessPath_PrefixesWholePath()
+    {
+        AssetHandler.InsertIsolationPrefix("loose.nif", "Mod")
+            .Should().Be(@"NPC2\Mod\loose.nif");
+    }
+
+    [Fact]
+    public void IsolationTagFor_SanitizesAndTruncates()
+    {
+        AssetHandler.IsolationTagFor(new NPC_Plugin_Chooser_2.Models.ModSetting
+                { DisplayName = @"Bad:Name|With""Chars?" })
+            .Should().NotContainAny(":", "|", "\"", "?");
+
+        var longName = new string('x', 100);
+        AssetHandler.IsolationTagFor(new NPC_Plugin_Chooser_2.Models.ModSetting { DisplayName = longName })
+            .Length.Should().BeLessThanOrEqualTo(40);
+
+        // Deterministic: the same mod always lands in the same folder.
+        AssetHandler.IsolationTagFor(new NPC_Plugin_Chooser_2.Models.ModSetting { DisplayName = "RS Children" })
+            .Should().Be(AssetHandler.IsolationTagFor(
+                new NPC_Plugin_Chooser_2.Models.ModSetting { DisplayName = "RS Children" }));
+    }
 }

@@ -509,7 +509,14 @@ public class AssetHandler : OptionalUIModule
     /// folders — everything downstream (dedup, destination claims, NIF post-processing) is
     /// unchanged, so a borrowed FaceGen is handled exactly like any other loose file.
     /// </param>
-    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx, string? overrideDestinationRelativePath = null, string? explicitSourceAbsolutePath = null)
+    /// <param name="isolationModTag">
+    /// Marks this as an Include-As-New ISOLATION copy (see
+    /// <see cref="ScheduleIncludeAsNewAssetIsolation"/>): post-copy analysis runs
+    /// <see cref="PostProcessIsolatedCopy"/> on the DESTINATION file — isolating the NIF's internal
+    /// texture references — instead of the standard source-side scan, which would schedule the
+    /// mod's textures back onto their shared paths.
+    /// </param>
+    private Task RequestAssetCopyAsync(string relativePath, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx, string? overrideDestinationRelativePath = null, string? explicitSourceAbsolutePath = null, string? isolationModTag = null)
     {
         // FIX: Create a composite key to uniquely identify an asset *within the context of its source mod*.
         // This prevents a failed lookup from one mod from blocking a successful lookup from another mod for the same relative path.
@@ -624,7 +631,19 @@ public class AssetHandler : OptionalUIModule
                     switch (sourceType)
                     {
                         case AssetSourceType.LooseFile:
-                            if (modSetting.CopyAssets)
+                            if (isolationModTag != null)
+                            {
+                                // Isolation rewrites the copy's internal references, so the
+                                // analysis runs on the DESTINATION and only after the copy landed
+                                // (never on the mod's source file).
+                                await PerformLooseCopyAsync(sourcePath, destPath);
+                                if (modSetting.CopyAssets)
+                                {
+                                    await PostProcessIsolatedCopy(destPath, isolationModTag, modSetting,
+                                        outputBasePath, faceTintSubPath, ctx);
+                                }
+                            }
+                            else if (modSetting.CopyAssets)
                             {
                                 // Create two tasks: one for copying, one for analyzing the source file.
                                 Task copyTask = PerformLooseCopyAsync(sourcePath, destPath);
@@ -647,7 +666,12 @@ public class AssetHandler : OptionalUIModule
                             var (extractOk, extractError) = await _bsaHandler.ExtractFileAsync(bsaPath, relativePath, destPath);
                             if (extractOk)
                             {
-                                if (modSetting.CopyAssets)
+                                if (isolationModTag != null && modSetting.CopyAssets)
+                                {
+                                    await PostProcessIsolatedCopy(destPath, isolationModTag, modSetting,
+                                        outputBasePath, faceTintSubPath, ctx);
+                                }
+                                else if (modSetting.CopyAssets)
                                 {
                                     await PostProcessCopiedFile(destPath, modSetting, outputBasePath, faceTintSubPath, ctx);
                                 }
@@ -737,6 +761,182 @@ public class AssetHandler : OptionalUIModule
     /// this function is agnostic to whether or not these textures are assigned to a surrogate, so this could potentially
     /// create the wrong face tint textures
     /// </summary>
+    #region Include-As-New asset isolation
+
+    /// <summary>Folder segment isolated copies live under, directly below the asset-type root:
+    /// <c>meshes\NPC2\&lt;mod tag&gt;\...</c>, <c>textures\NPC2\&lt;mod tag&gt;\...</c>.</summary>
+    public const string IsolationRootFolderName = "NPC2";
+
+    /// <summary>Filesystem-safe per-mod segment for isolated asset destinations. Deterministic per
+    /// DisplayName so every NPC in a batch lands in the same folder.</summary>
+    public static string IsolationTagFor(ModSetting modSetting)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var tag = new string(modSetting.DisplayName.Select(c => invalid.Contains(c) ? '_' : c).ToArray()).Trim();
+        if (tag.Length > 40) tag = tag.Substring(0, 40).TrimEnd();
+        return tag.Length == 0 ? "Mod" : tag;
+    }
+
+    /// <summary>"meshes\clothes\x.nif" -> "meshes\NPC2\&lt;tag&gt;\clothes\x.nif". The prefix goes UNDER
+    /// the asset-type root, so a record path (relative to meshes\/textures\) stays valid after the
+    /// same insertion.</summary>
+    public static string InsertIsolationPrefix(string dataRelativePath, string modTag)
+    {
+        var sep = dataRelativePath.IndexOf(Path.DirectorySeparatorChar);
+        if (sep <= 0)
+        {
+            return Path.Combine(IsolationRootFolderName, modTag, dataRelativePath);
+        }
+
+        return Path.Combine(dataRelativePath.Substring(0, sep), IsolationRootFolderName, modTag,
+            dataRelativePath.Substring(sep + 1));
+    }
+
+    /// <summary>
+    /// Asset-side counterpart of 'Include As New' (docs/SkyPatcher-IncludeAsNew-Outfit-Records.md
+    /// §6). Record-level duplication keeps the source's asset paths verbatim, and for any file the
+    /// donor mod itself ships that is exactly wrong for a PRIVATE copy: delivered at its original
+    /// path the file either overwrites a shared/vanilla asset for the whole game (Overwrite Base
+    /// Game Assets on) or is skipped by the overwrite guard and never ships at all (default) — the
+    /// same all-or-nothing 'Include As New' exists to avoid, one layer down. So every asset a
+    /// duplicated record references that the mod itself provides is re-pointed at an isolated
+    /// destination (<c>meshes|textures\NPC2\&lt;mod&gt;\...</c>) and copied there; assets the mod does
+    /// NOT ship keep their shared paths and resolve from the load order as usual. Isolated NIF
+    /// copies additionally get their internal texture references isolated the same way
+    /// (<see cref="PostProcessIsolatedCopy"/>). The predicate is "does the mod ship the path"
+    /// (<see cref="FindAssetSource"/> never leaves the ModSetting) — deterministic and
+    /// load-order-independent, unlike byte-comparison against the current winner.
+    ///
+    /// <para>Must run BEFORE the caller harvests the duplicates' asset links, so the harvest sees
+    /// the rewritten paths. Each duplicate is visited exactly once per run — later NPCs reusing a
+    /// batch duplicate skip it because its links already point at isolated (mod-absent) paths.</para>
+    /// </summary>
+    public void ScheduleIncludeAsNewAssetIsolation(IEnumerable<IMajorRecord> duplicatedRecords,
+        ModSetting modSetting, string outputBasePath, FormKey targetNpcFormKey,
+        INpcGetter appearanceNpcRecord, string npcIdentifier)
+    {
+        var modTag = IsolationTagFor(modSetting);
+        var (_, faceTintSubPath) = Auxilliary.GetFaceGenSubPathStrings(appearanceNpcRecord.FormKey, true);
+
+        foreach (var record in duplicatedRecords)
+        {
+            foreach (var link in record.EnumerateListedAssetLinks())
+            {
+                if (link.IsNull) continue;
+                if (!Auxilliary.TryRegularizePath(link.DataRelativePath.Path, out var rel) ||
+                    string.IsNullOrWhiteSpace(rel))
+                {
+                    continue;
+                }
+
+                if (FindAssetSource(rel, modSetting).Item1 == AssetSourceType.NotFound)
+                {
+                    continue; // Not the mod's file: the shared path resolves from the load order.
+                }
+
+                var isolatedRel = InsertIsolationPrefix(rel, modTag);
+                var ctx = new AssetRequestContext(npcIdentifier, targetNpcFormKey,
+                    appearanceNpcRecord.FormKey, appearanceNpcRecord.EditorID, "IsolatedRef",
+                    $"{record.Registration.Name} '{record.EditorID}' ({record.FormKey})");
+                _ = RequestAssetCopyAsync(rel, modSetting, outputBasePath, faceTintSubPath, ctx,
+                    overrideDestinationRelativePath: isolatedRel, isolationModTag: modTag);
+
+                // Weight-pair sibling (_0/_1): the engine derives it from the recorded path, so
+                // once the record points into the isolation folder the sibling must live there
+                // too (the original-path pipeline does the same via
+                // AddCorrespondingNumericalNifPaths).
+                string? siblingRel = null;
+                if (rel.EndsWith("_0.nif", StringComparison.OrdinalIgnoreCase))
+                    siblingRel = rel.Substring(0, rel.Length - 6) + "_1.nif";
+                else if (rel.EndsWith("_1.nif", StringComparison.OrdinalIgnoreCase))
+                    siblingRel = rel.Substring(0, rel.Length - 6) + "_0.nif";
+                if (siblingRel != null &&
+                    FindAssetSource(siblingRel, modSetting).Item1 != AssetSourceType.NotFound)
+                {
+                    _ = RequestAssetCopyAsync(siblingRel, modSetting, outputBasePath, faceTintSubPath,
+                        ctx.WithReferencer(ctx.Referencer + " (weight pair)"),
+                        overrideDestinationRelativePath: InsertIsolationPrefix(siblingRel, modTag),
+                        isolationModTag: modTag);
+                }
+
+                if (!link.TrySetPath(isolatedRel))
+                {
+                    AppendLog($"      WARNING: could not re-point {record.EditorID ?? record.FormKey.ToString()} " +
+                              $"asset '{rel}' at its isolated copy '{isolatedRel}'; the shared path remains.",
+                        true, true);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Post-copy processing for an isolated destination file (replaces
+    /// <see cref="PostProcessCopiedFile"/> for isolation copies, and runs on the DESTINATION after
+    /// the copy lands — the rewrite must never touch the mod's source file). For NIFs: every
+    /// internal texture the mod itself ships is scheduled for an isolated copy and the slot path
+    /// rewritten to match; textures the mod does not ship keep their shared paths. SMP physics
+    /// XMLs are scheduled through the standard machinery at their ORIGINAL paths — XML paths are
+    /// mod-specific by convention (vanilla ships none), so the original and isolated mesh can
+    /// safely share them.
+    /// </summary>
+    private async Task PostProcessIsolatedCopy(string copiedDestPath, string isolationModTag,
+        ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx)
+    {
+        if (!copiedDestPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)) return;
+
+        ScheduleSmpPhysicsXmls(copiedDestPath, modSetting, outputBasePath, faceTintSubPath, ctx);
+
+        try
+        {
+            var texCtx = ctx.WithReason("IsolatedNifTexture", Path.GetFileName(copiedDestPath));
+            // Slot-level harvest (not the block walk) so the remap keys match exactly what the
+            // slot-level rewriter will read back.
+            var remap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (_, texturePaths) in NifHandler.GetTexturesByShape(copiedDestPath))
+            {
+                foreach (var tex in texturePaths)
+                {
+                    if (remap.ContainsKey(tex)) continue;
+                    if (!string.IsNullOrEmpty(faceTintSubPath) &&
+                        (faceTintSubPath.Contains(tex, StringComparison.OrdinalIgnoreCase) ||
+                         tex.Contains(faceTintSubPath, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+                    if (!Auxilliary.TryRegularizePath(tex, out var rel) || string.IsNullOrWhiteSpace(rel))
+                    {
+                        continue;
+                    }
+                    if (FindAssetSource(rel, modSetting).Item1 == AssetSourceType.NotFound)
+                    {
+                        continue; // Shared texture: leave the path; the load order supplies it.
+                    }
+
+                    var isolatedRel = InsertIsolationPrefix(rel, isolationModTag);
+                    remap[tex] = isolatedRel;
+                    _ = RequestAssetCopyAsync(rel, modSetting, outputBasePath, faceTintSubPath, texCtx,
+                        overrideDestinationRelativePath: isolatedRel);
+                }
+            }
+
+            if (remap.Count > 0)
+            {
+                int rewritten = NifHandler.RewriteTexturePaths(copiedDestPath, remap,
+                    msg => AppendLog("      " + msg, true, true));
+                Debug.WriteLine($"      Isolation: rewrote {rewritten} texture slot(s) in {Path.GetFileName(copiedDestPath)}.");
+            }
+
+            await WarnOnFullyUnresolvedShapeTextures(copiedDestPath, modSetting, faceTintSubPath, ctx);
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"ISOLATED NIF ERROR: Failed to isolate texture references of '{copiedDestPath}': " +
+                      ExceptionLogger.GetExceptionStack(ex), true, true);
+        }
+    }
+
+    #endregion
+
     private async Task PostProcessNifTextures(string nifPathToAnalyze, ModSetting modSetting, string outputBasePath, string faceTintSubPath, AssetRequestContext ctx)
     {
         // The check now correctly uses the passed-in path.

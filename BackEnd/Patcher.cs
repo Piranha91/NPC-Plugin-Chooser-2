@@ -33,6 +33,7 @@ public class Patcher : OptionalUIModule
     private readonly WigForwarder _wigForwarder;
     private readonly HeadPartWigConverter _headPartWigConverter;
     private readonly ForwardedOutfitDistributor _forwardedOutfitDistributor;
+    private readonly OutfitDisplayResolver _outfitDisplayResolver;
 
     // FaceGen NIFs that need their baked hair shape(s) stripped after the
     // asset copy completes (ForwardToSkin wig handling; see WigForwarder).
@@ -132,6 +133,7 @@ public class Patcher : OptionalUIModule
         PluginProvider pluginProvider, BsaHandler bsaHandler, SkyPatcherInterface skyPatcherInterface,
         WigForwarder wigForwarder, HeadPartWigConverter headPartWigConverter,
         ForwardedOutfitDistributor forwardedOutfitDistributor,
+        OutfitDisplayResolver outfitDisplayResolver,
         Lazy<FaceGenConsistencyAnalyzer> faceGenConsistency)
     {
         _faceGenConsistency = faceGenConsistency;
@@ -148,6 +150,7 @@ public class Patcher : OptionalUIModule
         _wigForwarder = wigForwarder;
         _headPartWigConverter = headPartWigConverter;
         _forwardedOutfitDistributor = forwardedOutfitDistributor;
+        _outfitDisplayResolver = outfitDisplayResolver;
     }
 
     public async Task PreInitializationLogicAsync()
@@ -986,9 +989,14 @@ public class Patcher : OptionalUIModule
                             var maxNestedIntervalDepth = useDefaultOverrideSettings 
                                 ? _settings.DefaultMaxNestedIntervalDepth 
                                 : appearanceModSetting.MaxNestedIntervalDepth;
-                            var includeAllOverrides = useDefaultOverrideSettings 
-                                ? _settings.DefaultIncludeAllOverrides 
+                            var includeAllOverrides = useDefaultOverrideSettings
+                                ? _settings.DefaultIncludeAllOverrides
                                 : appearanceModSetting.IncludeAllOverrides;
+
+                            // Declared here (not in the record-handling block below) because the
+                            // post-switch directive emission at the bottom of this lambda needs it;
+                            // assigned once the appearance record is known to be valid.
+                            bool includeOutfit = false;
 
                             if (isFaceGenOnly)
                             {
@@ -1071,7 +1079,6 @@ public class Patcher : OptionalUIModule
 
                                 // Outfit inclusion is independent of the patching mode, so resolve it once
                                 // here for both the Create and Create-and-Patch branches.
-                                bool includeOutfit;
                                 if (_settings.NpcOutfitOverrides.TryGetValue(npcFormKey,
                                         out var outfitOverrideChoice))
                                 {
@@ -1331,16 +1338,6 @@ public class Patcher : OptionalUIModule
                                             appearanceModSetting, npcIdentifier, includeOutfit,
                                             mergeInDependencyRecords);
 
-                                        if (_settings.UseSkyPatcherMode)
-                                        {
-                                            // A wig forwarded to the outfit must emit the
-                                            // outfitDefault= directive even when the user's
-                                            // Include Outfit choice is off — the duplicate outfit
-                                            // is how the wig reaches the NPC at runtime.
-                                            ApplySkyPatcherDirectives(npcFormKey, winningNpcOverride, patchNpc,
-                                                includeOutfit || (wigForward?.OutfitForwarded ?? false));
-                                        }
-
                                         switch (recordOverrideHandlingMode)
                                         {
                                             case RecordOverrideHandlingMode.Ignore:
@@ -1531,6 +1528,49 @@ public class Patcher : OptionalUIModule
                                                 List<string> overrideExceptionStrings = new();
                                                 HashSet<IMajorRecord> mergedInRecords;
 
+                                                // Roots beyond the donor's own links: the chain hanging from
+                                                // the outfit the actor will ACTUALLY wear. Discovery walks
+                                                // the donor, but with Include Outfits off the worn outfit is
+                                                // the recipient's — when the two differ, the recipient's
+                                                // chain would never be duplicated and the mod's outfit-side
+                                                // edits (e.g. RS Children's ArmorAddon fixes) silently miss
+                                                // the NPC. Sleep outfits are never taken from the donor at
+                                                // all, so the recipient's is a root whenever this mode runs.
+                                                // Roots are keyed exactly as the remap/delivery looks them up
+                                                // (patched record's field in record mode, resolver-effective
+                                                // outfit for the SkyPatcher directive), so mint and delivery
+                                                // cannot disagree. Create record mode forwards the donor
+                                                // record wholesale — recipient roots would only mint
+                                                // unreferenced duplicates there.
+                                                List<IFormLinkGetter>? additionalRootLinks = null;
+                                                if (_settings.UseSkyPatcherMode ||
+                                                    _settings.PatchingMode == PatchingMode.CreateAndPatch)
+                                                {
+                                                    additionalRootLinks = new();
+                                                    if (!winningNpcOverride.SleepingOutfit.IsNull)
+                                                    {
+                                                        additionalRootLinks.Add(winningNpcOverride.SleepingOutfit);
+                                                    }
+
+                                                    if (!includeOutfit)
+                                                    {
+                                                        if (!winningNpcOverride.DefaultOutfit.IsNull)
+                                                        {
+                                                            additionalRootLinks.Add(winningNpcOverride.DefaultOutfit);
+                                                        }
+
+                                                        if (_settings.UseSkyPatcherMode &&
+                                                            ResolveRecipientEffectiveOutfit(npcFormKey,
+                                                                appearanceNpcRecord.FormKey,
+                                                                appearanceModSetting) is { } effectiveOutfit &&
+                                                            effectiveOutfit != winningNpcOverride.DefaultOutfit.FormKey)
+                                                        {
+                                                            additionalRootLinks.Add(
+                                                                new FormLink<IOutfitGetter>(effectiveOutfit));
+                                                        }
+                                                    }
+                                                }
+
                                                 if (includeAllOverrides)
                                                 {
                                                     AppendLog(
@@ -1545,6 +1585,25 @@ public class Patcher : OptionalUIModule
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
                                                         ct);
+
+                                                    // Bulk import copies overrides but does not bridge
+                                                    // unoverridden parents (e.g. a vanilla Outfit above an
+                                                    // overridden Armor), so the outfit roots still need the
+                                                    // traversal to build a deliverable chain.
+                                                    if (additionalRootLinks is { Count: > 0 })
+                                                    {
+                                                        mergedInRecords.UnionWith(
+                                                            _recordHandler.DuplicateInOverrideRecordsFromLinks(
+                                                                additionalRootLinks, patchNpc,
+                                                                appearanceModSetting.CorrespondingModKeys,
+                                                                appearanceModKey.Value, patchNpc.FormKey.ModKey,
+                                                                appearanceModSetting.HandleInjectedRecords,
+                                                                maxNestedIntervalDepth,
+                                                                currentModFolderPaths,
+                                                                ref overrideExceptionStrings,
+                                                                searchedOverrideFormKeysForGroup,
+                                                                ct));
+                                                    }
                                                 }
                                                 else
                                                 {
@@ -1557,7 +1616,8 @@ public class Patcher : OptionalUIModule
                                                         currentModFolderPaths,
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
-                                                        ct);
+                                                        ct,
+                                                        additionalRootLinks);
                                                 }
 
                                                 if (overrideExceptionStrings.Any())
@@ -1567,6 +1627,15 @@ public class Patcher : OptionalUIModule
                                                         true,
                                                         true);
                                                 }
+
+                                                // Asset-side isolation: re-points every mod-shipped
+                                                // asset on the duplicates at a private destination
+                                                // and schedules those copies. Must precede the
+                                                // harvest below so it sees the rewritten paths.
+                                                _assetHandler.ScheduleIncludeAsNewAssetIsolation(
+                                                    mergedInRecords, appearanceModSetting,
+                                                    _currentRunOutputAssetPath, npcFormKey,
+                                                    appearanceNpcRecord, npcIdentifier);
 
                                                 _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                                 break;
@@ -1668,16 +1737,6 @@ public class Patcher : OptionalUIModule
                                         WarnOnDanglingAppearanceLinks(patchNpc, appearanceNpcRecord,
                                             appearanceModSetting, npcIdentifier, includeOutfit,
                                             mergeInDependencyRecords);
-
-                                        if (_settings.UseSkyPatcherMode)
-                                        {
-                                            // A wig forwarded to the outfit must emit the
-                                            // outfitDefault= directive even when the user's
-                                            // Include Outfit choice is off — the duplicate outfit
-                                            // is how the wig reaches the NPC at runtime.
-                                            ApplySkyPatcherDirectives(npcFormKey, winningNpcOverride, patchNpc,
-                                                includeOutfit || (wigForward?.OutfitForwarded ?? false));
-                                        }
 
                                         switch (recordOverrideHandlingMode)
                                         {
@@ -1793,6 +1852,49 @@ public class Patcher : OptionalUIModule
                                                 List<string> overrideExceptionStrings = new();
                                                 HashSet<IMajorRecord> mergedInRecords;
 
+                                                // Roots beyond the donor's own links: the chain hanging from
+                                                // the outfit the actor will ACTUALLY wear. Discovery walks
+                                                // the donor, but with Include Outfits off the worn outfit is
+                                                // the recipient's — when the two differ, the recipient's
+                                                // chain would never be duplicated and the mod's outfit-side
+                                                // edits (e.g. RS Children's ArmorAddon fixes) silently miss
+                                                // the NPC. Sleep outfits are never taken from the donor at
+                                                // all, so the recipient's is a root whenever this mode runs.
+                                                // Roots are keyed exactly as the remap/delivery looks them up
+                                                // (patched record's field in record mode, resolver-effective
+                                                // outfit for the SkyPatcher directive), so mint and delivery
+                                                // cannot disagree. Create record mode forwards the donor
+                                                // record wholesale — recipient roots would only mint
+                                                // unreferenced duplicates there.
+                                                List<IFormLinkGetter>? additionalRootLinks = null;
+                                                if (_settings.UseSkyPatcherMode ||
+                                                    _settings.PatchingMode == PatchingMode.CreateAndPatch)
+                                                {
+                                                    additionalRootLinks = new();
+                                                    if (!winningNpcOverride.SleepingOutfit.IsNull)
+                                                    {
+                                                        additionalRootLinks.Add(winningNpcOverride.SleepingOutfit);
+                                                    }
+
+                                                    if (!includeOutfit)
+                                                    {
+                                                        if (!winningNpcOverride.DefaultOutfit.IsNull)
+                                                        {
+                                                            additionalRootLinks.Add(winningNpcOverride.DefaultOutfit);
+                                                        }
+
+                                                        if (_settings.UseSkyPatcherMode &&
+                                                            ResolveRecipientEffectiveOutfit(npcFormKey,
+                                                                appearanceNpcRecord.FormKey,
+                                                                appearanceModSetting) is { } effectiveOutfit &&
+                                                            effectiveOutfit != winningNpcOverride.DefaultOutfit.FormKey)
+                                                        {
+                                                            additionalRootLinks.Add(
+                                                                new FormLink<IOutfitGetter>(effectiveOutfit));
+                                                        }
+                                                    }
+                                                }
+
                                                 if (includeAllOverrides)
                                                 {
                                                     AppendLog(
@@ -1807,6 +1909,25 @@ public class Patcher : OptionalUIModule
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
                                                         ct);
+
+                                                    // Bulk import copies overrides but does not bridge
+                                                    // unoverridden parents (e.g. a vanilla Outfit above an
+                                                    // overridden Armor), so the outfit roots still need the
+                                                    // traversal to build a deliverable chain.
+                                                    if (additionalRootLinks is { Count: > 0 })
+                                                    {
+                                                        mergedInRecords.UnionWith(
+                                                            _recordHandler.DuplicateInOverrideRecordsFromLinks(
+                                                                additionalRootLinks, patchNpc,
+                                                                appearanceModSetting.CorrespondingModKeys,
+                                                                appearanceModKey.Value, patchNpc.FormKey.ModKey,
+                                                                appearanceModSetting.HandleInjectedRecords,
+                                                                maxNestedIntervalDepth,
+                                                                currentModFolderPaths,
+                                                                ref overrideExceptionStrings,
+                                                                searchedOverrideFormKeysForGroup,
+                                                                ct));
+                                                    }
                                                 }
                                                 else
                                                 {
@@ -1819,7 +1940,8 @@ public class Patcher : OptionalUIModule
                                                         currentModFolderPaths,
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
-                                                        ct);
+                                                        ct,
+                                                        additionalRootLinks);
                                                 }
 
                                                 if (overrideExceptionStrings.Any())
@@ -1829,6 +1951,15 @@ public class Patcher : OptionalUIModule
                                                         true,
                                                         true);
                                                 }
+
+                                                // Asset-side isolation: re-points every mod-shipped
+                                                // asset on the duplicates at a private destination
+                                                // and schedules those copies. Must precede the
+                                                // harvest below so it sees the rewritten paths.
+                                                _assetHandler.ScheduleIncludeAsNewAssetIsolation(
+                                                    mergedInRecords, appearanceModSetting,
+                                                    _currentRunOutputAssetPath, npcFormKey,
+                                                    appearanceNpcRecord, npcIdentifier);
 
                                                 _aux.CollectShallowAssetLinks(mergedInRecords, assetLinks);
                                                 break;
@@ -1897,6 +2028,25 @@ public class Patcher : OptionalUIModule
 
                                 if (_settings.UseSkyPatcherMode)
                                 {
+                                    // Directives are emitted HERE — after the override switch — so
+                                    // link-valued directives (race=, outfitDefault=) carry post-remap
+                                    // FormKeys. Emitting them before the switch orphaned every
+                                    // Include-As-New duplicate the remap was supposed to deliver, and
+                                    // dropped race= for the first NPC of each batch (Kayd bug; see
+                                    // docs/SkyPatcher-IncludeAsNew-Outfit-Records.md §4.3/§4.5).
+                                    // The wig OR: a wig forwarded to the outfit must emit
+                                    // outfitDefault= even when the user's Include Outfit choice is
+                                    // off — the duplicate outfit is how the wig reaches the NPC.
+                                    ApplySkyPatcherDirectives(npcFormKey, winningNpcOverride, patchNpc,
+                                        includeOutfit || (wigForward?.OutfitForwarded ?? false));
+
+                                    if (recordOverrideHandlingMode == RecordOverrideHandlingMode.IncludeAsNew)
+                                    {
+                                        DeliverIncludeAsNewOutfitDirectives(npcFormKey, winningNpcOverride,
+                                            appearanceNpcRecord.FormKey, appearanceModSetting,
+                                            includeOutfit || (wigForward?.OutfitForwarded ?? false));
+                                    }
+
                                     _skyPatcherInterface.ApplyCoreAppearance(npcFormKey, patchNpc);
                                 }
                             }
@@ -1984,6 +2134,11 @@ public class Patcher : OptionalUIModule
                     // (which Record Override Handling Mode to recommend) depends on the whole
                     // run's selections; convert them to warnings now, before the reporter flushes.
                     FlushRaceDriftFindings();
+
+                    // Any record minted under a new FormKey that nothing references is dead
+                    // cargo — see WarnOnOrphanedDuplicates. Must run after every NPC (and every
+                    // rollback) has finished touching the output, and before the reporter flushes.
+                    WarnOnOrphanedDuplicates();
 
                     // Per-NPC warnings (suspect origin meshes, missing tints, textureless
                     // shapes), grouped by type with one explanation per group — see
@@ -2808,6 +2963,111 @@ public class Patcher : OptionalUIModule
         if (includeOutfit)
         {
             _skyPatcherInterface.SetOutfit(npcFormKey, patchNpc.DefaultOutfit.FormKey);
+        }
+    }
+
+    /// <summary>
+    /// The outfit the actor is actually expected to wear when Include Outfits is OFF for its
+    /// appearance mod — the recipient's effective outfit per <see cref="OutfitDisplayResolver"/>
+    /// (chain-resolved, patch-mode-aware, runtime distributor layers included). Used both to
+    /// root the Include-As-New duplication traversal and to look the minted duplicate up again
+    /// at delivery time, so mint and delivery can never disagree on the key.
+    /// </summary>
+    private FormKey? ResolveRecipientEffectiveOutfit(FormKey npcFormKey, FormKey donorFormKey,
+        ModSetting appearanceModSetting)
+    {
+        var display = _outfitDisplayResolver.ResolveForDisplay(npcFormKey, donorFormKey,
+            appearanceModSetting, includeDefaultOutfitRenderFlag: true);
+        return display.OutfitFormKey is { IsNull: false } fk ? fk : null;
+    }
+
+    /// <summary>
+    /// SkyPatcher-mode delivery of Include-As-New outfit-side duplicates. Repointing the actor's
+    /// outfit at the mod's private copy is plumbing ("which copy of the outfit"), not an outfit
+    /// opinion ("whose outfit") — the Include Outfits flag answers only the latter, so this runs
+    /// even when it is off (docs/SkyPatcher-IncludeAsNew-Outfit-Records.md §2). copyVisualStyle
+    /// never carries an outfit, so outfitDefault=/outfitSleep= are the only channels to the game;
+    /// each is emitted ONLY when this batch actually minted a private copy of the outfit the
+    /// actor will wear — otherwise the runtime outfit contest is left alone. When Include Outfits
+    /// is ON (or a wig forwarded an outfit), the default outfit is already emitted from the
+    /// surrogate's post-remap field by <see cref="ApplySkyPatcherDirectives"/>, so only the sleep
+    /// outfit is considered here.
+    /// </summary>
+    private void DeliverIncludeAsNewOutfitDirectives(FormKey npcFormKey, INpcGetter winningNpcOverride,
+        FormKey donorFormKey, ModSetting appearanceModSetting, bool includeOutfit)
+    {
+        if (!includeOutfit &&
+            ResolveRecipientEffectiveOutfit(npcFormKey, donorFormKey, appearanceModSetting) is { } effectiveOutfit &&
+            _recordHandler.TryGetDuplicateMapping(effectiveOutfit, out var outfitDup) &&
+            outfitDup != effectiveOutfit)
+        {
+            _skyPatcherInterface.SetOutfit(npcFormKey, outfitDup);
+        }
+
+        var sleepLink = winningNpcOverride.SleepingOutfit;
+        if (!sleepLink.IsNull &&
+            _recordHandler.TryGetDuplicateMapping(sleepLink.FormKey, out var sleepDup) &&
+            sleepDup != sleepLink.FormKey)
+        {
+            _skyPatcherInterface.SetSleepOutfit(npcFormKey, sleepDup);
+        }
+    }
+
+    /// <summary>
+    /// Post-run safety net for 'Include As New' and dependency merge-in: any record minted into
+    /// the output under a NEW FormKey that nothing references — no FormLink on any output record
+    /// and no FormKey-valued SkyPatcher directive — is dead cargo. The game cannot resolve it,
+    /// and the edits it carries silently miss the NPCs it was duplicated for. Exactly the failure
+    /// that shipped RS Children's outfit chain orphaned for months
+    /// (docs/SkyPatcher-IncludeAsNew-Outfit-Records.md); the check makes the next delivery gap
+    /// loud instead of silent. Only chain HEADS surface: a duplicate referenced solely by another
+    /// orphan is delivered or stranded together with its head, so listing it separately is noise.
+    /// </summary>
+    private void WarnOnOrphanedDuplicates()
+    {
+        var outputMod = _environmentStateProvider.OutputMod;
+        var outputKey = outputMod.ModKey;
+
+        var referenced = new HashSet<FormKey>();
+        foreach (var record in outputMod.EnumerateMajorRecords())
+        {
+            foreach (var link in record.EnumerateFormLinks())
+            {
+                if (link.FormKey.ModKey == outputKey)
+                {
+                    referenced.Add(link.FormKey);
+                }
+            }
+        }
+
+        referenced.UnionWith(_skyPatcherInterface.EnumerateDirectiveFormKeys());
+
+        foreach (var record in outputMod.EnumerateMajorRecords())
+        {
+            if (record.FormKey.ModKey != outputKey || referenced.Contains(record.FormKey))
+            {
+                continue;
+            }
+
+            string sourceNote = _recordHandler.TryGetMergedRecordOrigin(record.FormKey, out var origin)
+                ? $"copied from {origin.SourceEditorId ?? "(no EditorID)"} ({origin.SourceFormKey})"
+                : "authored by this run";
+
+            string ownerNote = string.Empty;
+            if (_patchedRecordOwners.TryGetValue(record.FormKey, out var owners) && owners.Count > 0)
+            {
+                var mods = owners
+                    .Select(o => _npcAppearanceSources.TryGetValue(o, out var src) ? src.ModName : null)
+                    .Where(m => !string.IsNullOrEmpty(m))
+                    .Distinct()
+                    .ToList();
+                ownerNote = $"; minted for {owners.Count} NPC selection(s)" +
+                            (mods.Count > 0 ? $" from {string.Join(", ", mods)}" : string.Empty);
+            }
+
+            NpcWarningReporter.Record(NpcWarningKind.OrphanedRecordDuplicate,
+                $"{record.EditorID ?? "(no EditorID)"} [{record.Registration.Name}] {record.FormKey}",
+                detail: sourceNote + ownerNote);
         }
     }
 

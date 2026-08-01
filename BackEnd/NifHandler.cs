@@ -77,6 +77,58 @@ public class NifHandler
     }
 
     /// <summary>
+    /// Rewrites texture slot paths inside a NIF in place and saves it. Used by the Include-As-New
+    /// asset isolation (<c>AssetHandler.PostProcessIsolatedCopy</c>): an isolated copy of a mesh
+    /// must reference the isolated copies of the textures its mod ships, or the private mesh would
+    /// keep pulling whatever wins the shared texture path. Matching is by the EXACT stored slot
+    /// string (pass a case-insensitive map; the same texture can be spelled differently across
+    /// shapes). Slots are written through <c>NifFile.SetTextureSlot</c> — the only write API nifly
+    /// exposes for texture paths (<c>NiString</c> itself is read-only through the binding). Returns
+    /// the number of slots rewritten (0 = file untouched, no save).
+    /// </summary>
+    public static int RewriteTexturePaths(string nifPath, IReadOnlyDictionary<string, string> pathMap,
+        Action<string>? log = null)
+    {
+        int rewritten = 0;
+        using NifFile nif = new NifFile();
+        if (nif.Load(nifPath) != 0)
+        {
+            log?.Invoke($"RewriteTexturePaths: could not load '{nifPath}'.");
+            return 0;
+        }
+
+        using var shapes = nif.GetShapes();
+        foreach (var shape in shapes)
+        {
+            for (uint slot = 0; slot < 9; slot++)
+            {
+                string tex = nif.GetTexturePathByIndex(shape, slot);
+                if (string.IsNullOrWhiteSpace(tex)) continue;
+                if (!pathMap.TryGetValue(tex, out var newPath) ||
+                    string.Equals(tex, newPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                nif.SetTextureSlot(shape, newPath, slot);
+                rewritten++;
+            }
+        }
+
+        if (rewritten > 0)
+        {
+            int saveResult = nif.Save(nifPath);
+            if (saveResult != 0)
+            {
+                log?.Invoke($"RewriteTexturePaths: save failed ({saveResult}) for '{nifPath}'.");
+                return 0;
+            }
+        }
+
+        return rewritten;
+    }
+
+    /// <summary>
     /// Deletes the named shapes from a NIF in place and saves it. Used by the
     /// wig-forwarding pipeline to strip the baked hair shape(s) from a copied
     /// FaceGen NIF after the hair head part is removed from the NPC record —

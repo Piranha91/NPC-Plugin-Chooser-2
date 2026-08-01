@@ -1300,11 +1300,33 @@ public class RecordHandler
     #region Merge In Overrides of Existing Records
 
     public HashSet<IMajorRecord> // return is For Caller's Information only; duplication and remapping happens internally
-        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, int maxNestedIntervalDepth, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, CancellationToken ct)
+        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, int maxNestedIntervalDepth, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, CancellationToken ct, IReadOnlyCollection<IFormLinkGetter>? additionalRootLinks = null)
+    {
+        var rootLinks = majorRecordGetter.EnumerateFormLinks().AsEnumerable();
+        if (additionalRootLinks is { Count: > 0 })
+        {
+            rootLinks = rootLinks.Concat(additionalRootLinks);
+        }
+
+        return DuplicateInOverrideRecordsFromLinks(rootLinks.ToArray(), rootRecord, relevantContextKeys,
+            rootContextKey, npcSourceModKey, handleInjectedRecords, maxNestedIntervalDepth,
+            fallBackModFolderNames, ref exceptionStrings, searchedFormKeys, ct);
+    }
+
+    /// <summary>
+    /// Same as <see cref="DuplicateInOverrideRecords"/> but traverses from an explicit set of root
+    /// links instead of (or in addition to) a record's own links. Lets Include-As-New duplicate the
+    /// chain hanging from a link the eventual output does NOT carry on the traversed record — e.g.
+    /// the RECIPIENT's outfit when discovery walks the donor (Include Outfits off), or extra roots
+    /// alongside an 'Include All' bulk import. <paramref name="rootRecord"/> still gets its links
+    /// remapped against everything duplicated here.
+    /// </summary>
+    public HashSet<IMajorRecord>
+        DuplicateInOverrideRecordsFromLinks(IReadOnlyCollection<IFormLinkGetter> rootLinks, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, int maxNestedIntervalDepth, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, CancellationToken ct)
     {
         using var _ = ContextualPerformanceTracer.Trace("RecordHandler.DuplicateInOverrideRecords");
         HashSet<IMajorRecord> mergedInRecords = new();
-        var containedFormLinks = majorRecordGetter.EnumerateFormLinks().ToArray();
+        var containedFormLinks = rootLinks;
         foreach (var modKey in relevantContextKeys)
         {
             TryAddPluginToCaches(modKey, fallBackModFolderNames);
@@ -1470,7 +1492,17 @@ public class RecordHandler
                 !currentRecordHasBeenMergedIn &&
                 !remappedSubLinks.ContainsKey(formLinkGetter.FormKey))
             {
-                if (Auxilliary.TryDuplicateGenericRecordAsNew(traversedModRecord, outputMod, out var duplicate, out string exceptionString))
+                // A BRIDGE parent: not itself overridden by the mod, duplicated only because an
+                // overridden descendant needs a reachable private chain (e.g. the vanilla Outfit
+                // above RS Children's ArmorAddons). Registered in the batch-scoped map exactly
+                // like a direct override duplicate — the outfit-directive delivery looks the
+                // chain HEAD up there (Patcher.DeliverIncludeAsNewOutfitDirectives), and a later
+                // NPC in the batch must reuse this copy instead of minting another.
+                if (_currentDuplicateInMappings.TryGetValue(formLinkGetter.FormKey, out var existingBridge))
+                {
+                    remappedSubLinks.TryAdd(formLinkGetter.FormKey, existingBridge);
+                }
+                else if (Auxilliary.TryDuplicateGenericRecordAsNew(traversedModRecord, outputMod, out var duplicate, out string exceptionString))
                 {
                     RecordMergedRecordOrigin(formLinkGetter.FormKey, duplicate.FormKey, traversedModRecord.EditorID);
                     if (provenanceChain != null)
@@ -1479,6 +1511,7 @@ public class RecordHandler
                             traversedModRecord.Registration.Name, (FormKey)duplicate.FormKey, provenanceChain);
                     }
                     duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + formLinkGetter.FormKey.ModKey;
+                    _currentDuplicateInMappings.Add(formLinkGetter.FormKey, duplicate.FormKey);
                     remappedSubLinks.Add(formLinkGetter.FormKey, duplicate.FormKey);
                     mergedInRecords.Add(duplicate);
                 }
