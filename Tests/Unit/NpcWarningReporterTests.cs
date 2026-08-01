@@ -221,6 +221,7 @@ public class NpcWarningReporterTests
     [Theory]
     [InlineData(NpcWarningKind.OriginMeshCompatibility)]
     [InlineData(NpcWarningKind.ModMeshCompatibility)]
+    [InlineData(NpcWarningKind.RaceDefaultsDrift)]
     [InlineData(NpcWarningKind.MissingFaceTint)]
     [InlineData(NpcWarningKind.TexturelessShapes)]
     public void TechnicalNotes_ExistForEveryKind(NpcWarningKind kind)
@@ -231,6 +232,7 @@ public class NpcWarningReporterTests
     [Theory]
     [InlineData(NpcWarningKind.OriginMeshCompatibility)]
     [InlineData(NpcWarningKind.ModMeshCompatibility)]
+    [InlineData(NpcWarningKind.RaceDefaultsDrift)]
     [InlineData(NpcWarningKind.MissingFaceTint)]
     [InlineData(NpcWarningKind.TexturelessShapes)]
     public void Headers_AreSpecific_AndClassifyAsWarnings(NpcWarningKind kind)

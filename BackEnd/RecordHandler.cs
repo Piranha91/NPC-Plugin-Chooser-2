@@ -234,6 +234,63 @@ public class RecordHandler
             : null;
     }
 
+    /// <summary>
+    /// Resolves a RACE as the selected mod's author saw it: the mod's own plugins first (lowest
+    /// in the list wins, mirroring <see cref="ResolveNpcPreferringMod"/>, resource-only plugins
+    /// skipped the same way), then the winning version among the IMPLICIT base-game masters
+    /// (vanilla + CC) or the race's defining plugin, whichever wins between them. The fallback is
+    /// deliberately not the live winner — the caller (the Patcher's race-drift trigger) compares
+    /// this against the live winner to detect the race's chargen defaults changing out from under
+    /// a mod-authored FaceGen mesh, and a winner fallback would compare the live winner to itself
+    /// and hide exactly the third-party race override the trigger exists to catch. It is equally
+    /// deliberately not the raw ORIGIN: every SE-era mod is authored against the full vanilla
+    /// stack, so a DLC's own override of a vanilla race (Dawnguard rewriting every *RaceVampire's
+    /// chargen head parts) is baseline, not drift — an Origin fallback fired the trigger for all
+    /// 92 vampire-race NPCs on the measuring run.
+    /// </summary>
+    public IRaceGetter? ResolveRacePreferringMod(FormKey raceFormKey, ModSetting? appearanceModSetting,
+        HashSet<string> currentModFolderPaths)
+    {
+        if (appearanceModSetting != null)
+        {
+            var link = raceFormKey.ToLink<IRaceGetter>();
+
+            for (int i = appearanceModSetting.CorrespondingModKeys.Count - 1; i >= 0; i--)
+            {
+                var candidateKey = appearanceModSetting.CorrespondingModKeys[i];
+                if (appearanceModSetting.ResourceOnlyModKeys.Contains(candidateKey)) continue;
+
+                if (TryGetRecordGetterFromMod(link, candidateKey, currentModFolderPaths,
+                        RecordLookupFallBack.None, out var record) &&
+                    record is IRaceGetter modRace)
+                {
+                    return modRace;
+                }
+            }
+        }
+
+        var linkCache = _environmentStateProvider.LinkCache;
+        if (linkCache == null) return null;
+
+        // Winner-first walk, stopping at the first version supplied by the author baseline:
+        // an implicitly-loaded base-game plugin, or the plugin that defines the race (covers
+        // mod-added races, whose baseline is their own defining plugin).
+        var baseline = new HashSet<ModKey>(_environmentStateProvider.BaseGamePlugins);
+        baseline.UnionWith(_environmentStateProvider.CreationClubPlugins);
+        baseline.Add(raceFormKey.ModKey);
+
+        foreach (var ctx in linkCache.ResolveAllContexts<IRace, IRaceGetter>(raceFormKey))
+        {
+            if (baseline.Contains(ctx.ModKey)) return ctx.Record;
+        }
+
+        // The race resolves only through non-baseline overrides (defining plugin absent from the
+        // load order). Origin is the best remaining approximation of the author's view.
+        return linkCache.TryResolve<IRaceGetter>(raceFormKey, out var originRace, ResolveTarget.Origin)
+            ? originRace
+            : null;
+    }
+
     public void PrimeLinkCachesFor(IEnumerable<ModKey> modKeys, HashSet<string> fallBackModFolderNames)
     {
         foreach (var modKey in modKeys)

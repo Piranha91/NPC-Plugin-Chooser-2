@@ -656,6 +656,8 @@ public class Patcher : OptionalUIModule
                 _patchedRecordOwners.Clear();
                 _patchedRecordTypes.Clear();
                 _npcAppearanceSources.Clear();
+                _raceDriftUsage.Clear();
+                _raceDriftFindings.Clear();
                 _recordHandler.ResetMergedRecordTracking();
                 _pendingWigNifEdits.Clear();
                 _pendingWigBakes.Clear();
@@ -1978,6 +1980,11 @@ public class Patcher : OptionalUIModule
                     ReportFlattenedFallbackNpcs();
                     ReportInertOutfitNpcs();
 
+                    // Race-drift findings were held back during processing because their remedy
+                    // (which Record Override Handling Mode to recommend) depends on the whole
+                    // run's selections; convert them to warnings now, before the reporter flushes.
+                    FlushRaceDriftFindings();
+
                     // Per-NPC warnings (suspect origin meshes, missing tints, textureless
                     // shapes), grouped by type with one explanation per group — see
                     // NpcWarningReporter. Textureless entries accumulate from background NIF
@@ -3030,6 +3037,61 @@ public class Patcher : OptionalUIModule
             decision = FaceGenLadder.Classify(inputs);
         }
 
+        // The one pairing none of the legs above probe: the MOD's own mesh shipping with a record
+        // it was authored with — self-consistent by authorship (see ProbesModMesh). That
+        // consistency can still break from OUTSIDE, through the RACE record: for head slots the
+        // record leaves unset, the engine falls back to the race's chargen defaults resolved from
+        // the LIVE load order, while the mesh was baked against the race as the mod's author saw
+        // it. RS Children is the measured case — its NPC records merge into the output but its
+        // race edit is not carried over, so the defaults roll back to vanilla under its meshes —
+        // and an unrelated mod winning the race record does the same (docs/KnownLimitations.md #5).
+        // A record-level trigger (do the two contexts disagree about the defaults?) picks the NPCs
+        // that pay for a mesh parse, so the vast majority, whose race resolves identically, skip
+        // it. Warn-don't-gate, like every compat probe. Findings are HELD rather than recorded:
+        // the remedy is the per-mod Record Override Handling Mode, and which of its modes fits
+        // depends on the whole run's selections (see FlushRaceDriftFindings) — and a mod already
+        // set to Include/IncludeAsNew ships its race edit, so its drift is being handled and
+        // must not warn. Not routed through a ladder input because SourceNifCompatible belongs
+        // to the row-2 pairing — setting it would trip ModMeshFailedCompatCheck's unrelated
+        // warning.
+        if (!decision.Abort && appearanceModSetting != null)
+        {
+            var gradedRecord = ChooseCompatibilityRecord(
+                ResolveAppearanceTerminusRecord(decision, appearanceModSetting, currentModFolderPaths, isFaceGenOnly),
+                null, appearanceNpcRecord);
+
+            var drift = TryEvaluateRaceDrift(gradedRecord, appearanceModSetting, currentModFolderPaths);
+            if (drift != null)
+            {
+                // The advice census needs every selected mod that puts NPCs on this race, with
+                // the race version each was authored against — drifted or not: a baseline-
+                // authored mod on the same race is exactly what rules plain Include out.
+                RegisterRaceUsage(drift.RaceFormKey, modDisplayName, drift.AuthorDefaults);
+
+                var overrideMode = isFaceGenOnly
+                    ? RecordOverrideHandlingMode.Ignore // mirrors the caller: FaceGen-only forces Ignore
+                    : appearanceModSetting.ModRecordOverrideHandlingMode ?? _settings.DefaultRecordOverrideHandlingMode;
+
+                if (drift.Drifted
+                    && overrideMode == RecordOverrideHandlingMode.Ignore
+                    && decision.NifChoice == FaceGenSourceChoice.AppearanceMod
+                    && decision.Inputs.SourceNifCompatible is null)
+                {
+                    var (driftCompat, driftMismatch) =
+                        await EvaluateDriftNifCompatibilityAsync(gradedRecord, subjectNifRel, appearanceModSetting,
+                            currentModFolderPaths);
+                    if (driftCompat == false)
+                    {
+                        _raceDriftFindings.Add(new RaceDriftFinding(
+                            npcIdentifier, modDisplayName, drift.RaceFormKey, drift.Detail,
+                            decision.TechnicalSummary + "\n" + drift.TechnicalDetail + "\n" +
+                            ComposeCompatProbeContext(gradedRecord, subjectFormKey,
+                                new[] { ("selected mod's mesh failed the probe", driftMismatch) })));
+                    }
+                }
+            }
+        }
+
         FaceGenLadderDiag.Record(decision);
         return decision;
     }
@@ -3279,6 +3341,209 @@ public class Patcher : OptionalUIModule
         INpcGetter? flattenTerminus, INpcGetter? forwardedOrigin, INpcGetter donorRecord) =>
         flattenTerminus ?? forwardedOrigin ?? donorRecord;
 
+    /// <summary>What the race-drift trigger measured for one NPC. <see cref="Drifted"/> false
+    /// still carries the census half (<see cref="RaceFormKey"/> + <see cref="AuthorDefaults"/>) —
+    /// a non-drifting mod on the same race is exactly what the end-of-run advice needs to know
+    /// about. <see cref="Detail"/>/<see cref="TechnicalDetail"/> are composed only when drifted.</summary>
+    private sealed record RaceDriftInfo(
+        FormKey RaceFormKey, bool Drifted, HashSet<FormKey> AuthorDefaults,
+        string Detail, string TechnicalDetail);
+
+    /// <summary>One race-drift probe failure, held until the end of the run so the recommended
+    /// Record Override Handling Mode can be computed from the whole run's selections — see
+    /// <see cref="FlushRaceDriftFindings"/>.</summary>
+    private sealed record RaceDriftFinding(
+        string NpcIdentifier, string ModName, FormKey RaceFormKey, string Detail, string TechnicalDetail);
+
+    // race -> (selected mod -> the race-default set that mod was authored against). Fed by every
+    // NPC whose drift trigger could evaluate, drifted or not; read by FlushRaceDriftFindings.
+    // Kept across split-output batches (better census as the run progresses); cleared with the
+    // other per-run state on the first iteration.
+    private readonly Dictionary<FormKey, Dictionary<string, HashSet<FormKey>>> _raceDriftUsage = new();
+    private readonly List<RaceDriftFinding> _raceDriftFindings = new();
+
+    private void RegisterRaceUsage(FormKey raceFormKey, string modName, HashSet<FormKey> authorDefaults)
+    {
+        if (!_raceDriftUsage.TryGetValue(raceFormKey, out var byMod))
+        {
+            byMod = new Dictionary<string, HashSet<FormKey>>(StringComparer.OrdinalIgnoreCase);
+            _raceDriftUsage[raceFormKey] = byMod;
+        }
+        byMod[modName] = authorDefaults; // a mod resolves the same author context every time; last write is fine
+    }
+
+    /// <summary>
+    /// The cheap trigger in front of the race-drift mesh probe: do the selected mod's own plugins
+    /// (falling back to the implicit-master baseline — see
+    /// <see cref="RecordHandler.ResolveRacePreferringMod"/>) and the live load order disagree
+    /// about the RACE's chargen default head parts for this record's sex? Record lookups only, no
+    /// file I/O, so it can run for every NPC; the mesh parse is paid only on drift. The trigger
+    /// deliberately over-fires a little — drift in a slot the NPC's own record occupies is
+    /// harmless — because the probe behind it grades the truth and stays silent when the mesh
+    /// fits. Null when the race cannot be evaluated (no race, unresolvable).
+    /// </summary>
+    private RaceDriftInfo? TryEvaluateRaceDrift(INpcGetter gradedRecord, ModSetting appearanceModSetting,
+        HashSet<string> currentModFolderPaths)
+    {
+        if (gradedRecord.Race.IsNull) return null;
+        var raceFk = gradedRecord.Race.FormKey;
+
+        var linkCache = _environmentStateProvider.LinkCache;
+        if (linkCache == null || !linkCache.TryResolve<IRaceGetter>(raceFk, out var liveRace) || liveRace == null)
+        {
+            return null; // an unresolvable race is the record checks' business, not this probe's
+        }
+
+        var authorRace = _recordHandler.ResolveRacePreferringMod(raceFk, appearanceModSetting, currentModFolderPaths);
+        if (authorRace == null) return null;
+
+        bool female = Auxilliary.IsFemale(gradedRecord);
+        var authorDefaults = RaceDefaultHeadParts(authorRace, female);
+        var liveDefaults = RaceDefaultHeadParts(liveRace, female);
+        if (authorDefaults.SetEquals(liveDefaults))
+        {
+            return new RaceDriftInfo(raceFk, Drifted: false, authorDefaults, string.Empty, string.Empty);
+        }
+
+        string raceName = liveRace.EditorID ?? authorRace.EditorID ?? raceFk.ToString();
+
+        // Name the plugin winning the race when an override (not the defining plugin) supplies
+        // it — the LOTD-style third-party case; for a merged-away race edit the winner IS the
+        // defining master and the header's explanation carries the story instead.
+        string winnerNote = string.Empty;
+        var raceWinner = linkCache.ResolveAllContexts<IRace, IRaceGetter>(raceFk).FirstOrDefault()?.ModKey;
+        if (raceWinner != null && raceWinner.Value != raceFk.ModKey)
+        {
+            winnerNote = $" (race record winner: {raceWinner.Value.FileName})";
+        }
+
+        string detail = $"race '{raceName}' — its default head parts in your load order differ from the ones " +
+                        $"the selected mod's face was built against{winnerNote}.";
+        string technicalDetail =
+            $"race defaults drift: race='{raceName}' ({raceFk}), sex={(female ? "female" : "male")}\n" +
+            $"mod-context defaults: {FormatRaceDefaultSet(authorDefaults)}\n" +
+            $"load-order defaults: {FormatRaceDefaultSet(liveDefaults)}";
+        return new RaceDriftInfo(raceFk, Drifted: true, authorDefaults, detail, technicalDetail);
+    }
+
+    /// <summary>
+    /// Converts the run's held race-drift probe failures into <see cref="NpcWarningReporter"/>
+    /// warnings, each carrying the remedy that fits the RUN, not just the NPC: the per-mod
+    /// Record Override Handling Mode exists precisely for race-editing appearance mods, and
+    /// which of its modes to recommend depends on every selection sharing the race. If all
+    /// selected mods that put NPCs on the race agree about its default head parts, Include
+    /// carries the race edit into the output and fixes them together; once two selected mods
+    /// disagree (children split between an RS-style overhaul and a mod authored against the
+    /// unedited race, on the measuring run), a shared override always breaks one side, so the
+    /// drifting mod is steered to IncludeAsNew — its NPCs get their own copy of the race.
+    /// Class-gated by construction: nothing here keys on a specific mod's identity. Clears the
+    /// findings (per batch); the usage census persists for later batches of a split run.
+    /// </summary>
+    private void FlushRaceDriftFindings()
+    {
+        if (_raceDriftFindings.Count == 0) return;
+
+        foreach (var finding in _raceDriftFindings)
+        {
+            string advice;
+            string census = string.Empty;
+            if (_raceDriftUsage.TryGetValue(finding.RaceFormKey, out var byMod) &&
+                byMod.TryGetValue(finding.ModName, out var ownVersion))
+            {
+                var disagreeing = ModsWithDifferentRaceVersion(byMod, finding.ModName);
+                advice = disagreeing.Count == 0
+                    ? $"Fix: in the Mods menu, set the Record Override Handling Mode of '{finding.ModName}' to " +
+                      "Include — no other selected appearance mod uses a different version of this race, so " +
+                      "carrying the race edit into the output is safe."
+                    : $"Fix: in the Mods menu, set the Record Override Handling Mode of '{finding.ModName}' to " +
+                      $"IncludeAsNew. Plain Include would break the faces of NPCs from {Summarize(disagreeing)}, " +
+                      "which use a different version of this race; IncludeAsNew gives this mod's NPCs their own " +
+                      "copy of the race instead.";
+
+                census = "race referenced by selected mods: " + string.Join(", ", byMod
+                    .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(kv => $"'{kv.Key}' ({(kv.Value.SetEquals(ownVersion) ? "same" : "different")} race version)"));
+            }
+            else
+            {
+                // Defensive: no census entry (should not happen — the finding registered one).
+                advice = $"Fix: in the Mods menu, set the Record Override Handling Mode of '{finding.ModName}' to " +
+                         "Include or IncludeAsNew so its race edit reaches the game.";
+            }
+
+            NpcWarningReporter.Record(NpcWarningKind.RaceDefaultsDrift, finding.NpcIdentifier,
+                detail: finding.Detail + " " + advice,
+                technicalDetail: finding.TechnicalDetail +
+                                 (census.Length > 0 ? "\n" + census : string.Empty));
+        }
+
+        _raceDriftFindings.Clear();
+    }
+
+    /// <summary>The selected mods whose author-context version of a race disagrees with
+    /// <paramref name="modName"/>'s — the mods a plain Include override would break. Empty means
+    /// every selection sharing the race agrees, and Include is safe. Keyed on version CONTENT,
+    /// not mod count: two RS-family mods that agree about the race still get the simpler Include
+    /// advice. Pure and internal for tests.</summary>
+    internal static List<string> ModsWithDifferentRaceVersion(
+        IReadOnlyDictionary<string, HashSet<FormKey>> raceUsageByMod, string modName)
+    {
+        if (!raceUsageByMod.TryGetValue(modName, out var ownVersion)) return new List<string>();
+
+        return raceUsageByMod
+            .Where(kv => !kv.Key.Equals(modName, StringComparison.OrdinalIgnoreCase) &&
+                         !kv.Value.SetEquals(ownVersion))
+            .Select(kv => kv.Key)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>"'A'", "'A' and 'B'", or "'A', 'B' and 2 more" — keeps the advice sentence flat
+    /// when many mods share the race.</summary>
+    private static string Summarize(IReadOnlyList<string> mods)
+    {
+        const int max = 2;
+        var shown = mods.Take(max).Select(m => $"'{m}'").ToList();
+        if (mods.Count <= max)
+        {
+            return string.Join(" and ", shown);
+        }
+        return string.Join(", ", shown) + $" and {mods.Count - max} more";
+    }
+
+    /// <summary>The RACE's chargen default head part FormKeys for one sex — the parts the engine
+    /// falls back to for head slots an NPC record leaves unset, and therefore the set whose drift
+    /// between resolution contexts invalidates a baked FaceGen mesh. Null-tolerant at every
+    /// level; an absent HeadData reads as an empty set.</summary>
+    internal static HashSet<FormKey> RaceDefaultHeadParts(IRaceGetter race, bool female)
+    {
+        var result = new HashSet<FormKey>();
+        var headData = female ? race.HeadData?.Female : race.HeadData?.Male;
+        if (headData?.HeadParts == null) return result;
+
+        foreach (var hpRef in headData.HeadParts)
+        {
+            if (!hpRef.Head.IsNull) result.Add(hpRef.Head.FormKey);
+        }
+        return result;
+    }
+
+    /// <summary>One line of a race's default head parts for the drift warning's technical block,
+    /// deterministic order, EditorIDs added where the live load order can name them (a merged-away
+    /// mod's parts resolve nowhere live and print as bare FormKeys — the probe evidence below the
+    /// block names the missing parts with EditorIDs anyway).</summary>
+    private string FormatRaceDefaultSet(IReadOnlyCollection<FormKey> parts)
+    {
+        if (parts.Count == 0) return "(none)";
+        var linkCache = _environmentStateProvider.LinkCache;
+        return string.Join(", ", parts
+            .OrderBy(p => p.ToString(), StringComparer.OrdinalIgnoreCase)
+            .Select(p => linkCache != null && linkCache.TryResolve<IHeadPartGetter>(p, out var hp) &&
+                         !string.IsNullOrEmpty(hp?.EditorID)
+                ? $"'{hp!.EditorID}' ({p})"
+                : p.ToString()));
+    }
+
     /// <summary>Winner-side twin of <see cref="EvaluateNifCompatibilityAsync"/>: materializes the
     /// load-order-winning copy of the mesh — extracting when the winner is BSA-resident — and
     /// grades it against the record. The loose-only path it replaces returned NotEvaluated for
@@ -3323,6 +3588,57 @@ public class Patcher : OptionalUIModule
         }
     }
 
+    /// <summary>Race-drift twin of <see cref="EvaluateNifCompatibilityAsync"/>: same mesh
+    /// materialization, but the record's head parts resolve through the selected mod's plugins
+    /// first (live load order as fallback) so the donor's own custom parts read as the shipped
+    /// output will — see the <c>headPartResolver</c> remarks on
+    /// <see cref="EvaluateNifCompatibility"/>. The race still resolves live.</summary>
+    private async Task<(bool? Compatible, string? Mismatch)> EvaluateDriftNifCompatibilityAsync(
+        INpcGetter recordToMatch, string nifRelPath, ModSetting sourceMod, HashSet<string> currentModFolderPaths)
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "NPC2_FaceGenCompat");
+        string? materialized = null;
+        try
+        {
+            materialized = await _assetHandler.MaterializeAssetAsync(nifRelPath, sourceMod, tempDir);
+            return EvaluateNifCompatibility(recordToMatch, materialized,
+                fk => ResolveHeadPartPreferringMod(fk, sourceMod, currentModFolderPaths));
+        }
+        finally
+        {
+            // Only delete what we extracted; a loose source path is the mod's own file.
+            if (materialized != null && materialized.StartsWith(tempDir, StringComparison.OrdinalIgnoreCase))
+            {
+                try { File.Delete(materialized); } catch { /* temp cleanup is best-effort */ }
+            }
+        }
+    }
+
+    /// <summary>A head part as the selected mod's author saw it: the mod's own plugins first
+    /// (lowest in the list wins, like the donor), the live load order as fallback. Unlike the
+    /// NPC/race resolvers, resource-only plugins are INCLUDED — head parts legitimately live in
+    /// resource masters (High Poly Head.esm, RSkyrimChildren.esm), which is the very reason those
+    /// plugins get marked resource-only.</summary>
+    private IHeadPartGetter? ResolveHeadPartPreferringMod(FormKey headPartFormKey, ModSetting sourceMod,
+        HashSet<string> currentModFolderPaths)
+    {
+        var link = headPartFormKey.ToLink<IHeadPartGetter>();
+        for (int i = sourceMod.CorrespondingModKeys.Count - 1; i >= 0; i--)
+        {
+            if (_recordHandler.TryGetRecordGetterFromMod(link, sourceMod.CorrespondingModKeys[i],
+                    currentModFolderPaths, RecordHandler.RecordLookupFallBack.None, out var record) &&
+                record is IHeadPartGetter modHeadPart)
+            {
+                return modHeadPart;
+            }
+        }
+
+        var linkCache = _environmentStateProvider.LinkCache;
+        return linkCache != null && linkCache.TryResolve<IHeadPartGetter>(headPartFormKey, out var live)
+            ? live
+            : null;
+    }
+
     /// <summary>
     /// Does this mesh have a baked shape for every geometry-bearing head part the record resolves
     /// to? That reconciliation is what the engine performs when it applies the face tint, and its
@@ -3331,7 +3647,15 @@ public class Patcher : OptionalUIModule
     /// <c>Mismatch</c> carries the evidence (record-needs vs mesh-bakes) for the detailed warning
     /// log; null otherwise.
     /// </summary>
-    private (bool? Compatible, string? Mismatch) EvaluateNifCompatibility(INpcGetter recordToMatch, string? nifPath)
+    /// <param name="headPartResolver">Overrides how the record's head parts resolve; null means
+    /// the live load order. The race-drift probe passes a mod-first resolver here — the graded
+    /// record is the donor's pre-merge version, whose own custom parts only resolve inside the
+    /// mod (the output remaps them, and the mesh bakes their shapes), so live-only resolution
+    /// misread every such part as a broken link and failed the probe on plumbing rather than on
+    /// the race drift under test. The RACE always resolves live: for the drift probe that is
+    /// precisely the question being asked.</param>
+    private (bool? Compatible, string? Mismatch) EvaluateNifCompatibility(INpcGetter recordToMatch, string? nifPath,
+        Func<FormKey, IHeadPartGetter?>? headPartResolver = null)
     {
         if (string.IsNullOrEmpty(nifPath) || !File.Exists(nifPath)) return (null, null);
 
@@ -3345,7 +3669,7 @@ public class Patcher : OptionalUIModule
 
             var analysis = analyzer.Analyze(
                 recordToMatch,
-                fk => linkCache.TryResolve<IHeadPartGetter>(fk, out var hp) ? hp : null,
+                headPartResolver ?? (fk => linkCache.TryResolve<IHeadPartGetter>(fk, out var hp) ? hp : null),
                 fk => linkCache.TryResolve<IRaceGetter>(fk, out var r) ? r : null,
                 nifPath);
             return analysis.HasMismatch

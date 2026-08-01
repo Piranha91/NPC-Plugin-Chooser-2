@@ -18,6 +18,16 @@ public enum NpcWarningKind
     /// <see cref="FaceGenLadderDecision.ModMeshFailedCompatCheck"/>.</summary>
     ModMeshCompatibility,
 
+    /// <summary>The mod's own mesh ships with the record it was authored with — a pairing the
+    /// row legs never probe, being self-consistent by authorship — but the RACE's chargen
+    /// default head parts resolve differently in the live load order than through the mod's
+    /// own plugins, and the probe positively said the mesh does not fit what the game will
+    /// resolve. RS Children with its plugins merged into the output is the measured case
+    /// (docs/KnownLimitations.md #5); an unrelated mod winning the race record is the other.
+    /// Recorded by the Patcher at the probe site (not via a ladder flag — see the trigger in
+    /// <c>Patcher.ComputeFaceGenDecisionAsync</c>).</summary>
+    RaceDefaultsDrift,
+
     /// <summary>A face mesh is being copied with no tint to pair with it anywhere — see
     /// <see cref="FaceGenLadderDecision.MissingTintEverywhere"/>.</summary>
     MissingFaceTint,
@@ -132,6 +142,17 @@ public static class NpcWarningReporter
             "high-poly head replacer, USSEP, or an overhaul it expects underneath it). Spawn " +
             "these NPCs in game to check their faces before starting a playthrough:",
 
+        NpcWarningKind.RaceDefaultsDrift =>
+            "The faces of the following NPCs depend on RACE-level default head parts, and your " +
+            "load order supplies different defaults than the ones their face meshes were built " +
+            "against. Mods that restyle NPCs by editing the race itself (RS Children is the " +
+            "classic example) only work while their race edit is active — NPC2 merges NPC " +
+            "records into its output, but race edits are only carried over when the mod's " +
+            "Record Override Handling Mode says so, and another mod winning the race record has " +
+            "the same effect. A check found these meshes do not match the head parts the game " +
+            "will resolve, which can cause the dark face bug. Each NPC below names the Record " +
+            "Override Handling Mode that fits your selections:",
+
         NpcWarningKind.MissingFaceTint =>
             "No face tint textures could be found for the following NPCs — not in the appearance " +
             "mods you selected for them, not in the mods that originally added the NPCs, and not " +
@@ -156,6 +177,18 @@ public static class NpcWarningReporter
             "against the head parts the shipping record resolves to (race chargen defaults " +
             "included) — the reconciliation the engine performs when applying the face tint. " +
             "Run Validate Output for the exact per-NPC head-part difference.",
+
+        NpcWarningKind.RaceDefaultsDrift =>
+            "The trigger compares the race's chargen default head parts as the selected mod's " +
+            "own plugins supply them (falling back to the implicit base-game masters' winner) " +
+            "against the live load order's winner. On drift, the probe parses the mod's FaceGen " +
+            "NIF and reconciles its baked shape names against the head parts the shipping " +
+            "record resolves to in the live load order — the reconciliation the engine performs " +
+            "when applying the face tint. The recommended mode comes from every selection " +
+            "sharing the race: Include when they all agree about its defaults, IncludeAsNew " +
+            "when they disagree (a shared override would break the other side). Mods already " +
+            "set to Include/IncludeAsNew ship their race edits and are not warned about. Run " +
+            "Validate Output for the exact per-NPC difference.",
 
         NpcWarningKind.MissingFaceTint =>
             "No facetint .dds was found at the subject's FaceGen path in the selected mod's " +
