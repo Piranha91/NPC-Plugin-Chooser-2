@@ -2702,11 +2702,27 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             return;
         }
 
-        // Confirm with user
-        if (!ScrollableMessageBox.Confirm(
-                $"Are you sure you want to permanently delete the entry for '{DisplayName}'?\n\n" +
-                "This action cannot be undone.",
-                "Confirm Deletion"))
+        // Confirm with user, spelling out the NPC state that goes with the entry.
+        var (selectionCount, shareCount) = _parentVm.CountNpcStateForMod(DisplayName);
+        var message = new StringBuilder();
+        message.AppendLine($"Are you sure you want to permanently delete the entry for '{DisplayName}'?");
+        if (selectionCount > 0 || shareCount > 0)
+        {
+            message.AppendLine();
+            message.AppendLine("This will also:");
+            if (selectionCount > 0)
+            {
+                message.AppendLine($"  • Deselect {selectionCount} NPC(s) that currently use this mod's appearance");
+            }
+            if (shareCount > 0)
+            {
+                message.AppendLine($"  • Unshare {shareCount} appearance(s) this mod supplied to other NPCs");
+            }
+        }
+        message.AppendLine();
+        message.Append("This action cannot be undone.");
+
+        if (!ScrollableMessageBox.Confirm(message.ToString(), "Confirm Deletion"))
         {
             return;
         }
@@ -2830,6 +2846,11 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
         {
             IsRefreshing = true; // Show the "Refreshing..." indicator
 
+            // Measured up front so the message below can report what the refresh cost: a refresh
+            // that drops the entry (or drops NPCs from it) deselects the NPCs that relied on it,
+            // and that shouldn't happen silently when the user just edited a folder path.
+            var stateBefore = _parentVm.CountNpcStateForMod(DisplayName);
+
             // Ask the parent VM to perform the refresh and get result + reason
             var (isValid, failureReason) = await _parentVm.RefreshSingleModSettingAsync(this);
 
@@ -2840,15 +2861,48 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
             if (!isValid)
             {
                 // If the refresh determined the mod is no longer valid, notify the user.
-                ScrollableMessageBox.Show(
-                    $"The mod '{DisplayName}' no longer contains any plugins or FaceGen files.\nReason: {failureReason}\n\nIt will be removed from the appearance mods list.",
-                    "Mod Removed");
+                var message = new StringBuilder();
+                message.AppendLine($"The mod '{DisplayName}' no longer contains any plugins or FaceGen files.");
+                message.AppendLine($"Reason: {failureReason}");
+                message.AppendLine();
+                message.Append("It has been removed from the appearance mods list");
+                message.AppendLine(DescribeClearedNpcState(stateBefore) is { Length: > 0 } cost
+                    ? $", which also {cost}."
+                    : ".");
+                ScrollableMessageBox.Show(message.ToString(), "Mod Removed");
+            }
+            else
+            {
+                // The entry survived, but it may have stopped providing NPCs that were selected
+                // from it (a removed folder, a removed plugin); those selections are gone now.
+                var stateAfter = _parentVm.CountNpcStateForMod(DisplayName);
+                var cost = DescribeClearedNpcState(
+                    (stateBefore.Selections - stateAfter.Selections, stateBefore.Shares - stateAfter.Shares));
+                if (cost.Length > 0)
+                {
+                    ScrollableMessageBox.Show(
+                        $"'{DisplayName}' no longer provides some of the NPCs it used to, which {cost}.",
+                        "Selections Updated");
+                }
             }
         }
         finally
         {
             IsRefreshing = false; // Always hide the indicator when done
         }
+    }
+
+    /// <summary>
+    /// Phrases the NPC state a refresh/removal discarded ("deselected 3 NPC(s) and unshared 1
+    /// appearance(s)"), or an empty string when it discarded nothing. Non-positive counts are
+    /// treated as nothing so a refresh that ADDS NPCs never reports a loss.
+    /// </summary>
+    private static string DescribeClearedNpcState((int Selections, int Shares) cleared)
+    {
+        var parts = new List<string>();
+        if (cleared.Selections > 0) parts.Add($"deselected {cleared.Selections} NPC(s)");
+        if (cleared.Shares > 0) parts.Add($"unshared {cleared.Shares} appearance(s) it had supplied to other NPCs");
+        return string.Join(" and ", parts);
     }
 
     public async Task<List<(FormKey TargetNpc, FormKey SourceNpc, string ModDisplayName, string SourceNpcDisplayName)>>

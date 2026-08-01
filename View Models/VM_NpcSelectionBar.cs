@@ -4358,6 +4358,77 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         return staleGuests.Count;
     }
 
+    /// <summary>
+    /// Clears NPC selections made from <paramref name="modName"/> — all of them when the mod entry
+    /// itself goes away, or (via <paramref name="onlyFromSources"/>) just the ones whose face the
+    /// mod stopped providing. Either way the selection would otherwise dangle: the NPC still counts
+    /// as "chosen" in the menu and filters, but nothing can supply its appearance at patch time.
+    /// Shares SOURCED from the mod are swept separately by
+    /// <see cref="PruneStaleGuestAppearances"/> (which clears a selection pointing at a share as it
+    /// removes it), so what remains here is normally a direct pick of the mod's own face; the sweep
+    /// is by mod name either way, so ordering between the two is not load-bearing. The randomizer's
+    /// record of each cleared selection goes too, otherwise re-adding the mod later would let
+    /// <see cref="ClearRandomizedNpcs"/> mistake a fresh manual pick for a randomized one.
+    /// </summary>
+    /// <param name="modName">DisplayName of the mod entry being removed.</param>
+    /// <param name="onlyFromSources">When null, every selection naming the mod is cleared — the
+    /// whole entry is going away. When supplied, only selections whose SOURCE NPC is in the set are
+    /// cleared: the entry survives but no longer provides those faces (a folder was removed, say).
+    /// Matching on the source rather than the target is what keeps a still-valid share alive on an
+    /// NPC the mod itself stopped providing.</param>
+    /// <returns>Number of selections cleared.</returns>
+    public int ClearSelectionsFromMod(string modName, IReadOnlySet<FormKey>? onlyFromSources = null)
+    {
+        if (string.IsNullOrWhiteSpace(modName)) return 0;
+        if (onlyFromSources is { Count: 0 }) return 0;
+
+        // Snapshot first: ClearSelectedMod mutates SelectedAppearanceMods.
+        var toClear = _settings.SelectedAppearanceMods
+            .Where(kvp => kvp.Value.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase))
+            .Where(kvp => onlyFromSources == null || onlyFromSources.Contains(kvp.Value.NpcFormKey))
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var npcKey in toClear)
+        {
+            _consistencyProvider.ClearSelectedMod(npcKey);
+        }
+
+        foreach (var (npcKey, randomized) in _settings.RandomizedSelections.ToList())
+        {
+            if (randomized.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase) &&
+                (onlyFromSources == null || onlyFromSources.Contains(randomized.NpcFormKey)))
+            {
+                _settings.RandomizedSelections.Remove(npcKey);
+            }
+        }
+
+        if (toClear.Count > 0)
+        {
+            Debug.WriteLine($"ClearSelectionsFromMod: cleared {toClear.Count} selection(s) made from '{modName}'.");
+        }
+
+        return toClear.Count;
+    }
+
+    /// <summary>
+    /// Counts what removing the mod entry named <paramref name="modName"/> would discard: NPC
+    /// selections made from it, and guest/shared appearances it sourced onto other NPCs. Read-only
+    /// — used to spell out the cost in the delete confirmation.
+    /// </summary>
+    public (int Selections, int Shares) CountNpcStateFromMod(string modName)
+    {
+        if (string.IsNullOrWhiteSpace(modName)) return (0, 0);
+
+        int selections = _settings.SelectedAppearanceMods
+            .Count(kvp => kvp.Value.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase));
+
+        int shares = _settings.GuestAppearances
+            .Sum(kvp => kvp.Value.Count(g => g.ModName.Equals(modName, StringComparison.OrdinalIgnoreCase)));
+
+        return (selections, shares);
+    }
+
     /// <summary>Adds a guest/shared appearance AND records it as randomizer-created, so a
     /// later re-randomize can remove it (see <see cref="ClearRandomizedGuestAppearancesForNpc"/>).</summary>
     private void AddRandomizedGuestAppearance(FormKey targetNpcKey, string guestModName, FormKey guestNpcKey, string guestDisplayStr)

@@ -1723,6 +1723,23 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
                 }
             }
 
+            // Unlinking AppearanceMods above only takes the tile away; an NPC this mod no longer
+            // provides can still hold a SELECTION naming it, which then dangles exactly like a
+            // selection of a deleted entry -- the NPC counts as chosen with nothing able to supply
+            // its face at patch time. Swept to the same standard as the share prune above: only
+            // NPCs with no trace left in the mod (not merely rejected by this pass's analysis,
+            // which is not evidence of deletion), and nothing at all when nothing is provably live
+            // -- e.g. plugins failed to load, where every NPC would look deleted.
+            if (liveDonorKeys.Count > 0 || freshDonorKeys.Count > 0)
+            {
+                var goneForGood = removedNpcs.Where(formKey => !liveDonorKeys.Contains(formKey)).ToHashSet();
+                int clearedSelections = _npcSelectionBar.ClearSelectionsFromMod(vmToRefresh.DisplayName, goneForGood);
+                if (clearedSelections > 0)
+                {
+                    Debug.WriteLine($"{dbgTag} Cleared {clearedSelections} selection(s) for NPC(s) this mod no longer provides.");
+                }
+            }
+
             RequestNpcSelectionBarRefreshView();
             return (true, string.Empty); // Valid
         }
@@ -3665,7 +3682,17 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
     }
 
     /// <summary>
+    /// NPC selections + shares that would be discarded by removing the entry named
+    /// <paramref name="displayName"/> (see <see cref="RemoveModSetting"/>). Exposed for the delete
+    /// confirmation, which lives on VM_ModSetting and has no direct route to the selection bar.
+    /// </summary>
+    public (int Selections, int Shares) CountNpcStateForMod(string displayName) =>
+        _npcSelectionBar.CountNpcStateFromMod(displayName);
+
+    /// <summary>
     /// Removes the specified VM_ModSetting from the internal list and refreshes the filtered view.
+    /// Also clears the NPC state that referenced it: shares it sourced onto other NPCs, and every
+    /// selection naming it.
     /// </summary>
     /// <param name="modSettingToRemove">The VM_ModSetting to remove.</param>
     /// <returns>True if the item was successfully found and removed; otherwise, false.</returns>
@@ -3702,6 +3729,13 @@ private VM_ModsMenuMugshot CreateMugshotVmFromData(VM_ModSetting modSetting, str
             // template flags nothing references anymore) along with it.
             _npcSelectionBar.PruneStaleGuestAppearances(modSettingToRemove.DisplayName,
                 new HashSet<FormKey>(), new HashSet<FormKey>());
+
+            // Selections name the mod by DisplayName as well, so any NPC still pointing at this
+            // entry (its own face, or a share the sweep above just removed) has to be deselected --
+            // otherwise the NPC keeps counting as "chosen" with nothing able to supply its
+            // appearance. Callers that RENAME rather than retire the mod (the mugshot-merge path in
+            // VM_NpcsMenuMugshot) re-point their selections BEFORE calling in, so they are unaffected.
+            _npcSelectionBar.ClearSelectionsFromMod(modSettingToRemove.DisplayName);
 
             ApplyFilters(); // Refresh the ModSettingsList (left panel)
 
