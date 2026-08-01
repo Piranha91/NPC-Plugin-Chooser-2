@@ -88,6 +88,33 @@ public class PatcherDanglingMasterDiagnosticsTests
     }
 
     [Fact]
+    public void NamedAppearanceLinks_IncludeTheTemplate()
+    {
+        // TPLT is written too — by SyncTemplateInheritance in record mode and by the surrogate's
+        // DeepCopyIn in SkyPatcher mode — and it fails the save exactly like a head part does.
+        // Omitting it let 98 surrogates carrying a TPLT into a plugin outside the load order reach
+        // the save with no per-NPC warning at all.
+        var mod = MutagenFixtures.NewMod("Templated.esp");
+        var race = MutagenFixtures.NewRace(mod, "TestRace");
+        var template = MutagenFixtures.NewNpc(mod, "TheTemplate");
+        var npc = MutagenFixtures.NewNpc(mod, "Inheritor", race: race, template: template);
+
+        NamedAppearanceLinks(npc, includeOutfit: false)
+            .Should().Contain(("Template", template.FormKey));
+    }
+
+    [Fact]
+    public void NamedAppearanceLinks_SkipAnUnsetTemplate()
+    {
+        // The overwhelmingly common case: no TPLT at all, and no bogus FormKey.Null entry.
+        var mod = MutagenFixtures.NewMod("Untemplated.esp");
+        var npc = MutagenFixtures.NewNpc(mod, "Plain", race: MutagenFixtures.NewRace(mod, "R"));
+
+        NamedAppearanceLinks(npc, includeOutfit: true)
+            .Select(l => l.Field).Should().NotContain("Template");
+    }
+
+    [Fact]
     public void FieldNames_NameTheNpcFieldHoldingADanglingLink()
     {
         // The real-world shape: an NPC patched from an appearance mod whose Race and head

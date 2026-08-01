@@ -2725,6 +2725,13 @@ public class Patcher : OptionalUIModule
     // Same set as GetAppearanceFormLinks, but carrying the record field each link came from
     // so a bad reference can be reported as "Race=..." / "HeadParts[2]=..." rather than as a
     // bare FormKey. Diagnostics only.
+    //
+    // Template is included here although GetAppearanceFormLinks omits it: that method scopes
+    // SkyPatcher's dependent-OVERRIDE discovery (where following a template would import records
+    // for an NPC the user never selected), whereas this one asks the narrower question "what is
+    // written to the record, and can the output legally reference it". TPLT is written — by
+    // SyncTemplateInheritance in record mode and by the surrogate's DeepCopyIn in SkyPatcher mode —
+    // and a TPLT into a plugin outside the load order fails the save exactly like a head part does.
     private static IEnumerable<(string Field, FormKey Key)> EnumerateNamedAppearanceLinks(INpcGetter npc,
         bool includeOutfit)
     {
@@ -2741,6 +2748,7 @@ public class Patcher : OptionalUIModule
         }
 
         if (includeOutfit && !npc.DefaultOutfit.IsNull) yield return ("DefaultOutfit", npc.DefaultOutfit.FormKey);
+        if (npc.Template is { IsNull: false }) yield return ("Template", npc.Template.FormKey);
     }
 
     // The appearance-descended FormLinks of an NPC — the exact set CopyAppearanceData

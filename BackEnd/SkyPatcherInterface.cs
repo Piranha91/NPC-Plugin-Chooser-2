@@ -209,6 +209,14 @@ public class SkyPatcherInterface : OptionalUIModule
     /// gets one — <c>ApplySkyPatcherDirectives</c> only emits <c>outfitDefault=</c> when an outfit
     /// IS being applied. A wig-forwarded outfit is assigned later (<c>WigForwarder.ApplyLinksTo</c>,
     /// after <c>CopyAppearanceData</c>), so clearing here cannot lose it.</para>
+    ///
+    /// <para><b>The donor must not point outside the load order to begin with.</b> Nulling a link
+    /// is only safe for OPTIONAL subrecords; CNAM in particular is required, and a null one makes
+    /// xEdit report "Found a NULL reference, expected: CLAS" and stalls the game on launch. Rather
+    /// than repair such links here — field by field, forever — the Validator refuses to patch an
+    /// NPC whose donor references a plugin the output cannot reference at all
+    /// (<c>Validator.WrittenLinksAreSatisfiable</c>), so what reaches this method is only ever the
+    /// merge-eligible case, where the link is copied into the output rather than stripped.</para>
     /// </summary>
     private void StripNonAppearanceData(Npc npc, bool includeOutfit)
     {
