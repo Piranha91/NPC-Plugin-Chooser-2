@@ -78,11 +78,36 @@ public class RecordHandler
         _settings = settings;
     }
 
+    // Output FormKeys that already existed when the current appearance-mod batch began. Anything
+    // NOT in here was created by the batch in progress — see IsFromCurrentBatch.
+    private HashSet<FormKey> _preBatchOutputRecords = new();
+
     public void ResetMapping()
     {
         _currentDuplicateInMappings.Clear();
         _currenTraversedFormLinks.Clear();
+
+        // Env is null in the bookkeeping unit tests, which exercise the maps above and nothing else.
+        _preBatchOutputRecords = _environmentStateProvider?.OutputMod == null
+            ? new HashSet<FormKey>()
+            : _environmentStateProvider.OutputMod.EnumerateMajorRecords()
+                .Select(r => r.FormKey)
+                .ToHashSet();
     }
+
+    /// <summary>
+    /// Whether an output record was written by the appearance-mod batch currently being patched,
+    /// as opposed to an earlier one. The duplicate-in mapping is reset per batch
+    /// (<see cref="ResetMapping"/>), but the output plugin it is applied to is cumulative — so this
+    /// is what keeps one mod's merge from rewriting another mod's already-written records. See the
+    /// remap step in <c>PatcherExtensions.DuplicateFromOnlyReferencedGetters</c>.
+    ///
+    /// <para>Derived from a snapshot rather than from a list of records as they are created: a
+    /// tracked list silently misses any creation site that forgets to register, and the failure
+    /// mode of missing one is a dangling reference that fails the save.</para>
+    /// </summary>
+    public bool IsFromCurrentBatch(FormKey outputRecordFormKey) =>
+        !_preBatchOutputRecords.Contains(outputRecordFormKey);
 
     /// <summary>
     /// Records the provenance of a record that was deep-copied ("merged in") into

@@ -137,8 +137,33 @@ public static class PatcherExtensions
             }
         }
 
-        // Remap links
-        modToDuplicateInto.RemapLinks(mapping);
+        // Remap links, scoped to records the CURRENT appearance-mod batch created.
+        //
+        // modToDuplicateInto is the whole output plugin and `mapping` accumulates every duplication
+        // made for this mod, so remapping the mod wholesale retroactively rewrote records written
+        // for EARLIER mods — whose own merge decisions were different, and often "merge nothing".
+        // Normally the damage was invisible because `mapping` only ever held FormKeys defined in
+        // this mod's own plugins, which no unrelated mod's NPC references. Include-As-New breaks
+        // that: it duplicates a mod's overrides of records it does NOT own (RecordHandler
+        // .DuplicateAllOverrideRecordsAsNew), putting VANILLA FormKeys in the map — and vanilla
+        // FormKeys are referenced by half the output. One mod's RS Children child-race override was
+        // thereby stamped onto 70+ NPCs whose selected mod had merge-in switched off entirely,
+        // silently giving them an appearance from a mod the user never chose for them.
+        //
+        // Intra-batch remapping is deliberately preserved. The second and later NPCs of a batch have
+        // their links fixed only here: DuplicateAllOverrideRecordsAsNew short-circuits on
+        // searchedFormKeys before populating its own remap map, so narrowing this to just the roots
+        // of the current call would break the batch's own NPCs.
+        if (mapping.Count > 0)
+        {
+            foreach (var record in modToDuplicateInto.EnumerateMajorRecords<IMajorRecord>())
+            {
+                if (recordHandler.IsFromCurrentBatch(record.FormKey))
+                {
+                    record.RemapLinks(mapping);
+                }
+            }
+        }
 
         return mergedInRecords;
     }
