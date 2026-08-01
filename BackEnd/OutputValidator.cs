@@ -1422,7 +1422,7 @@ public class OutputValidator
                 // the mesh from the mod that originally added the NPC (or, failing that, from
                 // whatever already wins that path) so the mod's tint has geometry to sit on. Calling
                 // that a warning accused the patcher of its own designed behaviour on every
-                // tint-only and FaceGen-only selection. Whether the forwarded mesh actually FITS
+                // tint-only and plugin-only selection. Whether the forwarded mesh actually FITS
                 // this NPC's head parts is the dark-face question, and it is answered independently
                 // by CheckFaceGenHeadPartConsistency above.
                 result.Issues.Add(new ValidationIssue
@@ -1434,7 +1434,7 @@ public class OutputValidator
                     SelectedMod = selectedModName,
                     Issue = $"'{selectedModName}' ships no face mesh for this NPC, so the deployed mesh was " +
                             "forwarded from elsewhere — normally the mod that originally added the NPC. " +
-                            "That is the expected result for a tint-only or FaceGen-only mod.",
+                            "That is the expected result for a tint-only or plugin-only mod.",
                     WinningSource = DescribeDeployedFaceGenProvider(
                         subjectFk, targetMeshRel, subjectPath, linkCache, modSetting, dataFolder, run),
                     Details = targetMeshRel,
