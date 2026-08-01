@@ -500,9 +500,20 @@
                                                          </Button.Visibility>
                                                      </Button>
 
+                                                     <!-- Hidden for the mod's own primary folder: the next scan re-creates the
+                                                          entry around the folder that shares its name, so removing it only
+                                                          costs a Refresh to arrive back where it started. -->
                                                      <Button Grid.Column="3" Content="X" Foreground="Red" FontWeight="Bold"
                                                              Command="{Binding DataContext.RemoveFolderPathCommand, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}"
-                                                             CommandParameter="{Binding}" Padding="5,1" Margin="0,0,5,0" VerticalAlignment="Center" ToolTip="Delete this data folder"/>
+                                                             CommandParameter="{Binding}" Padding="5,1" Margin="0,0,5,0" VerticalAlignment="Center" ToolTip="Delete this data folder">
+                                                         <Button.Visibility>
+                                                             <MultiBinding Converter="{StaticResource NonPrimaryFolderVisibilityConverter}">
+                                                                 <Binding Path="."/>
+                                                                 <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType={x:Type ListBoxItem}}"/>
+                                                                 <Binding Path="DataContext.DisplayName" RelativeSource="{RelativeSource AncestorType={x:Type ListBoxItem}}"/>
+                                                             </MultiBinding>
+                                                         </Button.Visibility>
+                                                     </Button>
                                                  </Grid>
                                              </DataTemplate>
                                          </ItemsControl.ItemTemplate>

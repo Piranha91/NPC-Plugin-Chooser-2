@@ -474,7 +474,7 @@ public class VM_ModSettingPureTests
     }
 
     // ------------------------------------------------------------------
-    // IsPrimaryFolderPath — decides which folder row hides its lock toggle and Browse... button
+    // IsPrimaryFolderPath — decides which folder row hides its Browse..., lock and remove buttons
     // ------------------------------------------------------------------
 
     /// <summary>Builds a VM_ModSetting without its heavy ctor, seeding only DisplayName.</summary>
@@ -520,6 +520,44 @@ public class VM_ModSettingPureTests
         var vm = NamedVm("Bijin AIO");
         vm.IsPrimaryFolderPath(null).Should().BeFalse();
         vm.IsPrimaryFolderPath("   ").Should().BeFalse();
+    }
+
+    // ------------------------------------------------------------------
+    // RemoveFolderPath — backstop behind the hidden X on the primary row
+    // ------------------------------------------------------------------
+
+    /// <summary>Builds a VM_ModSetting without its heavy ctor, seeding DisplayName and the folder
+    /// list that RemoveFolderPath mutates.</summary>
+    private static VM_ModSetting NamedVm(string displayName, params string[] folderPaths)
+    {
+        var vm = NamedVm(displayName);
+        Reflect.SetField(vm, "<CorrespondingFolderPaths>k__BackingField",
+            new ObservableCollection<string>(folderPaths));
+        return vm;
+    }
+
+    [Fact]
+    public void RemoveFolderPath_PrimaryFolder_IsRefused()
+    {
+        // Dropping the anchor folder is circular — the Refresh it triggers strips the entry back
+        // and the next mods-folder scan rebuilds it from the very same folder. The guard also
+        // returns before the command/parent-VM fields an uninitialized VM doesn't have, which is
+        // what makes this reachable here at all.
+        var vm = NamedVm("Bijin AIO", @"C:\Mods\Bijin AIO", @"C:\Mods\Bijin Textures");
+
+        Reflect.InvokeVoid(vm, "RemoveFolderPath", @"C:\Mods\Bijin AIO");
+
+        vm.CorrespondingFolderPaths.Should().Equal(@"C:\Mods\Bijin AIO", @"C:\Mods\Bijin Textures");
+    }
+
+    [Fact]
+    public void RemoveFolderPath_PrimaryFolder_IsRefused_RegardlessOfCasingOrTrailingSeparator()
+    {
+        var vm = NamedVm("Bijin AIO", @"C:\Mods\Bijin AIO");
+
+        Reflect.InvokeVoid(vm, "RemoveFolderPath", @"C:\Mods\BIJIN AIO\");
+
+        vm.CorrespondingFolderPaths.Should().ContainSingle().Which.Should().Be(@"C:\Mods\Bijin AIO");
     }
 
     // NOTE: SKIPPED env/DI-bound members — RefreshNpcLists, GetSkyPatcherImportsAsync,

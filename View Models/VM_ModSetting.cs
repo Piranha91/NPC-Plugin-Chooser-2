@@ -1211,6 +1211,12 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
     private void RemoveFolderPath(string pathToRemove)
     {
+        // The primary folder is the one whose name matches DisplayName, and the mods-folder scan
+        // re-creates this entry around it — so removing it is circular: the Refresh below drops the
+        // entry (or strips it back), and the next scan builds it again from the same folder. The UI
+        // hides the X on that row; this is the backstop (mirrors BrowseFolderPathAsync).
+        if (IsPrimaryFolderPath(pathToRemove)) return;
+
         // Removing a path doesn't trigger the merge check.
         if (CorrespondingFolderPaths.Contains(pathToRemove))
         {
@@ -1271,7 +1277,9 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
 
     /// <summary>
     /// True when <paramref name="path"/> is this mod's own root folder — the one whose folder name
-    /// matches <see cref="DisplayName"/>. Mirrors the primary-folder test in
+    /// matches <see cref="DisplayName"/>. That row hides its Browse..., lock and remove buttons:
+    /// repointing or dropping the anchor folder either breaks the mod-to-folder correspondence the
+    /// app keys on, or is simply undone by the next scan. Mirrors the primary-folder test in
     /// <c>VM_Mods.CleanupCorrespondingFolders</c>, which is the entry that always survives a Refresh.
     /// </summary>
     public bool IsPrimaryFolderPath(string? path)
