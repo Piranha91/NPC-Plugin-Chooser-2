@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FluentAssertions;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
@@ -198,5 +199,88 @@ public class AppearanceTemplateTerminusTests
 
         Walk(vanillaNpc.FormKey, vanillaScope).Should().Be(vanillaTemplate.FormKey);
         Walk(vanillaNpc.FormKey, modScope).Should().Be(modTemplate.FormKey);
+    }
+
+    // ---- Auxilliary.TemplateChainDepth -------------------------------------------------------
+    //
+    // Randomize orders its run by this depth so a face's owner is decided before anyone who
+    // copies that face: a templated NPC's own selection is inert, so it can only be made
+    // consistent against a terminus that has already been settled. Everything the walk above
+    // treats as "no usable appearance" has to land in band 0 — those NPCs have no in-scope
+    // record to be made consistent WITH, so making the rest of the run wait on them would be
+    // waiting on nothing.
+
+    private static int Depth(FormKey start, Func<FormKey, INpcGetter?> resolve, int maxDepth = 50) =>
+        Auxilliary.TemplateChainDepth(start, resolve, maxDepth);
+
+    [Fact]
+    public void Depth_CountsHopsToTheFaceOwner()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var root = MutagenFixtures.NewNpc(mod, "Root");
+        var middle = MutagenFixtures.NewNpc(mod, "Middle", traitsTemplate: true, template: root);
+        var leaf = MutagenFixtures.NewNpc(mod, "Leaf", traitsTemplate: true, template: middle);
+        var resolve = Resolver(leaf, middle, root);
+
+        Depth(root.FormKey, resolve).Should().Be(0, "the root owns its face");
+        Depth(middle.FormKey, resolve).Should().Be(1);
+        Depth(leaf.FormKey, resolve).Should().Be(2);
+
+        // The property randomize actually relies on: sorting by depth puts every NPC after the
+        // one it copies from, whatever order the list arrives in.
+        new[] { leaf.FormKey, root.FormKey, middle.FormKey }
+            .OrderBy(fk => Depth(fk, resolve))
+            .Should().Equal(root.FormKey, middle.FormKey, leaf.FormKey);
+    }
+
+    [Fact]
+    public void Depth_TemplateLinkWithoutTheTraitsFlag_IsZero()
+    {
+        // TPLT without the Traits bit inherits inventory/AI, not the face — nothing to wait for.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var template = MutagenFixtures.NewNpc(mod, "Template");
+        var npc = MutagenFixtures.NewNpc(mod, "InventoryOnly", traitsTemplate: false, template: template);
+
+        Depth(npc.FormKey, Resolver(npc, template)).Should().Be(0);
+    }
+
+    [Fact]
+    public void Depth_UnfollowableChains_AreZero()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+
+        // Dangling link (missing master, or a Leveled NPC, which never resolves as an INpcGetter).
+        var absent = MutagenFixtures.NewNpc(mod, "Absent");
+        var orphan = MutagenFixtures.NewNpc(mod, "Orphan", traitsTemplate: true, template: absent);
+        Depth(orphan.FormKey, Resolver(orphan)).Should().Be(0);
+
+        // Traits flag with no link at all.
+        var flagOnly = MutagenFixtures.NewNpc(mod, "FlagButNoLink", traitsTemplate: true);
+        Depth(flagOnly.FormKey, Resolver(flagOnly)).Should().Be(0);
+
+        // Cycle: A → B → A.
+        var a = MutagenFixtures.NewNpc(mod, "A", traitsTemplate: true);
+        var b = MutagenFixtures.NewNpc(mod, "B", traitsTemplate: true, template: a);
+        a.Template.SetTo(b.FormKey);
+        Depth(a.FormKey, Resolver(a, b)).Should().Be(0);
+
+        // Starting NPC outside the resolver's scope.
+        Depth(MutagenFixtures.Fk("000800:Absent.esp"), Resolver()).Should().Be(0);
+    }
+
+    [Fact]
+    public void Depth_ChainLongerThanMaxDepth_IsZero()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var records = new List<Npc> { MutagenFixtures.NewNpc(mod, "Chain0") };
+        for (int i = 1; i <= 6; i++)
+        {
+            records.Add(MutagenFixtures.NewNpc(mod, "Chain" + i, traitsTemplate: true, template: records[i - 1]));
+        }
+        var resolve = Resolver(records.ToArray());
+
+        // 6 hops, plus one more visit to confirm the root owns its traits.
+        Depth(records[^1].FormKey, resolve, maxDepth: 7).Should().Be(6);
+        Depth(records[^1].FormKey, resolve, maxDepth: 6).Should().Be(0);
     }
 }

@@ -1811,6 +1811,28 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
             .ToList();
         int noEligibleCount = targetNpcs.Count - applicableNpcs.Count;
 
+        // Face owners first, then the NPCs that copy from them, deepest chains last. A templated
+        // NPC's own selection is inert — the game draws the terminus's face — so it can only be
+        // made consistent against a terminus that has already been decided: it then either draws
+        // the same mod (pinning the whole chain) or, per the contract in
+        // ValidateAndHandleTemplatesForBatch, gets no selection at all. Processed the other way
+        // round, a recipient compares itself against whatever its terminus happened to be set to
+        // BEFORE this run and keeps a stale selection the terminus later contradicts, which is
+        // exactly the mismatch the output validator reports. OrderBy is stable, so NPCs at the
+        // same depth keep the list's order.
+        var templateDepths = new Dictionary<FormKey, int>();
+        applicableNpcs = applicableNpcs
+            .OrderBy(n =>
+            {
+                if (!templateDepths.TryGetValue(n.NpcFormKey, out var depth))
+                {
+                    depth = Auxilliary.TemplateChainDepth(n.NpcFormKey, ResolveNpcFromLoadOrder);
+                    templateDepths[n.NpcFormKey] = depth;
+                }
+                return depth;
+            })
+            .ToList();
+
         if (!applicableNpcs.Any())
         {
             ScrollableMessageBox.Show(
@@ -1832,7 +1854,8 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         if (overwriteCount > 0)
         {
             confirmation.AppendLine();
-            confirmation.AppendLine($"{overwriteCount} NPC(s) already have a selection that will be overwritten. This action cannot be undone.");
+            confirmation.AppendLine($"{overwriteCount} NPC(s) already have a selection that will be replaced — or removed, " +
+                                    "for any NPC no appearance can be picked for. This action cannot be undone.");
         }
         confirmation.AppendLine();
         confirmation.Append("Are you sure you want to proceed?");
@@ -1848,6 +1871,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         int totalAffectedCount = 0;
         var fullyExhausted = new List<string>();
         int inheritedTemplateCount = 0;
+        int clearedCount = 0;
         var processedNpcs = new HashSet<FormKey>();
 
         // Snapshot of the active load order, used by the master-availability check
@@ -1987,7 +2011,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                                 // the candidate rather than overwriting other NPCs' selections.
                                 var (isValid, failureReason, _, affectedNpcs) =
                                     ValidateAndHandleTemplatesForBatch(npcVM.NpcFormKey, ownMod,
-                                        enforceRandomizerRules: true);
+                                        enforceRandomizerRules: true, decidedNpcs: processedNpcs);
 
                                 if (isValid)
                                 {
@@ -2019,6 +2043,30 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
                     if (!succeeded)
                     {
+                        // Randomize replaces the selection of every NPC it was handed, so an NPC it
+                        // could not place ends the run with NO selection rather than keeping the one
+                        // it came in with. A survivor is how a templated NPC and its template end up
+                        // on different mods: the pair was consistent when it was made, this run
+                        // reassigned the template, and the recipient's now-stale half outlives it to
+                        // be reported (and patched, inertly) later. The whole eligible set is in
+                        // scope, curated picks included — being offered up for replacement is what
+                        // eligibility means; NPCs with no candidate pool at all were never in the
+                        // run and keep what they have.
+                        //
+                        // Counted before anything is removed: dropping a randomized guest face
+                        // clears the selection that pointed at it, so asking afterwards would
+                        // undercount exactly the NPCs whose pick came from an earlier run.
+                        bool hadSelection = _consistencyProvider.DoesNpcHaveSelection(npcVM.NpcFormKey);
+                        ClearRandomizedGuestAppearancesForNpc(npcVM.NpcFormKey);
+                        _consistencyProvider.ClearSelectedMod(npcVM.NpcFormKey);
+                        _settings.RandomizedSelections.Remove(npcVM.NpcFormKey);
+                        if (hadSelection) clearedCount++;
+
+                        // Mark it decided: leaving it out would let a recipient processed later
+                        // hand it a selection through template propagation — resurrecting the very
+                        // NPC this run just declined to place.
+                        processedNpcs.Add(npcVM.NpcFormKey);
+
                         // An NPC whose winning override inherits through a Traits chain has no face
                         // of its own — the game draws the record at the end of the chain — so leaving
                         // it unassigned still renders correctly, whatever the candidates failed on.
@@ -2077,6 +2125,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             resultMessage.AppendLine();
             resultMessage.AppendLine(BuildInheritedTemplateRandomizeNote(inheritedTemplateCount));
+        }
+
+        if (clearedCount > 0)
+        {
+            resultMessage.AppendLine();
+            resultMessage.AppendLine(BuildClearedSelectionsRandomizeNote(clearedCount));
         }
 
         if (fullyExhausted.Any())
@@ -3773,9 +3827,22 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     /// anyway.</para>
     /// </summary>
     internal static string BuildInheritedTemplateRandomizeNote(int count) =>
-        $"{count} NPC(s) were left unchanged because they copy their appearance from another NPC. " +
-        "They have no face of their own to randomize, and will keep looking like whatever NPC they " +
-        "copy from.";
+        $"{count} NPC(s) were left without a selection because they copy their appearance from " +
+        "another NPC. They have no face of their own to randomize, and will keep looking like " +
+        "whatever NPC they copy from.";
+
+    /// <summary>
+    /// Randomize's note for the selections it removed. Every NPC in the run was offered up for
+    /// replacement, so one that could not be placed ends with nothing rather than with the pick it
+    /// arrived with — a survivor would be a leftover of a state the rest of the run has moved on
+    /// from, and on a templated NPC it is how a chain silently splits across two mods. Said plainly
+    /// because it is the one destructive thing a randomize run does that the user did not see
+    /// listed: the confirmation counts the selections that will be overwritten, not these.
+    /// </summary>
+    internal static string BuildClearedSelectionsRandomizeNote(int count) =>
+        $"{count} NPC(s) had their previous selection removed. Randomize replaces the appearance of " +
+        "every NPC it is given, so any it could not place is left unselected rather than keeping an " +
+        "older pick that the rest of the run has moved past.";
 
     // You will also need this helper method if you don't have it already.
     private ModKey? GetPluginKeyForNpc(VM_ModSetting? modSetting, FormKey npcFormKey)
@@ -4615,12 +4682,16 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     /// overwrite/propagation semantics — the right level for bulk-select, where re-assigning
     /// template references to the chosen mod is the user's explicit intent. Implied by
     /// <paramref name="enforceRandomizerRules"/>.</para>
+    /// <para><paramref name="decidedNpcs"/> (randomizer) names the NPCs the run has already
+    /// settled. An unselected reference in that set was deliberately left unassigned — it is not
+    /// an unclaimed NPC waiting to be propagated to, so a candidate needing it fails instead.</para>
     /// </summary>
     private (bool isValid, string failureReason, bool wasValidated, List<FormKey> affectedNpcs) ValidateAndHandleTemplatesForBatch(
         FormKey npcFormKey,
         VM_ModSetting modSetting,
         bool enforceRandomizerRules = false,
-        bool requireLoadOrderResolvable = false)
+        bool requireLoadOrderResolvable = false,
+        IReadOnlySet<FormKey>? decidedNpcs = null)
     {
         var (isValid, failureReason, wasValidated, templateChain, fromLinkCacheOnly) =
             ValidateTemplateChain(npcFormKey, modSetting,
@@ -4648,6 +4719,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                             $"template reference {refName} already has '{selectedModName}' selected",
                             wasValidated, affectedNpcs);
                     }
+                }
+                else if (decidedNpcs != null && decidedNpcs.Contains(refKey))
+                {
+                    return (false,
+                        $"template reference {refName} was left unassigned by this run",
+                        wasValidated, affectedNpcs);
                 }
                 else if (fromLinkCacheOnly.Contains(refKey))
                 {

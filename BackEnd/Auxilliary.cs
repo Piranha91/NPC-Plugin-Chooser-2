@@ -894,6 +894,42 @@ public class Auxilliary : IDisposable
     }
 
     /// <summary>
+    /// How many Traits hops separate an NPC from the record its face comes from: 0 for an NPC
+    /// with its own face, 1 for one that copies a face-owning NPC, 2 for one that copies it, and
+    /// so on. Ordering work by this value processes every face's owner before anyone who
+    /// inherits it.
+    ///
+    /// <para>A chain that cannot be followed — dangling link, Leveled NPC terminus, cycle,
+    /// pathological length — counts as 0 rather than throwing: there is no in-scope record such
+    /// an NPC could be made consistent with, so it belongs in the same band as the NPCs that own
+    /// their faces. <paramref name="resolveNpc"/> is the same per-hop resolver
+    /// <see cref="ResolveAppearanceTemplateTerminus"/> takes.</para>
+    /// </summary>
+    public static int TemplateChainDepth(
+        FormKey npcFormKey,
+        Func<FormKey, INpcGetter?> resolveNpc,
+        int maxDepth = 50)
+    {
+        var current = resolveNpc(npcFormKey);
+        if (current == null) return 0;
+
+        var visited = new HashSet<FormKey> { npcFormKey };
+
+        for (int depth = 0; depth < maxDepth; depth++)
+        {
+            if (!IsValidTemplatedNpc(current)) return depth;
+
+            var next = current.Template.FormKey;
+            if (!visited.Add(next)) return 0;       // cycle
+            var nextNpc = resolveNpc(next);
+            if (nextNpc == null) return 0;          // dangling link, or a Leveled NPC
+            current = nextNpc;
+        }
+
+        return 0; // pathologically long chain
+    }
+
+    /// <summary>
     /// <see cref="ResolveAppearanceTemplateTerminus"/> with the three outcomes kept apart.
     ///
     /// <para>That method deliberately returns its input unchanged both when an NPC is not

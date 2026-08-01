@@ -373,6 +373,34 @@ public class TemplateFlatteningTests
             .Should().NotContain(HandlingModeDisplay.ToDisplayString(TemplateHandlingMode.GiveEachNpcOwnCopy));
     }
 
+    // ---- Randomize's cleared-selection note (VM_NpcSelectionBar.BuildClearedSelectionsRandomizeNote)
+    //
+    // An NPC randomize could not place ends the run unselected instead of keeping the pick it
+    // arrived with. That is the one destructive thing a run does that the confirmation dialog does
+    // not enumerate up front (it counts selections to be replaced, not removed), so the summary has
+    // to own up to it plainly.
+
+    [Fact]
+    public void ClearedSelectionsNote_SaysSelectionsWereRemoved()
+    {
+        var text = VM_NpcSelectionBar.BuildClearedSelectionsRandomizeNote(91);
+
+        text.Should().Contain("91");
+        text.Should().ContainAny("removed", "unselected");
+        text.Should().NotContain("Traits", "'the Traits flag' means nothing to most users");
+    }
+
+    [Fact]
+    public void InheritedTemplateNote_DoesNotClaimTheNpcsWereLeftUntouched()
+    {
+        // These NPCs are cleared like any other unplaced NPC; only the reason they could not be
+        // placed differs. Saying "left unchanged" would describe the older behaviour, under which
+        // a stale selection survived the run and later showed up in the output validator paired
+        // against a template that had been randomized to a different mod.
+        VM_NpcSelectionBar.BuildInheritedTemplateRandomizeNote(570)
+            .Should().NotContainAny("unchanged", "untouched", "kept");
+    }
+
     [Theory]
     [InlineData(null, TemplateHandlingMode.GiveEachNpcOwnCopy, TemplateHandlingMode.GiveEachNpcOwnCopy)]
     [InlineData(TemplateHandlingMode.InheritFromTemplate, TemplateHandlingMode.GiveEachNpcOwnCopy, TemplateHandlingMode.InheritFromTemplate)]
