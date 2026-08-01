@@ -389,6 +389,168 @@ public class FaceGenConsistencyAnalyzerResultTests
         reason.Should().Contain("no matching plugin record");
     }
 
+    // ---- DeliveryFidelity: proven-faithful delivery replaces the conflict remedies ----------
+
+    [Fact]
+    public void HeadPartRef_FromRaceDefaults_DefaultsFalse_AndParticipatesInEquality()
+    {
+        var own = new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "ChildMouth");
+        var raceDefault = new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "ChildMouth") { FromRaceDefaults = true };
+
+        own.FromRaceDefaults.Should().BeFalse();
+        raceDefault.FromRaceDefaults.Should().BeTrue();
+        own.Should().NotBe(raceDefault);
+    }
+
+    [Fact]
+    public void BuildReason_RaceDefaultParts_AreAnnotatedInTheEvidenceList()
+    {
+        // The annotation is evidence, not a remedy, so it appears regardless of fidelity.
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "Hair"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpB, "ChildMouth") { FromRaceDefaults = true },
+            },
+        };
+        var reason = r.BuildReason();
+
+        reason.Should().Contain("'ChildMouth' (" + HpB + ") (race default)");
+        reason.Should().NotContain("'Hair' (" + HpA + ") (race default)");
+    }
+
+    [Fact]
+    public void BuildReason_FaithfulDelivery_DropsConflictRemedies_AndBlamesTheModsOwnData()
+    {
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "Hair"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpB, "HairLine"),
+            },
+        };
+        var reason = r.BuildReason(
+            fidelity: FaceGenConsistencyAnalyzer.DeliveryFidelity.SelectedModOwnData);
+
+        // The delivery is proven faithful: no conflict accusations, and no "different mods"
+        // inference in the headline — the mod's own files simply disagree.
+        reason.Should().NotContain("may be overwritten");
+        reason.Should().NotContain("not coming from the same appearance mod");
+        reason.Should().Contain("Not a deployment problem");
+        reason.Should().Contain("The selected mod's own files disagree with each other");
+    }
+
+    [Fact]
+    public void BuildReason_FaithfulDelivery_VanillaData_NamesTheBaseGamesOwnBug()
+    {
+        // The verified Dawnguard-vampire case: record and mesh are both vanilla's own, and they
+        // genuinely mismatch in an unmodded game. Single difference (Demon vs Vampire eyes).
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(
+                    FormKey.Factory("02425E:Skyrim.esm"), "MaleEyesHumanDemon"),
+            },
+            OrphanBakedShapes = new[] { "MaleEyesHumanVampire" },
+        };
+        var reason = r.BuildReason(
+            fidelity: FaceGenConsistencyAnalyzer.DeliveryFidelity.VanillaOwnData);
+
+        reason.Should().Contain("base game's own files");
+        reason.Should().Contain("unmodded game");
+        reason.Should().NotContain("may be overwritten");
+        reason.Should().NotContain("Version mismatch"); // the generic single-diff guess is replaced
+    }
+
+    [Fact]
+    public void BuildReason_FaithfulDelivery_MeshOnly_ExplainsTheOriginRecordPairing()
+    {
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "HairMaleNord01"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpB, "HumanBeard02"),
+            },
+        };
+        var reason = r.BuildReason(
+            fidelity: FaceGenConsistencyAnalyzer.DeliveryFidelity.SelectedModMeshOnly);
+
+        reason.Should().Contain("supplies only FaceGen files");
+        reason.Should().Contain("original plugin");
+        reason.Should().NotContain("may be overwritten");
+    }
+
+    [Fact]
+    public void BuildReason_FaithfulDelivery_AllRaceDefaults_NamesBothRaceSlotCauses()
+    {
+        // Two verified-in-the-wild patterns share this shape: RS Children (the mod's race edit is
+        // merged away, so race defaults roll back to vanilla under its mesh) and Women of Unslaad
+        // (the mod's record stopped listing parts its mesh was baked with, so the vanilla race
+        // defaults apply). One resolution context cannot tell them apart, so the row must present
+        // both — and must not accuse the load order, which is proven innocent.
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "MaleHeadChild") { FromRaceDefaults = true },
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpB, "ChildMouth") { FromRaceDefaults = true },
+            },
+            OrphanBakedShapes = new[] { "0RCOChildMouth" },
+        };
+        var reason = r.BuildReason(
+            fidelity: FaceGenConsistencyAnalyzer.DeliveryFidelity.SelectedModOwnData);
+
+        reason.Should().Contain("Every mismatched part is a RACE default");
+        reason.Should().Contain("race edits are not carried over");
+        reason.Should().Contain("record no longer lists");
+        reason.Should().NotContain("may be overwritten");
+    }
+
+    [Fact]
+    public void BuildReason_FaithfulDelivery_SingleDifference_KeepsTheRenameHint()
+    {
+        // One flipped slot can be a head part RENAMED by an overriding plugin (the NPC record
+        // still points at the same FormKey) — that cause survives proven-faithful delivery.
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "HairLineMaleRedguard3"),
+            },
+            OrphanBakedShapes = new[] { "HairLineMaleRedguard4" },
+        };
+        var reason = r.BuildReason(
+            fidelity: FaceGenConsistencyAnalyzer.DeliveryFidelity.SelectedModOwnData);
+
+        reason.Should().Contain("renamed head part");
+        reason.Should().Contain("Not a deployment problem");
+    }
+
+    [Fact]
+    public void BuildReason_Fidelity_IsIgnoredOutsideLoadOrderScope()
+    {
+        // The mugshot path resolves mod-scoped; fidelity is a load-order concept and must not
+        // change the mod-scoped remedies.
+        var r = new FaceGenConsistencyAnalyzer.Result
+        {
+            MissingBakedShapes = new[]
+            {
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpA, "Hair"),
+                new FaceGenConsistencyAnalyzer.HeadPartRef(HpB, "HairLine"),
+            },
+        };
+        var reason = r.BuildReason(
+            scope: FaceGenConsistencyAnalyzer.ReasonScope.SelectedMod,
+            fidelity: FaceGenConsistencyAnalyzer.DeliveryFidelity.SelectedModOwnData);
+
+        reason.Should().Contain("The mod's own .esp and .nif don't match");
+        reason.Should().NotContain("Not a deployment problem");
+    }
+
     [Fact]
     public void BuildReason_NullLinks_ReportsCountAndFix()
     {

@@ -97,7 +97,40 @@ public sealed class FaceGenConsistencyAnalyzer
         return entry;
     }
 
-    public readonly record struct HeadPartRef(FormKey FormKey, string EditorId);
+    public readonly record struct HeadPartRef(FormKey FormKey, string EditorId)
+    {
+        /// <summary>True when this part entered the effective set through the RACE's chargen
+        /// default head parts (a slot the NPC's own record does not occupy) rather than the
+        /// NPC's own head part list. The distinction matters for cause attribution: a missing
+        /// race-default part means the winning RACE record disagrees with the mesh — a race
+        /// edit was lost (e.g. an RS Children-style plugin merged away) or another mod
+        /// overrides the race — while the NPC's own record may match the mesh perfectly.</summary>
+        public bool FromRaceDefaults { get; init; }
+    }
+
+    /// <summary>How faithfully the deployed record + mesh reproduce the selected mod, when the
+    /// caller can prove it. Drives cause attribution in <see cref="Result.BuildReason"/>: once
+    /// delivery is known-faithful, "your load order overwrote it" is the one cause that is
+    /// ruled OUT, and the mismatch must be inherent to the data the selection supplies.</summary>
+    public enum DeliveryFidelity
+    {
+        /// Delivery not verified (or verified unfaithful) — keep the conflict-first remedies.
+        Unknown,
+
+        /// The deployed mesh is byte-identical to the selected mod's own file, the output
+        /// record is winning, and the mod supplies both record and mesh: the mod's own
+        /// .esp and .nif disagree with each other.
+        SelectedModOwnData,
+
+        /// Same fidelity, but the selection is FaceGen-only (the mod ships no plugin record
+        /// for this NPC): the mod's mesh is paired with the origin plugin's record by design,
+        /// and the pairing does not fit.
+        SelectedModMeshOnly,
+
+        /// Same fidelity, and the "mod" is the synthetic Base Game / Creation Club entry:
+        /// the mismatch is in the base game's own shipped data.
+        VanillaOwnData,
+    }
 
     /// <summary>What the evidence most likely means, used to pick the headline and the
     /// remedies in <see cref="Result.BuildReason"/>. The analyzer only observes that the
@@ -235,7 +268,12 @@ public sealed class FaceGenConsistencyAnalyzer
         /// <param name="maxPerCategory">Per-list cap before the "…and N more" tail.</param>
         /// <param name="scope">Which resolution context produced the analysis; picks the
         /// remedies that actually apply (load-order conflicts vs a single mod's own files).</param>
-        public string BuildReason(int maxPerCategory = 8, ReasonScope scope = ReasonScope.LoadOrder)
+        /// <param name="fidelity">What the caller has PROVEN about delivery. When it is not
+        /// <see cref="DeliveryFidelity.Unknown"/>, the conflict remedies are replaced with the
+        /// causes that are still possible — the mismatch is inherent to the selection's own
+        /// data (or the race record), not to the deployment. LoadOrder scope only.</param>
+        public string BuildReason(int maxPerCategory = 8, ReasonScope scope = ReasonScope.LoadOrder,
+            DeliveryFidelity fidelity = DeliveryFidelity.Unknown)
         {
             // Report only what the user would actually see in game — which is exactly what
             // HasMismatch flags. A purely additive .nif (Kind == ExtraBakedShapesOnly) causes no
@@ -251,8 +289,13 @@ public sealed class FaceGenConsistencyAnalyzer
             {
                 case MismatchKind.DifferentSource:
                     sb.Append("FaceGen / plugin mismatch (a common cause of the in-game dark-face bug): ")
-                      .Append("the FaceGen .nif has a different set of head parts than the NPC's .esp plugin record, ")
-                      .Append("so the mesh and the record are not coming from the same appearance mod.");
+                      .Append("the FaceGen .nif has a different set of head parts than the NPC's .esp plugin record");
+                    // "Not coming from the same mod" is an inference, and with proven-faithful
+                    // delivery it is a FALSE one (vanilla's own vampires ship exactly this way) —
+                    // the remedies then carry the accurate cause instead.
+                    sb.Append(scope == ReasonScope.LoadOrder && fidelity != DeliveryFidelity.Unknown
+                        ? "."
+                        : ", so the mesh and the record are not coming from the same appearance mod.");
                     break;
                 case MismatchKind.SingleHeadPartDifference:
                     sb.Append("FaceGen / plugin mismatch (a common cause of the in-game dark-face bug): ")
@@ -274,6 +317,7 @@ public sealed class FaceGenConsistencyAnalyzer
                 {
                     if (shown++ >= maxPerCategory) break;
                     sb.Append("\n • '").Append(m.EditorId).Append("' (").Append(m.FormKey).Append(')');
+                    if (m.FromRaceDefaults) sb.Append(" (race default)");
                 }
                 if (MissingBakedShapes.Count > maxPerCategory)
                     sb.Append("\n • …and ").Append(MissingBakedShapes.Count - maxPerCategory)
@@ -314,7 +358,7 @@ public sealed class FaceGenConsistencyAnalyzer
                   .Append(" empty entry(s).");
 
             // ---- Likely causes / remedies -------------------------------------------------
-            var remedies = BuildRemedies(kind, scope);
+            var remedies = BuildRemedies(kind, scope, fidelity);
             if (remedies.Count > 0)
             {
                 sb.Append("\nLikely cause(s), most common first:");
@@ -326,9 +370,17 @@ public sealed class FaceGenConsistencyAnalyzer
 
         /// <summary>The prescriptive half of <see cref="BuildReason"/>: the causes that can
         /// actually produce this <paramref name="kind"/> in this <paramref name="scope"/>,
-        /// each paired with the check or fix that resolves it.</summary>
-        private List<string> BuildRemedies(MismatchKind kind, ReasonScope scope)
+        /// each paired with the check or fix that resolves it. Proven-faithful delivery
+        /// (<paramref name="fidelity"/>) replaces the conflict remedies entirely — see
+        /// <see cref="BuildFaithfulDeliveryRemedies"/>.</summary>
+        private List<string> BuildRemedies(MismatchKind kind, ReasonScope scope, DeliveryFidelity fidelity)
         {
+            if (scope == ReasonScope.LoadOrder && fidelity != DeliveryFidelity.Unknown &&
+                kind is MismatchKind.DifferentSource or MismatchKind.SingleHeadPartDifference)
+            {
+                return BuildFaithfulDeliveryRemedies(kind, fidelity);
+            }
+
             var list = new List<string>();
             var plugins = MissingSourcePlugins();
             string pluginList = plugins.Count > 0 ? Join(plugins) : "the winning plugin(s)";
@@ -390,6 +442,99 @@ public sealed class FaceGenConsistencyAnalyzer
 
             return list;
         }
+
+        /// <summary>
+        /// Remedies for the case where the caller PROVED the deployment faithful (output record
+        /// winning, deployed mesh byte-identical to the selected mod's own file). "Your load
+        /// order overwrote it" is then the one cause that is ruled out — telling the user to go
+        /// check plugin/asset conflicts sends them chasing a conflict that demonstrably is not
+        /// happening. What remains: the selection's own data is mismatched (three flavours, per
+        /// <see cref="DeliveryFidelity"/>), or the RACE record's default head parts changed out
+        /// from under the mesh (the RS Children pattern: a race-editing plugin merged away, or an
+        /// unrelated mod overriding the race).
+        /// </summary>
+        private List<string> BuildFaithfulDeliveryRemedies(MismatchKind kind, DeliveryFidelity fidelity)
+        {
+            var list = new List<string>
+            {
+                "Not a deployment problem: NPC2's output record is winning and the deployed FaceGen .nif is " +
+                "byte-identical to the selected mod's own file, so nothing in your load order is overwriting this NPC.",
+            };
+
+            bool anyRace = MissingBakedShapes.Any(m => m.FromRaceDefaults);
+            bool allRace = MissingBakedShapes.Count > 0 && MissingBakedShapes.All(m => m.FromRaceDefaults);
+
+            if (allRace)
+            {
+                // The NPC's own parts all matched; the disagreement is confined to slots the record
+                // leaves to the RACE's defaults. Two distinct causes share that observable — a race
+                // edit that is not reaching the load order (RS Children with its plugin merged away,
+                // or another mod winning the race record), and a mod whose record simply stopped
+                // listing parts its mesh was baked with (observed in the wild both ways) — so both
+                // are named; the analyzer cannot tell them apart from one resolution context.
+                list.Add(
+                    "Every mismatched part is a RACE default (marked '(race default)'): the NPC's own head parts " +
+                    "all match the mesh. For the slots its record leaves unset the game falls back to the RACE's " +
+                    "default parts — and those defaults are not what the mesh was baked with.");
+                list.Add(
+                    "If the selected mod normally edits that race (RS Children-style overhauls), the race edit is " +
+                    "not reaching your load order: NPC2 merges NPC records into its output, but race edits are not " +
+                    "carried over, and another mod can also win the race record. Note a race edit is global — " +
+                    "appearance mods that disagree about a race's default parts cannot all match at once.");
+                list.Add(
+                    "Otherwise the mod's own files disagree: its FaceGen was baked with head parts its plugin " +
+                    "record no longer lists (they appear in the '.nif but not the .esp' list above). Re-install " +
+                    "the mod, or pick a different appearance for this NPC.");
+                return list;
+            }
+
+            switch (fidelity)
+            {
+                case DeliveryFidelity.VanillaOwnData:
+                    list.Add(
+                        "The mismatch is in the base game's own files: Bethesda edited this NPC's record without " +
+                        "regenerating its FaceGen mesh (common for vampire NPCs updated by the DLC), so the same " +
+                        "face bug exists in an unmodded game. NPC2 reproduced vanilla exactly; a mod that " +
+                        "regenerates this NPC's FaceGen — or a different appearance selection here — is the only fix.");
+                    break;
+
+                case DeliveryFidelity.SelectedModMeshOnly:
+                    list.Add(
+                        "The selected mod supplies only FaceGen files for this NPC (no plugin record), so its mesh " +
+                        "is paired with the record from the NPC's original plugin — and the pairing does not fit. " +
+                        "The mod was probably built to sit on top of another overhaul or a different version of " +
+                        "those records; install what it expects underneath, or pick a different appearance for this NPC.");
+                    break;
+
+                default: // SelectedModOwnData
+                    list.Add(
+                        "The selected mod's own files disagree with each other: its plugin record asks for head " +
+                        "parts its FaceGen .nif was not baked with. Re-install the mod and check its page for " +
+                        "required patches or load-order notes; if the mismatch persists, pick a different " +
+                        "appearance for this NPC.");
+                    break;
+            }
+
+            if (kind == MismatchKind.SingleHeadPartDifference)
+            {
+                // A single flipped slot can also be a rename: the NPC record still points at the
+                // same FormKey, but a mod overriding that head part changed its EditorID, and the
+                // game matches mesh shapes by NAME.
+                list.Add(
+                    "Or another mod in your load order edits that one head part record: the game matches mesh " +
+                    "shapes to head parts by name, so a renamed head part breaks the match even when the NPC " +
+                    "record itself is untouched.");
+            }
+
+            if (anyRace)
+            {
+                list.Add(
+                    "Part(s) marked '(race default)' come from the NPC's RACE record rather than the NPC itself — " +
+                    "check whether another mod overrides that race's default head parts.");
+            }
+
+            return list;
+        }
     }
 
     /// <summary>
@@ -427,7 +572,7 @@ public sealed class FaceGenConsistencyAnalyzer
         int resolvedCount = 0;
         var visited = new HashSet<FormKey>();
 
-        void Walk(IFormLinkGetter<IHeadPartGetter>? link)
+        void Walk(IFormLinkGetter<IHeadPartGetter>? link, bool fromRaceDefaults)
         {
             if (link is null || link.IsNull) { nullLinks++; return; }
             var fk = link.FormKey;
@@ -439,10 +584,10 @@ public sealed class FaceGenConsistencyAnalyzer
 
             bool geo = hp.Model?.File != null || (hp.Parts?.Count ?? 0) > 0;
             if (geo && !string.IsNullOrEmpty(hp.EditorID))
-                geometryBearing.Add(new HeadPartRef(fk, hp.EditorID!));
+                geometryBearing.Add(new HeadPartRef(fk, hp.EditorID!) { FromRaceDefaults = fromRaceDefaults });
 
             if (hp.ExtraParts != null)
-                foreach (var ep in hp.ExtraParts) Walk(ep);
+                foreach (var ep in hp.ExtraParts) Walk(ep, fromRaceDefaults);
         }
 
         // 2a. The NPC's own head parts. Record the slot Types it occupies (keyed by the
@@ -458,7 +603,7 @@ public sealed class FaceGenConsistencyAnalyzer
                     var slot = resolveHeadPart(link.FormKey)?.Type.ToString();
                     if (!string.IsNullOrEmpty(slot)) npcSlotTypes.Add(slot!);
                 }
-                Walk(link);
+                Walk(link, fromRaceDefaults: false);
             }
         }
 
@@ -477,7 +622,7 @@ public sealed class FaceGenConsistencyAnalyzer
                     if (link.IsNull) continue;
                     var slot = resolveHeadPart(link.FormKey)?.Type.ToString();
                     if (!string.IsNullOrEmpty(slot) && npcSlotTypes.Contains(slot!)) continue;
-                    Walk(link);
+                    Walk(link, fromRaceDefaults: true);
                 }
             }
         }
