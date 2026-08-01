@@ -350,6 +350,25 @@ public static class InternalMugshotMetadata
         return assets;
     }
 
+    /// <summary>True when the stamped metadata records assets the user could still
+    /// INSTALL — missing base NPC meshes/textures or missing outfit/headgear assets.
+    /// <para>This is the "is this render actually broken?" question, and it is
+    /// deliberately narrower than "does this PNG carry any notice". Excluded:
+    /// stale-physics-config notices (nothing you install fixes a broken mod link,
+    /// and the render is otherwise correct) and the FaceGen mismatch (a
+    /// records-vs-FaceGen disagreement, not an absent file). Both would otherwise
+    /// make a perfectly good render look re-renderable forever.</para>
+    /// <para>Used to scope the AG button's forced re-render to the mugshots the
+    /// user is actually trying to repair — re-rendering a whole row of intact
+    /// mugshots costs seconds each and changes nothing.</para></summary>
+    public static bool RecordsMissingInstallableAssets(string? parametersJson)
+    {
+        if (string.IsNullOrWhiteSpace(parametersJson)) return false;
+        TryReadMissingAssets(parametersJson, out var missingMeshes, out var missingTextures);
+        if (missingMeshes.Count > 0 || missingTextures.Count > 0) return true;
+        return TryReadMissingOutfitAssets(parametersJson).Count > 0;
+    }
+
     /// <summary>Parses the FaceGen-mismatch reason out of a previously-stamped
     /// "Parameters" JSON. Returns null when absent (older PNGs, or renders with no
     /// detected mismatch) or on any parse error.</summary>

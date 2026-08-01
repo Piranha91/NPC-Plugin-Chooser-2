@@ -696,15 +696,15 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
 
                 if (source == MugshotSourceType.AutoGeneration)
                 {
-                    // A pending forced regeneration (the user just clicked AG)
-                    // must not be short-circuited by a "fresh" cached PNG:
-                    // freshness is judged from stamped render settings, which
-                    // say nothing about the mod's asset scope — the input the
-                    // user just changed. Skipping the probe drops us into the
-                    // stale-display branch below, which shows the existing PNG
-                    // immediately but leaves HasMugshot false, so the tile is
-                    // still kicked and still reaches the AutoGeneration source.
-                    bool forcePending = _vmNpcSelectionBar.IsForcedAutoGenRegenerationPending(this);
+                    // A pending forced regeneration (the user just clicked AG on
+                    // a mugshot with missing assets) must not be short-circuited
+                    // by a "fresh" cached PNG: freshness is judged from stamped
+                    // render settings, which say nothing about the mod's asset
+                    // scope — the input the user just changed. Skipping the probe
+                    // drops us into the stale-display branch below, which shows
+                    // the existing PNG immediately but leaves HasMugshot false, so
+                    // the tile is still kicked and still reaches AutoGeneration.
+                    bool forcePending = ShouldForceAutoGenRegeneration();
                     if (!forcePending && _batchGenerator.TryGetExistingFreshAutoGenPath(
                             SourceNpcFormKey, AssociatedModSetting, out var freshAutoGen, _targetNpcFormKey))
                     {
@@ -1649,6 +1649,26 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         }
     }
 
+    /// <summary>Whether this tile owes a forced re-render: the user activated the
+    /// AG source override AND this tile's cached render actually records missing
+    /// assets.
+    /// <para>The missing-asset condition is what keeps the button proportionate.
+    /// AG promotes a source for the whole row, but the repair it stands in for is
+    /// per-tile — the user fixed one mod's folders. Forcing every tile would
+    /// re-render a row of intact mugshots at seconds each and change none of
+    /// them. A tile with no cached PNG needs no force either: a missing file is
+    /// already stale, so the normal path renders it.</para>
+    /// <para>Consulted twice per generation pass (fast-path suppression, then the
+    /// render itself), so it reads the same PNG twice rather than caching — the
+    /// two callers must agree, and the file only changes once the render this
+    /// gate authorises has finished.</para></summary>
+    private bool ShouldForceAutoGenRegeneration()
+    {
+        if (AssociatedModSetting == null) return false;
+        if (!_vmNpcSelectionBar.IsForcedAutoGenRegenerationPending(this)) return false;
+        return _batchGenerator.ExistingAutoGenHasMissingAssets(SourceNpcFormKey, AssociatedModSetting);
+    }
+
     /// <summary>True when this tile is currently displaying an auto-generated
     /// image (as opposed to a curated mugshot, a FaceFinder cache hit, or a
     /// placeholder). Lets the host re-render only the autogen tiles after
@@ -1748,10 +1768,11 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
         // Consume-on-success, not on entry: a render cancelled by the trigger
         // churn documented in GenerateMugshotAsync's finally would otherwise burn
         // the tile's one forced attempt and let the re-kick reuse the stale PNG.
-        bool force = _vmNpcSelectionBar.IsForcedAutoGenRegenerationPending(this);
+        bool force = ShouldForceAutoGenRegeneration();
         if (force)
         {
-            _eventLogger.Log($"Forcing re-render for {SourceNpcFormKey} from {ModName} (AG override)", "PORTRAIT_GEN");
+            _eventLogger.Log($"Forcing re-render for {SourceNpcFormKey} from {ModName} " +
+                             "(AG override; cached render is missing assets)", "PORTRAIT_GEN");
         }
 
         var rendererResult = await _batchGenerator.RunSelectedRendererAsync(

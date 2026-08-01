@@ -531,6 +531,22 @@ public sealed class BatchMugshotGenerator
     /// still warming when the first NPC view is built) nor a render that gets
     /// cancelled by startup layout churn can leave an already-cached NPC showing
     /// the placeholder. No render, no NIF lookup, no network — just a file probe.</summary>
+    /// <summary>True when a cached autogen PNG exists for this (NPC, mod) AND its
+    /// stamped metadata records missing installable assets — i.e. the render is
+    /// incomplete and re-rendering could actually improve it.
+    /// <para>Scopes the AG button's forced re-render. No cached file means there
+    /// is nothing to force: the normal path already treats a missing PNG as stale
+    /// and renders it. Only the Internal renderer stamps these arrays, so Legacy
+    /// PNGs answer false and keep the plain staleness behavior.</para></summary>
+    public bool ExistingAutoGenHasMissingAssets(FormKey npcFormKey, VM_ModSetting modSetting)
+    {
+        if (modSetting == null) return false;
+        var savePath = GetAutoGenSavePath(_settings, modSetting.DisplayName, npcFormKey);
+        if (!File.Exists(savePath)) return false;
+        return InternalMugshotMetadata.RecordsMissingInstallableAssets(
+            MugshotPngMetadata.TryRead(savePath));
+    }
+
     public bool TryGetExistingAutoGenPath(
         FormKey npcFormKey, VM_ModSetting modSetting, out string? path)
     {

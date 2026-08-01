@@ -275,6 +275,10 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
     // missing assets). Priority promotion alone can't serve that: the staleness
     // checker compares stamped render SETTINGS, so a changed asset scope is
     // invisible to it and the click reuses the same asset-less PNG.
+    // This latch is only ARMING, not the whole decision: each tile additionally
+    // requires its own cached render to record missing assets
+    // (VM_NpcsMenuMugshot.ShouldForceAutoGenRegeneration), so a click re-renders
+    // the broken mugshots in the row and leaves the intact ones alone.
     // Per-tile serve tracking (reference identity — VM_NpcsMenuMugshot doesn't
     // override Equals) keeps it one-shot: the rebuild the override triggers
     // hands every tile a fresh object that gets its one forced render, while the
