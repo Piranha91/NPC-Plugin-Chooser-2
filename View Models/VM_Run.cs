@@ -551,6 +551,11 @@ public class VM_Run : ReactiveObject, IDisposable
             // cost is one cache re-warm on the next render.
             if (PatchingStartTime.HasValue)
             {
+                // Same "this run touched the disk" signal: arm the Validate Output confirmation.
+                // Under a mod manager the VFS this process sees was built at launch, so the
+                // validator can no longer trust the Data folder until N.P.C.2 is relaunched.
+                _vmSettings.NotifyPatchRunCompleted();
+
                 try { _offscreenRenderer.Value.InvalidateCaches(); }
                 catch (Exception ex)
                 {

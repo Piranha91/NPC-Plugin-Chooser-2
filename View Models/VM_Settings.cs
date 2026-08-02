@@ -562,6 +562,27 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
     private readonly FaceGenAnalysisCache _faceGenAnalysisCache;
     private readonly OutputValidator _outputValidator;
 
+    // True once a patch run in THIS session wrote output. Under a mod manager (which is how
+    // nearly everyone runs N.P.C.2) the virtual file system was built at launch, so files the
+    // run just wrote are invisible to this process — validating against them reports missing
+    // FaceGen/plugins/lost conflicts that don't exist in the real game. Set by VM_Run; consumed
+    // by the confirmation gate in ValidateOutputAsync.
+    private bool _outputWrittenThisSession;
+
+    // Suppresses the gate for repeat clicks after the user has chosen to proceed. Re-armed by
+    // the next patch run, so a fresh run always warns again.
+    private bool _staleOutputWarningAcknowledged;
+
+    /// <summary>
+    /// Called by <see cref="VM_Run"/> after any run that reached patching. Arms the
+    /// "relaunch before validating" confirmation on the Validate Output button.
+    /// </summary>
+    public void NotifyPatchRunCompleted()
+    {
+        _outputWrittenThisSession = true;
+        _staleOutputWarningAcknowledged = false;
+    }
+
     public VM_Settings(
         EnvironmentStateProvider environmentStateProvider,
         Auxilliary aux,
@@ -2329,6 +2350,27 @@ public class VM_Settings : ReactiveObject, IDisposable, IActivatableViewModel
         {
             ScrollableMessageBox.ShowWarning("No appearance selections have been made yet, so there is nothing to validate.", "Validate Output");
             return;
+        }
+
+        // A patch run in this session wrote output the mod manager's VFS hasn't picked up yet,
+        // so the validator would be reading a stale Data folder. Warned about BEFORE the deploy
+        // readiness probe below: with a stale VFS that probe is itself unreliable (it can fail
+        // to see the just-written plugin and blame the user for not installing it).
+        if (_outputWrittenThisSession && !_staleOutputWarningAcknowledged)
+        {
+            var proceed = ScrollableMessageBox.Confirm(
+                "The patcher has been run since N.P.C.2 was launched.\n\n" +
+                "If you launched N.P.C.2 through a mod manager (MO2, Vortex, etc.), the mod manager built " +
+                "its virtual file system when the app started, so the output this run just wrote is not " +
+                "yet visible to N.P.C.2. Validating now can report problems — missing FaceGen, a missing " +
+                "output plugin, lost conflicts — that don't actually exist in your game.\n\n" +
+                "To validate reliably: close N.P.C.2, make sure the generated output is installed and " +
+                "enabled in your mod manager, then relaunch N.P.C.2 through the mod manager and validate.\n\n" +
+                "Validate anyway?",
+                "Validate Output", MessageBoxImage.Warning);
+
+            if (!proceed) return;
+            _staleOutputWarningAcknowledged = true;
         }
 
         // Fail fast: confirm this app's output is actually deployed & active BEFORE the user
