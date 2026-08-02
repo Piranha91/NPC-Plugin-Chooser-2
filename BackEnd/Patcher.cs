@@ -3557,27 +3557,6 @@ public class Patcher : OptionalUIModule
             {
                 (sourceCompat, var mm) =
                     await EvaluateNifCompatibilityAsync(recordToMatch, subjectNifRel, appearanceModSetting);
-
-                // A mesh-only mod ships no record, so its mesh is paired with the one from the
-                // NPC's ORIGIN plugin. That assumes the author built against the origin — wrong
-                // whenever a later plugin of the same mod supersedes it, which is what the DLC
-                // does to the vanilla vampires: Dawnguard swaps their eye head part and the mods
-                // baked their meshes against Dawnguard's version, so the origin pairing dark-faces.
-                // Only attempted when the default pairing has already FAILED, so an NPC that
-                // renders correctly today cannot be re-pointed.
-                if (sourceCompat == false)
-                {
-                    var repaired = await TryRepairMeshOnlyRecordPairingAsync(
-                        subjectFormKey, recordToMatch, subjectNifRel, appearanceModSetting, npcIdentifier);
-                    if (repaired != null)
-                    {
-                        appearanceNpcRecord = repaired;
-                        recordToMatch = repaired;
-                        sourceCompat = true;
-                        mm = null;
-                    }
-                }
-
                 if (sourceCompat == false) failedProbes.Add(("selected mod's mesh failed the probe", mm));
             }
 
@@ -3663,30 +3642,82 @@ public class Patcher : OptionalUIModule
             }
         }
 
-        // A mesh-only selection whose mesh fits NO record its NPC's mod of origin offers has no
-        // safe pairing left: patching it would ship a record naming head parts the mesh does not
-        // bake, which is the dark-face bug. Abort instead, exactly as the ladder does when no
-        // usable mesh exists at all — the NPC keeps the face the load order already gives it and
-        // is named in the end-of-run report.
+        // ---- Mesh-only record re-pairing -------------------------------------------------
+        // A selection with no plugin RECORD has its mesh paired with the record from the NPC's
+        // ORIGIN plugin, on the assumption the author built against it. That fails whenever a
+        // later plugin of the NPC's own family supersedes it: Dawnguard swaps the vanilla
+        // vampires' eye head part (FemaleEyesHumanDemon -> FemaleEyesHumanVampire) and mods bake
+        // their FaceGen against Dawnguard's record, because that is what their Creation Kit
+        // showed. The origin pairing then names a head part the mesh does not bake — dark face.
         //
-        // Decided here rather than inside FaceGenLadder.Classify because "no compatible record
-        // among the origin mod's plugins" is not one of the ladder's inputs; SourceNifCompatible
-        // alone means "the default pairing failed", which the ladder deliberately only warns
-        // about (a mismatch it cannot repair is not automatically fatal).
-        if (!decision.Abort && ProbesModMesh(decision) && decision.Inputs.SourceNifCompatible == false)
+        // Note this is keyed on SourceHasPluginRecord, NOT on the ladder ROW. The rows describe
+        // which ASSETS the mod ships (row 2 = mesh but no tint); a mod can ship both halves and
+        // still have no record, which is exactly the Nordic Faces / Cathedral shape and why an
+        // earlier attempt gated on row 2 and never fired.
+        if (!decision.Abort && isFaceGenOnly && appearanceModSetting != null &&
+            decision.NifChoice == FaceGenSourceChoice.AppearanceMod &&
+            // Only where the mesh and the record belong to the same NPC. A Traits redirect makes
+            // the chain a property of the record being replaced, so re-pairing could invalidate
+            // the very subject this was probed against.
+            subjectFormKey.Equals(appearanceNpcRecord.FormKey))
         {
-            string reason =
-                $"'{modDisplayName}' supplies a face mesh for this NPC but no plugin record, and the mesh " +
-                "does not match any record for it in the mod that originally added the NPC. Patching it " +
-                "would produce the dark-face bug, so it is being left unchanged. Pick a different mod for " +
-                "this NPC, or install the overhaul this mod was built to sit on top of.";
-
-            decision = decision with
+            // Cheap trigger first: with nothing in the family superseding the origin record there
+            // is nothing to re-pair with, so skip before touching a NIF. This matters — row 1
+            // ("mod ships both halves") is deliberately never NIF-probed, and 1136 of the
+            // measuring run's 8338 selections are record-less. An in-memory context walk keeps
+            // the parse for the handful that a DLC actually overrides.
+            var family = ResolveOriginFamilyPlugins(subjectFormKey);
+            if (family != null && HasSupersedingFamilyRecord(linkCache, subjectFormKey, family))
             {
-                Abort = true,
-                AbortReason = reason,
-                LogLine = $"ABORT: {reason}",
-            };
+                var pairingRecord = ChooseCompatibilityRecord(
+                    ResolveAppearanceTerminusRecord(decision, appearanceModSetting, currentModFolderPaths, isFaceGenOnly),
+                    null, appearanceNpcRecord);
+
+                // Row 2 already probed this exact pairing; reuse its verdict rather than parsing
+                // the same mesh twice.
+                bool? compatible = decision.Inputs.SourceNifCompatible;
+                if (compatible == null)
+                {
+                    (compatible, _) = await EvaluateNifCompatibilityAsync(
+                        pairingRecord, subjectNifRel, appearanceModSetting);
+                }
+
+                if (compatible == false)
+                {
+                    var repaired = await TryRepairMeshOnlyRecordPairingAsync(
+                        subjectFormKey, subjectNifRel, appearanceModSetting, npcIdentifier);
+
+                    if (repaired != null)
+                    {
+                        appearanceNpcRecord = repaired;
+                    }
+                    else
+                    {
+                        // No record in the family fits, so there is no safe pairing left: patching
+                        // would ship a record naming head parts the mesh does not bake. Abort, as
+                        // the ladder does when no usable mesh exists at all — the NPC keeps the
+                        // face the load order already gives it and is named in the run report.
+                        //
+                        // Decided here rather than in FaceGenLadder.Classify because "no
+                        // compatible record in the origin family" is not one of the ladder's
+                        // inputs, and SourceNifCompatible alone means only that the default
+                        // pairing failed, which it deliberately warns about rather than treats
+                        // as fatal.
+                        string reason =
+                            $"'{modDisplayName}' supplies a face mesh for this NPC but no plugin record, and the " +
+                            "mesh does not match any record for it in the mod that originally added the NPC. " +
+                            "Patching it would produce the dark-face bug, so it is being left unchanged. Pick a " +
+                            "different mod for this NPC, or install the overhaul this mod was built to sit on top of.";
+
+                        decision = decision with
+                        {
+                            Abort = true,
+                            AbortReason = reason,
+                            LogLine = $"ABORT: {reason}",
+                        };
+                    }
+                }
+            }
         }
 
         FaceGenLadderDiag.Record(decision);
@@ -3738,9 +3769,24 @@ public class Patcher : OptionalUIModule
         return null;
     }
 
+    /// <summary>Does any plugin of <paramref name="family"/> other than the NPC's own defining
+    /// plugin carry a record for it? False means the origin record IS the family's winner, so
+    /// there is nothing to re-pair with and no reason to parse a mesh. In-memory only.</summary>
+    internal static bool HasSupersedingFamilyRecord(
+        ILinkCache<ISkyrimMod, ISkyrimModGetter>? linkCache, FormKey subjectFormKey, HashSet<ModKey> family)
+    {
+        if (linkCache == null || family.Count == 0) return false;
+
+        foreach (var ctx in linkCache.ResolveAllContexts<INpc, INpcGetter>(subjectFormKey))
+        {
+            if (!ctx.ModKey.Equals(subjectFormKey.ModKey) && family.Contains(ctx.ModKey)) return true;
+        }
+
+        return false;
+    }
+
     private async Task<INpcGetter?> TryRepairMeshOnlyRecordPairingAsync(
-        FormKey subjectFormKey, INpcGetter current, string subjectNifRel, ModSetting meshMod,
-        string npcIdentifier)
+        FormKey subjectFormKey, string subjectNifRel, ModSetting meshMod, string npcIdentifier)
     {
         var linkCache = _environmentStateProvider.LinkCache;
         if (linkCache == null) return null;
