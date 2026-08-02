@@ -710,7 +710,7 @@ Once the library gets big, the boxes at the top make it manageable — they’re
 
 ![Randomize window](docs/Screenshots/NPCs/Randomize_Window.png)
 
-The **Randomize** button bulk-assigns random appearances. You can scope it to the visible (filtered) NPCs or all NPCs, control whether base and shared appearances are allowed (and how shares are matched — by race, gender, weight), pick the appearance source (mods, favorites, or both), and tick exactly which mods are eligible to draw from. **Randomize** applies the assignment; **Clear Randomized NPCs** reverts it.
+The **Randomize** button bulk-assigns random appearances. You can scope it to the visible (filtered) NPCs or all NPCs, control whether base and shared appearances are allowed (and how shares are matched — by race, gender, weight), decide whether NPCs that end up with only one eligible appearance are assigned it or left alone (**Allow single-option NPCs**, off by default), pick the appearance source (mods, favorites, or both), and tick exactly which mods are eligible to draw from. **Randomize** applies the assignment; **Clear Randomized NPCs** reverts it.
 
 ### Zoom Controls
 

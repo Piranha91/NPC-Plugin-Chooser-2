@@ -1653,6 +1653,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         var scope = optionsVm.Scope;
         bool allowBaseMod = optionsVm.AllowBaseMod;
+        bool allowSingleOptionNpcs = optionsVm.AllowSingleOptionNpcs;
         bool sharingEnabled = optionsVm.AllowSharedAppearance;
         bool forceShared = sharingEnabled && optionsVm.ForceSharedAppearance;
         bool sameRace = sharingEnabled && optionsVm.ShareFromSameRace;
@@ -1739,6 +1740,7 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         // Build each target NPC's candidate pool of (mod, sourceNpc) appearances.
         var eligibleByNpc = new Dictionary<FormKey, List<RandomCandidate>>();
+        int singleOptionSkipCount = 0;
         foreach (var npc in targetNpcs)
         {
             var targetKey = npc.NpcFormKey;
@@ -1802,14 +1804,19 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
                     foreach (var d in favoriteDonors) TryAddShared(d.ModName, d.SourceKey);
             }
 
-            if (pool.Count > 0)
+            // A one-candidate pool isn't a random pick, it's a forced one. Unless the user opts
+            // in, keep those NPCs out of the run entirely (like the ones with no candidates at
+            // all) so whatever they came in with — including a curated pick — survives untouched.
+            if (pool.Count > 1 || (pool.Count == 1 && allowSingleOptionNpcs))
                 eligibleByNpc[targetKey] = pool;
+            else if (pool.Count == 1)
+                singleOptionSkipCount++;
         }
 
         var applicableNpcs = targetNpcs
             .Where(n => eligibleByNpc.ContainsKey(n.NpcFormKey))
             .ToList();
-        int noEligibleCount = targetNpcs.Count - applicableNpcs.Count;
+        int noEligibleCount = targetNpcs.Count - applicableNpcs.Count - singleOptionSkipCount;
 
         // Face owners first, then the NPCs that copy from them, deepest chains last. A templated
         // NPC's own selection is inert — the game draws the terminus's face — so it can only be
@@ -1835,10 +1842,19 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
 
         if (!applicableNpcs.Any())
         {
-            ScrollableMessageBox.Show(
+            var nothingMessage = new StringBuilder();
+            nothingMessage.Append(
                 "No NPCs in the selected set have an eligible appearance under these options. " +
-                "Make sure at least one source mod is checked (and, for borrowed faces, that 'Allow shared appearances' is enabled).",
-                "Nothing to Randomize");
+                "Make sure at least one source mod is checked (and, for borrowed faces, that 'Allow shared appearances' is enabled).");
+            if (singleOptionSkipCount > 0)
+            {
+                nothingMessage.AppendLine();
+                nothingMessage.AppendLine();
+                nothingMessage.Append($"{singleOptionSkipCount} NPC(s) have exactly one eligible appearance — " +
+                                      "check 'Allow single-option NPCs' to include them.");
+            }
+
+            ScrollableMessageBox.Show(nothingMessage.ToString(), "Nothing to Randomize");
             return;
         }
 
@@ -1850,6 +1866,12 @@ public class VM_NpcSelectionBar : ReactiveObject, IDisposable
         {
             confirmation.AppendLine();
             confirmation.AppendLine($"{noEligibleCount} NPC(s) in the set have no eligible appearance under these options and will be skipped.");
+        }
+        if (singleOptionSkipCount > 0)
+        {
+            confirmation.AppendLine();
+            confirmation.AppendLine($"{singleOptionSkipCount} NPC(s) have only one eligible appearance and will be left alone " +
+                                    "('Allow single-option NPCs' is off).");
         }
         if (overwriteCount > 0)
         {

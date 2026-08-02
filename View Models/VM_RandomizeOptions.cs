@@ -66,6 +66,11 @@ public class VM_RandomizeOptions : ReactiveObject, IDisposable
     // --- Base appearance ---
     [Reactive] public bool AllowBaseMod { get; set; } = false;
 
+    // --- Single-option NPCs ---
+    // An NPC with exactly one eligible appearance has nothing to randomize between, so by
+    // default it is left out of the run entirely (keeping whatever selection it came in with).
+    [Reactive] public bool AllowSingleOptionNpcs { get; set; } = false;
+
     // --- Shared appearances ---
     [Reactive] public bool AllowSharedAppearance { get; set; } = false;
     [Reactive] public bool ForceSharedAppearance { get; set; } = true;

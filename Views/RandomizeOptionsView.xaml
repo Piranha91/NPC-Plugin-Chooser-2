@@ -82,6 +82,11 @@
                 </StackPanel>
             </Border>
 
+            <!-- Single-option NPCs -->
+            <CheckBox IsChecked="{Binding AllowSingleOptionNpcs}" Margin="0,0,0,6"
+                      Content="Allow single-option NPCs"
+                      ToolTip="If unchecked, an NPC that has exactly one eligible appearance under these options is left out of the run entirely — there is nothing to randomize between, so its current selection is kept as-is. If checked, that single appearance is assigned to it."/>
+
             <Separator Margin="0,2,0,8"/>
 
             <!-- Appearance source -->

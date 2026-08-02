@@ -44,6 +44,7 @@ public class VM_RandomizeOptionsTests
 
             vm.Scope.Should().Be(RandomizeScope.VisibleNpcs);
             vm.AllowBaseMod.Should().BeFalse();
+            vm.AllowSingleOptionNpcs.Should().BeFalse();
             vm.ForceSharedAppearance.Should().BeTrue();
             vm.AllowSharedAppearance.Should().BeFalse();
             vm.AppearanceSource.Should().Be(RandomizeAppearanceSource.ModsAndFavorites);
