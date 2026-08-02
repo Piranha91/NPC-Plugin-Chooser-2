@@ -1287,6 +1287,42 @@ public class OutputValidator
     }
 
     /// <summary>
+    /// Removes the source-plugin suffix this app appends when it duplicates a record into the
+    /// output — <c>NordRaceChild</c> -> <c>NordRaceChild_RSChildren.esp</c>. RecordHandler mints it
+    /// at three sites, twice from the mod's own plugin and once from the record's defining plugin,
+    /// always as <c>"_" + ModKey</c>.
+    ///
+    /// <para>Without this, "Include As New" made every NPC it touched fail the record comparison:
+    /// the mode exists to give a mod its own copy of a shared record, so a difference here is the
+    /// feature working, not a defect. On the measuring run all 11 RS Children NPCs reported as
+    /// Errors — and the patcher's own race-drift advice is what tells users to turn the mode on.</para>
+    ///
+    /// <para>Matched against WHOLE candidate plugin names rather than by scanning for the last
+    /// underscore, because plugin names contain underscores of their own
+    /// (<c>OCW_Obscure's_CollegeofWinterhold.esp</c>) and there is no way to tell the separator
+    /// from the name's own underscores. The longest match wins, so one plugin name being the tail
+    /// of another cannot under-strip. Both sides are normalised the same way, and a stem is only
+    /// taken when something is left of it. Pure — no state — so it can be tested directly.</para>
+    /// </summary>
+    internal static string StripDuplicateSuffix(string? editorId, IEnumerable<ModKey> candidatePlugins)
+    {
+        if (string.IsNullOrEmpty(editorId)) return editorId ?? string.Empty;
+
+        string best = editorId;
+        foreach (var plugin in candidatePlugins)
+        {
+            var suffix = "_" + plugin.FileName;
+            if (editorId.Length <= suffix.Length) continue;
+            if (!editorId.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var stem = editorId.Substring(0, editorId.Length - suffix.Length);
+            if (stem.Length < best.Length) best = stem;
+        }
+
+        return best;
+    }
+
+    /// <summary>
     /// FormLink equivalence by resolved EditorID. The same FormKey is trivially equal; differing
     /// FormKeys are equivalent when both resolve to records with the same (non-empty) EditorID — this
     /// handles records the patcher remapped/duplicated into the output. Falls back to FormKey identity
@@ -1303,7 +1339,15 @@ public class OutputValidator
         string? bEid = ResolveEditorId(b, linkCache, src);
         if (!string.IsNullOrEmpty(aEid) && !string.IsNullOrEmpty(bEid))
         {
-            return string.Equals(aEid, bEid, StringComparison.OrdinalIgnoreCase);
+            // Normalised so an "Include As New" duplicate matches the record it was copied from:
+            // that rename is the mode working, not a mismatch. The candidates are the selected
+            // mod's own plugins (two of RecordHandler's three mint sites) plus each side's own
+            // defining plugin (the third).
+            var candidates = src.ModKeys.Append(a.FormKey.ModKey).Append(b.FormKey.ModKey);
+            return string.Equals(
+                StripDuplicateSuffix(aEid, candidates),
+                StripDuplicateSuffix(bEid, candidates),
+                StringComparison.OrdinalIgnoreCase);
         }
         return false; // different FormKeys with no EditorID to vouch for equivalence
     }
@@ -1327,7 +1371,18 @@ public class OutputValidator
             if (excludeKeys != null && excludeKeys.Contains(hp.FormKey)) continue;
             if (excludeHair && IsHairHeadPart(hp, linkCache, src)) continue;
             var eid = ResolveEditorId(hp, linkCache, src);
-            set.Add(!string.IsNullOrEmpty(eid) ? "eid:" + eid : "fk:" + hp.FormKey);
+            // Same normalisation as AppearanceLinkEquivalent, so an "Include As New" copy of a head
+            // part is the same set member as the part it was copied from. Each side is keyed
+            // independently here, hence the candidates covering both the mod's plugins and this
+            // link's own defining plugin.
+            if (!string.IsNullOrEmpty(eid))
+            {
+                set.Add("eid:" + StripDuplicateSuffix(eid, src.ModKeys.Append(hp.FormKey.ModKey)));
+            }
+            else
+            {
+                set.Add("fk:" + hp.FormKey);
+            }
         }
         return set;
     }
