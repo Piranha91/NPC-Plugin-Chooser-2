@@ -395,7 +395,21 @@ public class OutputValidator
         {
             if (_settings.UseSkyPatcherMode)
             {
-                NoteSkyPatcherRecipientTemplate(npcFk, recipientRecord, displayName, selectedModName, linkCache, result, log);
+                // ...unless this run already told SkyPatcher to clear the bit. The recipient's
+                // record still READS as templated — SkyPatcher removes the flag at load, not in the
+                // plugin — but the face the user picked does land, so the inheritance is not news.
+                // Patcher.ApplySkyPatcherDirectives emits removeTemplateFlags=traits exactly when
+                // the recipient inherits its face and the surrogate does not; without this gate the
+                // check reports every one of them as a face the user will not get (80 rows on the
+                // reporting run, all false).
+                if (!SkyPatcherClearsTraits(npc2IniMap, npcFk))
+                {
+                    NoteSkyPatcherRecipientTemplate(npcFk, recipientRecord, displayName, selectedModName, linkCache, result, log);
+                }
+                else
+                {
+                    log.AppendLine("  TEMPLATE inheritance cleared at runtime by removeTemplateFlags=traits; no row");
+                }
             }
             else if (!TryRedirectToTemplate(
                          npcFk, recipientRecord, displayName, ref selectedModName, ref donorFk,
@@ -742,6 +756,13 @@ public class OutputValidator
     /// with no Name; trim it so a row reads as a name rather than a fragment.</summary>
     private string DescribeNpc(INpcGetter npc) =>
         Auxilliary.GetLogString(npc, _settings.LocalizationLanguage).TrimEnd(' ', '|');
+
+    /// <summary>True when this run's own .ini strips the recipient's Traits inheritance at load, so
+    /// its still-templated plugin record does not describe what the game renders.</summary>
+    private static bool SkyPatcherClearsTraits(Dictionary<string, Npc2SkyPatcherLine>? npc2IniMap, FormKey npcFk) =>
+        npc2IniMap != null &&
+        npc2IniMap.TryGetValue(FormKeyToSkyPatcherKey(npcFk), out var line) &&
+        line.ClearsTraitsTemplate;
 
     /// <summary>
     /// SkyPatcher-mode recipient: nothing of this app's can be re-targeted (the record is never
@@ -2565,6 +2586,12 @@ public class OutputValidator
     {
         public FormKey Surrogate;
         public bool HasSurrogate;
+
+        /// <summary>The line carries <c>removeTemplateFlags=traits</c>, so SkyPatcher clears the
+        /// recipient's Traits bit at load and the record's own (still-templated) plugin state is
+        /// NOT what the game renders. See <see cref="Patcher.ApplySkyPatcherDirectives"/>.</summary>
+        public bool ClearsTraitsTemplate;
+
         public string RawLine = string.Empty;
     }
 
@@ -2597,16 +2624,26 @@ public class OutputValidator
             if (filterKey != "filterbynpcs" && filterKey != "filterbynpcsformid") continue;
 
             // Actions part: copyVisualStyle=<surrogate>,skin=...,height=... (the surrogate FormKey
-            // has no comma, so a simple per-segment scan is safe).
+            // has no comma, so a simple per-segment scan is safe). SkyPatcherInterface.WriteIni
+            // joins actions with ',' and emits removeTemplateFlags with the single value "traits",
+            // so that directive is always its own segment here.
             FormKey surrogate = default;
             bool hasSurrogate = false;
+            bool clearsTraits = false;
             foreach (var seg in line.Substring(colon + 1).Split(','))
             {
                 var trimmed = seg.Trim();
-                if (trimmed.StartsWith("copyVisualStyle=", StringComparison.OrdinalIgnoreCase))
+                if (!hasSurrogate && trimmed.StartsWith("copyVisualStyle=", StringComparison.OrdinalIgnoreCase))
                 {
                     hasSurrogate = TryParseSkyPatcherFormKey(trimmed.Substring("copyVisualStyle=".Length).Trim(), out surrogate);
-                    break;
+                }
+                else if (trimmed.StartsWith("removeTemplateFlags=", StringComparison.OrdinalIgnoreCase))
+                {
+                    // SkyPatcher lower-cases each comma-separated value before matching it against
+                    // its flag map (npc.cpp), so match the same way.
+                    clearsTraits |= trimmed.Substring("removeTemplateFlags=".Length)
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Any(v => v.Equals("traits", StringComparison.OrdinalIgnoreCase));
                 }
             }
 
@@ -2614,6 +2651,7 @@ public class OutputValidator
             {
                 Surrogate = surrogate,
                 HasSurrogate = hasSurrogate,
+                ClearsTraitsTemplate = clearsTraits,
                 RawLine = line.Length > 400 ? line.Substring(0, 400) + "..." : line
             };
 
