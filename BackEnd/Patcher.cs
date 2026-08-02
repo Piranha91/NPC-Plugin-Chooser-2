@@ -107,6 +107,12 @@ public class Patcher : OptionalUIModule
     private Dictionary<FormKey, NpcAppearanceData> _accumulatedTokenData = new();
     private List<ModKey> _generatedOutputPlugins = new();
 
+    // NPCs that had a selection this run did NOT patch, mapped to the reason: rejected by
+    // pre-run screening (handed over by VM_Run) or aborted by the FaceGen ladder. Written to
+    // NPC_Token.json alongside the processed set so "Validate Output" can tell "we never
+    // touched this NPC" apart from "we patched it and it came out wrong".
+    private readonly Dictionary<FormKey, string> _skippedTokenData = new();
+
     // Tracks which NPCs reference each record added to the OutputMod during patching, so
     // a failed NPC can roll back any records that no other NPC depends on.
     private readonly Dictionary<FormKey, HashSet<FormKey>> _patchedRecordOwners = new();
@@ -169,6 +175,22 @@ public class Patcher : OptionalUIModule
         // Clear accumulated token data at the start of a new patching session
         _accumulatedTokenData.Clear();
         _generatedOutputPlugins.Clear();
+        // Runs before screening, so the rejections VM_Run hands over below survive this reset.
+        _skippedTokenData.Clear();
+    }
+
+    /// <summary>
+    /// Records the selections pre-run screening rejected, so they land in NPC_Token.json's
+    /// skipped map. Called between screening and patching — <see cref="PreInitializationLogicAsync"/>
+    /// has already cleared the map by then, and the FaceGen ladder adds its own aborts during the
+    /// run.
+    /// </summary>
+    public void RecordScreenedOutNpcs(IReadOnlyDictionary<FormKey, string> rejections)
+    {
+        foreach (var (npcFormKey, reason) in rejections)
+        {
+            _skippedTokenData[npcFormKey] = "Skipped before patching: " + reason;
+        }
     }
 
     private void RegisterRecordOwnership(FormKey npcFormKey, IMajorRecordGetter record,
@@ -1044,6 +1066,10 @@ public class Patcher : OptionalUIModule
                                     AppendLog($"      {faceGenDecision.LogLine}", false, false);
                                     _faceGenSkippedNpcs.Add((npcIdentifier, selectedModDisplayName,
                                         faceGenDecision.AbortReason ?? string.Empty));
+                                    // Same wording as ReportFaceGenSkippedNpcs' header, so the token
+                                    // reason reads identically to the run log entry it came from.
+                                    _skippedTokenData[npcFormKey] = "Face could not be assembled safely: " +
+                                                                    (faceGenDecision.AbortReason ?? "no usable face mesh was found.");
                                     return;
                                 }
 
@@ -2433,7 +2459,8 @@ public class Patcher : OptionalUIModule
         {
             CreationDate = DateTime.Now.ToString("o"),
             CreatedPlugins = _generatedOutputPlugins,
-            ProcessedNpcs = _accumulatedTokenData
+            ProcessedNpcs = _accumulatedTokenData,
+            SkippedNpcs = _skippedTokenData
         };
 
         JSONhandler<NpcToken>.SaveJSONFile(tokenData, tokenFilePath, out bool tokenSaved, out exceptionStr);

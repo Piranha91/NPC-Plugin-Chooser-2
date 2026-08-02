@@ -137,6 +137,22 @@ public class OutputValidator
         // surrogate template (for the .ini-line and surrogate record/FaceGen checks).
         var npc2IniMap = _settings.UseSkyPatcherMode ? ParseNpc2SkyPatcherIni(npc2IniPath) : null;
 
+        // --- What the last run actually patched ---
+        // Read from the DEPLOYED Data folder rather than the configured output directory, so it
+        // describes the output the game (and everything below) is actually seeing.
+        var lastRun = LoadDeployedRunLedger(dataFolder, log);
+        if (lastRun != null && lastRun.ProcessedNpcs.Count == 0)
+        {
+            // A bootstrap marker from a crashed run, or a token written before this field existed.
+            // Either way its emptiness proves nothing, and trusting it would report every NPC as
+            // unpatched. Fall back to grading everything.
+            result.Notes.Add(
+                "NPC_Token.json in your Data folder lists no patched NPCs, so this report could not tell " +
+                "which NPCs the last run actually covered. Every NPC was graded as if it had been patched; " +
+                "if the last run was interrupted, re-run the patcher before trusting the findings below.");
+            lastRun = null;
+        }
+
         // --- Per-NPC checks ---
         var modSettingsByName = _settings.ModSettings
             .GroupBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase)
@@ -165,7 +181,7 @@ public class OutputValidator
                 try
                 {
                     using (ContextualPerformanceTracer.Trace("ValidateNpc"))
-                        ValidateNpc(npcFk, linkCache, listings, modSettingsByName, skyIndex, npc2IniMap, dataFolder, scopedNpcs, run, result, log);
+                        ValidateNpc(npcFk, linkCache, listings, modSettingsByName, skyIndex, npc2IniMap, dataFolder, scopedNpcs, lastRun, run, result, log);
                 }
                 catch (Exception ex)
                 {
@@ -273,6 +289,7 @@ public class OutputValidator
         Dictionary<string, Npc2SkyPatcherLine>? npc2IniMap,
         string dataFolder,
         IReadOnlySet<FormKey> scopedNpcs,
+        NpcToken? lastRun,
         RunContext run,
         ValidationRunResult result,
         StringBuilder log)
@@ -301,6 +318,13 @@ public class OutputValidator
             : npcFk.ToString();
 
         log.AppendLine($"NPC {displayName} [{npcFk}] -> '{selectedModName}' (donor {donorFk}, winner {winningModKey.FileName})");
+
+        // Did the last run take responsibility for this NPC at all? Everything below grades the
+        // output against the selection, which only means something once the answer is yes.
+        if (lastRun != null && !CheckLastRunCoverage(npcFk, displayName, selectedModName, lastRun, result, log))
+        {
+            return;
+        }
 
         if (!modSettingsByName.TryGetValue(selectedModName, out var modSetting))
         {
@@ -395,6 +419,147 @@ public class OutputValidator
         // faction, keyword...) match on the RECIPIENT's own record, not the template's.
         using (ContextualPerformanceTracer.Trace("CheckSkyPatcher"))
             CheckSkyPatcher(npcFk, displayName, selectedModName, recipientRecord, linkCache, skyIndex, result);
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Last-run coverage
+    // ----------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Reads the deployed NPC_Token.json — the ledger the patcher writes naming every NPC it
+    /// processed and every one it deliberately skipped. Returns null when it is missing or
+    /// unreadable, in which case validation grades every NPC exactly as it did before this
+    /// check existed. Deliberately a SOFT dependency: an old or hand-placed output should still
+    /// validate, just without the extra attribution.
+    /// </summary>
+    private static NpcToken? LoadDeployedRunLedger(string dataFolder, StringBuilder log)
+    {
+        var tokenPath = Path.Combine(dataFolder, "NPC_Token.json");
+        if (!File.Exists(tokenPath))
+        {
+            log.AppendLine($"No NPC_Token.json in the data folder ({tokenPath}); last-run coverage unknown.");
+            return null;
+        }
+
+        var token = JSONhandler<NpcToken>.LoadJSONFile(tokenPath, out bool success, out string exception);
+        if (!success || token == null)
+        {
+            log.AppendLine($"Could not read NPC_Token.json: {exception}");
+            return null;
+        }
+
+        log.AppendLine($"Deployed NPC_Token.json: {token.ProcessedNpcs.Count} processed, " +
+                       $"{token.SkippedNpcs.Count} skipped, written {token.CreationDate}, " +
+                       $"plugins [{string.Join(", ", token.CreatedPlugins)}].");
+        return token;
+    }
+
+    /// <summary>How the last run's ledger accounts for one NPC.</summary>
+    internal enum LastRunCoverage
+    {
+        /// The last run patched it with the mod selected now: grade the output.
+        Covered,
+
+        /// The last run never patched it — screening rejected the selection, or the FaceGen
+        /// ladder deliberately left it alone.
+        NotPatched,
+
+        /// The last run patched it with a DIFFERENT mod than the one selected now.
+        SelectionChanged
+    }
+
+    /// <summary>
+    /// Three-way triage of one NPC against the last run's ledger. Pure — no state, no logging —
+    /// so it can be tested directly. <paramref name="detail"/> carries the recorded skip reason
+    /// (NotPatched, null when the run recorded none) or the mod the last run used
+    /// (SelectionChanged); it is empty for Covered.
+    /// </summary>
+    internal static LastRunCoverage ClassifyLastRunCoverage(
+        FormKey npcFk, string selectedModName, NpcToken lastRun, out string? detail)
+    {
+        if (lastRun.ProcessedNpcs.TryGetValue(npcFk, out var processed))
+        {
+            if (string.Equals(processed.ModName, selectedModName, StringComparison.OrdinalIgnoreCase))
+            {
+                detail = null;
+                return LastRunCoverage.Covered;
+            }
+
+            detail = processed.ModName;
+            return LastRunCoverage.SelectionChanged;
+        }
+
+        // Absent from the processed set. The skipped map names the reason when the run recorded
+        // one; tokens written before that map existed simply have nothing to say, which is why
+        // a missing reason is not itself treated as "covered".
+        detail = lastRun.SkippedNpcs.TryGetValue(npcFk, out var reason) ? reason : null;
+        return LastRunCoverage.NotPatched;
+    }
+
+    /// <summary>
+    /// Applies <see cref="ClassifyLastRunCoverage"/>. Returns true when the deeper checks should
+    /// run — i.e. the last run patched this NPC with the mod that is selected NOW, so anything
+    /// wrong from here on really is this app's output or its deployment.
+    ///
+    /// <para>The other two outcomes each get one row and stop:</para>
+    /// <list type="bullet">
+    /// <item><b>Not patched</b> — Info. The selection was rejected by pre-run screening (the user
+    /// was shown the reason and chose to continue) or the FaceGen ladder deliberately left the NPC
+    /// alone. Nothing of ours is in the game for this NPC, so grading the winning record against
+    /// the selection would report a mismatch this app did not cause and cannot fix.</item>
+    /// <item><b>Patched with a different mod</b> — Warning, not Info. The selection changed after
+    /// the last run, so the deployed output is stale. Unlike the Info case the user has had no
+    /// notice of it, and it does change the face they get.</item>
+    /// </list>
+    /// </summary>
+    private bool CheckLastRunCoverage(
+        FormKey npcFk,
+        string displayName,
+        string selectedModName,
+        NpcToken lastRun,
+        ValidationRunResult result,
+        StringBuilder log)
+    {
+        var coverage = ClassifyLastRunCoverage(npcFk, selectedModName, lastRun, out var detail);
+        if (coverage == LastRunCoverage.Covered) return true;
+
+        if (coverage == LastRunCoverage.SelectionChanged)
+        {
+            var processed = lastRun.ProcessedNpcs[npcFk];
+            log.AppendLine($"  STALE: last run patched this NPC with '{detail}', now selected '{selectedModName}'.");
+            result.Issues.Add(new ValidationIssue
+            {
+                Severity = ValidationSeverity.Warning,
+                Check = ValidationCheckKind.Selection,
+                NpcDisplayName = displayName,
+                NpcFormKey = npcFk.ToString(),
+                SelectedMod = selectedModName,
+                Issue = "Your selection for this NPC changed after the last patch run, so the deployed output " +
+                        "does not reflect it. Re-run the patcher to apply it. The remaining checks were skipped, " +
+                        "since the deployed output was built for a different mod.",
+                WinningSource = processed.OutputPlugin.FileName,
+                Details = $"Last run patched this NPC with '{detail}' " +
+                          $"(appearance plugin {processed.AppearancePlugin.FileName}).",
+            });
+            return false;
+        }
+
+        log.AppendLine($"  NOT PATCHED by the last run{(detail == null ? string.Empty : $": {detail}")}.");
+        result.Issues.Add(new ValidationIssue
+        {
+            Severity = ValidationSeverity.Info,
+            Check = ValidationCheckKind.Selection,
+            NpcDisplayName = displayName,
+            NpcFormKey = npcFk.ToString(),
+            SelectedMod = selectedModName,
+            Issue = "Not patched. The last run did not include this NPC, so its appearance is whatever your " +
+                    "load order already supplies and nothing below applies to it. Either the selection was " +
+                    "skipped before patching (you were shown the reason and chose to continue), or it was " +
+                    "deliberately left alone to avoid the dark-face bug.",
+            Details = detail ?? "The deployed output does not record why. Re-run the patcher to have the reason " +
+                                "recorded, or check the run log's screening section.",
+        });
+        return false;
     }
 
     // ----------------------------------------------------------------------------------

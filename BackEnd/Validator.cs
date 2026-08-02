@@ -18,6 +18,12 @@ public class Validator : OptionalUIModule
     private readonly RecordHandler _recordHandler;
 
     private Dictionary<FormKey, ScreeningResult> _screeningCache = new();
+
+    /// <summary>The mirror image of <see cref="_screeningCache"/>: every selection this pass
+    /// REJECTED, mapped to the short reason. The patcher stamps it into NPC_Token.json so
+    /// "Validate Output" can say why an NPC went unpatched without the run log.</summary>
+    private Dictionary<FormKey, string> _rejectedSelections = new();
+
     private Dictionary<ModKey, HashSet<ModKey>> _masterPluginCache = new();
 
     /// <summary>Per mod entry (by DisplayName), the plugins the user is not running — see
@@ -92,6 +98,9 @@ public class Validator : OptionalUIModule
         return _screeningCache;
     }
 
+    /// <summary>Selections the last screening pass rejected, FormKey -> reason.</summary>
+    public IReadOnlyDictionary<FormKey, string> GetRejectedSelections() => _rejectedSelections;
+
     public async Task<ValidationReport> ScreenSelectionsAsync(Dictionary<string, ModSetting> modSettingsMap,
         string selectedNpcGroup, CancellationToken ct)
     {
@@ -100,14 +109,16 @@ public class Validator : OptionalUIModule
         _screeningCache = new Dictionary<FormKey, ScreeningResult>();
         var invalidSelections = new List<string>();
         var invalidEntries = new List<InvalidSelection>();
+        _rejectedSelections = new Dictionary<FormKey, string>();
 
-        // Single place a rejection is recorded, so the flat log line and the grouped dialog form
-        // can never drift apart.
-        void Reject(string npcDescription, string modName, string reason)
+        // Single place a rejection is recorded, so the flat log line, the grouped dialog form and
+        // the FormKey-keyed map the patcher stamps into NPC_Token.json can never drift apart.
+        void Reject(FormKey npcFormKey, string npcDescription, string modName, string reason)
         {
             var entry = new InvalidSelection(npcDescription, modName, reason);
             invalidEntries.Add(entry);
             invalidSelections.Add(entry.ToLine());
+            _rejectedSelections[npcFormKey] = reason;
         }
 
         var selections = _settings.SelectedAppearanceMods;
@@ -196,7 +207,7 @@ public class Validator : OptionalUIModule
                     // forceLog: a screening warning means the selection is being dropped, which
                     // the user has to see whether or not verbose logging is on.
                     AppendLog($"  SCREENING WARNING: {errorMsg}", forceLog: true);
-                    Reject(npcFormKey.ToString(), selectedModDisplayName, "Base NPC not found in load order");
+                    Reject(npcFormKey, npcFormKey.ToString(), selectedModDisplayName, "Base NPC not found in load order");
                     if (shouldUpdateUI)
                     {
                         UpdateProgress(i + 1, totalToScreen, $"Screening: {npcIdentifier}");
@@ -230,7 +241,7 @@ public class Validator : OptionalUIModule
                     // forceLog: a screening warning means the selection is being dropped, which
                     // the user has to see whether or not verbose logging is on.
                     AppendLog($"  SCREENING WARNING: {errorMsg}", forceLog: true);
-                    Reject($"{npcIdentifier} (from {appearanceNpcIdenentifier})", selectedModDisplayName,
+                    Reject(npcFormKey, $"{npcIdentifier} (from {appearanceNpcIdenentifier})", selectedModDisplayName,
                         $"Can't appearance swap in {_settings.PatchingMode} mode");
                     if (shouldUpdateUI)
                     {
@@ -254,7 +265,7 @@ public class Validator : OptionalUIModule
                     AppendLog(
                         $"  SCREENING ERROR: Cannot find Mod '{selectedModDisplayName}' for NPC {npcIdentifier}. This selection is invalid or a placeholder.",
                         true);
-                    Reject(npcIdentifier, selectedModDisplayName, "Mod not installed or doesn't contain this NPC");
+                    Reject(npcFormKey, npcIdentifier, selectedModDisplayName, "Mod not installed or doesn't contain this NPC");
                     await Task.Delay(1, ct);
                     continue;
                 }
@@ -270,7 +281,7 @@ public class Validator : OptionalUIModule
                     AppendLog(
                         $"  SCREENING ERROR: For NPC {npcIdentifier}, none of the specified folders for mod '{selectedModDisplayName}' exist on disk. This selection is invalid.",
                         true);
-                    Reject(npcIdentifier, selectedModDisplayName, "Mod folder not found");
+                    Reject(npcFormKey, npcIdentifier, selectedModDisplayName, "Mod folder not found");
                     continue;
                 }
             }
@@ -295,7 +306,7 @@ public class Validator : OptionalUIModule
                         var errorMsg =
                             $"For NPC {npcIdentifier}, the selected mod '{selectedModDisplayName}' provides only FaceGen files for this NPC, and the record it would inherit ({appearanceNpcFormKey}) cannot be resolved from the load order (its defining plugin '{appearanceNpcFormKey.ModKey.FileName}' is missing). This selection is invalid.";
                         AppendLog($"  SCREENING ERROR: {errorMsg}", true);
-                        Reject(npcIdentifier, selectedModDisplayName,
+                        Reject(npcFormKey, npcIdentifier, selectedModDisplayName,
                             $"FaceGen-only selection; NPC record unresolvable - missing '{appearanceNpcFormKey.ModKey.FileName}'");
                         continue;
                     }
@@ -357,7 +368,7 @@ public class Validator : OptionalUIModule
 
                         var errorMsg = $"For NPC {npcIdentifier}, the selected plugin '{sourcePlugin.Value.FileName}' is missing a required master: '{master.FileName}'{rejectionDetail}. This selection is invalid.";
                         AppendLog($"  SCREENING ERROR: {errorMsg}", true);
-                        Reject(npcIdentifier, selectedModDisplayName, $"Missing required master: {master.FileName}");
+                        Reject(npcFormKey, npcIdentifier, selectedModDisplayName, $"Missing required master: {master.FileName}");
                         mastersAreValid = false;
                         break; // A single missing master invalidates the selection.
                     }
@@ -392,7 +403,7 @@ public class Validator : OptionalUIModule
                         $"  SCREENING WARNING: {npcIdentifier} inherits its appearance ({terminusDetail}), and " +
                         $"SkyPatcher mode cannot redirect an inherited face. This selection will be skipped.",
                         forceLog: true);
-                    Reject(npcIdentifier, selectedModDisplayName,
+                    Reject(npcFormKey, npcIdentifier, selectedModDisplayName,
                         "Templated NPC — SkyPatcher can't apply an appearance through a template chain; " +
                         "set Templated NPCs to \"Give each NPC its own copy\"");
                     continue;
@@ -423,7 +434,7 @@ public class Validator : OptionalUIModule
                     AppendLog($"  SCREENING ERROR: For NPC {npcIdentifier}, the appearance chosen from " +
                               $"'{selectedModDisplayName}' {linkFailure.Explanation} This selection is invalid.",
                         true);
-                    Reject(npcIdentifier, selectedModDisplayName, linkFailure.RejectReason);
+                    Reject(npcFormKey, npcIdentifier, selectedModDisplayName, linkFailure.RejectReason);
                     continue;
                 }
             }

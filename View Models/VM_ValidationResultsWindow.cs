@@ -133,9 +133,12 @@ public sealed class VM_ValidationResultsWindow : ReactiveObject, IDisposable
         };
         if (dlg.ShowDialog() != true) return;
 
+        // Deliberately NOT the filtered view: the saved file is the archive, and Info is
+        // suppressed by default, so exporting what's on screen would silently drop the rows
+        // that exist precisely to be a durable record. Copy TSV still follows the view.
         var sb = new StringBuilder();
         sb.AppendLine(string.Join(",", Headers.Select(CsvField)));
-        foreach (var i in FilteredIssues)
+        foreach (var i in _allIssues)
         {
             sb.AppendLine(string.Join(",", Row(i).Select(CsvField)));
         }

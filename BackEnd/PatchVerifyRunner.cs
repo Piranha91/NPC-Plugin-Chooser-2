@@ -217,6 +217,9 @@ public static class PatchVerifyRunner
             foreach (var line in invalid) log.AppendLine("  " + line);
         }
 
+        // Same hand-over VM_Run does, so the headless harness writes the same token ledger.
+        patcher.RecordScreenedOutNpcs(validator.GetRejectedSelections());
+
         var validSelections = validator.GetScreeningCache()
             .Where(kv => kv.Value.SelectionIsValid)
             .ToList();

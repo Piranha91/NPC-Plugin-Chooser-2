@@ -426,6 +426,11 @@ public class VM_Run : ReactiveObject, IDisposable
             var validationReport = await _validator.ScreenSelectionsAsync(modSettingsMap, SelectedNpcGroup, token);
             FinalValidationTime = DateTime.Now - ValidationStartTime.Value;
 
+            // Hand the rejections to the patcher so they reach NPC_Token.json. Done before the
+            // confirmation dialog: if the user backs out there is no run and no token to pollute,
+            // and if they continue the map is already in place for the token written at the end.
+            _patcher.RecordScreenedOutNpcs(_validator.GetRejectedSelections());
+
             bool continuePatching = true;
             if (validationReport.InvalidSelections.Any())
             {

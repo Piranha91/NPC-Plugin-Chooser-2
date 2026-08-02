@@ -864,13 +864,26 @@ First, choose whether to validate every NPC with a selection or a hand-picked su
 
 ![Validate output - choose NPCs](docs/Screenshots/Run/Validate_Output_Choose_NPCs.png)
 
-Each finding is tagged with the check that produced it — **Selection** (the chosen mod is no longer configured), **Record** (the conflict-winning NPC record doesn’t match the selected mod, with a field-level diff), **Asset** (the deployed FaceGen mesh differs from the selected mod’s), **FaceGen** (the deployed `.nif` doesn’t agree with the head parts on the NPC’s record — the dark face bug), **SkyPatcher**, **Template**, and **Environment** — and names the **Winning Source** that overrode your intended appearance. You can export everything to TSV/CSV:
+Each finding is tagged with the check that produced it — **Selection** (the chosen mod is no longer configured, or the last run didn’t patch this NPC — see below), **Record** (the conflict-winning NPC record doesn’t match the selected mod, with a field-level diff), **Asset** (the deployed FaceGen mesh differs from the selected mod’s), **FaceGen** (the deployed `.nif` doesn’t agree with the head parts on the NPC’s record — the dark face bug), **SkyPatcher**, **Template**, and **Environment** — and names the **Winning Source** that overrode your intended appearance.
+
+The **Error / Warning / Info** checkboxes beside the filter box control which severities the table shows. **Info is unchecked by default**: those rows are context rather than problems, and leaving them on would bury the findings you opened the window for. The summary line above always counts all three, so you can see at a glance that rows are being hidden. Note that **Save CSV always writes every row**, including the hidden ones — the saved file is meant to be a complete record. **Copy TSV** copies what’s currently on screen.
 
 ![Validate output - results](docs/Screenshots/Run/Validate_Outputs_Results.png)
 
 (The example above is a deliberately contrived setup — an “Ordinary People” overhaul placed so it wins conflicts over N.P.C.2’s output — to demonstrate what each finding looks like:)
 
 ![Contrived demo load order](docs/Screenshots/Run/Validate_Output_Demo_Situation_Contrived.png)
+
+#### “Not patched” findings
+
+The NPC list you validate comes from your *current* selections, but a run doesn’t necessarily patch all of them: a selection can be dropped by the pre-run screening (you’re shown the list and asked whether to continue), and the patcher deliberately leaves an NPC alone when assembling its face would have caused the dark face bug. For those NPCs nothing of N.P.C.2’s is in your game at all, and grading them against your selection would report a mismatch the app didn’t cause and can’t fix.
+
+So the validator checks first whether the last run actually covered each NPC, using the `NPC_Token.json` ledger that ships alongside your output:
+
+* **Not patched** — an **Info** row (hidden unless you tick *Info*), naming the recorded reason it was skipped. Nothing is wrong with your output; this NPC simply isn’t part of it, and its appearance is whatever your load order already supplies. The rest of the checks are skipped for it.
+* **Selection changed after the last run** — a **warning**, because unlike the above you’ve had no notice of it. You picked a different mod for this NPC since you last generated output, so the deployed result is stale. Re-run the patcher.
+
+If `NPC_Token.json` is missing or lists no NPCs — an older output, or a run that was interrupted before it finished — the validator says so in the notes and grades everything as before, rather than claiming your whole output is missing.
 
 #### NPCs that inherit someone else’s face
 
