@@ -446,9 +446,11 @@ public class OutputValidator
         }
 
         // Check 2: the deployed FaceGen should match the selected mod's. subjectFk is the NPC whose
-        // FaceGen the game actually loads — the recipient, or its Traits template.
+        // FaceGen the game actually loads — the recipient, or its Traits template. It only leaves
+        // npcFk when TryRedirectToTemplate above re-pointed it, so equality IS "no redirect".
         using (ContextualPerformanceTracer.Trace("CheckFaceGen"))
-            CheckFaceGen(npcFk, subjectFk, donorFk, displayName, selectedModName, modSetting, dataFolder, linkCache, run, result, log);
+            CheckFaceGen(npcFk, subjectFk, subjectFk.Equals(npcFk), donorFk, displayName, selectedModName,
+                modSetting, dataFolder, linkCache, run, result, log);
 
         // Check 3: any SkyPatcher mod that would override this NPC at runtime. Filters (race,
         // faction, keyword...) match on the RECIPIENT's own record, not the template's.
@@ -707,8 +709,11 @@ public class OutputValidator
             string nifPath = Path.Combine(dataFolder, relMesh);
             if (File.Exists(nifPath))
             {
+                // subjectFk is the TEMPLATE here, whose FaceGen renders on this NPC — a preset in
+                // that seat keeps the full warning, so the stand-in flag is false.
                 using (ContextualPerformanceTracer.Trace("FaceGenConsistency"))
-                    CheckFaceGenHeadPartConsistency(npcFk, subjectFk, nifPath, relMesh, displayName, selectedModName, linkCache, result);
+                    CheckFaceGenHeadPartConsistency(npcFk, subjectFk, subjectStandsInForNpc: false, nifPath,
+                        relMesh, displayName, selectedModName, linkCache, result);
             }
             return false;
         }
@@ -1100,17 +1105,22 @@ public class OutputValidator
 
             case SurrogateRedirect.ConsistencyOnly:
                 // No mod-side counterpart to compare against, but the head-part scan needs none.
+                // The subject is the surrogate's TEMPLATE root, so it does not stand in for npcFk.
                 var (relMesh, _) = Auxilliary.GetFaceGenSubPathStrings(subjectFk, regularized: true);
                 string nifPath = Path.Combine(dataFolder, relMesh);
                 if (File.Exists(nifPath))
                 {
                     using (ContextualPerformanceTracer.Trace("FaceGenConsistency"))
-                        CheckFaceGenHeadPartConsistency(npcFk, subjectFk, nifPath, relMesh, displayName, selectedModName, linkCache, result);
+                        CheckFaceGenHeadPartConsistency(npcFk, subjectFk, subjectStandsInForNpc: false, nifPath,
+                            relMesh, displayName, selectedModName, linkCache, result);
                 }
                 break;
 
             default:
-                CheckFaceGen(npcFk, subjectFk, subjectDonorFk, displayName, selectedModName, modSetting, dataFolder, linkCache, run, result, log);
+                // Only an un-redirected surrogate is this NPC's own 1:1 stand-in — it is minted per
+                // target, so its FaceGen renders on npcFk and nothing else.
+                CheckFaceGen(npcFk, subjectFk, redirect == SurrogateRedirect.None, subjectDonorFk, displayName,
+                    selectedModName, modSetting, dataFolder, linkCache, run, result, log);
                 break;
         }
 
@@ -1590,6 +1600,7 @@ public class OutputValidator
     private void CheckFaceGen(
         FormKey npcFk,        // recipient NPC — used for row identity (the NPC the user cares about)
         FormKey subjectFk,    // whose deployed FaceGen to check: recipient in record mode, surrogate in SkyPatcher mode
+        bool subjectStandsInForNpc, // subject renders on npcFk alone — false once a Traits template is in the seat
         FormKey donorFk,
         string displayName,
         string selectedModName,
@@ -1670,7 +1681,8 @@ public class OutputValidator
                 }
 
                 using (ContextualPerformanceTracer.Trace("FaceGenConsistency"))
-                    CheckFaceGenHeadPartConsistency(npcFk, subjectFk, subjectPath, targetMeshRel, displayName, selectedModName, linkCache, result, fidelity);
+                    CheckFaceGenHeadPartConsistency(npcFk, subjectFk, subjectStandsInForNpc, subjectPath,
+                        targetMeshRel, displayName, selectedModName, linkCache, result, fidelity);
             }
 
             if (!subjectExists && sourcePath == null)
@@ -1982,8 +1994,9 @@ public class OutputValidator
     /// mismatch — none of which the renderer or patcher can detect.
     /// </summary>
     private void CheckFaceGenHeadPartConsistency(
-        FormKey npcFk, FormKey subjectFk, string nifPath, string relMeshPath, string displayName,
-        string selectedModName, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, ValidationRunResult result,
+        FormKey npcFk, FormKey subjectFk, bool subjectStandsInForNpc, string nifPath, string relMeshPath,
+        string displayName, string selectedModName, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        ValidationRunResult result,
         FaceGenConsistencyAnalyzer.DeliveryFidelity fidelity = FaceGenConsistencyAnalyzer.DeliveryFidelity.Unknown)
     {
         if (!linkCache.TryResolve<INpcGetter>(subjectFk, out var npcGetter))
@@ -2011,11 +2024,16 @@ public class OutputValidator
         // A mismatch here is real on disk but has no visible effect, so warning about the
         // dark-face bug (78 rows on the reporting run — WICO ships FaceGen for every vanilla
         // preset) would send the user chasing a defect the game cannot show. Downgraded only when
-        // the preset is the row's own subject: a preset serving as another NPC's Traits template
-        // (subjectFk != npcFk) DOES get its FaceGen rendered — on the inheritor — and keeps the
-        // full warning.
-        if (subjectFk == npcFk &&
-            npcGetter.Configuration.Flags.HasFlag(NpcConfiguration.Flag.IsCharGenFacePreset))
+        // the subject stands in for the row's own NPC: a preset serving as another NPC's Traits
+        // template DOES get its FaceGen rendered — on the inheritor — and keeps the full warning.
+        //
+        // The flag is read off the ROW'S NPC, not the subject. "Never spawns in the world" is a
+        // property of the NPC the user selected for, and in SkyPatcher mode the subject is a
+        // surrogate this app minted — testing subjectFk == npcFk there can never hold, which
+        // silently killed the downgrade for every SkyPatcher run (all 78 came back as warnings).
+        if (subjectStandsInForNpc &&
+            linkCache.TryResolve<INpcGetter>(npcFk, out var rowNpc) &&
+            rowNpc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.IsCharGenFacePreset))
         {
             result.Issues.Add(new ValidationIssue
             {
