@@ -50,10 +50,18 @@ public class SourcePluginDisambiguationRepairTests
         return (settings, mod);
     }
 
+    /// <summary>Runs the pure core over one mod entry, against the given load order.</summary>
     private static void Repair(Settings settings, IEnumerable<ModKey> loadOrder)
     {
-        var handler = new UpdateHandler(settings);
-        Reflect.InvokeVoid(handler, "RepairSourcePluginDisambiguation", loadOrder);
+        var order = loadOrder.ToList();
+        var position = new Dictionary<ModKey, int>();
+        for (int i = 0; i < order.Count; i++) position[order[i]] = i;
+
+        foreach (var mod in settings.ModSettings)
+        {
+            UpdateHandler.RepairDisambiguationMap(
+                mod.NpcPluginDisambiguation, mod.AvailablePluginsForNpcs, position);
+        }
     }
 
     [Fact]
@@ -133,6 +141,40 @@ public class SourcePluginDisambiguationRepairTests
         Repair(settings, Env());
 
         mod.NpcPluginDisambiguation[Vampire].Should().Be(Dawnguard);
+    }
+
+    [Fact]
+    public void RepairsAnyMapItIsGiven_NotJustThePersistedModel()
+    {
+        // The reason the first attempt appeared to do nothing: VM_ModSetting COPIES both
+        // dictionaries out of its model on load and writes them back on save, so repairing only
+        // the model was undone by the next save. The core takes the map to fix, and the caller
+        // runs it over the view models as well.
+        var vmDisambiguation = new Dictionary<FormKey, ModKey> { [Vampire] = Skyrim };
+        var vmAvailable = new Dictionary<FormKey, List<ModKey>>
+        {
+            [Vampire] = new() { Skyrim, Dawnguard }
+        };
+        var position = new Dictionary<ModKey, int> { [Skyrim] = 0, [Dawnguard] = 1 };
+
+        var repaired = UpdateHandler.RepairDisambiguationMap(vmDisambiguation, vmAvailable, position);
+
+        repaired.Should().Be(1);
+        vmDisambiguation[Vampire].Should().Be(Dawnguard);
+    }
+
+    [Fact]
+    public void ReturnsTheNumberRepaired()
+    {
+        var disambiguation = new Dictionary<FormKey, ModKey> { [Vampire] = Dawnguard };
+        var available = new Dictionary<FormKey, List<ModKey>>
+        {
+            [Vampire] = new() { Skyrim, Dawnguard }
+        };
+        var position = new Dictionary<ModKey, int> { [Skyrim] = 0, [Dawnguard] = 1 };
+
+        UpdateHandler.RepairDisambiguationMap(disambiguation, available, position)
+            .Should().Be(0, "the entry already names the winner");
     }
 
     [Fact]

@@ -175,7 +175,7 @@ public class UpdateHandler
             // (that migration returns early when they haven't).
             if (environmentStateProvider is not null)
             {
-                RepairSourcePluginDisambiguation(environmentStateProvider.LoadOrderModKeys);
+                RepairSourcePluginDisambiguation(modsVm, environmentStateProvider.LoadOrderModKeys);
             }
         }
 
@@ -1702,7 +1702,40 @@ public class UpdateHandler
     /// alone, as is any entry already naming the winner. Rewrites rather than clears, so the fix
     /// does not depend on a later re-analysis pass.</para>
     /// </summary>
-    private void RepairSourcePluginDisambiguation(IEnumerable<ModKey>? loadOrderModKeys)
+    /// <summary>
+    /// Pure core of the disambiguation repair: rewrites every entry of one map whose sources are
+    /// ALL in the load order but whose chosen plugin is not the last-loading of them. Returns how
+    /// many were changed. No state, no logging, so it can be tested directly.
+    /// </summary>
+    internal static int RepairDisambiguationMap(
+        Dictionary<FormKey, ModKey> disambiguation,
+        IReadOnlyDictionary<FormKey, List<ModKey>> availablePlugins,
+        IReadOnlyDictionary<ModKey, int> loadOrderPosition)
+    {
+        if (disambiguation.Count == 0 || loadOrderPosition.Count == 0) return 0;
+
+        int repaired = 0;
+        foreach (var npcFormKey in disambiguation.Keys.ToList())
+        {
+            if (!availablePlugins.TryGetValue(npcFormKey, out var sources) || sources.Count < 2)
+            {
+                continue;
+            }
+
+            // Only the all-present branch; anything else was decided by a different rule.
+            if (!sources.All(loadOrderPosition.ContainsKey)) continue;
+
+            var winner = sources.OrderByDescending(s => loadOrderPosition[s]).First();
+            if (disambiguation[npcFormKey].Equals(winner)) continue;
+
+            disambiguation[npcFormKey] = winner;
+            repaired++;
+        }
+
+        return repaired;
+    }
+
+    private void RepairSourcePluginDisambiguation(VM_Mods? modsVm, IEnumerable<ModKey>? loadOrderModKeys)
     {
         var loadOrder = loadOrderModKeys?.ToList();
         if (loadOrder == null || loadOrder.Count == 0)
@@ -1717,24 +1750,20 @@ public class UpdateHandler
         int repaired = 0;
         foreach (var modSetting in _settings.ModSettings)
         {
-            if (modSetting.NpcPluginDisambiguation.Count == 0) continue;
+            repaired += RepairDisambiguationMap(
+                modSetting.NpcPluginDisambiguation, modSetting.AvailablePluginsForNpcs, position);
+        }
 
-            foreach (var npcFormKey in modSetting.NpcPluginDisambiguation.Keys.ToList())
+        // The view models too. VM_ModSetting COPIES both dictionaries out of its model on load and
+        // writes them back on save, so a model-only repair is undone by the next save — which is
+        // exactly what happened the first time this shipped: the settings still read Skyrim.esm
+        // after a rebuild, re-patch and re-validate.
+        if (modsVm != null)
+        {
+            foreach (var vm in modsVm.AllModSettings)
             {
-                if (!modSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var sources) ||
-                    sources.Count < 2)
-                {
-                    continue;
-                }
-
-                // Only the all-present branch; anything else was decided by a different rule.
-                if (!sources.All(position.ContainsKey)) continue;
-
-                var winner = sources.OrderByDescending(s => position[s]).First();
-                if (modSetting.NpcPluginDisambiguation[npcFormKey].Equals(winner)) continue;
-
-                modSetting.NpcPluginDisambiguation[npcFormKey] = winner;
-                repaired++;
+                repaired += RepairDisambiguationMap(
+                    vm.NpcPluginDisambiguation, vm.AvailablePluginsForNpcs, position);
             }
         }
 
