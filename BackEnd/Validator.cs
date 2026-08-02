@@ -640,6 +640,44 @@ public class Validator : OptionalUIModule
             if (!loadOrderList.Contains(key.ModKey) || LinkResolves(key, type)) continue;
 
             var missingFrom = key.ModKey.FileName.ToString();
+
+            // The plugin is present and does not contain the record — the version-drift signature.
+            // But an INJECTED record looks identical from here: one the appearance mod DEFINES
+            // itself inside a master's FormID space, the standard "don't add a new master" replacer
+            // technique (ARA_Bruma's ARA_* head parts in BSHeartland.esm's space, 3DNPC Visual
+            // Overhaul's 000* parts in 3DNPC.esp's). Those are not missing at all; the patcher
+            // resolves them from the mod's own plugins and duplicates them into the output. The
+            // difference that matters is whether it WILL: the merge walker only follows a link
+            // outside the mod's own FormID space when Injected Record Handling is on for the mod
+            // (see PatcherExtensions.DuplicateFromOnlyReferencedGetters). So ask which case it is
+            // instead of blaming the user's install.
+            var injectedIn = type == null
+                ? null
+                : FindInjectedRecordSource(key, type, appearanceModSetting, folderPaths,
+                    appearanceNpcFormKey.ModKey, npcProvidingOwnersByPlugin);
+
+            if (injectedIn != null)
+            {
+                if (appearanceModSetting.HandleInjectedRecords)
+                {
+                    NpcDiagnosticLogger.Log(
+                        $"  Written-link check: {field} points at {key}, which '{injectedIn.Value.FileName}' injects " +
+                        $"into '{missingFrom}'. Injected Record Handling is on for this mod, so the patcher merges " +
+                        "the record in and the output can reference it.");
+                    continue;
+                }
+
+                NpcDiagnosticLogger.Log(
+                    $"  Written-link check: {field} points at {key}, which '{injectedIn.Value.FileName}' injects " +
+                    $"into '{missingFrom}', but Injected Record Handling is OFF for this mod so the record would " +
+                    "not be carried into the output.");
+                return new UnwritableLink(
+                    $"writes {field}={key}. That record does not exist in '{missingFrom}' — " +
+                    $"'{injectedIn.Value.FileName}' injects it into that plugin's ID space — and Injected Record " +
+                    "Handling is turned off for this mod, so the output would not carry it and the reference " +
+                    "would dangle.",
+                    "Injected record, but 'Handle Injected Records' is off for this mod (enable it in the Mods menu)");
+            }
             NpcDiagnosticLogger.Log(
                 $"  Written-link check: {field} points at {key}, but '{missingFrom}' is in the load " +
                 "order and does not contain that record — the appearance mod was built against a " +
@@ -648,6 +686,41 @@ public class Validator : OptionalUIModule
                 $"writes {field}={key}, but the '{missingFrom}' you have installed does not contain " +
                 "that record — the appearance mod was built against a different version of it.",
                 $"Appearance references a record missing from your '{missingFrom}'");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Which of the selected mod's own plugins DEFINES <paramref name="key"/>, or null if none do.
+    /// A non-null result means the record is injected into another plugin's ID space rather than
+    /// missing from the user's install.
+    ///
+    /// <para>Searched exactly as the patcher searches: the merge-eligible subset of the mod's
+    /// plugins (<see cref="MergeEligibility.GetMergeEligiblePlugins"/> — the same
+    /// <c>modKeysToDuplicateFrom</c> set <c>RecordHandler.TryGetRecordFromMods</c> is handed),
+    /// last-listed first, with the donor NPC's own defining plugin excluded because the patcher
+    /// excludes it too. Resource-only plugins are deliberately NOT skipped: injected head parts
+    /// legitimately live in ones like RSkyrimChildren.esm or High Poly Head.esm.</para>
+    /// </summary>
+    private ModKey? FindInjectedRecordSource(FormKey key, Type type, ModSetting appearanceModSetting,
+        HashSet<string> folderPaths, ModKey donorPlugin,
+        IReadOnlyDictionary<ModKey, ModSetting> npcProvidingOwnersByPlugin)
+    {
+        var searchable = MergeEligibility.GetMergeEligiblePlugins(appearanceModSetting, npcProvidingOwnersByPlugin);
+        if (searchable.Count == 0) return null;
+
+        var link = new FormLinkInformation(key, type);
+        for (int i = appearanceModSetting.CorrespondingModKeys.Count - 1; i >= 0; i--)
+        {
+            var candidate = appearanceModSetting.CorrespondingModKeys[i];
+            if (!searchable.Contains(candidate) || candidate == donorPlugin) continue;
+
+            if (_recordHandler.TryGetRecordGetterFromMod(link, candidate, folderPaths,
+                    RecordHandler.RecordLookupFallBack.None, out var record) && record != null)
+            {
+                return candidate;
+            }
         }
 
         return null;
