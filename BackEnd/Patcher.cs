@@ -1071,10 +1071,18 @@ public class Patcher : OptionalUIModule
                                 // dependency records to roll back. This supersedes the old
                                 // missing-mesh warnings: the ladder covers the same cases and says
                                 // what it did about them rather than only that they exist.
-                                faceGenDecision = await ComputeFaceGenDecisionAsync(
+                                var faceGenPlan = await ComputeFaceGenDecisionAsync(
                                     npcFormKey, appearanceNpcRecord, appearanceModSetting,
                                     currentModFolderPaths, selectedModDisplayName, npcIdentifier,
                                     isFaceGenOnly);
+                                faceGenDecision = faceGenPlan.Decision;
+
+                                // A mesh-only selection may have been re-paired with a different
+                                // record from the NPC's own mod of origin — see
+                                // TryRepairMeshOnlyRecordPairingAsync. Everything downstream (the
+                                // record splice, the asset stage) must use the record the mesh was
+                                // actually graded against, not the one we started with.
+                                appearanceNpcRecord = faceGenPlan.DonorRecord;
 
                                 if (faceGenDecision.Abort)
                                 {
@@ -3413,7 +3421,13 @@ public class Patcher : OptionalUIModule
     /// mod ships both halves, and head-part compatibility (which parses a NIF, often after a BSA
     /// extraction) is evaluated only for the branches that actually gate on it.</para>
     /// </summary>
-    private async Task<FaceGenLadderDecision> ComputeFaceGenDecisionAsync(
+    /// <summary>The ladder's verdict plus the donor record it was reached with. The two travel
+    /// together because a mesh-only selection can be re-paired with a different record from the
+    /// NPC's own mod of origin (see <see cref="TryRepairMeshOnlyRecordPairingAsync"/>), and the
+    /// caller must splice the record the mesh was actually graded against.</summary>
+    private sealed record FaceGenPlan(FaceGenLadderDecision Decision, INpcGetter DonorRecord);
+
+    private async Task<FaceGenPlan> ComputeFaceGenDecisionAsync(
         FormKey targetNpcFormKey, INpcGetter appearanceNpcRecord, ModSetting appearanceModSetting,
         HashSet<string> currentModFolderPaths, string modDisplayName, string npcIdentifier,
         bool isFaceGenOnly)
@@ -3543,6 +3557,27 @@ public class Patcher : OptionalUIModule
             {
                 (sourceCompat, var mm) =
                     await EvaluateNifCompatibilityAsync(recordToMatch, subjectNifRel, appearanceModSetting);
+
+                // A mesh-only mod ships no record, so its mesh is paired with the one from the
+                // NPC's ORIGIN plugin. That assumes the author built against the origin — wrong
+                // whenever a later plugin of the same mod supersedes it, which is what the DLC
+                // does to the vanilla vampires: Dawnguard swaps their eye head part and the mods
+                // baked their meshes against Dawnguard's version, so the origin pairing dark-faces.
+                // Only attempted when the default pairing has already FAILED, so an NPC that
+                // renders correctly today cannot be re-pointed.
+                if (sourceCompat == false)
+                {
+                    var repaired = await TryRepairMeshOnlyRecordPairingAsync(
+                        subjectFormKey, recordToMatch, subjectNifRel, appearanceModSetting, npcIdentifier);
+                    if (repaired != null)
+                    {
+                        appearanceNpcRecord = repaired;
+                        recordToMatch = repaired;
+                        sourceCompat = true;
+                        mm = null;
+                    }
+                }
+
                 if (sourceCompat == false) failedProbes.Add(("selected mod's mesh failed the probe", mm));
             }
 
@@ -3628,8 +3663,113 @@ public class Patcher : OptionalUIModule
             }
         }
 
+        // A mesh-only selection whose mesh fits NO record its NPC's mod of origin offers has no
+        // safe pairing left: patching it would ship a record naming head parts the mesh does not
+        // bake, which is the dark-face bug. Abort instead, exactly as the ladder does when no
+        // usable mesh exists at all — the NPC keeps the face the load order already gives it and
+        // is named in the end-of-run report.
+        //
+        // Decided here rather than inside FaceGenLadder.Classify because "no compatible record
+        // among the origin mod's plugins" is not one of the ladder's inputs; SourceNifCompatible
+        // alone means "the default pairing failed", which the ladder deliberately only warns
+        // about (a mismatch it cannot repair is not automatically fatal).
+        if (!decision.Abort && ProbesModMesh(decision) && decision.Inputs.SourceNifCompatible == false)
+        {
+            string reason =
+                $"'{modDisplayName}' supplies a face mesh for this NPC but no plugin record, and the mesh " +
+                "does not match any record for it in the mod that originally added the NPC. Patching it " +
+                "would produce the dark-face bug, so it is being left unchanged. Pick a different mod for " +
+                "this NPC, or install the overhaul this mod was built to sit on top of.";
+
+            decision = decision with
+            {
+                Abort = true,
+                AbortReason = reason,
+                LogLine = $"ABORT: {reason}",
+            };
+        }
+
         FaceGenLadderDiag.Record(decision);
-        return decision;
+        return new FaceGenPlan(decision, appearanceNpcRecord);
+    }
+
+    /// <summary>
+    /// A mesh-only selection ships no plugin record, so its mesh is paired with the record from
+    /// the NPC's ORIGIN plugin. When that pairing fails the head-part probe, try the other records
+    /// the NPC's own mod of origin offers — its plugins walked winner-first, back toward the
+    /// origin — and return the first whose head parts the mesh actually bakes. Null when none fit.
+    ///
+    /// <para>Candidates are confined to the mod entry that owns the NPC's origin plugin (for a
+    /// vanilla NPC: the "Base Game" entry, i.e. Skyrim.esm plus the DLC). Ranging wider would pair
+    /// the mesh with some unrelated appearance mod's record, which is the very thing the
+    /// origin-pairing rule exists to avoid.</para>
+    ///
+    /// <para>Only called after the default pairing has already failed, so the walk costs nothing
+    /// for the NPCs that are fine, and no correctly-rendering NPC can be re-pointed by it.</para>
+    /// </summary>
+    /// <summary>
+    /// The plugins that count as "the same mod of origin" as <paramref name="subjectFormKey"/>'s
+    /// defining plugin, for the mesh-only re-pairing walk. Null when the NPC has no such family.
+    ///
+    /// <para>A vanilla NPC's family is the base game INCLUDING the DLC — those ship with every
+    /// SE/AE/VR install, so a mod author's Creation Kit shows the DLC's version of the record and
+    /// that is what their mesh was baked against. Creation Club is deliberately NOT included: it
+    /// is optional content and its own mod entry, so its records are no more "the base game" than
+    /// any other mod's.</para>
+    ///
+    /// <para>For a mod-added NPC the family is the mod entry that provides it, and only when that
+    /// entry really lists this NPC — the owner index is first-wins across all mod entries, so
+    /// without that guard an unrelated entry that happens to name the plugin could hand back a
+    /// candidate set the mesh was never authored against.</para>
+    /// </summary>
+    private HashSet<ModKey>? ResolveOriginFamilyPlugins(FormKey subjectFormKey)
+    {
+        var baseGame = _environmentStateProvider.BaseGamePlugins;
+        if (baseGame.Contains(subjectFormKey.ModKey)) return baseGame;
+
+        if (_npcProvidingOwnersByPlugin.TryGetValue(subjectFormKey.ModKey, out var originMod) &&
+            originMod?.CorrespondingModKeys != null &&
+            originMod.NpcFormKeys != null &&
+            originMod.NpcFormKeys.Contains(subjectFormKey))
+        {
+            return originMod.CorrespondingModKeys.ToHashSet();
+        }
+
+        return null;
+    }
+
+    private async Task<INpcGetter?> TryRepairMeshOnlyRecordPairingAsync(
+        FormKey subjectFormKey, INpcGetter current, string subjectNifRel, ModSetting meshMod,
+        string npcIdentifier)
+    {
+        var linkCache = _environmentStateProvider.LinkCache;
+        if (linkCache == null) return null;
+
+        var candidatePlugins = ResolveOriginFamilyPlugins(subjectFormKey);
+        if (candidatePlugins == null || candidatePlugins.Count < 2) return null;
+
+        // Winner-first, which is the order the mod's author saw in the Creation Kit; the walk
+        // continues back toward the origin so a mesh authored against an older record still finds
+        // its match. Every candidate is probed, including the origin plugin's own record — it is
+        // the one that just failed, but only as resolved for the CURRENT pairing, and re-testing
+        // it costs one parse on a path that is already rare.
+        foreach (var ctx in linkCache.ResolveAllContexts<INpc, INpcGetter>(subjectFormKey))
+        {
+            if (!candidatePlugins.Contains(ctx.ModKey)) continue;
+
+            var (compatible, _) = await EvaluateNifCompatibilityAsync(ctx.Record, subjectNifRel, meshMod);
+            if (compatible != true) continue;
+
+            AppendLog(
+                $"      Re-paired mesh-only selection with '{ctx.ModKey.FileName}' — its record's head parts " +
+                $"match the mesh, the origin plugin's do not.", false, false);
+            NpcDiagnosticLogger.Log(
+                $"  Mesh-only pairing repaired for {npcIdentifier}: origin record failed the head-part probe; " +
+                $"using '{ctx.ModKey.FileName}' instead.");
+            return ctx.Record;
+        }
+
+        return null;
     }
 
     /// <summary>
