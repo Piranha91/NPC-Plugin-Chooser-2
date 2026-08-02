@@ -1300,9 +1300,16 @@ public class RecordHandler
     #region Merge In Overrides of Existing Records
 
     public HashSet<IMajorRecord> // return is For Caller's Information only; duplication and remapping happens internally
-        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, int maxNestedIntervalDepth, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, CancellationToken ct, IReadOnlyCollection<IFormLinkGetter>? additionalRootLinks = null)
+        DuplicateInOverrideRecords(IMajorRecordGetter majorRecordGetter, IMajorRecord rootRecord, List<ModKey> relevantContextKeys, ModKey rootContextKey, ModKey npcSourceModKey, bool handleInjectedRecords, int maxNestedIntervalDepth, HashSet<string> fallBackModFolderNames, ref List<string> exceptionStrings, HashSet<FormKey> searchedFormKeys, CancellationToken ct, IReadOnlyCollection<IFormLinkGetter>? additionalRootLinks = null, IReadOnlyCollection<FormKey>? excludedRootFormKeys = null)
     {
+        // Exclusions are applied to the traversed record's OWN links only — an additional root
+        // naming the same FormKey (e.g. the recipient's outfit when it coincides with the donor's)
+        // is deliberately appended afterwards and survives.
         var rootLinks = majorRecordGetter.EnumerateFormLinks().AsEnumerable();
+        if (excludedRootFormKeys is { Count: > 0 })
+        {
+            rootLinks = rootLinks.Where(l => !excludedRootFormKeys.Contains(l.FormKey));
+        }
         if (additionalRootLinks is { Count: > 0 })
         {
             rootLinks = rootLinks.Concat(additionalRootLinks);

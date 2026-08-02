@@ -1543,10 +1543,34 @@ public class Patcher : OptionalUIModule
                                                 // record wholesale — recipient roots would only mint
                                                 // unreferenced duplicates there.
                                                 List<IFormLinkGetter>? additionalRootLinks = null;
+                                                HashSet<FormKey>? excludedDonorRootKeys = null;
                                                 if (_settings.UseSkyPatcherMode ||
                                                     _settings.PatchingMode == PatchingMode.CreateAndPatch)
                                                 {
                                                     additionalRootLinks = new();
+
+                                                    // The inverse of the extra roots below: donor links
+                                                    // the written record will NOT carry must not root
+                                                    // discovery either — a chain reachable only through
+                                                    // them is minted and then referenced by nothing (RS
+                                                    // Children's donor-only 0RCOClothesO* outfits were
+                                                    // the measured case). Sleep outfits are never taken
+                                                    // from the donor; the donor's default outfit ships
+                                                    // only when Include Outfits is on. Create record
+                                                    // mode is exempt (the donor record ships wholesale,
+                                                    // so its outfit links ARE delivered).
+                                                    excludedDonorRootKeys = new();
+                                                    if (!appearanceNpcRecord.SleepingOutfit.IsNull)
+                                                    {
+                                                        excludedDonorRootKeys.Add(
+                                                            appearanceNpcRecord.SleepingOutfit.FormKey);
+                                                    }
+                                                    if (!includeOutfit && !appearanceNpcRecord.DefaultOutfit.IsNull)
+                                                    {
+                                                        excludedDonorRootKeys.Add(
+                                                            appearanceNpcRecord.DefaultOutfit.FormKey);
+                                                    }
+
                                                     if (!winningNpcOverride.SleepingOutfit.IsNull)
                                                     {
                                                         additionalRootLinks.Add(winningNpcOverride.SleepingOutfit);
@@ -1617,7 +1641,8 @@ public class Patcher : OptionalUIModule
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
                                                         ct,
-                                                        additionalRootLinks);
+                                                        additionalRootLinks,
+                                                        excludedDonorRootKeys);
                                                 }
 
                                                 if (overrideExceptionStrings.Any())
@@ -1867,10 +1892,34 @@ public class Patcher : OptionalUIModule
                                                 // record wholesale — recipient roots would only mint
                                                 // unreferenced duplicates there.
                                                 List<IFormLinkGetter>? additionalRootLinks = null;
+                                                HashSet<FormKey>? excludedDonorRootKeys = null;
                                                 if (_settings.UseSkyPatcherMode ||
                                                     _settings.PatchingMode == PatchingMode.CreateAndPatch)
                                                 {
                                                     additionalRootLinks = new();
+
+                                                    // The inverse of the extra roots below: donor links
+                                                    // the written record will NOT carry must not root
+                                                    // discovery either — a chain reachable only through
+                                                    // them is minted and then referenced by nothing (RS
+                                                    // Children's donor-only 0RCOClothesO* outfits were
+                                                    // the measured case). Sleep outfits are never taken
+                                                    // from the donor; the donor's default outfit ships
+                                                    // only when Include Outfits is on. Create record
+                                                    // mode is exempt (the donor record ships wholesale,
+                                                    // so its outfit links ARE delivered).
+                                                    excludedDonorRootKeys = new();
+                                                    if (!appearanceNpcRecord.SleepingOutfit.IsNull)
+                                                    {
+                                                        excludedDonorRootKeys.Add(
+                                                            appearanceNpcRecord.SleepingOutfit.FormKey);
+                                                    }
+                                                    if (!includeOutfit && !appearanceNpcRecord.DefaultOutfit.IsNull)
+                                                    {
+                                                        excludedDonorRootKeys.Add(
+                                                            appearanceNpcRecord.DefaultOutfit.FormKey);
+                                                    }
+
                                                     if (!winningNpcOverride.SleepingOutfit.IsNull)
                                                     {
                                                         additionalRootLinks.Add(winningNpcOverride.SleepingOutfit);
@@ -1941,7 +1990,8 @@ public class Patcher : OptionalUIModule
                                                         ref overrideExceptionStrings,
                                                         searchedOverrideFormKeysForGroup,
                                                         ct,
-                                                        additionalRootLinks);
+                                                        additionalRootLinks,
+                                                        excludedDonorRootKeys);
                                                 }
 
                                                 if (overrideExceptionStrings.Any())
@@ -2136,9 +2186,9 @@ public class Patcher : OptionalUIModule
                     FlushRaceDriftFindings();
 
                     // Any record minted under a new FormKey that nothing references is dead
-                    // cargo — see WarnOnOrphanedDuplicates. Must run after every NPC (and every
-                    // rollback) has finished touching the output, and before the reporter flushes.
-                    WarnOnOrphanedDuplicates();
+                    // cargo — see LogOrphanedDuplicates (neutral note, not a warning). Must run
+                    // after every NPC (and every rollback) has finished touching the output.
+                    LogOrphanedDuplicates();
 
                     // Per-NPC warnings (suspect origin meshes, missing tints, textureless
                     // shapes), grouped by type with one explanation per group — see
@@ -3014,16 +3064,22 @@ public class Patcher : OptionalUIModule
     }
 
     /// <summary>
-    /// Post-run safety net for 'Include As New' and dependency merge-in: any record minted into
+    /// Post-run tripwire for 'Include As New' and dependency merge-in: any record minted into
     /// the output under a NEW FormKey that nothing references — no FormLink on any output record
     /// and no FormKey-valued SkyPatcher directive — is dead cargo. The game cannot resolve it,
     /// and the edits it carries silently miss the NPCs it was duplicated for. Exactly the failure
     /// that shipped RS Children's outfit chain orphaned for months
-    /// (docs/SkyPatcher-IncludeAsNew-Outfit-Records.md); the check makes the next delivery gap
-    /// loud instead of silent. Only chain HEADS surface: a duplicate referenced solely by another
+    /// (docs/SkyPatcher-IncludeAsNew-Outfit-Records.md); the check keeps the next delivery gap
+    /// from being invisible. Only chain HEADS surface: a duplicate referenced solely by another
     /// orphan is delivered or stranded together with its head, so listing it separately is noise.
+    ///
+    /// <para>Deliberately NOT a <see cref="NpcWarningReporter"/> warning (user standard,
+    /// 2026-08-02): colored WARNINGs are reserved for issues the user notices in game, and an
+    /// unreferenced record is inert there — dead weight in the plugin, nothing more. A neutral
+    /// one-line note goes to the run log (details at verbose), which is enough for the
+    /// maintainer-facing tripwire purpose without crying wolf at users.</para>
     /// </summary>
-    private void WarnOnOrphanedDuplicates()
+    private void LogOrphanedDuplicates()
     {
         var outputMod = _environmentStateProvider.OutputMod;
         var outputKey = outputMod.ModKey;
@@ -3042,6 +3098,7 @@ public class Patcher : OptionalUIModule
 
         referenced.UnionWith(_skyPatcherInterface.EnumerateDirectiveFormKeys());
 
+        var orphanLines = new List<string>();
         foreach (var record in outputMod.EnumerateMajorRecords())
         {
             if (record.FormKey.ModKey != outputKey || referenced.Contains(record.FormKey))
@@ -3065,9 +3122,22 @@ public class Patcher : OptionalUIModule
                             (mods.Count > 0 ? $" from {string.Join(", ", mods)}" : string.Empty);
             }
 
-            NpcWarningReporter.Record(NpcWarningKind.OrphanedRecordDuplicate,
-                $"{record.EditorID ?? "(no EditorID)"} [{record.Registration.Name}] {record.FormKey}",
-                detail: sourceNote + ownerNote);
+            orphanLines.Add($"  - {record.EditorID ?? "(no EditorID)"} [{record.Registration.Name}] " +
+                            $"{record.FormKey}: {sourceNote}{ownerNote}");
+        }
+
+        if (orphanLines.Count == 0) return;
+
+        // Neutral phrasing on purpose — no WARNING:/ERROR: marker, so RunLogClassifier leaves it
+        // uncolored. Summary is forced; the per-record list only appears in a verbose log.
+        AppendLog($"Note: {orphanLines.Count} private record cop{(orphanLines.Count == 1 ? "y" : "ies")} " +
+                  "created by 'Include As New' / dependency merge-in ended up unreferenced by the output. " +
+                  "These are inert in game (unused records; no visible effect). If an NPC that should have " +
+                  "received a mod's non-NPC edits looks wrong, this list (in the verbose log) is the place " +
+                  "to start.", false, true);
+        foreach (var line in orphanLines)
+        {
+            AppendLog(line, false);
         }
     }
 

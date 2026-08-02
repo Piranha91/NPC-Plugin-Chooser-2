@@ -9,8 +9,13 @@ directives are emitted post-remap at the asset stage; the recipient's effective 
 emitted only when the batch minted a copy of the outfit the actor wears; assets a
 duplicated record references that the mod itself ships are relocated to
 `meshes|textures\NPC2\<mod>\...` with record paths and NIF-internal texture slots
-rewritten to match; and an end-of-run orphan check (`NpcWarningKind.OrphanedRecordDuplicate`)
-makes any future delivery gap loud. Golden references for the four Include-As-New combos
+rewritten to match; and an end-of-run orphan check (`Patcher.LogOrphanedDuplicates` — a
+neutral run-log note, deliberately NOT a colored warning: unreferenced records are inert
+in game, and WARNINGs are reserved for in-game-visible issues per the user's 2026-08-02
+standard) keeps any future delivery gap from being invisible. Donor outfit links the
+written record will not carry are excluded from discovery roots, so donor-only outfit
+chains (RSC's native `0RCOClothesO*`) are no longer minted at all.
+Golden references for the four Include-As-New combos
 predate the fix; the tests assert the fixed behavior and tolerate exactly those deviations
 until the references are regenerated.
 

@@ -39,13 +39,11 @@ public enum NpcWarningKind
     /// and warning on it is a false positive; see <see cref="AssetRequestContext.HeadPartOnly"/>.</summary>
     TexturelessShapes,
 
-    /// <summary>A record was duplicated into the output as a brand-new record ('Include As New' /
-    /// dependency merge-in) but NOTHING in the output references it — no plugin link and no
-    /// SkyPatcher directive — so the game can never resolve it and the edits it carries silently
-    /// miss the NPCs they were duplicated for. Only chain HEADS are listed: a duplicate referenced
-    /// solely by another orphan is delivered or stranded together with its head. Detected once per
-    /// run after patching (see <c>Patcher.WarnOnOrphanedDuplicates</c>).</summary>
-    OrphanedRecordDuplicate,
+    // NOTE (user standard, 2026-08-02): a kind belongs in this enum — i.e. in the colored,
+    // grouped WARNING report — only when the user would NOTICE the issue in game (dark face,
+    // missing meshes/textures, CTD-class null references, wrong outfits). Findings that are real
+    // but invisible in game (e.g. orphaned/unreferenced output records) get a neutral "Note:"
+    // line in the run log instead — see Patcher.LogOrphanedDuplicates for the precedent.
 }
 
 /// <summary>
@@ -173,14 +171,6 @@ public static class NpcWarningReporter
             "an appearance mod that relies on textures from a separate mod — if so, add the folder " +
             "of the mod that provides the textures to the appearance mod's entry in the Mods menu:",
 
-        NpcWarningKind.OrphanedRecordDuplicate =>
-            "NPC2 made private copies of the following records (a mod's Record Override Handling " +
-            "Mode is set to Include As New, or its dependencies were merged in), but nothing in " +
-            "the generated output points at the copies — so the edits those copies carry never " +
-            "reach the game. The NPCs the copies were made for will behave as if the originals " +
-            "had won instead. This indicates a gap in NPC2's delivery logic rather than a problem " +
-            "with your setup — please report it, naming the mods listed below:",
-
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 
@@ -214,12 +204,6 @@ public static class NpcWarningReporter
             "Every texture slot of each listed shape failed to resolve in the selected mod's " +
             "folders and archives, the game Data folder, and the vanilla archives. Paths are " +
             "Data-relative.",
-
-        NpcWarningKind.OrphanedRecordDuplicate =>
-            "After patching, the checker unions every FormLink of every output record with every " +
-            "FormKey-valued SkyPatcher directive, and flags output-native minted records absent " +
-            "from that union. Only chain heads are flagged; descendants referenced by an orphan " +
-            "share its fate. Enable Log Record Provenance for each orphan's mint chain.",
 
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
