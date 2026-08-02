@@ -2014,11 +2014,22 @@ public class VM_ModSetting : ReactiveObject, IDisposable, IDropTarget
                         var loadOrderList = loadOrder.ListedOrder.Select(x => x.ModKey).ToList();
                         ModKey? winner = null;
 
-                        // 1) Check if all sources are in the load order. If so, use load order winner.
+                        // 1) Check if all sources are in the load order. If so, use load order winner
+                        // — the LAST-loading of them, which is the record the game itself resolves.
+                        //
+                        // This ordering was inverted until 2.2.4, taking the earliest-loading plugin
+                        // instead, and every DLC-overridden vanilla NPC therefore forwarded the
+                        // Skyrim.esm record rather than the DLC's. The measured case: Dawnguard
+                        // REMOVES MaleEyesHumanDemon from the vampire NPCs it overrides (their eyes
+                        // then come from its own reworked race defaults) and regenerates their
+                        // FaceGen to match. Forwarding Skyrim.esm's record put the demon eyes back
+                        // while the mesh stayed Dawnguard's — a head part named in the record with
+                        // no shape of that name in the mesh, which is the dark-face bug. In an
+                        // unmodded game Dawnguard simply wins and these NPCs render fine.
                         if (sources.All(s => !s.IsNull && loadOrderList.Contains(s)))
                         {
                             winner = sources
-                                .OrderBy(s => loadOrderList.IndexOf(s))
+                                .OrderByDescending(s => loadOrderList.IndexOf(s))
                                 .FirstOrDefault();
                         }
 

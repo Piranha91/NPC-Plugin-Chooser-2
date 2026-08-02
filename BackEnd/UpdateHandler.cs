@@ -169,6 +169,14 @@ public class UpdateHandler
         if (settingsVersion < "2.2.3")
         {
             await UpdateTo2_2_3_Final(modsVm, npcsVm, environmentStateProvider, splashReporter);
+
+            // Its own step rather than part of UpdateTo2_2_3_Final: it repairs mod entries, not
+            // selections, so it must also run for a user who has not chosen any appearances yet
+            // (that migration returns early when they haven't).
+            if (environmentStateProvider is not null)
+            {
+                RepairSourcePluginDisambiguation(environmentStateProvider.LoadOrderModKeys);
+            }
         }
 
         Debug.WriteLine("Settings update process complete.");
@@ -1676,6 +1684,63 @@ public class UpdateHandler
     /// keeping it without saying so would let a selection the patcher can no longer honour sit
     /// there invisibly. So those are listed by name and the choice is handed to the user.</para>
     /// </summary>
+    /// <summary>
+    /// One-time (&lt; 2.2.3) repair of source-plugin disambiguations that the pre-2.2.3 default
+    /// rule got backwards. When several of a mod entry's plugins carried the same NPC and all were
+    /// in the load order, it picked the EARLIEST-loading one instead of the winner, and persisted
+    /// that indistinguishably from a hand-made choice — so correcting the rule alone would not
+    /// have fixed anyone's existing settings.
+    ///
+    /// <para>Worst hit is the synthetic "Base Game" entry, where it meant every DLC-overridden
+    /// vanilla NPC forwarded the Skyrim.esm record rather than the DLC's. On the measuring load
+    /// order that was 123 of its NPCs — the Dawnguard vampires among them, which dark-faced
+    /// because Dawnguard drops a head part their regenerated FaceGen no longer contains.</para>
+    ///
+    /// <para>Deliberately narrow: only entries whose sources are ALL in the load order are
+    /// rewritten, which is exactly the branch the inverted comparison served. Choices made when
+    /// some source was missing came from the master-depth/alphabetical fallbacks and are left
+    /// alone, as is any entry already naming the winner. Rewrites rather than clears, so the fix
+    /// does not depend on a later re-analysis pass.</para>
+    /// </summary>
+    private void RepairSourcePluginDisambiguation(IEnumerable<ModKey>? loadOrderModKeys)
+    {
+        var loadOrder = loadOrderModKeys?.ToList();
+        if (loadOrder == null || loadOrder.Count == 0)
+        {
+            Debug.WriteLine("Disambiguation repair skipped: no load order available.");
+            return;
+        }
+
+        var position = new Dictionary<ModKey, int>();
+        for (int i = 0; i < loadOrder.Count; i++) position[loadOrder[i]] = i;
+
+        int repaired = 0;
+        foreach (var modSetting in _settings.ModSettings)
+        {
+            if (modSetting.NpcPluginDisambiguation.Count == 0) continue;
+
+            foreach (var npcFormKey in modSetting.NpcPluginDisambiguation.Keys.ToList())
+            {
+                if (!modSetting.AvailablePluginsForNpcs.TryGetValue(npcFormKey, out var sources) ||
+                    sources.Count < 2)
+                {
+                    continue;
+                }
+
+                // Only the all-present branch; anything else was decided by a different rule.
+                if (!sources.All(position.ContainsKey)) continue;
+
+                var winner = sources.OrderByDescending(s => position[s]).First();
+                if (modSetting.NpcPluginDisambiguation[npcFormKey].Equals(winner)) continue;
+
+                modSetting.NpcPluginDisambiguation[npcFormKey] = winner;
+                repaired++;
+            }
+        }
+
+        Debug.WriteLine($"Repaired {repaired} source-plugin disambiguation(s) to the load-order winner.");
+    }
+
     private async Task UpdateTo2_2_3_Final(VM_Mods modsVm, VM_NpcSelectionBar npcsVm,
         EnvironmentStateProvider environmentStateProvider, VM_SplashScreen? splashReporter)
     {
