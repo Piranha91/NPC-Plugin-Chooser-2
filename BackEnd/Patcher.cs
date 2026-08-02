@@ -52,6 +52,15 @@ public class Patcher : OptionalUIModule
     private readonly System.Collections.Concurrent.ConcurrentBag<(string NifPath, HeadPartWigConverter.Result Convert, string NpcIdentifier)>
         _pendingWigBakes = new();
 
+    // FaceGen NIFs whose shapes must be renamed to follow head-part records this run
+    // duplicated under a new EditorID (Include As New appends "_<sourcePlugin>"). The engine
+    // pairs head parts to baked geometry BY NAME, so a renamed record whose shape kept the old
+    // name dark-faces. Applied after the two wig phases, which is what keeps it out of their
+    // way: the bake has already stripped/renamed the shapes it owns by then, so the old names
+    // it removed are simply absent here.
+    private readonly System.Collections.Concurrent.ConcurrentBag<(string NifPath, Dictionary<string, string> Renames, string NpcIdentifier)>
+        _pendingHeadPartRenames = new();
+
     private Dictionary<string, ModSetting> _modSettingsMap;
     // Lazy: the analyzer hangs off CharacterPreviewCache and its asset-resolver chain, and is only
     // needed on the rare ladder rows that borrow a mesh from outside the selected mod.
@@ -686,6 +695,7 @@ public class Patcher : OptionalUIModule
                 _recordHandler.ResetMergedRecordTracking();
                 _pendingWigNifEdits.Clear();
                 _pendingWigBakes.Clear();
+                _pendingHeadPartRenames.Clear();
                 _headPartWigConverter.ResetSession(); // collision guards + temp BSA extractions from the last run
                 RecordProvenanceDiag.Reset(); // opt-in per-run record provenance report (no-op unless enabled)
             }
@@ -2096,7 +2106,20 @@ public class Patcher : OptionalUIModule
                                         Path.Combine(_currentRunOutputAssetPath, bakeFaceGenRelPath),
                                         wigConvert, npcIdentifier));
                                 }
-                                
+
+                                // Head parts this run duplicated under a new EditorID need their
+                                // baked FaceGen shapes renamed to match, or the engine's by-name
+                                // pairing breaks and the NPC dark-faces.
+                                var headPartRenames = CollectHeadPartShapeRenames(patchNpc);
+                                if (headPartRenames.Count > 0)
+                                {
+                                    var (renameFaceGenRelPath, _) =
+                                        Auxilliary.GetFaceGenSubPathStrings(patchNpc.FormKey, true);
+                                    _pendingHeadPartRenames.Add((
+                                        Path.Combine(_currentRunOutputAssetPath, renameFaceGenRelPath),
+                                        headPartRenames, npcIdentifier));
+                                }
+
                                 await _assetHandler.ScheduleCopyAssetLinkFiles(assetLinks, appearanceModSetting,
                                     _currentRunOutputAssetPath, faceTintPath,
                                     appearanceNpcRecord, npcFormKey, npcIdentifier);
@@ -2183,6 +2206,10 @@ public class Patcher : OptionalUIModule
                         ApplyPendingWigNifEdits();
 
                         ApplyPendingWigBakes();
+
+                        // Last: the two phases above own specific shape names (stripped donor
+                        // hair, baked wig shapes), so renaming runs against the final shape set.
+                        ApplyPendingHeadPartRenames();
                     }, ct);
 
                     // Opt-in asset-provenance report (AssetProvenance.csv): why each file was copied
@@ -2584,6 +2611,108 @@ public class Patcher : OptionalUIModule
         StripOne(pendingEdits[0]);
         Parallel.ForEach(pendingEdits.Skip(1),
             new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, StripOne);
+    }
+
+    /// <summary>
+    /// Old shape name -> new shape name for every head part on <paramref name="patchNpc"/> that
+    /// this run duplicated into the output under a CHANGED EditorID. Empty for the overwhelming
+    /// majority of NPCs (nothing was duplicated, or the EditorID survived).
+    ///
+    /// <para>The engine pairs an NPC's head parts to its baked FaceGen geometry by name —
+    /// <c>GetObjectByName(headPart-&gt;formEditorID)</c> — so a duplicate minted under
+    /// <c>&lt;original&gt;_&lt;sourcePlugin&gt;</c> (what Include As New does, to keep one mod's
+    /// copy of a shared record off every other mod's NPCs) points at a name no shape in the mesh
+    /// carries. Confirmed in game on RS Children's Assur and Svari: dark faces.</para>
+    ///
+    /// <para>Derived from the merged-record provenance map rather than from the override-handling
+    /// mode, so it covers every mint site that renames and cannot drift from them. Records the
+    /// wig pipeline mints are absent from that map — it creates them itself and bakes shapes
+    /// already carrying the new names — so they are naturally excluded.</para>
+    /// </summary>
+    private Dictionary<string, string> CollectHeadPartShapeRenames(INpcGetter patchNpc)
+    {
+        var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var outputMod = _environmentStateProvider.OutputMod;
+
+        foreach (var hp in patchNpc.HeadParts)
+        {
+            if (hp.IsNull) continue;
+            if (!hp.FormKey.ModKey.Equals(outputMod.ModKey)) continue; // not one of ours
+            if (!_recordHandler.TryGetMergedRecordOrigin(hp.FormKey, out var origin)) continue;
+
+            var oldName = origin.SourceEditorId;
+            if (string.IsNullOrEmpty(oldName)) continue;
+            if (!outputMod.HeadParts.TryGetValue(hp.FormKey, out var minted)) continue;
+
+            var newName = minted.EditorID;
+            if (string.IsNullOrEmpty(newName)) continue;
+            if (string.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase)) continue;
+
+            renames[oldName] = newName;
+        }
+
+        return renames;
+    }
+
+    /// <summary>
+    /// Renames the baked shapes in each queued NPC's copied FaceGen NIF to the EditorIDs of the
+    /// head-part duplicates this run minted for it (see
+    /// <see cref="CollectHeadPartShapeRenames"/>). Runs last of the three post-copy NIF phases —
+    /// after the antler/hair strip and the wig bake — so it sees the final shape set and never
+    /// competes with the names those phases own. Drains destructively for the same reason the
+    /// bake does: RunPatchingLogic runs once per output plugin.
+    /// </summary>
+    private void ApplyPendingHeadPartRenames()
+    {
+        if (_pendingHeadPartRenames.IsEmpty) return;
+
+        AppendLog($"Renaming FaceGen shapes to match duplicated head parts in " +
+                  $"{_pendingHeadPartRenames.Count} NIF(s)...", false, false);
+
+        var pending = new List<(string NifPath, Dictionary<string, string> Renames, string NpcIdentifier)>();
+        while (_pendingHeadPartRenames.TryTake(out var item)) pending.Add(item);
+
+        int total = pending.Count;
+        int done = 0;
+
+        void RenameOne((string NifPath, Dictionary<string, string> Renames, string NpcIdentifier) item)
+        {
+            UpdateProgress(Interlocked.Increment(ref done), total, "Renaming FaceGen shapes...");
+            var (nifPath, renames, npcIdentifier) = item;
+            try
+            {
+                if (!File.Exists(nifPath))
+                {
+                    // No FaceGen of our own for this NPC. The renamed head parts then apply to
+                    // whatever mesh the load order supplies, which this run cannot edit.
+                    AppendLog($"  WARNING: {npcIdentifier}: FaceGen NIF not found ({nifPath}), so the " +
+                              $"duplicated head part(s) [{string.Join(", ", renames.Values)}] keep names no " +
+                              "shape in its mesh carries. This NPC may show the dark face bug — set the mod's " +
+                              "Record Override Handling Mode to Include instead of IncludeAsNew if it does.",
+                        true, true);
+                    return;
+                }
+
+                int renamed = NifHandler.RenameShapesByName(nifPath, renames,
+                    msg => AppendLog("    " + msg, false, false));
+
+                if (renamed > 0)
+                {
+                    AppendLog($"  {npcIdentifier}: renamed {renamed} FaceGen shape(s) in " +
+                              $"{Path.GetFileName(nifPath)} to match duplicated head parts.", false, false);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"  ERROR renaming FaceGen shapes for {npcIdentifier} ({nifPath}): " +
+                          ExceptionLogger.GetExceptionStack(ex), true, true);
+            }
+        }
+
+        if (pending.Count == 0) return;
+        RenameOne(pending[0]);
+        Parallel.ForEach(pending.Skip(1),
+            new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, RenameOne);
     }
 
     /// <summary>

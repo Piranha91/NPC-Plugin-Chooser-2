@@ -166,6 +166,83 @@ public class NifHandler
         return removedCount;
     }
 
+    /// <summary>
+    /// Renames shapes in a FaceGen NIF in place and saves it. The engine reconciles an NPC's
+    /// head parts against its baked FaceGen geometry BY NAME —
+    /// <c>actor3D-&gt;GetObjectByName(headPart-&gt;formEditorID)</c> — so whenever this app mints a
+    /// duplicate head part under a new EditorID (Include As New appends
+    /// <c>_&lt;sourcePlugin&gt;</c>), the shape that head part refers to has to follow, or the
+    /// pairing breaks and the NPC dark-faces.
+    ///
+    /// <para>Keys are the OLD shape names, values the new ones. Matching is by exact name,
+    /// case-insensitive, like <see cref="RemoveShapesByName"/>. A rename is skipped when the
+    /// target name is already taken in this file (renaming onto it would make two shapes
+    /// indistinguishable to the by-name lookup) — the usual cause being a file that has already
+    /// been renamed by an earlier pass. Returns the number of shapes renamed; 0 leaves the file
+    /// untouched with no save.</para>
+    /// </summary>
+    public static int RenameShapesByName(string nifPath, IReadOnlyDictionary<string, string> renames,
+        Action<string>? log = null)
+    {
+        if (renames.Count == 0) return 0;
+
+        using NifFile nif = new NifFile();
+        int loadResult = nif.Load(nifPath);
+        if (loadResult != 0)
+        {
+            log?.Invoke($"RenameShapesByName: failed to load NIF (code {loadResult}): {nifPath}");
+            return 0;
+        }
+
+        // Collected before any rename so the "already taken" test sees the file's original
+        // names, and so renaming does not disturb the enumeration.
+        var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var toRename = new List<(NiShape Shape, string OldName, string NewName)>();
+        int renamed = 0;
+        using (var shapes = nif.GetShapes())
+        {
+            foreach (var shape in shapes)
+            {
+                string? name = shape.name?.get();
+                if (string.IsNullOrEmpty(name)) continue;
+                present.Add(name);
+                if (renames.TryGetValue(name, out var newName) &&
+                    !string.IsNullOrEmpty(newName) &&
+                    !string.Equals(name, newName, StringComparison.OrdinalIgnoreCase))
+                {
+                    toRename.Add((shape, name, newName));
+                }
+            }
+
+            foreach (var (shape, oldName, newName) in toRename)
+            {
+                if (present.Contains(newName))
+                {
+                    log?.Invoke($"RenameShapesByName: '{oldName}' -> '{newName}' skipped in " +
+                                $"{Path.GetFileName(nifPath)} — a shape is already named '{newName}'.");
+                    continue;
+                }
+
+                NifFile.RenameShape(shape, newName);
+                present.Remove(oldName);
+                present.Add(newName);
+                renamed++;
+                log?.Invoke($"RenameShapesByName: '{oldName}' -> '{newName}' in {Path.GetFileName(nifPath)}");
+            }
+
+            if (renamed == 0) return 0;
+        }
+
+        int saveResult = nif.Save(nifPath);
+        if (saveResult != 0)
+        {
+            log?.Invoke($"RenameShapesByName: save FAILED (code {saveResult}): {nifPath}");
+            return 0;
+        }
+
+        return renamed;
+    }
+
     /// <summary>In-memory core of <see cref="RemoveShapesByName"/>: deletes the named
     /// shapes from an already-loaded NIF without saving. Shared with the wig bake,
     /// which strips the donor hair shapes and merges the wig in one load/save.</summary>

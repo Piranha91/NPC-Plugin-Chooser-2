@@ -1185,6 +1185,11 @@ public class RecordHandler
                             var duplicate = context.DuplicateIntoAsNewRecord(_environmentStateProvider.OutputMod);
                             RecordProvenanceDiag.RecordBulkOverrideImport(record.FormKey, record.EditorID,
                                 record.Registration.Name, duplicate.FormKey, modKey);
+                            // Origin recorded BEFORE the rename, so it keeps the source EditorID.
+                            // Unlike RecordProvenanceDiag above this map is not opt-in: the "missing
+                            // master" diagnostics read it, and so does the FaceGen shape rename that
+                            // keeps a renamed head part paired with its baked geometry.
+                            RecordMergedRecordOrigin(record.FormKey, duplicate.FormKey, record.EditorID);
                             duplicate.EditorID = (duplicate.EditorID ?? "NoEditorID") + "_" + modKey.FileName;
                             _currentDuplicateInMappings.Add(record.FormKey, duplicate.FormKey);
                             remappedOverrideMap.Add(record.FormKey, duplicate.FormKey);
