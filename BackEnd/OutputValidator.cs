@@ -428,13 +428,23 @@ public class OutputValidator
             }
         }
 
+        // --- Flattened inheritance --------------------------------------------------------
+        // Under GiveEachNpcOwnCopy the patcher does NOT deliver the donor's own appearance: it
+        // overlays the TERMINUS's fields (Auxilliary.CopyInheritedAppearance) and forwards the
+        // TERMINUS's FaceGen file onto this NPC's own path. Grading either against the donor
+        // compares the output to a record and a mesh it deliberately no longer carries — the
+        // stub's dead face, which the game never rendered because the NPC inherited. That is
+        // 78 false Errors on the reporting run. The pre-run Validator already redirects the same
+        // way (Validator.FindUnwritableLink); this is the post-run half of it.
+        donorFk = ResolveFlattenedDonor(modSetting, donorFk, out bool donorInheritsFace, log);
+
         if (_settings.UseSkyPatcherMode)
         {
             // SkyPatcher mode doesn't patch the recipient's record. It builds a surrogate "_Template"
             // NPC (a copy of the donor) in the output plugin and an .ini line that copies the
             // surrogate's visual style onto the recipient at runtime. So validate the .ini line and
             // the surrogate — not the recipient's record/FaceGen.
-            ValidateNpcSkyPatcher(npcFk, donorFk, selectedModName, displayName, recipientRecord,
+            ValidateNpcSkyPatcher(npcFk, donorFk, donorInheritsFace, selectedModName, displayName, recipientRecord,
                 modSetting, npc2IniMap ?? new(), linkCache, listings, skyIndex, dataFolder, run, result, log);
             return;
         }
@@ -463,8 +473,8 @@ public class OutputValidator
         // FaceGen the game actually loads — the recipient, or its Traits template. It only leaves
         // npcFk when TryRedirectToTemplate above re-pointed it, so equality IS "no redirect".
         using (ContextualPerformanceTracer.Trace("CheckFaceGen"))
-            CheckFaceGen(npcFk, subjectFk, subjectFk.Equals(npcFk), donorFk, displayName, selectedModName,
-                modSetting, dataFolder, linkCache, run, result, log);
+            CheckFaceGen(npcFk, subjectFk, subjectFk.Equals(npcFk), donorInheritsFace, donorFk, displayName,
+                selectedModName, modSetting, dataFolder, linkCache, run, result, log);
 
         // Check 3: any SkyPatcher mod that would override this NPC at runtime. Filters (race,
         // faction, keyword...) match on the RECIPIENT's own record, not the template's.
@@ -1003,6 +1013,7 @@ public class OutputValidator
     private void ValidateNpcSkyPatcher(
         FormKey npcFk,
         FormKey donorFk,
+        bool donorInheritsFace,
         string selectedModName,
         string displayName,
         INpcGetter? recipientRecord,
@@ -1139,8 +1150,11 @@ public class OutputValidator
 
             default:
                 // Only an un-redirected surrogate is this NPC's own 1:1 stand-in — it is minted per
-                // target, so its FaceGen renders on npcFk and nothing else.
-                CheckFaceGen(npcFk, subjectFk, redirect == SurrogateRedirect.None, subjectDonorFk, displayName,
+                // target, so its FaceGen renders on npcFk and nothing else. A surrogate redirect
+                // has already moved subjectDonorFk to the donor's own template root, so the "owns
+                // no mesh" suppression applies to the un-redirected case alone.
+                CheckFaceGen(npcFk, subjectFk, redirect == SurrogateRedirect.None,
+                    donorInheritsFace && redirect == SurrogateRedirect.None, subjectDonorFk, displayName,
                     selectedModName, modSetting, dataFolder, linkCache, run, result, log);
                 break;
         }
@@ -1224,6 +1238,46 @@ public class OutputValidator
             Details = "Differing fields: " + string.Join(" | ", diffs),
         });
         log.AppendLine($"  RECORD mismatch ({string.Join(" | ", diffs)}); winner={winnerDesc}");
+    }
+
+    /// <summary>
+    /// The record whose appearance the patcher actually delivered for this selection. Normally the
+    /// donor itself; under <see cref="TemplateHandlingMode.GiveEachNpcOwnCopy"/> a donor that
+    /// inherits its face is flattened, so the output carries the TERMINUS's fields and the
+    /// terminus's FaceGen file — and that is what the checks have to be graded against. Mirrors the
+    /// pre-run screen in <c>Validator.FindUnwritableLink</c>, which redirects the same way.
+    /// </summary>
+    /// <param name="donorInheritsFace">True whenever the donor carries the Traits flag, whether or
+    /// not the chain could be followed and regardless of mode. Used to suppress the "ships no face
+    /// mesh" row: a templated stub owning no mesh is the definition of inheriting one, not a
+    /// finding the user can act on.</param>
+    private FormKey ResolveFlattenedDonor(ModSetting modSetting, FormKey donorFk,
+        out bool donorInheritsFace, StringBuilder log)
+    {
+        donorInheritsFace = false;
+
+        var donor = TryResolveSelectedSourceNpc(modSetting, donorFk);
+        if (donor == null || !Auxilliary.IsValidTemplatedNpc(donor)) return donorFk;
+
+        donorInheritsFace = true;
+
+        // Inherit mode leaves the inheritance standing, so the donor IS what was delivered; the
+        // Traits-template branch above already re-pointed the checks at what renders.
+        if (_settings.GetEffectiveTemplateHandlingMode(modSetting) !=
+            TemplateHandlingMode.GiveEachNpcOwnCopy)
+        {
+            return donorFk;
+        }
+
+        // Walk inside the SELECTED MOD, exactly as the patcher resolved it — the same resolver the
+        // record comparison uses, so a mod that overrides part of a chain is followed identically.
+        var status = Auxilliary.TryResolveAppearanceTerminus(
+            donor, fk => TryResolveSelectedSourceNpc(modSetting, fk), out var terminusFk);
+
+        if (status != FaceGenChainStatus.Resolved || terminusFk.Equals(donorFk)) return donorFk;
+
+        log.AppendLine($"  FLATTENED donor {donorFk} -> terminus {terminusFk} (grading against the terminus)");
+        return terminusFk;
     }
 
     /// <summary>
@@ -1622,6 +1676,7 @@ public class OutputValidator
         FormKey npcFk,        // recipient NPC — used for row identity (the NPC the user cares about)
         FormKey subjectFk,    // whose deployed FaceGen to check: recipient in record mode, surrogate in SkyPatcher mode
         bool subjectStandsInForNpc, // subject renders on npcFk alone — false once a Traits template is in the seat
+        bool donorInheritsFace,     // donor carries Traits: owning no mesh is expected, not a finding
         FormKey donorFk,
         string displayName,
         string selectedModName,
@@ -1719,6 +1774,17 @@ public class OutputValidator
 
             if (subjectExists && sourcePath == null)
             {
+                // A donor that inherits its face owns no mesh BY DEFINITION — that is what the
+                // Traits flag means. Saying so per NPC is noise the user cannot act on and which
+                // signals nothing about how the NPC looks in game, and templated stubs come in
+                // hundreds (532 rows on the reporting run). Worth an Info row for a non-templated
+                // mod, which really might have shipped a mesh and did not; never for these.
+                if (donorInheritsFace)
+                {
+                    log.AppendLine("  FACEGEN mod ships no mesh for a templated donor; expected, no row");
+                    return;
+                }
+
                 // The selected mod ships no face MESH for this NPC. Since the FaceGen ladder that is
                 // not a fault, it is the definition of rows 3-5: the patcher deliberately forwards
                 // the mesh from the mod that originally added the NPC (or, failing that, from
