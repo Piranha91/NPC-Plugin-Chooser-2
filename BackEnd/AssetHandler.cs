@@ -892,7 +892,7 @@ public class AssetHandler : OptionalUIModule
             // Slot-level harvest (not the block walk) so the remap keys match exactly what the
             // slot-level rewriter will read back.
             var remap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (_, texturePaths) in NifHandler.GetTexturesByShape(copiedDestPath))
+            foreach (var (_, texturePaths, _) in NifHandler.GetTexturesByShape(copiedDestPath))
             {
                 foreach (var tex in texturePaths)
                 {
@@ -999,6 +999,13 @@ public class AssetHandler : OptionalUIModule
     /// file in the game Data folder, then the vanilla archives. Without those last two, every mod
     /// NIF that legitimately reuses a vanilla texture would be reported.</para>
     ///
+    /// <para>Shapes the engine cannot draw are exempt (<c>DrawnInGame</c>): a mesh at material
+    /// alpha 0 renders nothing whatever its textures resolve to, which is how an author retires hair
+    /// left baked into a FaceGen head when a wig supplies the real thing. High Poly NPC Overhaul was
+    /// the specimen — four of its five reported NPCs looked correct in game because the flagged
+    /// shapes were hidden export leftovers and their worn wigs were textured fine, while the fifth
+    /// (a wig mesh at alpha 1, whose texture the mod forgets to ship) really did render blue.</para>
+    ///
     /// <para>Deduplicated by (mod, NIF, shape) so a shared mesh used by hundreds of NPCs is
     /// recorded once, against the first NPC that hit it, not hundreds of times.</para>
     /// </summary>
@@ -1013,7 +1020,7 @@ public class AssetHandler : OptionalUIModule
         // AssetRequestContext.HeadPartOnly. ArmorAddon meshes ARE drawn, so they stay reportable.
         if (ctx.HeadPartOnly) return;
 
-        IReadOnlyList<(string ShapeName, IReadOnlyList<string> TexturePaths)> byShape;
+        IReadOnlyList<(string ShapeName, IReadOnlyList<string> TexturePaths, bool DrawnInGame)> byShape;
         try
         {
             byShape = NifHandler.GetTexturesByShape(nifPathToAnalyze);
@@ -1027,8 +1034,15 @@ public class AssetHandler : OptionalUIModule
         IReadOnlySet<string>? vanillaAssetPaths = null;
         string dataFolder = _environmentStateProvider.DataFolderPath;
 
-        foreach (var (shapeName, texturePaths) in byShape)
+        foreach (var (shapeName, texturePaths, drawnInGame) in byShape)
         {
+            // A shape the engine cannot draw cannot render untextured. Wig-based appearance mods
+            // leave the hair baked into the FaceGen head at material alpha 0 and dress the NPC in a
+            // wig instead, so the dead geometry keeps naming textures the user never installed —
+            // reporting it says "will render untextured" about hair that is already invisible, while
+            // the wig's own mesh (drawn, and scanned separately) is where a real miss shows up.
+            if (!drawnInGame) continue;
+
             var candidates = new List<string>();
             foreach (var tex in texturePaths)
             {

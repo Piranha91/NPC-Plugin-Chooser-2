@@ -54,13 +54,19 @@ public class NifHandler
     /// set can be shared by several shapes and the block walk loses which shape used it. Empty
     /// slots are omitted; shapes with no shader property (SMP collision/virtual meshes) yield an
     /// empty list and are still returned, so callers can tell "no textures" from "not present".</para>
+    ///
+    /// <para><c>DrawnInGame</c> is false for a shape the engine cannot put on screen no matter what
+    /// its textures resolve to — see <see cref="ShapeIsDrawnInGame"/>. A caller reporting texture
+    /// problems must skip those, or it warns about geometry nobody can see.</para>
     /// </summary>
-    public static IReadOnlyList<(string ShapeName, IReadOnlyList<string> TexturePaths)> GetTexturesByShape(string nifPath)
+    public static IReadOnlyList<(string ShapeName, IReadOnlyList<string> TexturePaths, bool DrawnInGame)>
+        GetTexturesByShape(string nifPath)
     {
-        var results = new List<(string, IReadOnlyList<string>)>();
+        var results = new List<(string, IReadOnlyList<string>, bool)>();
         using NifFile nif = new NifFile();
         if (nif.Load(nifPath) != 0) return results;
 
+        NiHeader header = nif.GetHeader();
         using var shapes = nif.GetShapes();
         foreach (var shape in shapes)
         {
@@ -71,9 +77,59 @@ public class NifHandler
                 string tex = nif.GetTexturePathByIndex(shape, slot);
                 if (!string.IsNullOrWhiteSpace(tex)) paths.Add(tex);
             }
-            results.Add((name, paths));
+            results.Add((name, paths, ShapeIsDrawnInGame(header, shape)));
         }
         return results;
+    }
+
+    /// <summary>
+    /// Whether the engine can render this shape at all, judged from its material alpha
+    /// (<c>BSLightingShaderProperty.alpha</c>) together with its <c>NiAlphaProperty</c>.
+    ///
+    /// <para>A material alpha of 0 is how an author neutralises hair geometry left baked into a
+    /// FaceGen head: the shape stays in the NIF but contributes nothing, and the visible hair comes
+    /// from a worn wig instead. Specimen — High Poly NPC Overhaul builds every NPC as bald head part
+    /// plus wig, so 3021 of its 3025 FaceGen heads carry no hair at all; the four that do (Adrianne
+    /// Avenicci's <c>00013bb9.nif</c> keeps <c>0Victorian</c>/<c>0VictorianHL</c>, textured from a
+    /// hair the mod no longer ships) are export leftovers hidden this way, while the wig actually
+    /// worn is a different hair entirely. Rare, not a convention: a 35-NIF sample across six other
+    /// appearance mods contained no alpha-0 shape at all.</para>
+    ///
+    /// <para>Alpha 0 only hides a shape when an NiAlphaProperty makes the engine consult alpha in
+    /// the first place, so both flavours count and both must be checked: with alpha BLEND the shape
+    /// composites at zero opacity; with alpha TEST the tested value is material alpha times the
+    /// texture's alpha, so 0 falls under any threshold (including the GREATER-than-0 case) and every
+    /// fragment is discarded. With neither flag the shape draws in the opaque pass and its material
+    /// alpha is ignored — that is a visible shape, so it is reported as drawn.</para>
+    ///
+    /// <para>Reads fail open: anything unreadable is treated as drawn, because the cost of a missed
+    /// suppression is one extra warning line while the cost of a wrong suppression is silence about
+    /// a real untextured mesh.</para>
+    /// </summary>
+    private static bool ShapeIsDrawnInGame(NiHeader header, NiShape shape)
+    {
+        const float invisible = 0.001f;
+        try
+        {
+            var shaderRef = shape.ShaderPropertyRef();
+            if (shaderRef == null || shaderRef.IsEmpty()) return true;
+            if (header.GetBlockById(shaderRef.index) is not BSLightingShaderProperty shader) return true;
+            if (shader.alpha > invisible) return true;
+
+            if (!shape.HasAlphaProperty()) return true;
+            var alphaRef = shape.AlphaPropertyRef();
+            if (alphaRef == null || alphaRef.IsEmpty()) return true;
+            if (header.GetBlockById(alphaRef.index) is not NiAlphaProperty alphaProp) return true;
+
+            ushort flags = alphaProp.flags;
+            bool alphaBlend = (flags & 1) != 0;          // bit 0
+            bool alphaTest = (flags & (1 << 9)) != 0;    // bit 9
+            return !(alphaBlend || alphaTest);
+        }
+        catch
+        {
+            return true;
+        }
     }
 
     /// <summary>

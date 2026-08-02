@@ -36,7 +36,9 @@ public enum NpcWarningKind
     /// folder, or the vanilla archives, so it renders untextured (detail names the NIF, the shape
     /// and the missing paths). Meshes reached only through a HeadPart record are exempt — the game
     /// draws the face from the FaceGen NIF's baked shapes, so a stale HDPT mesh is not rendered
-    /// and warning on it is a false positive; see <see cref="AssetRequestContext.HeadPartOnly"/>.</summary>
+    /// and warning on it is a false positive; see <see cref="AssetRequestContext.HeadPartOnly"/>.
+    /// Shapes the engine cannot draw at all — material alpha 0 under an NiAlphaProperty, how
+    /// wig-based mods retire the hair baked into a FaceGen head — are exempt for the same reason.</summary>
     TexturelessShapes,
 
     // NOTE (user standard, 2026-08-02): a kind belongs in this enum — i.e. in the colored,
