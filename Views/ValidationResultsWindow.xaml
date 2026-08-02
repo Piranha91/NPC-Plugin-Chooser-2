@@ -45,12 +45,24 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,0"/>
             <TextBox Grid.Column="1"
                      Text="{Binding FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                      VerticalContentAlignment="Center"
                      ToolTip="Filter rows by any column"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                <CheckBox Content="Error" IsChecked="{Binding ShowErrors, Mode=TwoWay}"
+                          VerticalAlignment="Center"
+                          ToolTip="Show findings where the chosen appearance will not be what shows in-game"/>
+                <CheckBox Content="Warning" IsChecked="{Binding ShowWarnings, Mode=TwoWay}"
+                          VerticalAlignment="Center" Margin="12,0,0,0"
+                          ToolTip="Show likely problems worth a look"/>
+                <CheckBox Content="Info" IsChecked="{Binding ShowInfo, Mode=TwoWay}"
+                          VerticalAlignment="Center" Margin="12,0,0,0"
+                          ToolTip="Show informational rows (expected behaviour / context)"/>
+            </StackPanel>
         </Grid>
 
         <DataGrid Grid.Row="3"

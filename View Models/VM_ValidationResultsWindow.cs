@@ -28,6 +28,11 @@ public sealed class VM_ValidationResultsWindow : ReactiveObject, IDisposable
 
     [Reactive] public string FilterText { get; set; } = string.Empty;
 
+    // Severity toggles. Info is off by default — it is context, not a problem.
+    [Reactive] public bool ShowErrors { get; set; } = true;
+    [Reactive] public bool ShowWarnings { get; set; } = true;
+    [Reactive] public bool ShowInfo { get; set; } = false;
+
     public string SummaryText { get; }
     public string NotesText { get; }
     public bool HasNotes { get; }
@@ -62,6 +67,13 @@ public sealed class VM_ValidationResultsWindow : ReactiveObject, IDisposable
             .Subscribe(_ => ApplyFilter())
             .DisposeWith(_disposables);
 
+        // Severity toggles apply immediately (no throttle — they are discrete clicks).
+        this.WhenAnyValue(x => x.ShowErrors, x => x.ShowWarnings, x => x.ShowInfo)
+            .Skip(1)
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(_ => ApplyFilter())
+            .DisposeWith(_disposables);
+
         CopyTsvCommand = ReactiveCommand.Create(CopyTsv).DisposeWith(_disposables);
         SaveCsvCommand = ReactiveCommand.Create(SaveCsv).DisposeWith(_disposables);
     }
@@ -73,10 +85,17 @@ public sealed class VM_ValidationResultsWindow : ReactiveObject, IDisposable
         _ => 2
     };
 
+    private bool IsSeverityShown(ValidationIssue i) => i.Severity switch
+    {
+        ValidationSeverity.Error => ShowErrors,
+        ValidationSeverity.Warning => ShowWarnings,
+        _ => ShowInfo
+    };
+
     private void ApplyFilter()
     {
         FilteredIssues.Clear();
-        IEnumerable<ValidationIssue> query = _allIssues;
+        IEnumerable<ValidationIssue> query = _allIssues.Where(IsSeverityShown);
         var s = FilterText?.Trim();
         if (!string.IsNullOrEmpty(s))
         {
