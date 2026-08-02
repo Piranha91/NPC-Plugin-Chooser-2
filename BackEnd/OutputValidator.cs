@@ -1256,7 +1256,21 @@ public class OutputValidator
     {
         donorInheritsFace = false;
 
-        var donor = TryResolveSelectedSourceNpc(modSetting, donorFk);
+        // RecordHandler.ResolveNpcPreferringMod, NOT TryResolveSelectedSourceNpc: the latter is
+        // scoped to the mod's own plugins and returns null outright for a FaceGen-only entry, so
+        // the two commonest flatten cases would never be seen — a mesh-only overhaul (VIGILANT -
+        // NPC Overhaul ships no plugin at all) and a mod whose plugin simply does not override
+        // this NPC (Botox). The patcher resolves the chain with the load-order fallback, and the
+        // grading has to follow the record it actually flattened from.
+        bool isFaceGenOnly = modSetting.IsFaceGenOnlyEntry ||
+                             modSetting.FaceGenOnlyNpcFormKeys.Contains(donorFk);
+        var folderPaths = modSetting.CorrespondingFolderPaths?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                          ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        INpcGetter? Resolve(FormKey fk) =>
+            _recordHandler.ResolveNpcPreferringMod(fk, modSetting, folderPaths, isFaceGenOnly);
+
+        var donor = Resolve(donorFk);
         if (donor == null || !Auxilliary.IsValidTemplatedNpc(donor)) return donorFk;
 
         donorInheritsFace = true;
@@ -1269,11 +1283,7 @@ public class OutputValidator
             return donorFk;
         }
 
-        // Walk inside the SELECTED MOD, exactly as the patcher resolved it — the same resolver the
-        // record comparison uses, so a mod that overrides part of a chain is followed identically.
-        var status = Auxilliary.TryResolveAppearanceTerminus(
-            donor, fk => TryResolveSelectedSourceNpc(modSetting, fk), out var terminusFk);
-
+        var status = Auxilliary.TryResolveAppearanceTerminus(donor, Resolve, out var terminusFk);
         if (status != FaceGenChainStatus.Resolved || terminusFk.Equals(donorFk)) return donorFk;
 
         log.AppendLine($"  FLATTENED donor {donorFk} -> terminus {terminusFk} (grading against the terminus)");
