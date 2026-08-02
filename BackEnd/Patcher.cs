@@ -61,6 +61,13 @@ public class Patcher : OptionalUIModule
     private readonly System.Collections.Concurrent.ConcurrentBag<(string NifPath, Dictionary<string, string> Renames, string NpcIdentifier)>
         _pendingHeadPartRenames = new();
 
+    // Output-relative paths of FaceGen meshes the phases above actually rewrote. Recorded into
+    // NPC_Token.json: an edited file is deliberately no longer byte-identical to the appearance
+    // mod's copy, which is how "Validate Output" otherwise proves nothing overwrote our output,
+    // so without this an intentional edit reads as a lost conflict.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte>
+        _editedFaceGenPaths = new(StringComparer.OrdinalIgnoreCase);
+
     private Dictionary<string, ModSetting> _modSettingsMap;
     // Lazy: the analyzer hangs off CharacterPreviewCache and its asset-resolver chain, and is only
     // needed on the rare ladder rows that borrow a mesh from outside the selected mod.
@@ -696,6 +703,7 @@ public class Patcher : OptionalUIModule
                 _pendingWigNifEdits.Clear();
                 _pendingWigBakes.Clear();
                 _pendingHeadPartRenames.Clear();
+                _editedFaceGenPaths.Clear();
                 _headPartWigConverter.ResetSession(); // collision guards + temp BSA extractions from the last run
                 RecordProvenanceDiag.Reset(); // opt-in per-run record provenance report (no-op unless enabled)
             }
@@ -2487,7 +2495,8 @@ public class Patcher : OptionalUIModule
             CreationDate = DateTime.Now.ToString("o"),
             CreatedPlugins = _generatedOutputPlugins,
             ProcessedNpcs = _accumulatedTokenData,
-            SkippedNpcs = _skippedTokenData
+            SkippedNpcs = _skippedTokenData,
+            EditedFaceGen = new HashSet<string>(_editedFaceGenPaths.Keys, StringComparer.OrdinalIgnoreCase)
         };
 
         JSONhandler<NpcToken>.SaveJSONFile(tokenData, tokenFilePath, out bool tokenSaved, out exceptionStr);
@@ -2588,6 +2597,7 @@ public class Patcher : OptionalUIModule
                     msg => AppendLog("    " + msg, false, false));
                 if (removed > 0)
                 {
+                    NoteFaceGenEdited(nifPath);
                     AppendLog($"  {npcIdentifier}: removed {removed} baked hair/antler shape(s) " +
                               $"[{string.Join(", ", shapeNames)}] from {Path.GetFileName(nifPath)}.", false, false);
                 }
@@ -2614,6 +2624,23 @@ public class Patcher : OptionalUIModule
     }
 
     /// <summary>
+    /// Notes that a copied FaceGen mesh was rewritten in place, keyed exactly as
+    /// <see cref="Auxilliary.GetFaceGenSubPathStrings"/> renders it (regularized, lowercase) so
+    /// the validator can look it up against the path it builds from the same helper.
+    /// </summary>
+    private void NoteFaceGenEdited(string absoluteNifPath)
+    {
+        var root = _currentRunOutputAssetPath;
+        if (string.IsNullOrEmpty(root)) return;
+        if (!absoluteNifPath.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return;
+
+        var relative = absoluteNifPath.Substring(root.Length)
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .ToLowerInvariant();
+        if (relative.Length > 0) _editedFaceGenPaths[relative] = 0;
+    }
+
+    /// <summary>
     /// Old shape name -> new shape name for every head part on <paramref name="patchNpc"/> that
     /// this run duplicated into the output under a CHANGED EditorID. Empty for the overwhelming
     /// majority of NPCs (nothing was duplicated, or the EditorID survived).
@@ -2633,23 +2660,36 @@ public class Patcher : OptionalUIModule
     {
         var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var outputMod = _environmentStateProvider.OutputMod;
+        var visited = new HashSet<FormKey>();
 
-        foreach (var hp in patchNpc.HeadParts)
+        // ExtraParts are walked because a hairline is an EXTRA PART of its hair head part, not a
+        // top-level entry on the NPC — and it gets its own baked shape and its own duplicate. The
+        // first cut of this only read the NPC's own list, which renamed Assur's hair and left his
+        // hairline behind: still dark-faced, just for one part instead of two. Mirrors the walk
+        // in FaceGenConsistencyAnalyzer, which is what grades the result.
+        void Walk(IFormLinkGetter<IHeadPartGetter> link)
         {
-            if (hp.IsNull) continue;
-            if (!hp.FormKey.ModKey.Equals(outputMod.ModKey)) continue; // not one of ours
-            if (!_recordHandler.TryGetMergedRecordOrigin(hp.FormKey, out var origin)) continue;
+            if (link.IsNull || !visited.Add(link.FormKey)) return;
+            if (!link.FormKey.ModKey.Equals(outputMod.ModKey)) return; // not one of ours
+            if (!outputMod.HeadParts.TryGetValue(link.FormKey, out var minted)) return;
 
-            var oldName = origin.SourceEditorId;
-            if (string.IsNullOrEmpty(oldName)) continue;
-            if (!outputMod.HeadParts.TryGetValue(hp.FormKey, out var minted)) continue;
+            if (_recordHandler.TryGetMergedRecordOrigin(link.FormKey, out var origin))
+            {
+                var oldName = origin.SourceEditorId;
+                var newName = minted.EditorID;
+                if (!string.IsNullOrEmpty(oldName) && !string.IsNullOrEmpty(newName) &&
+                    !string.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase))
+                {
+                    renames[oldName] = newName;
+                }
+            }
 
-            var newName = minted.EditorID;
-            if (string.IsNullOrEmpty(newName)) continue;
-            if (string.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase)) continue;
-
-            renames[oldName] = newName;
+            // Descend regardless: a part we did not rename can still own ones we did.
+            if (minted.ExtraParts == null) return;
+            foreach (var extra in minted.ExtraParts) Walk(extra);
         }
+
+        foreach (var hp in patchNpc.HeadParts) Walk(hp);
 
         return renames;
     }
@@ -2698,6 +2738,7 @@ public class Patcher : OptionalUIModule
 
                 if (renamed > 0)
                 {
+                    NoteFaceGenEdited(nifPath);
                     AppendLog($"  {npcIdentifier}: renamed {renamed} FaceGen shape(s) in " +
                               $"{Path.GetFileName(nifPath)} to match duplicated head parts.", false, false);
                 }
@@ -2772,6 +2813,7 @@ public class Patcher : OptionalUIModule
 
                 if (baked > 0)
                 {
+                    NoteFaceGenEdited(nifPath);
                     AppendLog($"  {npcIdentifier}: baked {baked} wig shape(s) from " +
                               $"{Path.GetFileName(convert.WigNifSourcePath)} into {Path.GetFileName(nifPath)} " +
                               (convert.FaceGenShapeNamesToStrip.Count > 0

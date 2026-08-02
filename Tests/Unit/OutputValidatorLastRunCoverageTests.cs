@@ -1,8 +1,10 @@
-using System.IO;
+﻿using System.IO;
+using System.Text;
 using FluentAssertions;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
+using NPC_Plugin_Chooser_2.Tests.TestSupport;
 using Xunit;
 
 namespace NPC_Plugin_Chooser_2.Tests.Unit;
@@ -172,6 +174,33 @@ public class OutputValidatorLastRunCoverageTests
         {
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void EditedFaceGen_SurvivesTheJsonRoundTrip()
+    {
+        // A FaceGen this run rewrote (shape rename / wig bake / hair strip) is deliberately no
+        // longer byte-identical to the appearance mod's copy. That list is the only thing keeping
+        // the validator from reporting our own edit as a lost conflict, so it has to persist.
+        var ledger = Ledger(processed: [(Assur, "RS Children Overhaul")]);
+        ledger.EditedFaceGen.Add(@"meshes\actors\character\facegendata\facegeom\skyrim.esm\0001c18a.nif");
+
+        using var dir = new TempDir("ledger");
+        JSONhandler<NpcToken>.SaveJSONFile(ledger, Path.Combine(dir.Path, "NPC_Token.json"),
+            out bool saved, out string saveError);
+        saved.Should().BeTrue(saveError);
+
+        // Through the real read path, which is where the comparer is restored: Newtonsoft rebuilds
+        // a HashSet with the DEFAULT comparer, so a raw deserialize is case-sensitive and the
+        // lookup would depend on both ends happening to stay lowercase.
+        var reloaded = Reflect.InvokeStatic<OutputValidator, NpcToken?>(
+            "LoadDeployedRunLedger", dir.Path, new StringBuilder());
+
+        reloaded.Should().NotBeNull();
+        reloaded!.EditedFaceGen.Should().ContainSingle();
+        reloaded.EditedFaceGen.Contains(
+            @"MESHES\ACTORS\CHARACTER\FACEGENDATA\FACEGEOM\SKYRIM.ESM\0001C18A.NIF")
+            .Should().BeTrue("the validator looks this up with a path built elsewhere");
     }
 
     [Fact]

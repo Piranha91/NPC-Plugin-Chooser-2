@@ -23,4 +23,16 @@ public class NpcToken
     /// which is why every reader must treat an empty map as "unknown", not as "nothing skipped".</para>
     /// </summary>
     public Dictionary<FormKey, string> SkippedNpcs { get; set; } = new();
+
+    /// <summary>
+    /// Relative paths (regularized, e.g. <c>meshes\actors\character\facegendata\facegeom\...</c>)
+    /// of FaceGen meshes this run rewrote AFTER copying them out of the appearance mod: baked hair
+    /// or antler shapes stripped, a wig scene baked in, or shapes renamed to follow a duplicated
+    /// head part.
+    ///
+    /// <para>Such a file is deliberately no longer byte-identical to the mod's own copy, which is
+    /// otherwise how "Validate Output" proves nothing in the load order overwrote this app's
+    /// output. Without this list an intentional edit reads as a lost conflict.</para>
+    /// </summary>
+    public HashSet<string> EditedFaceGen { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

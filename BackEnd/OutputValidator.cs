@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Archives;
@@ -166,6 +166,7 @@ public class OutputValidator
             Release = _settings.SkyrimRelease.ToGameRelease(),
             TempDir = CreateValidationTempDir()
         };
+        if (lastRun != null) run.EditedFaceGen.UnionWith(lastRun.EditedFaceGen);
         try
         {
             for (int i = 0; i < total; i++)
@@ -448,9 +449,16 @@ public class OutputValidator
             return null;
         }
 
+        // Newtonsoft rebuilds a HashSet with the DEFAULT comparer, discarding the
+        // OrdinalIgnoreCase one the model declares — so a deserialized ledger is case-sensitive
+        // until it is rebuilt. Paths are compared against Auxilliary.GetFaceGenSubPathStrings
+        // output, and depending on both ends staying lowercase is the kind of coupling that
+        // breaks silently, so restore the comparer here rather than at each use.
+        token.EditedFaceGen = new HashSet<string>(token.EditedFaceGen, StringComparer.OrdinalIgnoreCase);
+
         log.AppendLine($"Deployed NPC_Token.json: {token.ProcessedNpcs.Count} processed, " +
-                       $"{token.SkippedNpcs.Count} skipped, written {token.CreationDate}, " +
-                       $"plugins [{string.Join(", ", token.CreatedPlugins)}].");
+                       $"{token.SkippedNpcs.Count} skipped, {token.EditedFaceGen.Count} edited FaceGen, " +
+                       $"written {token.CreationDate}, plugins [{string.Join(", ", token.CreatedPlugins)}].");
         return token;
     }
 
@@ -1591,6 +1599,13 @@ public class OutputValidator
                     deployedMatchesSource = FilesEqual(subjectPath, sourcePath);
             }
 
+            // ...unless the last run rewrote this very file on purpose (hair/antler strip, wig
+            // bake, head-part shape rename). Then it CANNOT be byte-identical to the mod's copy,
+            // and requiring that would report every deliberately-edited mesh as a lost conflict.
+            // Delivery is still ours and still faithful, so both consumers treat it as a match.
+            bool weEditedIt = subjectExists && run.EditedFaceGen.Contains(targetMeshRel);
+            bool deployedIsOurs = deployedMatchesSource || weEditedIt;
+
             // Independent of the source-matching below: does the deployed FaceGen's baked
             // geometry actually line up with the head parts this NPC resolves to in the
             // live load order? A mismatch (wrong plugin version, missing master, a null or
@@ -1609,7 +1624,7 @@ public class OutputValidator
             if (subjectExists)
             {
                 var fidelity = FaceGenConsistencyAnalyzer.DeliveryFidelity.Unknown;
-                if (deployedMatchesSource)
+                if (deployedIsOurs)
                 {
                     bool faceGenOnly = modSetting.IsFaceGenOnlyEntry ||
                                        modSetting.FaceGenOnlyNpcFormKeys.Contains(donorFk);
@@ -1748,9 +1763,9 @@ public class OutputValidator
 
             // Step 1: both exist — does the deployed FaceGen match the selected mod's source?
             // (Compared once at the top of the try, where the consistency check's fidelity needed it.)
-            if (deployedMatchesSource)
+            if (deployedIsOurs)
             {
-                return; // Match.
+                return; // Match — the mod's own file, or our own deliberate edit of it.
             }
 
             // Mismatch — identify what is actually supplying the deployed file.
@@ -2278,6 +2293,12 @@ public class OutputValidator
     {
         public GameRelease Release;
         public string TempDir = string.Empty;
+
+        /// <summary>Output-relative FaceGen paths the last run rewrote in place after copying
+        /// (hair/antler strip, wig bake, head-part shape rename). Such a file is intentionally no
+        /// longer byte-identical to the appearance mod's copy, so the byte comparison alone would
+        /// read this app's own edit as a lost conflict. Empty when the ledger is absent.</summary>
+        public HashSet<string> EditedFaceGen = new(StringComparer.OrdinalIgnoreCase);
         public readonly HashSet<string> OpenedBsaPaths = new(StringComparer.OrdinalIgnoreCase);
         public readonly Dictionary<string, HashSet<string>?> BsaIndex = new(StringComparer.OrdinalIgnoreCase);
     }

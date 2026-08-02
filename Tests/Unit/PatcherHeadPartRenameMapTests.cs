@@ -175,6 +175,60 @@ public class PatcherHeadPartRenameMapTests
         Collect(fx, NewNpc(fx)).Should().BeEmpty();
     }
 
+    // ── Extra parts ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ExtraPartsAreWalked_BecauseAHairlineIsNotATopLevelHeadPart()
+    {
+        // The regression this pins: a hairline is an EXTRA PART of its hair head part, and gets
+        // its own baked shape and its own duplicate. Reading only the NPC's own list renamed
+        // Assur's hair and left his hairline behind — still dark-faced, just for one part.
+        var fx = Build();
+        var hair = MintDuplicate(fx, "HairMaleImperialChild01");
+        var hairLine = MintDuplicate(fx, "HairLineMaleImperialChild01");
+        hair.ExtraParts.Add(hairLine.FormKey);
+
+        var npc = NewNpc(fx);
+        npc.HeadParts.Add(hair.FormKey); // hairline is NOT on the NPC
+
+        Collect(fx, npc).Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["HairMaleImperialChild01"] = "HairMaleImperialChild01_RSkyrimChildren.esm",
+            ["HairLineMaleImperialChild01"] = "HairLineMaleImperialChild01_RSkyrimChildren.esm",
+        });
+    }
+
+    [Fact]
+    public void ExtraPartOfAnUnrenamedPart_IsStillFound()
+    {
+        // Descent must not be gated on the parent having been renamed.
+        var fx = Build();
+        var parent = fx.OutputMod.HeadParts.AddNew();
+        parent.EditorID = "SomeHair"; // in the output but with no recorded provenance
+        var hairLine = MintDuplicate(fx, "HairLineMaleImperialChild01");
+        parent.ExtraParts.Add(hairLine.FormKey);
+
+        var npc = NewNpc(fx);
+        npc.HeadParts.Add(parent.FormKey);
+
+        Collect(fx, npc).Should().ContainKey("HairLineMaleImperialChild01");
+    }
+
+    [Fact]
+    public void CyclicExtraParts_Terminate()
+    {
+        var fx = Build();
+        var a = MintDuplicate(fx, "PartA");
+        var b = MintDuplicate(fx, "PartB");
+        a.ExtraParts.Add(b.FormKey);
+        b.ExtraParts.Add(a.FormKey);
+
+        var npc = NewNpc(fx);
+        npc.HeadParts.Add(a.FormKey);
+
+        Collect(fx, npc).Should().HaveCount(2);
+    }
+
     [Fact]
     public void MixedNpc_MapsOnlyTheRenamedOnes()
     {
