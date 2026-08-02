@@ -415,47 +415,15 @@ public class EnvironmentStateProvider : ReactiveObject
         return creationClubModKeys;
     }
 
+    /// <summary>Rebuilds the ModKey -> FormID-prefix map for the CURRENT load order. The
+    /// two-counter rule lives in <see cref="Auxilliary.BuildFormIdPrefixes"/> so the output
+    /// validator, which reports against an untrimmed load order of its own, shares it.</summary>
     private void ComputeFormIdPrefixes()
     {
-        var loadOrder = LoadOrder.ListedOrder.ToList();
-        
-        // This is the separate counter for full masters ONLY.
-        int fullMasterIndex = 0; 
-        int lightMasterIndex = 0;
-
-        for (int i = 0; i < loadOrder.Count; i++)
+        _modKeyFormIdPrefixCache.Clear();
+        foreach (var (modKey, prefix) in Auxilliary.BuildFormIdPrefixes(LoadOrder.ListedOrder))
         {
-            var listing = loadOrder[i];
-            if (listing.Mod != null && listing.Mod.ModHeader.Flags.HasFlag(SkyrimModHeader.HeaderFlag.Small))
-            {
-                // Handle ESLs using the light master counter.
-                if (lightMasterIndex > 4095) // Max is FFF (4095)
-                {
-                    Debug.WriteLine($"WARNING: Load order exceeds the 4096 light master limit. Plugin '{listing.ModKey.FileName}' will not be correctly indexed.");
-                    continue;
-                }
-                        
-                // The prefix uses the current lightMasterIndex, formatted to 3 hex digits.
-                _modKeyFormIdPrefixCache[listing.ModKey] = $"FE{lightMasterIndex:X3}";
-                        
-                // Increment ONLY the light master counter.
-                lightMasterIndex++; 
-            }
-            else
-            {
-                // Handle full masters using the full master counter.
-                if (fullMasterIndex > 253) // Max is FD (253)
-                {
-                    Debug.WriteLine($"WARNING: Load order exceeds the 254 full master limit. Plugin '{listing.ModKey.FileName}' and subsequent plugins will have invalid FormIDs.");
-                    continue;
-                }
-
-                // The prefix is the fullMasterIndex formatted to 2 hex digits.
-                _modKeyFormIdPrefixCache[listing.ModKey] = fullMasterIndex.ToString("X2");
-
-                // Increment ONLY the full master counter.
-                fullMasterIndex++; 
-            }
+            _modKeyFormIdPrefixCache[modKey] = prefix;
         }
     }
 

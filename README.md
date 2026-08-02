@@ -866,6 +866,8 @@ First, choose whether to validate every NPC with a selection or a hand-picked su
 
 Each finding is tagged with the check that produced it — **Selection** (the chosen mod is no longer configured, or the last run didn’t patch this NPC — see below), **Record** (the conflict-winning NPC record doesn’t match the selected mod, with a field-level diff), **Asset** (the deployed FaceGen mesh differs from the selected mod’s), **FaceGen** (the deployed `.nif` doesn’t agree with the head parts on the NPC’s record — the dark face bug), **SkyPatcher**, **Template**, and **Environment** — and names the **Winning Source** that overrode your intended appearance.
 
+Each row also carries the NPC's **FormKey** and its **FormID**, so you can paste either straight into xEdit or the console. You can select any run of cells — drag, or Ctrl/Shift-click — and press **Ctrl+C** (or right-click → *Copy selected cells*) to copy just those, which is usually quicker than exporting the whole table when you only want a FormID or two.
+
 The **Error / Warning / Info** checkboxes beside the filter box control which severities the table shows. **Info is unchecked by default**: those rows are context rather than problems, and leaving them on would bury the findings you opened the window for. The summary line above always counts all three, so you can see at a glance that rows are being hidden. Note that **Save CSV always writes every row**, including the hidden ones — the saved file is meant to be a complete record. **Copy TSV** copies what’s currently on screen.
 
 ![Validate output - results](docs/Screenshots/Run/Validate_Outputs_Results.png)

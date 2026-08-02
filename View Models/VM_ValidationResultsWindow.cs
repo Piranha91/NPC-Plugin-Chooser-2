@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -41,7 +41,7 @@ public sealed class VM_ValidationResultsWindow : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> SaveCsvCommand { get; }
 
     private static readonly string[] Headers =
-        { "Severity", "Check", "NPC", "FormKey", "Selected Mod", "Issue", "Winning Source", "Details" };
+        { "Severity", "Check", "NPC", "FormKey", "FormID", "Selected Mod", "Issue", "Winning Source", "Details" };
 
     public VM_ValidationResultsWindow(ValidationRunResult result)
     {
@@ -102,6 +102,7 @@ public sealed class VM_ValidationResultsWindow : ReactiveObject, IDisposable
             query = query.Where(i =>
                 i.NpcDisplayName.Contains(s, StringComparison.OrdinalIgnoreCase) ||
                 i.NpcFormKey.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                i.NpcFormId.Contains(s, StringComparison.OrdinalIgnoreCase) ||
                 i.SelectedMod.Contains(s, StringComparison.OrdinalIgnoreCase) ||
                 i.Issue.Contains(s, StringComparison.OrdinalIgnoreCase) ||
                 i.WinningSource.Contains(s, StringComparison.OrdinalIgnoreCase) ||
@@ -147,7 +148,7 @@ public sealed class VM_ValidationResultsWindow : ReactiveObject, IDisposable
     }
 
     private static string[] Row(ValidationIssue i) =>
-        new[] { i.SeverityText, i.CheckText, i.NpcDisplayName, i.NpcFormKey, i.SelectedMod, i.Issue, i.WinningSource, i.Details };
+        new[] { i.SeverityText, i.CheckText, i.NpcDisplayName, i.NpcFormKey, i.NpcFormId, i.SelectedMod, i.Issue, i.WinningSource, i.Details };
 
     private static string CleanTsv(string? s) =>
         (s ?? string.Empty).Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ');

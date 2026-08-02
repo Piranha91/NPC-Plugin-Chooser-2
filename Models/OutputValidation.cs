@@ -56,6 +56,12 @@ public sealed class ValidationIssue
 
     public string NpcDisplayName { get; init; } = string.Empty;
     public string NpcFormKey { get; init; } = string.Empty;
+
+    /// The NPC's resolved FormID in the load order the report was generated against. Stamped
+    /// onto every row in one pass at the end of the run rather than at each construction site,
+    /// so no check can forget it. Empty when the plugin isn't in that load order.
+    public string NpcFormId { get; set; } = string.Empty;
+
     public string SelectedMod { get; init; } = string.Empty;
 
     /// Human-readable description of the finding.

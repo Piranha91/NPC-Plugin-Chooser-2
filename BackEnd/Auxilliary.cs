@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Reactive.Disposables;
@@ -9,6 +9,7 @@ using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Assets;
 using Mutagen.Bethesda.Plugins.Cache;
+using Mutagen.Bethesda.Plugins.Order;
 using Mutagen.Bethesda.Plugins.Cache.Internals.Implementations;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
@@ -575,6 +576,58 @@ public class Auxilliary : IDisposable
         return foundEnabledKeysInFolder;
     }
     
+    /// <summary>
+    /// ModKey -> FormID prefix for a load order: two hex digits for a full master (its index
+    /// among full masters), <c>FE</c> + three for a light one (its index among light masters).
+    /// The two counters advance independently, which is the whole reason this cannot be read off
+    /// a plugin's position in the list.
+    ///
+    /// <para>Pure, and takes the listing sequence rather than reading any provider, so a caller
+    /// holding a DIFFERENT load order than the app's own — the output validator builds an
+    /// untrimmed one, including this app's output plugin — gets FormIDs for the order it is
+    /// actually reporting on. <see cref="EnvironmentStateProvider.ComputeFormIdPrefixes"/> and
+    /// that validator share it so the two cannot drift.</para>
+    /// </summary>
+    public static Dictionary<ModKey, string> BuildFormIdPrefixes(
+        IEnumerable<IModListingGetter<ISkyrimModGetter>> listedOrder)
+    {
+        var prefixes = new Dictionary<ModKey, string>();
+        int fullMasterIndex = 0;
+        int lightMasterIndex = 0;
+
+        foreach (var listing in listedOrder)
+        {
+            if (listing.Mod != null && listing.Mod.ModHeader.Flags.HasFlag(SkyrimModHeader.HeaderFlag.Small))
+            {
+                if (lightMasterIndex > 4095) continue; // past FFF: no valid FormID to give
+                prefixes[listing.ModKey] = $"FE{lightMasterIndex:X3}";
+                lightMasterIndex++;
+            }
+            else
+            {
+                if (fullMasterIndex > 253) continue; // past FD: same
+                prefixes[listing.ModKey] = fullMasterIndex.ToString("X2");
+                fullMasterIndex++;
+            }
+        }
+
+        return prefixes;
+    }
+
+    /// <summary>
+    /// The 8-character FormID for a FormKey under the supplied prefixes, or empty when its plugin
+    /// isn't in that load order. A light master's local ID is the low 12 bits, a full master's the
+    /// low 24. Pure.
+    /// </summary>
+    public static string FormatFormId(FormKey formKey, IReadOnlyDictionary<ModKey, string> prefixes)
+    {
+        if (!prefixes.TryGetValue(formKey.ModKey, out var prefix)) return string.Empty;
+
+        return prefix.StartsWith("FE", StringComparison.Ordinal)
+            ? $"{prefix}{formKey.ID & 0xFFF:X3}"
+            : prefix + formKey.IDString();
+    }
+
     public string FormKeyToFormIDString(FormKey formKey)
     {
         if (FormIDCache.TryGetValue(formKey, out var cachedId))

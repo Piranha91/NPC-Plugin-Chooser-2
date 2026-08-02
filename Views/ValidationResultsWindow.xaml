@@ -65,6 +65,9 @@
             </StackPanel>
         </Grid>
 
+        <!-- Cell selection + ExcludeHeader: highlight any run of cells (drag, or Ctrl/Shift-click)
+             and Ctrl+C pastes just those cells, tab-separated, with no column header line. The
+             buttons below the grid are what emit a full headered table. -->
         <DataGrid Grid.Row="3"
                   ItemsSource="{Binding FilteredIssues}"
                   AutoGenerateColumns="False"
@@ -77,13 +80,20 @@
                   GridLinesVisibility="All"
                   HeadersVisibility="Column"
                   RowHeaderWidth="0"
-                  ClipboardCopyMode="IncludeHeader"
+                  ClipboardCopyMode="ExcludeHeader"
                   Background="{DynamicResource SecondaryBackground}"
                   Foreground="{DynamicResource PrimaryForeground}"
                   BorderBrush="{DynamicResource BorderBrush}"
                   RowBackground="{DynamicResource SecondaryBackground}"
                   HorizontalGridLinesBrush="{DynamicResource BorderBrush}"
                   VerticalGridLinesBrush="{DynamicResource BorderBrush}">
+            <DataGrid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Copy selected cells"
+                              Command="ApplicationCommands.Copy"
+                              InputGestureText="Ctrl+C"/>
+                </ContextMenu>
+            </DataGrid.ContextMenu>
             <DataGrid.ColumnHeaderStyle>
                 <Style TargetType="DataGridColumnHeader">
                     <Setter Property="Background" Value="{DynamicResource ButtonBackground}"/>
@@ -126,6 +136,7 @@
                 <DataGridTextColumn Header="Check" Binding="{Binding CheckText}" Width="90"/>
                 <DataGridTextColumn Header="NPC" Binding="{Binding NpcDisplayName}" Width="160"/>
                 <DataGridTextColumn Header="FormKey" Binding="{Binding NpcFormKey}" Width="150"/>
+                <DataGridTextColumn Header="FormID" Binding="{Binding NpcFormId}" Width="80"/>
                 <DataGridTextColumn Header="Selected Mod" Binding="{Binding SelectedMod}" Width="150"/>
                 <DataGridTextColumn Header="Issue" Binding="{Binding Issue}" Width="2*">
                     <DataGridTextColumn.ElementStyle>

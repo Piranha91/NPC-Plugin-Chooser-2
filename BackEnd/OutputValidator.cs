@@ -203,6 +203,12 @@ public class OutputValidator
             CleanupRun(run, log);
         }
 
+        // Stamp each row's FormID from the load order this report was generated against — the
+        // UNTRIMMED one, so it matches what the console and xEdit show for the deployed game
+        // rather than the trimmed order the app patches with. Done in one pass here so no check
+        // has to remember to fill it in.
+        StampFormIds(result.Issues, listings);
+
         result.NpcsChecked = total;
         progress?.Report((total, total, "Validation complete."));
         log.AppendLine($"Done. NPCs checked: {total}. Issues: {result.Issues.Count}.");
@@ -213,6 +219,34 @@ public class OutputValidator
         }
         WriteLog(log, result);
         return result;
+    }
+
+    /// <summary>
+    /// Fills in <see cref="ValidationIssue.NpcFormId"/> for every row from the load order the
+    /// report was generated against. Rows with no NPC (environment-level notes) and NPCs whose
+    /// plugin isn't in that order are left blank rather than guessed at. Internal for tests.
+    /// </summary>
+    internal static void StampFormIds(
+        IEnumerable<ValidationIssue> issues,
+        IEnumerable<IModListingGetter<ISkyrimModGetter>> listings)
+    {
+        var prefixes = Auxilliary.BuildFormIdPrefixes(listings);
+        var cache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var issue in issues)
+        {
+            if (string.IsNullOrEmpty(issue.NpcFormKey)) continue;
+
+            if (!cache.TryGetValue(issue.NpcFormKey, out var formId))
+            {
+                formId = FormKey.TryFactory(issue.NpcFormKey, out var fk)
+                    ? Auxilliary.FormatFormId(fk, prefixes)
+                    : string.Empty;
+                cache[issue.NpcFormKey] = formId;
+            }
+
+            issue.NpcFormId = formId;
+        }
     }
 
     /// <summary>Outcome of the up-front deploy-readiness probe. <see cref="Ok"/> is true
