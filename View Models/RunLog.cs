@@ -54,6 +54,18 @@ public sealed class RunLogEntry
 /// Successful non-asset file writes ("Saved plugin: …", "Successfully wrote unified
 /// NPC_Token.json to …") are recognised the same way, from a leading verb; see
 /// <see cref="SuccessMarkers"/> for why that has to be anchored to the first word.
+///
+/// <para>What a marker is FOR (user standard, 2026-08-02): a coloured line is reserved for
+/// something the user will notice in game — the dark face bug, missing or wrong meshes and
+/// textures, wrong or missing outfits, null references that can crash or hang a load — plus
+/// outright failures (exceptions, save failures, skipped NPCs, failed copies). A finding that
+/// is real but inert in game gets a neutral "Note: " line instead, forced past the verbose
+/// gate for the summary and verbose-only for the per-item detail; see
+/// <c>Patcher.LogOrphanedDuplicates</c> for the shape and the comment at the bottom of
+/// <c>NpcWarningKind</c> for the same rule applied to the grouped end-of-run report. Note when
+/// wording one of those neutral lines that the search below is by WORD, not by prefix: a bare
+/// "warning" or "error" anywhere in the first <see cref="MarkerWindow"/> characters colours the
+/// line, while the plurals ("warnings", "errors") do not.</para>
 /// </summary>
 public static class RunLogClassifier
 {

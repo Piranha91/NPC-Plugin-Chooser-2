@@ -2036,9 +2036,16 @@ public class AssetHandler : OptionalUIModule
         }
         else
         {
+            // Neutral and non-error on purpose (user standard, 2026-08-02): the suppression list
+            // only silences known-missing-asset reports, so its absence makes NPC2 say MORE, not
+            // less, and changes nothing the user sees in game. "Cannot proceed" was untrue as
+            // well — LoadAuxiliaryFiles' result is not acted on and the run continues. Forced
+            // rather than verbose because a missing shipped resource means a damaged install,
+            // which is worth saying once; see Patcher.LogOrphanedDuplicates for the shape.
             RunLog(
-                $"ERROR: Suppressed warnings file not found at '{suppressWarningsFile}'. Cannot proceed.",
-                true);
+                $"Note: no suppression list at '{suppressWarningsFile}' (one ships with NPC2), so " +
+                "every missing asset will be reported. Patching is unaffected.",
+                false, true);
             success = false;
         }
 

@@ -120,8 +120,15 @@ namespace NPC_Plugin_Chooser_2.BackEnd
             }
             catch (Exception ex)
             {
-                // If writing the log file fails, report a critical error to the main log.
-                AppendLog($"FATAL: Could not write the DeltaPatchingLog.html file. Reason: {ex.Message}", true, true);
+                // Neutral and non-error on purpose (user standard, 2026-08-02): only the companion
+                // diagnostic failed to write. Delta patching itself already ran and the output
+                // plugin is untouched by this, so nothing here is visible in game — the same
+                // reasoning that makes NpcWarningReporter.WriteDetailedLog fail quietly. Forced,
+                // because the detail the run log would have pointed at is now gone.
+                AppendLog(
+                    "Note: the delta patching detail log could not be written to disk " +
+                    $"({ex.Message}). Delta patching itself ran; the output plugin is unaffected.",
+                    false, true);
             }
         }
         #endregion
