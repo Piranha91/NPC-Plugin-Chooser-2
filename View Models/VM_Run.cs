@@ -436,24 +436,22 @@ public class VM_Run : ReactiveObject, IDisposable
             {
                 CurrentProgressMessage = "Waiting for user input...";
 
-                // Grouped by reason, then by the mod the appearance came from: a load order can
-                // reject hundreds of NPCs for one shared reason, and repeating that reason on
-                // every line makes the dialog unreadable.
+                // Presented as an issue -> mod -> NPC tree: a load order can reject hundreds of
+                // NPCs for one shared reason, and repeating that reason on every line makes the
+                // dialog unreadable. Reports built without structured entries (callers predating
+                // them) are lifted into one catch-all issue so the tree still has something to
+                // show rather than silently going empty.
                 var details = validationReport.DetailedSelections;
-                var body = details.Any()
-                    ? Validator.FormatInvalidSelectionsReport(details)
-                    : string.Join("\n", validationReport.InvalidSelections);
-
-                var message =
-                    new StringBuilder(
-                        $"Found {validationReport.InvalidSelections.Count} invalid NPC selection(s) that will be skipped for the following reasons:\n\n");
-                message.AppendLine(body);
-                message.AppendLine(
-                    "\nSkip them and continue with only the valid selections?");
+                if (!details.Any())
+                {
+                    details = validationReport.InvalidSelections
+                        .Select(line => new Validator.InvalidSelection(line, "(unspecified)", "Invalid selection"))
+                        .ToList();
+                }
 
                 Application.Current?.Dispatcher.Invoke(() =>
                 {
-                    continuePatching = ScrollableMessageBox.Confirm(message.ToString(), "Invalid Selections Found");
+                    continuePatching = InvalidSelectionsWindow.Confirm(details);
                 });
             }
 

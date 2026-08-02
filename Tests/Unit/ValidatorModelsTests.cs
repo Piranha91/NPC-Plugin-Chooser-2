@@ -36,6 +36,48 @@ public class ValidatorModelsTests
     }
 
     [Fact]
+    public void InvalidSelection_NpcLabel_AppendsTheFormKey()
+    {
+        var entry = new Validator.InvalidSelection("Lydia", "Mod One", "Mod folder not found", "000A2C8E:Skyrim.esm");
+
+        entry.NpcLabel.Should().Be("Lydia [000A2C8E:Skyrim.esm]");
+        entry.ToLine().Should().Be("Lydia [000A2C8E:Skyrim.esm] -> 'Mod One' (Mod folder not found)");
+    }
+
+    [Fact]
+    public void InvalidSelection_NpcLabel_DoesNotDoubleUpWhenTheDescriptionIsTheFormKey()
+    {
+        // Validator falls back to the raw FormKey as the description when the NPC can't be
+        // resolved ("Base NPC not found in load order"); appending it again would read as
+        // "000A2C8E:Skyrim.esm [000A2C8E:Skyrim.esm]".
+        new Validator.InvalidSelection("000A2C8E:Skyrim.esm", "Mod One", "Base NPC not found in load order",
+                "000A2C8E:Skyrim.esm")
+            .NpcLabel.Should().Be("000A2C8E:Skyrim.esm");
+    }
+
+    [Fact]
+    public void InvalidSelection_NpcLabel_OmittedWhenNoFormKeySupplied()
+    {
+        new Validator.InvalidSelection("Lydia", "Mod One", "Mod folder not found")
+            .NpcLabel.Should().Be("Lydia", "the FormKey is optional for callers that predate it");
+    }
+
+    [Fact]
+    public void FormatInvalidSelectionsReport_UsesTheFormKeyAppendedLabel()
+    {
+        var entries = new List<Validator.InvalidSelection>
+        {
+            new("Lydia", "Mod One", "Templated NPC", "000A2C8E:Skyrim.esm"),
+        };
+
+        Validator.FormatInvalidSelectionsReport(entries).Replace("\r\n", "\n")
+            .Should().Be(
+                "Templated NPC (1 selection):\n" +
+                "- Mod One\n" +
+                "-- Lydia [000A2C8E:Skyrim.esm]");
+    }
+
+    [Fact]
     public void FormatInvalidSelectionsReport_GroupsByReasonThenMod()
     {
         var entries = new List<Validator.InvalidSelection>

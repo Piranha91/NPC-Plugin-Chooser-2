@@ -38,9 +38,21 @@ public class Validator : OptionalUIModule
     /// identical explanation on every line. <see cref="ToLine"/> is the flat form used by the run
     /// log and by callers that only want a human-readable string.
     /// </summary>
-    public record InvalidSelection(string NpcDescription, string ModName, string Reason)
+    /// <param name="NpcFormKey">Flat form of the target NPC's FormKey, appended to the display
+    /// name by <see cref="NpcLabel"/>. Optional so callers predating it still compile.</param>
+    public record InvalidSelection(string NpcDescription, string ModName, string Reason, string NpcFormKey = "")
     {
-        public string ToLine() => $"{NpcDescription} -> '{ModName}' ({Reason})";
+        /// <summary>The NPC as displayed, with its FormKey appended. Two NPCs can share a Name
+        /// (and mods routinely reuse EditorIDs), so the name alone does not identify the record
+        /// the user has to go fix. Skipped when the description already IS the FormKey — that is
+        /// what <see cref="Auxilliary.GetLogString"/> falls back to for an unresolvable NPC.</summary>
+        public string NpcLabel =>
+            string.IsNullOrWhiteSpace(NpcFormKey) ||
+            NpcDescription.Contains(NpcFormKey, StringComparison.OrdinalIgnoreCase)
+                ? NpcDescription
+                : $"{NpcDescription} [{NpcFormKey}]";
+
+        public string ToLine() => $"{NpcLabel} -> '{ModName}' ({Reason})";
     }
 
     /// <param name="InvalidSelections">Flat one-line form of each rejection, in screening order.</param>
@@ -72,7 +84,7 @@ public class Validator : OptionalUIModule
                 sb.AppendLine($"- {modGroup.Key}");
                 foreach (var entry in modGroup)
                 {
-                    sb.AppendLine($"-- {entry.NpcDescription}");
+                    sb.AppendLine($"-- {entry.NpcLabel}");
                 }
             }
 
@@ -115,7 +127,7 @@ public class Validator : OptionalUIModule
         // the FormKey-keyed map the patcher stamps into NPC_Token.json can never drift apart.
         void Reject(FormKey npcFormKey, string npcDescription, string modName, string reason)
         {
-            var entry = new InvalidSelection(npcDescription, modName, reason);
+            var entry = new InvalidSelection(npcDescription, modName, reason, npcFormKey.ToString());
             invalidEntries.Add(entry);
             invalidSelections.Add(entry.ToLine());
             _rejectedSelections[npcFormKey] = reason;
