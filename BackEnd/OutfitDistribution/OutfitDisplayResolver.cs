@@ -888,10 +888,17 @@ public class OutfitDisplayResolver
         // in the donor's outfit (source 1); source 2 (a WornArmor antler ARMA)
         // stays out because the preview never draws those slots.
         // Deliberately shares NpcMeshResolver's collector rather than mirroring
-        // it, so the stamp cannot drift from what is actually hidden.
+        // it, so the stamp cannot drift from what is actually hidden — and for
+        // the same reason it must be handed the MOD-SCOPED resolver every other
+        // lookup here uses. An appearance mod's plugin is normally NOT in the
+        // active load order, so a linkCache-only resolve returns nothing for the
+        // head parts that mod defines: the segment stayed silently empty and
+        // switching the mod to Remove never re-staled the tile. The render hid
+        // the antlers correctly all along (NpcMeshResolver resolves mod-scoped),
+        // so only the cached mugshot was wrong, and only deleting it fixed that.
         var hiddenAntlerShapes = CharacterViewerHost.NpcMeshResolver.CollectAntlerHiddenShapeNames(
             donor, modSetting, _settings,
-            link => linkCache.TryResolve<IHeadPartGetter>(link.FormKey, out var hp) ? hp : null);
+            link => ResolveHeadPart(link, modSetting, folders, linkCache));
         if (hiddenAntlerShapes.Count > 0)
         {
             sb.Append("+fgantler[" + string.Join(",",
@@ -919,19 +926,25 @@ public class OutfitDisplayResolver
         foreach (var hpLink in donor.HeadParts)
         {
             if (hpLink == null || hpLink.IsNull) continue;
-            IHeadPartGetter? hp = null;
-            if (_recordHandler.TryGetRecordFromMods(hpLink, modSetting.CorrespondingModKeys, folders,
-                    RecordHandler.RecordLookupFallBack.Winner, out var hpRec) && hpRec is IHeadPartGetter scopedHp)
-            {
-                hp = scopedHp;
-            }
-            else
-            {
-                linkCache.TryResolve<IHeadPartGetter>(hpLink.FormKey, out hp);
-            }
-            if (hp?.Type == HeadPart.TypeEnum.Hair) return true;
+            if (ResolveHeadPart(hpLink, modSetting, folders, linkCache)?.Type == HeadPart.TypeEnum.Hair) return true;
         }
         return false;
+    }
+
+    /// <summary>A head part resolved through the mod's own plugins first, with
+    /// the load-order winner as fallback — the same order every other record
+    /// lookup in this file uses. The mod-scoped leg is not an optimization: an
+    /// appearance mod's plugin is usually absent from the active load order, so
+    /// the linkCache alone cannot resolve the head parts that mod defines.</summary>
+    private IHeadPartGetter? ResolveHeadPart(IFormLinkGetter<IHeadPartGetter> link, ModSetting modSetting,
+        HashSet<string> folders, ILinkCache linkCache)
+    {
+        if (_recordHandler.TryGetRecordFromMods(link, modSetting.CorrespondingModKeys, folders,
+                RecordHandler.RecordLookupFallBack.Winner, out var rec) && rec is IHeadPartGetter scoped)
+        {
+            return scoped;
+        }
+        return linkCache.TryResolve<IHeadPartGetter>(link.FormKey, out var winner) ? winner : null;
     }
 
     private static string DescribeOutfit(FormKey outfit, ILinkCache linkCache)
