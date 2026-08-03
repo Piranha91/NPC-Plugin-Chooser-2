@@ -429,7 +429,12 @@ public class WigForwarderTests
         mergedHair.EditorID = "FoxGloveHairMesh";
         f.RecordHandler.SeedDuplicateMapping(f.HairHeadPart.FormKey, mergedHair.FormKey);
 
+        // A non-playable race, i.e. one vanilla's HeadPartsAllRacesMinusBeast omits.
+        var dremoraRace = f.OutputMod.Races.AddNew();
+        dremoraRace.EditorID = "DremoraRace";
+
         var patchNpc = f.OutputMod.Npcs.AddNew();
+        patchNpc.Race.SetTo(dremoraRace);
         patchNpc.HeadParts.Add(mergedHair.ToLink());
         patchNpc.HeadParts.Add(f.EyesHeadPart.ToLink());
 
@@ -440,8 +445,15 @@ public class WigForwarderTests
         bald.Model.Should().BeNull("the bald hair must render nothing — the wig supplies the visuals");
         bald.Flags.Should().Be(HeadPart.Flag.Male | HeadPart.Flag.Female,
             "non-playable, both sexes — mirroring High Poly NPC Overhaul's HighPoly_HairBald");
-        bald.ValidRaces.FormKey.Should().Be(FormKey.Factory("0A803F:Skyrim.esm"),
-            "HeadPartsAllRacesMinusBeast, as HPNO uses");
+
+        // ValidRaces is this run's OWN list, containing the wearer's race. HPNO's record points at
+        // vanilla HeadPartsAllRacesMinusBeast and this one used to copy that, but the list holds
+        // only the ten playable races and their vampire variants — so the record whose whole job is
+        // to guarantee the NPC HAS a usable Hair part was invalid for every non-playable race.
+        var validRaces = f.OutputMod.FormLists.Single(l =>
+            l.EditorID == Auxilliary.MintedHeadPartValidRacesEditorId);
+        bald.ValidRaces.FormKey.Should().Be(validRaces.FormKey);
+        validRaces.Items.Select(i => i.FormKey).Should().Contain(dremoraRace.FormKey);
 
         patchNpc.HeadParts.Select(h => h.FormKey).Should().BeEquivalentTo(
             new[] { f.EyesHeadPart.FormKey, bald.FormKey });

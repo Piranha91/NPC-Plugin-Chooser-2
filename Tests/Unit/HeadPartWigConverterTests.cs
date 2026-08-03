@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -34,7 +34,15 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 public class HeadPartWigConverterTests : IDisposable
 {
     private static readonly ModKey DonorKey = ModKey.FromNameAndExtension("FoxGloveAuri.esp");
-    private static readonly FormKey ValidRacesFlst = FormKey.Factory("0A803F:Skyrim.esm");
+    /// <summary>The output-owned ValidRaces FormList the minted parts point at, and the races in
+    /// it. Was vanilla's HeadPartsAllRacesMinusBeast until that turned out to hold only the ten
+    /// playable races plus vampires — see Auxilliary.GetOrCreateMintedHeadPartValidRaces.</summary>
+    private static (FormKey Key, List<FormKey> Races) MintedValidRaces(SkyrimMod outputMod)
+    {
+        var flst = outputMod.FormLists.Single(f =>
+            f.EditorID == Auxilliary.MintedHeadPartValidRacesEditorId);
+        return (flst.FormKey, flst.Items.Select(i => i.FormKey).ToList());
+    }
 
     private const string WigNifRecordPath = @"actors\TestWig\wig_1.nif";
     private static readonly string[] WigShapes = { "01b", "01a", "Hl" };
@@ -427,7 +435,8 @@ public class HeadPartWigConverterTests : IDisposable
             "hair parts must be single-gender — a Male|Female part is invisible to the " +
             "engine's gender-filtered hair lookup, which disables headgear hair suppression");
         parent.Flags.Should().NotHaveFlag(HeadPart.Flag.Playable);
-        parent.ValidRaces.FormKey.Should().Be(ValidRacesFlst);
+        parent.ValidRaces.FormKey.Should().Be(MintedValidRaces(f.OutputMod).Key,
+            "minted parts point at this run's own ValidRaces list, not a borrowed vanilla one");
         parent.Model.Should().NotBeNull();
         parent.Model!.File.GivenPath.Should().Be(WigNifRecordPath);
         parent.ExtraParts.Select(l => l.FormKey).Should().BeEquivalentTo(
@@ -442,7 +451,7 @@ public class HeadPartWigConverterTests : IDisposable
             extra.Model.Should().NotBeNull(
                 "every part must be geometry-bearing or the engine orphans its baked shape (dark face)");
             extra.Model!.File.GivenPath.Should().Be(WigNifRecordPath);
-            extra.ValidRaces.FormKey.Should().Be(ValidRacesFlst);
+            extra.ValidRaces.FormKey.Should().Be(MintedValidRaces(f.OutputMod).Key);
         }
 
         // EDID == baked shape name for every part, via the rename map.
@@ -948,21 +957,61 @@ public class HeadPartWigConverterTests : IDisposable
         f.OutputMod.HeadParts.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// The race guard is "does the engine build this actor a FaceGen head", not "is this race in
+    /// some list". Without a FaceGen head there is nothing for a minted part to bake into, so the
+    /// conversion declines and the skin-carried wig is left alone.
+    ///
+    /// <para>It used to test membership of vanilla's <c>HeadPartsAllRacesMinusBeast</c>, which the
+    /// minted parts borrowed as their ValidRaces — a circular check that declined because the race
+    /// was missing from a list this app had chosen. That list holds only the ten playable races
+    /// and their vampire variants, so it rejected every non-playable race; all 25 declines in the
+    /// measured run were DremoraRace, whose NPCs have head parts and a FaceGen head and whose wig
+    /// ArmorAddon the mod author had named for them.</para>
+    /// </summary>
     [Fact]
-    public void Apply_WnamWig_BeastRace_DeclinesWithoutFallback()
+    public void Apply_WnamWig_RaceWithNoFaceGenHead_DeclinesWithoutFallback()
     {
         var f = Make(donorHasHair: false);
         RemoveOutfitWig(f);
         AddWnamWig(f);
         var race = f.DonorMod.Races.AddNew();
-        race.EditorID = "KhajiitRace";
+        race.EditorID = "SomeCreatureRace";
         f.DonorNpc.Race.SetTo(race);
-        f.Converter.HeadPartRaceAllowedProbe = _ => false; // not in HeadPartsAllRacesMinusBeast
+        f.Converter.HeadPartRaceAllowedProbe = _ => false; // no FaceGenHead flag
 
         var result = Apply(f, out bool fallback);
 
-        result.Should().BeNull("the minted parent's ValidRaces excludes beast races");
+        result.Should().BeNull("there is no FaceGen head to bake the minted part into");
         fallback.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// The Dremora case. A race outside vanilla's playable set converts normally, and its race is
+    /// added to the minted ValidRaces list so the parts are actually valid for it — the whole
+    /// reason the list is minted rather than borrowed.
+    /// </summary>
+    [Fact]
+    public void Apply_WnamWig_NonPlayableRace_ConvertsAndWidensValidRaces()
+    {
+        var f = Make(donorHasHair: false);
+        RemoveOutfitWig(f);
+        AddWnamWig(f);
+        var race = f.DonorMod.Races.AddNew();
+        race.EditorID = "DremoraRace";
+        f.DonorNpc.Race.SetTo(race);
+        // Probe left at the production default's answer for a resolvable FaceGenHead race.
+        f.Converter.HeadPartRaceAllowedProbe = _ => true;
+
+        var result = Apply(f, out bool fallback);
+
+        result.Should().NotBeNull("a FaceGen-headed race converts regardless of vanilla playability");
+        fallback.Should().BeFalse();
+
+        var (key, races) = MintedValidRaces(f.OutputMod);
+        races.Should().Contain(race.FormKey,
+            "a minted part whose ValidRaces omits the wearer's race is invalid for exactly the NPC it was minted for");
+        f.OutputMod.HeadParts.Should().OnlyContain(h => h.ValidRaces.FormKey == key);
     }
 
     [Fact]

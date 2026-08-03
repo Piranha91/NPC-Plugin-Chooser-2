@@ -131,16 +131,23 @@ public class WigForwarder
     /// nothing.</summary>
     public const string BaldHairEditorId = "NPC2_HairBald";
 
-    // HeadPartsAllRacesMinusBeast [FLST:0A803F] — the ValidRaces list High
-    // Poly NPC Overhaul's HighPoly_HairBald points at (read from its record
-    // bytes: RNAM=3F800A00, DATA=06 = Male|Female non-playable, no MODL).
-    private static readonly FormKey HeadPartsAllRacesMinusBeastKey = FormKey.Factory("0A803F:Skyrim.esm");
-
-    private FormKey GetOrCreateBaldHairHeadPart()
+    /// <summary>Creates (once per output plugin) the modeless bald hair, and makes sure
+    /// <paramref name="raceKey"/> is in the output-owned ValidRaces list it points at.
+    ///
+    /// <para>That list used to be vanilla's <c>HeadPartsAllRacesMinusBeast [FLST:0A803F]</c>,
+    /// copied from the record this one mirrors. Despite the name it holds only the ten PLAYABLE
+    /// races and their vampire variants, so a bald hair scoped to it is not valid for any
+    /// non-playable race — DremoraRace being the specimen that surfaced it. The point of this
+    /// record is to guarantee the NPC HAS a usable Hair part, so scoping it to a list that might
+    /// exclude that NPC's race defeats it. See
+    /// <see cref="Auxilliary.GetOrCreateMintedHeadPartValidRaces"/>.</para></summary>
+    private FormKey GetOrCreateBaldHairHeadPart(FormKey? raceKey)
     {
         lock (_lock)
         {
             var outputMod = _environmentStateProvider.OutputMod;
+            var validRacesKey = Auxilliary.GetOrCreateMintedHeadPartValidRaces(outputMod, raceKey);
+
             var existing = outputMod.HeadParts.FirstOrDefault(h =>
                 string.Equals(h.EditorID, BaldHairEditorId, StringComparison.OrdinalIgnoreCase));
             if (existing != null) return existing.FormKey;
@@ -149,7 +156,7 @@ public class WigForwarder
             bald.EditorID = BaldHairEditorId;
             bald.Type = HeadPart.TypeEnum.Hair;
             bald.Flags = HeadPart.Flag.Male | HeadPart.Flag.Female;
-            bald.ValidRaces.SetTo(HeadPartsAllRacesMinusBeastKey);
+            bald.ValidRaces.SetTo(validRacesKey);
             RecordProvenanceDiag.RecordGenerated(bald.FormKey, bald.EditorID, "HeadPart");
             return bald.FormKey;
         }
@@ -204,7 +211,7 @@ public class WigForwarder
             }
             else if (removed > 0)
             {
-                var baldKey = GetOrCreateBaldHairHeadPart();
+                var baldKey = GetOrCreateBaldHairHeadPart(patchNpc.Race.IsNull ? null : patchNpc.Race.FormKey);
                 if (patchNpc.HeadParts.All(l => l.FormKey != baldKey))
                 {
                     patchNpc.HeadParts.Add(baldKey.ToLink<IHeadPartGetter>());

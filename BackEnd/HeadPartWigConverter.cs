@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Records;
@@ -75,9 +75,9 @@ public class HeadPartWigConverter
     /// baked shape renames (see <see cref="SmpXmlRewriter"/>).</summary>
     public const string PhysicsXmlOutputFolder = @"meshes\NPC2\WigPhysics";
 
-    // HeadPartsAllRacesMinusBeast [FLST:0A803F] — the same ValidRaces list the
-    // bald-hair mint and the engine-proven spike package use.
-    private static readonly FormKey HeadPartsAllRacesMinusBeastKey = FormKey.Factory("0A803F:Skyrim.esm");
+    // ValidRaces for the minted parts is an OUTPUT-owned FormList holding exactly the races this
+    // run converts for (Auxilliary.GetOrCreateMintedHeadPartValidRaces). It used to be vanilla's
+    // HeadPartsAllRacesMinusBeast; see that helper for why borrowing it was wrong.
 
     // Per appearance-mod-batch reuse cache (reset alongside WigForwarder.ResetCache):
     // NPCs sharing the same wig ARMO + resolved NIF + sex share one minted HDPT set
@@ -112,42 +112,28 @@ public class HeadPartWigConverter
         _recordHandler = recordHandler;
         _bsaHandler = bsaHandler;
         _settings = settings;
-        HeadPartRaceAllowedProbe = IsRaceInHeadPartsAllRacesMinusBeast;
+        HeadPartRaceAllowedProbe = RaceBuildsAFaceGenHead;
     }
 
-    /// <summary>Whether a race may wear the minted parts
-    /// (<see cref="Result"/> ValidRaces = HeadPartsAllRacesMinusBeast) —
-    /// the WNAM source's beast-race guard. Seam for tests; production resolves
-    /// the FLST via the link cache (unresolvable counts as allowed).</summary>
+    /// <summary>Whether a race can wear a minted head part at all — i.e. whether the engine builds
+    /// this actor a FaceGen head for one to be baked into. Seam for tests; production reads the
+    /// RACE record's <see cref="Race.Flag.FaceGenHead"/> flag, the same signal
+    /// <see cref="Auxilliary"/> gates the whole NPC list on (see its remarks for why that beats
+    /// the ActorTypeNPC keyword). An unresolvable race counts as allowed, for the same reason the
+    /// old FLST probe did: failing to resolve must not silently decline every conversion.
+    ///
+    /// <para>This deliberately does NOT filter beast races. Whether a given wig belongs on a given
+    /// race is the ARMA's own race filter to answer (<see cref="Auxilliary.ArmaNamesRace"/>, applied
+    /// upstream), and that is the mod author's statement rather than this app's guess. The
+    /// membership test this replaced answered a different question badly — see
+    /// <see cref="Auxilliary.GetOrCreateMintedHeadPartValidRaces"/>.</para></summary>
     internal Func<FormKey, bool> HeadPartRaceAllowedProbe { get; set; }
 
-    private HashSet<FormKey>? _headPartAllowedRaces;
-    private bool _headPartAllowedRacesResolved;
-
-    private bool IsRaceInHeadPartsAllRacesMinusBeast(FormKey raceKey)
+    private bool RaceBuildsAFaceGenHead(FormKey raceKey)
     {
-        lock (_lock)
-        {
-            if (!_headPartAllowedRacesResolved)
-            {
-                _headPartAllowedRacesResolved = true;
-                var lc = _environmentStateProvider.LinkCache;
-                if (lc != null &&
-                    lc.TryResolve<IFormListGetter>(HeadPartsAllRacesMinusBeastKey, out var flst) &&
-                    flst?.Items != null)
-                {
-                    _headPartAllowedRaces = flst.Items
-                        .Where(i => i != null && !i.IsNull)
-                        .Select(i => i.FormKey)
-                        .ToHashSet();
-                }
-            }
-
-            // Unresolvable FLST (no environment / missing master) → allow;
-            // blocking on a resolution failure would wrongly decline every
-            // conversion, and the engine checks ValidRaces at runtime anyway.
-            return _headPartAllowedRaces == null || _headPartAllowedRaces.Contains(raceKey);
-        }
+        var lc = _environmentStateProvider.LinkCache;
+        if (lc == null || !lc.TryResolve<IRaceGetter>(raceKey, out var race) || race == null) return true;
+        return race.Flags.HasFlag(Race.Flag.FaceGenHead);
     }
 
     /// <summary>One minted HDPT set, shared by every NPC wearing the same wig
@@ -445,6 +431,7 @@ public class HeadPartWigConverter
         // 4. Mint (or reuse) the per-(wig, sex) HDPT set.
         MintedWigSet? set = GetOrMintWigSet(wigArmor.EditorID, wigKey, wigNifSourcePath, wigNifDataRelPath,
             wigNifRecordPath, appearanceNpc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female),
+            appearanceNpc.Race.IsNull ? null : appearanceNpc.Race.FormKey,
             appearanceModSetting, npcIdentifier, appendLog);
         if (set == null)
         {
@@ -542,14 +529,13 @@ public class HeadPartWigConverter
 
         var arma = applicable[0];
 
-        // Beast-race guard: the minted parent's ValidRaces is
-        // HeadPartsAllRacesMinusBeast; converting a beast-race NPC would leave
-        // it with no valid Hair head part (engine back-fills or bares the head).
+        // No FaceGen head, nothing to bake a head part into. Which races a given wig SUITS is the
+        // ARMA's own filter to answer, and it already did so above.
         if (raceKey != null && !HeadPartRaceAllowedProbe(raceKey.Value))
         {
-            appendLog($"      Wig conversion: {npcIdentifier}'s race is not in HeadPartsAllRacesMinusBeast — " +
-                      "a minted Hair head part would be invalid for it. Leaving the skin-carried hair as-is.",
-                false, true);
+            appendLog($"      Wig conversion: {npcIdentifier}'s race does not build a FaceGen head " +
+                      "(no FaceGenHead flag), so there is nothing for a minted Hair head part to bake into. " +
+                      "Leaving the skin-carried hair as-is.", false, true);
             return null;
         }
 
@@ -598,7 +584,7 @@ public class HeadPartWigConverter
 
         MintedWigSet? set = GetOrMintWigSet(arma.EditorID, arma.FormKey, wigNifSourcePath, wigNifDataRelPath,
             wigNifRecordPath, appearanceNpc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.Female),
-            appearanceModSetting, npcIdentifier, appendLog);
+            raceKey, appearanceModSetting, npcIdentifier, appendLog);
         if (set == null) return null;
 
         var result = new Result
@@ -711,8 +697,8 @@ public class HeadPartWigConverter
             _mintedSets.Clear();
             _renamePrefixOwners.Clear();
             _usedPhysicsXmlRelPaths.Clear();
-            _headPartAllowedRaces = null;
-            _headPartAllowedRacesResolved = false;
+            // The race probe reads the link cache per call now, and the ValidRaces list it feeds
+            // lives on the output mod, which is itself rebuilt per run — nothing to reset here.
         }
 
         try
@@ -879,12 +865,18 @@ public class HeadPartWigConverter
     /// single-gender hair parts; UseSolidTint likewise mirrors the vanilla
     /// hair-part convention.</para></summary>
     private MintedWigSet? GetOrMintWigSet(string? sourceEditorId, FormKey wigKey, string wigNifSourcePath,
-        string wigNifDataRelPath, string wigNifRecordPath, bool female, ModSetting appearanceModSetting,
-        string npcIdentifier, Action<string, bool, bool> appendLog)
+        string wigNifDataRelPath, string wigNifRecordPath, bool female, FormKey? raceKey,
+        ModSetting appearanceModSetting, string npcIdentifier, Action<string, bool, bool> appendLog)
     {
         lock (_lock)
         {
-            if (_mintedSets.TryGetValue((wigKey, wigNifSourcePath, female), out var existing)) return existing;
+            if (_mintedSets.TryGetValue((wigKey, wigNifSourcePath, female), out var existing))
+            {
+                // Reuse still has to widen ValidRaces: one set is shared by every NPC wearing the
+                // wig, so the list must cover all their races, not just the first one's.
+                RegisterValidRace(raceKey);
+                return existing;
+            }
         }
 
         var renderShapes = RenderShapeNamesProvider(wigNifSourcePath);
@@ -991,12 +983,13 @@ public class HeadPartWigConverter
             // gender-filtered hair lookup, which silently disables headgear
             // hair suppression (see the method doc).
             var genderFlag = female ? HeadPart.Flag.Female : HeadPart.Flag.Male;
+            var validRacesKey = Auxilliary.GetOrCreateMintedHeadPartValidRaces(outputMod, raceKey);
             HeadPart? parent = null;
             foreach (var srcName in renderShapes)
             {
                 var hp = outputMod.HeadParts.AddNew();
                 hp.EditorID = renames[srcName];
-                hp.ValidRaces.SetTo(HeadPartsAllRacesMinusBeastKey);
+                hp.ValidRaces.SetTo(validRacesKey);
                 hp.Model = new Model { File = wigNifRecordPath };
                 if (parent == null)
                 {
@@ -1025,6 +1018,11 @@ public class HeadPartWigConverter
                   $"'{sourceEditorId ?? wigKey.ToString()}' (parent '{set.ParentEditorId}').", false, false);
         return set;
     }
+
+    /// <summary>Adds <paramref name="raceKey"/> to the output-owned ValidRaces list the minted
+    /// parts point at (see <see cref="Auxilliary.GetOrCreateMintedHeadPartValidRaces"/>).</summary>
+    private void RegisterValidRace(FormKey? raceKey) =>
+        Auxilliary.GetOrCreateMintedHeadPartValidRaces(_environmentStateProvider.OutputMod, raceKey);
 
     /// <summary>Spike-proven EditorID sanitizer: letters/digits/underscore kept,
     /// everything else becomes '_'.</summary>

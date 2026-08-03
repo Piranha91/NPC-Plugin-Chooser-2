@@ -711,6 +711,53 @@ public class Auxilliary : IDisposable
         return armorRace.Equals(raceGetter.FormKey) ? null : armorRace;
     }
 
+    /// <summary>EditorID of the output-owned FormList that every head part this app MINTS uses as
+    /// its ValidRaces — the wig→head-part converter's parts and the wig forwarder's modeless bald
+    /// hair.</summary>
+    public const string MintedHeadPartValidRacesEditorId = "NPC2_HeadPartValidRaces";
+
+    private static readonly object _mintedValidRacesLock = new();
+
+    /// <summary>
+    /// The output plugin's own ValidRaces FormList, extended to contain <paramref name="raceKey"/>.
+    /// Created on first use and grown as more races are encountered; found by EditorID, so it is
+    /// naturally scoped to one run (the output mod is rebuilt each time).
+    ///
+    /// <para><b>Why not reuse a vanilla list.</b> Both mint sites used to point at
+    /// <c>HeadPartsAllRacesMinusBeast [FLST:0A803F]</c>, inherited by copy from High Poly NPC
+    /// Overhaul's <c>HighPoly_HairBald</c>. That list is not what its name suggests — it holds 19
+    /// entries, the ten PLAYABLE races plus their vampire variants, so it excludes every
+    /// non-playable race and not merely beast races. The converter then guarded on membership,
+    /// which made the check circular: it declined because the race was missing from a list this
+    /// app had chosen. All 25 declines in the measured run were DremoraRace, whose NPCs carry head
+    /// parts and whose wig ArmorAddon the mod author had explicitly named for them.</para>
+    ///
+    /// <para>Minted head parts are private to the output and reachable only from the NPCs this run
+    /// points at them, so scoping their ValidRaces to exactly the races converted for is both
+    /// safe and more accurate than any borrowed list.</para>
+    /// </summary>
+    public static FormKey GetOrCreateMintedHeadPartValidRaces(ISkyrimMod outputMod, FormKey? raceKey)
+    {
+        lock (_mintedValidRacesLock)
+        {
+            var list = outputMod.FormLists.FirstOrDefault(f =>
+                string.Equals(f.EditorID, MintedHeadPartValidRacesEditorId, StringComparison.OrdinalIgnoreCase));
+            if (list == null)
+            {
+                list = outputMod.FormLists.AddNew();
+                list.EditorID = MintedHeadPartValidRacesEditorId;
+                RecordProvenanceDiag.RecordGenerated(list.FormKey, list.EditorID, "FormList");
+            }
+
+            if (raceKey is { IsNull: false } race && list.Items.All(i => i.FormKey != race))
+            {
+                list.Items.Add(race.ToLink<ISkyrimMajorRecordGetter>());
+            }
+
+            return list.FormKey;
+        }
+    }
+
     /// <summary>
     /// Does <paramref name="arma"/> name either race key in Race/AdditionalRaces?
     /// <paramref name="armorRaceKey"/> is the ArmorRace indirection from
