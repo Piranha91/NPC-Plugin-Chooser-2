@@ -1,6 +1,7 @@
 ﻿using System.IO;
 using System.Text;
 using System.Windows;
+using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
@@ -712,8 +713,20 @@ public class Validator : OptionalUIModule
                 .Select(l => (WholeRecordSweepField, l.FormKey, l.Type)));
         }
 
+        var implicitRecords = GetImplicitRecordFormKeys();
+
         foreach (var (field, key, type) in candidates)
         {
+            // Engine-hardcoded records (PlayerRef 000014, the implicit globals/actor values, ...) live
+            // in the game executable, not in Skyrim.esm, so the link cache can never resolve them —
+            // but their ModKey is a base master the output plugin gets anyway, so they cannot dangle.
+            // Mutagen's own merge walkers skip this same set (PatcherExtensions.AddAllLinks) and so
+            // does the menu's candidate screen (VM_NpcSelectionBar.CandidateAppearanceDependencies-
+            // AreResolvable); this check was the one place that did not, which rejected any scripted
+            // NPC whose VMAD points at PlayerRef — Miraak and DLC2MiraakSoulSteal in High Poly NPC
+            // Overhaul — for version drift that never happened.
+            if (implicitRecords.Contains(key)) continue;
+
             if (!IsMasterSatisfied(key.ModKey, appearanceModSetting, loadOrderList, implicitMasters,
                     npcProvidingOwnersByPlugin, out var detail))
             {
@@ -820,6 +833,31 @@ public class Validator : OptionalUIModule
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The records the engine hardcodes rather than storing in a plugin — PlayerRef (000014), the
+    /// implicit globals and actor values. Nothing can resolve them from a plugin file, so any check
+    /// that asks "does this link resolve" has to exempt them or it condemns every reference to the
+    /// player. Materialised as a set because it is probed once per candidate link.
+    ///
+    /// <para>Keyed by release: changing the game version re-derives it, the same way
+    /// <c>EnvironmentStateProvider.BaseGamePlugins</c> does.</para>
+    /// </summary>
+    private IReadOnlySet<FormKey>? _implicitRecordCache;
+    private GameRelease? _implicitRecordCacheRelease;
+
+    private IReadOnlySet<FormKey> GetImplicitRecordFormKeys()
+    {
+        var release = _environmentStateProvider.SkyrimVersion.ToGameRelease();
+        if (_implicitRecordCache != null && _implicitRecordCacheRelease == release)
+        {
+            return _implicitRecordCache;
+        }
+
+        _implicitRecordCacheRelease = release;
+        _implicitRecordCache = Implicits.Get(release).RecordFormKeys.ToHashSet();
+        return _implicitRecordCache;
     }
 
     /// <summary>

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using FluentAssertions;
 using Mutagen.Bethesda;
@@ -436,6 +436,84 @@ public class ValidatorWrittenLinkCheckTests
 
         Screen(PatchingMode.CreateAndPatch, skyPatcher: false)
             .Should().BeNull("Create-and-Patch never writes the donor's non-appearance links");
+    }
+
+    // ── Engine-hardcoded records are not "missing" ──────────────────────────────────────
+
+    private static readonly FormKey PlayerRef = FormKey.Factory("000014:Skyrim.esm");
+    private static readonly FormKey OrdinaryVanillaRecord = FormKey.Factory("0ABCDE:Skyrim.esm");
+
+    /// <summary>A replacer whose NPC override carries a Papyrus script property pointing at
+    /// <paramref name="propertyTarget"/> — the High Poly NPC Overhaul / Miraak shape. A script
+    /// property is reachable only through the whole-record sweep, and its declared type is the
+    /// "any record" base.</summary>
+    private static string BuildScriptedFixture(TempDir dir, FormKey propertyTarget)
+    {
+        var replacer = new SkyrimMod(SweepReplacer, SkyrimRelease.SkyrimSE);
+        var npcOverride = new Npc(SweepNpc, SkyrimRelease.SkyrimSE) { EditorID = "WL_ScriptedNpc" };
+
+        var adapter = new VirtualMachineAdapter();
+        var entry = new ScriptEntry { Name = "DLC2MiraakSoulStealScript" };
+        var property = new ScriptObjectProperty { Name = "PlayerRef" };
+        property.Object.SetTo(propertyTarget);
+        entry.Properties.Add(property);
+        adapter.Scripts.Add(entry);
+        npcOverride.VirtualMachineAdapter = adapter;
+
+        replacer.Npcs.Add(npcOverride);
+        replacer.WriteToBinary(System.IO.Path.Combine(dir.Path, SweepReplacer.FileName));
+        return dir.Path;
+    }
+
+    private static object? ScreenScripted(string folder, PatchingMode mode = PatchingMode.Create)
+        => Reflect.Invoke<object>(
+            HarnessValidator(new Settings { PatchingMode = mode, UseSkyPatcherMode = false }),
+            "FindUnwritableLink",
+            SweepNpc, SweepNpc, SweepMod(folder),
+            new List<ModKey> { MutagenFixtures.Mk("WLTestMaster.esm") },
+            new HashSet<ModKey>(),
+            new Dictionary<ModKey, ModSetting>());
+
+    /// <summary>
+    /// The reported case: High Poly NPC Overhaul's Miraak and DLC2MiraakSoulSteal were rejected for
+    /// "references a record missing from your 'Skyrim.esm'" because their VMAD points at PlayerRef,
+    /// which the engine hardcodes and no plugin defines — so nothing can ever resolve it.
+    ///
+    /// <para>The exemption sits ahead of BOTH failure branches, so this exercises it through the
+    /// master check; in production the rejection arrived via the resolve check, which needs a real
+    /// link cache and so cannot be reproduced hermetically. What both branches share is the thing
+    /// under test: the key never reaches either one.</para>
+    /// </summary>
+    [Fact]
+    public void FindUnwritableLink_ExemptsEngineHardcodedRecords()
+    {
+        using var dir = new TempDir("implicitrec");
+
+        ScreenScripted(BuildScriptedFixture(dir, PlayerRef))
+            .Should().BeNull("PlayerRef lives in the game executable, not in a plugin");
+    }
+
+    [Fact]
+    public void FindUnwritableLink_StillScreensOrdinaryRecordsInTheSamePlugin()
+    {
+        // The control that keeps the exemption honest: it is keyed on the RECORD, not on the
+        // plugin. An ordinary Skyrim.esm record reached the same way is still screened, so the fix
+        // cannot be blanket-exempting vanilla masters.
+        using var dir = new TempDir("implicitrec-control");
+
+        ScreenScripted(BuildScriptedFixture(dir, OrdinaryVanillaRecord))
+            .Should().NotBeNull("only the hardcoded set is exempt");
+    }
+
+    [Fact]
+    public void ImplicitRecordSet_ContainsThePlayerReference()
+    {
+        // Pins the set the exemption is drawn from: if Mutagen ever stopped listing PlayerRef, the
+        // exemption above would still "pass" while the real NPCs went back to being rejected.
+        var validator = HarnessValidator(new Settings());
+
+        Reflect.Invoke<IReadOnlySet<FormKey>>(validator, "GetImplicitRecordFormKeys")
+            .Should().Contain(PlayerRef);
     }
 
     // ── The reported configuration, end to end across the two seams ─────────────────────
