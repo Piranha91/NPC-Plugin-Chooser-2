@@ -713,12 +713,13 @@ public class OutfitDisplayResolver
 
         var wigMode = _settings.GetEffectiveRenderWigMode(modSetting);
         var antlerMode = _settings.GetEffectiveRenderAntlerMode(modSetting);
-        // Both modes inert still needs the walk when the mod has outfit wigs: the
-        // mugshot depicts those regardless of mode (+wigdepict below). HasWigArmors
-        // is the cheap outfit-ARMO-only precheck, so a mod with nothing to depict
-        // keeps the old zero-cost bail.
+        // Both modes inert still needs the walk when the mod has outfit wigs or
+        // antlers: the mugshot depicts those regardless of mode (+wigdepict /
+        // +antlerdepict below). HasWigArmors/HasAntlerArmors are the cheap
+        // outfit-ARMO-only prechecks, so a mod with nothing to depict keeps the old
+        // zero-cost bail.
         if (wigMode == WigHandlingMode.None && antlerMode == AntlerHandlingMode.None &&
-            !modSetting.HasWigArmors)
+            !modSetting.HasWigArmors && !modSetting.HasAntlerArmors)
         {
             return tintMarker;
         }
@@ -768,7 +769,7 @@ public class OutfitDisplayResolver
                 outfitHasDetectedWig = wigKeys.Count > 0;
 
                 // Depiction segment — the mode-None outfit wig the MUGSHOT draws anyway
-                // (NpcMeshResolver's PieceForward.Depiction, alwaysRenderOutfitWigs). No
+                // (NpcMeshResolver's PieceForward.Depiction, alwaysRenderOutfitWigsAndAntlers). No
                 // mode tag: the mode is None by construction, and the keys alone re-stale
                 // when the mod's outfit gains or loses a wig. Emitted regardless of the
                 // outfit toggle because the depiction ignores both toggles. This suffix is
@@ -793,6 +794,17 @@ public class OutfitDisplayResolver
                     {
                         sb.Append("+wig[" + effWig + ":" + string.Join(",", wigKeys) + "]");
                     }
+                }
+
+                // Depiction segment — the mode-None outfit antler the MUGSHOT draws
+                // anyway (PieceForward.Depiction), the antler twin of +wigdepict above
+                // and emitted on the same terms: no mode tag (None by construction),
+                // keys only, and regardless of the outfit toggle because the depiction
+                // ignores both toggles. Mugshot-only, so the output-faithful live
+                // preview is unaffected.
+                if (antlerMode == AntlerHandlingMode.None && antlerKeys.Count > 0)
+                {
+                    sb.Append("+antlerdepict[" + string.Join(",", antlerKeys) + "]");
                 }
 
                 // Antler segment — the outfit (source 1) antlers the preview reflects.

@@ -177,4 +177,134 @@ public class AntlerIdentityStampTests
         built.Resolver.ComputeWigIdentitySuffix(built.Npc, built.ModSetting, false)
             .Should().NotContain("+fgantler");
     }
+
+    // ---------------------------------------------------------------------
+    // Outfit-carried antlers (source 1) and the mode-None DEPICTION segment.
+    //
+    // Antlers in a Default Outfit sit on a head slot, so the ordinary outfit walk
+    // promotes them to headgear — and with the mugshot's attire toggles off they
+    // disappeared entirely under "Leave As Is". The mugshot now draws them anyway
+    // (PieceForward.Depiction), exactly as it already did for outfit wigs, and
+    // +antlerdepict is what re-renders the tiles cached before that.
+    // ---------------------------------------------------------------------
+
+    private sealed record BuiltOutfit(
+        OutfitDisplayResolver Resolver, ModSetting ModSetting, FormKey Npc, FormKey AntlerArmor);
+
+    /// <summary>An NPC whose Default Outfit carries a detected antler ARMO and NO wig — so
+    /// the mod's only reason to walk the outfit at all is the antler. That is the shape the
+    /// stamp's both-modes-inert early bail used to discard.</summary>
+    private BuiltOutfit? BuildOutfitAntler(WigRouteFixture fx, Settings settings)
+    {
+        var antler = fx.AddResArmor("NPC2Antler_OutfitAntlers",
+            fx.AddResArmorAddon("NPC2Antler_OutfitAntlersAA"));
+        var outfit = fx.AddResOutfit("NPC2Antler_Outfit",
+            fx.AddResArmor("NPC2Antler_Dress", fx.AddResArmorAddon("NPC2Antler_DressAA", BipedObjectFlag.Body)),
+            antler);
+
+        var npc = fx.AddBaseNpc("NPC2Antler_OutfitNpc");
+        fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc).DefaultOutfit.SetTo(outfit);
+
+        fx.WriteFaceGen(npc.FormKey);
+        fx.WritePlugins();
+
+        var provider = fx.TryBuildProvider(_output);
+        if (provider == null) return null;
+
+        var recordHandler = new RecordHandler(provider, new PluginProvider(provider, settings), settings);
+        var modSetting = fx.NewModSetting();
+        modSetting.DetectedAntlerArmors.Add(antler.FormKey);
+
+        return new BuiltOutfit(
+            new OutfitDisplayResolver(settings, provider, recordHandler),
+            modSetting, npc.FormKey, antler.FormKey);
+    }
+
+    /// <summary>
+    /// The core of this half: under Leave As Is the mugshot still draws the outfit antler, so
+    /// the stamp has to say so or every already-cached PNG keeps its old antler-less render
+    /// forever — nothing else about the NPC changed. Also pins the early-bail fix: this mod
+    /// has no wigs and both modes are None, which used to return before reaching any segment.
+    /// </summary>
+    [Fact]
+    public void OutfitAntler_LeaveAsIs_StampsTheAntlerTheMugshotDrawsAnyway()
+    {
+        using var fx = new WigRouteFixture("antlerstamp5");
+        var settings = fx.NewSettings(skyPatcherMode: false, "antlerstamp5");
+        settings.DefaultAntlerHandlingMode = AntlerHandlingMode.None;
+        var built = BuildOutfitAntler(fx, settings);
+        if (built == null) return;
+
+        var suffix = built.Resolver.ComputeWigIdentitySuffix(built.Npc, built.ModSetting, false);
+        _output.WriteLine("suffix: " + suffix);
+
+        suffix.Should().Contain("+antlerdepict[",
+            "the mugshot renders this antler despite the inert mode, so a PNG cached before the " +
+            "change has to be re-rendered");
+        suffix.Should().Contain(built.AntlerArmor.ToString(), "content-based on the antler's FormKey");
+        suffix.Should().NotContain("+antler[",
+            "nothing is being FORWARDED — the mode is None; this is a depiction-only segment");
+    }
+
+    /// <summary>
+    /// The depiction is emitted with the outfit toggle OFF — that is the whole point, since the
+    /// toggles are what hid the antler. Both toggle states must stamp it, or turning Include
+    /// Outfit on and off would churn re-renders of an identical image.
+    /// </summary>
+    [Fact]
+    public void OutfitAntler_LeaveAsIs_DepictionIgnoresTheOutfitToggle()
+    {
+        using var fx = new WigRouteFixture("antlerstamp6");
+        var settings = fx.NewSettings(skyPatcherMode: false, "antlerstamp6");
+        settings.DefaultAntlerHandlingMode = AntlerHandlingMode.None;
+        var built = BuildOutfitAntler(fx, settings);
+        if (built == null) return;
+
+        var off = built.Resolver.ComputeWigIdentitySuffix(built.Npc, built.ModSetting, false);
+        var on = built.Resolver.ComputeWigIdentitySuffix(built.Npc, built.ModSetting, true);
+
+        off.Should().Contain("+antlerdepict[");
+        on.Should().Be(off, "the depiction ignores both attire toggles, so neither may drift the stamp");
+    }
+
+    /// <summary>
+    /// Depiction and forward are mutually exclusive: exactly one segment describes any tile.
+    /// An active mode forwards, so nothing is depicted-only.
+    /// </summary>
+    [Fact]
+    public void OutfitAntler_ActiveMode_StampsAForwardNotADepiction()
+    {
+        using var fx = new WigRouteFixture("antlerstamp7");
+        var settings = fx.NewSettings(skyPatcherMode: false, "antlerstamp7");
+        settings.DefaultAntlerHandlingMode = AntlerHandlingMode.ForwardToOutfit;
+        var built = BuildOutfitAntler(fx, settings);
+        if (built == null) return;
+
+        var suffix = built.Resolver.ComputeWigIdentitySuffix(built.Npc, built.ModSetting, true);
+
+        suffix.Should().Contain("+antler[ForwardToOutfit");
+        suffix.Should().NotContain("+antlerdepict");
+    }
+
+    /// <summary>
+    /// Plain Create record mode makes antler handling inert whatever the dropdown says, so an
+    /// actively configured mode still renders — and stamps — as a depiction rather than a
+    /// forward. Stamping a forward the output mode cannot perform would cache the wrong image.
+    /// </summary>
+    [Fact]
+    public void OutfitAntler_PlainCreateMode_StampsADepictionNotAForward()
+    {
+        using var fx = new WigRouteFixture("antlerstamp8");
+        var settings = fx.NewSettings(skyPatcherMode: false, "antlerstamp8",
+            patchingMode: PatchingMode.Create);
+        settings.DefaultAntlerHandlingMode = AntlerHandlingMode.ForwardToSkin;
+        var built = BuildOutfitAntler(fx, settings);
+        if (built == null) return;
+
+        var suffix = built.Resolver.ComputeWigIdentitySuffix(built.Npc, built.ModSetting, true);
+
+        suffix.Should().Contain("+antlerdepict[",
+            "Create mode cannot forward the antler, so the mugshot depicts it unforwarded");
+        suffix.Should().NotContain("+antler[ForwardToSkin");
+    }
 }

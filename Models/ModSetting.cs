@@ -172,6 +172,14 @@ public class ModSetting
     [JsonIgnore]
     public bool HasWigArmors => DetectedWigArmors.Count > 0;
 
+    /// <summary>Antler counterpart of <see cref="HasWigArmors"/>: outfit-carried
+    /// antler ARMOs only (source 1), NOT the ARMA/HeadPart sources folded into
+    /// <see cref="HasDetectedAntlers"/>. Those are the only antlers a mugshot
+    /// depicts through the outfit walk, so this is the cheap precheck for the
+    /// depiction paths (mesh-plan bail, identity-stamp bail).</summary>
+    [JsonIgnore]
+    public bool HasAntlerArmors => DetectedAntlerArmors.Count > 0;
+
     /// <summary>Whether the analysis SCAN detected wigs from either source
     /// (outfit ARMOs or WNAM-carried hair ARMAs). User designations (persisted
     /// on <see cref="Settings.ManualWigArmatures"/>) are folded in by

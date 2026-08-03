@@ -200,15 +200,17 @@ public sealed class InternalMugshotGenerator
             // resulting outfit IDENTITY is stamped into the PNG metadata below
             // so the staleness checker can re-render only when the depicted
             // outfit actually changes.
-            // alwaysRenderOutfitWigs: a mugshot shows the face this mod gives the NPC,
-            // and a wig is part of that face — so a detected Default-Outfit wig is drawn
-            // even under Wig Handling Mode "Leave As Is", where the patch would leave it
-            // behind, and regardless of both attire toggles. The tile flags that gap on
-            // its has-wig badge; the live 3D preview stays output-faithful and does not
-            // pass this. (Batch generation routes through here too.)
+            // alwaysRenderOutfitWigsAndAntlers: a mugshot shows the face this mod gives the
+            // NPC, and a wig or antler is part of that face — so a detected Default-Outfit
+            // wig/antler is drawn even under Handling Mode "Leave As Is", where the patch
+            // would leave it behind, and regardless of both attire toggles. Without this
+            // they vanish from the tile entirely, since the outfit walk treats their
+            // head-slot armature as headgear. The tile flags the wig gap on its has-wig
+            // badge; the live 3D preview stays output-faithful and does not pass this.
+            // (Batch generation routes through here too.)
             var meshOverrides = _resolver.ResolveAttireMeshOverrides(
                 npcFormKey, modSetting, effectiveIncludeDefaultOutfit, effectiveIncludeHeadgear,
-                targetNpcFormKey, out var outfitDisplay, alwaysRenderOutfitWigs: true);
+                targetNpcFormKey, out var outfitDisplay, alwaysRenderOutfitWigsAndAntlers: true);
             var meshOverrideWarningsOut = new List<MeshOverrideWarning>();
             // Attire (outfit/headgear) textures the override build couldn't decode.
             // The renderer attributes these as the post-override delta of its

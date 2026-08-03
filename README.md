@@ -631,7 +631,7 @@ Mugshots can carry small icons in their corners that flag special states. Hover 
 
 ![Has Wig badge tooltip](docs/Screenshots/NPCs/Has_Wig_Badge_Tooltip.png)
 
-* **“No Antlers” badge** (top-left) — this mod’s Antler Handling Mode is *Remove* and this NPC actually carries antlers that the patch will strip, so the picture you’re looking at is showing you the antler-free result.
+* **“No Antlers” badge** (top-left) — this mod’s Antler Handling Mode is *Remove* and this NPC actually carries antlers that the patch will strip, so the picture you’re looking at is showing you the antler-free result. With any other mode, mugshots always *show* an outfit’s antlers, whatever the Include Outfit and Include Headgear settings — like a wig, antlers are part of the face the mod gives the NPC rather than a hat you’d want toggled away.
 
 ![No Antlers badge tooltip](docs/Screenshots/NPCs/No_Antlers_Badge_Tooltip.png)
 
@@ -679,7 +679,7 @@ The **Show 3D Preview** option (or Ctrl+Shift+RClick on a mugshot) opens an inte
 
 With the outfit toggle on, the preview dresses the NPC in the outfit they’ll *actually wear in game* given your patching mode, the Include Outfit setting, and any SkyPatcher/SPID outfit distribution in your load order — see [Which outfit does the preview wear?](#which-outfit-does-the-preview-wear). If a runtime config defeats an outfit you asked N.P.C.2 to include, a warning banner in the preview names the config responsible; otherwise the status line at the bottom notes where a distributed outfit came from. Banners in the top-right corner likewise flag missing outfit assets and antler removal, matching the [badges](#mugshot-symbols) on the mugshot tile.
 
-The preview also reflects [Head Editing](#head-editing-wigs--antlers): a wig that will be forwarded or converted is shown the way the patched NPC will look, and antlers that *Remove* will strip are hidden.
+The preview also reflects [Head Editing](#head-editing-wigs--antlers): a wig that will be forwarded or converted is shown the way the patched NPC will look, and antlers that *Remove* will strip are hidden. Outfit antlers under any other mode follow the same split as wigs — the preview treats them as the ordinary outfit piece they are (so they obey Include Headgear), while the mugshot tile draws them regardless.
 
 Unlike the mugshot, the preview stays strictly faithful to your output here. A wig the patch *won’t* carry across (Wig Handling Mode *Leave As Is* with Include Outfits off) behaves like the ordinary outfit piece it is — it follows the Include Headgear toggle — and a banner tells you the mod supplies a wig you aren’t getting, and how to keep it. The mugshot tile answers the same question the other way round: it draws the wig and puts a red X on its [Has Wig badge](#mugshot-symbols).
 

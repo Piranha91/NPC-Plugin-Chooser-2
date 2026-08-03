@@ -1166,18 +1166,19 @@ public class NpcMeshResolver
     /// in the user's load order (differs from <paramref name="npcFormKey"/>
     /// for guest appearances; runtime distributors filter on the target) —
     /// null means the rendered NPC is its own target.
-    /// <para><paramref name="alwaysRenderOutfitWigs"/> is set by the MUGSHOT
-    /// generator only: it draws a detected Default-Outfit wig even under wig mode
-    /// None, where the patch would not forward it. A wig is the character's hair,
-    /// and a mugshot's job is to show the face a mod gives an NPC — so it is
-    /// depicted regardless of both attire toggles, and the tile marks the
-    /// output discrepancy on its has-wig badge. The live 3D preview leaves this
-    /// false and stays output-faithful.</para>
+    /// <para><paramref name="alwaysRenderOutfitWigsAndAntlers"/> is set by the MUGSHOT
+    /// generator only: it draws a detected Default-Outfit wig OR antler even under
+    /// handling mode None, where the patch would not forward it. Both are part of
+    /// the face a mod gives an NPC, and the outfit walk that would otherwise draw
+    /// them promotes their head-slot armature to headgear — so with the attire
+    /// toggles off they disappeared entirely. They are depicted regardless of both
+    /// toggles; the tile marks the output discrepancy on its has-wig badge. The
+    /// live 3D preview leaves this false and stays output-faithful.</para>
     /// </summary>
     public IReadOnlyList<MeshOverride> ResolveAttireMeshOverrides(
         FormKey npcFormKey, ModSetting? modSetting, bool includeDefaultOutfit, bool includeHeadgear,
         FormKey? targetNpcFormKey, out OutfitDisplayResult outfitDisplay,
-        bool alwaysRenderOutfitWigs = false)
+        bool alwaysRenderOutfitWigsAndAntlers = false)
     {
         outfitDisplay = OutfitDisplayResult.NoOutfit;
         // Wig/antler handling: the mugshot depicts the POST-PATCH NPC, so a
@@ -1192,12 +1193,13 @@ public class NpcMeshResolver
         bool anySkinForward = wigMode == WigHandlingMode.ForwardToSkin ||
                               wigMode == WigHandlingMode.ConvertToHeadParts ||
                               antlerMode == AntlerHandlingMode.ForwardToSkin;
-        // A mode-None outfit wig the mugshot depicts anyway (PieceForward.Depiction)
-        // renders with both toggles off, exactly like a skin-forwarded one, so it has
-        // to defeat this bail too.
-        bool anyDepictedWig = alwaysRenderOutfitWigs && wigMode == WigHandlingMode.None &&
-                              _settings.ModHasWigs(modSetting);
-        if (!includeDefaultOutfit && !includeHeadgear && !anySkinForward && !anyDepictedWig)
+        // A mode-None outfit wig or antler the mugshot depicts anyway
+        // (PieceForward.Depiction) renders with both toggles off, exactly like a
+        // skin-forwarded one, so it has to defeat this bail too.
+        bool anyDepicted = alwaysRenderOutfitWigsAndAntlers &&
+                           ((wigMode == WigHandlingMode.None && _settings.ModHasWigs(modSetting)) ||
+                            (antlerMode == AntlerHandlingMode.None && _settings.ModHasAntlers(modSetting)));
+        if (!includeDefaultOutfit && !includeHeadgear && !anySkinForward && !anyDepicted)
             return Array.Empty<MeshOverride>();
         var linkCache = _env.LinkCache;
         if (linkCache == null) return Array.Empty<MeshOverride>();
@@ -1221,7 +1223,7 @@ public class NpcMeshResolver
         var appearanceKey = ResolveAppearanceNpcKey(npcFormKey, modSetting);
         return ResolveAttireMeshOverrides(appearanceKey, linkCache,
             BuildContext(appearanceKey, modSetting), includeDefaultOutfit, includeHeadgear, outfitDisplay,
-            wigMode, antlerMode, modSetting, alwaysRenderOutfitWigs);
+            wigMode, antlerMode, modSetting, alwaysRenderOutfitWigsAndAntlers);
     }
 
     private IReadOnlyList<MeshOverride> ResolveAttireMeshOverrides(
@@ -1229,7 +1231,7 @@ public class NpcMeshResolver
         bool includeDefaultOutfit, bool includeHeadgear, OutfitDisplayResult outfitDisplay,
         WigHandlingMode wigMode = WigHandlingMode.None,
         AntlerHandlingMode antlerMode = AntlerHandlingMode.None, ModSetting? modSetting = null,
-        bool alwaysRenderOutfitWigs = false)
+        bool alwaysRenderOutfitWigsAndAntlers = false)
     {
         var result = new List<MeshOverride>();
         // Outfit is the dominant toggle — headgear is part of the outfit and never
@@ -1238,16 +1240,19 @@ public class NpcMeshResolver
         // toggle while the outfit is off.) Exception: an active ForwardToSkin wig
         // or antler mode still emits the forwarded pieces (post-patch they are skin).
         includeHeadgear = includeHeadgear && includeDefaultOutfit;
-        // alwaysRenderOutfitWigs (mugshot only) makes a mode-None wig mod relevant to
-        // the plan too — the pass below emits it as PieceForward.Depiction.
+        // alwaysRenderOutfitWigsAndAntlers (mugshot only) makes a mode-None wig or
+        // antler mod relevant to the plan too — the pass below emits those as
+        // PieceForward.Depiction.
         bool maybeWigsOrAntlers = (wigMode != WigHandlingMode.None ||
                                    antlerMode != AntlerHandlingMode.None ||
-                                   (alwaysRenderOutfitWigs && _settings.ModHasWigs(modSetting)))
+                                   (alwaysRenderOutfitWigsAndAntlers &&
+                                    (_settings.ModHasWigs(modSetting) || _settings.ModHasAntlers(modSetting))))
                                   && modSetting != null;
         bool anySkinForward = wigMode == WigHandlingMode.ForwardToSkin ||
                               wigMode == WigHandlingMode.ConvertToHeadParts ||
                               antlerMode == AntlerHandlingMode.ForwardToSkin ||
-                              (alwaysRenderOutfitWigs && wigMode == WigHandlingMode.None);
+                              (alwaysRenderOutfitWigsAndAntlers &&
+                               (wigMode == WigHandlingMode.None || antlerMode == AntlerHandlingMode.None));
         if (!includeDefaultOutfit && !includeHeadgear && !(maybeWigsOrAntlers && anySkinForward))
         {
             return result;
@@ -1278,7 +1283,7 @@ public class NpcMeshResolver
         // NPC wears in game.
         var wigPlan = maybeWigsOrAntlers
             ? BuildWigRenderPlan(npcGetter, modSetting!, wigMode, antlerMode, linkCache, context,
-                alwaysRenderOutfitWigs)
+                alwaysRenderOutfitWigsAndAntlers)
             : null;
         if (wigPlan != null)
         {
@@ -1428,11 +1433,11 @@ public class NpcMeshResolver
     /// on), or Removed (antler Remove — never rendered, and suppressed from the
     /// outfit walk when the outfit is forwarded).
     /// <para><see cref="Depiction"/> is the odd one out: it makes NO claim about
-    /// the output. It carries a wig the patch will NOT forward (mode None) into
-    /// the MUGSHOT anyway, because a wig is the character's hair and a mugshot
-    /// exists to show the face this mod gives an NPC. Renders like
+    /// the output. It carries a wig or antler the patch will NOT forward (mode
+    /// None) into the MUGSHOT anyway, because both are part of the face this mod
+    /// gives an NPC and a mugshot exists to show that face. Renders like
     /// <see cref="Skin"/> (both attire toggles bypassed) and is emitted only when
-    /// the caller passes <c>alwaysRenderOutfitWigs</c> — the live 3D preview does
+    /// the caller passes <c>alwaysRenderOutfitWigsAndAntlers</c> — the live 3D preview does
     /// not, so it stays output-faithful and flags the discrepancy in a banner
     /// instead (see <see cref="WigNotPersistedApplies"/>).</para></summary>
     private enum PieceForward
@@ -1468,7 +1473,7 @@ public class NpcMeshResolver
     /// </summary>
     private WigRenderPlan? BuildWigRenderPlan(INpcGetter npcGetter, ModSetting modSetting,
         WigHandlingMode wigMode, AntlerHandlingMode antlerMode, ILinkCache linkCache,
-        NpcResolutionContext? context, bool alwaysRenderOutfitWigs)
+        NpcResolutionContext? context, bool alwaysRenderOutfitWigsAndAntlers)
     {
         if (npcGetter.DefaultOutfit == null || npcGetter.DefaultOutfit.IsNull) return null;
         var donorOutfit = ResolveRecord<IOutfitGetter>(npcGetter.DefaultOutfit, linkCache, context);
@@ -1497,7 +1502,17 @@ public class NpcMeshResolver
                     case AntlerHandlingMode.Remove:
                         plan.SuppressedOutfitItemKeys.Add(item.FormKey);
                         break;
-                    // None: legacy passthrough — the outfit walk depicts it normally.
+                    case AntlerHandlingMode.None when alwaysRenderOutfitWigsAndAntlers:
+                        // Same reasoning as the mode-None wig below: antlers are part
+                        // of the face this mod gives the NPC, and the outfit walk that
+                        // would otherwise draw them promotes their head-slot armature
+                        // to headgear — so with the attire toggles off (the mugshot
+                        // default) they vanished entirely under "Leave As Is". Depict
+                        // them; whether they reach the OUTPUT is a separate question.
+                        AddRenderPiece(plan, item.FormKey, true, PieceForward.Depiction, linkCache, context);
+                        break;
+                    // None (preview): legacy passthrough — the outfit walk depicts it,
+                    // gated by Include Headgear, keeping the preview output-faithful.
                 }
             }
             else
@@ -1519,7 +1534,7 @@ public class NpcMeshResolver
                         // isn't knowable here and ForwardToSkin looks identical).
                         AddRenderPiece(plan, item.FormKey, false, PieceForward.Skin, linkCache, context);
                         break;
-                    case WigHandlingMode.None when alwaysRenderOutfitWigs:
+                    case WigHandlingMode.None when alwaysRenderOutfitWigsAndAntlers:
                         // Legacy passthrough, but the MUGSHOT still depicts the wig:
                         // it is the NPC's hair, and the tile exists to show the face
                         // this mod supplies. Purely a depiction — whether the wig
