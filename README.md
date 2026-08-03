@@ -626,7 +626,8 @@ Mugshots can carry small icons in their corners that flag special states. Hover 
 
 ![No NPC record tooltip](docs/Screenshots/NPCs/No_Npc_Record_Icon_Tooltip.png)
 
-* **“Has Wig” badge** (top-left) — this NPC wears a wig supplied by this mod, either in its skin/worn armor or in its Default Outfit. Purely informational: it tells you the face you’re looking at includes a wig, which is what the [Head Editing](#head-editing-wigs--antlers) settings act on. The tooltip names each wig record it found.
+* **“Has Wig” badge** (top-left) — this NPC wears a wig supplied by this mod, either in its skin/worn armor or in its Default Outfit. It tells you the face you’re looking at includes a wig, which is what the [Head Editing](#head-editing-wigs--antlers) settings act on. The tooltip names each wig record it found. Mugshots always *show* an outfit wig, whatever the Wig Handling Mode and whatever the Include Headgear setting — a wig is the character’s hair, not a hat you’d want toggled away.
+    * **Crossed out with a red X** — that wig won’t make it into your output. This happens when the mod’s Wig Handling Mode is *Leave As Is* **and** Include Outfits is off for the NPC, so nothing carries the wig across; in game they’d have their own hair instead of the face you’re looking at. The tooltip says how to keep it: pick a Wig Handling Mode, or turn on Include Outfits. (In plain *Create* output mode wig handling can’t run at all, so the tooltip points you at the output mode instead.) Skin-carried wigs travel with the appearance and are never crossed out.
 
 ![Has Wig badge tooltip](docs/Screenshots/NPCs/Has_Wig_Badge_Tooltip.png)
 
@@ -679,6 +680,8 @@ The **Show 3D Preview** option (or Ctrl+Shift+RClick on a mugshot) opens an inte
 With the outfit toggle on, the preview dresses the NPC in the outfit they’ll *actually wear in game* given your patching mode, the Include Outfit setting, and any SkyPatcher/SPID outfit distribution in your load order — see [Which outfit does the preview wear?](#which-outfit-does-the-preview-wear). If a runtime config defeats an outfit you asked N.P.C.2 to include, a warning banner in the preview names the config responsible; otherwise the status line at the bottom notes where a distributed outfit came from. Banners in the top-right corner likewise flag missing outfit assets and antler removal, matching the [badges](#mugshot-symbols) on the mugshot tile.
 
 The preview also reflects [Head Editing](#head-editing-wigs--antlers): a wig that will be forwarded or converted is shown the way the patched NPC will look, and antlers that *Remove* will strip are hidden.
+
+Unlike the mugshot, the preview stays strictly faithful to your output here. A wig the patch *won’t* carry across (Wig Handling Mode *Leave As Is* with Include Outfits off) behaves like the ordinary outfit piece it is — it follows the Include Headgear toggle — and a banner tells you the mod supplies a wig you aren’t getting, and how to keep it. The mugshot tile answers the same question the other way round: it draws the wig and puts a red X on its [Has Wig badge](#mugshot-symbols).
 
 #### Correcting what counts as a wig or an antler
 

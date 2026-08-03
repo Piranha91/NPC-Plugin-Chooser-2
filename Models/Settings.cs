@@ -194,7 +194,12 @@ public class Settings
     /// <summary>True when wig/antler handling is active for the current output
     /// mode: Create-and-Patch record mode, or SkyPatcher output in either
     /// PatchingMode. Inert in plain Create record mode.</summary>
-    private bool WigHandlingActiveForOutputMode =>
+    /// <summary>Whether the current output mode can act on wigs/antlers at all.
+    /// Plain Create record mode cannot, so every handling mode reads as inert there
+    /// whatever the dropdown says — which is a distinct thing to tell the user from
+    /// "your mode is Leave As Is", hence public rather than folded into the
+    /// resolvers (see <c>OutfitDisplayResolver.ComputeWigPersistence</c>).</summary>
+    public bool WigHandlingActiveForOutputMode =>
         UseSkyPatcherMode || PatchingMode == PatchingMode.CreateAndPatch;
 
     /// <summary>

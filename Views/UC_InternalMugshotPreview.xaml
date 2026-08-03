@@ -259,6 +259,20 @@
                     <TextBlock Text="Antlers removed (hidden to match output)" Foreground="White"
                                FontWeight="SemiBold"/>
                 </Border>
+                <!-- Wig not persisted: this NPC's Default-Outfit wig will not reach
+                     the output (Wig Handling Mode inert AND the outfit not
+                     forwarded). This preview is output-faithful, so the wig follows
+                     Include Headgear like any other head-slot outfit piece — the
+                     banner is what surfaces the gap. Warning-coloured, not the
+                     informational blue of antler removal: something the user
+                     probably wants IS being lost. The tooltip carries the fix. -->
+                <Border HorizontalAlignment="Right" Margin="0,4,0,0" MaxWidth="320"
+                        Background="#C0703000" CornerRadius="4" Padding="6,3"
+                        ToolTip="{Binding WigNotPersistedNoticeTooltip}"
+                        Visibility="{Binding HasWigNotPersistedNotice, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                    <TextBlock Text="{Binding WigNotPersistedNoticeText}" Foreground="White"
+                               FontWeight="SemiBold" TextWrapping="Wrap"/>
+                </Border>
             </StackPanel>
 
             <!-- Outfit-conflict warning: "Include Outfit" is overridden at

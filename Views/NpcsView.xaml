@@ -949,6 +949,31 @@
                                                  </Viewbox.Effect>
                                                  <Image Source="/NPC Plugin Chooser 2;component/Resources/Has Wig.png" />
                                              </Viewbox>
+
+                                             <!-- Crossed out when the wig will NOT reach the output
+                                                  (Wig Handling Mode inert AND the outfit carrying it
+                                                  not forwarded). The mugshot draws the wig regardless
+                                                  — it is the NPC's hair — so without this the tile
+                                                  would promise an appearance the patch won't deliver.
+                                                  Drawn as vector strokes rather than an icon asset so
+                                                  it stays crisp at the 20% tile sizing; sized to the
+                                                  badge by filling the same Grid cell. StrokeThickness
+                                                  is in the Viewbox's own 0..10 space, so it scales
+                                                  with the badge instead of hairlining at small tiles. -->
+                                             <Viewbox Stretch="Fill"
+                                                      Visibility="{Binding WigNotPersisted, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                 <!-- Same white halo as the icon: the X lands on hair,
+                                                      which is usually as dark as the stroke. -->
+                                                 <Viewbox.Effect>
+                                                     <DropShadowEffect Color="White" ShadowDepth="0"
+                                                                       BlurRadius="6" Opacity="0.9"/>
+                                                 </Viewbox.Effect>
+                                                 <Canvas Width="10" Height="10">
+                                                     <Path Stroke="Red" StrokeThickness="1.4"
+                                                           StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                           Data="M 1,1 L 9,9 M 9,1 L 1,9"/>
+                                                 </Canvas>
+                                             </Viewbox>
                                          </Grid>
 
                                          </StackPanel>

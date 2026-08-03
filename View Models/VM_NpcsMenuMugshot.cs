@@ -157,6 +157,15 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     /// fact, deliberately independent of the mugshot generation pipeline.</summary>
     [Reactive] public bool HasWigNotice { get; set; } = false;
     [Reactive] public string WigNoticeText { get; set; } = string.Empty;
+    /// <summary>True when this NPC's Default-Outfit wig will NOT reach the patch
+    /// output — Wig Handling Mode is inert AND the outfit carrying it isn't being
+    /// forwarded. Crosses the has-wig badge out with a red X, because the mugshot
+    /// DOES draw that wig (it is the NPC's hair) and would otherwise promise an
+    /// appearance the patch won't deliver. Skin-carried wigs always persist and
+    /// never trip this. Unlike <see cref="HasWigNotice"/> — a fixed record fact —
+    /// this depends on live settings, so it is recomputed on the post-generation
+    /// notice refresh as well as at construction.</summary>
+    [Reactive] public bool WigNotPersisted { get; set; } = false;
     [Reactive] public FormKey? TemplateNpcKey { get; set; }
     [Reactive] public bool CanJumpToTemplate { get; set; }
     public bool IsAmbiguousSource { get; }
@@ -2009,6 +2018,7 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                     "WIG_NOTICE");
                 WigNoticeText = BuildWigNoticeText(effective);
                 HasWigNotice = true;
+                RefreshWigPersistenceNotice();
             }
         }
         catch (Exception ex)
@@ -2017,6 +2027,35 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
                 $"Wig notice {ModName} / {SourceNpcFormKey}: EXCEPTION {ex.GetType().Name}: {ex.Message}",
                 "WIG_NOTICE");
             Debug.WriteLine($"InitializeWigNotice failed for {SourceNpcFormKey}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Recomputes the crossed-out state of the has-wig badge and appends
+    /// (or removes) the "won't be in your output" paragraph on its tooltip. Pure
+    /// settings + persisted scan data — no record walk, no environment — so it is
+    /// safe to call synchronously from the constructor. Rebuilds the tooltip from
+    /// the effective sources each time rather than mutating the existing string,
+    /// so repeated calls can't stack duplicate paragraphs.</summary>
+    private void RefreshWigPersistenceNotice()
+    {
+        try
+        {
+            var sourceMod = _settings.ModSettings.FirstOrDefault(m => m.DisplayName == ModName);
+            var effective = _settings.GetEffectiveNpcWigSources(sourceMod, SourceNpcFormKey);
+            if (effective.Count == 0) return;
+
+            var persistence = _outfitDisplayResolver.ComputeWigPersistence(
+                SourceNpcFormKey, _targetNpcFormKey, sourceMod);
+
+            WigNotPersisted = persistence.AnyDropped;
+            WigNoticeText = persistence.AnyDropped
+                ? BuildWigNoticeText(effective) + "\n\n⚠ " + persistence.Headline
+                  + "\n\n" + persistence.FixAdvice
+                : BuildWigNoticeText(effective);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"RefreshWigPersistenceNotice failed for {SourceNpcFormKey}: {ex.Message}");
         }
     }
 
@@ -2053,6 +2092,10 @@ public class VM_NpcsMenuMugshot : ReactiveObject, IDisposable, IHasMugshotImage,
     {
         await RefreshOutfitNoticeAsync();
         await RefreshAntlerRemovalNoticeAsync();
+        // Cheap and synchronous (settings + persisted scan data), but it belongs
+        // here too: whether the wig persists tracks live settings, unlike the
+        // has-wig fact the badge itself is built from.
+        RefreshWigPersistenceNotice();
     }
 
     private void SetImageSource(string path)

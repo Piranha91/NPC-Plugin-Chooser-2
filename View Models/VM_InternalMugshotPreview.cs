@@ -12,6 +12,7 @@ using CharacterViewer.Rendering;
 using Mutagen.Bethesda.Plugins;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.BackEnd.CharacterViewerHost;
+using NPC_Plugin_Chooser_2.BackEnd.OutfitDistribution;
 using NPC_Plugin_Chooser_2.Models;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
@@ -76,6 +77,19 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
     /// only — never marks a cached mugshot stale.</summary>
     [Reactive] public bool HasAntlerRemovalNotice { get; private set; }
     [Reactive] public string AntlerRemovalNoticeText { get; private set; } = string.Empty;
+
+    /// <summary>Wig-not-persisted banner: set when this NPC carries a Default-Outfit
+    /// wig that the patch will NOT carry into the output (Wig Handling Mode inert AND
+    /// the outfit not forwarded). This preview stays OUTPUT-FAITHFUL — such a wig is
+    /// left to the ordinary outfit walk, where it behaves like the hood it is
+    /// indistinguishable from at the record level and obeys Include Headgear — so the
+    /// banner is what tells the user the mod supplies a wig they aren't getting, and
+    /// how to keep it. (The mugshot takes the other route: it draws the wig and
+    /// crosses out its has-wig badge.) Informational only — never marks a cached
+    /// mugshot stale.</summary>
+    [Reactive] public bool HasWigNotPersistedNotice { get; private set; }
+    [Reactive] public string WigNotPersistedNoticeText { get; private set; } = string.Empty;
+    [Reactive] public string WigNotPersistedNoticeTooltip { get; private set; } = string.Empty;
 
     // --- "Set Antler Head Parts" selector (per-tile 3D popup only) ---
     /// <summary>Whether the antler head-part selector can be offered: the preview
@@ -570,6 +584,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             ApplyAttireOverrides(attire);
             ApplyOutfitNotice(outfitDisplay);
             SetAntlerRemovalNotice(_resolver.AntlerRemovalAppliesForActiveSelection(formKey));
+            SetWigNotPersistedNotice(_resolver.WigNotPersistedAppliesForActiveSelection(formKey));
             ClearAntlerSelector(); // no explicit mod scope on the active-selection path
             ClearWigSelector();
 
@@ -640,6 +655,7 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
             ApplyAttireOverrides(attire);
             ApplyOutfitNotice(outfitDisplay);
             SetAntlerRemovalNotice(_resolver.AntlerRemovalApplies(formKey, modSetting));
+            SetWigNotPersistedNotice(_resolver.WigNotPersistedApplies(formKey, modSetting, targetNpcFormKey));
             PopulateAntlerSelector(modSetting, formKey);
             PopulateWigSelector(modSetting, formKey);
 
@@ -692,6 +708,18 @@ public class VM_InternalMugshotPreview : ReactiveObject, IDisposable
         AntlerRemovalNoticeText = applies
             ? "Antlers are removed from this NPC in the patched output (this mod's Antler Handling Mode is "
               + "Remove) and are hidden here to match."
+            : string.Empty;
+    }
+
+    /// <summary>Applies the "wig won't be in your output" banner. The headline is
+    /// the visible text; the fix advice rides in the tooltip so the banner stays
+    /// one line over the render.</summary>
+    private void SetWigNotPersistedNotice(WigPersistenceResult persistence)
+    {
+        HasWigNotPersistedNotice = persistence.AnyDropped;
+        WigNotPersistedNoticeText = persistence.AnyDropped ? persistence.Headline : string.Empty;
+        WigNotPersistedNoticeTooltip = persistence.AnyDropped
+            ? persistence.Headline + "\n\n" + persistence.FixAdvice
             : string.Empty;
     }
 

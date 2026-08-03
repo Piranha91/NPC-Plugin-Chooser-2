@@ -228,4 +228,74 @@ public class OutfitDisplayInventoryTemplateTests
         result.RecordOutfitInert.Should().BeFalse();
         result.WarningText.Should().BeNull("nothing defeated the user's intent here");
     }
+
+    /// <summary>
+    /// The mugshot draws a Default-Outfit wig even under Wig Handling Mode "Leave As Is" — it is the
+    /// NPC's hair, and the tile exists to show the face the mod supplies. That depiction has to be in
+    /// the identity stamp or the change ships invisibly: every already-cached PNG would keep showing
+    /// the old wigless render forever, since nothing else about the NPC changed.
+    ///
+    /// <para>The stamp is deliberately keyless of the mode here (the mode IS None), but content-based
+    /// on the wig FormKeys, so a mod update that adds or drops a wig still re-stales the tile.</para>
+    /// </summary>
+    [Fact]
+    public void WigIdentityStamp_LeaveAsIs_StampsTheWigTheMugshotDrawsAnyway()
+    {
+        using var fx = new WigRouteFixture("inv7");
+        var settings = fx.NewSettings(skyPatcherMode: false, "inv7");
+        settings.DefaultWigHandlingMode = WigHandlingMode.None;
+        var built = Build(fx, NpcConfiguration.TemplateFlag.Traits, settings);
+        if (built == null) return;
+
+        var suffix = built.Resolver.ComputeWigIdentitySuffix(built.Heir, built.ModSetting, true);
+
+        suffix.Should().Contain("+wigdepict[",
+            "the mugshot renders this wig despite the inert mode, so a cached PNG taken before the " +
+            "change has to be re-rendered");
+        suffix.Should().Contain(built.OwnWigArmor.ToString(), "content-based on the wig's FormKey");
+        suffix.Should().NotContain("+wig[",
+            "nothing is being FORWARDED — the mode is None; this is a depiction-only segment");
+    }
+
+    /// <summary>
+    /// The depiction segment tracks the same outfit resolution everything else does. An
+    /// INVENTORY-templated NPC wears its template's outfit, which carries no wig — so there is
+    /// nothing for the mugshot to draw and nothing to stamp. (Stamping the heir's own outfit here
+    /// would cache a render of a wig the game never puts on — the bug the two tests above pin.)
+    /// </summary>
+    [Fact]
+    public void WigIdentityStamp_LeaveAsIs_FollowsTheInventoryTemplateToo()
+    {
+        using var fx = new WigRouteFixture("inv8");
+        var settings = fx.NewSettings(skyPatcherMode: false, "inv8");
+        settings.DefaultWigHandlingMode = WigHandlingMode.None;
+        var built = Build(fx, NpcConfiguration.TemplateFlag.Inventory, settings);
+        if (built == null) return;
+
+        built.Resolver.ComputeWigIdentitySuffix(built.Heir, built.ModSetting, true)
+            .Should().NotContain("+wigdepict",
+                "the worn outfit comes from the template and has no wig, so the mugshot draws none");
+    }
+
+    /// <summary>
+    /// Plain Create record mode makes wig handling inert whatever the dropdown says, so an actively
+    /// configured mode still renders — and stamps — as a depiction rather than a forward. Pins that
+    /// the two segments stay mutually exclusive: exactly one describes any given tile.
+    /// </summary>
+    [Fact]
+    public void WigIdentityStamp_PlainCreateMode_StampsADepictionNotAForward()
+    {
+        using var fx = new WigRouteFixture("inv9");
+        var settings = fx.NewSettings(skyPatcherMode: false, "inv9", patchingMode: PatchingMode.Create);
+        settings.DefaultWigHandlingMode = WigHandlingMode.ForwardToSkin;
+        var built = Build(fx, NpcConfiguration.TemplateFlag.Traits, settings);
+        if (built == null) return;
+
+        var suffix = built.Resolver.ComputeWigIdentitySuffix(built.Heir, built.ModSetting, true);
+
+        suffix.Should().Contain("+wigdepict[",
+            "Create mode cannot forward the wig, so the mugshot depicts it unforwarded");
+        suffix.Should().NotContain("+wig[ForwardToSkin",
+            "stamping a forward the output mode makes impossible would cache the wrong image");
+    }
 }

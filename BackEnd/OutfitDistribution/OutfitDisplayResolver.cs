@@ -81,6 +81,56 @@ public sealed record RuntimeOutfitContest
 }
 
 /// <summary>The outcome of outfit-display resolution for one NPC.</summary>
+/// <summary>Why a Default-Outfit wig will not reach the patch output. Both values
+/// mean "the wig is dropped"; they differ in what the user has to change.</summary>
+public enum WigDropReason
+{
+    /// <summary>Nothing is dropped.</summary>
+    None,
+
+    /// <summary>Wig Handling Mode is Leave As Is and the outfit carrying the wig is
+    /// not being forwarded either. Fix: pick a handling mode, or Include Outfits.</summary>
+    ModeLeaveAsIs,
+
+    /// <summary>Wig handling cannot run at all in plain Create record mode, so the
+    /// mode dropdown is not the lever here — the output mode is.</summary>
+    InertInCreateMode
+}
+
+/// <summary>Result of <see cref="OutfitDisplayResolver.ComputeWigPersistence"/>:
+/// whether an NPC's outfit wig(s) survive into the output, and which don't.</summary>
+public sealed record WigPersistenceResult(WigDropReason Reason, IReadOnlyList<NpcWigSource> DroppedSources)
+{
+    public bool AnyDropped => Reason != WigDropReason.None;
+
+    public static readonly WigPersistenceResult Persisted =
+        new(WigDropReason.None, Array.Empty<NpcWigSource>());
+
+    /// <summary>One-line statement of the problem, for a banner or the first line
+    /// of a tooltip. Callers add their own record detail — the mugshot tile already
+    /// names each wig record in its badge tooltip.</summary>
+    public string Headline => DroppedSources.Count > 1
+        ? "The wigs this mod gives this NPC will NOT be in your output."
+        : "The wig this mod gives this NPC will NOT be in your output.";
+
+    /// <summary>What the user has to change to keep the wig, phrased with the
+    /// UI's own labels. Differs by <see cref="WigDropReason"/>: in plain Create
+    /// mode the Wig Handling Mode dropdown is not the lever.</summary>
+    public string FixAdvice => Reason switch
+    {
+        WigDropReason.ModeLeaveAsIs =>
+            "To keep it, set this mod's Wig Handling Mode (Mods tab — or Settings > Head Editing "
+            + "for the default) to something other than \"Leave As Is\". Enabling Include Outfits "
+            + "for the mod also keeps it, by carrying the whole outfit across.",
+        WigDropReason.InertInCreateMode =>
+            "Wig handling does nothing in plain Create output mode, whatever Wig Handling Mode is "
+            + "set to. To keep it, switch to Create and Patch or SkyPatcher output and pick a Wig "
+            + "Handling Mode — or enable Include Outfits for the mod, which carries the whole "
+            + "outfit across.",
+        _ => string.Empty
+    };
+}
+
 public sealed record OutfitDisplayResult
 {
     public FormKey? OutfitFormKey { get; init; }
@@ -482,6 +532,43 @@ public class OutfitDisplayResolver
     //  Patcher-intent helpers
     // ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Whether every wig this NPC carries from <paramref name="modSetting"/> will
+    /// actually reach the patch output, and if not, which ones won't and why.
+    ///
+    /// <para>Only Default-Outfit wigs can be lost. A skin-carried (WornArmor) wig
+    /// rides the appearance forward whatever the mode is, so it is never reported.
+    /// An outfit wig survives if ANY handling mode is active (each one forwards or
+    /// bakes it), or if the outfit itself is forwarded — Include Outfits carries
+    /// the wig along with everything else in it, per-NPC override included.</para>
+    ///
+    /// <para>Patch-side deliberately: this reads <see cref="Settings.GetEffectiveWigMode"/>,
+    /// not the Render variant, so the dev/harness override cannot change a claim
+    /// about the output.</para>
+    /// </summary>
+    public WigPersistenceResult ComputeWigPersistence(
+        FormKey sourceNpcFormKey, FormKey targetNpcFormKey, ModSetting? modSetting)
+    {
+        if (modSetting == null) return WigPersistenceResult.Persisted;
+
+        var outfitWigs = _settings.GetEffectiveNpcWigSources(modSetting, sourceNpcFormKey)
+            .Where(s => s.Kind == NpcWigSourceKind.Outfit).ToList();
+        if (outfitWigs.Count == 0) return WigPersistenceResult.Persisted;
+
+        if (_settings.GetEffectiveWigMode(modSetting) != WigHandlingMode.None)
+            return WigPersistenceResult.Persisted;
+        if (ComputeIncludeOutfitIntent(targetNpcFormKey, modSetting))
+            return WigPersistenceResult.Persisted;
+
+        // Mode is inert either because the user left it at Leave As Is, or because
+        // plain Create record mode cannot act on wigs at all — different fixes, so
+        // the reason is carried out to the notice text rather than flattened.
+        var reason = _settings.WigHandlingActiveForOutputMode
+            ? WigDropReason.ModeLeaveAsIs
+            : WigDropReason.InertInCreateMode;
+        return new WigPersistenceResult(reason, outfitWigs);
+    }
+
     /// <summary>Mirrors Patcher.cs's includeOutfit resolution: the per-NPC
     /// override (keyed by the TARGET NPC) wins over the mod-level flag.</summary>
     private bool ComputeIncludeOutfitIntent(FormKey targetNpcFormKey, ModSetting? modSetting)
@@ -626,7 +713,15 @@ public class OutfitDisplayResolver
 
         var wigMode = _settings.GetEffectiveRenderWigMode(modSetting);
         var antlerMode = _settings.GetEffectiveRenderAntlerMode(modSetting);
-        if (wigMode == WigHandlingMode.None && antlerMode == AntlerHandlingMode.None) return tintMarker;
+        // Both modes inert still needs the walk when the mod has outfit wigs: the
+        // mugshot depicts those regardless of mode (+wigdepict below). HasWigArmors
+        // is the cheap outfit-ARMO-only precheck, so a mod with nothing to depict
+        // keeps the old zero-cost bail.
+        if (wigMode == WigHandlingMode.None && antlerMode == AntlerHandlingMode.None &&
+            !modSetting.HasWigArmors)
+        {
+            return tintMarker;
+        }
         var linkCache = _env.LinkCache;
         if (linkCache == null) return tintMarker;
 
@@ -671,6 +766,18 @@ public class OutfitDisplayResolver
                 var antlerKeys = itemKeys.Where(k => modSetting.DetectedAntlerArmors.Contains(k))
                     .Select(k => k.ToString()).OrderBy(s => s, StringComparer.Ordinal).ToList();
                 outfitHasDetectedWig = wigKeys.Count > 0;
+
+                // Depiction segment — the mode-None outfit wig the MUGSHOT draws anyway
+                // (NpcMeshResolver's PieceForward.Depiction, alwaysRenderOutfitWigs). No
+                // mode tag: the mode is None by construction, and the keys alone re-stale
+                // when the mod's outfit gains or loses a wig. Emitted regardless of the
+                // outfit toggle because the depiction ignores both toggles. This suffix is
+                // mugshot-only (metadata stamp + staleness), so the output-faithful live
+                // preview is unaffected by it.
+                if (wigMode == WigHandlingMode.None && wigKeys.Count > 0)
+                {
+                    sb.Append("+wigdepict[" + string.Join(",", wigKeys) + "]");
+                }
 
                 // Wig segment — content-based (mode + sorted keys) so adding/removing a wig
                 // re-stales too. ForwardToSkin and ConvertToHeadParts depict regardless of
