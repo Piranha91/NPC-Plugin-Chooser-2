@@ -21,8 +21,10 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 /// <list type="bullet">
 /// <item><c>EnumerateNamedAppearanceLinks</c> — the exact set of links the appearance copy
 /// writes, used at copy time so the failing NPC is reported while it is being patched.</item>
-/// <item><c>MapFieldNamesForLinks</c> — a reflection walk over an arbitrary output record,
-/// used at save time to say WHICH field on the offending record dangles.</item>
+/// <item><see cref="RecordFieldPathMapper.MapFieldNames"/> — a reflection walk over an arbitrary
+/// output record, used at save time to say WHICH field on the offending record dangles. Shared
+/// with the pre-run screening dialog, which needs it for the same reason; see
+/// <see cref="RecordFieldPathMapperTests"/> for the walk's own coverage.</item>
 /// </list>
 ///
 /// Both are failure-path-only and must never throw; the walk degrades to "(field unknown)".
@@ -34,8 +36,7 @@ public class PatcherDanglingMasterDiagnosticsTests
             typeof(Patcher), "EnumerateNamedAppearanceLinks", npc, includeOutfit)!.ToList();
 
     private static Dictionary<FormKey, List<string>> FieldNames(IMajorRecordGetter record, params FormKey[] wanted)
-        => Reflect.InvokeStatic<Dictionary<FormKey, List<string>>>(
-            typeof(Patcher), "MapFieldNamesForLinks", record, new HashSet<FormKey>(wanted))!;
+        => RecordFieldPathMapper.MapFieldNames(record, new HashSet<FormKey>(wanted));
 
     [Fact]
     public void NamedAppearanceLinks_LabelEveryCopiedField_AndIndexHeadParts()

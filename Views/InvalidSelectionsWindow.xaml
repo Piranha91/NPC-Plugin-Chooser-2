@@ -63,7 +63,7 @@
                             <TextBlock Text="{Binding DisplayText}" ToolTip="{Binding ModName}"/>
                             <HierarchicalDataTemplate.ItemTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding DisplayText}" ToolTip="{Binding NpcFormKey}"/>
+                                    <TextBlock Text="{Binding DisplayText}" ToolTip="{Binding ToolTipText}"/>
                                 </DataTemplate>
                             </HierarchicalDataTemplate.ItemTemplate>
                         </HierarchicalDataTemplate>
@@ -175,7 +175,7 @@
                         ToolTip="Copy the whole list as indented text (issue, then mod, then NPC)."/>
                 <Button Content="Copy Sheet" Command="{Binding CopySheetCommand}"
                         Height="30" Padding="12,0" Margin="10,0,0,0"
-                        ToolTip="Copy one tab-separated row per NPC (Issue, Mod, NPC, FormKey); paste directly into Excel."/>
+                        ToolTip="Copy one tab-separated row per NPC (Issue, Mod, NPC, FormKey, Missing Record); paste directly into Excel."/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Skip and Continue" Click="ContinueButton_Click"

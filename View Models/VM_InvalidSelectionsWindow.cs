@@ -31,7 +31,7 @@ public sealed class VM_InvalidSelectionsWindow : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> CopyTextCommand { get; }
     public ReactiveCommand<Unit, Unit> CopySheetCommand { get; }
 
-    private static readonly string[] SheetHeaders = { "Issue", "Mod", "NPC", "FormKey" };
+    private static readonly string[] SheetHeaders = { "Issue", "Mod", "NPC", "FormKey", "Missing Record" };
 
     public VM_InvalidSelectionsWindow(IReadOnlyList<Validator.InvalidSelection> entries)
     {
@@ -69,7 +69,8 @@ public sealed class VM_InvalidSelectionsWindow : ReactiveObject, IDisposable
     private void CopyText() => SetClipboard(Validator.FormatInvalidSelectionsReport(_entries));
 
     /// <summary>One flat tab-separated row per rejected NPC, headers included: pastes straight
-    /// into Excel as four columns, where the tree's grouping is a sort/pivot away.</summary>
+    /// into Excel as five columns, where the tree's grouping is a sort/pivot away. The last column
+    /// is empty for rejections that carry no per-NPC detail.</summary>
     private void CopySheet()
     {
         var sb = new StringBuilder();
@@ -77,7 +78,7 @@ public sealed class VM_InvalidSelectionsWindow : ReactiveObject, IDisposable
         foreach (var e in _entries)
         {
             sb.AppendLine(string.Join("\t",
-                new[] { e.Reason, e.ModName, e.NpcDescription, e.NpcFormKey }.Select(CleanTsv)));
+                new[] { e.Reason, e.ModName, e.NpcDescription, e.NpcFormKey, e.Detail }.Select(CleanTsv)));
         }
         SetClipboard(sb.ToString());
     }
@@ -137,17 +138,28 @@ public sealed class VM_InvalidSelectionMod : ReactiveObject
 }
 
 /// <summary>Leaf: one rejected NPC, named as it is elsewhere in the app with its FormKey
-/// appended.</summary>
+/// appended, plus whatever is specific to this NPC under the shared reason above it.</summary>
 public sealed class VM_InvalidSelectionNpc : ReactiveObject
 {
     public VM_InvalidSelectionNpc(Validator.InvalidSelection entry)
     {
-        DisplayText = entry.NpcLabel;
+        // With the detail, because the reason heading has already been printed once for the whole
+        // group: the row's job is what differs between the NPCs under it. For the written-link
+        // rejections that is the record the appearance points at and the user's install lacks —
+        // the reason names the plugin, only this names the record.
+        DisplayText = entry.NpcLabelWithDetail;
         NpcFormKey = entry.NpcFormKey;
+        Detail = entry.Detail;
     }
 
     public string DisplayText { get; }
     public string NpcFormKey { get; }
+    public string Detail { get; }
+
+    /// <summary>Hover text: the FormKey alone once the row carries no detail, otherwise both, since
+    /// the row then holds two FormKeys and the tooltip has to say which one is the NPC.</summary>
+    public string ToolTipText =>
+        string.IsNullOrWhiteSpace(Detail) ? NpcFormKey : $"NPC {NpcFormKey}\nReferences {Detail}";
 
     /// <summary>Leaves never have children, so this only exists to satisfy the shared
     /// TreeViewItem style's two-way IsExpanded binding.</summary>

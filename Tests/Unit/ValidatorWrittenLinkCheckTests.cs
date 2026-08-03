@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using FluentAssertions;
 using Mutagen.Bethesda;
@@ -464,5 +464,104 @@ public class ValidatorWrittenLinkCheckTests
 
         offending.Should().ContainSingle()
             .Which.Should().Be(("Template", template.FormKey));
+    }
+
+    // ── Naming the offending record ─────────────────────────────────────────────────────
+    //
+    // The rejection reason names the PLUGIN that is short a record ("...missing from your
+    // 'Skyrim.esm'") and is shared by every NPC under it, so the record itself has to travel on the
+    // per-NPC detail or the user has no way to know what to go look at.
+
+    private static string Describe(string field, FormKey key, Type? type, IMajorRecordGetter? record = null)
+        => Reflect.InvokeStatic<string>(typeof(Validator), "DescribeUnwritableLink",
+            field, key, type, record)!;
+
+    [Fact]
+    public void DescribeUnwritableLink_NamesTheFieldTheFormKeyAndTheType()
+    {
+        Describe("HeadParts[3]", FormKey.Factory("000014:Skyrim.esm"), typeof(IHeadPartGetter))
+            .Should().Be("HeadParts[3] = 000014:Skyrim.esm (HeadPart)");
+    }
+
+    [Fact]
+    public void DescribeUnwritableLink_OmitsATypeThatNamesNoRecordType()
+    {
+        // The reported HPNO/Miraak case. A Papyrus script property is declared
+        // IFormLinkGetter<ISkyrimMajorRecordGetter>, so "SkyrimMajorRecord" is the link's base, not
+        // the type of the thing it points at — printing it reads as an answer when it is not one.
+        Describe("Class", FormKey.Factory("000014:Skyrim.esm"), typeof(ISkyrimMajorRecordGetter))
+            .Should().Be("Class = 000014:Skyrim.esm");
+    }
+
+    [Fact]
+    public void DescribeUnwritableLink_RecoversTheFieldPathForASweptLink()
+    {
+        // The sweep hands over "record data" rather than a field, so the path has to come from
+        // walking the record. Without it a generic link says nothing at all: no type, no field.
+        var plugin = MutagenFixtures.NewMod("Sweep.esp");
+        var npc = MutagenFixtures.NewNpc(plugin, "SweepDescribeNpc");
+        npc.Race.SetTo(FormKey.Factory("013746:Skyrim.esm"));
+
+        Describe("record data", npc.Race.FormKey, typeof(ISkyrimMajorRecordGetter), npc)
+            .Should().Be("Race = 013746:Skyrim.esm");
+    }
+
+    [Fact]
+    public void DescribeUnwritableLink_SaysSoWhenTheFieldCannotBeNamed()
+    {
+        var plugin = MutagenFixtures.NewMod("Sweep.esp");
+        var npc = MutagenFixtures.NewNpc(plugin, "SweepUnknownFieldNpc");
+
+        Describe("record data", FormKey.Factory("00BEEF:Nowhere.esp"), null, npc)
+            .Should().Be("(field unknown) = 00BEEF:Nowhere.esp");
+    }
+
+    [Theory]
+    [InlineData(typeof(IHeadPartGetter), "HeadPart")]
+    [InlineData(typeof(ITextureSetGetter), "TextureSet")]
+    [InlineData(typeof(IArmorGetter), "Armor")]
+    [InlineData(typeof(INpcSpawnGetter), "NpcSpawn")]
+    [InlineData(typeof(IColorRecordGetter), "ColorRecord")]
+    public void RecordTypeLabel_TrimsTheGetterInterfaceToTheXEditName(Type type, string expected)
+        => Reflect.InvokeStatic<string>(typeof(Validator), "RecordTypeLabel", type)
+            .Should().Be(expected);
+
+    [Theory]
+    [InlineData(typeof(ISkyrimMajorRecordGetter))]
+    [InlineData(typeof(IMajorRecordGetter))]
+    public void RecordTypeLabel_IsNullForABaseThatNamesNoRecordType(Type type)
+        => Reflect.InvokeStatic<string>(typeof(Validator), "RecordTypeLabel", type)
+            .Should().BeNull();
+
+    [Fact]
+    public void RecordTypeLabel_IsNullWhenTheLinkCarriedNoType()
+        => Reflect.InvokeStatic<string>(typeof(Validator), "RecordTypeLabel", new object?[] { null })
+            .Should().BeNull();
+
+    [Fact]
+    public void InvalidSelection_CarriesTheDetailIntoTheLabelAndTheFlatLine()
+    {
+        var entry = new Validator.InvalidSelection("Miraak", "High Poly NPC Overhaul",
+            "Appearance references a record missing from your 'Skyrim.esm'", "017936:Dragonborn.esm",
+            "HeadParts[3] = 000014:Skyrim.esm (HeadPart)");
+
+        entry.NpcLabelWithDetail.Should().Be(
+            "Miraak [017936:Dragonborn.esm] — HeadParts[3] = 000014:Skyrim.esm (HeadPart)");
+        entry.ToLine().Should().Be(
+            "Miraak [017936:Dragonborn.esm] -> 'High Poly NPC Overhaul' " +
+            "(Appearance references a record missing from your 'Skyrim.esm': " +
+            "HeadParts[3] = 000014:Skyrim.esm (HeadPart))");
+    }
+
+    [Fact]
+    public void InvalidSelection_WithoutDetail_IsUnchanged()
+    {
+        // Most rejections have nothing to add beyond the reason; those rows must not grow a
+        // dangling separator.
+        var entry = new Validator.InvalidSelection("Lydia", "Mod One", "Mod folder not found",
+            "000A2C8E:Skyrim.esm");
+
+        entry.NpcLabelWithDetail.Should().Be(entry.NpcLabel);
+        entry.ToLine().Should().Be("Lydia [000A2C8E:Skyrim.esm] -> 'Mod One' (Mod folder not found)");
     }
 }

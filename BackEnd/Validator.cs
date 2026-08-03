@@ -3,6 +3,7 @@ using System.Text;
 using System.Windows;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
+using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Views;
@@ -40,7 +41,13 @@ public class Validator : OptionalUIModule
     /// </summary>
     /// <param name="NpcFormKey">Flat form of the target NPC's FormKey, appended to the display
     /// name by <see cref="NpcLabel"/>. Optional so callers predating it still compile.</param>
-    public record InvalidSelection(string NpcDescription, string ModName, string Reason, string NpcFormKey = "")
+    /// <param name="Detail">What is specific to THIS NPC under a shared <paramref name="Reason"/>,
+    /// currently the offending record for the written-link failures ("HeadParts[3] =
+    /// 000014:Skyrim.esm (HeadPart)"). The reason names the plugin that is short a record; without
+    /// this the user still has to go find which record that was. Empty for rejections that have
+    /// nothing to add beyond the reason.</param>
+    public record InvalidSelection(string NpcDescription, string ModName, string Reason, string NpcFormKey = "",
+        string Detail = "")
     {
         /// <summary>The NPC as displayed, with its FormKey appended. Two NPCs can share a Name
         /// (and mods routinely reuse EditorIDs), so the name alone does not identify the record
@@ -52,7 +59,15 @@ public class Validator : OptionalUIModule
                 ? NpcDescription
                 : $"{NpcDescription} [{NpcFormKey}]";
 
-        public string ToLine() => $"{NpcLabel} -> '{ModName}' ({Reason})";
+        /// <summary>The label with the per-NPC detail appended, for the places that list NPCs
+        /// under an already-printed reason heading (the dialog tree, the grouped report).</summary>
+        public string NpcLabelWithDetail =>
+            string.IsNullOrWhiteSpace(Detail) ? NpcLabel : $"{NpcLabel} — {Detail}";
+
+        public string ToLine() =>
+            string.IsNullOrWhiteSpace(Detail)
+                ? $"{NpcLabel} -> '{ModName}' ({Reason})"
+                : $"{NpcLabel} -> '{ModName}' ({Reason}: {Detail})";
     }
 
     /// <param name="InvalidSelections">Flat one-line form of each rejection, in screening order.</param>
@@ -84,7 +99,7 @@ public class Validator : OptionalUIModule
                 sb.AppendLine($"- {modGroup.Key}");
                 foreach (var entry in modGroup)
                 {
-                    sb.AppendLine($"-- {entry.NpcLabel}");
+                    sb.AppendLine($"-- {entry.NpcLabelWithDetail}");
                 }
             }
 
@@ -125,9 +140,9 @@ public class Validator : OptionalUIModule
 
         // Single place a rejection is recorded, so the flat log line, the grouped dialog form and
         // the FormKey-keyed map the patcher stamps into NPC_Token.json can never drift apart.
-        void Reject(FormKey npcFormKey, string npcDescription, string modName, string reason)
+        void Reject(FormKey npcFormKey, string npcDescription, string modName, string reason, string detail = "")
         {
-            var entry = new InvalidSelection(npcDescription, modName, reason, npcFormKey.ToString());
+            var entry = new InvalidSelection(npcDescription, modName, reason, npcFormKey.ToString(), detail);
             invalidEntries.Add(entry);
             invalidSelections.Add(entry.ToLine());
             _rejectedSelections[npcFormKey] = reason;
@@ -446,7 +461,8 @@ public class Validator : OptionalUIModule
                     AppendLog($"  SCREENING ERROR: For NPC {npcIdentifier}, the appearance chosen from " +
                               $"'{selectedModDisplayName}' {linkFailure.Explanation} This selection is invalid.",
                         true);
-                    Reject(npcFormKey, npcIdentifier, selectedModDisplayName, linkFailure.RejectReason);
+                    Reject(npcFormKey, npcIdentifier, selectedModDisplayName, linkFailure.RejectReason,
+                        linkFailure.Detail);
                     continue;
                 }
             }
@@ -558,7 +574,69 @@ public class Validator : OptionalUIModule
     /// <param name="Explanation">Sentence fragment for the run log, following "...chosen from 'X' ".</param>
     /// <param name="RejectReason">Grouping key for the rejection dialog — identical across NPCs that
     /// fail the same way, so hundreds of them collapse to one heading.</param>
-    private sealed record UnwritableLink(string Explanation, string RejectReason);
+    /// <param name="Detail">The offending record on its own, for listing beside the NPC under that
+    /// shared heading. See <see cref="DescribeUnwritableLink"/>.</param>
+    private sealed record UnwritableLink(string Explanation, string RejectReason, string Detail);
+
+    /// <summary>The field name <see cref="FindUnwritableLink"/> gives links swept off the donor's
+    /// whole record rather than off a named appearance field. Not a real field, so
+    /// <see cref="DescribeUnwritableLink"/> leaves it off the label.</summary>
+    private const string WholeRecordSweepField = "record data";
+
+    /// <summary>
+    /// The record a rejected link points at, as "field = FormKey (Type)" — e.g.
+    /// "HeadParts[3] = 000014:Skyrim.esm (HeadPart)". Same shape as the dangling-reference list in
+    /// the patcher's own missing-master report. The rejection reason names the plugin that is short
+    /// a record but not WHICH record, which is the thing the user has to go look up.
+    ///
+    /// <para>Both trailing parts degrade independently. A link swept off the whole record arrives
+    /// with no field name, so the field is recovered from <paramref name="record"/> by walking it —
+    /// that is the only way to name a Papyrus script property, which is where the generic links
+    /// live. The type is dropped entirely when it is a base rather than a record type (see
+    /// <see cref="RecordTypeLabel"/>) rather than printed as though it were the answer.</para>
+    /// </summary>
+    private static string DescribeUnwritableLink(string field, FormKey key, Type? type,
+        IMajorRecordGetter? record)
+    {
+        var fieldPath = field == WholeRecordSweepField
+            ? RecordFieldPathMapper.FindFieldPath(record, key) ?? "(field unknown)"
+            : field;
+
+        var typeName = RecordTypeLabel(type);
+        return typeName == null ? $"{fieldPath} = {key}" : $"{fieldPath} = {key} ({typeName})";
+    }
+
+    /// <summary>
+    /// Declared link types that name no record type at all. A Papyrus script property is an
+    /// <c>IFormLinkGetter&lt;ISkyrimMajorRecordGetter&gt;</c> — "every record" — so rendering it as
+    /// "SkyrimMajorRecord" reads like a record type the user could go look for, when in fact the
+    /// link simply does not record what it points at.
+    /// </summary>
+    private static readonly HashSet<string> UninformativeTypeLabels = new(StringComparer.Ordinal)
+    {
+        "SkyrimMajorRecord", "MajorRecord", "SkyrimMajorRecordInternal",
+    };
+
+    /// <summary>
+    /// The record type as xEdit and the rest of the app name it (HeadPart, TextureSet, Armor): the
+    /// Mutagen getter interface with its "I" prefix and "Getter" suffix trimmed. Derived from the
+    /// declared link type rather than read off the record, because the record is precisely what is
+    /// missing — there is nothing to ask <c>Registration.Name</c>, and it cannot be resolved from
+    /// the load order either (that failing is why it is being reported).
+    ///
+    /// <para>Null when the type says nothing: absent on the link, or one of the
+    /// <see cref="UninformativeTypeLabels"/> bases. Callers omit it rather than substituting a
+    /// placeholder that would look like an answer.</para>
+    /// </summary>
+    private static string? RecordTypeLabel(Type? type)
+    {
+        if (type == null) return null;
+
+        var name = type.Name;
+        if (name.Length > 1 && name[0] == 'I' && char.IsUpper(name[1])) name = name.Substring(1);
+        if (name.EndsWith("Getter", StringComparison.Ordinal)) name = name[..^"Getter".Length];
+        return name.Length == 0 || UninformativeTypeLabels.Contains(name) ? null : name;
+    }
 
     /// <summary>
     /// Finds the first link this selection would WRITE onto the output record that the output cannot
@@ -631,7 +709,7 @@ public class Validator : OptionalUIModule
         {
             candidates = candidates.Concat(donor.EnumerateFormLinks()
                 .Where(l => !l.FormKey.IsNull)
-                .Select(l => ("record data", l.FormKey, l.Type)));
+                .Select(l => (WholeRecordSweepField, l.FormKey, l.Type)));
         }
 
         foreach (var (field, key, type) in candidates)
@@ -646,7 +724,8 @@ public class Validator : OptionalUIModule
                 return new UnwritableLink(
                     $"writes {field}={key} pointing at plugin '{plugin}'{detail}. The output plugin " +
                     "cannot reference it.",
-                    $"Appearance references missing plugin: {plugin}");
+                    $"Appearance references missing plugin: {plugin}",
+                    DescribeUnwritableLink(field, key, type, donor));
             }
 
             // Only meaningful for plugins the link cache actually holds. A link into a merge-eligible
@@ -691,7 +770,8 @@ public class Validator : OptionalUIModule
                     $"'{injectedIn.Value.FileName}' injects it into that plugin's ID space — and Injected Record " +
                     "Handling is turned off for this mod, so the output would not carry it and the reference " +
                     "would dangle.",
-                    "Injected record, but 'Handle Injected Records' is off for this mod (enable it in the Mods menu)");
+                    "Injected record, but 'Handle Injected Records' is off for this mod (enable it in the Mods menu)",
+                    DescribeUnwritableLink(field, key, type, donor));
             }
             NpcDiagnosticLogger.Log(
                 $"  Written-link check: {field} points at {key}, but '{missingFrom}' is in the load " +
@@ -700,7 +780,8 @@ public class Validator : OptionalUIModule
             return new UnwritableLink(
                 $"writes {field}={key}, but the '{missingFrom}' you have installed does not contain " +
                 "that record — the appearance mod was built against a different version of it.",
-                $"Appearance references a record missing from your '{missingFrom}'");
+                $"Appearance references a record missing from your '{missingFrom}'",
+                DescribeUnwritableLink(field, key, type, donor));
         }
 
         return null;

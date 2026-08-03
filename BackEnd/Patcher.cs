@@ -361,7 +361,7 @@ public class Patcher : OptionalUIModule
             // and at what. Without it the user only learns that some plugin is missing, not
             // what in their setup depends on it.
             sb.AppendLine("      Dangling reference(s):");
-            var fieldNames = MapFieldNamesForLinks(record, kvp.Value.DanglingTargets);
+            var fieldNames = RecordFieldPathMapper.MapFieldNames(record, kvp.Value.DanglingTargets);
             foreach (var target in kvp.Value.DanglingTargets.OrderBy(t => t.ToString()))
             {
                 string field = fieldNames.TryGetValue(target, out var names) && names.Count > 0
@@ -415,110 +415,6 @@ public class Patcher : OptionalUIModule
         catch
         {
             return string.Empty;
-        }
-    }
-
-    /// <summary>
-    /// Best-effort reverse map from a record's dangling FormKeys to the field path(s) that hold
-    /// them (e.g. "Race", "HeadParts[2]", "Armature[0]"). Mutagen's EnumerateFormLinks flattens a
-    /// record to bare links with no field names, so this walks the record's property graph by
-    /// reflection instead. Diagnostics-only and failure-path-only: every access is guarded, and a
-    /// field that cannot be walked simply goes unnamed rather than masking the real error.
-    /// </summary>
-    private static Dictionary<FormKey, List<string>> MapFieldNamesForLinks(IMajorRecordGetter record,
-        HashSet<FormKey> wanted)
-    {
-        var result = new Dictionary<FormKey, List<string>>();
-        try
-        {
-            foreach (var (path, key) in EnumerateNamedFormLinks(record, string.Empty, 0,
-                         new HashSet<object>(ReferenceEqualityComparer.Instance)))
-            {
-                if (!wanted.Contains(key)) continue;
-                if (!result.TryGetValue(key, out var names))
-                {
-                    names = new List<string>();
-                    result[key] = names;
-                }
-                if (!names.Contains(path)) names.Add(path);
-            }
-        }
-        catch
-        {
-            // Leave whatever was collected; unnamed fields print as "(field unknown)".
-        }
-        return result;
-    }
-
-    // Property names that lead back into Mutagen's static/registration plumbing rather than
-    // into record data. Walking them yields nothing useful and can be expensive.
-    private static readonly HashSet<string> _reflectionSkippedProperties = new(StringComparer.Ordinal)
-    {
-        "Registration", "StaticRegistration", "CommonInstance", "CommonSetterInstance",
-        "CommonSetterTranslationInstance", "ContainedFormLinks", "ContainedAssetLinks", "Mask",
-    };
-
-    private static IEnumerable<(string Path, FormKey Key)> EnumerateNamedFormLinks(object? obj, string path,
-        int depth, HashSet<object> visited)
-    {
-        if (obj == null || depth > 6) yield break;
-
-        if (obj is IFormLinkGetter link)
-        {
-            if (!link.FormKey.IsNull) yield return (path.Length == 0 ? "(root)" : path, link.FormKey);
-            yield break;
-        }
-
-        if (obj is string || obj.GetType().IsPrimitive || obj is FormKey) yield break;
-
-        // A nested MajorRecord is referenced by link, never embedded; if one shows up, stop
-        // rather than walking a second record's whole graph under this record's field path.
-        if (depth > 0 && obj is IMajorRecordGetter) yield break;
-
-        if (!visited.Add(obj)) yield break;
-
-        if (obj is System.Collections.IEnumerable sequence)
-        {
-            int index = 0;
-            foreach (var item in sequence)
-            {
-                foreach (var found in EnumerateNamedFormLinks(item, $"{path}[{index}]", depth + 1, visited))
-                {
-                    yield return found;
-                }
-                index++;
-                if (index > 512) break; // pathological list guard
-            }
-            yield break;
-        }
-
-        var type = obj.GetType();
-        if (type.Namespace == null || !type.Namespace.StartsWith("Mutagen.", StringComparison.Ordinal)) yield break;
-
-        foreach (var property in type.GetProperties(System.Reflection.BindingFlags.Public |
-                                                    System.Reflection.BindingFlags.Instance))
-        {
-            if (!property.CanRead) continue;
-            if (property.GetIndexParameters().Length > 0) continue;
-            if (_reflectionSkippedProperties.Contains(property.Name)) continue;
-
-            object? value;
-            try
-            {
-                value = property.GetValue(obj);
-            }
-            catch
-            {
-                continue; // a property that throws is not worth failing the diagnostic over
-            }
-
-            if (value == null) continue;
-
-            string childPath = path.Length == 0 ? property.Name : $"{path}.{property.Name}";
-            foreach (var found in EnumerateNamedFormLinks(value, childPath, depth + 1, visited))
-            {
-                yield return found;
-            }
         }
     }
 
