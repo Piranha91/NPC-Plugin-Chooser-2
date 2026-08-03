@@ -512,6 +512,18 @@ public class WigRouteTwoModeTests
         fx.ResMod.HeadParts.FirstOrDefault(h => h.FormKey == key)?.EditorID
         ?? $"(unknown: {key})";
 
+    /// <summary>The EditorIDs of <paramref name="outNpc"/>'s Hair-TYPE head parts, resolved through
+    /// the output plugin first and the resource plugin second (a part the run did not merge is
+    /// still on the record). Typed rather than name-matched: the minted parent's EditorID is built
+    /// from the wig ARMA and its render shape names, so nothing about it is predictable.</summary>
+    private static List<string> HairHeadPartEditorIds(RouteRun run, WigRouteFixture fx, INpcGetter outNpc) =>
+        outNpc.HeadParts
+            .Select(l => (IHeadPartGetter?)run.Output.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)
+                         ?? fx.ResMod.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey))
+            .Where(h => h?.Type == HeadPart.TypeEnum.Hair)
+            .Select(h => h!.EditorID ?? "(no EditorID)")
+            .ToList();
+
     // =============================================================================================
     // Route 3 — ForwardToOutfit, outfit-carried wig.
     // =============================================================================================
@@ -565,6 +577,112 @@ public class WigRouteTwoModeTests
         // ...and the merged wig ARMO must itself carry the merged armature, not the resource one.
         var outWig = OutputArmor(run, "NPC2Route_Wig");
         ArmatureEditorIds(run, outWig).Should().BeEquivalentTo(new[] { "NPC2Route_WigAA" });
+    }
+
+    /// <summary>
+    /// ForwardToOutfit on an NPC that takes its whole inventory — outfit included — from a
+    /// template. The forwarded outfit could never reach it, so the patcher converts the wig to head
+    /// parts instead (head parts ride Traits data, which has no equivalent dead-field problem).
+    ///
+    /// <para>This is the MAJORITY path for ForwardToOutfit on a real load order, not an edge case:
+    /// whole vanilla NPC classes are inventory-templated (generic Enc*/Treas*/Lvl* actors), which
+    /// was 1,621 of 3,550 NPCs on the measuring run. The output validator resolved the wig mode per
+    /// MOD and so never knew, reporting every one of those conversions as
+    /// "HeadParts: extra [NPC2Wig_...]". The record assertions below are the patcher half; the
+    /// validator half is <c>Settings.GetEffectiveWigModeForNpc</c>, which both sides now call —
+    /// hence the template-flag assertion, which is the premise that lets the validator reach the
+    /// same answer from the output record alone.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Route3b_ForwardToOutfit_InertOutfitField_ConvertsToHeadParts(bool skyPatcherMode)
+    {
+        const string wigNifRecordPath = @"actors\NPC2Route\wig_1.nif";
+        using var fx = new WigRouteFixture("r3b");
+        var inventorySource = fx.AddBaseNpc("NPC2Route_R3bTemplate");
+        var npc = fx.AddBaseNpc("NPC2Route_R3b");
+        // The vanilla generic-actor shape: appearance of its own, inventory from a template.
+        npc.Configuration.TemplateFlags |= NpcConfiguration.TemplateFlag.Inventory;
+        npc.Template.SetTo(inventorySource.FormKey);
+
+        // The full High Poly NPC Overhaul shape: wig carried on the SKIN, paired with a modeless
+        // bald placeholder in the Hair slot.
+        var bodyArma = fx.AddResArmorAddon("NPC2Route_BodyAA", BipedObjectFlag.Body);
+        var wigArma = fx.AddResArmorAddon("NPC2Route_WigAA");
+        wigArma.WorldModel = new GenderedItem<Model?>(
+            new Model { File = wigNifRecordPath }, new Model { File = wigNifRecordPath });
+        // Named for the NPC's own race: the WNAM conversion declines an armature that is not
+        // applicable, and the fixture's default (DefaultRace) only matches through the RACE
+        // record's RNAM, which this test has no reason to depend on.
+        wigArma.Race.SetTo(WigRouteFixture.NordRace);
+        var skin = fx.AddResArmor("NPC2Route_Skin", bodyArma, wigArma);
+
+        var baldHair = MutagenFixtures.NewHeadPart(
+            fx.ResMod, "NPC2Route_BaldHair", HeadPart.TypeEnum.Hair, modeless: true);
+
+        var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
+        modNpc.WornArmor.SetTo(skin);
+        modNpc.HeadParts.Clear();
+        modNpc.HeadParts.Add(baldHair.FormKey);
+
+        fx.WriteLooseFile(@"meshes\actors\NPC2Route\wig_1.nif", "dummy");
+        fx.WriteLooseFile(@"meshes\actors\NPC2Route\wig_0.nif", "dummy");
+        fx.WriteFaceGen(npc.FormKey);
+        fx.WritePlugins();
+
+        var settings = fx.NewSettings(skyPatcherMode, Label(skyPatcherMode));
+        settings.DefaultWigHandlingMode = WigHandlingMode.ForwardToOutfit;
+        var modSetting = fx.NewModSetting();
+        modSetting.DetectedWigArmatures.Add(wigArma.FormKey);
+        Select(fx, settings, modSetting, npc.FormKey);
+
+        using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode), configure: h =>
+        {
+            var converter = h.HeadPartWigConverter;
+            converter.RenderShapeNamesProvider = _ => new[] { "wigMain", "wigExtra" };
+            converter.PartitionProbe = (_, _) => true;
+            converter.PhysicsXmlProvider = _ => Array.Empty<string>();
+        });
+        if (run == null) return;
+
+        AssertCleanWrite(run, npc.FormKey);
+
+        var outNpc = PatchedNpc(run);
+        var npcHeadPartEids = outNpc.HeadParts.Select(l =>
+            run.Output.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)?.EditorID
+            ?? ResHeadPartEditorId(fx, l.FormKey)).ToList();
+
+        if (skyPatcherMode)
+        {
+            // SkyPatcher applies the outfit by runtime directive, which bypasses record-level
+            // template resolution — the field is not dead there, so nothing routes around it.
+            npcHeadPartEids.Should().NotContain(e => e != null && e.StartsWith("NPC2Wig_", StringComparison.Ordinal),
+                "the outfit field is only inert in record mode");
+            return;
+        }
+
+        npcHeadPartEids.Should().Contain(e => e != null && e.StartsWith("NPC2Wig_", StringComparison.Ordinal),
+            "a wig forwarded into an outfit this NPC never wears would silently vanish, so it " +
+            "becomes head parts instead");
+        npcHeadPartEids.Should().NotContain("NPC2Route_BaldHair",
+            "the minted parent IS the NPC's Hair part, so the donor's placeholder — which existed " +
+            "only to satisfy the engine's 'must have a Hair part' rule — is now redundant");
+        HairHeadPartEditorIds(run, fx, outNpc).Should().ContainSingle(
+            "two Hair-type parts on one record is exactly what leaving the placeholder would cause");
+
+        outNpc.Configuration.TemplateFlags.Should().HaveFlag(NpcConfiguration.TemplateFlag.Inventory);
+        outNpc.Template.IsNull.Should().BeFalse(
+            "the output record must still carry the flag+template pair, or the validator cannot " +
+            "tell that this NPC was converted rather than forwarded");
+
+        // The link that closes the loop: asked about the record the patcher actually wrote, the
+        // shared resolver the validator consults returns the mode the patcher actually used. Read
+        // off the real output rather than a synthetic record, so a patcher change that dropped the
+        // flags would fail here instead of silently re-opening the false-positive flood.
+        settings.GetEffectiveWigModeForNpc(modSetting, outNpc)
+            .Should().Be(WigHandlingMode.ConvertToHeadParts,
+                "the validator must reach the patcher's per-NPC verdict from the output record alone");
     }
 
     // =============================================================================================

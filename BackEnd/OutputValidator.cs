@@ -1356,12 +1356,14 @@ public class OutputValidator
         CheckLink("HeadTexture", a.HeadTexture, b.HeadTexture);
         CheckLink("HairColor", a.HairColor, b.HairColor);
 
-        // Wig forwarding (ForwardToSkin) deliberately removes the donor's
-        // Hair-type head parts from the output (the wig lives in the skin
-        // instead; see WigForwarder), and antler Remove deletes keyword-detected
-        // antler head parts. Exclude both from the comparison when they apply to
-        // this NPC so the intentional removals aren't reported as mismatches.
-        bool excludeHair = WigForwardingRemovesHair(b, sourceMod, linkCache, src);
+        // Wig handling deliberately rewrites the donor's Hair-type head parts (ForwardToSkin
+        // removes them, ConvertToHeadParts replaces them with the minted wig parent; see
+        // WigForwarder / HeadPartWigConverter), and antler Remove deletes keyword-detected antler
+        // head parts. Exclude both from the comparison when they apply to this NPC so the
+        // intentional rewrites aren't reported as mismatches. The wig mode is resolved PER NPC
+        // off the output record — the patcher converts instead of forwarding when that record's
+        // outfit field is inert, and the mode alone does not say so.
+        bool excludeHair = WigHandlingRewritesHair(b, a, sourceMod, linkCache, src);
         var antlerRemovals = AntlerRemovalHeadPartKeys(b, sourceMod, linkCache, src);
         var aHead = HeadPartKeySet(a.HeadParts, linkCache, src, excludeHair, antlerRemovals);
         var bHead = HeadPartKeySet(b.HeadParts, linkCache, src, excludeHair, antlerRemovals);
@@ -1606,16 +1608,15 @@ public class OutputValidator
         return false;
     }
 
-    /// <summary>Mirrors the wig handling's hair-removal applicability for
-    /// validation: ForwardToSkin (needs a donor WNAM to forward into) replaces
-    /// the donor hair with the modeless bald record, and ConvertToHeadParts
-    /// (no WNAM requirement) replaces it with the minted wig parent — both are
-    /// Hair-type on the output side, so excluding Hair-type parts from BOTH
-    /// sides of the comparison covers either replacement (and the converter's
-    /// per-NPC ForwardToSkin fallback, which this record-level check cannot
-    /// distinguish). A declined WNAM conversion (multi-ARMA, beast race,
-    /// unresolvable NIF) leaves the donor hair intact — the same accepted
-    /// record-level imprecision as the outfit note above.
+    /// <summary>Mirrors the wig handling's Hair-head-part rewrite for validation: ForwardToSkin
+    /// (needs a donor WNAM to forward into) replaces the donor hair with the modeless bald record,
+    /// and ConvertToHeadParts (no WNAM requirement) replaces it with the minted wig parent — both
+    /// are Hair-type on the output side, so excluding Hair-type parts from BOTH sides of the
+    /// comparison covers either rewrite, in either direction (the converter ADDS a part where a
+    /// bald donor had none), and the converter's per-NPC ForwardToSkin fallback, which this
+    /// record-level check cannot distinguish. A declined WNAM conversion (multi-ARMA, beast race,
+    /// unresolvable NIF) leaves the donor hair intact — the same accepted record-level imprecision
+    /// as the outfit note above.
     ///
     /// <para><b>Both wig sources, both modes.</b> The WNAM branch used to be gated to
     /// ConvertToHeadParts, on the reading that ForwardToSkin only ever acts on an outfit wig.
@@ -1625,18 +1626,30 @@ public class OutputValidator
     /// so every NPC of a mod that ships its wigs on the skin reported its intended hair
     /// replacement as an appearance mismatch. ForwardToSkin narrows the walk to hair-slot ARMAs
     /// to match <c>CollectWnamWigArmas(hairSlotOnly: true)</c> — <c>BipedObjectFlag.Hair</c>
-    /// alone, NOT <c>WigDetector.HairSlots</c>, which is load-bearing there and here.</para></summary>
-    private bool WigForwardingRemovesHair(INpcGetter donor, ModSetting sourceMod,
+    /// alone, NOT <c>WigDetector.HairSlots</c>, which is load-bearing there and here.</para>
+    ///
+    /// <para><b>Per NPC, not per mod.</b> The mode is resolved through
+    /// <see cref="Settings.GetEffectiveWigModeForNpc"/> off <paramref name="outputRecord"/>,
+    /// because ForwardToOutfit converts to head parts for any NPC whose outfit field is inert —
+    /// the majority of them on a full load order, since whole vanilla classes are
+    /// inventory-templated. Reading the mod-level mode alone reported all 1,621 of those
+    /// conversions as an appearance mismatch. The output record is the right subject in both
+    /// patching modes: Create-and-Patch overrides the winning record and inherits its template
+    /// flags, and plain Create copies the donor the patcher tested.</para></summary>
+    private bool WigHandlingRewritesHair(INpcGetter donor, INpcGetter outputRecord, ModSetting sourceMod,
         ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
     {
-        var wigMode = _settings.GetEffectiveWigMode(sourceMod);
+        var wigMode = _settings.GetEffectiveWigModeForNpc(sourceMod, outputRecord);
         if (wigMode != WigHandlingMode.ForwardToSkin && wigMode != WigHandlingMode.ConvertToHeadParts) return false;
 
-        // Nothing is removed unless there is modeled hair to remove: the collectors skip
-        // geometry-less Hair parts outright, so a donor whose only Hair part is a bald
-        // placeholder keeps it and its head parts come through unchanged. Claiming a removal
-        // here would blind the comparison to real head-part damage on those NPCs.
-        if (!DonorHasModeledHair(donor, linkCache, src)) return false;
+        // ForwardToSkin only ever REMOVES, and the collectors skip geometry-less Hair parts
+        // outright — so a donor whose only Hair part is a bald placeholder keeps it and its head
+        // parts come through unchanged. Claiming a removal there would blind the comparison to
+        // real head-part damage on those NPCs. ConvertToHeadParts gets no such precondition: it
+        // ADDS the minted wig parent whether or not the donor had hair (the WNAM source treats a
+        // bald donor as legal and synthesizes the partition template instead of harvesting), so
+        // the output's Hair parts differ from the donor's either way.
+        if (wigMode == WigHandlingMode.ForwardToSkin && !DonorHasModeledHair(donor, linkCache, src)) return false;
 
         // Skin-carried (WNAM) wig source.
         if (!donor.WornArmor.IsNull)

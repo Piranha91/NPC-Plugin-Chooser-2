@@ -1043,13 +1043,14 @@ public class HeadPartWigConverter
     /// the donor here left <see cref="FinalizeNpcRecord"/> removing keys the flatten had already
     /// replaced, so the terminus's hair rendered alongside the minted wig.
     ///
-    /// <para>Hair bearing no baked geometry (see
-    /// <see cref="FaceGenConsistencyAnalyzer.BearsBakedGeometry"/>) is skipped entirely, which is
-    /// what makes the caller's bald-donor guard correct rather than merely lucky: a mod that
-    /// parks its wig on the skin ships a MODELESS bald placeholder in the Hair slot, and counting
-    /// that as a donor sent the bake off to harvest dismember partitions from a shape the NIF
-    /// does not contain. An empty result now routes it to the ForwardToSkin fallback, which is
-    /// what the guard's message already claims happens.</para></summary>
+    /// <para><paramref name="stripNames"/> is restricted to hair that bears baked geometry (see
+    /// <see cref="FaceGenConsistencyAnalyzer.BearsBakedGeometry"/>), which is what makes the
+    /// callers' bald-donor guard correct rather than merely lucky: a mod that parks its wig on the
+    /// skin ships a MODELESS bald placeholder in the Hair slot, and counting that as a partition
+    /// donor sent the bake off to harvest from a shape the NIF does not contain. An empty strip
+    /// list now routes the outfit source to the ForwardToSkin fallback — what that guard's message
+    /// already claimed — and tells the WNAM source to synthesize the partition template instead.
+    /// <paramref name="donorHairKeys"/> deliberately does NOT share the filter; see the body.</para></summary>
     private void CollectHairRemoval(INpcGetter appearanceNpc, ModSetting appearanceModSetting,
         HashSet<string> modFolderPaths, HashSet<FormKey> donorHairKeys, HashSet<string> stripNames)
     {
@@ -1081,7 +1082,12 @@ public class HeadPartWigConverter
                 }
             }
 
-            if (partNames.Count == 0) continue; // modeless placeholder — renders nothing
+            // The two lists answer different questions and a modeless placeholder splits them.
+            // RECORD removal takes every Hair-type part: the minted parent becomes the NPC's Hair
+            // part, which makes a placeholder redundant rather than merely harmless — leaving it
+            // would give the NPC two Hair parts. The NIF STRIP takes only the geometry-bearing
+            // ones, because only those have a baked shape to remove. An empty strip list with a
+            // non-empty removal list is exactly the bald-donor pattern the callers key on.
             donorHairKeys.Add(hpLink.FormKey);
             stripNames.UnionWith(partNames);
         }

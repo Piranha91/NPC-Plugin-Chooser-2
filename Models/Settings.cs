@@ -220,6 +220,40 @@ public class Settings
     }
 
     /// <summary>
+    /// <see cref="GetEffectiveWigMode"/> refined for ONE NPC. ForwardToOutfit becomes
+    /// <see cref="WigHandlingMode.ConvertToHeadParts"/> whenever the outfit field the patcher
+    /// would write is inert (see <see cref="OutfitFieldIsInert"/>): forwarding a wig into a field
+    /// the engine never reads would silently do nothing, so the patcher converts instead. Head
+    /// parts have no equivalent flag — they ride the Traits data this app already owns.
+    ///
+    /// <para>Whole vanilla NPC classes are inventory-templated (generic Enc*/Treas*/Lvl* actors),
+    /// so on a full load order this is the majority path for ForwardToOutfit, not an edge case:
+    /// 1,621 of 3,550 NPCs on the measuring run. Centralized because the patcher decided this
+    /// per NPC and the output validator did not, which reported every one of those conversions
+    /// as an appearance mismatch.</para>
+    /// </summary>
+    /// <param name="writtenRecord">The record whose outfit field the run writes — the winning
+    /// override in Create-and-Patch, the appearance record in plain Create.</param>
+    public WigHandlingMode GetEffectiveWigModeForNpc(ModSetting? modSetting, INpcGetter? writtenRecord)
+    {
+        var mode = GetEffectiveWigMode(modSetting);
+        if (mode != WigHandlingMode.ForwardToOutfit) return mode;
+        return OutfitFieldIsInert(writtenRecord) ? WigHandlingMode.ConvertToHeadParts : mode;
+    }
+
+    /// <summary>
+    /// True when a DefaultOutfit written to <paramref name="writtenRecord"/> would never be worn:
+    /// the engine takes the whole inventory, outfit included, from the Inventory template.
+    /// Always false in SkyPatcher mode, where the outfit is delivered by directive rather than by
+    /// the record field.
+    /// </summary>
+    public bool OutfitFieldIsInert(INpcGetter? writtenRecord) =>
+        !UseSkyPatcherMode
+        && writtenRecord != null
+        && writtenRecord.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Inventory)
+        && writtenRecord.Template is { IsNull: false };
+
+    /// <summary>
     /// The wig hair-tint mode that will actually apply to
     /// <paramref name="modSetting"/>: the per-mod override when set, else the
     /// global default. Gated on wig detection like

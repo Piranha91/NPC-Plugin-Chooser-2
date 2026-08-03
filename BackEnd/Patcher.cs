@@ -4012,18 +4012,16 @@ public class Patcher : OptionalUIModule
     /// <para>The record examined is the one that will actually be written — the recipient's winning
     /// override in Create-and-Patch, the donor in Create — because that is where the flag lands.
     /// Flattening does not affect the answer: it clears Traits, never Inventory.</para>
+    ///
+    /// <para>Only the record SELECTION lives here; the test itself is
+    /// <see cref="Settings.OutfitFieldIsInert"/>, shared with the output validator so the
+    /// ForwardToOutfit → ConvertToHeadParts downgrade this drives cannot be known to one and not
+    /// the other.</para>
     /// </summary>
-    private bool RecordOutfitIsInert(INpcGetter winningNpcOverride, INpcGetter appearanceNpcRecord)
-    {
-        if (_settings.UseSkyPatcherMode) return false;
-
-        var written = _settings.PatchingMode == PatchingMode.CreateAndPatch
+    private bool RecordOutfitIsInert(INpcGetter winningNpcOverride, INpcGetter appearanceNpcRecord) =>
+        _settings.OutfitFieldIsInert(_settings.PatchingMode == PatchingMode.CreateAndPatch
             ? winningNpcOverride
-            : appearanceNpcRecord;
-
-        return written.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Inventory)
-               && written.Template is { IsNull: false };
-    }
+            : appearanceNpcRecord);
 
     /// <summary>Shorthand for <see cref="RecordHandler.ResolveNpcPreferringMod"/>, which the
     /// Validator also uses so screening walks the same Traits chain the patcher will.</summary>

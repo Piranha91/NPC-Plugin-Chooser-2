@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Mutagen.Bethesda.Plugins;
+using Mutagen.Bethesda.Plugins.Records;
+using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Tests.TestSupport;
 using Xunit;
@@ -465,5 +467,106 @@ public class WigHandlingModeResolutionTests
         new ModSetting { DetectedWigArmatures = { ArmaKey } }.HasWigSources.Should().BeTrue();
         new ModSetting { DetectedWigArmatures = { ArmaKey } }.HasWigArmors
             .Should().BeFalse("HasWigArmors stays outfit-ARMO-only for its existing consumers");
+    }
+
+    // ── Per-NPC refinement: ForwardToOutfit → ConvertToHeadParts on an inert outfit field ──
+    //
+    // Whole vanilla NPC classes (generic Enc*/Treas*/Lvl* actors) take their whole inventory,
+    // outfit included, from an Inventory template, so a forwarded outfit could never reach them.
+    // The patcher converts the wig to head parts for those instead. The output validator read the
+    // MOD-level mode and therefore did not know, and reported all 1,621 such conversions on the
+    // measuring run as "HeadParts: extra [NPC2Wig_...]" appearance mismatches.
+
+    private static Npc TemplatedNpc(SkyrimMod mod, NpcConfiguration.TemplateFlag flags)
+    {
+        var template = MutagenFixtures.NewNpc(mod, "Template");
+        var npc = MutagenFixtures.NewNpc(mod, "Generic");
+        npc.Configuration.TemplateFlags = flags;
+        npc.Template.SetTo(template.FormKey);
+        return npc;
+    }
+
+    [Fact]
+    public void ForwardToOutfit_InventoryTemplatedNpc_ResolvesToConvertToHeadParts()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = TemplatedNpc(mod, NpcConfiguration.TemplateFlag.Inventory);
+        var settings = NewSettings(PatchingMode.CreateAndPatch, globalDefault: WigHandlingMode.ForwardToOutfit);
+
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc)
+            .Should().Be(WigHandlingMode.ConvertToHeadParts,
+                "a wig written into an outfit field the engine never reads would silently do nothing");
+    }
+
+    [Fact]
+    public void ForwardToOutfit_UntemplatedNpc_StaysForwardToOutfit()
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = MutagenFixtures.NewNpc(mod, "Named");
+        var settings = NewSettings(PatchingMode.CreateAndPatch, globalDefault: WigHandlingMode.ForwardToOutfit);
+
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc).Should().Be(WigHandlingMode.ForwardToOutfit);
+    }
+
+    [Fact]
+    public void InventoryFlagWithoutATemplate_IsNotInert()
+    {
+        // The flag alone changes nothing — the engine needs somewhere to take the inventory FROM.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = MutagenFixtures.NewNpc(mod, "Orphan");
+        npc.Configuration.TemplateFlags = NpcConfiguration.TemplateFlag.Inventory;
+        var settings = NewSettings(PatchingMode.CreateAndPatch, globalDefault: WigHandlingMode.ForwardToOutfit);
+
+        settings.OutfitFieldIsInert(npc).Should().BeFalse();
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc).Should().Be(WigHandlingMode.ForwardToOutfit);
+    }
+
+    [Fact]
+    public void OtherTemplateFlags_DoNotMakeTheOutfitInert()
+    {
+        // Traits is the flag this app usually reasons about; it says nothing about inventory.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = TemplatedNpc(mod, NpcConfiguration.TemplateFlag.Traits | NpcConfiguration.TemplateFlag.Stats);
+        var settings = NewSettings(PatchingMode.CreateAndPatch, globalDefault: WigHandlingMode.ForwardToOutfit);
+
+        settings.OutfitFieldIsInert(npc).Should().BeFalse();
+    }
+
+    [Fact]
+    public void SkyPatcherMode_IsNeverInert()
+    {
+        // There the outfit is applied at runtime by directive, which bypasses record-level
+        // template resolution entirely — so there is nothing to route around.
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = TemplatedNpc(mod, NpcConfiguration.TemplateFlag.Inventory);
+        var settings = NewSettings(PatchingMode.CreateAndPatch, skyPatcher: true,
+            globalDefault: WigHandlingMode.ForwardToOutfit);
+
+        settings.OutfitFieldIsInert(npc).Should().BeFalse();
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc).Should().Be(WigHandlingMode.ForwardToOutfit);
+    }
+
+    [Theory]
+    [InlineData(WigHandlingMode.ForwardToSkin)]
+    [InlineData(WigHandlingMode.ConvertToHeadParts)]
+    [InlineData(WigHandlingMode.None)]
+    public void OtherModes_AreUnaffectedByAnInertOutfit(WigHandlingMode mode)
+    {
+        var mod = MutagenFixtures.NewMod("Test.esp");
+        var npc = TemplatedNpc(mod, NpcConfiguration.TemplateFlag.Inventory);
+        var settings = NewSettings(PatchingMode.CreateAndPatch, globalDefault: mode);
+
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), npc)
+            .Should().Be(settings.GetEffectiveWigMode(ModWithWig()),
+                "the downgrade exists only to rescue ForwardToOutfit from a dead field");
+    }
+
+    [Fact]
+    public void NullRecord_FallsBackToTheModLevelMode()
+    {
+        var settings = NewSettings(PatchingMode.CreateAndPatch, globalDefault: WigHandlingMode.ForwardToOutfit);
+
+        settings.OutfitFieldIsInert(null).Should().BeFalse();
+        settings.GetEffectiveWigModeForNpc(ModWithWig(), null).Should().Be(WigHandlingMode.ForwardToOutfit);
     }
 }
