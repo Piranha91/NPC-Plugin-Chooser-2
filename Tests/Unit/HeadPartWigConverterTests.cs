@@ -113,16 +113,12 @@ public class HeadPartWigConverterTests : IDisposable
             f.DonorOutfit.Items.Add(wig2.FormKey.ToLink<IOutfitTargetGetter>());
         }
 
-        f.HairlinePart = f.DonorMod.HeadParts.AddNew();
-        f.HairlinePart.EditorID = "FoxGloveHairlineMesh";
-        f.HairlinePart.Type = HeadPart.TypeEnum.Misc;
-        f.HairHeadPart = f.DonorMod.HeadParts.AddNew();
-        f.HairHeadPart.EditorID = "FoxGloveHairMesh";
-        f.HairHeadPart.Type = HeadPart.TypeEnum.Hair;
+        // Modeled throughout: the conversion harvests dismember partitions from the donor
+        // hair's baked shape, so a modeless placeholder is not a donor at all.
+        f.HairlinePart = MutagenFixtures.NewHeadPart(f.DonorMod, "FoxGloveHairlineMesh", HeadPart.TypeEnum.Misc);
+        f.HairHeadPart = MutagenFixtures.NewHeadPart(f.DonorMod, "FoxGloveHairMesh", HeadPart.TypeEnum.Hair);
         f.HairHeadPart.ExtraParts.Add(f.HairlinePart.ToLink());
-        f.EyesHeadPart = f.DonorMod.HeadParts.AddNew();
-        f.EyesHeadPart.EditorID = "FoxGloveEyeMesh";
-        f.EyesHeadPart.Type = HeadPart.TypeEnum.Eyes;
+        f.EyesHeadPart = MutagenFixtures.NewHeadPart(f.DonorMod, "FoxGloveEyeMesh", HeadPart.TypeEnum.Eyes);
 
         f.DonorNpc = MutagenFixtures.NewNpc(f.DonorMod, editorId: "Auri", female: femaleDonor);
         f.DonorNpc.Weight = donorWeight;
@@ -308,9 +304,7 @@ public class HeadPartWigConverterTests : IDisposable
         // parts with the terminus's, so removing the donor's would match nothing in
         // FinalizeNpcRecord and leave the terminus's hair rendering alongside the minted wig.
         var f = Make(donorHasHair: true);
-        var terminusHair = f.DonorMod.HeadParts.AddNew();
-        terminusHair.EditorID = "TerminusHairMesh";
-        terminusHair.Type = HeadPart.TypeEnum.Hair;
+        var terminusHair = MutagenFixtures.NewHeadPart(f.DonorMod, "TerminusHairMesh", HeadPart.TypeEnum.Hair);
         var terminus = MakeTerminus(f, hair: terminusHair);
 
         var result = Apply(f, terminus, out bool fallback);

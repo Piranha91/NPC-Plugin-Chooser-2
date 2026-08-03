@@ -582,7 +582,7 @@ public sealed class FaceGenConsistencyAnalyzer
             resolvedCount++;
             if (!string.IsNullOrEmpty(hp.EditorID)) resolvedEditorIds.Add(hp.EditorID!);
 
-            bool geo = hp.Model?.File != null || (hp.Parts?.Count ?? 0) > 0;
+            bool geo = BearsBakedGeometry(hp);
             if (geo && !string.IsNullOrEmpty(hp.EditorID))
                 geometryBearing.Add(new HeadPartRef(fk, hp.EditorID!) { FromRaceDefaults = fromRaceDefaults });
 
@@ -651,6 +651,24 @@ public sealed class FaceGenConsistencyAnalyzer
             NullHeadPartLinks = nullLinks,
         };
     }
+
+    /// <summary>
+    /// True when <paramref name="headPart"/> contributes a shape to the baked FaceGen mesh —
+    /// it has a model (MODL) or chargen morph parts (NAM0/NAM1). This is the predicate
+    /// <see cref="Analyze"/> grades against, so a part it says bears no geometry has no baked
+    /// shape named after its EditorID and never did.
+    ///
+    /// <para>Exposed because the wig/antler pipeline has to reach the same verdict. A MODELESS
+    /// head part is a placeholder that renders nothing: it cannot clash with a forwarded wig,
+    /// there is nothing in the NIF to strip for it, and swapping it out changes only the record.
+    /// High Poly NPC Overhaul's <c>HighPoly_HairBald</c> is the canonical specimen (EDID + DATA +
+    /// PNAM + RNAM, no MODL, no NAM0/NAM1) — treating it as real hair produced one bogus
+    /// "baked shape not found" warning and one bogus validation error per NPC, 3,400 of each.
+    /// Callers: <c>WigForwarder.CollectHairRemoval</c> / <c>CollectAntlerHeadPartRemoval</c>,
+    /// <c>HeadPartWigConverter.CollectHairRemoval</c>, <c>OutputValidator.DonorHasModeledHair</c>.</para>
+    /// </summary>
+    public static bool BearsBakedGeometry(IHeadPartGetter? headPart) =>
+        headPart != null && (headPart.Model?.File != null || (headPart.Parts?.Count ?? 0) > 0);
 
     /// <summary>
     /// Collects the FaceGen shape names that belong to head parts of

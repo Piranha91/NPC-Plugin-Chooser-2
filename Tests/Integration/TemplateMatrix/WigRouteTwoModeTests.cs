@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using FluentAssertions;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
@@ -7,6 +7,7 @@ using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Tests.Integration.GoldenOutput;
+using NPC_Plugin_Chooser_2.Tests.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -163,9 +164,7 @@ public class WigRouteTwoModeTests
         var wigArmo = fx.AddResArmor("NPC2Route_Wig", wigArma);
         var donorOutfit = fx.AddResOutfit("NPC2Route_DonorOutfit", wigArmo);
 
-        var donorHair = fx.ResMod.HeadParts.AddNew();
-        donorHair.EditorID = "NPC2Route_DonorHair";
-        donorHair.Type = HeadPart.TypeEnum.Hair;
+        var donorHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_DonorHair", HeadPart.TypeEnum.Hair);
 
         var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
         modNpc.WornArmor.SetTo(skin);
@@ -231,9 +230,7 @@ public class WigRouteTwoModeTests
         var wigArmo = fx.AddResArmor("NPC2Route_Wig", wigArma);
         var donorOutfit = fx.AddResOutfit("NPC2Route_DonorOutfit", wigArmo);
 
-        var donorHair = fx.ResMod.HeadParts.AddNew();
-        donorHair.EditorID = "NPC2Route_DonorHair";
-        donorHair.Type = HeadPart.TypeEnum.Hair;
+        var donorHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_DonorHair", HeadPart.TypeEnum.Hair);
 
         var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
         modNpc.WornArmor.SetTo(skin);
@@ -303,9 +300,7 @@ public class WigRouteTwoModeTests
         var wigArma = fx.AddResArmorAddon("NPC2Route_WigAA");
         var skin = fx.AddResArmor("NPC2Route_Skin", bodyArma, wigArma);
 
-        var donorHair = fx.ResMod.HeadParts.AddNew();
-        donorHair.EditorID = "NPC2Route_DonorHair";
-        donorHair.Type = HeadPart.TypeEnum.Hair;
+        var donorHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_DonorHair", HeadPart.TypeEnum.Hair);
 
         var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
         modNpc.WornArmor.SetTo(skin);
@@ -363,9 +358,7 @@ public class WigRouteTwoModeTests
         var circletArma = fx.AddResArmorAddon("NPC2Route_CircletAA", BipedObjectFlag.Circlet);
         var skin = fx.AddResArmor("NPC2Route_Skin", bodyArma, circletArma);
 
-        var donorHair = fx.ResMod.HeadParts.AddNew();
-        donorHair.EditorID = "NPC2Route_DonorHair";
-        donorHair.Type = HeadPart.TypeEnum.Hair;
+        var donorHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_DonorHair", HeadPart.TypeEnum.Hair);
 
         var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
         modNpc.WornArmor.SetTo(skin);
@@ -395,6 +388,129 @@ public class WigRouteTwoModeTests
         run.Output.HeadParts.Select(h => h.EditorID).Should().NotContain(WigForwarder.BaldHairEditorId,
             "no hair was removed, so nothing needs the modeless replacement");
     }
+
+    /// <summary>
+    /// The High Poly NPC Overhaul shape, and the specimen that motivated the geometry gate. A mod
+    /// that already parks its wig on the skin pairs it with a MODELESS bald hair head part —
+    /// HPNO's <c>HighPoly_HairBald</c>, verified from its record bytes as EDID + DATA + PNAM +
+    /// RNAM with no MODL and no NAM0/NAM1. It renders nothing, so there is nothing for the
+    /// skin-carried wig to clash with.
+    ///
+    /// <para>Route 2's hair removal used to fire on it anyway, because the collector took every
+    /// Hair-type part regardless of geometry. That swapped the mod's placeholder for our own
+    /// functionally identical <see cref="WigForwarder.BaldHairEditorId"/> — a no-op in game that
+    /// nonetheless queued a FaceGen strip for a shape that was never baked (one "no shape named
+    /// [...] found" warning per NPC, 3,431 on the measuring run) and read as an appearance
+    /// mismatch to the validator (3,446 Errors on the same run, every NPC of the mod).</para>
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Route2c_ForwardToSkin_ModelessBaldHair_IsLeftAlone(bool skyPatcherMode)
+    {
+        using var fx = new WigRouteFixture("r2c");
+        var npc = fx.AddBaseNpc("NPC2Route_R2c");
+
+        var bodyArma = fx.AddResArmorAddon("NPC2Route_BodyAA", BipedObjectFlag.Body);
+        var wigArma = fx.AddResArmorAddon("NPC2Route_WigAA");
+        var skin = fx.AddResArmor("NPC2Route_Skin", bodyArma, wigArma);
+
+        var baldHair = MutagenFixtures.NewHeadPart(
+            fx.ResMod, "NPC2Route_BaldHair", HeadPart.TypeEnum.Hair, modeless: true);
+
+        var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
+        modNpc.WornArmor.SetTo(skin);
+        modNpc.HeadParts.Clear();
+        modNpc.HeadParts.Add(baldHair.FormKey);
+
+        fx.WriteFaceGen(npc.FormKey);
+        fx.WritePlugins();
+
+        var settings = fx.NewSettings(skyPatcherMode, Label(skyPatcherMode));
+        settings.DefaultWigHandlingMode = WigHandlingMode.ForwardToSkin;
+        var modSetting = fx.NewModSetting();
+        modSetting.DetectedWigArmatures.Add(wigArma.FormKey);
+        Select(fx, settings, modSetting, npc.FormKey);
+
+        using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
+        if (run == null) return;
+
+        AssertCleanWrite(run, npc.FormKey);
+
+        var outNpc = PatchedNpc(run);
+        var hairEids = outNpc.HeadParts.Select(l =>
+            run.Output.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)?.EditorID
+            ?? ResHeadPartEditorId(fx, l.FormKey)).ToList();
+
+        hairEids.Should().Contain("NPC2Route_BaldHair",
+            "the donor's own modeless bald hair already satisfies the engine's 'must have a Hair part' " +
+            "requirement — it renders nothing and cannot clash with the wig");
+        run.Output.HeadParts.Select(h => h.EditorID).Should().NotContain(WigForwarder.BaldHairEditorId,
+            "minting our identical bald record on top would leave the NPC with two Hair parts, and is " +
+            "the ONLY thing the validator would then see as a difference");
+    }
+
+    /// <summary>
+    /// The 13-NPC minority in the same measuring run: real hair AND the bald placeholder on one
+    /// record. The real hair is genuinely superseded by the skin-carried wig and must come off,
+    /// which proves the gate is per-head-part rather than an escape hatch for the whole NPC. The
+    /// placeholder then stands in for the bald back-fill, so nothing is minted here either.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Route2d_ForwardToSkin_RealHairPlusBaldPlaceholder_RemovesOnlyTheRealHair(
+        bool skyPatcherMode)
+    {
+        using var fx = new WigRouteFixture("r2d");
+        var npc = fx.AddBaseNpc("NPC2Route_R2d");
+
+        var bodyArma = fx.AddResArmorAddon("NPC2Route_BodyAA", BipedObjectFlag.Body);
+        var wigArma = fx.AddResArmorAddon("NPC2Route_WigAA");
+        var skin = fx.AddResArmor("NPC2Route_Skin", bodyArma, wigArma);
+
+        var realHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_DonorHair", HeadPart.TypeEnum.Hair);
+        var baldHair = MutagenFixtures.NewHeadPart(
+            fx.ResMod, "NPC2Route_BaldHair", HeadPart.TypeEnum.Hair, modeless: true);
+
+        var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
+        modNpc.WornArmor.SetTo(skin);
+        modNpc.HeadParts.Clear();
+        modNpc.HeadParts.Add(realHair.FormKey);
+        modNpc.HeadParts.Add(baldHair.FormKey);
+
+        fx.WriteFaceGen(npc.FormKey);
+        fx.WritePlugins();
+
+        var settings = fx.NewSettings(skyPatcherMode, Label(skyPatcherMode));
+        settings.DefaultWigHandlingMode = WigHandlingMode.ForwardToSkin;
+        var modSetting = fx.NewModSetting();
+        modSetting.DetectedWigArmatures.Add(wigArma.FormKey);
+        Select(fx, settings, modSetting, npc.FormKey);
+
+        using var run = await fx.RunAsync(settings, _output, Label(skyPatcherMode));
+        if (run == null) return;
+
+        AssertCleanWrite(run, npc.FormKey);
+
+        var outNpc = PatchedNpc(run);
+        var hairEids = outNpc.HeadParts.Select(l =>
+            run.Output.HeadParts.FirstOrDefault(h => h.FormKey == l.FormKey)?.EditorID
+            ?? ResHeadPartEditorId(fx, l.FormKey)).ToList();
+
+        hairEids.Should().NotContain("NPC2Route_DonorHair",
+            "modeled hair IS superseded by the skin-carried wig — leaving it on renders both");
+        hairEids.Should().Contain("NPC2Route_BaldHair",
+            "the placeholder survives the removal and discharges the bald back-fill");
+        run.Output.HeadParts.Select(h => h.EditorID).Should().NotContain(WigForwarder.BaldHairEditorId,
+            "the donor already supplies a modeless bald hair; ours would be a second Hair part");
+    }
+
+    /// <summary>EditorID of a head part that stayed in the resource plugin (was not merged into the
+    /// output), so an assertion can name it rather than printing a bare FormKey.</summary>
+    private static string ResHeadPartEditorId(WigRouteFixture fx, FormKey key) =>
+        fx.ResMod.HeadParts.FirstOrDefault(h => h.FormKey == key)?.EditorID
+        ?? $"(unknown: {key})";
 
     // =============================================================================================
     // Route 3 — ForwardToOutfit, outfit-carried wig.
@@ -484,9 +600,7 @@ public class WigRouteTwoModeTests
         var wigArmo = fx.AddResArmor("NPC2Route_Wig", wigArma);
         var donorOutfit = fx.AddResOutfit("NPC2Route_DonorOutfit", wigArmo);
 
-        var donorHair = fx.ResMod.HeadParts.AddNew();
-        donorHair.EditorID = "NPC2Route_DonorHair";
-        donorHair.Type = HeadPart.TypeEnum.Hair;
+        var donorHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_DonorHair", HeadPart.TypeEnum.Hair);
 
         var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
         modNpc.WornArmor.SetTo(skin);
@@ -565,12 +679,8 @@ public class WigRouteTwoModeTests
         var dress = fx.AddResArmor("NPC2Route_Dress", bodyArma);
         var donorOutfit = fx.AddResOutfit("NPC2Route_DonorOutfit", antlerArmo, dress); // source 1
 
-        var antlerHdpt = fx.ResMod.HeadParts.AddNew();                        // source 3
-        antlerHdpt.EditorID = "NPC2Route_AntlerHP";
-        antlerHdpt.Type = HeadPart.TypeEnum.Misc;
-        var donorHair = fx.ResMod.HeadParts.AddNew();
-        donorHair.EditorID = "NPC2Route_DonorHair";
-        donorHair.Type = HeadPart.TypeEnum.Hair;
+        var antlerHdpt = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_AntlerHP", HeadPart.TypeEnum.Misc);                        // source 3
+        var donorHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_DonorHair", HeadPart.TypeEnum.Hair);
 
         var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
         modNpc.WornArmor.SetTo(skin);
@@ -650,9 +760,7 @@ public class WigRouteTwoModeTests
         var dress = fx.AddResArmor("NPC2Route_Dress", bodyArma);
         var donorOutfit = fx.AddResOutfit("NPC2Route_DonorOutfit", wigArmo, dress);
 
-        var donorHair = fx.ResMod.HeadParts.AddNew();
-        donorHair.EditorID = "NPC2Route_DonorHair";
-        donorHair.Type = HeadPart.TypeEnum.Hair;
+        var donorHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_DonorHair", HeadPart.TypeEnum.Hair);
 
         var modNpc = fx.AppearanceMod.Npcs.GetOrAddAsOverride(npc);
         modNpc.WornArmor.SetTo(skin);
@@ -779,13 +887,9 @@ public class WigRouteTwoModeTests
         var wigArmo = fx.AddResArmor("NPC2Route_Wig", wigArma);
         var wigOutfit = fx.AddResOutfit("NPC2Route_WigOutfit", wigArmo);
 
-        var terminusHair = fx.ResMod.HeadParts.AddNew();
-        terminusHair.EditorID = "NPC2Route_TerminusHair";
-        terminusHair.Type = HeadPart.TypeEnum.Hair;
+        var terminusHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_TerminusHair", HeadPart.TypeEnum.Hair);
 
-        var donorHair = fx.ResMod.HeadParts.AddNew();
-        donorHair.EditorID = "NPC2Route_DonorHair";
-        donorHair.Type = HeadPart.TypeEnum.Hair;
+        var donorHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_DonorHair", HeadPart.TypeEnum.Hair);
 
         var modTerminus = fx.AppearanceMod.Npcs.GetOrAddAsOverride(terminus);
         modTerminus.Configuration.Flags |= NpcConfiguration.Flag.Female;
@@ -875,9 +979,7 @@ public class WigRouteTwoModeTests
         var wigArmo = fx.AddResArmor("NPC2Route_Wig", wigArma);
         var wigOutfit = fx.AddResOutfit("NPC2Route_WigOutfit", wigArmo);
 
-        var terminusHair = fx.ResMod.HeadParts.AddNew();
-        terminusHair.EditorID = "NPC2Route_TerminusHair";
-        terminusHair.Type = HeadPart.TypeEnum.Hair;
+        var terminusHair = MutagenFixtures.NewHeadPart(fx.ResMod, "NPC2Route_TerminusHair", HeadPart.TypeEnum.Hair);
 
         var modTerminus = fx.AppearanceMod.Npcs.GetOrAddAsOverride(terminus);
         modTerminus.WornArmor.SetTo(terminusSkin);

@@ -79,6 +79,16 @@ public class WigForwarder
         /// hair).</summary>
         public HashSet<FormKey> DonorHairHeadPartKeys { get; } = new();
 
+        /// <summary>Set when the donor already carries a Hair-type head part that bears no
+        /// baked geometry (a modeless bald placeholder — High Poly NPC Overhaul's
+        /// <c>HighPoly_HairBald</c> is the canonical one). Such a part is LEFT ON the record:
+        /// it renders nothing, so it cannot clash with the forwarded wig, and it already
+        /// satisfies the engine's "must have a Hair part" requirement that
+        /// <see cref="BaldHairEditorId"/> exists to satisfy. Adding ours on top would give the
+        /// NPC two Hair parts and swap the mod's record for an identical copy of itself, which
+        /// is the only thing the validator would then see.</summary>
+        public bool RetainedModelessHair { get; set; }
+
         /// <summary>Donor-side FormKeys of the antler head parts (source 3) to
         /// remove from the patched NPC record with NO replacement (antler
         /// Remove — an antler isn't a required head-part type, so removing it
@@ -182,7 +192,17 @@ public class WigForwarder
         {
             var hairRemoveKeys = ExpandWithDuplicateMappings(result.DonorHairHeadPartKeys);
             int removed = patchNpc.HeadParts.RemoveAll(l => l != null && hairRemoveKeys.Contains(l.FormKey));
-            if (removed > 0)
+            if (removed > 0 && result.RetainedModelessHair)
+            {
+                // The donor already pairs its wig with its own modeless bald placeholder, which
+                // survived the removal above. It discharges the same "must have a Hair part"
+                // requirement, so minting ours would only leave the NPC with two Hair parts.
+                appendLog($"      Wig handling: removed {removed} hair head part(s) from {npcIdentifier}; " +
+                          "the donor's own modeless bald hair head part is kept (the forwarded wig supplies " +
+                          "the hair). The baked FaceGen shape(s) are stripped after asset copy.",
+                    false, false);
+            }
+            else if (removed > 0)
             {
                 var baldKey = GetOrCreateBaldHairHeadPart();
                 if (patchNpc.HeadParts.All(l => l.FormKey != baldKey))
@@ -988,7 +1008,15 @@ public class WigForwarder
     /// <paramref name="result"/>: record keys for the NPC-record removal, and
     /// shape names (the head parts' EditorIDs plus their ExtraParts' EditorIDs,
     /// e.g. hairlines — baked FaceGen shapes are named after them) for the
-    /// FaceGen NIF strip.</summary>
+    /// FaceGen NIF strip.
+    ///
+    /// <para>Hair that bears no baked geometry (see
+    /// <see cref="FaceGenConsistencyAnalyzer.BearsBakedGeometry"/>) is skipped and flagged via
+    /// <see cref="Result.RetainedModelessHair"/> instead. A mod that already parks its wig on the
+    /// skin pairs it with a modeless bald placeholder, which is exactly what our removal would
+    /// replace it with — the swap renders identically, strips nothing (one bogus
+    /// "no shape named [...] found" warning per NPC), and reads as an appearance mismatch to the
+    /// validator. Nothing to clash, nothing to strip, nothing to remove.</para></summary>
     private void CollectHairRemoval(INpcGetter appearanceNpc, ModSetting appearanceModSetting,
         HashSet<string> modFolderPaths, Result result)
     {
@@ -999,8 +1027,18 @@ public class WigForwarder
                 appearanceModSetting.CorrespondingModKeys, modFolderPaths);
             if (hpRec?.Type != HeadPart.TypeEnum.Hair) continue;
 
+            // Geometry may live on the part itself OR on an ExtraPart (a modeless parent
+            // owning a modeled hairline still renders), so ask for the shape names first and
+            // let an empty answer stand for "renders nothing".
+            var shapeNames = CollectBakedShapeNames(hpRec, appearanceModSetting, modFolderPaths);
+            if (shapeNames.Count == 0)
+            {
+                result.RetainedModelessHair = true;
+                continue;
+            }
+
             result.DonorHairHeadPartKeys.Add(hpLink.FormKey);
-            AddShapeNames(hpRec, appearanceModSetting, modFolderPaths, result);
+            result.FaceGenShapeNamesToStrip.UnionWith(shapeNames);
         }
     }
 
@@ -1043,21 +1081,25 @@ public class WigForwarder
                 _settings.IsManualAntlerHeadPart(hpRec.EditorID, appearanceModSetting.DisplayName, donorNpc.FormKey);
             if (mainRemoved)
             {
+                // The record removal is unconditional (the user/keyword scan designated this head
+                // part, so it goes), but only the geometry-bearing parts name a shape in the NIF.
                 result.DonorAntlerHeadPartKeys.Add(hpLink.FormKey);
-                if (!string.IsNullOrEmpty(hpRec.EditorID)) result.FaceGenShapeNamesToStrip.Add(hpRec.EditorID);
-                foreach (var extraRec in ResolveExtraParts(hpRec, appearanceModSetting, modFolderPaths))
-                    if (!string.IsNullOrEmpty(extraRec.EditorID)) result.FaceGenShapeNamesToStrip.Add(extraRec.EditorID);
+                result.FaceGenShapeNamesToStrip.UnionWith(
+                    CollectBakedShapeNames(hpRec, appearanceModSetting, modFolderPaths));
                 continue;
             }
 
             // Head part kept. Any designated ExtraPart is stripped from the baked NIF
             // AND removed from the parent head-part RECORD — leaving the ExtraPart in
             // the record while its baked shape is gone dark-faces the NPC (engine
-            // validates the ExtraParts structure against the FaceGen).
+            // validates the ExtraParts structure against the FaceGen). The two stay
+            // coupled: a modeless ExtraPart has no shape to strip, so editing the record
+            // for it would move the record/NIF pair OUT of agreement rather than into it.
             var antlerExtraKeys = new List<FormKey>();
             foreach (var extraRec in ResolveExtraParts(hpRec, appearanceModSetting, modFolderPaths))
             {
                 if (string.IsNullOrEmpty(extraRec.EditorID)) continue;
+                if (!FaceGenConsistencyAnalyzer.BearsBakedGeometry(extraRec)) continue;
                 if (_settings.IsManualAntlerHeadPart(extraRec.EditorID, appearanceModSetting.DisplayName, donorNpc.FormKey))
                 {
                     result.FaceGenShapeNamesToStrip.Add(extraRec.EditorID);
@@ -1175,23 +1217,31 @@ public class WigForwarder
         }
     }
 
-    /// <summary>Adds a head part's EditorID and its ExtraParts' EditorIDs to the
-    /// FaceGen shape-strip set (baked shapes are named after the head part
-    /// EditorIDs).</summary>
-    private void AddShapeNames(IHeadPartGetter hpRec, ModSetting appearanceModSetting,
-        HashSet<string> modFolderPaths, Result result)
+    /// <summary>The FaceGen shape names a head part actually contributes: its own EditorID plus
+    /// its ExtraParts' (baked shapes are named after the head part EditorIDs), restricted to the
+    /// parts that bear geometry. A modeless part has no shape in the mesh, so naming it in a
+    /// strip list can only produce a "not found" warning about a shape that was never there —
+    /// and an EMPTY result is the signal that the head part renders nothing at all.
+    /// Parent and ExtraParts are tested independently: either can be the modeless one.</summary>
+    private List<string> CollectBakedShapeNames(IHeadPartGetter hpRec, ModSetting appearanceModSetting,
+        HashSet<string> modFolderPaths)
     {
-        if (!string.IsNullOrEmpty(hpRec.EditorID)) result.FaceGenShapeNamesToStrip.Add(hpRec.EditorID);
-        if (hpRec.ExtraParts != null)
+        var names = new List<string>();
+        if (!string.IsNullOrEmpty(hpRec.EditorID) && FaceGenConsistencyAnalyzer.BearsBakedGeometry(hpRec))
         {
-            foreach (var extraLink in hpRec.ExtraParts)
+            names.Add(hpRec.EditorID);
+        }
+
+        foreach (var extraRec in ResolveExtraParts(hpRec, appearanceModSetting, modFolderPaths))
+        {
+            if (!string.IsNullOrEmpty(extraRec.EditorID) &&
+                FaceGenConsistencyAnalyzer.BearsBakedGeometry(extraRec))
             {
-                if (extraLink == null || extraLink.IsNull) continue;
-                var extraRec = ResolveFromModsOrWinner<IHeadPartGetter>(extraLink,
-                    appearanceModSetting.CorrespondingModKeys, modFolderPaths);
-                if (!string.IsNullOrEmpty(extraRec?.EditorID)) result.FaceGenShapeNamesToStrip.Add(extraRec.EditorID);
+                names.Add(extraRec.EditorID);
             }
         }
+
+        return names;
     }
 
     /// <summary>Appends the forwardable ArmorAddons of each applicable wig

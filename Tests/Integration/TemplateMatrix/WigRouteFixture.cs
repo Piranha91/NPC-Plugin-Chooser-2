@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Order;
@@ -6,6 +6,7 @@ using Mutagen.Bethesda.Skyrim;
 using NPC_Plugin_Chooser_2.BackEnd;
 using NPC_Plugin_Chooser_2.Models;
 using NPC_Plugin_Chooser_2.Tests.Integration.GoldenOutput;
+using NPC_Plugin_Chooser_2.Tests.TestSupport;
 using Xunit.Abstractions;
 
 namespace NPC_Plugin_Chooser_2.Tests.Integration.TemplateMatrix;
@@ -88,9 +89,7 @@ internal sealed class WigRouteFixture : IDisposable
     /// Hair head part (several routes require the donor to have real hair to remove).</summary>
     public Npc AddBaseNpc(string editorId)
     {
-        var hair = BaseMod.HeadParts.AddNew();
-        hair.EditorID = editorId + "_Hair";
-        hair.Type = HeadPart.TypeEnum.Hair;
+        var hair = MutagenFixtures.NewHeadPart(BaseMod, editorId + "_Hair", HeadPart.TypeEnum.Hair);
 
         var npc = BaseMod.Npcs.AddNew();
         npc.EditorID = editorId;

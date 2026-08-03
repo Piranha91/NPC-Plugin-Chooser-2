@@ -49,6 +49,31 @@ public static class MutagenFixtures
         return npc;
     }
 
+    /// <summary>
+    /// Adds a head part that bears baked FaceGen geometry — i.e. one the Creation Kit would
+    /// bake into the NPC's FaceGen mesh as a shape named after its EditorID.
+    ///
+    /// <para>Use this for any part a test means as REAL hair/brows/an antler. A head part with
+    /// no MODL is a modeless placeholder that renders nothing, and the wig/antler pipeline now
+    /// tells the two apart (see <c>FaceGenConsistencyAnalyzer.BearsBakedGeometry</c>): it will
+    /// not remove a placeholder, strip a shape for it, or expect the validator to excuse it.
+    /// Fixtures that assigned only an EditorID and a Type were therefore describing High Poly
+    /// NPC Overhaul's <c>HighPoly_HairBald</c>, not the hair they were named after. Pass
+    /// <paramref name="modeless"/> to build the placeholder deliberately.</para>
+    /// </summary>
+    public static HeadPart NewHeadPart(
+        SkyrimMod mod,
+        string editorId,
+        HeadPart.TypeEnum? type = null,
+        bool modeless = false)
+    {
+        var hp = mod.HeadParts.AddNew();
+        hp.EditorID = editorId;
+        if (type != null) hp.Type = type;
+        if (!modeless) hp.Model = new Model { File = $@"actors\character\character assets\{editorId}.nif" };
+        return hp;
+    }
+
     /// <summary>Adds a new race with the given EditorID.</summary>
     public static Race NewRace(SkyrimMod mod, string? editorId = null)
     {

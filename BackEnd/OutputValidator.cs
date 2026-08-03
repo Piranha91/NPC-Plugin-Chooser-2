@@ -1562,6 +1562,50 @@ public class OutputValidator
         return false;
     }
 
+    /// <summary>True when <paramref name="donor"/> carries at least one Hair-type head part that
+    /// actually contributes baked geometry — the only kind the wig handling removes. Geometry may
+    /// sit on the part itself or on an ExtraPart (a modeless parent owning a modeled hairline still
+    /// renders), so both are tested, exactly as <c>WigForwarder.CollectBakedShapeNames</c> does.
+    /// Records resolve through the mod's own plugins first, then the load order, matching the
+    /// patcher's <c>ResolveFromModsOrWinner</c>.
+    ///
+    /// <para>The walk is static and takes its resolver, for the same reason
+    /// <see cref="WigDetector.EffectiveWnamWigArmatures"/> does: the resolution strategy is the
+    /// only thing that differs between callers, and the walk itself is what must not drift.</para></summary>
+    private bool DonorHasModeledHair(INpcGetter donor, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+        SourceModRefs src) =>
+        DonorHasModeledHair(donor, link =>
+            _recordHandler.TryGetRecordFromMods(link, src.ModKeys, src.Folders,
+                RecordHandler.RecordLookupFallBack.Origin, out var modRec) && modRec is IHeadPartGetter scoped
+                ? scoped
+                : linkCache.TryResolve<IHeadPartGetter>(link.FormKey, out var winner)
+                    ? winner
+                    : null);
+
+    /// <inheritdoc cref="DonorHasModeledHair(INpcGetter, ILinkCache{ISkyrimMod, ISkyrimModGetter}, SourceModRefs)"/>
+    internal static bool DonorHasModeledHair(INpcGetter donor,
+        Func<IFormLinkGetter<IHeadPartGetter>, IHeadPartGetter?> resolveHeadPart)
+    {
+        if (donor.HeadParts == null) return false;
+
+        foreach (var hpLink in donor.HeadParts)
+        {
+            if (hpLink == null || hpLink.IsNull) continue;
+            var hpRec = resolveHeadPart(hpLink);
+            if (hpRec?.Type != HeadPart.TypeEnum.Hair) continue;
+            if (FaceGenConsistencyAnalyzer.BearsBakedGeometry(hpRec)) return true;
+
+            if (hpRec.ExtraParts == null) continue;
+            foreach (var extraLink in hpRec.ExtraParts)
+            {
+                if (extraLink == null || extraLink.IsNull) continue;
+                if (FaceGenConsistencyAnalyzer.BearsBakedGeometry(resolveHeadPart(extraLink))) return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Mirrors the wig handling's hair-removal applicability for
     /// validation: ForwardToSkin (needs a donor WNAM to forward into) replaces
     /// the donor hair with the modeless bald record, and ConvertToHeadParts
@@ -1569,19 +1613,33 @@ public class OutputValidator
     /// Hair-type on the output side, so excluding Hair-type parts from BOTH
     /// sides of the comparison covers either replacement (and the converter's
     /// per-NPC ForwardToSkin fallback, which this record-level check cannot
-    /// distinguish). The WNAM branch covers the skin-carried wig source under
-    /// ConvertToHeadParts: an effective wig ARMA in the donor's WornArmor means
-    /// the minted parent replaced the donor hair. A declined WNAM conversion
-    /// (multi-ARMA, beast race, unresolvable NIF) leaves the donor hair intact
-    /// — the same accepted record-level imprecision as the outfit note above.</summary>
+    /// distinguish). A declined WNAM conversion (multi-ARMA, beast race,
+    /// unresolvable NIF) leaves the donor hair intact — the same accepted
+    /// record-level imprecision as the outfit note above.
+    ///
+    /// <para><b>Both wig sources, both modes.</b> The WNAM branch used to be gated to
+    /// ConvertToHeadParts, on the reading that ForwardToSkin only ever acts on an outfit wig.
+    /// It does not: <c>WigForwarder.Apply</c>'s already-skin-carried branch strips the hair for
+    /// a wig the WNAM ALREADY carries, because a skin-carried hair-slot wig does not suppress
+    /// head-part hair the way an equipped one does. This mirror never learned about that branch,
+    /// so every NPC of a mod that ships its wigs on the skin reported its intended hair
+    /// replacement as an appearance mismatch. ForwardToSkin narrows the walk to hair-slot ARMAs
+    /// to match <c>CollectWnamWigArmas(hairSlotOnly: true)</c> — <c>BipedObjectFlag.Hair</c>
+    /// alone, NOT <c>WigDetector.HairSlots</c>, which is load-bearing there and here.</para></summary>
     private bool WigForwardingRemovesHair(INpcGetter donor, ModSetting sourceMod,
         ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, SourceModRefs src)
     {
         var wigMode = _settings.GetEffectiveWigMode(sourceMod);
         if (wigMode != WigHandlingMode.ForwardToSkin && wigMode != WigHandlingMode.ConvertToHeadParts) return false;
 
-        // Skin-carried (WNAM) wig source — ConvertToHeadParts only.
-        if (wigMode == WigHandlingMode.ConvertToHeadParts && !donor.WornArmor.IsNull)
+        // Nothing is removed unless there is modeled hair to remove: the collectors skip
+        // geometry-less Hair parts outright, so a donor whose only Hair part is a bald
+        // placeholder keeps it and its head parts come through unchanged. Claiming a removal
+        // here would blind the comparison to real head-part damage on those NPCs.
+        if (!DonorHasModeledHair(donor, linkCache, src)) return false;
+
+        // Skin-carried (WNAM) wig source.
+        if (!donor.WornArmor.IsNull)
         {
             IArmorGetter? wnam =
                 _recordHandler.TryGetRecordFromMods(donor.WornArmor, src.ModKeys, src.Folders,
@@ -1604,7 +1662,11 @@ public class OutputValidator
                         : linkCache.TryResolve<IArmorAddonGetter>(link.FormKey, out var armaWinner)
                             ? armaWinner
                             : null,
-                    arma => _settings.IsWigArmature(sourceMod, arma.FormKey, arma.EditorID, donor.FormKey))
+                    arma => _settings.IsWigArmature(sourceMod, arma.FormKey, arma.EditorID, donor.FormKey),
+                    wigMode == WigHandlingMode.ConvertToHeadParts
+                        ? null
+                        : arma => arma.BodyTemplate?.FirstPersonFlags is { } flags &&
+                                  (flags & BipedObjectFlag.Hair) != 0)
                 .Any())
             {
                 return true;

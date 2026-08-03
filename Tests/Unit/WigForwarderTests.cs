@@ -110,23 +110,18 @@ public class WigForwarderTests
             f.DressArmor.FormKey.ToLink<IOutfitTargetGetter>(),
         };
 
-        f.HairlinePart = f.DonorMod.HeadParts.AddNew();
-        f.HairlinePart.EditorID = "FoxGloveHairline";
-        f.HairlinePart.Type = HeadPart.TypeEnum.Hair;
-        f.HairHeadPart = f.DonorMod.HeadParts.AddNew();
-        f.HairHeadPart.EditorID = "FoxGloveHairMesh";
-        f.HairHeadPart.Type = HeadPart.TypeEnum.Hair;
+        // Modeled throughout: these stand for real hair, and only geometry-bearing head parts
+        // are removed / stripped / excused by the validator.
+        f.HairlinePart = MutagenFixtures.NewHeadPart(f.DonorMod, "FoxGloveHairline", HeadPart.TypeEnum.Hair);
+        f.HairHeadPart = MutagenFixtures.NewHeadPart(f.DonorMod, "FoxGloveHairMesh", HeadPart.TypeEnum.Hair);
         f.HairHeadPart.ExtraParts.Add(f.HairlinePart.ToLink());
-        f.EyesHeadPart = f.DonorMod.HeadParts.AddNew();
-        f.EyesHeadPart.EditorID = "FoxGloveEyeMesh";
-        f.EyesHeadPart.Type = HeadPart.TypeEnum.Eyes;
+        f.EyesHeadPart = MutagenFixtures.NewHeadPart(f.DonorMod, "FoxGloveEyeMesh", HeadPart.TypeEnum.Eyes);
 
         // Source 3: an antler head part baked into the FaceGen. (Type is
         // irrelevant — antler head parts are keyed by FormKey, not Type.)
         if (faceGenAntlerHeadPart)
         {
-            f.AntlerHeadPart = f.DonorMod.HeadParts.AddNew();
-            f.AntlerHeadPart.EditorID = "AuriAntlerHeadPart";
+            f.AntlerHeadPart = MutagenFixtures.NewHeadPart(f.DonorMod, "AuriAntlerHeadPart");
         }
 
         f.DonorNpc = MutagenFixtures.NewNpc(f.DonorMod, editorId: "Auri");
@@ -350,6 +345,76 @@ public class WigForwarderTests
             "only the Hair-type head part is superseded by the wig — eyes must stay");
         result.FaceGenShapeNamesToStrip.Should().BeEquivalentTo(new[] { "FoxGloveHairMesh", "FoxGloveHairline" },
             "the FaceGen strip needs the hair's EditorID plus its ExtraParts' EditorIDs");
+        result.RetainedModelessHair.Should().BeFalse("both parts are modeled");
+    }
+
+    /// <summary>
+    /// The High Poly NPC Overhaul specimen. Its NPCs carry a MODELESS bald hair head part
+    /// (<c>HighPoly_HairBald</c>: EDID + DATA + PNAM + RNAM, no MODL, no NAM0/NAM1) because the
+    /// wig already lives on the skin. It renders nothing, so there is nothing for the wig to clash
+    /// with and no baked shape to strip — and removing it would swap the mod's record for our own
+    /// functionally identical <see cref="WigForwarder.BaldHairEditorId"/>, which is the only
+    /// difference the validator would then have to report. 3,431 bogus strip warnings and 3,446
+    /// bogus validation Errors on the measuring run came from taking it for real hair.
+    /// </summary>
+    [Fact]
+    public void ForwardToSkin_ModelessBaldHair_IsNeitherRemovedNorStripped()
+    {
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.None);
+        f.HairHeadPart.Model = null;
+        f.HairHeadPart.ExtraParts.Clear();
+
+        var result = Apply(f)!;
+
+        result.DonorHairHeadPartKeys.Should().BeEmpty(
+            "a placeholder that renders nothing cannot clash with the forwarded wig");
+        result.FaceGenShapeNamesToStrip.Should().BeEmpty(
+            "no shape was ever baked under its EditorID, so naming it can only produce a " +
+            "'not found' warning about a shape that was never there");
+        result.RetainedModelessHair.Should().BeTrue();
+    }
+
+    /// <summary>Per-head-part, not per-NPC: the modeled hair still comes off when a placeholder
+    /// sits beside it. That combination is the 13-NPC minority in the measuring run.</summary>
+    [Fact]
+    public void ForwardToSkin_RealHairBesideAPlaceholder_RemovesOnlyTheRealHair()
+    {
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.None);
+        var bald = MutagenFixtures.NewHeadPart(
+            f.DonorMod, "HighPoly_HairBald", HeadPart.TypeEnum.Hair, modeless: true);
+        f.DonorNpc.HeadParts.Add(bald.ToLink());
+
+        var result = Apply(f)!;
+
+        result.DonorHairHeadPartKeys.Should().BeEquivalentTo(new[] { f.HairHeadPart.FormKey });
+        result.FaceGenShapeNamesToStrip.Should().BeEquivalentTo(new[] { "FoxGloveHairMesh", "FoxGloveHairline" });
+        result.RetainedModelessHair.Should().BeTrue();
+    }
+
+    /// <summary>With the donor's own placeholder still on the record, minting ours would leave the
+    /// NPC with two Hair parts — and the mint is the whole substance of the validator's
+    /// "extra [NPC2_HairBald]" complaint.</summary>
+    [Fact]
+    public void FinalizeNpcRecord_RetainedPlaceholder_SkipsTheBaldBackFill()
+    {
+        var f = Make(WigHandlingMode.ForwardToSkin, AntlerHandlingMode.None);
+        var bald = MutagenFixtures.NewHeadPart(
+            f.DonorMod, "HighPoly_HairBald", HeadPart.TypeEnum.Hair, modeless: true);
+        f.DonorNpc.HeadParts.Add(bald.ToLink());
+        var result = Apply(f)!;
+
+        var patchNpc = f.OutputMod.Npcs.AddNew();
+        patchNpc.HeadParts.Add(f.HairHeadPart.ToLink());
+        patchNpc.HeadParts.Add(bald.ToLink());
+        patchNpc.HeadParts.Add(f.EyesHeadPart.ToLink());
+
+        f.Forwarder.FinalizeNpcRecord(result, patchNpc, "TestNpc", (_, _, _) => { });
+
+        f.OutputMod.HeadParts.Should().NotContain(h => h.EditorID == WigForwarder.BaldHairEditorId,
+            "the donor's placeholder already discharges the engine's 'must have a Hair part' rule");
+        patchNpc.HeadParts.Select(h => h.FormKey).Should().BeEquivalentTo(
+            new[] { bald.FormKey, f.EyesHeadPart.FormKey },
+            "the modeled hair goes, the placeholder and the eyes stay");
     }
 
     [Fact]

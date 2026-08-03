@@ -1041,7 +1041,15 @@ public class HeadPartWigConverter
     /// <summary>Collects the Hair-type head parts of <paramref name="appearanceNpc"/> — the
     /// record whose HeadParts the OUTPUT will carry, so the terminus's under a flatten. Reading
     /// the donor here left <see cref="FinalizeNpcRecord"/> removing keys the flatten had already
-    /// replaced, so the terminus's hair rendered alongside the minted wig.</summary>
+    /// replaced, so the terminus's hair rendered alongside the minted wig.
+    ///
+    /// <para>Hair bearing no baked geometry (see
+    /// <see cref="FaceGenConsistencyAnalyzer.BearsBakedGeometry"/>) is skipped entirely, which is
+    /// what makes the caller's bald-donor guard correct rather than merely lucky: a mod that
+    /// parks its wig on the skin ships a MODELESS bald placeholder in the Hair slot, and counting
+    /// that as a donor sent the bake off to harvest dismember partitions from a shape the NIF
+    /// does not contain. An empty result now routes it to the ForwardToSkin fallback, which is
+    /// what the guard's message already claims happens.</para></summary>
     private void CollectHairRemoval(INpcGetter appearanceNpc, ModSetting appearanceModSetting,
         HashSet<string> modFolderPaths, HashSet<FormKey> donorHairKeys, HashSet<string> stripNames)
     {
@@ -1052,16 +1060,30 @@ public class HeadPartWigConverter
                 appearanceModSetting.CorrespondingModKeys, modFolderPaths);
             if (hpRec?.Type != HeadPart.TypeEnum.Hair) continue;
 
-            donorHairKeys.Add(hpLink.FormKey);
-            if (!string.IsNullOrEmpty(hpRec.EditorID)) stripNames.Add(hpRec.EditorID);
-            if (hpRec.ExtraParts == null) continue;
-            foreach (var extraLink in hpRec.ExtraParts)
+            var partNames = new List<string>();
+            if (!string.IsNullOrEmpty(hpRec.EditorID) && FaceGenConsistencyAnalyzer.BearsBakedGeometry(hpRec))
             {
-                if (extraLink == null || extraLink.IsNull) continue;
-                var extraRec = ResolveFromModsOrWinner<IHeadPartGetter>(extraLink,
-                    appearanceModSetting.CorrespondingModKeys, modFolderPaths);
-                if (!string.IsNullOrEmpty(extraRec?.EditorID)) stripNames.Add(extraRec.EditorID);
+                partNames.Add(hpRec.EditorID);
             }
+
+            if (hpRec.ExtraParts != null)
+            {
+                foreach (var extraLink in hpRec.ExtraParts)
+                {
+                    if (extraLink == null || extraLink.IsNull) continue;
+                    var extraRec = ResolveFromModsOrWinner<IHeadPartGetter>(extraLink,
+                        appearanceModSetting.CorrespondingModKeys, modFolderPaths);
+                    if (!string.IsNullOrEmpty(extraRec?.EditorID) &&
+                        FaceGenConsistencyAnalyzer.BearsBakedGeometry(extraRec))
+                    {
+                        partNames.Add(extraRec.EditorID);
+                    }
+                }
+            }
+
+            if (partNames.Count == 0) continue; // modeless placeholder — renders nothing
+            donorHairKeys.Add(hpLink.FormKey);
+            stripNames.UnionWith(partNames);
         }
     }
 
