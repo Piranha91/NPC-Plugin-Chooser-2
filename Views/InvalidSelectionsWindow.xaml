@@ -1,3 +1,7 @@
+<!-- ShowInTaskbar is True here, unlike the other owned dialogs: this one is modal and can sit
+     open for a long time while the user reads the list. Without a taskbar button of its own,
+     switching to another app and back lands on the blocked main window, which just looks frozen
+     with nothing to indicate a dialog is waiting behind it. -->
 <Window x:Class="NPC_Plugin_Chooser_2.Views.InvalidSelectionsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -12,7 +16,7 @@
         Height="620" Width="860"
         MinHeight="360" MinWidth="560"
         WindowStartupLocation="CenterOwner"
-        ShowInTaskbar="False"
+        ShowInTaskbar="True"
         Style="{DynamicResource ThemedWindowStyle}">
 
     <i:Interaction.Behaviors>
