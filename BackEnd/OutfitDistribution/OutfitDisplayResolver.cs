@@ -92,8 +92,12 @@ public enum WigDropReason
     /// not being forwarded either. Fix: pick a handling mode, or Include Outfits.</summary>
     ModeLeaveAsIs,
 
-    /// <summary>Wig handling cannot run at all in plain Create record mode, so the
-    /// mode dropdown is not the lever here — the output mode is.</summary>
+    /// <summary>Plain Create record mode forwards the donor record wholesale, outfit
+    /// included, so an outfit wig normally rides the forward and nothing is dropped.
+    /// This reason fires only for the one genuine loss there: the written record's
+    /// outfit field is INERT (Inventory template flag), so the forwarded outfit is
+    /// never worn — and wig handling, which would convert or re-route the wig, cannot
+    /// run in this mode. The output mode is the lever, not the mode dropdown.</summary>
     InertInCreateMode
 }
 
@@ -123,10 +127,11 @@ public sealed record WigPersistenceResult(WigDropReason Reason, IReadOnlyList<Np
             + "for the default) to something other than \"Leave As Is\". Enabling Include Outfits "
             + "for the mod also keeps it, by carrying the whole outfit across.",
         WigDropReason.InertInCreateMode =>
-            "Wig handling does nothing in plain Create output mode, whatever Wig Handling Mode is "
-            + "set to. To keep it, switch to Create and Patch or SkyPatcher output and pick a Wig "
-            + "Handling Mode — or enable Include Outfits for the mod, which carries the whole "
-            + "outfit across.",
+            "This NPC takes its whole inventory — outfit included — from an inventory template, so "
+            + "the outfit written to its record is never worn, and in plain Create output mode wig "
+            + "handling (which would convert the wig to head parts or move it to the skin) cannot "
+            + "run. To keep it, switch to Create and Patch or SkyPatcher output and pick a Wig "
+            + "Handling Mode.",
         _ => string.Empty
     };
 }
@@ -542,6 +547,14 @@ public class OutfitDisplayResolver
     /// bakes it), or if the outfit itself is forwarded — Include Outfits carries
     /// the wig along with everything else in it, per-NPC override included.</para>
     ///
+    /// <para>Plain Create record mode forwards the donor record WHOLESALE, DefaultOutfit
+    /// included and Include Outfits notwithstanding — the same forward this class's own
+    /// Create display arm models — so the wig rides the outfit across and the mode that
+    /// cannot ACT on wigs cannot LOSE this one either. The single genuine loss there is
+    /// an inert outfit field (Inventory template): the engine never reads the record's
+    /// outfit, and no lever in this mode can reach the actor, so only that narrow case
+    /// keeps the <see cref="WigDropReason.InertInCreateMode"/> notice.</para>
+    ///
     /// <para>Patch-side deliberately: this reads <see cref="Settings.GetEffectiveWigMode"/>,
     /// not the Render variant, so the dev/harness override cannot change a claim
     /// about the output.</para>
@@ -555,18 +568,28 @@ public class OutfitDisplayResolver
             .Where(s => s.Kind == NpcWigSourceKind.Outfit).ToList();
         if (outfitWigs.Count == 0) return WigPersistenceResult.Persisted;
 
+        // Plain Create: the wholesale forward delivers the outfit — wig included — so
+        // the only drop is the inert-outfit-field case. Resolved off the DONOR record
+        // because that is the record plain Create writes (Patcher.RecordOutfitIsInert
+        // picks the same one); an unresolvable donor or absent link cache cannot prove
+        // inertness, so it stays quiet rather than false-alarming.
+        if (!_settings.WigHandlingActiveForOutputMode)
+        {
+            var linkCache = _env?.LinkCache;
+            var writtenNpc = linkCache != null
+                ? ResolveDonorNpc(sourceNpcFormKey, modSetting, linkCache)
+                : null;
+            return _settings.OutfitFieldIsInert(writtenNpc)
+                ? new WigPersistenceResult(WigDropReason.InertInCreateMode, outfitWigs)
+                : WigPersistenceResult.Persisted;
+        }
+
         if (_settings.GetEffectiveWigMode(modSetting) != WigHandlingMode.None)
             return WigPersistenceResult.Persisted;
         if (ComputeIncludeOutfitIntent(targetNpcFormKey, modSetting))
             return WigPersistenceResult.Persisted;
 
-        // Mode is inert either because the user left it at Leave As Is, or because
-        // plain Create record mode cannot act on wigs at all — different fixes, so
-        // the reason is carried out to the notice text rather than flattened.
-        var reason = _settings.WigHandlingActiveForOutputMode
-            ? WigDropReason.ModeLeaveAsIs
-            : WigDropReason.InertInCreateMode;
-        return new WigPersistenceResult(reason, outfitWigs);
+        return new WigPersistenceResult(WigDropReason.ModeLeaveAsIs, outfitWigs);
     }
 
     /// <summary>Mirrors Patcher.cs's includeOutfit resolution: the per-NPC

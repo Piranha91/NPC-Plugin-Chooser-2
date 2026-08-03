@@ -620,11 +620,14 @@ public class Validator : OptionalUIModule
         var candidates = EnumerateWrittenLinks(appearanceRecord, donor, includeOutfit,
             _settings.UseSkyPatcherMode);
 
-        // Plain Create hands the surrogate the donor's WHOLE record (appearanceOnly is only passed
-        // in the Create-and-Patch branch), so everything on it lands in the output and everything is
-        // screened. Create-and-Patch strips the non-appearance data instead, so the named set above
-        // is already the complete list of what survives.
-        if (_settings.UseSkyPatcherMode && _settings.PatchingMode != PatchingMode.CreateAndPatch)
+        // The named set above is the complete write set only for Create-and-Patch, which overrides
+        // the WINNING record (record mode) or strips the surrogate down to appearance data
+        // (SkyPatcher mode). Both Create flavors forward the donor's WHOLE record — record mode via
+        // GetOrAddAsOverride(donor), SkyPatcher via a surrogate DeepCopyIn with appearanceOnly never
+        // passed — so everything on it lands in the output, and a version-drifted or unreachable
+        // NON-appearance link (factions, items, packages, the LOTD v5-on-v6 shape) ships exactly
+        // like a head part does. Screen the whole record for both.
+        if (_settings.PatchingMode != PatchingMode.CreateAndPatch)
         {
             candidates = candidates.Concat(donor.EnumerateFormLinks()
                 .Where(l => !l.FormKey.IsNull)

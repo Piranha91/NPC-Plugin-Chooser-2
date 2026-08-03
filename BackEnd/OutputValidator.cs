@@ -141,6 +141,13 @@ public class OutputValidator
         // Read from the DEPLOYED Data folder rather than the configured output directory, so it
         // describes the output the game (and everything below) is actually seeing.
         var lastRun = LoadDeployedRunLedger(dataFolder, log);
+
+        if (DescribeModeMismatch(lastRun, _settings) is { } modeMismatch)
+        {
+            result.Notes.Add(modeMismatch);
+            log.AppendLine($"MODE MISMATCH: {modeMismatch}");
+        }
+
         if (lastRun != null && lastRun.ProcessedNpcs.Count == 0)
         {
             // A bootstrap marker from a crashed run, or a token written before this field existed.
@@ -493,6 +500,33 @@ public class OutputValidator
     /// check existed. Deliberately a SOFT dependency: an old or hand-placed output should still
     /// validate, just without the extra attribution.
     /// </summary>
+    /// <summary>
+    /// The run-level note shown when the deployed output was produced under a DIFFERENT output
+    /// mode than the one being validated with, or null when the modes match (or the token predates
+    /// the stamp and cannot say). Every check grades the deployed files against the CURRENT
+    /// settings — the effective wig/antler modes among them, which flip to inert in plain Create —
+    /// so a mode switch without a re-run mass-reports the old mode's deliberate rewrites
+    /// (converted wigs, stripped antlers) as appearance mismatches. Said once, up front; grading
+    /// still runs, because the token attributes and never filters scope.
+    /// </summary>
+    internal static string? DescribeModeMismatch(NpcToken? lastRun, Settings settings)
+    {
+        if (lastRun?.PatchingMode == null) return null;
+        bool tokenSkyPatcher = lastRun.UseSkyPatcherMode ?? false;
+        if (string.Equals(lastRun.PatchingMode, settings.PatchingMode.ToString(), StringComparison.OrdinalIgnoreCase) &&
+            tokenSkyPatcher == settings.UseSkyPatcherMode)
+        {
+            return null;
+        }
+
+        static string Describe(string mode, bool skyPatcher) => skyPatcher ? $"{mode} + SkyPatcher" : mode;
+        return $"The deployed output was produced in {Describe(lastRun.PatchingMode, tokenSkyPatcher)} mode, " +
+               $"but you are validating with {Describe(settings.PatchingMode.ToString(), settings.UseSkyPatcherMode)} " +
+               "settings. The checks below grade against the current mode's expectations, so intentional " +
+               "differences from the old mode (e.g. wig conversions) will read as errors. Re-run the patcher " +
+               "before trusting this report.";
+    }
+
     private static NpcToken? LoadDeployedRunLedger(string dataFolder, StringBuilder log)
     {
         var tokenPath = Path.Combine(dataFolder, "NPC_Token.json");

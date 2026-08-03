@@ -19,8 +19,11 @@ namespace NPC_Plugin_Chooser_2.Tests.Unit;
 /// ordinary Include-Headgear-gated outfit walk and warns in a banner. If this
 /// helper is wrong, both lie in the same direction.</para>
 ///
-/// <para>Pure settings + persisted scan data: no record resolution and no
-/// environment, so the resolver's other two dependencies are never touched.</para>
+/// <para>Pure settings + persisted scan data in the active output modes: no record
+/// resolution and no environment. The one exception is plain Create's inert-outfit
+/// probe, which resolves the donor record WHEN an environment exists — without one
+/// it stays quiet (Persisted), which is what keeps the null-dependency fixture
+/// legal.</para>
 /// </summary>
 public class WigPersistenceTests
 {
@@ -29,9 +32,11 @@ public class WigPersistenceTests
     private static readonly FormKey WigArmo = MutagenFixtures.Fk("000808:FoxGloveAuri.esp");
     private static readonly FormKey HairArma = MutagenFixtures.Fk("000807:FoxGloveAuri.esp");
 
-    /// <summary>ComputeWigPersistence reads only Settings and the ModSetting, so the
-    /// environment/record-handler dependencies are deliberately left null — a test
-    /// that starts needing them has caught a real regression in that guarantee.</summary>
+    /// <summary>The environment/record-handler dependencies are deliberately left
+    /// null: ComputeWigPersistence must stay callable without them (it may CONSULT
+    /// the environment for plain Create's inert-outfit probe, but must degrade to
+    /// Persisted, never throw). A test that starts throwing here has caught a real
+    /// regression in that guarantee.</summary>
     private static OutfitDisplayResolver Resolver(Settings settings) =>
         new(settings, null!, null!);
 
@@ -179,10 +184,14 @@ public class WigPersistenceTests
             .Which.Kind.Should().Be(NpcWigSourceKind.Outfit);
     }
 
-    /// <summary>Plain Create record mode makes wig handling inert whatever the
-    /// dropdown says, so the advice has to point at the OUTPUT mode instead.</summary>
+    /// <summary>Plain Create record mode forwards the donor record wholesale, outfit
+    /// included and Include Outfits notwithstanding — so an outfit wig rides the
+    /// forward and must NOT be reported as dropped. (The one genuine plain-Create
+    /// loss, an inert Inventory-templated outfit field, needs a resolvable donor
+    /// record and is covered by the integration inert-outfit tests; with no
+    /// environment the badge stays quiet rather than false-alarming.)</summary>
     [Fact]
-    public void PlainCreateMode_DropsTheWigAndSaysWhy()
+    public void PlainCreateMode_WholesaleForwardPersistsTheOutfitWig()
     {
         var settings = new Settings
         {
@@ -191,11 +200,29 @@ public class WigPersistenceTests
             DefaultWigHandlingMode = WigHandlingMode.ForwardToSkin
         };
 
-        var result = Resolver(settings).ComputeWigPersistence(Npc, Npc, Mod());
+        Resolver(settings).ComputeWigPersistence(Npc, Npc, Mod())
+            .AnyDropped.Should().BeFalse(
+                "plain Create forwards the donor record — DefaultOutfit and wig with it");
 
-        result.AnyDropped.Should().BeTrue("wig handling cannot run in plain Create mode");
-        result.Reason.Should().Be(WigDropReason.InertInCreateMode);
+        // Include Outfits off changes nothing there: the field ships regardless.
+        settings.NpcOutfitOverrides[Npc] = OutfitOverride.No;
+        Resolver(settings).ComputeWigPersistence(Npc, Npc, Mod())
+            .AnyDropped.Should().BeFalse("Include Outfits is not a lever in plain Create");
+    }
+
+    /// <summary>The inert-outfit-field drop is the only plain-Create claim left, and
+    /// its advice must point at the OUTPUT mode (wig handling is the fix there) and
+    /// must NOT recommend Include Outfits, which cannot reach an inventory-templated
+    /// actor.</summary>
+    [Fact]
+    public void InertInCreateModeAdvice_PointsAtTheOutputMode()
+    {
+        var result = new WigPersistenceResult(WigDropReason.InertInCreateMode,
+            new[] { new NpcWigSource { Kind = NpcWigSourceKind.Outfit } });
+
         result.FixAdvice.Should().Contain("Create and Patch");
+        result.FixAdvice.Should().Contain("inventory template");
+        result.FixAdvice.Should().NotContain("Include Outfits");
     }
 
     [Fact]

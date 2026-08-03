@@ -238,4 +238,64 @@ public class OutputValidatorLastRunCoverageTests
             if (File.Exists(path)) File.Delete(path);
         }
     }
+
+    // ── Output-mode stamp ───────────────────────────────────────────────────────
+    // Every check grades the deployed output against the CURRENT settings — the effective
+    // wig/antler modes flip to inert in plain Create — so validating an output produced under a
+    // different mode mass-reports the old mode's deliberate rewrites as mismatches. The stamp
+    // lets the report say so up front instead.
+
+    private static Settings ModeSettings(PatchingMode mode, bool skyPatcher = false) =>
+        new() { PatchingMode = mode, UseSkyPatcherMode = skyPatcher };
+
+    [Fact]
+    public void ModeMismatch_FiresWhenThePatchingModeChanged()
+    {
+        var ledger = Ledger();
+        ledger.PatchingMode = nameof(PatchingMode.CreateAndPatch);
+        ledger.UseSkyPatcherMode = false;
+
+        var note = OutputValidator.DescribeModeMismatch(ledger, ModeSettings(PatchingMode.Create));
+
+        note.Should().NotBeNull("wig/antler expectations differ between the modes");
+        note.Should().Contain("produced in CreateAndPatch mode")
+            .And.Contain("validating with Create settings")
+            .And.Contain("Re-run the patcher");
+    }
+
+    [Fact]
+    public void ModeMismatch_FiresWhenOnlyTheSkyPatcherFlagChanged()
+    {
+        var ledger = Ledger();
+        ledger.PatchingMode = nameof(PatchingMode.CreateAndPatch);
+        ledger.UseSkyPatcherMode = true;
+
+        OutputValidator.DescribeModeMismatch(ledger, ModeSettings(PatchingMode.CreateAndPatch))
+            .Should().NotBeNull().And.BeOfType<string>()
+            .Which.Should().Contain("SkyPatcher");
+    }
+
+    [Fact]
+    public void ModeMismatch_IsSilentWhenTheModesMatch()
+    {
+        var ledger = Ledger();
+        ledger.PatchingMode = nameof(PatchingMode.Create);
+        ledger.UseSkyPatcherMode = false;
+
+        OutputValidator.DescribeModeMismatch(ledger, ModeSettings(PatchingMode.Create))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void ModeMismatch_IsSilentForTokensThatPredateTheStamp()
+    {
+        // An absent stamp means "unknown", never "mismatch" — old outputs must not gain a scary
+        // banner they cannot deserve.
+        var ledger = Ledger(); // PatchingMode stays null
+
+        OutputValidator.DescribeModeMismatch(ledger, ModeSettings(PatchingMode.Create))
+            .Should().BeNull();
+        OutputValidator.DescribeModeMismatch(null, ModeSettings(PatchingMode.Create))
+            .Should().BeNull();
+    }
 }

@@ -2502,6 +2502,8 @@ public class Patcher : OptionalUIModule
         {
             CreationDate = DateTime.Now.ToString("o"),
             CreatedPlugins = _generatedOutputPlugins,
+            PatchingMode = _settings.PatchingMode.ToString(),
+            UseSkyPatcherMode = _settings.UseSkyPatcherMode,
             ProcessedNpcs = _accumulatedTokenData,
             SkippedNpcs = _skippedTokenData,
             EditedFaceGen = new HashSet<string>(_editedFaceGenPaths.Keys, StringComparer.OrdinalIgnoreCase)
@@ -3090,11 +3092,13 @@ public class Patcher : OptionalUIModule
     }
 
     /// <summary>
-    /// An appearance link that points outside the load order is fatal: the run completes, then
+    /// A written link that points outside the load order is fatal: the run completes, then
     /// Mutagen refuses to write the plugin with a bare "referenced mod was not present" naming only
     /// an output FormKey — thousands of NPCs after the one that caused it. Reported here, where the
     /// NPC, the offending field, the source plugin and the mod are all still known, so the failure
-    /// is attributable from the main log and the per-NPC log.
+    /// is attributable from the main log and the per-NPC log. In Create-and-Patch only the named
+    /// appearance set is ours to dangle; both Create flavors ship the donor's whole record, so
+    /// every link on it is checked there (extras labelled "record data").
     ///
     /// <para>MUST be called only once every step that can rewrite this NPC's appearance links has
     /// run — the appearance copy, the wig/antler finalizers, and above all the dependency merge-in
@@ -3106,7 +3110,23 @@ public class Patcher : OptionalUIModule
         ModSetting? appearanceModSetting, string npcIdentifier, bool includeOutfit,
         bool mergeInDependencyRecords)
     {
-        var danglingAppearanceLinks = EnumerateNamedAppearanceLinks(targetNpc, includeOutfit)
+        // Create-and-Patch writes only the named appearance set onto the winning override, so those
+        // are the only links of ours that can dangle. Both Create flavors forward the donor's WHOLE
+        // record (record mode wholesale, SkyPatcher surrogate un-stripped) — ANY link on it can fail
+        // the save, and the outfit ships whether or not Include Outfits is on. Named entries first so
+        // the familiar fields keep their labels; the remainder reports as "record data".
+        bool wholeRecordShips = _settings.PatchingMode != PatchingMode.CreateAndPatch;
+        var written = EnumerateNamedAppearanceLinks(targetNpc, includeOutfit || wholeRecordShips)
+            .ToList();
+        if (wholeRecordShips)
+        {
+            var named = written.Select(l => l.Key).ToHashSet();
+            written.AddRange(targetNpc.EnumerateFormLinks()
+                .Where(l => !l.FormKey.IsNull && !named.Contains(l.FormKey))
+                .Select(l => ("record data", l.FormKey)));
+        }
+
+        var danglingAppearanceLinks = written
             .Where(l => !_allowedMasterKeys.Contains(l.Key.ModKey))
             .ToList();
         if (!danglingAppearanceLinks.Any()) return;
@@ -3125,7 +3145,7 @@ public class Patcher : OptionalUIModule
               "different appearance for this NPC all resolve it.";
 
         AppendLog(
-            $"      CRITICAL WARNING: {npcIdentifier}'s appearance from '{appearanceModSetting?.DisplayName ?? "N/A"}' " +
+            $"      CRITICAL WARNING: {npcIdentifier}'s patched record from '{appearanceModSetting?.DisplayName ?? "N/A"}' " +
             $"(source record {sourceNpc.FormKey}) references plugin(s) that are NOT in your load order: " +
             $"{string.Join(", ", missingPlugins)}. THE OUTPUT PLUGIN CANNOT BE SAVED while this reference exists. " +
             $"Offending field(s): {string.Join("; ", danglingAppearanceLinks.Select(l => $"{l.Field}={l.Key}"))}. " +

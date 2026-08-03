@@ -10,6 +10,18 @@ public class NpcToken
 {
     public string CreationDate { get; set; } = string.Empty;
     public List<ModKey> CreatedPlugins { get; set; } = new();
+
+    /// <summary>
+    /// The output mode that produced this run: the <see cref="Models.PatchingMode"/> name plus
+    /// whether SkyPatcher output was on. "Validate Output" grades the deployed files against the
+    /// CURRENT settings (effective wig/antler modes included), so validating an output produced
+    /// under a different mode floods the report with false mismatches — these let it say so up
+    /// front instead. Null in tokens written by older versions, which readers must treat as
+    /// "unknown", never as a mismatch.
+    /// </summary>
+    public string? PatchingMode { get; set; }
+    public bool? UseSkyPatcherMode { get; set; }
+
     public Dictionary<FormKey, NpcAppearanceData> ProcessedNpcs { get; set; } = new();
 
     /// <summary>

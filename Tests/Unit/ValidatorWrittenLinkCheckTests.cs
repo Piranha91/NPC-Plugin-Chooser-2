@@ -361,6 +361,83 @@ public class ValidatorWrittenLinkCheckTests
         WrittenPairs(donor, donor).Select(l => l.Field).Should().NotContain("Class");
     }
 
+    // ── The mode gate on the whole-record sweep, end to end ─────────────────────────────
+
+    private static readonly ModKey SweepReplacer = MutagenFixtures.Mk("WLReplacer.esp");
+    private static readonly FormKey SweepNpc = FormKey.Factory("000900:WLTestMaster.esm");
+    private static readonly FormKey MissingPluginCombatStyle = FormKey.Factory("000123:WLMissingQuest.esp");
+
+    /// <summary>A replacer plugin on disk whose NPC override carries ONE link, and a
+    /// non-appearance one: CombatStyle into a plugin that exists nowhere.</summary>
+    private static string BuildSweepFixture(TempDir dir)
+    {
+        var replacer = new SkyrimMod(SweepReplacer, SkyrimRelease.SkyrimSE);
+        var npcOverride = new Npc(SweepNpc, SkyrimRelease.SkyrimSE) { EditorID = "WL_SweepNpc" };
+        npcOverride.CombatStyle.SetTo(MissingPluginCombatStyle);
+        replacer.Npcs.Add(npcOverride);
+        replacer.WriteToBinary(System.IO.Path.Combine(dir.Path, SweepReplacer.FileName));
+        return dir.Path;
+    }
+
+    /// <summary>A Validator with the collaborators FindUnwritableLink touches, built the way
+    /// <see cref="ValidatorInjectedRecordTests"/> builds its harness: real plugin files resolved
+    /// through a real PluginProvider, everything else uninitialized.</summary>
+    private static Validator HarnessValidator(Settings settings)
+    {
+        var env = Reflect.Uninitialized<EnvironmentStateProvider>();
+        Reflect.SetField(env, "SkyrimVersion", SkyrimRelease.SkyrimSE);
+
+        var pluginProvider = new PluginProvider(env, settings);
+        var recordHandler = new RecordHandler(env, pluginProvider, settings);
+
+        var validator = Reflect.Uninitialized<Validator>();
+        Reflect.SetField(validator, "_environmentStateProvider", env);
+        Reflect.SetField(validator, "_recordHandler", recordHandler);
+        Reflect.SetField(validator, "_pluginProvider", pluginProvider);
+        Reflect.SetField(validator, "_settings", settings);
+        Reflect.SetField(validator, "_absentPluginCache", new Dictionary<string, HashSet<ModKey>>());
+        return validator;
+    }
+
+    private static ModSetting SweepMod(string folder) => new()
+    {
+        DisplayName = "Written-Link Sweep Mod",
+        CorrespondingModKeys = new List<ModKey> { SweepReplacer },
+        CorrespondingFolderPaths = new List<string> { folder },
+        MergeInDependencyRecords = true,
+    };
+
+    /// <summary>The gate itself: both Create flavors ship the donor's whole record, so the sweep
+    /// must reject a non-appearance link the output cannot honour — while Create-and-Patch leaves
+    /// those fields as the winning record's own and must screen the same donor clean. This was the
+    /// plain-Create gap: the sweep used to run for SkyPatcher + Create only, so a version-drifted
+    /// or unreachable faction/item/combat-style link shipped unscreened in plain Create.</summary>
+    [Fact]
+    public void FindUnwritableLink_SweepsNonAppearanceLinksInBothCreateFlavors_ButNotCreateAndPatch()
+    {
+        using var dir = new TempDir("createsweep");
+        var folder = BuildSweepFixture(dir);
+        var loadOrder = new List<ModKey> { MutagenFixtures.Mk("WLTestMaster.esm") };
+        var implicits = new HashSet<ModKey>();
+        var owners = new Dictionary<ModKey, ModSetting>();
+
+        object? Screen(PatchingMode mode, bool skyPatcher) =>
+            Reflect.Invoke<object>(
+                HarnessValidator(new Settings { PatchingMode = mode, UseSkyPatcherMode = skyPatcher }),
+                "FindUnwritableLink",
+                SweepNpc, SweepNpc, SweepMod(folder), loadOrder, implicits, owners);
+
+        var plainCreate = Screen(PatchingMode.Create, skyPatcher: false);
+        plainCreate.Should().NotBeNull("plain Create forwards the donor record wholesale");
+        plainCreate!.ToString().Should().Contain("WLMissingQuest.esp");
+
+        Screen(PatchingMode.Create, skyPatcher: true)
+            .Should().NotBeNull("the SkyPatcher surrogate is an un-stripped DeepCopyIn in Create");
+
+        Screen(PatchingMode.CreateAndPatch, skyPatcher: false)
+            .Should().BeNull("Create-and-Patch never writes the donor's non-appearance links");
+    }
+
     // ── The reported configuration, end to end across the two seams ─────────────────────
 
     [Fact]
